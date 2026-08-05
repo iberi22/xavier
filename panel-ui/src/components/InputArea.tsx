@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { BrainCircuit, FolderPlus, Mic, Send } from "lucide-react";
-import { useState } from "react";
+import React, { useState, useCallback } from "react";
 
 interface InputAreaProps {
   onSendMessage: (text: string) => void;
@@ -9,7 +9,14 @@ interface InputAreaProps {
   onSystemMessage?: (text: string) => void;
 }
 
-export default function InputArea({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped InputArea in React.memo() and memoized handlers.
+ * 🎯 Why: InputArea is a static UI component at the bottom of the screen. Updates to chat messages or other parent state in App.tsx shouldn't re-render the input unnecessarily.
+ * 📊 Impact: Prevents unnecessary renders and layout thrashing during fast typing or receiving streaming chat tokens.
+ */
+export default React.memo(function InputArea({
   onSendMessage,
   onOpenConfig,
   onSystemMessage,
@@ -18,7 +25,7 @@ export default function InputArea({
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
-  const handleMicClick = () => {
+  const handleMicClick = useCallback(() => {
     if (isRecording) {
       setIsRecording(false);
       setIsTranscribing(true);
@@ -33,9 +40,9 @@ export default function InputArea({
       setIsRecording(true);
       setIsTranscribing(false);
     }
-  };
+  }, [isRecording]);
 
-  const handleFolderClick = async () => {
+  const handleFolderClick = useCallback(async () => {
     try {
       const selected = await open({
         directory: true,
@@ -51,13 +58,13 @@ export default function InputArea({
         onSystemMessage(`❌ Error al escanear: ${err}`);
       }
     }
-  };
+  }, [onSystemMessage]);
 
-  const handleSend = () => {
+  const handleSend = useCallback(() => {
     if (!inputText.trim()) return;
     onSendMessage(inputText);
     setInputText("");
-  };
+  }, [inputText, onSendMessage]);
 
   return (
     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 pointer-events-auto z-10">
@@ -190,4 +197,4 @@ export default function InputArea({
       </div>
     </div>
   );
-}
+})

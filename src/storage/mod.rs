@@ -344,6 +344,19 @@ impl Default for MigrationManager {
 
 /// Helper to check if a table has a column.
 pub fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let allowed_tables = [
+        "entities",
+        "relations",
+        "memory_records",
+        "timeline_events",
+        "memory_chain",
+        "session_tokens",
+    ];
+
+    if !allowed_tables.contains(&table) {
+        anyhow::bail!("Invalid table name for schema check: {}", table);
+    }
+
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
     let mut rows = stmt.query(())?;
     while let Some(row) = rows.next()? {

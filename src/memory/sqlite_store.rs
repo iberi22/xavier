@@ -228,6 +228,25 @@ impl MemoryStore for SqliteMemoryStore {
         self
     }
 
+    async fn compact(&self) -> Result<()> {
+        let project_id = self.project_id.clone();
+        ConnectionManager::global()
+            .with_conn(&project_id, move |conn| {
+                conn.execute_batch("VACUUM;")?;
+                Ok(())
+            })
+            .await
+    }
+
+    async fn db_size(&self) -> Result<Option<u64>> {
+        if self.config.path.exists() {
+            if let Ok(metadata) = std::fs::metadata(&self.config.path) {
+                return Ok(Some(metadata.len()));
+            }
+        }
+        Ok(None)
+    }
+
     async fn health(&self) -> Result<String> {
         let detail = self.config.detail();
         ConnectionManager::global()
