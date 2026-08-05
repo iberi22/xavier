@@ -40,11 +40,20 @@ fn ensure_watcher_started() {
 
 #[cfg(not(test))]
 async fn watch_config_changes() -> Result<()> {
+    let path = serialization::resolve_config_path();
+    watch_config_changes_impl(path).await
+}
+
+async fn watch_config_changes_impl(path: std::path::PathBuf) -> Result<()> {
     use notify::{RecursiveMode, Watcher};
     use std::time::Duration;
 
-    let path = serialization::resolve_config_path();
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    if !parent.exists() {
+        tracing::debug!("config dir absent, watcher skipped: {:?}", parent);
+        return Ok(());
+    }
+
     let config_file_name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -469,5 +478,31 @@ pub mod tests {
 
         // Clean up
         let _ = std::fs::remove_file(&test_config_path);
+    }
+
+    #[tokio::test]
+    async fn test_watcher_skipped_when_dir_absent() {
+        let nonexistent_path = std::path::PathBuf::from("/nonexistent/path/xavier.config.json");
+        let result = super::watch_config_changes_impl(nonexistent_path).await;
+        assert!(result.is_ok(), "Watcher should gracefully succeed and return Ok when parent dir is absent");
+    }
+
+    #[tokio::test]
+    async fn test_watcher_starts_when_dir_present() {
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join("xavier_watcher_test.json");
+
+        // Create the dummy config file so that the parent and file exist
+        std::fs::write(&test_path, "{}").unwrap();
+
+        // Since the watcher loops forever awaiting RX, let's run it with a short timeout
+        let run_watcher = super::watch_config_changes_impl(test_path.clone());
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), run_watcher).await;
+
+        // Clean up
+        let _ = std::fs::remove_file(&test_path);
+
+        // It should time out (since it waits for changes in a loop), which proves it started up properly and didn't fail immediately
+        assert!(result.is_err(), "Watcher should run indefinitely when parent dir exists, thus timing out here");
     }
 }
