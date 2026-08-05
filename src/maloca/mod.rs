@@ -5,10 +5,14 @@
 //!
 //! See `docs/SWAL/MALOCA_SUPPORT_WORKSPACE.md` and ADR-002.
 
+pub mod beliefs;
+pub mod commits;
 mod handlers;
 mod params;
 mod store;
+pub mod timeline;
 pub mod types;
+pub mod ws;
 
 pub use store::MalocaStore;
 pub use types::*;
