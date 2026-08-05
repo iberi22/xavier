@@ -341,6 +341,19 @@ pub enum Command {
         #[command(subcommand)]
         cmd: RegenCommand,
     },
+
+    /// Cleanup empty conversation databases and legacy store
+    Cleanup {
+        /// Dry run mode (default: true if --apply is not set)
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the changes (actually delete files)
+        #[arg(long)]
+        apply: bool,
+        /// Only purge empty databases older than N days (default: 0)
+        #[arg(short, long, default_value_t = 0)]
+        days: u64,
+    },
 }
 
 /// Subcommands for the auto-improvement loop.

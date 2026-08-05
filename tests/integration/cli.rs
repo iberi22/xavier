@@ -374,3 +374,84 @@ fn test_cli_subcommand_session_save_without_server() {
         "session-save without server should produce error output, got: {combined}"
     );
 }
+
+// ─── Cleanup Command Tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_cli_cleanup_flow() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_path = temp_dir.path();
+
+    // Create .xavier/conversations directory
+    let conv_dir = temp_path.join(".xavier").join("conversations");
+    std::fs::create_dir_all(&conv_dir).unwrap();
+
+    // Create mock empty and non-empty database files
+    let empty_db1 = conv_dir.join("test-empty1.db");
+    let empty_db2 = conv_dir.join("test-empty2.db");
+    let active_db = conv_dir.join("active.db");
+    let bench_db = conv_dir.join("bench.db");
+    let default_db = conv_dir.join("default.db");
+
+    std::fs::write(&empty_db1, b"").unwrap(); // 0 bytes
+    std::fs::write(&empty_db2, vec![0; 4096]).unwrap(); // 4KB empty
+
+    // Non-empty databases (> 4KB)
+    std::fs::write(&active_db, vec![0; 8192]).unwrap(); // 8KB
+    std::fs::write(&bench_db, vec![0; 16384]).unwrap(); // 16KB
+    std::fs::write(&default_db, vec![0; 5000]).unwrap(); // ~5KB
+
+    // Create a mock legacy store
+    let legacy_dir = temp_path.join("xavier");
+    std::fs::create_dir_all(&legacy_dir).unwrap();
+    let legacy_store = legacy_dir.join("memory-store.sqlite3");
+
+    // We can initialize a valid sqlite db file
+    let conn = rusqlite::Connection::open(&legacy_store).unwrap();
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS mock_table (id INTEGER PRIMARY KEY);").unwrap();
+    conn.execute("INSERT INTO mock_table DEFAULT VALUES;", []).unwrap();
+    drop(conn);
+
+    // 1. Run xavier cleanup (dry-run)
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.args(&["cleanup", "--dry-run"])
+        .env("HOME", temp_path)
+        .env("XAVIER_DATA_DIR", legacy_dir.to_str().unwrap());
+
+    let output = cmd.output().expect("failed to run xavier cleanup");
+    assert!(output.status.success(), "xavier cleanup should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Verify it reports empty databases and legacy store
+    assert!(stdout.contains("test-empty1.db"), "stdout should list test-empty1.db");
+    assert!(stdout.contains("test-empty2.db"), "stdout should list test-empty2.db");
+    assert!(stdout.contains("memory-store.sqlite3"), "stdout should list memory-store.sqlite3");
+    assert!(stdout.contains("active.db"), "stdout should list active.db");
+
+    // Ensure files still exist (dry-run)
+    assert!(empty_db1.exists());
+    assert!(empty_db2.exists());
+    assert!(active_db.exists());
+    assert!(legacy_store.exists());
+
+    // 2. Run xavier cleanup --apply
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.args(&["cleanup", "--apply"])
+        .env("HOME", temp_path)
+        .env("XAVIER_DATA_DIR", legacy_dir.to_str().unwrap());
+
+    let output = cmd.output().expect("failed to run xavier cleanup");
+    assert!(output.status.success(), "xavier cleanup --apply should succeed");
+
+    // Ensure empty databases are deleted
+    assert!(!empty_db1.exists(), "empty_db1 should be deleted");
+    assert!(!empty_db2.exists(), "empty_db2 should be deleted");
+
+    // Ensure active databases survived
+    assert!(active_db.exists(), "active_db should survive");
+    assert!(bench_db.exists(), "bench_db should survive");
+    assert!(default_db.exists(), "default_db should survive");
+
+    // Ensure legacy store was deleted
+    assert!(!legacy_store.exists(), "legacy_store should be deleted");
+}
