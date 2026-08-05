@@ -414,6 +414,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     let multi_db = xavier::storage::multi_db::MultiDbManager::new();
 
+    // Clone the bus for the WebSocket layer before it moves into CliState.
+    let event_bus_for_ws = event_bus.clone();
+
     let state = CliState {
         memory: memory_port,
         qmd_memory: Arc::clone(&memory),
@@ -580,6 +583,38 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             post(xavier::api::timeline::get_time_slice),
         )
         .route("/timeline", get(xavier::api::timeline::timeline_summary))
+        // ── Maloca Timeline Export API (MS-002) ──────────────────────────
+        .route(
+            "/maloca/timeline",
+            get(xavier::maloca::timeline::timeline_export),
+        )
+        .route(
+            "/maloca/timeline/sessions",
+            get(xavier::maloca::timeline::timeline_sessions),
+        )
+        .route(
+            "/maloca/timeline/{id}/context",
+            get(xavier::maloca::timeline::timeline_event_context),
+        )
+        // ── Maloca Commit Chronicle API (MS-003) ─────────────────────────
+        .route(
+            "/maloca/commits/graph",
+            get(xavier::maloca::commits::commits_graph),
+        )
+        // ── Maloca WebSocket Live Feed (MS-004) ──────────────────────────
+        .route(
+            "/maloca/ws/feed",
+            get(xavier::maloca::ws::ws_live_feed),
+        )
+        // ── Maloca Belief Graph Confidence (MS-005) ──────────────────────
+        .route(
+            "/maloca/beliefs",
+            get(xavier::maloca::beliefs::beliefs_snapshot),
+        )
+        .route(
+            "/maloca/beliefs/path",
+            get(xavier::maloca::beliefs::belief_path),
+        )
         .route(
             "/api/settings/cloud-node",
             get(xavier::api::settings::get_cloud_node)
@@ -1079,6 +1114,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .merge(protected_routes)
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
+        .layer(Extension(event_bus_for_ws))
         .layer(CorsLayer::permissive());
 
     let agent_indexer_cron = state.agent_indexer.clone();
