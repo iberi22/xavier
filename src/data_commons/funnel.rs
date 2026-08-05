@@ -231,7 +231,9 @@ impl Minter {
                 .map_err(|_| MinterError::InvalidContext)?;
 
         let maintainer_pubkey =
-            crate::data_commons::maintainer::get_maintainer_public_key().to_bytes();
+            crate::data_commons::maintainer::get_maintainer_public_key()
+                .map_err(|_| MinterError::InvalidContext)?
+                .to_bytes();
 
         // Instanciar DB y guardar
         let db = crate::data_commons::telemetry_db::TelemetryDb::new(db_path)
