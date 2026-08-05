@@ -15,6 +15,7 @@
 //! through re-exports so that external consumers are unaffected.
 
 pub mod billing;
+pub mod cleanup;
 pub mod code;
 pub mod data_commons;
 pub mod enums;
@@ -291,6 +292,9 @@ impl Cli {
             }
             Command::Improve { cmd } => improve::handle_improve_command(cmd.clone()).await,
             Command::Regen { cmd } => regen::handle_regen_command(cmd.clone()).await,
+            Command::Cleanup { dry_run, apply, days } => {
+                cleanup::handle_cleanup(*dry_run, *apply, *days).await
+            }
         }
     }
 }
