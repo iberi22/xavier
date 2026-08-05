@@ -20,3 +20,6 @@
 ## 2026-08-03 - Memoization of App, GraphCanvas, and InputArea components
 **Learning:** In the `panel-ui` frontend, components rendering heavy nested structures (e.g., `ForceGraph2D` in `GraphCanvas`) or iterative child elements (e.g., `DraggableWidget` lists in `App`) must have their callback props wrapped in `useCallback` (e.g., `handleNodeClick`, `handleRemoveWidget`), and the child components themselves wrapped in `React.memo()`. This establishes rendering optimization by preventing expensive sub-tree reconciliations during higher-level parent state changes.
 **Action:** Use `React.memo()` to wrap iterative components like `DraggableWidget` and static layout elements like `InputArea` to ensure they avoid re-rendering. Additionally, use `useCallback` to memoize inline functions passed down as props to heavily nested components like `ForceGraph2D` to avoid unneeded reconciliations.
+## 2024-05-18 - [React.memo on GraphCanvas]
+**Learning:** `ForceGraph2D` is computationally expensive to render. When wrapped components like `GraphCanvas` are mounted in interactive parents (like `ConfigModal` with tab switches), they will trigger N+1 canvas recalculations on unrelated state updates.
+**Action:** Always wrap computationally heavy visualizer components (like canvas/force-graphs) in `React.memo()` if their props don't need to change frequently.
