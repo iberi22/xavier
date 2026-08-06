@@ -253,82 +253,89 @@ export default function App() {
     }
   }
 
-  async function sendMessage(draft: string) {
-    if (!draft.trim()) return;
+  const sendMessage = useCallback(
+    async (draft: string) => {
+      if (!draft.trim()) return;
 
-    const tempId = Date.now().toString();
-    const newUserMsg: PanelMessage = {
-      id: tempId,
-      role: "user",
-      plain_text: draft,
-      created_at: new Date().toISOString(),
-    };
+      const tempId = Date.now().toString();
+      const newUserMsg: PanelMessage = {
+        id: tempId,
+        role: "user",
+        plain_text: draft,
+        created_at: new Date().toISOString(),
+      };
 
-    if (!hasConfig) {
-      setMessages((prev) => [
-        ...prev,
-        newUserMsg,
-        {
-          id: `${tempId}_sys`,
-          role: "assistant",
-          plain_text:
-            "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
-          created_at: new Date().toISOString(),
-        },
-      ]);
-      return;
-    }
+      if (!hasConfig) {
+        setMessages((prev) => [
+          ...prev,
+          newUserMsg,
+          {
+            id: `${tempId}_sys`,
+            role: "assistant",
+            plain_text:
+              "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
+            created_at: new Date().toISOString(),
+          },
+        ]);
+        return;
+      }
 
-    // Optimistic UI updates
-    setMessages((prev) => [...prev, newUserMsg]);
+      // Optimistic UI updates
+      setMessages((prev) => [...prev, newUserMsg]);
 
-    try {
-      setIsLoading(true);
-      setError(null);
+      try {
+        setIsLoading(true);
+        setError(null);
 
-      // Create thread if none exists
-      let targetThreadId = selectedThreadId;
-      if (!targetThreadId) {
-        const thread = await api<ThreadSummary>("/panel/api/threads", {
+        // Create thread if none exists
+        let targetThreadId = selectedThreadId;
+        if (!targetThreadId) {
+          const thread = await api<ThreadSummary>("/panel/api/threads", {
+            method: "POST",
+            body: JSON.stringify({ title: draft.slice(0, 30) }),
+          });
+          setThreads((current) => [thread, ...current]);
+          targetThreadId = thread.id;
+          setSelectedThreadId(thread.id);
+        }
+
+        const payload = await api<PanelChatResponse>("/panel/api/chat", {
           method: "POST",
-          body: JSON.stringify({ title: draft.slice(0, 30) }),
+          body: JSON.stringify({
+            thread_id: targetThreadId,
+            message: draft,
+          }),
         });
-        setThreads((current) => [thread, ...current]);
-        targetThreadId = thread.id;
-        setSelectedThreadId(thread.id);
+
+        setSelectedThreadId(payload.thread.id);
+        setMessages(payload.messages);
+
+        const lastMessage = payload.messages[payload.messages.length - 1];
+        if (lastMessage?.role === "assistant") {
+          setStreamingMessageId(lastMessage.id);
+        }
+
+        setThreads((current) => {
+          const next = [
+            payload.thread,
+            ...current.filter((item) => item.id !== payload.thread.id),
+          ];
+          return next;
+        });
+      } catch (cause) {
+        setError(
+          cause instanceof Error ? cause.message : "Failed to send message",
+        );
+      } finally {
+        setIsLoading(false);
       }
+    },
+    [api, hasConfig, selectedThreadId],
+  );
 
-      const payload = await api<PanelChatResponse>("/panel/api/chat", {
-        method: "POST",
-        body: JSON.stringify({
-          thread_id: targetThreadId,
-          message: draft,
-        }),
-      });
-
-      setSelectedThreadId(payload.thread.id);
-      setMessages(payload.messages);
-
-      const lastMessage = payload.messages[payload.messages.length - 1];
-      if (lastMessage?.role === "assistant") {
-        setStreamingMessageId(lastMessage.id);
-      }
-
-      setThreads((current) => {
-        const next = [
-          payload.thread,
-          ...current.filter((item) => item.id !== payload.thread.id),
-        ];
-        return next;
-      });
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Failed to send message",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }
+  const handleOpenConfig = useCallback(() => {
+    setIsConfigOpen(true);
+  }, []);
 
   const handleSystemMessage = useCallback((text: string) => {
     setMessages((prev) => [
@@ -509,7 +516,7 @@ export default function App() {
           >
             <InputArea
               onSendMessage={sendMessage}
-              onOpenConfig={() => setIsConfigOpen(true)}
+              onOpenConfig={handleOpenConfig}
               onSystemMessage={handleSystemMessage}
             />
           </motion.div>
