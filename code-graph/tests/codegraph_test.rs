@@ -104,14 +104,21 @@ echo '{"symbols": [{"name": "test_func", "kind": "Function", "lang": "Rust", "fi
 async fn test_parser_rust_plugin_execution() {
     let _guard = PATH_MUTEX.lock().await;
     // 1. Ensure parser-rust is compiled in debug mode
-    let mut target_dir = env::current_dir().unwrap();
-    if !target_dir.join("target/debug").exists() {
-        // We might be running inside code-graph/ directory
-        if target_dir.ends_with("code-graph") {
-            target_dir = target_dir.parent().unwrap().to_path_buf();
+    let workspace_root = if let Ok(dir) = env::current_dir() {
+        if dir.ends_with("code-graph") {
+            dir.parent().unwrap().to_path_buf()
+        } else {
+            dir
         }
-    }
-    let debug_dir = target_dir.join("target/debug");
+    } else {
+        std::path::PathBuf::from(".")
+    };
+
+    let debug_dir = if let Ok(target_env) = env::var("CARGO_TARGET_DIR") {
+        std::path::PathBuf::from(target_env).join("debug")
+    } else {
+        workspace_root.join("target/debug")
+    };
     let mut exe_name = "parser-rust".to_string();
     #[cfg(windows)]
     {
@@ -125,7 +132,7 @@ async fn test_parser_rust_plugin_execution() {
         // Compile parser-rust dynamically
         let status = std::process::Command::new("cargo")
             .args(["build", "-p", "parser-rust"])
-            .current_dir(&target_dir)
+            .current_dir(&workspace_root)
             .status()
             .expect("failed to run cargo build");
         assert!(status.success(), "Failed to build parser-rust dependency");
