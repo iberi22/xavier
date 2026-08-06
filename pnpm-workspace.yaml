@@ -1,3 +1,6 @@
 packages:
   - 'panel-ui'
   - 'docs/site'
+  - '../../maloca/packages/swal-ui'
+  - '../../maloca/packages/swal-maloca-embed'
+  - '../../maloca/packages/maloca-wasm'
