@@ -1,6 +1,22 @@
-/* Soft Maloca palette — tokens come from maloca.ui.json via CSS variables */
+/* Soft Maloca palette — tokens defined as default custom properties */
 
 .maloca-root {
+  --maloca-bg: #f4f6f3;
+  --maloca-bg-elevated: #ffffff;
+  --maloca-bg-muted: #e8ece6;
+  --maloca-text: #2a322c;
+  --maloca-text-muted: #5f6b62;
+  --maloca-accent: #5a7a6a;
+  --maloca-accent-soft: #c5d6cb;
+  --maloca-border: #d5ddd6;
+  --maloca-warning: #9a7b4a;
+  --maloca-warning-bg: #f3ead8;
+  --maloca-danger: #8b5555;
+  --maloca-radius: 12px;
+  --maloca-space: 16px;
+  --maloca-font: 'Source Sans 3', 'Segoe UI', sans-serif;
+  --maloca-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
   font-family: var(--maloca-font);
   color: var(--maloca-text);
   background:
