@@ -44,6 +44,7 @@ pub mod node_identity;
 pub mod notifications;
 pub mod observability;
 pub mod polygon_anchor;
+pub mod plugins;
 pub mod retrieval;
 pub mod scheduler;
 pub mod search;
