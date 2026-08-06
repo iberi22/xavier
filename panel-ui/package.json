@@ -29,7 +29,8 @@
     "recharts": "^3.8.1",
     "tailwindcss": "4.3.0",
     "zustand": "^4.5.7",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.3",
+    "@swal/maloca-embed": "file:../../maloca/packages/swal-maloca-embed"
   },
   "devDependencies": {
     "@astrojs/node": "^10.0.5",
