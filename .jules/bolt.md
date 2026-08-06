@@ -23,3 +23,7 @@
 ## 2024-05-18 - [React.memo on GraphCanvas]
 **Learning:** `ForceGraph2D` is computationally expensive to render. When wrapped components like `GraphCanvas` are mounted in interactive parents (like `ConfigModal` with tab switches), they will trigger N+1 canvas recalculations on unrelated state updates.
 **Action:** Always wrap computationally heavy visualizer components (like canvas/force-graphs) in `React.memo()` if their props don't need to change frequently.
+
+## 2026-08-06 - Proper Memoization of Callback Props
+**Learning:** Wrapping a component in `React.memo()` (like `InputArea`) is useless if the parent component (`App.tsx`) passes inline arrow functions or unmemoized functions as props. This causes the `React.memo()` component to re-render on every parent render, completely negating the performance optimization and potentially causing layout thrashing during fast state updates (like streaming chat tokens).
+**Action:** Always verify that all callback props passed to a `React.memo()` component are wrapped in `useCallback()` in the parent component to maintain referential stability.
