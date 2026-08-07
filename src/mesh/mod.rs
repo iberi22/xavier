@@ -77,7 +77,7 @@ pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
 #[cfg(feature = "mesh")]
 pub use discovery::DiscoveryService;
 #[cfg(feature = "mesh")]
-pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService};
+pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService, HeartbeatStatus};
 pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
@@ -90,3 +90,21 @@ pub use tokenomics::{
     WalletBalance,
 };
 pub use transport::MeshTransport;
+
+#[cfg(feature = "mesh")]
+pub use iroh_transport::IrohTransport;
+
+/// Active Iroh Transport initialization helper.
+#[cfg(feature = "mesh")]
+pub fn init_active_transport(identity: std::sync::Arc<NodeIdentity>) -> IrohTransport {
+    IrohTransport::new(identity)
+}
+
+/// Helper method to connect via the active Iroh transport.
+#[cfg(feature = "mesh")]
+pub async fn connect_active_transport(
+    transport: &IrohTransport,
+    peer_addr: &str,
+) -> anyhow::Result<iroh::endpoint::Connection> {
+    transport.connect(peer_addr).await
+}
