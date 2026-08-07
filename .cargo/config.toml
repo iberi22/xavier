@@ -1,5 +1,5 @@
 [build]
-target-dir = "./target"
+target-dir = "/build/rust-target/xavier"
 # rustflags = ["-C", "link-arg=-fuse-ld=mold"] # Commented out (causes Bus error in CI runners)
 
 # [target.x86_64-unknown-linux-gnu]
