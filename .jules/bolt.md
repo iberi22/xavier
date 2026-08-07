@@ -27,3 +27,7 @@
 ## 2026-08-06 - Proper Memoization of Callback Props
 **Learning:** Wrapping a component in `React.memo()` (like `InputArea`) is useless if the parent component (`App.tsx`) passes inline arrow functions or unmemoized functions as props. This causes the `React.memo()` component to re-render on every parent render, completely negating the performance optimization and potentially causing layout thrashing during fast state updates (like streaming chat tokens).
 **Action:** Always verify that all callback props passed to a `React.memo()` component are wrapped in `useCallback()` in the parent component to maintain referential stability.
+
+## 2026-08-07 - [TopStatusBar Memoization]
+**Learning:** In a highly animated React app (like `panel-ui` using Framer Motion), statically placed components that consume global state or contain local polling intervals (`TopStatusBar`) must be wrapped in `React.memo` to prevent profound layout recalculations across the app whenever a parent context (e.g. typing in an input field) updates.
+**Action:** Wrap complex, static UI layer components in `React.memo()` to decouple their render lifecycle from fast-updating siblings or parents.
