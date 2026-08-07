@@ -75,9 +75,9 @@ impl RateLimiter {
 /// Calls `f()` up to `max_retries` times. On failure, waits `2^attempt` seconds
 /// (capped at 16 s) before retrying. Returns the first successful value or the
 /// last error.
-async fn with_retry<F, Fut, T, E>(label: &str, max_retries: usize, f: F) -> Result<T, E>
+async fn with_retry<F, Fut, T, E>(label: &str, max_retries: usize, mut f: F) -> Result<T, E>
 where
-    F: Fn() -> Fut,
+    F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
     E: std::fmt::Display,
 {
@@ -182,6 +182,19 @@ impl MemoryCommand {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TelegramTransport {
+    Polling,
+    Webhook,
+}
+
+impl Default for TelegramTransport {
+    fn default() -> Self {
+        Self::Polling
+    }
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub struct TelegramConfig {
     pub bot_token: String,
@@ -190,6 +203,8 @@ pub struct TelegramConfig {
     pub webhook_url: Option<String>,
     pub webhook_port: u16,
     pub notification_chat_id: Option<String>,
+    #[serde(default)]
+    pub transport_mode: TelegramTransport,
 }
 
 impl fmt::Debug for TelegramConfig {
@@ -204,6 +219,7 @@ impl fmt::Debug for TelegramConfig {
                 "notification_chat_id",
                 &self.notification_chat_id.as_ref().map(|_| "[REDACTED]"),
             )
+            .field("transport_mode", &self.transport_mode)
             .finish()
     }
 }
@@ -218,6 +234,7 @@ impl Default for TelegramConfig {
             webhook_url: settings.telegram.webhook_url.clone(),
             webhook_port: settings.telegram.webhook_port,
             notification_chat_id: settings.telegram.notification_chat_id.clone(),
+            transport_mode: TelegramTransport::Polling,
         }
     }
 }
@@ -335,9 +352,15 @@ impl XavierBot {
 
     /// Start.
     pub async fn start(&self) {
-        if let Some(webhook_url) = &self.config.webhook_url {
-            info!("Starting Telegram bot (webhook: {})...", webhook_url);
-            self.start_webhook(webhook_url).await;
+        if self.config.transport_mode == TelegramTransport::Webhook {
+            if let Some(webhook_url) = &self.config.webhook_url {
+                info!("Starting Telegram bot (webhook: {})...", webhook_url);
+                self.start_webhook(webhook_url).await;
+            } else {
+                warn!("Telegram transport_mode is Webhook, but webhook_url is not set. Falling back to long-polling.");
+                info!("Starting Telegram bot (long-polling)...");
+                self.start_polling().await;
+            }
         } else {
             info!("Starting Telegram bot (long-polling)...");
             self.start_polling().await;
@@ -1136,5 +1159,29 @@ mod tests {
         assert!(text.contains("Local sano"));
         assert!(text.contains("local"));
         assert!(text.contains("http://localhost:11434"));
+    }
+
+    #[test]
+    fn test_telegram_transport_default() {
+        let config = TelegramConfig::default();
+        assert_eq!(config.transport_mode, TelegramTransport::Polling);
+    }
+
+    #[test]
+    fn test_telegram_transport_webhook_config() {
+        let mut config = TelegramConfig::default();
+        config.transport_mode = TelegramTransport::Webhook;
+        assert_eq!(config.transport_mode, TelegramTransport::Webhook);
+    }
+
+    #[test]
+    fn test_telegram_transport_serde() {
+        let json_str = r#"{"bot_token":"tok","admin_ids":[],"enabled":true,"webhook_url":null,"webhook_port":8009,"notification_chat_id":null,"transport_mode":"webhook"}"#;
+        let config: TelegramConfig = serde_json::from_str(json_str).unwrap();
+        assert_eq!(config.transport_mode, TelegramTransport::Webhook);
+
+        let json_str_default = r#"{"bot_token":"tok","admin_ids":[],"enabled":true,"webhook_url":null,"webhook_port":8009,"notification_chat_id":null}"#;
+        let config_default: TelegramConfig = serde_json::from_str(json_str_default).unwrap();
+        assert_eq!(config_default.transport_mode, TelegramTransport::Polling);
     }
 }
