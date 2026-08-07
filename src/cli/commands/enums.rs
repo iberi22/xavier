@@ -332,8 +332,11 @@ pub enum Command {
 
     /// Run the auto-improvement loop (benchmark → gaps → experiments → validate)
     Improve {
+        /// Run in CI mode: autonomous, non-interactive, and fails if regression or critical gaps exist
+        #[arg(long)]
+        ci: bool,
         #[command(subcommand)]
-        cmd: ImproveCommand,
+        cmd: Option<ImproveCommand>,
     },
 
     /// Context regeneration: measure recall@k and tune RRF weights
@@ -369,6 +372,9 @@ pub enum ImproveCommand {
         /// Emit the cycle result as JSON (for scripting / scheduler capture)
         #[arg(long)]
         json: bool,
+        /// Run in CI mode: autonomous, non-interactive, and fails if regression or critical gaps exist
+        #[arg(long)]
+        ci: bool,
     },
     /// Show the last improvement cycle and benchmark history
     Status,
