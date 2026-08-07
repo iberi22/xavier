@@ -31,7 +31,7 @@ impl Default for MeshMaturityReport {
             acl: true,
             acl_percent: 90, // Fully operational, with some enterprise/namespaces expansions planned
             tokenomics: true,
-            tokenomics_percent: 40, // Placeholder XP simulation is implemented
+            tokenomics_percent: 85, // Fully integrated with Data Commons marketplace, reputation and storage rent economy
             onchain_gov: false,
             onchain_gov_percent: 0, // Unimplemented
         }
