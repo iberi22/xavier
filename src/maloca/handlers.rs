@@ -9,12 +9,71 @@ use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
 
-pub async fn pack(Extension(store): Extension<Arc<MalocaStore>>) -> Json<MalocaPack> {
-    Json(store.pack())
+#[derive(Debug, Deserialize)]
+pub struct BacklogQuery {
+    pub app_id: Option<String>,
 }
 
-pub async fn backlog(Extension(store): Extension<Arc<MalocaStore>>) -> Json<serde_json::Value> {
-    Json(store.backlog())
+pub async fn pack(Extension(store): Extension<Arc<MalocaStore>>) -> Json<MalocaPack> {
+    let mut pack = store.pack();
+    let projects = crate::maloca::universal::scan_projects();
+
+    let mut total = 0;
+    let mut draft = 0;
+    let mut zero_gaps = Vec::new();
+
+    for p in &projects {
+        for f in &p.features {
+            total += 1;
+            if f.status.eq_ignore_ascii_case("draft") {
+                draft += 1;
+            }
+            if f.progress_pct == 0.0 {
+                zero_gaps.push(f.id.clone());
+            }
+        }
+    }
+
+    pack.features_total = total as u64;
+    pack.features_draft = draft as u64;
+    pack.gaps_zero_symbol_modules = zero_gaps;
+
+    Json(pack)
+}
+
+pub async fn backlog(
+    Extension(store): Extension<Arc<MalocaStore>>,
+    Query(q): Query<BacklogQuery>,
+) -> Json<serde_json::Value> {
+    let _ = store;
+    let projects = crate::maloca::universal::scan_projects();
+    let mut items = Vec::new();
+
+    for p in &projects {
+        if let Some(ref target_app_id) = q.app_id {
+            if !p.repo_name.eq_ignore_ascii_case(target_app_id) {
+                continue;
+            }
+        }
+
+        for f in &p.features {
+            if f.progress_pct < 100.0 {
+                items.push(serde_json::json!({
+                    "id": f.id.clone(),
+                    "title": f.name.clone(),
+                    "status": f.status.clone(),
+                    "progress_pct": f.progress_pct,
+                    "notes": f.notes.clone().unwrap_or_default(),
+                    "repo_name": p.repo_name.clone(),
+                }));
+            }
+        }
+    }
+
+    Json(serde_json::json!({
+        "source": "xavier/src/maloca",
+        "items": items,
+    }))
 }
 
 pub async fn list_support(
