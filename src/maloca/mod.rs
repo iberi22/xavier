@@ -12,6 +12,7 @@ mod params;
 mod store;
 pub mod timeline;
 pub mod types;
+pub mod universal;
 pub mod ws;
 
 pub use store::MalocaStore;
