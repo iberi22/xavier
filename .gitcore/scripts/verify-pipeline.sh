@@ -179,7 +179,7 @@ CHECK_STATUS="skipped"
 if [ "$DO_CHECK" -eq 1 ]; then
   echo ""
   echo "── cargo check -p xavier ────────────────────────────────"
-  if (cd "$ROOT" && CARGO_TARGET_DIR=/tmp/xavier-check cargo check -p xavier 2>&1 | tail -3); then
+  if (cd "$ROOT" && CARGO_TARGET_DIR=/build/rust-target/xavier-check cargo check -p xavier 2>&1 | tail -3); then
     CHECK_STATUS="ok"
   else
     CHECK_STATUS="FAILED"
@@ -193,7 +193,7 @@ TEST_STATUS="skipped"
 if [ "$DO_TEST" -eq 1 ]; then
   echo ""
   echo "── cargo test -p xavier --lib ───────────────────────────"
-  if (cd "$ROOT" && CARGO_TARGET_DIR=/tmp/xavier-check cargo test -p xavier --lib 2>&1 | tail -5); then
+  if (cd "$ROOT" && CARGO_TARGET_DIR=/build/rust-target/xavier-check cargo test -p xavier --lib 2>&1 | tail -5); then
     TEST_STATUS="ok"
   else
     TEST_STATUS="FAILED"
