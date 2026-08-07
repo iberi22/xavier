@@ -18,7 +18,7 @@ import {
   Home,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { getApiUrl } from "../api/client";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
@@ -46,7 +46,16 @@ async function getAuthToken(): Promise<string> {
   }
 }
 
-export default function TopStatusBar({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped TopStatusBar in React.memo()
+ * 🎯 Why: TopStatusBar is a complex component containing multiple intervals, fetches,
+ *         and animated layout calculations. Updates to chat messages or other parent state in App.tsx shouldn't
+ *         re-render this bar unnecessarily.
+ * 📊 Impact: Prevents unnecessary heavy tree renders and layout recalculations.
+ */
+export default React.memo(function TopStatusBar({
   isModalOpen = false,
 }: TopStatusBarProps) {
   const [time, setTime] = useState(new Date());
@@ -503,4 +512,4 @@ export default function TopStatusBar({
       </AnimatePresence>
     </>
   );
-}
+})
