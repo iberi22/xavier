@@ -16,6 +16,9 @@ pub struct HeartbeatService {
     peer_count: usize,
 }
 
+/// Type alias for HeartbeatService.
+pub type HeartbeatStatus = HeartbeatService;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HeartbeatPayload {
     pub node_id: NodeId,
@@ -39,7 +42,7 @@ impl HeartbeatService {
         Self {
             node_id,
             interval: DEFAULT_HEARTBEAT_INTERVAL,
-            peer_count: 0,
+            peer_count: Default::default(),
         }
     }
 
