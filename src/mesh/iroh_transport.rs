@@ -152,7 +152,7 @@ impl IrohTransport {
     /// `PeerInfo.iroh_addr`). It is parsed into a [`iroh::PublicKey`] and
     /// wrapped in an `EndpointAddr`; the endpoint's address-lookup service
     /// resolves the relay/direct addresses needed to reach it.
-    async fn connect(&self, peer_addr: &str) -> Result<Connection> {
+    pub async fn connect(&self, peer_addr: &str) -> Result<Connection> {
         let endpoint = self.endpoint().await?;
         let trimmed = peer_addr.trim();
         let public_key = trimmed
@@ -190,7 +190,7 @@ impl IrohTransport {
     }
 
     /// Build a signed sync request (shared by fetch/push).
-    fn signed_sync_request(&self, wanted_hashes: Vec<String>) -> MeshSyncRequest {
+    pub fn signed_sync_request(&self, wanted_hashes: Vec<String>) -> MeshSyncRequest {
         let nonce = uuid::Uuid::new_v4().to_string();
         let timestamp = chrono::Utc::now().timestamp();
         let message = format!("{}:{}", timestamp, nonce);
