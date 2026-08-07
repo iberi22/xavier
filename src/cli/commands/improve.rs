@@ -13,15 +13,24 @@ use crate::cli::commands::enums::ImproveCommand;
 use crate::cli::commands::spawn::load_spawn_memory;
 
 /// Dispatch the `improve` subcommands.
-pub async fn handle_improve_command(cmd: ImproveCommand) -> Result<()> {
+pub async fn handle_improve_command(ci: bool, cmd: Option<ImproveCommand>) -> Result<()> {
     match cmd {
-        ImproveCommand::Run { autonomous, json } => run_cycle(autonomous, json).await,
-        ImproveCommand::Status => show_status().await,
+        Some(ImproveCommand::Run { autonomous, json, ci: run_ci }) => {
+            run_cycle(autonomous || ci || run_ci, json, ci || run_ci).await
+        }
+        Some(ImproveCommand::Status) => {
+            show_status().await
+        }
+        None => {
+            // Default to running a cycle in CI mode if ci flag was specified, otherwise run standard cycle.
+            let autonomous = ci;
+            run_cycle(autonomous, false, ci).await
+        }
     }
 }
 
 /// Run a full auto-improvement cycle against the local memory store.
-async fn run_cycle(autonomous: bool, json: bool) -> Result<()> {
+async fn run_cycle(autonomous: bool, json: bool, ci: bool) -> Result<()> {
     let settings = XavierSettings::default();
     let memory = load_spawn_memory()
         .await
@@ -33,8 +42,8 @@ async fn run_cycle(autonomous: bool, json: bool) -> Result<()> {
 
     if !json {
         println!(
-            "Running auto-improvement cycle (autonomous={})...",
-            autonomous
+            "Running auto-improvement cycle (autonomous={}, ci={})...",
+            autonomous, ci
         );
     }
 
@@ -42,6 +51,16 @@ async fn run_cycle(autonomous: bool, json: bool) -> Result<()> {
 
     if json {
         println!("{}", serde_json::to_string_pretty(&cycle)?);
+        if ci {
+            let has_regression_or_critical = cycle.gaps.iter().any(|gap| {
+                gap.metric == "recall_regression" || matches!(gap.severity, xavier::auto_improvement::GapSeverity::Critical)
+            });
+            if has_regression_or_critical {
+                return Err(anyhow::anyhow!(
+                    "CI failed: critical gaps or regressions detected under auto-improvement cycle!"
+                ));
+            }
+        }
         return Ok(());
     }
 
@@ -105,6 +124,19 @@ async fn run_cycle(autonomous: bool, json: bool) -> Result<()> {
     }
 
     println!("\nImprovement vs previous: {:.2}%", cycle.improvement_pct);
+
+    if ci {
+        let has_regression_or_critical = cycle.gaps.iter().any(|gap| {
+            gap.metric == "recall_regression" || matches!(gap.severity, xavier::auto_improvement::GapSeverity::Critical)
+        });
+
+        if has_regression_or_critical {
+            return Err(anyhow::anyhow!(
+                "CI failed: critical gaps or regressions detected under auto-improvement cycle!"
+            ));
+        }
+        println!("\n✅ CI check passed: no critical gaps or regressions detected.");
+    }
 
     Ok(())
 }
