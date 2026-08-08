@@ -394,4 +394,161 @@ Scan/Index/Push/Pull/Status/Sync for OpenClaw agent memory (MEMORY.md, SOUL.md, 
 
 ---
 
-*Add domain-specific REQ-020+ below. Keep numbering stable. Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032).*
+## REQ-020: Clearance levels (document classification)
+
+- **Category:** Security
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Features:** `feat-clearance-levels`
+- **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §3
+
+### Description
+Classify documents like government classified material: UNCLASSIFIED → TOPSECRET (6 levels). Server redacts sections by requester clearance; no bypass.
+
+### Acceptance criteria
+- [ ] `ClearanceLevel` enum (0-5) with serialization
+- [ ] `clearance` field on MemoryRecord + DatasetMetadata
+- [ ] Read middleware redacts by requester clearance
+- [ ] Per-section REDACTED support within a document
+- [ ] Access audit log (who/what/when/clearance)
+
+---
+
+## REQ-021: Information groups with strict permissions
+
+- **Category:** Security
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Features:** `feat-groups-permissions`
+- **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §4
+
+### Description
+Information groups (core-xavier-dev, service-nodes, family) with rigorous ACL (read/write/audit) enforced on ALL reads, no bypass, audited.
+
+### Acceptance criteria
+- [ ] Group model + membership
+- [ ] ACL per group (read/write/audit roles)
+- [ ] Enforcement in all server reads
+- [ ] Audit trail of accesses
+- [ ] Bypass-attempt tests
+
+---
+
+## REQ-022: Training datasets API
+
+- **Category:** Data
+- **Priority:** High
+- **SRS Status:** `partial`
+- **Features:** `feat-training-datasets-api`
+- **Files:** `src/data_commons/training.rs` (TrainingExporter exists)
+
+### Description
+Serve training datasets over REST: /v1/training/datasets + train/eval splits (JSONL) with consent audit, clearance, segment, language metadata.
+
+### Acceptance criteria
+- [ ] `GET /v1/training/datasets` — list
+- [ ] `GET /v1/training/datasets/{id}` — manifest
+- [ ] `GET /v1/training/datasets/{id}/train` + `/eval` — JSONL splits
+- [ ] `POST /v1/training/bundles` — generate with seed/eval_ratio
+- [ ] Metadata: clearance, consent, segment, language
+
+---
+
+## REQ-023: Personal mini-experts (on-demand local models)
+
+- **Category:** AI
+- **Priority:** Medium
+- **SRS Status:** `planned`
+- **Features:** `feat-mini-experts`
+- **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §5
+
+### Description
+Small models (1-3B) trained with the user's own curated data, only the user's language (or EN+user), served locally via Ollama. Pipeline: dataset → Colab/Vertex (agy) → GGUF → local serve.
+
+### Acceptance criteria
+- [ ] Dataset export via /v1/training/*
+- [ ] Colab/Vertex training pipeline (agy CLI)
+- [ ] GGUF conversion + Ollama/llama.cpp serving
+- [ ] Mini-expert registry (segment, language, clearance, source dataset)
+- [ ] ProviderRouter includes local mini-experts
+
+---
+
+## REQ-024: SWAL service network (internal telemetry)
+
+- **Category:** Mesh
+- **Priority:** Medium
+- **SRS Status:** `planned`
+- **Features:** `feat-mesh-service-network`
+- **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §2 Capa 2
+
+### Description
+Share benchmarks, logs, feedbacks, operational telemetry among service nodes to improve Xavier — strictly NO personal data. Classified INTERNAL.
+
+### Acceptance criteria
+- [ ] Telemetry classified INTERNAL
+- [ ] Publish telemetry to service network
+- [ ] Service nodes consume to improve Xavier
+- [ ] Personal data exclusion guaranteed (tests)
+
+---
+
+## REQ-025: Private mesh by key wallet
+
+- **Category:** Mesh
+- **Priority:** Medium
+- **SRS Status:** `planned`
+- **Features:** `feat-mesh-private-wallet`
+- **Design:** `docs/design/F9-MESH-SWAL-PUBLICO-PRIVADO.md` §3.7
+
+### Description
+Nodes anchored to the SAME key wallet form a private mesh: sync memory, snapshots, models across the user's devices. Third parties cannot see it.
+
+### Acceptance criteria
+- [ ] Node registration by wallet (Clavis)
+- [ ] Private discovery (same wallet only)
+- [ ] Memory + snapshot + model sync between devices
+- [ ] Session encryption between private nodes
+- [ ] Cross-wallet isolation tests
+
+---
+
+## REQ-026: Content redaction (partial censorship)
+
+- **Category:** Security
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Features:** `feat-content-redaction`
+- **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §3
+
+### Description
+Documents with REDACTED sections: server serves censored version per requester clearance, like government classified documents.
+
+### Acceptance criteria
+- [ ] Segmented document format (sections with levels)
+- [ ] Per-section redaction engine
+- [ ] Redacted vs full version serving by clearance
+- [ ] Redaction tests (secret section hidden at low clearance)
+
+---
+
+## REQ-027: Human curation of information
+
+- **Category:** Governance
+- **Priority:** Medium
+- **SRS Status:** `planned`
+- **Features:** `feat-human-curation`
+- **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §1
+
+### Description
+Humans are curators: review, approve, classify the information Xavier preserves. Personal models train ONLY on curated info. Real regenerated info, not generated.
+
+### Acceptance criteria
+- [ ] UI/API to review unclassified information
+- [ ] Human approval flow (curate = classify + validate)
+- [ ] Curation history (who classified what, when)
+- [ ] Personal models trained only on curated data
+
+---
+
+*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032).*

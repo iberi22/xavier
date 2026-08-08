@@ -922,10 +922,10 @@
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
-        "REQ-CLEAR-01"
+        "REQ-020"
       ],
       "user_stories": [
-        "US-CLEAR-01"
+        "US-033"
       ]
     },
     {
@@ -950,10 +950,10 @@
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
-        "REQ-GRP-01"
+        "REQ-021"
       ],
       "user_stories": [
-        "US-GRP-01"
+        "US-034"
       ]
     },
     {
@@ -978,10 +978,10 @@
       "implemented_in": "src/data_commons/training.rs",
       "tests": 0,
       "req_ids": [
-        "REQ-TRN-01"
+        "REQ-022"
       ],
       "user_stories": [
-        "US-TRN-01"
+        "US-035"
       ]
     },
     {
@@ -1006,10 +1006,10 @@
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
-        "REQ-ME-01"
+        "REQ-023"
       ],
       "user_stories": [
-        "US-ME-01"
+        "US-036"
       ]
     },
     {
@@ -1033,10 +1033,10 @@
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
-        "REQ-SVC-01"
+        "REQ-024"
       ],
       "user_stories": [
-        "US-SVC-01"
+        "US-037"
       ]
     },
     {
@@ -1061,10 +1061,10 @@
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
-        "REQ-PW-01"
+        "REQ-025"
       ],
       "user_stories": [
-        "US-PW-01"
+        "US-038"
       ]
     },
     {
@@ -1088,10 +1088,10 @@
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
-        "REQ-RED-01"
+        "REQ-026"
       ],
       "user_stories": [
-        "US-RED-01"
+        "US-039"
       ]
     },
     {
@@ -1115,10 +1115,10 @@
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
-        "REQ-CUR-01"
+        "REQ-027"
       ],
       "user_stories": [
-        "US-CUR-01"
+        "US-040"
       ]
     }
   ],

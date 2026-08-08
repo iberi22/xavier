@@ -269,4 +269,62 @@ As a **SWAL node user**, I want Pro features unlocked by an active node so that 
 
 ---
 
-*Add US-033+ below. Keep numbering stable. Updated 2026-08-04.*
+## US-033: Classify information by sensitivity level
+
+As a **curator**, I want to classify information (UNCLASSIFIED→TOPSECRET) so that **sensitive sections are only visible to authorized nodes**.
+
+- **Feature:** `feat-clearance-levels` · **REQ:** REQ-020
+- **Acceptance:** `ClearanceLevel` enum; read middleware redacts by requester clearance.
+
+## US-034: Create information groups with permissions
+
+As a **node owner**, I want to organize information in groups with read/write/audit permissions so that **only members access each group**.
+
+- **Feature:** `feat-groups-permissions` · **REQ:** REQ-021
+- **Acceptance:** ACL enforced on all reads; bypass attempts blocked and logged.
+
+## US-035: Export my data for training
+
+As a **user**, I want Xavier to serve my curated data as train/eval datasets so that **I can train a personal model with my own data**.
+
+- **Feature:** `feat-training-datasets-api` · **REQ:** REQ-022
+- **Acceptance:** `/v1/training/datasets/{id}/train` returns JSONL with consent-filtered records.
+
+## US-036: Train a personal mini-expert
+
+As a **user**, I want to train a small model with my own language and my segment data so that **I get an on-demand expert that loads fast**.
+
+- **Feature:** `feat-mini-experts` · **REQ:** REQ-023
+- **Acceptance:** Pipeline dataset → Colab/Vertex → GGUF → served locally; model responds in user's language.
+
+## US-037: Share work telemetry with the service network
+
+As a **SWAL service node**, I want to share benchmarks/logs/feedbacks (never personal data) so that **the network improves Xavier collectively**.
+
+- **Feature:** `feat-mesh-service-network` · **REQ:** REQ-024
+- **Acceptance:** Telemetry classified INTERNAL; personal data excluded (tests).
+
+## US-038: Private mesh across my devices
+
+As a **user**, I want my devices (same key wallet) to form a private mesh so that **my memory and models sync privately**.
+
+- **Feature:** `feat-mesh-private-wallet` · **REQ:** REQ-025
+- **Acceptance:** Same-wallet nodes discover each other; other wallets cannot see the mesh.
+
+## US-039: Read redacted documents
+
+As a **low-clearance reader**, I want sensitive sections shown as REDACTED so that **I get the useful parts without seeing secrets**.
+
+- **Feature:** `feat-content-redaction` · **REQ:** REQ-026
+- **Acceptance:** Secret section of a document hidden at low clearance; full version at high clearance.
+
+## US-040: Curate information as a human
+
+As a **human curator**, I want to review/approve/classify information so that **the future is built with real regenerated info, not generated**.
+
+- **Feature:** `feat-human-curation` · **REQ:** REQ-027
+- **Acceptance:** Curation flow with approval; personal models train only on curated data.
+
+---
+
+*Domain-specific US-033..040 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04.*
