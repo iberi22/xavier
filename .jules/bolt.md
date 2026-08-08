@@ -31,3 +31,6 @@
 ## 2026-08-07 - [TopStatusBar Memoization]
 **Learning:** In a highly animated React app (like `panel-ui` using Framer Motion), statically placed components that consume global state or contain local polling intervals (`TopStatusBar`) must be wrapped in `React.memo` to prevent profound layout recalculations across the app whenever a parent context (e.g. typing in an input field) updates.
 **Action:** Wrap complex, static UI layer components in `React.memo()` to decouple their render lifecycle from fast-updating siblings or parents.
+## 2026-08-08 - [React.memo boundary for ChatHistory container]
+ **Learning:** Large components rendering iterative child lists (like `ChatHistory` rendering `ChatMessageItem`) will still re-render when a high-frequency parent state changes (like typing inputs in `App.tsx`), even if the individual list items are memoized.
+ **Action:** Always wrap top-level dynamic list containers in `React.memo()` to prevent O(1) container re-renders and expensive DOM tree traversal when the container props haven't changed.
