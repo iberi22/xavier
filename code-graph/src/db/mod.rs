@@ -331,10 +331,16 @@ impl CodeGraphDB {
         let allowed_columns = ["stable_id", "signature", "parent", "complexity"];
 
         if !allowed_tables.contains(&table) {
-            return Err(GraphError::Database(format!("Invalid table name: {}", table)));
+            return Err(GraphError::Database(format!(
+                "Invalid table name: {}",
+                table
+            )));
         }
         if !allowed_columns.contains(&column) {
-            return Err(GraphError::Database(format!("Invalid column name: {}", column)));
+            return Err(GraphError::Database(format!(
+                "Invalid column name: {}",
+                column
+            )));
         }
 
         let conn = self

@@ -119,8 +119,8 @@ async fn test_tgd_consolidation_refinement() {
 #[tokio::test]
 async fn test_nightly_consolidation_process() {
     use tokio::sync::RwLock;
-    use xavier::memory::qmd_memory::QmdMemory;
     use xavier::memory::manager::core::MemoryManager;
+    use xavier::memory::qmd_memory::QmdMemory;
     use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
     use xavier::memory::store::MemoryStore;
 

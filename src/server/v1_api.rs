@@ -198,10 +198,19 @@ pub async fn v1_memories_add(
     };
     let content_for_graph = content.clone();
 
-    let path = payload
+    let mut path = payload
         .user_id
         .clone()
         .unwrap_or_else(|| "default".to_string());
+    path = path
+        .replace("..", "")
+        .replace("/", "")
+        .replace("\\", "")
+        .replace("\0", "");
+    path.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+    if path.is_empty() {
+        path = "default".to_string();
+    }
     let mut meta = payload.metadata.unwrap_or(serde_json::json!({}));
     let is_dedup =
         params.mode.as_deref() == Some("dedup") || payload.mode.as_deref() == Some("dedup");
@@ -2114,7 +2123,7 @@ mod tests {
             .body(Body::from(
                 serde_json::json!({
                     "text": "Decision: use hybrid search",
-                    "user_id": "test/decision/1",
+                    "user_id": "test_decision_1",
                     "kind": "decision",
                     "metadata": {
                         "kind": "decision"
@@ -2138,7 +2147,7 @@ mod tests {
             .body(Body::from(
                 serde_json::json!({
                     "text": "Fact: Paris is capital",
-                    "user_id": "test/fact/1",
+                    "user_id": "test_fact_1",
                     "kind": "fact",
                     "metadata": {
                         "kind": "fact"
@@ -2162,7 +2171,7 @@ mod tests {
             .body(Body::from(
                 serde_json::json!({
                     "text": "Fact: Berlin is cold",
-                    "user_id": "other/fact/1",
+                    "user_id": "other_fact_1",
                     "kind": "fact",
                     "metadata": {
                         "kind": "fact",
@@ -2260,7 +2269,7 @@ mod tests {
             .header("content-type", "application/json")
             .body(Body::from(
                 serde_json::json!({
-                    "path_prefix": "test/",
+                    "path_prefix": "test_",
                     "dry_run": false
                 })
                 .to_string(),

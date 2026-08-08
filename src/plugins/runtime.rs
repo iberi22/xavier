@@ -2,13 +2,13 @@
 //!
 //! Provides APIs for registering, loading, and executing plugins that are compatible with `code-graph`.
 
-use std::path::{Path, PathBuf};
-use std::fs;
-use std::sync::Arc;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
+use code_graph::plugin::types::{FileToParse, PluginDescriptor};
 use code_graph::plugin::PluginManager;
-use code_graph::plugin::types::{PluginDescriptor, FileToParse};
 use code_graph::types::{Language, Symbol};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// The runtime environment for managing Xavier plugins.
 pub struct XavierPluginRuntime {
@@ -46,8 +46,12 @@ impl XavierPluginRuntime {
             if let Ok(metadata) = fs::metadata(&abs_path) {
                 let mut perms = metadata.permissions();
                 perms.set_mode(0o755);
-                fs::set_permissions(&abs_path, perms)
-                    .with_context(|| format!("Failed to set executable permissions on {}", abs_path.display()))?;
+                fs::set_permissions(&abs_path, perms).with_context(|| {
+                    format!(
+                        "Failed to set executable permissions on {}",
+                        abs_path.display()
+                    )
+                })?;
             }
         }
 
@@ -90,8 +94,9 @@ impl XavierPluginRuntime {
         temp_dir: &Path,
     ) -> Result<PluginDescriptor> {
         let script_path = temp_dir.join(format!("{}.py", name));
-        fs::write(&script_path, script_content)
-            .with_context(|| format!("Failed to write python script to {}", script_path.display()))?;
+        fs::write(&script_path, script_content).with_context(|| {
+            format!("Failed to write python script to {}", script_path.display())
+        })?;
 
         self.load_plugin(
             name,
@@ -141,12 +146,14 @@ mod tests {
         let script_path = temp_dir.path().join("mock-plugin.sh");
         fs::write(&script_path, "#!/bin/sh\necho '{}'\n").unwrap();
 
-        let desc = runtime.load_plugin(
-            "loaded-plugin",
-            &script_path,
-            vec![Language::TypeScript],
-            vec!["ts".to_string()],
-        ).expect("Failed to load plugin");
+        let desc = runtime
+            .load_plugin(
+                "loaded-plugin",
+                &script_path,
+                vec![Language::TypeScript],
+                vec!["ts".to_string()],
+            )
+            .expect("Failed to load plugin");
 
         assert_eq!(desc.name, "loaded-plugin");
         assert!(desc.command.contains("mock-plugin.sh"));
@@ -178,12 +185,14 @@ echo '{"symbols": [{"name": "execute_test", "kind": "Function", "lang": "Python"
 "#;
         fs::write(&script_path, script_content).unwrap();
 
-        let _desc = runtime.load_plugin(
-            "executor-plugin",
-            &script_path,
-            vec![Language::Python],
-            vec!["py".to_string()],
-        ).expect("Failed to load plugin");
+        let _desc = runtime
+            .load_plugin(
+                "executor-plugin",
+                &script_path,
+                vec![Language::Python],
+                vec!["py".to_string()],
+            )
+            .expect("Failed to load plugin");
 
         let files = vec![FileToParse {
             path: "dummy.py".to_string(),
@@ -253,12 +262,14 @@ exit 1
 "#;
         fs::write(&script_path, script_content).unwrap();
 
-        let _desc = runtime.load_plugin(
-            "failing-plugin",
-            &script_path,
-            vec![Language::Python],
-            vec!["py".to_string()],
-        ).expect("Failed to load plugin");
+        let _desc = runtime
+            .load_plugin(
+                "failing-plugin",
+                &script_path,
+                vec![Language::Python],
+                vec!["py".to_string()],
+            )
+            .expect("Failed to load plugin");
 
         let files = vec![FileToParse {
             path: "dummy.py".to_string(),
@@ -271,7 +282,9 @@ exit 1
 
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Plugin execution failed") || err_msg.contains("exited with status"));
+        assert!(
+            err_msg.contains("Plugin execution failed") || err_msg.contains("exited with status")
+        );
     }
 
     // 6. Test Live E2E Python parser plugin using a real Python script loaded via `include_str!`
@@ -285,7 +298,11 @@ exit 1
 
         let temp_dir = tempfile::tempdir().unwrap();
         let desc = runtime
-            .load_and_register_python_plugin("parser-python", real_python_plugin_src, temp_dir.path())
+            .load_and_register_python_plugin(
+                "parser-python",
+                real_python_plugin_src,
+                temp_dir.path(),
+            )
             .await
             .expect("Failed to load and register real Python parser plugin");
 
@@ -323,8 +340,12 @@ def compute_everything():
         assert!(!symbols.is_empty(), "Parsed symbols should not be empty");
 
         // Find the imported modules
-        let has_os_import = symbols.iter().any(|s| s.name == "os" && s.kind == SymbolKind::Import);
-        let has_sys_import = symbols.iter().any(|s| s.name == "sys" && s.kind == SymbolKind::Import);
+        let has_os_import = symbols
+            .iter()
+            .any(|s| s.name == "os" && s.kind == SymbolKind::Import);
+        let has_sys_import = symbols
+            .iter()
+            .any(|s| s.name == "sys" && s.kind == SymbolKind::Import);
         assert!(has_os_import, "Should extract 'os' import");
         assert!(has_sys_import, "Should extract 'sys' import");
 

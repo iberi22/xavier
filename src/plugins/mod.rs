@@ -12,6 +12,8 @@ pub fn get_version() -> &'static str {
 }
 
 /// Helper function to create a new plugin runtime wrapping an existing PluginManager.
-pub fn create_runtime(manager: std::sync::Arc<code_graph::plugin::PluginManager>) -> XavierPluginRuntime {
+pub fn create_runtime(
+    manager: std::sync::Arc<code_graph::plugin::PluginManager>,
+) -> XavierPluginRuntime {
     XavierPluginRuntime::new(manager)
 }

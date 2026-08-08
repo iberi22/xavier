@@ -4,15 +4,15 @@
 //! dataset announcement and consumption on top of the Data Commons Marketplace,
 //! and storage rent economy mechanisms for Xavier Mesh.
 
-use std::collections::HashMap;
-use crate::mesh::node::NodeId;
-use crate::mesh::tokenomics::accounting::{ResourceAccounting, PeerAccount};
-use crate::data_commons::marketplace::{DataMarketplace, DatasetId, DatasetMetadata, DataPage};
-use crate::data_commons::reputation::{
-    EigenTrustEngine, ContributionHistory, ContributionCalculator
-};
-use crate::data_commons::types::{WalletAddress, DataCategory, ReputationAttestation};
+use crate::data_commons::marketplace::{DataMarketplace, DataPage, DatasetId, DatasetMetadata};
 use crate::data_commons::pricing::PricingTier;
+use crate::data_commons::reputation::{
+    ContributionCalculator, ContributionHistory, EigenTrustEngine,
+};
+use crate::data_commons::types::{DataCategory, ReputationAttestation, WalletAddress};
+use crate::mesh::node::NodeId;
+use crate::mesh::tokenomics::accounting::{PeerAccount, ResourceAccounting};
+use std::collections::HashMap;
 
 pub struct MeshCommonsBridge {
     /// Maps a mesh NodeId to its associated Data Commons WalletAddress
@@ -54,29 +54,39 @@ impl MeshCommonsBridge {
         history: &mut ContributionHistory,
         system_wallet: &WalletAddress,
     ) -> Result<(), String> {
-        let wallet = self.get_wallet(node_id)
+        let wallet = self
+            .get_wallet(node_id)
             .ok_or_else(|| "Node not bound to any wallet".to_string())?;
 
-        let peer_acc = accounting.accounts.get(node_id)
+        let peer_acc = accounting
+            .accounts
+            .get(node_id)
             .ok_or_else(|| "Peer account not found in ResourceAccounting".to_string())?;
 
         // 1. Update ContributionHistory
-        history.total_uptime = peer_acc.storage_contributed.max(peer_acc.bandwidth_contributed) / 1000;
+        history.total_uptime = peer_acc
+            .storage_contributed
+            .max(peer_acc.bandwidth_contributed)
+            / 1000;
 
         // Populate simulated validations
         for i in 0..peer_acc.quality_contributions {
             if history.validations.len() < i as usize + 1 {
-                history.validations.push(crate::data_commons::reputation::ValidationRecord {
-                    context_hash: format!("val_ctx_{}_{}", node_id.0, i),
-                    was_correct: true,
-                    timestamp: 1700000000 + (i as u64 * 3600),
-                });
+                history
+                    .validations
+                    .push(crate::data_commons::reputation::ValidationRecord {
+                        context_hash: format!("val_ctx_{}_{}", node_id.0, i),
+                        was_correct: true,
+                        timestamp: 1700000000 + (i as u64 * 3600),
+                    });
             }
         }
 
         // 2. Add Reputation Attestations in EigenTrustEngine based on contributions.
         // If a node contributed significantly more than consumed, the system (pre-trusted) endorses its wallet.
-        if peer_acc.storage_contributed > peer_acc.storage_consumed && peer_acc.storage_contributed > 0 {
+        if peer_acc.storage_contributed > peer_acc.storage_consumed
+            && peer_acc.storage_contributed > 0
+        {
             engine.add_attestation(ReputationAttestation {
                 from: system_wallet.clone(),
                 to: wallet.clone(),
@@ -88,7 +98,9 @@ impl MeshCommonsBridge {
                     .as_secs(),
                 signature: Vec::new(),
             });
-        } else if peer_acc.storage_consumed > peer_acc.storage_contributed * 2 && peer_acc.storage_consumed > 1000 {
+        } else if peer_acc.storage_consumed > peer_acc.storage_contributed * 2
+            && peer_acc.storage_consumed > 1000
+        {
             // Negative attestation (report/distrust) for freeloading behaviors
             engine.add_attestation(ReputationAttestation {
                 from: system_wallet.clone(),
@@ -116,7 +128,8 @@ impl MeshCommonsBridge {
         history: &ContributionHistory,
         accounting: &mut ResourceAccounting,
     ) -> Result<(), String> {
-        let wallet = self.get_wallet(node_id)
+        let wallet = self
+            .get_wallet(node_id)
             .ok_or_else(|| "Node not bound to any wallet".to_string())?;
 
         // Calculate hybrid score
@@ -146,7 +159,8 @@ impl MeshCommonsBridge {
         tier: PricingTier,
         engine: &EigenTrustEngine,
     ) -> Result<DatasetId, String> {
-        let wallet = self.get_wallet(publisher_node)
+        let wallet = self
+            .get_wallet(publisher_node)
             .ok_or_else(|| "Publisher node not bound to any wallet".to_string())?;
 
         let reputation = engine.trust_score(wallet).unwrap_or(0.0);
@@ -181,7 +195,10 @@ impl MeshCommonsBridge {
     ) -> Result<DataPage, String> {
         // Enforce mesh access control based on karma/reputation
         if accounting.is_freeloader(buyer_node) {
-            return Err("Access Denied: Node is marked as a freeloader due to low reputation (bad karma)".to_string());
+            return Err(
+                "Access Denied: Node is marked as a freeloader due to low reputation (bad karma)"
+                    .to_string(),
+            );
         }
 
         let page = marketplace.query_dataset(dataset_id, query, payment)?;
@@ -241,7 +258,9 @@ mod tests {
     fn test_bridge_registration_and_binding() {
         let mut bridge = MeshCommonsBridge::new();
         let (node_a, _) = make_test_nodes();
-        let wallet_a = WalletAddress("xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0".into());
+        let wallet_a = WalletAddress(
+            "xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0".into(),
+        );
 
         bridge.bind_node(node_a.clone(), wallet_a.clone());
         assert_eq!(bridge.get_wallet(&node_a).unwrap(), &wallet_a);
@@ -251,8 +270,12 @@ mod tests {
     fn test_announce_and_consume_data_package() {
         let mut bridge = MeshCommonsBridge::new();
         let (node_seller, node_buyer) = make_test_nodes();
-        let wallet_seller = WalletAddress("xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n1".into());
-        let wallet_buyer = WalletAddress("xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n2".into());
+        let wallet_seller = WalletAddress(
+            "xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n1".into(),
+        );
+        let wallet_buyer = WalletAddress(
+            "xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n2".into(),
+        );
 
         bridge.bind_node(node_seller.clone(), wallet_seller.clone());
         bridge.bind_node(node_buyer.clone(), wallet_buyer.clone());
@@ -271,29 +294,33 @@ mod tests {
         }
 
         // 1. Announce dataset on behalf of mesh node
-        let dataset_id = bridge.announce_dataset_mesh(
-            &mut marketplace,
-            &node_seller,
-            "Mesh Stats".to_string(),
-            "Network telemetries".to_string(),
-            "Telemetry".to_string(),
-            rows,
-            PricingTier::Colaborador,
-            &engine,
-        ).unwrap();
+        let dataset_id = bridge
+            .announce_dataset_mesh(
+                &mut marketplace,
+                &node_seller,
+                "Mesh Stats".to_string(),
+                "Network telemetries".to_string(),
+                "Telemetry".to_string(),
+                rows,
+                PricingTier::Colaborador,
+                &engine,
+            )
+            .unwrap();
 
         assert!(dataset_id.0.starts_with("ds_"));
 
         // 2. Consume dataset on behalf of mesh node (Buyer is not a freeloader, initial reputation is 500)
-        let page = bridge.consume_dataset_mesh(
-            &marketplace,
-            &node_buyer,
-            &node_seller,
-            &dataset_id,
-            "ram",
-            10, // Pricing Tier Colaborador, 100 items -> 10 tokens price
-            &mut accounting,
-        ).unwrap();
+        let page = bridge
+            .consume_dataset_mesh(
+                &marketplace,
+                &node_buyer,
+                &node_seller,
+                &dataset_id,
+                "ram",
+                10, // Pricing Tier Colaborador, 100 items -> 10 tokens price
+                &mut accounting,
+            )
+            .unwrap();
 
         assert_eq!(page.records.len(), 1);
         assert_eq!(page.records[0]["value"], 72);
@@ -313,8 +340,12 @@ mod tests {
     fn test_freeloader_access_denied() {
         let mut bridge = MeshCommonsBridge::new();
         let (node_seller, node_buyer) = make_test_nodes();
-        let wallet_seller = WalletAddress("xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n1".into());
-        let wallet_buyer = WalletAddress("xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n2".into());
+        let wallet_seller = WalletAddress(
+            "xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n1".into(),
+        );
+        let wallet_buyer = WalletAddress(
+            "xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n2".into(),
+        );
 
         bridge.bind_node(node_seller.clone(), wallet_seller.clone());
         bridge.bind_node(node_buyer.clone(), wallet_buyer.clone());
@@ -332,16 +363,18 @@ mod tests {
             rows.push(serde_json::json!({ "log": "dummy" }));
         }
 
-        let dataset_id = bridge.announce_dataset_mesh(
-            &mut marketplace,
-            &node_seller,
-            "Mesh Logs".to_string(),
-            "Error logs".to_string(),
-            "FunctionalError".to_string(),
-            rows,
-            PricingTier::Colaborador,
-            &engine,
-        ).unwrap();
+        let dataset_id = bridge
+            .announce_dataset_mesh(
+                &mut marketplace,
+                &node_seller,
+                "Mesh Logs".to_string(),
+                "Error logs".to_string(),
+                "FunctionalError".to_string(),
+                rows,
+                PricingTier::Colaborador,
+                &engine,
+            )
+            .unwrap();
 
         // Querying should return access denied because node_buyer is a freeloader (bad karma)
         let query_res = bridge.consume_dataset_mesh(
@@ -362,13 +395,18 @@ mod tests {
     fn test_bidirectional_reputation_sync() {
         let mut bridge = MeshCommonsBridge::new();
         let (node_a, _) = make_test_nodes();
-        let wallet_a = WalletAddress("xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n3".into());
-        let system_wallet = WalletAddress("xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0".into());
+        let wallet_a = WalletAddress(
+            "xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n3".into(),
+        );
+        let system_wallet = WalletAddress(
+            "xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0".into(),
+        );
 
         bridge.bind_node(node_a.clone(), wallet_a.clone());
 
         let mut accounting = ResourceAccounting::new();
-        let mut engine = EigenTrustEngine::new(ReputationConfig::default(), vec![system_wallet.clone()]);
+        let mut engine =
+            EigenTrustEngine::new(ReputationConfig::default(), vec![system_wallet.clone()]);
         let mut history = ContributionHistory::default();
 
         // 1. Give node_a good contributions in mesh accounting
@@ -376,7 +414,15 @@ mod tests {
         accounting.record_quality_contribution(&node_a);
 
         // Sync mesh stats to Data Commons
-        bridge.sync_mesh_to_commons(&node_a, &accounting, &mut engine, &mut history, &system_wallet).unwrap();
+        bridge
+            .sync_mesh_to_commons(
+                &node_a,
+                &accounting,
+                &mut engine,
+                &mut history,
+                &system_wallet,
+            )
+            .unwrap();
 
         // Verify history has been populated
         assert_eq!(history.total_uptime, 5); // 5000 / 1000
@@ -386,7 +432,9 @@ mod tests {
         let _ = engine.compute().unwrap();
 
         // 2. Sync reputation from Data Commons back to mesh
-        bridge.sync_commons_to_mesh(&node_a, &engine, &history, &mut accounting).unwrap();
+        bridge
+            .sync_commons_to_mesh(&node_a, &engine, &history, &mut accounting)
+            .unwrap();
 
         // Node reputation should reflect the sync
         let peer_acc = accounting.accounts.get(&node_a).unwrap();
@@ -419,8 +467,12 @@ mod tests {
     #[test]
     fn test_multi_node_sharing_and_economy_settlement() {
         let (node_a, node_b) = make_test_nodes();
-        let wallet_a = WalletAddress("xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n4".into());
-        let wallet_b = WalletAddress("xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n5".into());
+        let wallet_a = WalletAddress(
+            "xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n4".into(),
+        );
+        let wallet_b = WalletAddress(
+            "xv1_1qyp0ephnj8fhf8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n0h8n5".into(),
+        );
 
         let mut bridge = MeshCommonsBridge::new();
         bridge.bind_node(node_a.clone(), wallet_a.clone());
@@ -433,27 +485,31 @@ mod tests {
         let rows = vec![serde_json::json!({ "signal": "ok" })];
 
         // Node A announces data
-        let dataset_id = bridge.announce_dataset_mesh(
-            &mut marketplace,
-            &node_a,
-            "Signal Data".to_string(),
-            "Decentralized telemetry".to_string(),
-            "BasicTelemetry".to_string(),
-            rows,
-            PricingTier::Free, // Free tier dataset
-            &engine,
-        ).unwrap();
+        let dataset_id = bridge
+            .announce_dataset_mesh(
+                &mut marketplace,
+                &node_a,
+                "Signal Data".to_string(),
+                "Decentralized telemetry".to_string(),
+                "BasicTelemetry".to_string(),
+                rows,
+                PricingTier::Free, // Free tier dataset
+                &engine,
+            )
+            .unwrap();
 
         // Node B consumes A's data
-        let page = bridge.consume_dataset_mesh(
-            &marketplace,
-            &node_b,
-            &node_a,
-            &dataset_id,
-            "",
-            0, // Free tier payment
-            &mut accounting,
-        ).unwrap();
+        let page = bridge
+            .consume_dataset_mesh(
+                &marketplace,
+                &node_b,
+                &node_a,
+                &dataset_id,
+                "",
+                0, // Free tier payment
+                &mut accounting,
+            )
+            .unwrap();
 
         assert_eq!(page.records.len(), 1);
 

@@ -56,15 +56,29 @@ pub async fn handle_cleanup(dry_run: bool, apply: bool, days: u64) -> Result<()>
         }
     }
 
-    println!("💬 CONVERSATIONS DATABASES (in {}):", conversations_dir.display());
-    println!("   Total qualified for deletion (empty, <= 4KB): {}", qualified_for_deletion.len());
-    println!("   Total active databases surviving: {}", surviving_dbs.len());
+    println!(
+        "💬 CONVERSATIONS DATABASES (in {}):",
+        conversations_dir.display()
+    );
+    println!(
+        "   Total qualified for deletion (empty, <= 4KB): {}",
+        qualified_for_deletion.len()
+    );
+    println!(
+        "   Total active databases surviving: {}",
+        surviving_dbs.len()
+    );
 
     if !qualified_for_deletion.is_empty() {
         println!("\n🗑️  Empty databases to purge:");
         for (path, size, modified) in &qualified_for_deletion {
             let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            println!("   - {} ({} bytes, modified: {})", filename, size, modified.to_rfc3339());
+            println!(
+                "   - {} ({} bytes, modified: {})",
+                filename,
+                size,
+                modified.to_rfc3339()
+            );
         }
 
         if !is_dry_run {
@@ -78,12 +92,21 @@ pub async fn handle_cleanup(dry_run: bool, apply: bool, days: u64) -> Result<()>
                     let wal = path.with_extension("db-wal");
                     let shm = path.with_extension("db-shm");
                     let journal = path.with_extension("db-journal");
-                    if wal.exists() { let _ = std::fs::remove_file(wal); }
-                    if shm.exists() { let _ = std::fs::remove_file(shm); }
-                    if journal.exists() { let _ = std::fs::remove_file(journal); }
+                    if wal.exists() {
+                        let _ = std::fs::remove_file(wal);
+                    }
+                    if shm.exists() {
+                        let _ = std::fs::remove_file(shm);
+                    }
+                    if journal.exists() {
+                        let _ = std::fs::remove_file(journal);
+                    }
                 }
             }
-            println!("   ✅ Successfully deleted {} empty databases.", deleted_count);
+            println!(
+                "   ✅ Successfully deleted {} empty databases.",
+                deleted_count
+            );
         }
     } else {
         println!("   ✨ No empty databases qualified for deletion.");
@@ -93,7 +116,12 @@ pub async fn handle_cleanup(dry_run: bool, apply: bool, days: u64) -> Result<()>
         println!("\n🛡️  Active databases surviving:");
         for (path, size, modified) in &surviving_dbs {
             let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            println!("   - {} ({} bytes, modified: {})", filename, size, modified.to_rfc3339());
+            println!(
+                "   - {} ({} bytes, modified: {})",
+                filename,
+                size,
+                modified.to_rfc3339()
+            );
         }
 
         // Run checkpoints and vacuums on surviving databases to optimize them as per WAL mode technical research
@@ -127,7 +155,8 @@ pub async fn handle_cleanup(dry_run: bool, apply: bool, days: u64) -> Result<()>
 
     // Collect possible paths for memory-store.sqlite3 to check
     let mut legacy_paths = Vec::new();
-    let default_legacy = xavier::settings::XavierSettings::resolve_data_dir().join("memory-store.sqlite3");
+    let default_legacy =
+        xavier::settings::XavierSettings::resolve_data_dir().join("memory-store.sqlite3");
     if default_legacy.exists() {
         legacy_paths.push(default_legacy);
     }
@@ -169,7 +198,9 @@ pub async fn handle_cleanup(dry_run: bool, apply: bool, days: u64) -> Result<()>
 
                 for table in tables {
                     let count: i64 = conn
-                        .query_row(&format!("SELECT COUNT(*) FROM \"{}\"", table), [], |r| r.get(0))
+                        .query_row(&format!("SELECT COUNT(*) FROM \"{}\"", table), [], |r| {
+                            r.get(0)
+                        })
                         .unwrap_or(0);
                     total_rows += count;
                     table_reports.push(format!("     - {}: {} rows", table, count));
@@ -189,21 +220,33 @@ pub async fn handle_cleanup(dry_run: bool, apply: bool, days: u64) -> Result<()>
             } else {
                 println!("   🗑️  Deleting legacy store...");
                 if let Err(e) = std::fs::remove_file(&legacy_path) {
-                    eprintln!("   ⚠️  Failed to delete legacy store {}: {}", legacy_path.display(), e);
+                    eprintln!(
+                        "   ⚠️  Failed to delete legacy store {}: {}",
+                        legacy_path.display(),
+                        e
+                    );
                 } else {
                     println!("   ✅ Successfully deleted legacy store memory-store.sqlite3.");
                     // Remove legacy sidecars
                     let wal = legacy_path.with_extension("sqlite3-wal");
                     let shm = legacy_path.with_extension("sqlite3-shm");
                     let journal = legacy_path.with_extension("sqlite3-journal");
-                    if wal.exists() { let _ = std::fs::remove_file(wal); }
-                    if shm.exists() { let _ = std::fs::remove_file(shm); }
-                    if journal.exists() { let _ = std::fs::remove_file(journal); }
+                    if wal.exists() {
+                        let _ = std::fs::remove_file(wal);
+                    }
+                    if shm.exists() {
+                        let _ = std::fs::remove_file(shm);
+                    }
+                    if journal.exists() {
+                        let _ = std::fs::remove_file(journal);
+                    }
                 }
             }
         }
     } else {
-        println!("   ✨ No legacy store memory-store.sqlite3 found (already cleaned up or not used).");
+        println!(
+            "   ✨ No legacy store memory-store.sqlite3 found (already cleaned up or not used)."
+        );
     }
 
     println!("\n✨ Cleanup check finished.");

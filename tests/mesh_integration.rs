@@ -235,7 +235,7 @@ async fn test_mesh_handshake_and_sync() {
 #[cfg(feature = "mesh")]
 mod iroh_tests {
     use super::*;
-    use xavier::mesh::{NodeIdentity, PeerInfo, HeartbeatStatus, NodeId};
+    use xavier::mesh::{HeartbeatStatus, NodeId, NodeIdentity, PeerInfo};
     use xavier::sync::SyncTransport;
 
     #[test]
@@ -265,7 +265,9 @@ mod iroh_tests {
                 last_seen_at: None,
                 sync_enabled: true,
                 is_cloud: false,
-                iroh_addr: Some("abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234".to_string()),
+                iroh_addr: Some(
+                    "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234".to_string(),
+                ),
                 shared_workspace_ids: Vec::new(),
                 shared_workspace_tokens: std::collections::HashMap::new(),
             };
@@ -285,10 +287,12 @@ mod iroh_tests {
                 shared_workspace_tokens: std::collections::HashMap::new(),
             };
 
-            let res_ok = SyncTransport::for_peer(&peer_with_iroh, Arc::new(NodeIdentity::generate()));
+            let res_ok =
+                SyncTransport::for_peer(&peer_with_iroh, Arc::new(NodeIdentity::generate()));
             assert!(res_ok.is_ok());
 
-            let res_err = SyncTransport::for_peer(&peer_no_iroh, Arc::new(NodeIdentity::generate()));
+            let res_err =
+                SyncTransport::for_peer(&peer_no_iroh, Arc::new(NodeIdentity::generate()));
             assert!(res_err.is_ok());
         });
     }
@@ -299,10 +303,14 @@ mod iroh_tests {
         rt.block_on(async {
             let identity = Arc::new(NodeIdentity::generate());
             let transport = xavier::mesh::init_active_transport(identity.clone());
-            let request = transport.signed_sync_request(vec!["hash-1".to_string(), "hash-2".to_string()]);
+            let request =
+                transport.signed_sync_request(vec!["hash-1".to_string(), "hash-2".to_string()]);
 
             assert_eq!(request.requesting_node_id, identity.node_id);
-            assert_eq!(request.wanted_hashes, vec!["hash-1".to_string(), "hash-2".to_string()]);
+            assert_eq!(
+                request.wanted_hashes,
+                vec!["hash-1".to_string(), "hash-2".to_string()]
+            );
             assert!(!request.nonce.is_empty());
             assert!(!request.signature_hex.is_empty());
         });
@@ -353,7 +361,8 @@ mod iroh_tests {
             let identity = Arc::new(NodeIdentity::generate());
             let transport = xavier::mesh::init_active_transport(identity);
 
-            let invalid_key_res = xavier::mesh::connect_active_transport(&transport, "not-a-valid-key").await;
+            let invalid_key_res =
+                xavier::mesh::connect_active_transport(&transport, "not-a-valid-key").await;
             assert!(invalid_key_res.is_err());
             let err_msg = invalid_key_res.unwrap_err().to_string();
             assert!(err_msg.contains("invalid iroh peer addr"));
@@ -362,8 +371,7 @@ mod iroh_tests {
 
     #[test]
     fn test_heartbeat_service_with_peer_count() {
-        let svc = HeartbeatStatus::new(NodeId("test-node-hb".to_string()))
-            .with_peer_count(42);
+        let svc = HeartbeatStatus::new(NodeId("test-node-hb".to_string())).with_peer_count(42);
         let payload = svc.payload();
         assert_eq!(payload.peer_count, 42);
         assert_eq!(payload.node_id.as_str(), "test-node-hb");
