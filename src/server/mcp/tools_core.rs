@@ -79,6 +79,14 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
             }),
         },
         MCPTool {
+            name: "sys_health".to_string(),
+            description: "Snapshot del HOST (guardian del nodo): PSI (cpu/memory/io avg10/60/300), swap usado, load average, top 10 procesos por RSS, conteo D-state y alertas con umbrales (psi.io.full.avg10>50% critical, swap>80% critical, VmSwap>4GB warn). Read-only, sin efectos".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
+        MCPTool {
             name: "get_code_graph".to_string(),
             description: "Get the portable code graph dump (.xavier/codegraph.json)".to_string(),
             input_schema: json!({
@@ -158,6 +166,7 @@ pub fn is_core_tool(name: &str) -> bool {
             | "get_project_context"
             | "sync_gitcore"
             | "health_check"
+            | "sys_health"
             | "get_code_graph"
             | "xavier_local_status"
             | "codegraph_explore"
@@ -407,6 +416,16 @@ pub async fn handle_core_tool(
             Ok(serde_json::to_value(MCPToolResult::structured(
                 serde_json::to_value(&result)?,
                 health.status != "healthy",
+            ))?)
+        }
+        "sys_health" => {
+            // Guardian del nodo (P0, 2026-08-08): snapshot read-only del HOST —
+            // PSI, swap, load average, top procesos por RSS, D-state y alertas
+            // con umbrales (docs/research/SELF-MANAGEMENT-RUNTIME.md §5).
+            let snapshot = crate::self_manage::collect_system_snapshot();
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                serde_json::to_value(&snapshot)?,
+                snapshot.overall != "healthy",
             ))?)
         }
         "xavier_local_status" => {
