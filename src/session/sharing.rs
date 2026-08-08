@@ -35,7 +35,7 @@ pub async fn export_session(memory: &QmdMemory, session_id: &str) -> Result<Sess
         ..Default::default()
     };
 
-    let documents = memory
+    let mut documents: Vec<MemoryDocument> = memory
         .all_documents()
         .await
         .into_iter()
@@ -49,6 +49,12 @@ pub async fn export_session(memory: &QmdMemory, session_id: &str) -> Result<Sess
         })
         .take(1000)
         .collect();
+
+    // Auto-redact sensitive PII data before exporting/sharing
+    let redaction_engine = crate::security::redaction::RedactionEngine::default();
+    for doc in &mut documents {
+        doc.content = redaction_engine.redact(&doc.content);
+    }
 
     Ok(SessionBundle {
         session_id: session_id.to_string(),
