@@ -1,302 +1,260 @@
-//! SWAL Service Network Telemetry Sharing
+//! Service Network layer (Capa 2) for internal work routing in the Xavier Mesh.
 //!
-//! Handles sharing of telemetry information between nodes in the SWAL service network.
-//! Only purely operational/functioning telemetry metrics (cpu, memory, latency, temp, etc.)
-//! are published and shared. Personal and sensitive user data are strictly filtered and excluded.
+//! This module implements service discovery, a service registry for nodes to
+//! register their capabilities (e.g., memory, search, code-graph), and
+//! health-aware service routing to direct requests to healthy nodes.
 
 use crate::mesh::node::NodeId;
-use crate::mesh::peer::PeerInfo;
-use crate::mesh::telemetry_collector::{TelemetryAggregate, TelemetryCollector};
+use crate::mesh::peer::PeerRegistry;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-/// Represents a shared telemetry publication across the SWAL service network.
-/// Classified with clearance level INTERNAL. Defines explicit, non-generic fields
-/// to avoid any leak of sensitive user information.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TelemetryPublication {
+/// Types of services available in the Xavier Mesh.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ServiceKind {
+    Memory,
+    Search,
+    CodeGraph,
+    Custom(String),
+}
+
+impl std::fmt::Display for ServiceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Memory => write!(f, "memory"),
+            Self::Search => write!(f, "search"),
+            Self::CodeGraph => write!(f, "code-graph"),
+            Self::Custom(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+/// Information about a registered service instance.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceInfo {
     pub node_id: NodeId,
-    pub ts: i64,
-    pub metric_name: String,
-    pub aggregate: TelemetryAggregate,
-    pub clearance: String,
+    pub kind: ServiceKind,
+    pub capabilities: Vec<String>,
+    pub endpoint_url: String,
+    pub version: String,
 }
 
-/// Helper function to check if a metric name is safe (purely operational)
-/// and strictly does not contain personal or sensitive identifiers.
-pub fn is_safe_telemetry_metric(name: &str) -> bool {
-    let lower = name.to_lowercase();
+/// A registry of services offered by nodes within the mesh network.
+#[derive(Debug, Default, Clone)]
+pub struct ServiceRegistry {
+    /// Maps service kind to a list of node-hosted service instances.
+    pub services: HashMap<ServiceKind, Vec<ServiceInfo>>,
+}
 
-    // Explicit blacklist of personal/sensitive keywords
-    let unsafe_keywords = [
-        "user",
-        "email",
-        "ip",
-        "address",
-        "name",
-        "password",
-        "secret",
-        "token",
-        "key",
-        "private",
-        "auth",
-        "personal",
-        "credential",
-        "phone",
-        "profile",
-        "account",
-        "billing",
-        "card",
-        "payment",
-        "location",
-        "gps",
-        "lat",
-        "lon",
-    ];
-
-    for kw in &unsafe_keywords {
-        if lower.contains(kw) {
-            // Bypass "lat" false positive if it's "latency"
-            if *kw == "lat" && lower.contains("latency") {
-                continue;
-            }
-            return false;
+impl ServiceRegistry {
+    /// Create a new empty service registry.
+    pub fn new() -> Self {
+        Self {
+            services: HashMap::new(),
         }
     }
 
-    // Explicit whitelist of safe operational/telemetry prefixes/keywords
-    let safe_keywords = [
-        "cpu",
-        "mem",
-        "latency",
-        "temp",
-        "disk",
-        "network",
-        "uptime",
-        "peer",
-        "req",
-        "err",
-        "queue",
-        "bandwidth",
-        "io",
-        "bytes",
-        "packet",
-        "thread",
-        "load",
-        "storage",
-        "fps",
-        "db",
-        "query",
-    ];
-
-    for kw in &safe_keywords {
-        if lower.contains(kw) {
-            return true;
+    /// Register a service in the registry.
+    pub fn register_service(&mut self, info: ServiceInfo) {
+        let entry = self.services.entry(info.kind.clone()).or_default();
+        // Avoid duplicate registrations for the same node and service kind.
+        if let Some(existing) = entry.iter_mut().find(|s| s.node_id == info.node_id) {
+            *existing = info;
+        } else {
+            entry.push(info);
         }
     }
 
-    // Default to false for unknown metric names to be safe
-    false
-}
-
-/// Publishes telemetry from the collector for the given peers.
-/// Generates TelemetryPublication entries for all active safe telemetry metrics.
-pub fn publish_telemetry(
-    collector: &TelemetryCollector,
-    _peers: &[PeerInfo],
-) -> Vec<TelemetryPublication> {
-    let node_id = collector.node_id().clone();
-    let ts = chrono::Utc::now().timestamp();
-
-    // List of standard operational metrics to scan and aggregate
-    let standard_metrics = [
-        "cpu_usage",
-        "memory_bytes",
-        "latency_ms",
-        "cpu_temp",
-        "disk_read_bytes",
-        "disk_write_bytes",
-        "network_in_bytes",
-        "network_out_bytes",
-        "uptime",
-        "active_peers",
-        "request_count",
-        "error_rate",
-        "queue_size",
-        "bandwidth",
-    ];
-
-    let mut publications = Vec::new();
-
-    for metric in &standard_metrics {
-        if is_safe_telemetry_metric(metric) {
-            if let Some(agg) = collector.aggregate(metric, 0) {
-                publications.push(TelemetryPublication {
-                    node_id: node_id.clone(),
-                    ts,
-                    metric_name: metric.to_string(),
-                    aggregate: agg,
-                    clearance: "INTERNAL".to_string(),
-                });
-            }
+    /// Deregister a service for a specific node.
+    pub fn deregister_service(&mut self, node_id: &NodeId, kind: &ServiceKind) {
+        if let Some(instances) = self.services.get_mut(kind) {
+            instances.retain(|info| info.node_id != *node_id);
         }
     }
 
-    publications
-}
-
-/// ServiceNetwork manages the discovery and telemetry sharing across the SWAL service network.
-pub struct ServiceNetwork {
-    pub node_id: NodeId,
-}
-
-impl ServiceNetwork {
-    /// Creates a new ServiceNetwork instance.
-    pub fn new(node_id: NodeId) -> Self {
-        Self { node_id }
+    /// Discover nodes providing a specific service kind.
+    pub fn discover_service(&self, kind: &ServiceKind) -> Vec<ServiceInfo> {
+        self.services.get(kind).cloned().unwrap_or_default()
     }
 
-    /// Shares telemetry publications, filtering only safe metrics and strictly excluding personal data.
-    pub fn share(collector: &TelemetryCollector, peers: &[PeerInfo]) -> Vec<TelemetryPublication> {
-        let mut pubs = publish_telemetry(collector, peers);
+    /// Route a request for a service kind to an available node.
+    /// Skip any unhealthy nodes based on the provided health-checking function.
+    pub fn route_service<F>(&self, kind: &ServiceKind, is_healthy: F) -> Option<&ServiceInfo>
+    where
+        F: Fn(&NodeId) -> bool,
+    {
+        let instances = self.services.get(kind)?;
+        // Find the first healthy instance.
+        instances.iter().find(|info| is_healthy(&info.node_id))
+    }
 
-        // Final safety audit: ensure only safe telemetry is shared, never personal data
-        pubs.retain(|pub_item| is_safe_telemetry_metric(&pub_item.metric_name));
-
-        pubs
+    /// Route a request using a PeerRegistry to check node health.
+    pub fn route_service_with_registry(&self, kind: &ServiceKind, registry: &PeerRegistry) -> Option<&ServiceInfo> {
+        self.route_service(kind, |node_id| {
+            registry.get_peer(node_id).map(|p| p.is_healthy()).unwrap_or(false)
+        })
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::mesh::peer::PeerInfo;
+    use tempfile::tempdir;
 
     #[test]
-    fn test_telemetry_publication_fields() {
-        let node_id = NodeId("xv1-test-node".to_string());
-        let agg = TelemetryAggregate {
-            count: 10,
-            min: 15.0,
-            max: 25.0,
-            avg: 20.0,
-            stddev: 3.16,
-        };
+    fn test_mesh_service_registration_and_discovery() {
+        let mut registry = ServiceRegistry::new();
+        let node_id = NodeId("xv1-node1".to_string());
 
-        let pub_item = TelemetryPublication {
+        let info = ServiceInfo {
             node_id: node_id.clone(),
-            ts: 1718293041,
-            metric_name: "cpu_temp".to_string(),
-            aggregate: agg,
-            clearance: "INTERNAL".to_string(),
+            kind: ServiceKind::Memory,
+            capabilities: vec!["sqlite".to_string(), "read-write".to_string()],
+            endpoint_url: "http://localhost:8000".to_string(),
+            version: "0.12.0".to_string(),
         };
 
-        assert_eq!(pub_item.node_id.as_str(), "xv1-test-node");
-        assert_eq!(pub_item.ts, 1718293041);
-        assert_eq!(pub_item.metric_name, "cpu_temp");
-        assert_eq!(pub_item.aggregate.count, 10);
-        assert_eq!(pub_item.clearance, "INTERNAL");
+        registry.register_service(info.clone());
+
+        let discovered = registry.discover_service(&ServiceKind::Memory);
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0], info);
+
+        // Update the registration
+        let mut updated_info = info.clone();
+        updated_info.capabilities.push("compression".to_string());
+        registry.register_service(updated_info.clone());
+
+        let discovered_updated = registry.discover_service(&ServiceKind::Memory);
+        assert_eq!(discovered_updated.len(), 1);
+        assert_eq!(discovered_updated[0].capabilities.len(), 3);
     }
 
     #[test]
-    fn test_publish_telemetry_empty_collector() {
-        let node_id = NodeId("xv1-test-node".to_string());
-        let collector = TelemetryCollector::new(node_id);
-        let peers = vec![];
+    fn test_mesh_service_deregistration() {
+        let mut registry = ServiceRegistry::new();
+        let node_id = NodeId("xv1-node1".to_string());
 
-        let pubs = publish_telemetry(&collector, &peers);
-        assert!(
-            pubs.is_empty(),
-            "Empty collector should produce no publications"
-        );
-    }
-
-    #[test]
-    fn test_publish_telemetry_with_safe_metrics() {
-        let node_id = NodeId("xv1-test-node".to_string());
-        let collector = TelemetryCollector::new(node_id);
-        let peers = vec![];
-
-        let labels = HashMap::new();
-        collector.record("cpu_temp", 45.0, labels.clone());
-        collector.record("cpu_temp", 55.0, labels.clone());
-        collector.record("latency_ms", 12.5, labels.clone());
-
-        let pubs = publish_telemetry(&collector, &peers);
-        assert_eq!(pubs.len(), 2);
-
-        let temp_pub = pubs.iter().find(|p| p.metric_name == "cpu_temp").unwrap();
-        assert_eq!(temp_pub.aggregate.count, 2);
-        assert_eq!(temp_pub.aggregate.min, 45.0);
-        assert_eq!(temp_pub.aggregate.max, 55.0);
-        assert_eq!(temp_pub.clearance, "INTERNAL");
-
-        let latency_pub = pubs.iter().find(|p| p.metric_name == "latency_ms").unwrap();
-        assert_eq!(latency_pub.aggregate.count, 1);
-        assert_eq!(latency_pub.clearance, "INTERNAL");
-    }
-
-    #[test]
-    fn test_service_network_share_filtering() {
-        let node_id = NodeId("xv1-test-node".to_string());
-        let collector = TelemetryCollector::new(node_id);
-
-        let labels = HashMap::new();
-        // Record safe metrics
-        collector.record("cpu_temp", 42.0, labels.clone());
-
-        // Record simulated unsafe/personal metrics (e.g. if somehow added under standard name or if we custom scanned)
-        // Let's verify our custom safety helper filters them
-        assert!(!is_safe_telemetry_metric("user_email_count"));
-        assert!(!is_safe_telemetry_metric("user_password_attempts"));
-        assert!(!is_safe_telemetry_metric("personal_ip_address"));
-
-        let pubs = ServiceNetwork::share(&collector, &[]);
-        // Only "cpu_temp" should survive and be published
-        assert_eq!(pubs.len(), 1);
-        assert_eq!(pubs[0].metric_name, "cpu_temp");
-    }
-
-    #[test]
-    fn test_service_network_share_all_safe_metrics() {
-        let node_id = NodeId("xv1-test-node".to_string());
-        let collector = TelemetryCollector::new(node_id);
-
-        let labels = HashMap::new();
-        collector.record("memory_bytes", 1024.0, labels.clone());
-        collector.record("cpu_usage", 12.5, labels.clone());
-
-        let pubs = ServiceNetwork::share(&collector, &[]);
-        assert_eq!(pubs.len(), 2);
-        assert!(pubs.iter().any(|p| p.metric_name == "memory_bytes"));
-        assert!(pubs.iter().any(|p| p.metric_name == "cpu_usage"));
-    }
-
-    #[test]
-    fn test_telemetry_publication_no_personal_data_assert() {
-        // Assert that the TelemetryPublication struct only contains explicit, safe fields.
-        // It has no fields related to user identity or any generic 'data' field.
-        let pub_item = TelemetryPublication {
-            node_id: NodeId("xv1-test".to_string()),
-            ts: 12345678,
-            metric_name: "bandwidth".to_string(),
-            aggregate: TelemetryAggregate {
-                count: 1,
-                min: 100.0,
-                max: 100.0,
-                avg: 100.0,
-                stddev: 0.0,
-            },
-            clearance: "INTERNAL".to_string(),
+        let info = ServiceInfo {
+            node_id: node_id.clone(),
+            kind: ServiceKind::Search,
+            capabilities: vec!["vector-search".to_string()],
+            endpoint_url: "http://localhost:8001".to_string(),
+            version: "0.12.0".to_string(),
         };
 
-        // Let's do string and content checks to verify the absence of any PII
-        assert!(!pub_item.node_id.as_str().contains("@"));
-        assert!(!pub_item.metric_name.contains("user"));
-        assert!(!pub_item.metric_name.contains("email"));
-        assert_eq!(pub_item.clearance, "INTERNAL");
+        registry.register_service(info);
+        assert_eq!(registry.discover_service(&ServiceKind::Search).len(), 1);
+
+        registry.deregister_service(&node_id, &ServiceKind::Search);
+        assert_eq!(registry.discover_service(&ServiceKind::Search).len(), 0);
+    }
+
+    #[test]
+    fn test_mesh_service_health_aware_routing() {
+        let mut registry = ServiceRegistry::new();
+        let node1 = NodeId("xv1-node1".to_string());
+        let node2 = NodeId("xv1-node2".to_string());
+
+        let s1 = ServiceInfo {
+            node_id: node1.clone(),
+            kind: ServiceKind::CodeGraph,
+            capabilities: vec!["rust-parser".to_string()],
+            endpoint_url: "http://localhost:8002".to_string(),
+            version: "0.12.0".to_string(),
+        };
+
+        let s2 = ServiceInfo {
+            node_id: node2.clone(),
+            kind: ServiceKind::CodeGraph,
+            capabilities: vec!["rust-parser".to_string()],
+            endpoint_url: "http://localhost:8003".to_string(),
+            version: "0.12.0".to_string(),
+        };
+
+        registry.register_service(s1);
+        registry.register_service(s2);
+
+        // Case 1: All healthy -> should pick the first registered (node1)
+        let routed_healthy = registry.route_service(&ServiceKind::CodeGraph, |_| true);
+        assert_eq!(routed_healthy.map(|s| &s.node_id), Some(&node1));
+
+        // Case 2: Only node2 is healthy -> should skip node1 and route to node2
+        let routed_filtered = registry.route_service(&ServiceKind::CodeGraph, |id| id == &node2);
+        assert_eq!(routed_filtered.map(|s| &s.node_id), Some(&node2));
+
+        // Case 3: None healthy -> should return None
+        let routed_none = registry.route_service(&ServiceKind::CodeGraph, |_| false);
+        assert!(routed_none.is_none());
+    }
+
+    #[test]
+    fn test_mesh_service_routing_with_peer_registry() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("peers.json");
+        let mut peer_registry = PeerRegistry::load_from(storage_path).unwrap();
+
+        let node1 = NodeId("xv1-node1".to_string());
+        let node2 = NodeId("xv1-node2".to_string());
+
+        // node1: healthy (last_seen_at is recent)
+        let peer1 = PeerInfo {
+            node_id: node1.clone(),
+            alias: Some("Node 1".to_string()),
+            endpoint_url: "http://localhost:8000".to_string(),
+            public_key_hex: "aabbcc".to_string(),
+            added_at: 1000,
+            last_seen_at: Some(chrono::Utc::now().timestamp() - 10), // 10 seconds ago (healthy)
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: None,
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: HashMap::new(),
+        };
+
+        // node2: unhealthy (last_seen_at is None or old)
+        let peer2 = PeerInfo {
+            node_id: node2.clone(),
+            alias: Some("Node 2".to_string()),
+            endpoint_url: "http://localhost:8001".to_string(),
+            public_key_hex: "ddeeff".to_string(),
+            added_at: 1000,
+            last_seen_at: Some(chrono::Utc::now().timestamp() - 200), // 200 seconds ago (unhealthy)
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: None,
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: HashMap::new(),
+        };
+
+        peer_registry.add_peer(peer1).unwrap();
+        peer_registry.add_peer(peer2).unwrap();
+
+        let mut service_registry = ServiceRegistry::new();
+
+        let s1 = ServiceInfo {
+            node_id: node1.clone(),
+            kind: ServiceKind::Memory,
+            capabilities: vec![],
+            endpoint_url: "http://localhost:8000".to_string(),
+            version: "0.12.0".to_string(),
+        };
+
+        let s2 = ServiceInfo {
+            node_id: node2.clone(),
+            kind: ServiceKind::Memory,
+            capabilities: vec![],
+            endpoint_url: "http://localhost:8001".to_string(),
+            version: "0.12.0".to_string(),
+        };
+
+        // If we register s2 (unhealthy) first, then s1 (healthy)
+        service_registry.register_service(s2);
+        service_registry.register_service(s1);
+
+        // Routing with registry should skip node2 (which is unhealthy, even though registered first) and route to node1
+        let routed = service_registry.route_service_with_registry(&ServiceKind::Memory, &peer_registry);
+        assert_eq!(routed.map(|s| &s.node_id), Some(&node1));
     }
 }
