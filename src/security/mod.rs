@@ -16,6 +16,7 @@ pub mod initializer;
 pub mod layers;
 pub mod license;
 pub mod prompt_guard;
+pub mod redaction;
 pub mod recovery;
 pub mod redaction;
 pub mod rsa_keys;
@@ -26,6 +27,7 @@ pub mod tokens;
 pub mod url_validator;
 pub mod user_store;
 
+pub use redaction::{RedactionEngine, RedactionRule};
 pub use anticipator::{Anticipator, AnticipatorConfig};
 pub use detections::{ScanResult as AnticipatorScanResult, Severity, Threat, ThreatCategory};
 pub use prompt_guard::{AttackType, DetectionResult, PromptInjectionDetector};
