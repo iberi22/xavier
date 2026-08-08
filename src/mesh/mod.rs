@@ -59,6 +59,7 @@ pub mod pairing_registry;
 pub mod peer;
 pub mod pro_gate;
 pub mod protocol;
+pub mod public_rag;
 pub mod telemetry;
 pub mod telemetry_collector;
 pub mod tokenomics;
@@ -89,6 +90,7 @@ pub use tokenomics::{
     ContributionType, RewardEngine, RewardEvent, Transaction, TransactionKind, Wallet,
     WalletBalance,
 };
+pub use public_rag::{search_public, PublicRagQuery, PublicRagResult};
 pub use transport::MeshTransport;
 
 #[cfg(feature = "mesh")]
