@@ -1,7 +1,7 @@
 {
   "name": "docnode",
   "type": "module",
-  "version": "1.0.0",
+  "version": "0.13.0",
   "description": "Minimal Astro + Svelte documentation system with vault support",
   "scripts": {
     "dev": "astro dev",
