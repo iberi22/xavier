@@ -4,6 +4,7 @@
 //! incluyendo detección de prompt injection, sanitización de inputs y filtrado de outputs.
 
 pub mod acl;
+pub mod groups;
 pub mod anticipator;
 pub mod audit;
 pub mod auth;
