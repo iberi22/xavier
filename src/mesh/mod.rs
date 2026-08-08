@@ -58,6 +58,7 @@ pub mod pairing;
 pub mod pairing_registry;
 pub mod peer;
 pub mod pro_gate;
+pub mod public_directory;
 pub mod protocol;
 pub mod public_rag;
 pub mod telemetry;
