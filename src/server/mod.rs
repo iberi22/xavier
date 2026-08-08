@@ -7,4 +7,5 @@ pub mod http;
 pub mod mcp;
 pub mod mcp_stdio;
 pub mod panel;
+pub mod training_routes;
 pub mod v1_api;

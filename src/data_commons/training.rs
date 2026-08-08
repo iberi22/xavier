@@ -144,6 +144,159 @@ impl TrainingExporter {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct DatasetMetadata {
+    pub id: String,
+    pub size: usize,
+    pub clearance: String,
+    pub language: String,
+    pub segment: String,
+}
+
+/// Scan `data_dir` for subdirectories that contain `bundle_manifest.json`.
+pub fn scan_datasets(data_dir: &Path) -> Result<Vec<DatasetMetadata>, String> {
+    let mut datasets = Vec::new();
+    if !data_dir.exists() {
+        return Ok(datasets);
+    }
+
+    let entries = std::fs::read_dir(data_dir).map_err(|e| e.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.is_dir() {
+            let manifest_path = path.join("bundle_manifest.json");
+            if manifest_path.exists() {
+                if let Ok(metadata) = load_dataset_metadata(&path) {
+                    datasets.push(metadata);
+                }
+            }
+        }
+    }
+    // Sort datasets by id for deterministic output
+    datasets.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(datasets)
+}
+
+/// Load a dataset's metadata from its directory.
+pub fn load_dataset_metadata(dataset_dir: &Path) -> Result<DatasetMetadata, String> {
+    let manifest_path = dataset_dir.join("bundle_manifest.json");
+    let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
+    let val: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    let id = dataset_dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Sum train and eval counts from split_counts
+    let mut size = 0;
+    if let Some(split_counts) = val.get("split_counts").and_then(|v| v.as_object()) {
+        for count in split_counts.values() {
+            if let Some(c) = count.as_u64() {
+                size += c as usize;
+            }
+        }
+    }
+
+    let clearance = val
+        .get("clearance")
+        .and_then(|v| v.as_str())
+        .unwrap_or("INTERNAL")
+        .to_string();
+
+    let language = val
+        .get("language")
+        .and_then(|v| v.as_str())
+        .unwrap_or("en")
+        .to_string();
+
+    let segment = val
+        .get("segment")
+        .and_then(|v| v.as_str())
+        .unwrap_or("telemetry")
+        .to_string();
+
+    Ok(DatasetMetadata {
+        id,
+        size,
+        clearance,
+        language,
+        segment,
+    })
+}
+
+/// Load a dataset's manifest.
+pub fn load_dataset_manifest(dataset_dir: &Path) -> Result<serde_json::Value, String> {
+    let manifest_path = dataset_dir.join("bundle_manifest.json");
+    if !manifest_path.exists() {
+        return Err("Manifest not found".to_string());
+    }
+    let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
+    let val: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    Ok(val)
+}
+
+/// Load a dataset's split (train or eval) as JSONL string.
+pub fn load_dataset_split(dataset_dir: &Path, split: &str) -> Result<String, String> {
+    let file_name = format!("{}.jsonl", split);
+    let split_path = dataset_dir.join(file_name);
+    if !split_path.exists() {
+        return Err(format!("Split {} not found", split));
+    }
+    std::fs::read_to_string(&split_path).map_err(|e| e.to_string())
+}
+
+/// Write a training bundle to disk, adding metadata fields.
+pub fn write_bundle_to_dir(
+    data_dir: &Path,
+    id: &str,
+    bundle: &TrainingBundle,
+    clearance: Option<String>,
+    language: Option<String>,
+    segment: Option<String>,
+) -> Result<(), String> {
+    let dataset_dir = data_dir.join(id);
+    std::fs::create_dir_all(&dataset_dir).map_err(|e| e.to_string())?;
+
+    // Add extra metadata fields to manifest
+    let mut manifest_val = serde_json::to_value(&bundle.manifest).map_err(|e| e.to_string())?;
+    if let Some(obj) = manifest_val.as_object_mut() {
+        obj.insert("clearance".to_string(), serde_json::json!(clearance.unwrap_or_else(|| "INTERNAL".to_string())));
+        obj.insert("language".to_string(), serde_json::json!(language.unwrap_or_else(|| "en".to_string())));
+        obj.insert("segment".to_string(), serde_json::json!(segment.unwrap_or_else(|| "telemetry".to_string())));
+    }
+
+    std::fs::write(
+        dataset_dir.join("bundle_manifest.json"),
+        serde_json::to_string_pretty(&manifest_val).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    std::fs::write(
+        dataset_dir.join("anonymization_audit.json"),
+        serde_json::to_string_pretty(&bundle.audit_summary).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let mut train_content = String::new();
+    for record in &bundle.train_split {
+        train_content.push_str(&serde_json::to_string(record).map_err(|e| e.to_string())?);
+        train_content.push('\n');
+    }
+    std::fs::write(dataset_dir.join("train.jsonl"), train_content).map_err(|e| e.to_string())?;
+
+    let mut eval_content = String::new();
+    for record in &bundle.eval_split {
+        eval_content.push_str(&serde_json::to_string(record).map_err(|e| e.to_string())?);
+        eval_content.push('\n');
+    }
+    std::fs::write(dataset_dir.join("eval.jsonl"), eval_content).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
