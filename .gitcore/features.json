@@ -1133,6 +1133,36 @@
       "user_stories": [
         "US-040"
       ]
+    },
+    "feat-issue-context-packager": {
+      "id": "feat-issue-context-packager",
+      "name": "Issue Context Packager — análisis automático de issues con línea exacta",
+      "category": "ai",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Xavier revisa un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qué archivos/símbolos tocar, línea exacta o número de carácter a modificar, fragmento before/after — el análisis ya hecho para que un agente solo ejecute",
+      "steps": [
+        "Parser de issues (título + cuerpo → entidades: archivos, símbolos, features)",
+        "Mapper issue→CodeGraph: find_by_name + search para localizar símbolos",
+        "Generador de paquete: PreciseChange por símbolo (file, línea, before/after)",
+        "Ensamblador: IssueContextPackage { issue_id, changes: [PreciseChange], deps, tests_a_fijar }",
+        "Endpoint POST /v1/f12/issue-context (issue body → paquete JSON)",
+        "Integración: el agente ejecutor recibe el paquete y aplica los deltas",
+        "Métrica de ahorro: tokens sin paquete vs con paquete (benchmark)"
+      ],
+      "passes": false,
+      "verified_by": "orquestador-hermes",
+      "github_issue": "",
+      "last_tested": "2026-08-08",
+      "notes": "La pieza que cierra el ahorro de tokens: PreciseChange existe (snapshot.rs) pero está huérfano. Este feature lo conecta con los issues.",
+      "implemented_in": "",
+      "tests": 0,
+      "req_ids": [
+        "REQ-028"
+      ],
+      "user_stories": [
+        "US-041"
+      ]
     }
   },
   "verification_commands": {
