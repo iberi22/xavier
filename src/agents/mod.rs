@@ -10,6 +10,7 @@ pub mod evolve;
 pub mod extraction;
 pub mod hormer;
 pub mod provider;
+pub mod provider_router;
 pub mod rate_limit;
 pub mod router;
 pub mod runtime;

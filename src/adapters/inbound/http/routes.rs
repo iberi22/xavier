@@ -94,7 +94,10 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             post(crate::adapters::inbound::http::handlers::sync::sync_resolve_handler),
         )
         // ── Training Datasets API ─────────────────────────────────────────
-        .route("/v1/training/export", post(training_export_handler));
+        .route("/v1/training/export", post(training_export_handler))
+        // ── Mini-Experts API ──────────────────────────────────────────────
+        .route("/v1/agents/mini-experts", get(mini_experts_list_handler))
+        .route("/v1/agents/mini-experts/invoke", post(mini_expert_invoke_handler));
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
@@ -667,6 +670,68 @@ pub async fn plugins_sync_handler(
     })
 }
 
+// ─── Mini-Experts Endpoints ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct MiniExpertInvokeRequest {
+    pub name: String,
+    pub prompt: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MiniExpertInvokeResponse {
+    pub status: String,
+    pub provider: String,
+    pub endpoint: String,
+    pub response: String,
+}
+
+/// GET /v1/agents/mini-experts — list configured mini-experts.
+pub async fn mini_experts_list_handler() -> impl axum::response::IntoResponse {
+    let settings = XavierSettings::current();
+    let mut mini_experts = settings.workspace.mini_experts;
+    if mini_experts.is_empty() {
+        mini_experts = XavierSettings::default().workspace.mini_experts;
+    }
+    Json(mini_experts)
+}
+
+/// POST /v1/agents/mini-experts/invoke — invoke a mini-expert by name.
+pub async fn mini_expert_invoke_handler(
+    Json(payload): Json<MiniExpertInvokeRequest>,
+) -> Result<Json<MiniExpertInvokeResponse>, (axum::http::StatusCode, String)> {
+    let settings = XavierSettings::current();
+    let mut mini_experts = settings.workspace.mini_experts;
+    if mini_experts.is_empty() {
+        mini_experts = XavierSettings::default().workspace.mini_experts;
+    }
+    let router = crate::agents::provider_router::ProviderRouter::new(mini_experts);
+
+    let expert_config = router.route(&payload.name).ok_or_else(|| {
+        (
+            axum::http::StatusCode::NOT_FOUND,
+            format!("Mini-expert '{}' not found", payload.name),
+        )
+    })?;
+
+    let provider = expert_config.provider.clone();
+    let endpoint = expert_config.endpoint.clone();
+
+    let response = router.invoke(&payload.name, &payload.prompt).await.map_err(|e| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            e.to_string(),
+        )
+    })?;
+
+    Ok(Json(MiniExpertInvokeResponse {
+        status: "success".to_string(),
+        provider,
+        endpoint,
+        response,
+    }))
+}
+
 #[cfg(test)]
 mod route_tests {
     use axum::{
@@ -839,6 +904,74 @@ mod route_tests {
 
         assert_eq!(parsed["service"], "xavier");
         assert!(parsed.get("version").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_route_mini_experts_list() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/agents/mini-experts")
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse list response");
+
+        assert!(parsed.is_array());
+        let arr = parsed.as_array().unwrap();
+        assert!(!arr.is_empty());
+        assert_eq!(arr[0]["provider"], "agy");
+    }
+
+    #[tokio::test]
+    async fn test_route_mini_expert_invoke_mock() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let req_body = serde_json::json!({
+            "name": "agy-expert",
+            "prompt": "test prompt"
+        });
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/agents/mini-experts/invoke")
+                    .method(Method::POST)
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse invoke response");
+
+        assert_eq!(parsed["status"], "success");
+        assert_eq!(parsed["provider"], "agy");
+        assert!(parsed["response"].as_str().unwrap().contains("Mock response"));
     }
 }
 

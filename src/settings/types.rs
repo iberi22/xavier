@@ -157,6 +157,14 @@ pub struct ServerSettings {
     pub config_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct MiniExpertConfig {
+    pub name: String,
+    pub provider: String,
+    pub endpoint: String,
+    pub api_key: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorkspaceSettings {
@@ -168,6 +176,8 @@ pub struct WorkspaceSettings {
     pub embedding_provider_mode: String,
     pub managed_google_embeddings: bool,
     pub sync_policy: String,
+    #[serde(default)]
+    pub mini_experts: Vec<MiniExpertConfig>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
