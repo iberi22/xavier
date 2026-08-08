@@ -92,7 +92,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route(
             "/api/v1/memory/sync/resolve/{conflict_id}",
             post(crate::adapters::inbound::http::handlers::sync::sync_resolve_handler),
-        );
+        )
+        // ── Training Datasets API ─────────────────────────────────────────
+        .route("/v1/training/export", post(training_export_handler));
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
@@ -475,6 +477,69 @@ pub fn init_plugin_registry() {
     if PLUGIN_REGISTRY.set(registry_arc).is_err() {
         tracing::error!("Plugin registry already initialized");
     }
+}
+
+// ─── Training Datasets API ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct TrainingExportRequest {
+    /// Deterministic seed for reproducible splits.
+    pub seed: u64,
+    /// Fraction of records for the eval split (0.0..1.0).
+    pub eval_ratio: f32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TrainingExportResponse {
+    pub manifest: serde_json::Value,
+    pub train_count: usize,
+    pub eval_count: usize,
+    pub audit: TrainingAuditDto,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TrainingAuditDto {
+    pub total_records_found: usize,
+    pub included_records: usize,
+    pub excluded_no_consent: usize,
+    pub excluded_revoked: usize,
+}
+
+/// POST /v1/training/export — generate a training bundle from telemetry data.
+pub async fn training_export_handler(
+    Json(payload): Json<TrainingExportRequest>,
+) -> Result<Json<TrainingExportResponse>, (axum::http::StatusCode, String)> {
+    let db_path = std::path::PathBuf::from(
+        std::env::var("XAVIER_TELEMETRY_DB_PATH")
+            .unwrap_or_else(|_| ".xavier/telemetry.db".to_string()),
+    );
+
+    if !db_path.exists() {
+        return Err((
+            axum::http::StatusCode::NOT_FOUND,
+            format!("Telemetry DB not found at {}", db_path.display()),
+        ));
+    }
+
+    let exporter = crate::data_commons::training::TrainingExporter::new(&db_path);
+    let bundle = exporter
+        .generate_bundle(payload.seed, payload.eval_ratio, None)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    let manifest = serde_json::to_value(&bundle.manifest)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(TrainingExportResponse {
+        manifest,
+        train_count: bundle.train_split.len(),
+        eval_count: bundle.eval_split.len(),
+        audit: TrainingAuditDto {
+            total_records_found: bundle.audit_summary.total_records_found,
+            included_records: bundle.audit_summary.included_records,
+            excluded_no_consent: bundle.audit_summary.excluded_records_no_consent,
+            excluded_revoked: bundle.audit_summary.excluded_records_revoked,
+        },
+    }))
 }
 
 /// Get the plugin registry (panics if not initialized)

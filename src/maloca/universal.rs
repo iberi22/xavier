@@ -43,7 +43,9 @@ pub fn scan_projects_from_dir(base_dir: &Path) -> Vec<SwalProject> {
                             let mut features = Vec::new();
                             if let Some(arr) = parsed.get("features").and_then(|f| f.as_array()) {
                                 for item in arr {
-                                    if let Ok(feat) = serde_json::from_value::<SwalFeature>(item.clone()) {
+                                    if let Ok(feat) =
+                                        serde_json::from_value::<SwalFeature>(item.clone())
+                                    {
                                         features.push(feat);
                                     }
                                 }

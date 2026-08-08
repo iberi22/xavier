@@ -4,18 +4,22 @@ use axum::{
     routing::post,
     Router,
 };
+use std::sync::Arc;
 use tower::ServiceExt;
+use xavier::agents::RuntimeConfig;
 use xavier::server::v1_api::{v1_memories_add, V1AddMemoryRequest};
 use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
-use xavier::agents::RuntimeConfig;
-use std::sync::Arc;
 
 #[tokio::test]
 async fn test_v1_memories_add_path_traversal() {
     let temp_dir = tempfile::tempdir().unwrap();
     let config = WorkspaceConfig::from_env();
     let runtime = RuntimeConfig::from_env();
-    let state = Arc::new(WorkspaceState::new(config, runtime, temp_dir.path().to_path_buf()).await.unwrap());
+    let state = Arc::new(
+        WorkspaceState::new(config, runtime, temp_dir.path().to_path_buf())
+            .await
+            .unwrap(),
+    );
 
     let ctx = WorkspaceContext {
         workspace_id: "test".to_string(),
@@ -50,7 +54,9 @@ async fn test_v1_memories_add_path_traversal() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Read the response to verify it didn't use ../../../etc/passwd
-    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     // It should have sanitized the path/id to just "etcpasswd" or similar without the slashes and dots
