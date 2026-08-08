@@ -28,6 +28,26 @@ impl Default for WorkspaceSettings {
             embedding_provider_mode: "local".to_string(),
             managed_google_embeddings: false,
             sync_policy: "local_only".to_string(),
+            mini_experts: vec![
+                MiniExpertConfig {
+                    name: "agy-expert".to_string(),
+                    provider: "agy".to_string(),
+                    endpoint: "https://api.agy.ai/v1/experts/google".to_string(),
+                    api_key: Some("mock-agy-key".to_string()),
+                },
+                MiniExpertConfig {
+                    name: "local-expert".to_string(),
+                    provider: "local".to_string(),
+                    endpoint: "http://localhost:11434/v1".to_string(),
+                    api_key: None,
+                },
+                MiniExpertConfig {
+                    name: "custom-expert".to_string(),
+                    provider: "custom".to_string(),
+                    endpoint: "https://custom.expert/api".to_string(),
+                    api_key: Some("mock-custom-key".to_string()),
+                }
+            ],
         }
     }
 }
