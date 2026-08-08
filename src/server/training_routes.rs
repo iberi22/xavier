@@ -1,18 +1,18 @@
 //! Rest API routes for training datasets under `/v1/training/*`
 
+use crate::data_commons::training::{
+    load_dataset_manifest, load_dataset_metadata, load_dataset_split, scan_datasets,
+    write_bundle_to_dir, TrainingExporter,
+};
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
     response::IntoResponse,
-    Extension, Json, Router,
     routing::{get, post},
+    Extension, Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::data_commons::training::{
-    scan_datasets, load_dataset_metadata, load_dataset_manifest,
-    load_dataset_split, write_bundle_to_dir, TrainingExporter,
-};
 
 #[derive(Clone, Debug)]
 pub struct TrainingState {
@@ -32,9 +32,18 @@ pub struct GenerateBundleRequest {
 pub fn router(state: TrainingState) -> Router {
     Router::new()
         .route("/v1/training/datasets", get(list_datasets_handler))
-        .route("/v1/training/datasets/{id}", get(get_dataset_manifest_handler))
-        .route("/v1/training/datasets/{id}/train", get(get_dataset_train_handler))
-        .route("/v1/training/datasets/{id}/eval", get(get_dataset_eval_handler))
+        .route(
+            "/v1/training/datasets/{id}",
+            get(get_dataset_manifest_handler),
+        )
+        .route(
+            "/v1/training/datasets/{id}/train",
+            get(get_dataset_train_handler),
+        )
+        .route(
+            "/v1/training/datasets/{id}/eval",
+            get(get_dataset_eval_handler),
+        )
         .route("/v1/training/bundles", post(generate_bundle_handler))
         .layer(Extension(state))
 }
@@ -71,12 +80,10 @@ pub async fn get_dataset_train_handler(
         return (StatusCode::NOT_FOUND, "Dataset not found").into_response();
     }
     match load_dataset_split(&dataset_dir, "train") {
-        Ok(content) => {
-            axum::response::Response::builder()
-                .header("content-type", "application/x-ndjson")
-                .body(axum::body::Body::from(content))
-                .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
-        }
+        Ok(content) => axum::response::Response::builder()
+            .header("content-type", "application/x-ndjson")
+            .body(axum::body::Body::from(content))
+            .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
         Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
     }
 }
@@ -90,12 +97,10 @@ pub async fn get_dataset_eval_handler(
         return (StatusCode::NOT_FOUND, "Dataset not found").into_response();
     }
     match load_dataset_split(&dataset_dir, "eval") {
-        Ok(content) => {
-            axum::response::Response::builder()
-                .header("content-type", "application/x-ndjson")
-                .body(axum::body::Body::from(content))
-                .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
-        }
+        Ok(content) => axum::response::Response::builder()
+            .header("content-type", "application/x-ndjson")
+            .body(axum::body::Body::from(content))
+            .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
         Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
     }
 }
@@ -107,7 +112,11 @@ pub async fn generate_bundle_handler(
     let exporter = TrainingExporter::new(&state.db_path);
     match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
         Ok(bundle) => {
-            let id = format!("dataset_{}_{}", payload.seed, chrono::Utc::now().timestamp());
+            let id = format!(
+                "dataset_{}_{}",
+                payload.seed,
+                chrono::Utc::now().timestamp()
+            );
             match write_bundle_to_dir(
                 &state.data_dir,
                 &id,
@@ -122,10 +131,16 @@ pub async fn generate_bundle_handler(
                         Err(_) => crate::data_commons::training::DatasetMetadata {
                             id: id.clone(),
                             size: bundle.train_split.len() + bundle.eval_split.len(),
-                            clearance: payload.clearance.clone().unwrap_or_else(|| "INTERNAL".to_string()),
+                            clearance: payload
+                                .clearance
+                                .clone()
+                                .unwrap_or_else(|| "INTERNAL".to_string()),
                             language: payload.language.clone().unwrap_or_else(|| "en".to_string()),
-                            segment: payload.segment.clone().unwrap_or_else(|| "telemetry".to_string()),
-                        }
+                            segment: payload
+                                .segment
+                                .clone()
+                                .unwrap_or_else(|| "telemetry".to_string()),
+                        },
                     };
                     Json(serde_json::json!({
                         "status": "ok",
@@ -133,26 +148,35 @@ pub async fn generate_bundle_handler(
                         "metadata": metadata,
                         "manifest": bundle.manifest,
                         "audit_summary": bundle.audit_summary,
-                    })).into_response()
+                    }))
+                    .into_response()
                 }
-                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write bundle: {}", e)).into_response(),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to write bundle: {}", e),
+                )
+                    .into_response(),
             }
         }
-        Err(e) => (StatusCode::BAD_REQUEST, format!("Failed to generate bundle: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            format!("Failed to generate bundle: {}", e),
+        )
+            .into_response(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_commons::maintainer::encrypt_for_maintainer;
+    use crate::data_commons::telemetry_db::TelemetryDb;
     use axum::{
         body::{to_bytes, Body},
         http::{Request, StatusCode},
     };
+    use tempfile::{tempdir, NamedTempFile};
     use tower::util::ServiceExt;
-    use tempfile::{NamedTempFile, tempdir};
-    use crate::data_commons::telemetry_db::TelemetryDb;
-    use crate::data_commons::maintainer::encrypt_for_maintainer;
 
     fn setup_test_env() -> (NamedTempFile, tempfile::TempDir) {
         std::env::set_var(
@@ -203,7 +227,8 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
 
         let body_bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-        let datasets: Vec<crate::data_commons::training::DatasetMetadata> = serde_json::from_slice(&body_bytes).unwrap();
+        let datasets: Vec<crate::data_commons::training::DatasetMetadata> =
+            serde_json::from_slice(&body_bytes).unwrap();
         assert!(datasets.is_empty());
     }
 
@@ -250,7 +275,8 @@ mod tests {
         assert_eq!(resp_list.status(), StatusCode::OK);
 
         let list_bytes = to_bytes(resp_list.into_body(), usize::MAX).await.unwrap();
-        let datasets: Vec<crate::data_commons::training::DatasetMetadata> = serde_json::from_slice(&list_bytes).unwrap();
+        let datasets: Vec<crate::data_commons::training::DatasetMetadata> =
+            serde_json::from_slice(&list_bytes).unwrap();
         assert_eq!(datasets.len(), 1);
         assert_eq!(datasets[0].id, dataset_id);
         assert_eq!(datasets[0].clearance, "CONFIDENTIAL");
@@ -298,7 +324,9 @@ mod tests {
         let resp_manifest = app.oneshot(req_manifest).await.unwrap();
         assert_eq!(resp_manifest.status(), StatusCode::OK);
 
-        let manifest_bytes = to_bytes(resp_manifest.into_body(), usize::MAX).await.unwrap();
+        let manifest_bytes = to_bytes(resp_manifest.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes).unwrap();
         assert_eq!(manifest["reproducibility_seed"], 123);
         assert_eq!(manifest["clearance"], "SECRET");
@@ -343,7 +371,10 @@ mod tests {
             .unwrap();
         let resp_train = app.oneshot(req_train).await.unwrap();
         assert_eq!(resp_train.status(), StatusCode::OK);
-        assert_eq!(resp_train.headers().get("content-type").unwrap(), "application/x-ndjson");
+        assert_eq!(
+            resp_train.headers().get("content-type").unwrap(),
+            "application/x-ndjson"
+        );
 
         let train_bytes = to_bytes(resp_train.into_body(), usize::MAX).await.unwrap();
         let train_str = String::from_utf8(train_bytes.to_vec()).unwrap();
@@ -388,7 +419,10 @@ mod tests {
             .unwrap();
         let resp_eval = app.oneshot(req_eval).await.unwrap();
         assert_eq!(resp_eval.status(), StatusCode::OK);
-        assert_eq!(resp_eval.headers().get("content-type").unwrap(), "application/x-ndjson");
+        assert_eq!(
+            resp_eval.headers().get("content-type").unwrap(),
+            "application/x-ndjson"
+        );
 
         let eval_bytes = to_bytes(resp_eval.into_body(), usize::MAX).await.unwrap();
         let eval_str = String::from_utf8(eval_bytes.to_vec()).unwrap();

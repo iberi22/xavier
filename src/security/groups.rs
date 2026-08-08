@@ -1,7 +1,7 @@
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use anyhow::{Result, Context, anyhow};
 
 /// Permissions configuration for an Information Group.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -49,14 +49,12 @@ impl GroupRegistry {
             });
         }
 
-        let raw = std::fs::read_to_string(&path)
-            .context("Failed to read groups storage file")?;
+        let raw = std::fs::read_to_string(&path).context("Failed to read groups storage file")?;
 
         let groups = if raw.trim().is_empty() {
             HashMap::new()
         } else {
-            serde_json::from_str(&raw)
-                .context("Failed to parse groups JSON storage")?
+            serde_json::from_str(&raw).context("Failed to parse groups JSON storage")?
         };
 
         Ok(Self {
@@ -71,8 +69,7 @@ impl GroupRegistry {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(&self.groups)?;
-        std::fs::write(&self.storage_path, json)
-            .context("Failed to write groups storage file")?;
+        std::fs::write(&self.storage_path, json).context("Failed to write groups storage file")?;
         Ok(())
     }
 

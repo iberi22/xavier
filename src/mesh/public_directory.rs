@@ -78,8 +78,8 @@ impl PublicDirectory {
 
         let raw = std::fs::read_to_string(&storage_path)
             .context("Failed to read public directory file")?;
-        let entries_vec: Vec<PublicNodeEntry> = serde_json::from_str(&raw)
-            .context("Failed to parse public directory JSON")?;
+        let entries_vec: Vec<PublicNodeEntry> =
+            serde_json::from_str(&raw).context("Failed to parse public directory JSON")?;
 
         let entries = entries_vec
             .into_iter()
@@ -175,7 +175,11 @@ mod tests {
                 repos,
                 memorias: MemoriaInfo {
                     count: 13000,
-                    kinds: vec!["decision".to_string(), "state".to_string(), "analysis".to_string()],
+                    kinds: vec![
+                        "decision".to_string(),
+                        "state".to_string(),
+                        "analysis".to_string(),
+                    ],
                 },
                 skills: SkillInfo { count: 90 },
             },
@@ -233,8 +237,12 @@ mod tests {
 
         let list = public_dir.list_nodes();
         assert_eq!(list.len(), 2);
-        assert!(list.iter().any(|n| n.node_id == NodeId("xv1-test-node-1".to_string())));
-        assert!(list.iter().any(|n| n.node_id == NodeId("xv1-test-node-2".to_string())));
+        assert!(list
+            .iter()
+            .any(|n| n.node_id == NodeId("xv1-test-node-1".to_string())));
+        assert!(list
+            .iter()
+            .any(|n| n.node_id == NodeId("xv1-test-node-2".to_string())));
     }
 
     #[test]

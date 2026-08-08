@@ -263,9 +263,18 @@ pub fn write_bundle_to_dir(
     // Add extra metadata fields to manifest
     let mut manifest_val = serde_json::to_value(&bundle.manifest).map_err(|e| e.to_string())?;
     if let Some(obj) = manifest_val.as_object_mut() {
-        obj.insert("clearance".to_string(), serde_json::json!(clearance.unwrap_or_else(|| "INTERNAL".to_string())));
-        obj.insert("language".to_string(), serde_json::json!(language.unwrap_or_else(|| "en".to_string())));
-        obj.insert("segment".to_string(), serde_json::json!(segment.unwrap_or_else(|| "telemetry".to_string())));
+        obj.insert(
+            "clearance".to_string(),
+            serde_json::json!(clearance.unwrap_or_else(|| "INTERNAL".to_string())),
+        );
+        obj.insert(
+            "language".to_string(),
+            serde_json::json!(language.unwrap_or_else(|| "en".to_string())),
+        );
+        obj.insert(
+            "segment".to_string(),
+            serde_json::json!(segment.unwrap_or_else(|| "telemetry".to_string())),
+        );
     }
 
     std::fs::write(

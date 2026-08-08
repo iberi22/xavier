@@ -57,14 +57,14 @@ pub mod node;
 pub mod pairing;
 pub mod pairing_registry;
 pub mod peer;
-pub mod pro_gate;
-pub mod public_directory;
-pub mod protocol;
-pub mod public_rag;
-pub mod telemetry;
 pub mod private_mesh;
-pub mod telemetry_collector;
+pub mod pro_gate;
+pub mod protocol;
+pub mod public_directory;
+pub mod public_rag;
 pub mod service_network;
+pub mod telemetry;
+pub mod telemetry_collector;
 pub mod tokenomics;
 pub mod transport;
 // Modernized libp2p transport (v0.56) with NAT traversal, reconnection backoff and metrics.
@@ -72,7 +72,6 @@ pub mod transport;
 pub mod libp2p_transport;
 
 pub use acl::{MeshAcl, NamespaceAclEntry, NodeAclEntry};
-pub use private_mesh::{PrivateMeshRegistry, WalletNode, derive_wallet_id, is_same_wallet};
 #[cfg(feature = "mesh")]
 pub use auto_update::{AutoUpdateService, UpdateStatus};
 pub use context_bridge::{BridgeKind, BridgeRegistry, ContextBridge};
@@ -86,7 +85,9 @@ pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService, Heartb
 pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
+pub use private_mesh::{derive_wallet_id, is_same_wallet, PrivateMeshRegistry, WalletNode};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
+pub use public_rag::{search_public, PublicRagQuery, PublicRagResult};
 pub use telemetry_collector::{
     RetentionPolicy, TelemetryAggregate, TelemetryCollector, TelemetrySample,
 };
@@ -94,7 +95,6 @@ pub use tokenomics::{
     ContributionType, RewardEngine, RewardEvent, Transaction, TransactionKind, Wallet,
     WalletBalance,
 };
-pub use public_rag::{search_public, PublicRagQuery, PublicRagResult};
 pub use transport::MeshTransport;
 
 #[cfg(feature = "mesh")]

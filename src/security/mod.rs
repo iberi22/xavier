@@ -4,19 +4,19 @@
 //! incluyendo detección de prompt injection, sanitización de inputs y filtrado de outputs.
 
 pub mod acl;
-pub mod groups;
 pub mod anticipator;
 pub mod audit;
 pub mod auth;
 pub mod auth_store;
+pub mod clearance;
 pub mod detections;
 pub mod encryption_keys;
+pub mod groups;
 pub mod initializer;
 pub mod layers;
 pub mod license;
 pub mod prompt_guard;
 pub mod recovery;
-pub mod clearance;
 pub mod redaction;
 pub mod rsa_keys;
 pub mod scanner;

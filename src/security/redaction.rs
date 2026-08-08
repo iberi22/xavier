@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::security::acl::ClearanceLevel;
+use serde::{Deserialize, Serialize};
 
 /// Represents a segmented document that has multiple sections,
 /// each with its own clearance level classification.
@@ -95,7 +95,10 @@ mod tests {
 
         assert_eq!(redacted.sections.len(), 2);
         assert_eq!(redacted.sections[0].content, "This is a public intro.");
-        assert_eq!(redacted.sections[1].content, "[REDACTED: Vulnerabilidad Crítica]");
+        assert_eq!(
+            redacted.sections[1].content,
+            "[REDACTED: Vulnerabilidad Crítica]"
+        );
     }
 
     #[test]
@@ -113,7 +116,10 @@ mod tests {
         let redacted = redact(&doc, ClearanceLevel::TopSecret);
 
         assert_eq!(redacted.sections.len(), 1);
-        assert_eq!(redacted.sections[0].content, "Explotación del desbordamiento de búfer...");
+        assert_eq!(
+            redacted.sections[0].content,
+            "Explotación del desbordamiento de búfer..."
+        );
     }
 
     #[test]
@@ -171,7 +177,8 @@ mod tests {
             }],
         };
 
-        let json_str = serde_json::to_string(&redacted_doc).expect("Failed to serialize RedactedDocument");
+        let json_str =
+            serde_json::to_string(&redacted_doc).expect("Failed to serialize RedactedDocument");
         assert!(json_str.contains("\"id\":\"doc-123\""));
         assert!(json_str.contains("\"content\":\"[REDACTED: Secret Details]\""));
 
@@ -215,12 +222,21 @@ mod tests {
         // 1. Request with Confidential clearance (Secret should be redacted, Confidential visible)
         let redacted_conf = redact(&doc, ClearanceLevel::Confidential);
         assert_eq!(redacted_conf.sections[0].content, "Confidential Content");
-        assert_eq!(redacted_conf.sections[1].content, "[REDACTED: Secret Section]");
+        assert_eq!(
+            redacted_conf.sections[1].content,
+            "[REDACTED: Secret Section]"
+        );
 
         // 2. Request with Internal clearance (both redacted)
         let redacted_int = redact(&doc, ClearanceLevel::Internal);
-        assert_eq!(redacted_int.sections[0].content, "[REDACTED: Confidential Section]");
-        assert_eq!(redacted_int.sections[1].content, "[REDACTED: Secret Section]");
+        assert_eq!(
+            redacted_int.sections[0].content,
+            "[REDACTED: Confidential Section]"
+        );
+        assert_eq!(
+            redacted_int.sections[1].content,
+            "[REDACTED: Secret Section]"
+        );
 
         // 3. Request with Secret clearance (both visible)
         let redacted_sec = redact(&doc, ClearanceLevel::Secret);
