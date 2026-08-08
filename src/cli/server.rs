@@ -533,6 +533,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             post(xavier::server::v1_api::v1_memories_prune),
         )
         .route(
+            "/v1/context/assemble",
+            post(xavier::server::v1_api::v1_context_assemble),
+        )
+        .route(
             "/v1/memories/{id}",
             get(xavier::server::v1_api::v1_memories_get),
         )

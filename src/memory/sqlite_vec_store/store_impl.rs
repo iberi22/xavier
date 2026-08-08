@@ -115,6 +115,35 @@ impl MemoryStore for VecSqliteMemoryStore {
             }
         }
 
+        // SSP canonical paths (stability/{repo}/... and features/{repo}/{feature_id})
+        // always UPSERT by exact path: reuse the existing row id so INSERT OR REPLACE
+        // updates in place instead of creating duplicates on every stabilize/index run.
+        // (SSP-OlaB #1234). The kind string is normalized by resolve_metadata, so the
+        // canonical-path prefix is the reliable contract.
+        let canonical_path = record.path.starts_with("stability/") || record.path.starts_with("features/");
+        if canonical_path && !record.path.is_empty() {
+            let project_id = self.project_id.clone();
+            let path_c = record.path.clone();
+            let ws_c = record.workspace_id.clone();
+            let existing: Option<String> = ConnectionManager::global()
+                .with_conn(&project_id, move |conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT id FROM memory_records WHERE workspace_id = ?1 AND path = ?2 LIMIT 1",
+                    )?;
+                    match stmt.query_row(params![ws_c, path_c], |row| row.get::<_, String>(0)) {
+                        Ok(id) => Ok(Some(id)),
+                        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                        Err(e) => Err(anyhow::anyhow!("SSP upsert lookup failed: {e}")),
+                    }
+                })
+                .await
+                .unwrap_or(None);
+            if let Some(existing_id) = existing {
+                record.id = existing_id;
+                record.revision += 1;
+            }
+        }
+
         let dedup_settings = {
             let lock = self.dedup_config.read().await;
             lock.clone()
