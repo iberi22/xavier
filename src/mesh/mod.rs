@@ -59,6 +59,7 @@ pub mod pairing_registry;
 pub mod peer;
 pub mod pro_gate;
 pub mod protocol;
+pub mod service_network;
 pub mod telemetry;
 pub mod telemetry_collector;
 pub mod tokenomics;
@@ -82,6 +83,7 @@ pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
+pub use service_network::{ServiceInfo, ServiceKind, ServiceRegistry};
 pub use telemetry_collector::{
     RetentionPolicy, TelemetryAggregate, TelemetryCollector, TelemetrySample,
 };
