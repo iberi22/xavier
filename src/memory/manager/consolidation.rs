@@ -59,8 +59,12 @@ impl MemoryManager {
         let after_count = self.memory.count().await.unwrap_or(0);
 
         // 6. Log consolidation metrics (antes/después: tamaño, nº de memorias)
-        let before_size_str = before_size.map(|s| format!("{} bytes", s)).unwrap_or_else(|| "N/A".to_string());
-        let after_size_str = after_size.map(|s| format!("{} bytes", s)).unwrap_or_else(|| "N/A".to_string());
+        let before_size_str = before_size
+            .map(|s| format!("{} bytes", s))
+            .unwrap_or_else(|| "N/A".to_string());
+        let after_size_str = after_size
+            .map(|s| format!("{} bytes", s))
+            .unwrap_or_else(|| "N/A".to_string());
 
         info!(
             "📊 Consolidation complete metrics:\n\
@@ -122,7 +126,8 @@ impl MemoryManager {
                             .get(doc_id)
                             .copied()
                             .or_else(|| {
-                                doc.metadata.get("created_at")
+                                doc.metadata
+                                    .get("created_at")
                                     .or_else(|| doc.metadata.get("updated_at"))
                                     .and_then(|v| v.as_str())
                                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())

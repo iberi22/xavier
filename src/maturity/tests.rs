@@ -7,7 +7,10 @@ mod tests {
     #[test]
     fn test_scanner_auto_generates_when_missing() {
         let temp_dir = tempdir().unwrap();
-        let anchor_path = temp_dir.path().join(".xavier").join("maturity-anchors.json");
+        let anchor_path = temp_dir
+            .path()
+            .join(".xavier")
+            .join("maturity-anchors.json");
 
         assert!(!anchor_path.exists());
 

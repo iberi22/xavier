@@ -89,16 +89,15 @@ pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
                 .or(codebase.as_ref())
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| ".".to_string());
-            let anchor_path = anchors
-                .clone()
-                .unwrap_or_else(|| {
-                    let relative_to_workspace = PathBuf::from(&root).join(".xavier/maturity-anchors.json");
-                    if relative_to_workspace.exists() {
-                        relative_to_workspace
-                    } else {
-                        PathBuf::from(".xavier/maturity-anchors.json")
-                    }
-                });
+            let anchor_path = anchors.clone().unwrap_or_else(|| {
+                let relative_to_workspace =
+                    PathBuf::from(&root).join(".xavier/maturity-anchors.json");
+                if relative_to_workspace.exists() {
+                    relative_to_workspace
+                } else {
+                    PathBuf::from(".xavier/maturity-anchors.json")
+                }
+            });
 
             // DeepScan uses with_deep_scan()
             let is_deep = matches!(&cmd, MaturityCommand::DeepScan { .. });

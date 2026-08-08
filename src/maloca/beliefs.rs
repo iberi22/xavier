@@ -55,9 +55,7 @@ pub struct BeliefStats {
 }
 
 /// Full belief graph snapshot + aggregate stats.
-pub async fn beliefs_snapshot(
-    Extension(ctx): Extension<WorkspaceContext>,
-) -> impl IntoResponse {
+pub async fn beliefs_snapshot(Extension(ctx): Extension<WorkspaceContext>) -> impl IntoResponse {
     let graph = &ctx.workspace.belief_graph;
     let graph = graph.read().await;
     let nodes = graph.list_nodes();
@@ -98,10 +96,7 @@ pub async fn beliefs_snapshot(
         nodes: nodes.len(),
         edges: edges.len(),
         avg_confidence,
-        high_confidence_edges: edges
-            .iter()
-            .filter(|e| e.confidence_score >= 0.7)
-            .count(),
+        high_confidence_edges: edges.iter().filter(|e| e.confidence_score >= 0.7).count(),
         contradictions: edges
             .iter()
             .filter(|e| e.contradicts_edge_id.is_some())

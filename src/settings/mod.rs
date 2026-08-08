@@ -484,7 +484,10 @@ pub mod tests {
     async fn test_watcher_skipped_when_dir_absent() {
         let nonexistent_path = std::path::PathBuf::from("/nonexistent/path/xavier.config.json");
         let result = super::watch_config_changes_impl(nonexistent_path).await;
-        assert!(result.is_ok(), "Watcher should gracefully succeed and return Ok when parent dir is absent");
+        assert!(
+            result.is_ok(),
+            "Watcher should gracefully succeed and return Ok when parent dir is absent"
+        );
     }
 
     #[tokio::test]
@@ -503,6 +506,9 @@ pub mod tests {
         let _ = std::fs::remove_file(&test_path);
 
         // It should time out (since it waits for changes in a loop), which proves it started up properly and didn't fail immediately
-        assert!(result.is_err(), "Watcher should run indefinitely when parent dir exists, thus timing out here");
+        assert!(
+            result.is_err(),
+            "Watcher should run indefinitely when parent dir exists, thus timing out here"
+        );
     }
 }

@@ -478,6 +478,39 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     xavier::adapters::inbound::http::handlers::sync::init_memory_sync(sync_service);
 
     let protected_routes = Router::new()
+        // ── Memory Sync endpoints ──────────────────────────────────────────
+        .route(
+            "/v1/memory/manifest",
+            get(crate::cli::handlers::memory::memory_manifest_handler),
+        )
+        .route(
+            "/v1/memory/push",
+            post(crate::cli::handlers::memory::memory_push_handler),
+        )
+        .route(
+            "/v1/memory/pull",
+            post(crate::cli::handlers::memory::memory_pull_handler),
+        )
+        .route(
+            "/v1/memory/pull-since/{workspace_id}/{since}",
+            get(crate::cli::handlers::memory::memory_pull_since_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/push",
+            post(xavier::adapters::inbound::http::handlers::sync::sync_push_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/pull",
+            post(xavier::adapters::inbound::http::handlers::sync::sync_pull_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/status",
+            get(xavier::adapters::inbound::http::handlers::sync::sync_status_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/resolve/{conflict_id}",
+            post(xavier::adapters::inbound::http::handlers::sync::sync_resolve_handler),
+        )
         .route("/memory/search", post(search_handler))
         .route("/memory/update", post(update_handler))
         .route("/memory/delete", post(delete_handler))
@@ -602,10 +635,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             get(xavier::maloca::commits::commits_graph),
         )
         // ── Maloca WebSocket Live Feed (MS-004) ──────────────────────────
-        .route(
-            "/maloca/ws/feed",
-            get(xavier::maloca::ws::ws_live_feed),
-        )
+        .route("/maloca/ws/feed", get(xavier::maloca::ws::ws_live_feed))
         // ── Maloca Belief Graph Confidence (MS-005) ──────────────────────
         .route(
             "/maloca/beliefs",
@@ -1071,40 +1101,6 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/ready", get(readiness_handler))
         .route("/readiness", get(readiness_handler))
         .route("/v1/health/ready", get(readiness_handler))
-        // ── Memory Sync endpoints ──────────────────────────────────────────
-        .route(
-            "/v1/memory/manifest",
-            get(crate::cli::handlers::memory::memory_manifest_handler),
-        )
-        .route(
-            "/v1/memory/push",
-            post(crate::cli::handlers::memory::memory_push_handler),
-        )
-        .route(
-            "/v1/memory/pull",
-            post(crate::cli::handlers::memory::memory_pull_handler),
-        )
-        .route(
-            "/v1/memory/pull-since/{workspace_id}/{since}",
-            get(crate::cli::handlers::memory::memory_pull_since_handler),
-        )
-        .route(
-            "/api/v1/memory/sync/push",
-            post(xavier::adapters::inbound::http::handlers::sync::sync_push_handler),
-        )
-        .route(
-            "/api/v1/memory/sync/pull",
-            post(xavier::adapters::inbound::http::handlers::sync::sync_pull_handler),
-        )
-        .route(
-            "/api/v1/memory/sync/status",
-            get(xavier::adapters::inbound::http::handlers::sync::sync_status_handler),
-        )
-        .route(
-            "/api/v1/memory/sync/resolve/{conflict_id}",
-            post(xavier::adapters::inbound::http::handlers::sync::sync_resolve_handler),
-        )
-        // Panel UI: Vite production build uses absolute `/assets/*` paths.
         // Serve index + assets at both `/` and `/panel` so portable installs and
         // bookmarked `/panel` URLs both work.
         .route("/", get(panel_index))
