@@ -551,4 +551,24 @@ Humans are curators: review, approve, classify the information Xavier preserves.
 
 ---
 
-*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032).*
+## REQ-028: Issue Context Packager (análisis automático con línea exacta)
+
+- **Category:** AI
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Features:** `feat-issue-context-packager`
+- **Design:** `docs/design/F12-PRESERVACION-MINI-EXPERTOS.md` §5 + `src/codebase/snapshot.rs` (PreciseChange)
+
+### Description
+Xavier lee un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qué archivos/símbolos tocar, línea exacta o número de carácter a modificar, fragmento before/after. El análisis queda LISTO antes de delegar — el agente ejecutor solo aplica los deltas (sin re-buscar en el codebase, sin reescritura de fragmentos enteros).
+
+### Acceptance criteria
+- [ ] Parser de issue (título+cuerpo → archivos/símbolos/features mencionados)
+- [ ] Mapper issue→CodeGraph (`find_by_name` + `search`)
+- [ ] Paquete con `PreciseChange` por símbolo (file, start_line, end_line, before, after)
+- [ ] `POST /v1/f12/issue-context` devuelve el paquete JSON
+- [ ] Benchmark: tokens sin paquete vs con paquete (objetivo ≥50% ahorro)
+
+---
+
+*Domain-specific REQ-028 added 2026-08-08 (Issue Context Packager). REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision).*

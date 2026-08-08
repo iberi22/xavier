@@ -327,4 +327,13 @@ As a **human curator**, I want to review/approve/classify information so that **
 
 ---
 
-*Domain-specific US-033..040 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04.*
+## US-041: Receive a ready-to-execute issue package
+
+As a **coding agent**, I want Xavier to analyze an issue and give me the exact lines/files/symbols to change (with before/after snippets) so that **I only apply the deltas — no re-searching, no full-file rewrites, maximum token savings**.
+
+- **Feature:** `feat-issue-context-packager` · **REQ:** REQ-028
+- **Acceptance:** `POST /v1/f12/issue-context` returns `IssueContextPackage` with `PreciseChange` deltas; benchmark shows ≥50% token savings.
+
+---
+
+*Domain-specific US-041 added 2026-08-08 (Issue Context Packager). US-033..040 added 2026-08-08 (F12 preservation + mini-experts vision).*
