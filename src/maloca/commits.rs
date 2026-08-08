@@ -124,9 +124,13 @@ pub async fn commits_graph(
 
     for id in revwalk {
         let Ok(oid) = id else { continue };
-        let Ok(commit) = repo.find_commit(oid) else { continue };
+        let Ok(commit) = repo.find_commit(oid) else {
+            continue;
+        };
         let commit_time = DateTime::<Utc>::from_timestamp(commit.time().seconds(), 0);
-        let Some(commit_time) = commit_time else { continue };
+        let Some(commit_time) = commit_time else {
+            continue;
+        };
         if commit_time < since {
             continue;
         }
@@ -143,11 +147,7 @@ pub async fn commits_graph(
             .next()
             .unwrap_or_default()
             .to_string();
-        let author = commit
-            .author()
-            .name()
-            .unwrap_or("unknown")
-            .to_string();
+        let author = commit.author().name().unwrap_or("unknown").to_string();
         let ts = commit_time.to_rfc3339();
 
         let mut files_changed = 0usize;

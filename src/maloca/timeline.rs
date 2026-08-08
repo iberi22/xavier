@@ -122,9 +122,7 @@ fn event_to_dto(ev: &RealtimeEvent) -> MalocaTimelineEvent {
 }
 
 /// List all timeline events (optionally filtered by `since` RFC3339).
-pub async fn timeline_export(
-    Extension(ctx): Extension<WorkspaceContext>,
-) -> impl IntoResponse {
+pub async fn timeline_export(Extension(ctx): Extension<WorkspaceContext>) -> impl IntoResponse {
     let since = "1970-01-01T00:00:00+00:00".to_string();
     match fetch_events(&ctx, &since).await {
         Ok(events) => Json(serde_json::json!({
@@ -137,9 +135,7 @@ pub async fn timeline_export(
 }
 
 /// Group events into sessions (per agent + memory_id or 30-min windows).
-pub async fn timeline_sessions(
-    Extension(ctx): Extension<WorkspaceContext>,
-) -> impl IntoResponse {
+pub async fn timeline_sessions(Extension(ctx): Extension<WorkspaceContext>) -> impl IntoResponse {
     let since = "1970-01-01T00:00:00+00:00".to_string();
     let events = match fetch_events(&ctx, &since).await {
         Ok(e) => e,
@@ -151,7 +147,9 @@ pub async fn timeline_sessions(
     for ev in &events {
         let key = (
             ev.agent.clone(),
-            ev.memory_id.clone().unwrap_or_else(|| ev.session_id.clone().unwrap_or_default()),
+            ev.memory_id
+                .clone()
+                .unwrap_or_else(|| ev.session_id.clone().unwrap_or_default()),
         );
         buckets.entry(key).or_default().push(ev);
     }
@@ -220,9 +218,10 @@ async fn fetch_events(
 ) -> anyhow::Result<Vec<MalocaTimelineEvent>> {
     let memory = ctx.workspace.memory.clone();
     let ws = memory.workspace_id();
-    let store = memory.store().await.ok_or_else(|| {
-        anyhow::anyhow!("memory store unavailable for workspace {ws}")
-    })?;
+    let store = memory
+        .store()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("memory store unavailable for workspace {ws}"))?;
     let raw = store.list_timeline_events(ws, since).await?;
     Ok(raw.iter().map(event_to_dto).collect())
 }
@@ -230,5 +229,7 @@ async fn fetch_events(
 /// Parse an RFC3339 timestamp; used for validation helpers.
 #[allow(dead_code)]
 fn parse_ts(s: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&Utc))
+    DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|d| d.with_timezone(&Utc))
 }
