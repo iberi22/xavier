@@ -1,0 +1,112 @@
+{
+  "project": "xavier",
+  "plan_version": "1.0",
+  "updated": "2026-08-08",
+  "goal": "v0.15.0 — Xavier operativo de punta a punta: Issue Context Packager funcionando (ahorro de tokens real), nodo SWAL (edge-hive) registrado, mini-experto entrenado vía Colab, mesh con 2+ nodos conectados, y TODOS los features verificados en runtime real",
+  "goal_verifiable": "1) POST /v1/f12/issue-context devuelve IssueContextPackage con PreciseChange de un issue real de GitHub (benchmark ≥50% ahorro tokens) · 2) edge-hive compila y se registra en /v1/f12/directory · 3) un mini-experto GGUF responde vía Ollama (entrenado con datos reales de Xavier vía Colab CLI) · 4) 2 nodos xavier conectados vía /v1/mesh (active_peers ≥ 1) · 5) verify-pipeline 38/38 PASS + suite completa 0 failed",
+  "tag_when": "v0.15.0 cuando se cumplan TODOS los criterios del goal_verifiable",
+  "waves": [
+    {
+      "wave": "W13",
+      "name": "Issue Context Packager + cierre deuda",
+      "issues": [
+        {
+          "id": "ICP-01",
+          "title": "Issue Context Packager: parser de issues + mapper CodeGraph",
+          "feature": "feat-issue-context-packager",
+          "scope": "src/context/issue_parser.rs (nuevo): extrae archivos/símbolos/features de título+cuerpo · src/context/issue_mapper.rs (nuevo): find_by_name + search del QueryEngine",
+          "tests": "parser con issues reales de GitHub (≥6) · mapper con CodeGraph fixture (≥4)"
+        },
+        {
+          "id": "ICP-02",
+          "title": "IssueContextPackage: ensamblar PreciseChange + endpoint HTTP",
+          "feature": "feat-issue-context-packager",
+          "scope": "src/context/issue_package.rs (nuevo): IssueContextPackage { issue_id, changes: Vec<PreciseChange>, deps } · POST /v1/f12/issue-context en f12_routes.rs",
+          "tests": "ensamblado con snapshot manager real (≥4) · endpoint e2e (≥2)"
+        },
+        {
+          "id": "ICP-03",
+          "title": "Benchmark de ahorro de tokens + integración con template de issues",
+          "feature": "feat-issue-context-packager",
+          "scope": "scripts/bench/issue_context_tokens.py: mide tokens con/sin paquete sobre 5 issues reales · docs/design/F12 §5 actualizado con el flujo completo",
+          "tests": "benchmark corre y reporta ≥50% (script, no unit)"
+        }
+      ],
+      "depends_on": [],
+      "closes": ["REQ-028", "US-041"]
+    },
+    {
+      "wave": "W14",
+      "name": "Nodo SWAL real (edge-hive) + mesh 2 nodos",
+      "issues": [
+        {
+          "id": "NODO-01",
+          "title": "Edge-hive: estabilizar build (shared-protocol) + features.json",
+          "feature": "feat-mesh-network",
+          "scope": "repo edge-hive: fix shared-protocol build script · crear .gitcore/features.json con 20+ features reales",
+          "tests": "cargo check --workspace 0 errores en edge-hive · features.json válido"
+        },
+        {
+          "id": "NODO-02",
+          "title": "Edge-hive se registra en el directorio público de Xavier",
+          "feature": "feat-mesh-network",
+          "scope": "edge-hive-core: register_with_public_directory(node_id, capabilities, iroh_addr) → POST /v1/f12/directory/nodes",
+          "tests": "registro e2e contra xavier real (node aparece en list_directory)"
+        },
+        {
+          "id": "MESH-01",
+          "title": "2 nodos xavier conectados (descubrimiento + handshake real)",
+          "feature": "feat-mesh-network",
+          "scope": "prueba de integración: 2 binarios xavier (puertos 8006/8007) → pair → handshake → active_peers ≥ 1 · script scripts/mesh/two_nodes_test.sh",
+          "tests": "script e2e: ambos nodos se descubren, handshake ok, health muestra peers"
+        }
+      ],
+      "depends_on": ["W13"],
+      "closes": ["#1254", "REQ-024"]
+    },
+    {
+      "wave": "W15",
+      "name": "Mini-experto real (pipeline Colab completo)",
+      "issues": [
+        {
+          "id": "ME-01",
+          "title": "Pipeline de entrenamiento: dataset de Xavier → Colab CLI → GGUF",
+          "feature": "feat-mini-experts",
+          "scope": "exportar dataset real vía /v1/training/bundles · colab upload + colab run --gpu T4 (train_lora_colab.py) · colab download GGUF · registro en MiniExpertRegistry",
+          "tests": "e2e: el GGUF descargado se sirve con Ollama y responde en el idioma del usuario"
+        },
+        {
+          "id": "ME-02",
+          "title": "Mini-expertos en el ProviderRouter (invocación local)",
+          "feature": "feat-mini-experts",
+          "scope": "conectar MiniExpertRegistry con ProviderKind::Local · POST /v1/agents/mini-experts/invoke real (sin mock)",
+          "tests": "invoke real contra el modelo GGUF servido (≥2 queries)"
+        }
+      ],
+      "depends_on": ["W14"],
+      "closes": ["REQ-023", "US-036"]
+    },
+    {
+      "wave": "W16",
+      "name": "Estabilización final + release v0.15.0",
+      "issues": [
+        {
+          "id": "REL-01",
+          "title": "Rebuild release + runtime real de TODOS los routers F12",
+          "feature": "all",
+          "scope": "cargo build --release · cp a binario NUEVO · restart aprobado · smoke test de /v1/f12/*, /v1/training/*, /v1/context/assemble en runtime",
+          "tests": "curl a cada endpoint F12 en el servicio real (200)"
+        },
+        {
+          "id": "REL-02",
+          "title": "Suite completa + verify + metadata + tag v0.15.0",
+          "feature": "all",
+          "scope": "cargo test --lib (0 failed) · verify-pipeline 38/38 · features.json reconciliado · CHANGELOG v0.15.0 · tag",
+          "tests": "goal_verifiable completo"
+        }
+      ],
+      "depends_on": ["W15"],
+      "closes": ["goal v0.15.0"]
+    }
+  ]
+}
