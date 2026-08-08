@@ -32,7 +32,7 @@ pub struct MemoryDocument {
     #[serde(default)]
     pub relation: Option<crate::memory::schema::RelationKind>,
     #[serde(default)]
-    pub clearance: crate::memory::schema::ClearanceLevel,
+    pub clearance: crate::security::clearance::ClearanceLevel,
     #[serde(default)]
     pub minhash: Option<Vec<u64>>,
     #[serde(default)]
@@ -56,7 +56,7 @@ impl Default for MemoryDocument {
             parent_id: None,
             level: crate::memory::schema::MemoryLevel::Raw,
             relation: None,
-            clearance: crate::memory::schema::ClearanceLevel::TopSecret,
+            clearance: crate::security::clearance::ClearanceLevel::Unclassified,
             minhash: None,
             score: 0.0,
             source_node_id: None,
