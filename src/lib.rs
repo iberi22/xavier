@@ -26,6 +26,7 @@ pub mod codebase;
 pub mod consistency;
 pub mod consolidation;
 pub mod context;
+pub mod curation;
 pub mod coordination;
 pub mod crypto;
 pub mod data_commons;
