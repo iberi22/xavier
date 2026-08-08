@@ -1042,6 +1042,112 @@ pub async fn v1_memories_search(
     }
 }
 
+/// V1 context assemble (SSP-OlaB #1234): fat-search over feature_snippet /
+/// stability_report memories and return a compact JSON context (<2KB) for a task.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct V1ContextAssembleRequest {
+    pub task: String,
+    #[serde(default = "default_context_limit")]
+    pub limit: usize,
+}
+
+fn default_context_limit() -> usize {
+    5
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1ContextAssembleResponse {
+    pub status: String,
+    pub task: String,
+    pub snippets: Vec<V1ContextSnippet>,
+    pub total_chars: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1ContextSnippet {
+    pub path: String,
+    pub kind: String,
+    pub snippet: String,
+    pub score: f32,
+}
+
+/// Assemble compact context for an agent task: run a snippet-mode search over
+/// canonical SSP paths (`features/{repo}/{id}`, `stability/{repo}/latest`) plus
+/// any decision memories, and return the top hits as a small JSON payload.
+pub async fn v1_context_assemble(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<V1ContextAssembleRequest>,
+) -> impl IntoResponse {
+    let task = payload.task.trim();
+    if task.is_empty() {
+        return crate::error::ApiError::validation("task is required")
+            .into_ok_response();
+    }
+
+    let limit = payload.limit.clamp(1, 20);
+
+    let mut filters = crate::memory::schema::MemoryQueryFilters::default();
+    let zones = crate::memory::schema::parse_zones_from_prompt(task);
+    if !zones.is_empty() {
+        filters.zones = Some(zones);
+    }
+
+    let documents = query_with_embedding_filtered(
+        &workspace.workspace.memory,
+        task,
+        limit * 3,
+        Some(&filters),
+    )
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|doc| is_primary_memory(&doc.metadata))
+    // Prefer canonical SSP paths (features/*, stability/*, decisions)
+    .filter(|doc| {
+        doc.path.starts_with("features/")
+            || doc.path.starts_with("stability/")
+            || doc
+                .metadata
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .is_some_and(|k| k == "decision")
+    })
+    .collect::<Vec<_>>();
+
+    let budget = crate::memory::snippet::SnippetBudget {
+        title: 80,
+        snippet: 140,
+    };
+
+    let mut snippets: Vec<V1ContextSnippet> = Vec::new();
+    let mut total_chars = 0usize;
+    for doc in documents.into_iter().take(limit) {
+        let excerpt = crate::memory::snippet::extract(&doc.content, &doc.metadata, task, budget);
+        let kind = doc
+            .metadata
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("generic")
+            .to_string();
+        let snippet = V1ContextSnippet {
+            path: doc.path,
+            kind,
+            snippet: excerpt.snippet,
+            score: doc.score,
+        };
+        total_chars += snippet.snippet.len();
+        snippets.push(snippet);
+    }
+
+    Json(V1ContextAssembleResponse {
+        status: "ok".to_string(),
+        task: task.to_string(),
+        snippets,
+        total_chars,
+    })
+    .into_response()
+}
+
 /// V1 memories list.
 pub async fn v1_memories_list(
     Extension(workspace): Extension<WorkspaceContext>,
@@ -1652,6 +1758,7 @@ mod tests {
             .route("/v1/memories/{id}/outline", get(v1_memories_outline))
             .route("/v1/memories/search", post(v1_memories_search))
             .route("/v1/memories/prune", post(v1_memories_prune))
+            .route("/v1/context/assemble", post(v1_context_assemble))
             .route("/v1/mesh/health", get(v1_mesh_health))
             .layer(Extension(workspace))
             .with_state(state)
@@ -2088,6 +2195,77 @@ mod tests {
         let item = &results[0];
         assert_eq!(item["memory"], long_content);
         assert!(item.get("snippet").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_v1_context_assemble_returns_ssp_snippets() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // Seed a canonical SSP memory: feature snippet for shelf under features/shelf/...
+        let add_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": "feat-p2p-sync: rate limiter implemented; 12 tests green; verified 2026-08-08",
+                    "user_id": "features/shelf/feat-p2p-sync",
+                    "kind": "decision",
+                })
+                .to_string(),
+            ))
+            .expect("failed to build add request");
+        let resp = app
+            .clone()
+            .oneshot(add_req)
+            .await
+            .expect("failed to execute add request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Assemble context for a task mentioning the feature
+        let assemble_req = Request::builder()
+            .method("POST")
+            .uri("/v1/context/assemble")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "task": "P2P sync rate limiter shelf",
+                    "limit": 5,
+                })
+                .to_string(),
+            ))
+            .expect("failed to build assemble request");
+        let resp = app
+            .clone()
+            .oneshot(assemble_req)
+            .await
+            .expect("failed to execute assemble request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("failed to read body");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("failed to parse JSON");
+
+        assert_eq!(payload["status"], "ok");
+        assert!(payload["total_chars"].as_u64().unwrap_or(0) > 0);
+        let snippets = payload["snippets"]
+            .as_array()
+            .expect("snippets should be array");
+        assert!(!snippets.is_empty(), "expected at least one SSP snippet");
+        assert!(
+            snippets
+                .iter()
+                .any(|s| s["path"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .starts_with("features/")),
+            "expected a features/ snippet in context"
+        );
+        // Context must stay compact (<2KB per AC)
+        assert!(body.len() < 2048, "context/assemble response too large: {}", body.len());
     }
 
     #[tokio::test]
