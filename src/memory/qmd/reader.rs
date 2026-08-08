@@ -261,7 +261,7 @@ pub async fn cache_metrics(memory: &QmdMemory) -> crate::memory::qmd_memory::typ
 /// Export.
 pub async fn export(memory: &QmdMemory, public_only: bool) -> Result<Vec<MemoryDocument>> {
     let docs = memory.docs.read().await;
-    let exported = docs
+    let mut exported: Vec<MemoryDocument> = docs
         .iter()
         .filter(|doc| {
             if !public_only {
@@ -283,5 +283,12 @@ pub async fn export(memory: &QmdMemory, public_only: bool) -> Result<Vec<MemoryD
         })
         .cloned()
         .collect();
+
+    // Auto-redact sensitive PII data before exporting/sharing
+    let redaction_engine = crate::security::redaction::RedactionEngine::default();
+    for doc in &mut exported {
+        doc.content = redaction_engine.redact(&doc.content);
+    }
+
     Ok(exported)
 }

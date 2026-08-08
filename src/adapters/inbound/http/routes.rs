@@ -94,7 +94,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             post(crate::adapters::inbound::http::handlers::sync::sync_resolve_handler),
         )
         // ── Training Datasets API ─────────────────────────────────────────
-        .route("/v1/training/export", post(training_export_handler));
+        .route("/v1/training/export", post(training_export_handler))
+        // ── Content Redaction API ─────────────────────────────────────────
+        .route("/v1/memories/redact", post(memories_redact_handler));
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
@@ -540,6 +542,29 @@ pub async fn training_export_handler(
             excluded_revoked: bundle.audit_summary.excluded_records_revoked,
         },
     }))
+}
+
+// ─── Content Redaction API ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RedactRequest {
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RedactResponse {
+    pub redacted_text: String,
+}
+
+/// POST /v1/memories/redact - Redact PII / sensitive data from a text payload.
+pub async fn memories_redact_handler(
+    Json(payload): Json<RedactRequest>,
+) -> impl axum::response::IntoResponse {
+    let engine = crate::security::redaction::RedactionEngine::default();
+    let redacted = engine.redact(&payload.text);
+    Json(RedactResponse {
+        redacted_text: redacted,
+    })
 }
 
 /// Get the plugin registry (panics if not initialized)
