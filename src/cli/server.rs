@@ -1121,7 +1121,16 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let memory_port_cron = state.memory.clone();
     let app = app
         .with_state(state.clone())
-        .merge(xavier::maloca::nested_router(maloca_store));
+        .merge(xavier::maloca::nested_router(maloca_store))
+        .merge(xavier::server::training_routes::router(
+            xavier::server::training_routes::TrainingState {
+                db_path: state.workspace_dir.clone().join("data/vec-store.sqlite3"),
+                data_dir: state.workspace_dir.clone().join("data/datasets"),
+            },
+        ))
+        .merge(xavier::server::f12_routes::router(
+            xavier::server::f12_routes::F12State::new(state.workspace_dir.clone().join("data")),
+        ));
 
     #[cfg(feature = "enterprise")]
     let app = {

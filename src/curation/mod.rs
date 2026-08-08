@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,7 +62,10 @@ impl CurationQueue {
     }
 
     pub fn save(&self) -> Result<(), String> {
-        let path = self.file_path.as_deref().unwrap_or_else(|| Path::new("data/curation/queue.json"));
+        let path = self
+            .file_path
+            .as_deref()
+            .unwrap_or_else(|| Path::new("data/curation/queue.json"));
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -71,7 +74,11 @@ impl CurationQueue {
         Ok(())
     }
 
-    pub fn submit_for_curation(&mut self, content_ref: String, proposed_clearance: String) -> CurationItem {
+    pub fn submit_for_curation(
+        &mut self,
+        content_ref: String,
+        proposed_clearance: String,
+    ) -> CurationItem {
         let id = ulid::Ulid::new().to_string();
         let item = CurationItem {
             id,
@@ -96,7 +103,12 @@ impl CurationQueue {
         }
     }
 
-    pub fn reject(&mut self, id: &str, curator: String, reason: String) -> Result<CurationItem, String> {
+    pub fn reject(
+        &mut self,
+        id: &str,
+        curator: String,
+        reason: String,
+    ) -> Result<CurationItem, String> {
         if let Some(item) = self.items.iter_mut().find(|i| i.id == id) {
             item.status = CurationStatus::Rejected { reason };
             item.curated_by = Some(curator);
@@ -145,7 +157,9 @@ mod tests {
     fn test_reject_item() {
         let mut queue = CurationQueue::new();
         let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string());
-        let rejected = queue.reject(&item.id, "bob".to_string(), "offensive content".to_string()).unwrap();
+        let rejected = queue
+            .reject(&item.id, "bob".to_string(), "offensive content".to_string())
+            .unwrap();
         assert_eq!(
             rejected.status,
             CurationStatus::Rejected {
@@ -177,7 +191,9 @@ mod tests {
         let _item3 = queue.submit_for_curation("doc-3".to_string(), "internal".to_string());
 
         queue.approve(&item1.id, "alice".to_string()).unwrap();
-        queue.reject(&item2.id, "bob".to_string(), "bad format".to_string()).unwrap();
+        queue
+            .reject(&item2.id, "bob".to_string(), "bad format".to_string())
+            .unwrap();
 
         let eligible = queue.curated_items();
         assert_eq!(eligible.len(), 1);

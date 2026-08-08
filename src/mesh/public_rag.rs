@@ -4,11 +4,11 @@
 //! snippets of lines for public workspaces/repositories, strictly filtering
 //! for UNCLASSIFIED content.
 
+use code_graph::db::CodeGraphDB;
+use code_graph::query::QueryEngine;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use code_graph::db::CodeGraphDB;
-use code_graph::query::QueryEngine;
 
 /// Query payload for public RAG searches.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -90,7 +90,11 @@ pub fn search_public(query: &str, repo: Option<&str>, limit: u8) -> Vec<PublicRa
     }
 
     // Sort all combined results by score descending
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Truncate to requested limit
     results.truncate(limit as usize);
@@ -121,7 +125,11 @@ fn resolve_public_databases(repo: Option<&str>) -> Vec<(String, PathBuf)> {
             for entry in entries.filter_map(Result::ok) {
                 let path = entry.path();
                 if path.is_dir() {
-                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                    let name = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string();
                     let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(&path);
                     if db_path.exists() {
                         dbs.push((name, db_path));
@@ -164,7 +172,10 @@ fn get_snippet_for_symbol(repo_dir: &Path, symbol: &code_graph::types::Symbol) -
     if let Some(source) = content {
         extract_lines(&source, symbol.start_line, symbol.end_line)
     } else {
-        symbol.signature.clone().unwrap_or_else(|| symbol.name.clone())
+        symbol
+            .signature
+            .clone()
+            .unwrap_or_else(|| symbol.name.clone())
     }
 }
 
@@ -282,12 +293,18 @@ mod tests {
     #[test]
     fn test_search_public_unclassified_filter() {
         // Test with explicitly classified patterns to ensure they are excluded
-        assert!(!is_unclassified("src/secrets/private_key.rs", "get_private_key"));
+        assert!(!is_unclassified(
+            "src/secrets/private_key.rs",
+            "get_private_key"
+        ));
         assert!(!is_unclassified(".env.production", "api_key"));
         assert!(!is_unclassified("src/wallet.rs", "sign_tx"));
 
         // Test with unclassified patterns
-        assert!(is_unclassified("src/mesh/iroh_transport.rs", "IrohTransport"));
+        assert!(is_unclassified(
+            "src/mesh/iroh_transport.rs",
+            "IrohTransport"
+        ));
     }
 
     #[test]
@@ -302,7 +319,10 @@ mod tests {
 
     #[test]
     fn test_calculate_score_helper() {
-        assert_eq!(calculate_symbol_score("IrohTransport", "irohtransport"), 10.0);
+        assert_eq!(
+            calculate_symbol_score("IrohTransport", "irohtransport"),
+            10.0
+        );
         assert_eq!(calculate_symbol_score("IrohTransport", "iroh"), 5.0);
         assert_eq!(calculate_symbol_score("IrohTransport", "transport"), 1.0);
         assert_eq!(calculate_symbol_score("IrohTransport", "other"), 0.1);

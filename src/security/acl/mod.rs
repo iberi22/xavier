@@ -401,28 +401,17 @@ mod group_tests {
 
         let mut low_perms = HashSet::new();
         low_perms.insert(AclPermission::Read);
-        gm.create_group(
-            "low".to_string(),
-            low_perms,
-            ClearanceLevel::Internal,
-        );
+        gm.create_group("low".to_string(), low_perms, ClearanceLevel::Internal);
 
         let mut high_perms = HashSet::new();
         high_perms.insert(AclPermission::Manage);
-        gm.create_group(
-            "high".to_string(),
-            high_perms,
-            ClearanceLevel::Secret,
-        );
+        gm.create_group("high".to_string(), high_perms, ClearanceLevel::Secret);
 
         gm.add_member("bob", "low");
         gm.add_member("bob", "high");
 
         // Effective clearance is the max across groups
-        assert_eq!(
-            gm.user_max_clearance("bob"),
-            ClearanceLevel::Secret
-        );
+        assert_eq!(gm.user_max_clearance("bob"), ClearanceLevel::Secret);
         assert!(gm.user_can_access("bob", ClearanceLevel::Secret));
         assert!(!gm.user_can_access("bob", ClearanceLevel::TopSecret));
     }

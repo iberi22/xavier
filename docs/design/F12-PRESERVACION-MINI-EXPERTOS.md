@@ -117,17 +117,40 @@ consentimiento), `segment` (idioma/dominio), `schema_version`.
 
 **Herramientas de entrenamiento disponibles en el sistema:**
 - `agy` v1.1.8 — CLI de Google (cuenta logueada) — puede acceder a Colab/Vertex
-- El usuario menciona el CLI de Google Colab con cuenta logueada
-- Ollama local para servir los mini-expertos resultantes
+- **`colab` CLI oficial (googlecolab/google-colab-cli, Apache-2.0)** — el
+  pipeline CANÓNICO para mini-expertos. Comandos clave:
 
-**Flujo:**
+| Comando | Uso en el pipeline |
+|---------|-------------------|
+| `colab run --gpu T4 train.py` | VM efímera con GPU: provisiona → ejecuta → descarga → destruye (1 comando) |
+| `colab new --gpu L4/H100` | VM persistente para entrenamientos largos |
+| `colab upload LOCAL REMOTE` | Subir el dataset JSONL de Xavier |
+| `colab download REMOTE LOCAL` | Bajar el modelo resultante (GGUF/safetensors) |
+| `colab install -r req.txt` | Instalar deps con uv (ultra-rápido) |
+| `colab auth` | Autenticar GCP (BigQuery/GCS) en la VM |
+| `colab log -o out.jsonl` | Exportar logs de sesión como JSONL |
+| `colab pay` | Gestionar compute units |
+
+- Soporta CPU, GPU (T4, L4, G4, H100, A100) y TPU (v5e1, v6e1).
+- Keep-alive automático evita que la VM idle se termine.
+- El ejemplo oficial "Accelerator Training with Checkpoint Retrieval" es el
+  flujo exacto: provisionar GPU → correr train → recuperar pesos → destruir.
+- Ollama local para servir los mini-expertos resultantes (GGUF).
+
+**Flujo (canónico con colab CLI):**
 ```
-1. Xavier exporta el dataset (TrainingExporter + /v1/training/*)
-2. El CLI de Colab/Vertex toma el dataset JSONL
-3. Entrena un modelo pequeño (LoRA sobre base 1-3B, solo el idioma del usuario)
-4. El modelo resultante (GGUF) se sirve localmente con Ollama/llama.cpp
-5. El mini-experto responde consultas sobre SU segmento — con datos REALES
+1. Xavier exporta el dataset (TrainingExporter → /v1/training/* → JSONL)
+2. colab upload dataset.jsonl xavier-dataset.jsonl
+3. colab run --gpu T4 -- train_lora.py --dataset xavier-dataset.jsonl
+   (el script: carga base 1-3B, LoRA, solo idioma del usuario, guarda GGUF)
+4. colab download /content/model.gguf model.gguf
+5. El modelo GGUF se sirve localmente con Ollama/llama.cpp
+6. El mini-experto responde consultas sobre SU segmento — con datos REALES
 ```
+
+**Nota**: el CLI se instala con `uv tool install colab-cli` (o pip) — ver
+github.com/googlecolab/google-colab-cli. Config en ~/.config/colab-cli/.
+Solo Linux/macOS (soportado en este sistema).
 
 ### 5.4 Mini-expertos on-demand
 

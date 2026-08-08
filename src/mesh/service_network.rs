@@ -28,10 +28,29 @@ pub fn is_safe_telemetry_metric(name: &str) -> bool {
 
     // Explicit blacklist of personal/sensitive keywords
     let unsafe_keywords = [
-        "user", "email", "ip", "address", "name", "password",
-        "secret", "token", "key", "private", "auth", "personal",
-        "credential", "phone", "profile", "account", "billing",
-        "card", "payment", "location", "gps", "lat", "lon"
+        "user",
+        "email",
+        "ip",
+        "address",
+        "name",
+        "password",
+        "secret",
+        "token",
+        "key",
+        "private",
+        "auth",
+        "personal",
+        "credential",
+        "phone",
+        "profile",
+        "account",
+        "billing",
+        "card",
+        "payment",
+        "location",
+        "gps",
+        "lat",
+        "lon",
     ];
 
     for kw in &unsafe_keywords {
@@ -46,10 +65,27 @@ pub fn is_safe_telemetry_metric(name: &str) -> bool {
 
     // Explicit whitelist of safe operational/telemetry prefixes/keywords
     let safe_keywords = [
-        "cpu", "mem", "latency", "temp", "disk", "network",
-        "uptime", "peer", "req", "err", "queue", "bandwidth",
-        "io", "bytes", "packet", "thread", "load", "storage",
-        "fps", "db", "query"
+        "cpu",
+        "mem",
+        "latency",
+        "temp",
+        "disk",
+        "network",
+        "uptime",
+        "peer",
+        "req",
+        "err",
+        "queue",
+        "bandwidth",
+        "io",
+        "bytes",
+        "packet",
+        "thread",
+        "load",
+        "storage",
+        "fps",
+        "db",
+        "query",
     ];
 
     for kw in &safe_keywords {
@@ -172,7 +208,10 @@ mod tests {
         let peers = vec![];
 
         let pubs = publish_telemetry(&collector, &peers);
-        assert!(pubs.is_empty(), "Empty collector should produce no publications");
+        assert!(
+            pubs.is_empty(),
+            "Empty collector should produce no publications"
+        );
     }
 
     #[test]

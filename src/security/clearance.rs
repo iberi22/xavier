@@ -132,26 +132,54 @@ mod tests {
 
     #[test]
     fn test_clearance_from_str() {
-        assert_eq!(ClearanceLevel::from("unclassified"), ClearanceLevel::Unclassified);
+        assert_eq!(
+            ClearanceLevel::from("unclassified"),
+            ClearanceLevel::Unclassified
+        );
         assert_eq!(ClearanceLevel::from("INTERNAL"), ClearanceLevel::Internal);
-        assert_eq!(ClearanceLevel::from("Restricted"), ClearanceLevel::Restricted);
-        assert_eq!(ClearanceLevel::from("confidential"), ClearanceLevel::Confidential);
+        assert_eq!(
+            ClearanceLevel::from("Restricted"),
+            ClearanceLevel::Restricted
+        );
+        assert_eq!(
+            ClearanceLevel::from("confidential"),
+            ClearanceLevel::Confidential
+        );
         assert_eq!(ClearanceLevel::from("SECRET"), ClearanceLevel::Secret);
         assert_eq!(ClearanceLevel::from("topsecret"), ClearanceLevel::TopSecret);
-        assert_eq!(ClearanceLevel::from("TOP_SECRET"), ClearanceLevel::TopSecret);
-        assert_eq!(ClearanceLevel::from("BOGUS"), ClearanceLevel::Unclassified); // Fallback
+        assert_eq!(
+            ClearanceLevel::from("TOP_SECRET"),
+            ClearanceLevel::TopSecret
+        );
+        assert_eq!(ClearanceLevel::from("BOGUS"), ClearanceLevel::Unclassified);
+        // Fallback
     }
 
     #[test]
     fn test_can_access_logic() {
         // Equal clearance can access
-        assert!(can_access(ClearanceLevel::Internal, ClearanceLevel::Internal));
+        assert!(can_access(
+            ClearanceLevel::Internal,
+            ClearanceLevel::Internal
+        ));
         // Higher clearance can access lower clearance
-        assert!(can_access(ClearanceLevel::TopSecret, ClearanceLevel::Secret));
-        assert!(can_access(ClearanceLevel::Secret, ClearanceLevel::Unclassified));
+        assert!(can_access(
+            ClearanceLevel::TopSecret,
+            ClearanceLevel::Secret
+        ));
+        assert!(can_access(
+            ClearanceLevel::Secret,
+            ClearanceLevel::Unclassified
+        ));
         // Lower clearance CANNOT access higher clearance
-        assert!(!can_access(ClearanceLevel::Unclassified, ClearanceLevel::Internal));
-        assert!(!can_access(ClearanceLevel::Confidential, ClearanceLevel::TopSecret));
+        assert!(!can_access(
+            ClearanceLevel::Unclassified,
+            ClearanceLevel::Internal
+        ));
+        assert!(!can_access(
+            ClearanceLevel::Confidential,
+            ClearanceLevel::TopSecret
+        ));
     }
 
     #[test]

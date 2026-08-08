@@ -209,7 +209,6 @@ impl ContextZone {
     }
 }
 
-
 impl MemoryLevel {
     /// As str.
     pub fn as_str(&self) -> &'static str {

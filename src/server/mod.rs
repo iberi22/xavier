@@ -2,6 +2,7 @@
 
 pub mod alerts;
 pub mod events;
+pub mod f12_routes;
 pub mod headless;
 pub mod http;
 pub mod mcp;

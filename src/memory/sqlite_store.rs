@@ -160,7 +160,10 @@ impl SqliteMemoryStore {
             clearance: serde_json::from_str::<serde_json::Value>(&metadata_str)
                 .ok()
                 .and_then(|v| v.get("clearance").cloned())
-                .and_then(|v| v.as_str().map(|s| crate::security::clearance::ClearanceLevel::from(s)))
+                .and_then(|v| {
+                    v.as_str()
+                        .map(|s| crate::security::clearance::ClearanceLevel::from(s))
+                })
                 .unwrap_or_default(),
             revisions: row
                 .get::<_, Option<String>>(14)?

@@ -167,7 +167,9 @@ mod tests {
         let wallet_id = "wallet_1";
         let node = make_test_node("xv1-node1", wallet_id, "Node 1");
 
-        registry.register_wallet_node(node.clone(), wallet_id).unwrap();
+        registry
+            .register_wallet_node(node.clone(), wallet_id)
+            .unwrap();
 
         assert_eq!(registry.all_nodes().len(), 1);
         assert_eq!(registry.all_nodes()[0].name, "Node 1");
@@ -238,7 +240,9 @@ mod tests {
 
         // Update the name of the same node
         let node_updated = make_test_node("xv1-node1", wallet_id, "Node Updated");
-        registry.register_wallet_node(node_updated, wallet_id).unwrap();
+        registry
+            .register_wallet_node(node_updated, wallet_id)
+            .unwrap();
 
         assert_eq!(registry.all_nodes().len(), 1);
         assert_eq!(registry.all_nodes()[0].name, "Node Updated");
