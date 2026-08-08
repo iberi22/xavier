@@ -61,6 +61,7 @@ pub mod pro_gate;
 pub mod protocol;
 pub mod telemetry;
 pub mod telemetry_collector;
+pub mod service_network;
 pub mod tokenomics;
 pub mod transport;
 // Modernized libp2p transport (v0.56) with NAT traversal, reconnection backoff and metrics.
