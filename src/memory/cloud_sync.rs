@@ -580,7 +580,7 @@ mod tests {
             cluster_id: None,
             level: crate::memory::schema::MemoryLevel::Raw,
             relation: None,
-            clearance: crate::memory::schema::ClearanceLevel::Unclassified,
+            clearance: crate::security::clearance::ClearanceLevel::Unclassified,
             revisions: Vec::new(),
             encrypted_dek: None,
             content_iv: None,

@@ -154,16 +154,7 @@ pub enum ContextZone {
     Relational, // Beliefs and knowledge graph relations
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-#[serde(rename_all = "snake_case")]
-#[derive(Default)]
-pub enum ClearanceLevel {
-    Unclassified,
-    Confidential,
-    Secret,
-    #[default]
-    TopSecret,
-}
+pub use crate::security::clearance::ClearanceLevel;
 
 /// Parse zones from prompt.
 pub fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
@@ -218,27 +209,6 @@ impl ContextZone {
     }
 }
 
-impl ClearanceLevel {
-    /// As str.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Unclassified => "unclassified",
-            Self::Confidential => "confidential",
-            Self::Secret => "secret",
-            Self::TopSecret => "top_secret",
-        }
-    }
-
-    /// Parse.
-    pub fn parse(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "unclassified" => Self::Unclassified,
-            "confidential" => Self::Confidential,
-            "secret" => Self::Secret,
-            _ => Self::TopSecret,
-        }
-    }
-}
 
 impl MemoryLevel {
     /// As str.
