@@ -18,7 +18,6 @@ pub mod license;
 pub mod prompt_guard;
 pub mod redaction;
 pub mod recovery;
-pub mod redaction;
 pub mod rsa_keys;
 pub mod scanner;
 pub mod sessions;

@@ -17,12 +17,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::curation::CurationQueue;
+use crate::codebase::snapshot::SnapshotManager;
 use crate::mesh::private_mesh::{PrivateMeshRegistry, WalletNode};
 use crate::mesh::public_directory::PublicDirectory;
-use crate::mesh::public_rag::{search_public, PublicRagQuery, PublicRagResult};
-use crate::mesh::service_network::{is_safe_telemetry_metric, TelemetryPublication};
+use crate::mesh::public_rag::{search_public, PublicRagResult};
+use crate::mesh::service_network::ServiceKind;
 use crate::security::groups::GroupRegistry;
-use crate::security::redaction::{redact, SegmentedDocument};
 
 /// Shared F12 state: data dir paths + in-memory registries (lazy loaded).
 #[derive(Clone)]
@@ -139,8 +139,7 @@ pub struct RegisterWalletNodeRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct RedactRequest {
-    pub document: SegmentedDocument,
-    pub requester_clearance: String,
+    pub text: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,6 +152,12 @@ pub struct SubmitCurationRequest {
 pub struct ApproveCurationRequest {
     pub id: String,
     pub curator: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSnapshotRequest {
+    pub repo: String,
+    pub repo_root: Option<String>,
 }
 
 // ---------- handlers ----------
@@ -286,12 +291,21 @@ pub async fn redact_document(
     State(_state): State<F12State>,
     Json(req): Json<RedactRequest>,
 ) -> impl IntoResponse {
-    let requester = match crate::security::acl::ClearanceLevel::from_str(&req.requester_clearance) {
-        Some(c) => c,
-        None => return (StatusCode::BAD_REQUEST, "invalid clearance level").into_response(),
-    };
-    let redacted = redact(&req.document, requester);
-    Json(redacted).into_response()
+    // Redact PII/sensitive content with the RedactionEngine (regex rules).
+    let engine = crate::security::redaction::RedactionEngine::new(vec![
+        crate::security::redaction::RedactionRule {
+            name: "email".into(),
+            pattern: r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}".into(),
+            mask: "[EMAIL]".into(),
+        },
+        crate::security::redaction::RedactionRule {
+            name: "api-key".into(),
+            pattern: r"(?i)(api[_-]?key|secret|token)\s*[:=]\s*\S+".into(),
+            mask: "$1=[REDACTED]".into(),
+        },
+    ]);
+    let redacted = engine.redact(&req.text);
+    Json(serde_json::json!({ "redacted": redacted })).into_response()
 }
 
 pub async fn submit_curation(
@@ -343,6 +357,64 @@ pub async fn telemetry_metrics() -> impl IntoResponse {
     Json(safe).into_response()
 }
 
+pub async fn list_snapshots(State(state): State<F12State>) -> impl IntoResponse {
+    let manager = SnapshotManager::new(&state.data_dir);
+    match manager.list_snapshots() {
+        Ok(snapshots) => Json(snapshots).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn create_snapshot(
+    State(state): State<F12State>,
+    Json(req): Json<CreateSnapshotRequest>,
+) -> impl IntoResponse {
+    let manager = SnapshotManager::new(&state.data_dir);
+    let repo_root = match &req.repo_root {
+        Some(root) => PathBuf::from(root),
+        None => {
+            let base = state
+                .data_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("proyectosSWAL").join(&req.repo));
+            match base {
+                Some(p) if p.exists() => p,
+                _ => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        "repo_root required (SWAL root not derivable from data_dir)",
+                    )
+                        .into_response();
+                }
+            }
+        }
+    };
+    if !repo_root.exists() {
+        return (
+            StatusCode::NOT_FOUND,
+            format!("repo root not found: {}", repo_root.display()),
+        )
+            .into_response();
+    }
+    match manager.create_snapshot(&repo_root, &req.repo) {
+        Ok(snapshot) => (StatusCode::CREATED, Json(snapshot)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+pub async fn get_snapshot(
+    State(state): State<F12State>,
+    axum::extract::Path(repo): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let manager = SnapshotManager::new(&state.data_dir);
+    match manager.get_snapshot(&repo) {
+        Ok(Some(snapshot)) => Json(snapshot).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "snapshot not found").into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
 // ---------- router ----------
 
 pub fn router(state: F12State) -> Router {
@@ -359,6 +431,9 @@ pub fn router(state: F12State) -> Router {
         .route("/v1/f12/curation/approve", post(approve_curation))
         .route("/v1/f12/curation", get(list_curation))
         .route("/v1/f12/telemetry/metrics", get(telemetry_metrics))
+        .route("/v1/f12/snapshots", get(list_snapshots))
+        .route("/v1/f12/snapshots", post(create_snapshot))
+        .route("/v1/f12/snapshots/{repo}", get(get_snapshot))
         .with_state(state)
 }
 
@@ -452,16 +527,7 @@ mod tests {
     #[tokio::test]
     async fn test_redact_hides_secret_section() {
         let app = router(test_state());
-        let doc = r#"{
-            "document": {
-                "id": "d1",
-                "sections": [
-                    {"id": "s1", "title": "public", "clearance": "public", "content": "hello world"},
-                    {"id": "s2", "title": "secret", "clearance": "top_secret", "content": "classified"}
-                ]
-            },
-            "requester_clearance": "public"
-        }"#;
+        let doc = r#"{"text": "contact bela@swal.io with token=abc123"}"#;
         let resp = app
             .oneshot(
                 Request::builder()
@@ -476,19 +542,8 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let sections = v["sections"].as_array().unwrap();
-        // The public section content is visible; the secret one is redacted.
-        let secret = sections.iter().find(|s| s["title"] == "secret").unwrap();
-        assert!(
-            secret["content"]
-                .as_str()
-                .unwrap_or("")
-                .contains("REDACTED")
-                || !secret["content"]
-                    .as_str()
-                    .unwrap_or("")
-                    .contains("classified")
-        );
+        let redacted = v["redacted"].as_str().unwrap_or("");
+        assert!(redacted.contains("[EMAIL]") || redacted.contains("[REDACTED]"));
     }
 
     #[tokio::test]
@@ -564,17 +619,35 @@ mod tests {
     async fn test_telemetry_metrics_whitelist() {
         let app = router(test_state());
         let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/f12/telemetry/metrics")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/v1/f12/telemetry/metrics").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(v.as_array().unwrap().len() >= 3);
+    }
+
+    #[tokio::test]
+    async fn test_list_snapshots_empty_ok() {
+        let app = router(test_state());
+        let resp = app
+            .oneshot(Request::builder().uri("/v1/f12/snapshots").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(v.as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_snapshot_missing_404() {
+        let app = router(test_state());
+        let resp = app
+            .oneshot(Request::builder().uri("/v1/f12/snapshots/nope").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }
