@@ -100,7 +100,7 @@ pub struct MemoryRecord {
     #[serde(default)]
     pub relation: Option<RelationKind>,
     #[serde(default)]
-    pub clearance: crate::memory::schema::ClearanceLevel,
+    pub clearance: crate::security::clearance::ClearanceLevel,
     #[serde(default)]
     pub revisions: Vec<MemoryRevision>,
     #[serde(default)]
@@ -132,7 +132,7 @@ impl Default for MemoryRecord {
             cluster_id: None,
             level: MemoryLevel::Raw,
             relation: None,
-            clearance: crate::memory::schema::ClearanceLevel::Unclassified,
+            clearance: crate::security::clearance::ClearanceLevel::Unclassified,
             revisions: Vec::new(),
             encrypted_dek: None,
             content_iv: None,
@@ -393,7 +393,7 @@ impl MemoryRecord {
     pub fn is_authorized_for_embedding(
         &self,
         consent_given: bool,
-        max_clearance: crate::memory::schema::ClearanceLevel,
+        max_clearance: crate::security::clearance::ClearanceLevel,
     ) -> bool {
         if !consent_given {
             return false;
