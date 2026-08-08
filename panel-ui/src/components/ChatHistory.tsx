@@ -176,7 +176,14 @@ const ChatMessageItem = memo(function ChatMessageItem({
   );
 });
 
-export default function ChatHistory({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped ChatHistory in React.memo()
+ * 🎯 Why: ChatHistory is a large complex component re-rendering dynamic lists of ChatMessageItem. When the parent App.tsx updates due to typing inputs or hash changes, ChatHistory needlessly re-rendered.
+ * 📊 Impact: O(1) rendering for the ChatHistory container when un-related parent state updates, preventing expensive DOM reconciliation of the message list.
+ */
+export default memo(function ChatHistory({
   messages,
   streamingMessageId,
 }: ChatHistoryProps) {
@@ -223,4 +230,4 @@ export default function ChatHistory({
       `}</style>
     </div>
   );
-}
+});
