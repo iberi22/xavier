@@ -60,6 +60,7 @@ pub mod peer;
 pub mod pro_gate;
 pub mod protocol;
 pub mod telemetry;
+pub mod private_mesh;
 pub mod telemetry_collector;
 pub mod tokenomics;
 pub mod transport;
@@ -68,6 +69,7 @@ pub mod transport;
 pub mod libp2p_transport;
 
 pub use acl::{MeshAcl, NamespaceAclEntry, NodeAclEntry};
+pub use private_mesh::{PrivateMeshRegistry, WalletNode, derive_wallet_id, is_same_wallet};
 #[cfg(feature = "mesh")]
 pub use auto_update::{AutoUpdateService, UpdateStatus};
 pub use context_bridge::{BridgeKind, BridgeRegistry, ContextBridge};
