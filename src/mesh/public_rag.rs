@@ -48,6 +48,10 @@ pub fn resolve_swal_workspace_dir() -> PathBuf {
 /// Filters results to ensure only UNCLASSIFIED (public) contents are returned.
 pub fn search_public(query: &str, repo: Option<&str>, limit: u8) -> Vec<PublicRagResult> {
     let mut results = Vec::new();
+    // Empty query must return no results (matches test contract).
+    if query.trim().is_empty() {
+        return results;
+    }
     let dbs = resolve_public_databases(repo);
     let swal_dir = resolve_swal_workspace_dir();
 

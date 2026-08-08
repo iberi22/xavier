@@ -202,12 +202,24 @@ pub async fn v1_memories_add(
         .user_id
         .clone()
         .unwrap_or_else(|| "default".to_string());
-    path = path
-        .replace("..", "")
-        .replace("/", "")
-        .replace("\\", "")
-        .replace("\0", "");
-    path.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+    // Prevent path traversal (..) while preserving canonical slash-delimited
+    // paths like "features/shelf/feat-p2p-sync" or "sessions/2026-08-08/...".
+    let segments: Vec<String> = path
+        .split('/')
+        .filter(|s| !s.is_empty() && *s != "." && *s != "..")
+        .map(|s| {
+            s.chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect();
+    path = segments.join("/");
     if path.is_empty() {
         path = "default".to_string();
     }
