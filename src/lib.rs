@@ -50,6 +50,7 @@ pub mod scheduler;
 pub mod search;
 pub mod secrets;
 pub mod security;
+pub mod self_manage;
 pub mod server;
 pub mod session;
 pub mod settings;
