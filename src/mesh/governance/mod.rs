@@ -271,7 +271,7 @@ mod tests {
         // Cast 1 downvote (total 5 votes: 4 up, 1 down = 80%)
         dao.cast_vote("CLUSTER_P2P", "voter_4", false, false)
             .await
-                .unwrap();
+            .unwrap();
 
         let prop = dao.active_proposals.get("CLUSTER_P2P").unwrap();
         assert!(prop.is_approved_for_pr); // Reached 80% with 5 votes!

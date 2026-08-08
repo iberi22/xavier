@@ -1080,8 +1080,7 @@ pub async fn v1_context_assemble(
 ) -> impl IntoResponse {
     let task = payload.task.trim();
     if task.is_empty() {
-        return crate::error::ApiError::validation("task is required")
-            .into_ok_response();
+        return crate::error::ApiError::validation("task is required").into_ok_response();
     }
 
     let limit = payload.limit.clamp(1, 20);
@@ -1092,27 +1091,23 @@ pub async fn v1_context_assemble(
         filters.zones = Some(zones);
     }
 
-    let documents = query_with_embedding_filtered(
-        &workspace.workspace.memory,
-        task,
-        limit * 3,
-        Some(&filters),
-    )
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .filter(|doc| is_primary_memory(&doc.metadata))
-    // Prefer canonical SSP paths (features/*, stability/*, decisions)
-    .filter(|doc| {
-        doc.path.starts_with("features/")
-            || doc.path.starts_with("stability/")
-            || doc
-                .metadata
-                .get("kind")
-                .and_then(|v| v.as_str())
-                .is_some_and(|k| k == "decision")
-    })
-    .collect::<Vec<_>>();
+    let documents =
+        query_with_embedding_filtered(&workspace.workspace.memory, task, limit * 3, Some(&filters))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|doc| is_primary_memory(&doc.metadata))
+            // Prefer canonical SSP paths (features/*, stability/*, decisions)
+            .filter(|doc| {
+                doc.path.starts_with("features/")
+                    || doc.path.starts_with("stability/")
+                    || doc
+                        .metadata
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|k| k == "decision")
+            })
+            .collect::<Vec<_>>();
 
     let budget = crate::memory::snippet::SnippetBudget {
         title: 80,
@@ -2256,16 +2251,18 @@ mod tests {
             .expect("snippets should be array");
         assert!(!snippets.is_empty(), "expected at least one SSP snippet");
         assert!(
-            snippets
-                .iter()
-                .any(|s| s["path"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .starts_with("features/")),
+            snippets.iter().any(|s| s["path"]
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("features/")),
             "expected a features/ snippet in context"
         );
         // Context must stay compact (<2KB per AC)
-        assert!(body.len() < 2048, "context/assemble response too large: {}", body.len());
+        assert!(
+            body.len() < 2048,
+            "context/assemble response too large: {}",
+            body.len()
+        );
     }
 
     #[tokio::test]

@@ -15,12 +15,12 @@ use crate::cli::commands::spawn::load_spawn_memory;
 /// Dispatch the `improve` subcommands.
 pub async fn handle_improve_command(ci: bool, cmd: Option<ImproveCommand>) -> Result<()> {
     match cmd {
-        Some(ImproveCommand::Run { autonomous, json, ci: run_ci }) => {
-            run_cycle(autonomous || ci || run_ci, json, ci || run_ci).await
-        }
-        Some(ImproveCommand::Status) => {
-            show_status().await
-        }
+        Some(ImproveCommand::Run {
+            autonomous,
+            json,
+            ci: run_ci,
+        }) => run_cycle(autonomous || ci || run_ci, json, ci || run_ci).await,
+        Some(ImproveCommand::Status) => show_status().await,
         None => {
             // Default to running a cycle in CI mode if ci flag was specified, otherwise run standard cycle.
             let autonomous = ci;
@@ -53,7 +53,11 @@ async fn run_cycle(autonomous: bool, json: bool, ci: bool) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&cycle)?);
         if ci {
             let has_regression_or_critical = cycle.gaps.iter().any(|gap| {
-                gap.metric == "recall_regression" || matches!(gap.severity, xavier::auto_improvement::GapSeverity::Critical)
+                gap.metric == "recall_regression"
+                    || matches!(
+                        gap.severity,
+                        xavier::auto_improvement::GapSeverity::Critical
+                    )
             });
             if has_regression_or_critical {
                 return Err(anyhow::anyhow!(
@@ -127,7 +131,11 @@ async fn run_cycle(autonomous: bool, json: bool, ci: bool) -> Result<()> {
 
     if ci {
         let has_regression_or_critical = cycle.gaps.iter().any(|gap| {
-            gap.metric == "recall_regression" || matches!(gap.severity, xavier::auto_improvement::GapSeverity::Critical)
+            gap.metric == "recall_regression"
+                || matches!(
+                    gap.severity,
+                    xavier::auto_improvement::GapSeverity::Critical
+                )
         });
 
         if has_regression_or_critical {

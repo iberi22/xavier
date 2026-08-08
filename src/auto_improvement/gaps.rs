@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::benchmark::BenchmarkSnapshot;
+use serde::{Deserialize, Serialize};
 
 /// A detected gap that could be improved
 #[derive(Debug, Clone, Serialize, Deserialize)]

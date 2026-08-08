@@ -10,10 +10,10 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::benchmark::{
-    BenchmarkSnapshot, ExternalBenchmarkMetrics, run_external_benchmark, run_search_benchmark,
+    run_external_benchmark, run_search_benchmark, BenchmarkSnapshot, ExternalBenchmarkMetrics,
 };
-use super::experiments::{Experiment, ExperimentStatus, generate_experiments};
-use super::gaps::{Gap, analyze_gaps};
+use super::experiments::{generate_experiments, Experiment, ExperimentStatus};
+use super::gaps::{analyze_gaps, Gap};
 
 /// Full auto-improvement cycle result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -445,7 +445,10 @@ pub fn append_history_entry(path: &Path, entry: &HistoryEntry) -> Result<()> {
 
 /// Merge an iterator of `(key, value)` config overrides into a `RetrievalConfig`,
 /// returning a new config.
-pub fn merge_overrides_into_config<'a, I>(mut config: RetrievalConfig, overrides: I) -> RetrievalConfig
+pub fn merge_overrides_into_config<'a, I>(
+    mut config: RetrievalConfig,
+    overrides: I,
+) -> RetrievalConfig
 where
     I: IntoIterator<Item = (&'a String, &'a String)>,
 {
@@ -465,9 +468,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use crate::auto_improvement::{Gap, GapSeverity};
     use std::collections::HashMap;
-    use crate::auto_improvement::{GapSeverity, Gap};
+    use std::time::Duration;
 
     #[tokio::test]
     async fn test_engine_cycle_no_memory() {

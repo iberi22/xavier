@@ -1,6 +1,6 @@
+use super::gaps::Gap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use super::gaps::Gap;
 
 /// An experiment configuration to try
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,7 +107,7 @@ pub fn config_overrides_for(metric: &str, experiment_name: &str) -> HashMap<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auto_improvement::{GapSeverity, Gap};
+    use crate::auto_improvement::{Gap, GapSeverity};
 
     #[test]
     fn test_generate_experiments_deduplicates() {

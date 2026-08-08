@@ -120,7 +120,8 @@ impl MemoryStore for VecSqliteMemoryStore {
         // updates in place instead of creating duplicates on every stabilize/index run.
         // (SSP-OlaB #1234). The kind string is normalized by resolve_metadata, so the
         // canonical-path prefix is the reliable contract.
-        let canonical_path = record.path.starts_with("stability/") || record.path.starts_with("features/");
+        let canonical_path =
+            record.path.starts_with("stability/") || record.path.starts_with("features/");
         if canonical_path && !record.path.is_empty() {
             let project_id = self.project_id.clone();
             let path_c = record.path.clone();
