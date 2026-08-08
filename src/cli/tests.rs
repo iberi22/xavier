@@ -295,3 +295,27 @@ async fn test_chat_batch_proxy_ordering() {
     assert_eq!(results[1]["id"], "2");
     assert_eq!(results.len(), 2);
 }
+
+#[test]
+fn test_cli_handlers_memory_path_sanitization_pattern() {
+    let raw_paths = vec![
+        "../../../etc/passwd",
+        r"valid/path\\with\0null",
+        "some..path",
+    ];
+
+    for raw in raw_paths {
+        let mut path = raw.to_string();
+        path = path
+            .replace("..", "")
+            .replace("/", "")
+            .replace("\\", "")
+            .replace("\0", "");
+        path.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+
+        assert!(!path.contains(".."));
+        assert!(!path.contains("/"));
+        assert!(!path.contains("\\"));
+        assert!(!path.contains("\0"));
+    }
+}

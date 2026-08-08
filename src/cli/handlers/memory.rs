@@ -316,9 +316,19 @@ pub async fn add_handler(
         .as_deref()
         .unwrap_or(&sec_result.original_input);
 
-    let path = payload
+    let mut path = payload
         .path
         .unwrap_or_else(|| format!("memory/{}", ulid::Ulid::new()));
+    path = path
+        .replace("..", "")
+        .replace("/", "")
+        .replace("\\", "")
+        .replace("\0", "");
+    path.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+    if path.is_empty() {
+        path = format!("memory/{}", ulid::Ulid::new());
+    }
+
     let mut metadata = payload.metadata.unwrap_or(serde_json::json!({}));
 
     let cluster_id = payload.cluster_id.clone();
@@ -514,9 +524,19 @@ pub async fn update_handler(
         .as_deref()
         .unwrap_or(&sec_result.original_input);
 
-    let path = payload
+    let mut path = payload
         .path
         .unwrap_or_else(|| format!("memory/{}", payload.id));
+    path = path
+        .replace("..", "")
+        .replace("/", "")
+        .replace("\\", "")
+        .replace("\0", "");
+    path.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+    if path.is_empty() {
+        path = format!("memory/{}", payload.id);
+    }
+
     let metadata = payload.metadata.unwrap_or(serde_json::json!({}));
 
     let record = MemoryRecord {
