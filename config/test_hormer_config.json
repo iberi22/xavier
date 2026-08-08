@@ -10,21 +10,22 @@
   "workspace": {
     "default_workspace_id": "default",
     "default_plan": "community",
-    "storage_limit_bytes": null,
+    "storage_limit_bytes": 1073741824,
     "request_limit": null,
     "request_unit_limit": null,
     "embedding_provider_mode": "local",
     "managed_google_embeddings": false,
-    "sync_policy": "local_only"
+    "sync_policy": "local_only",
+    "mini_experts": []
   },
   "memory": {
     "backend": "vec",
-    "data_dir": "/home/belal/.local/share/xavier",
-    "embedding_dimensions": 768,
-    "workspace_dir": "/home/belal/.local/share/xavier/workspaces",
-    "file_path": "/home/belal/.local/share/xavier/workspaces/default/memory-store.json",
-    "sqlite_path": "/home/belal/.local/share/xavier/memory-store.sqlite3",
-    "vec_path": "/home/belal/.local/share/xavier/vec-store.sqlite3",
+    "data_dir": "data",
+    "embedding_dimensions": 1536,
+    "workspace_dir": "data/workspaces",
+    "file_path": "data/workspaces/default/memory-store.json",
+    "sqlite_path": "data/memory-store.sqlite3",
+    "vec_path": "data/vec-store.sqlite3",
     "supabase_url": null,
     "supabase_key": null,
     "postgres_url": null,
@@ -58,8 +59,8 @@
     "embedding_model": "embeddinggemma",
     "router_retrieved_model": "",
     "router_complex_model": "",
-    "router_fast_model": "opencode/minimax-m2.7",
-    "router_quality_model": "opencode/deepseek-v4-pro",
+    "router_fast_model": "",
+    "router_quality_model": "",
     "llm_model": null,
     "llm_api_key": null,
     "cloud_llm_model": null,
@@ -68,8 +69,8 @@
     "local_anthropic_url": null,
     "compaction_model": null,
     "zai_api_key": null,
-    "zai_model": "glm-5.1",
-    "opencode_model": "opencode/deepseek-v4-flash",
+    "zai_model": null,
+    "opencode_model": null,
     "local_model_dirs": [],
     "auto_start_last_model": false
   },
@@ -108,9 +109,9 @@
     "timeout_ms": 5000
   },
   "embedding": {
-    "endpoint": "",
-    "embedder": "",
-    "gllm_model": "",
+    "endpoint": "http://localhost:11434/api/embeddings",
+    "embedder": "local",
+    "gllm_model": "embeddinggemma",
     "api_flavor": "openai-compatible",
     "api_key": null,
     "gllm_dimension": null,
@@ -124,13 +125,13 @@
     "allowed_domains": "",
     "token_secret": null,
     "encryption_at_rest_enabled": false,
-    "master_key_name": ""
+    "master_key_name": "xavier_master_key"
   },
   "telegram": {
     "enabled": false,
     "bot_token": null,
     "webhook_url": null,
-    "webhook_port": 0,
+    "webhook_port": 8009,
     "admin_ids": [],
     "notification_chat_id": null
   },
@@ -185,7 +186,7 @@
   },
   "license": {
     "mesh_accepted": false,
-    "license_type": "AGPL-3.0",
+    "license_type": "MIT",
     "commercial_key": null
   }
 }

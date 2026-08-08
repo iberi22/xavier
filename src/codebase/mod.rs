@@ -12,6 +12,7 @@ pub mod codegraph_sidecar;
 pub mod connection_manager;
 pub mod conversations_db;
 pub mod db;
+pub mod snapshot;
 
 /// Validation regex for project_id: only alphanumeric, hyphens, and underscores.
 static PROJECT_ID_RE: LazyLock<Regex> =
