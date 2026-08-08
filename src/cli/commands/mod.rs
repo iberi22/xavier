@@ -292,9 +292,11 @@ impl Cli {
             }
             Command::Improve { ci, cmd } => improve::handle_improve_command(*ci, cmd.clone()).await,
             Command::Regen { cmd } => regen::handle_regen_command(cmd.clone()).await,
-            Command::Cleanup { dry_run, apply, days } => {
-                cleanup::handle_cleanup(*dry_run, *apply, *days).await
-            }
+            Command::Cleanup {
+                dry_run,
+                apply,
+                days,
+            } => cleanup::handle_cleanup(*dry_run, *apply, *days).await,
         }
     }
 }

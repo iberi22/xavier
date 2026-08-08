@@ -23,7 +23,12 @@ pub async fn handle_scan_command(cmd: ScanCommand) -> Result<()> {
             if let Ok(token) = crate::cli::config::require_xavier_token() {
                 let client = crate::cli::commands::enums::CLI_HTTP_CLIENT.clone();
                 let url = format!("{}/v1/system/scan", base_url);
-                if let Ok(resp) = client.get(&url).header("X-Xavier-Token", &token).send().await {
+                if let Ok(resp) = client
+                    .get(&url)
+                    .header("X-Xavier-Token", &token)
+                    .send()
+                    .await
+                {
                     if resp.status().is_success() {
                         if let Ok(res) = resp.json::<SystemScanResult>().await {
                             scan_result = Some(res);
@@ -35,7 +40,9 @@ pub async fn handle_scan_command(cmd: ScanCommand) -> Result<()> {
             let result = match scan_result {
                 Some(res) => res,
                 None => {
-                    println!("⚠️ Server offline or unreachable. Falling back to local offline scan...\n");
+                    println!(
+                        "⚠️ Server offline or unreachable. Falling back to local offline scan...\n"
+                    );
                     scan_system(detailed).await
                 }
             };
@@ -106,9 +113,30 @@ async fn run_security_audit() -> SecurityAuditResult {
     }
 
     let token_keys = vec![
-        ("XAVIER_TOKEN", config_json.as_ref().and_then(|v| v.get("auth_token").or(v.get("token")).and_then(|t| t.as_str()))),
-        ("XAVIER_API_KEY", config_json.as_ref().and_then(|v| v.get("api_key").and_then(|t| t.as_str()))),
-        ("OPENAI_API_KEY", config_json.as_ref().and_then(|v| v.get("models").and_then(|m| m.get("llm_api_key").or(m.get("local_llm_api_key")).and_then(|t| t.as_str())))),
+        (
+            "XAVIER_TOKEN",
+            config_json.as_ref().and_then(|v| {
+                v.get("auth_token")
+                    .or(v.get("token"))
+                    .and_then(|t| t.as_str())
+            }),
+        ),
+        (
+            "XAVIER_API_KEY",
+            config_json
+                .as_ref()
+                .and_then(|v| v.get("api_key").and_then(|t| t.as_str())),
+        ),
+        (
+            "OPENAI_API_KEY",
+            config_json.as_ref().and_then(|v| {
+                v.get("models").and_then(|m| {
+                    m.get("llm_api_key")
+                        .or(m.get("local_llm_api_key"))
+                        .and_then(|t| t.as_str())
+                })
+            }),
+        ),
         ("ANTHROPIC_API_KEY", None),
         ("GROQ_API_KEY", None),
         ("DEEPSEEK_API_KEY", None),
@@ -184,7 +212,10 @@ fn check_path_security(path_str: &str, description: &str) -> PermissionCheck {
                         path: path_str.to_string(),
                         exists: true,
                         status: "INSECURE".to_string(),
-                        details: format!("World-readable credential file: mode {:o} (Risk)", mode & 0o777),
+                        details: format!(
+                            "World-readable credential file: mode {:o} (Risk)",
+                            mode & 0o777
+                        ),
                     }
                 } else if group_readable || group_writable {
                     PermissionCheck {

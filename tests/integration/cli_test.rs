@@ -94,7 +94,10 @@ fn test_cli_scan_system_table() {
 #[test]
 fn test_cli_scan_system_json() {
     let output = run(&["scan", "system", "-f", "json"]);
-    assert!(output.status.success(), "xavier scan system -f json should succeed");
+    assert!(
+        output.status.success(),
+        "xavier scan system -f json should succeed"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json_start = stdout.find('{').expect("JSON start brace not found");
@@ -115,7 +118,10 @@ fn test_cli_scan_system_json() {
 #[test]
 fn test_cli_scan_system_markdown() {
     let output = run(&["scan", "system", "-f", "markdown"]);
-    assert!(output.status.success(), "xavier scan system -f markdown should succeed");
+    assert!(
+        output.status.success(),
+        "xavier scan system -f markdown should succeed"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -127,7 +133,10 @@ fn test_cli_scan_system_markdown() {
 #[test]
 fn test_cli_scan_security_table() {
     let output = run(&["scan", "security"]);
-    assert!(output.status.success(), "xavier scan security should succeed");
+    assert!(
+        output.status.success(),
+        "xavier scan security should succeed"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -139,7 +148,10 @@ fn test_cli_scan_security_table() {
 #[test]
 fn test_cli_scan_security_json() {
     let output = run(&["scan", "security", "-f", "json"]);
-    assert!(output.status.success(), "xavier scan security -f json should succeed");
+    assert!(
+        output.status.success(),
+        "xavier scan security -f json should succeed"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json_start = stdout.find('{').expect("JSON start brace not found");
@@ -162,7 +174,10 @@ fn test_cli_scan_security_json() {
 #[test]
 fn test_cli_maturity_scan_positional() {
     let output = run(&["maturity", "scan", ".", "-j"]);
-    assert!(output.status.success(), "xavier maturity scan . -j should succeed");
+    assert!(
+        output.status.success(),
+        "xavier maturity scan . -j should succeed"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json_start = stdout.find('{').expect("JSON start brace not found");

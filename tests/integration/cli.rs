@@ -408,8 +408,10 @@ fn test_cli_cleanup_flow() {
 
     // We can initialize a valid sqlite db file
     let conn = rusqlite::Connection::open(&legacy_store).unwrap();
-    conn.execute_batch("CREATE TABLE IF NOT EXISTS mock_table (id INTEGER PRIMARY KEY);").unwrap();
-    conn.execute("INSERT INTO mock_table DEFAULT VALUES;", []).unwrap();
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS mock_table (id INTEGER PRIMARY KEY);")
+        .unwrap();
+    conn.execute("INSERT INTO mock_table DEFAULT VALUES;", [])
+        .unwrap();
     drop(conn);
 
     // 1. Run xavier cleanup (dry-run)
@@ -423,9 +425,18 @@ fn test_cli_cleanup_flow() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Verify it reports empty databases and legacy store
-    assert!(stdout.contains("test-empty1.db"), "stdout should list test-empty1.db");
-    assert!(stdout.contains("test-empty2.db"), "stdout should list test-empty2.db");
-    assert!(stdout.contains("memory-store.sqlite3"), "stdout should list memory-store.sqlite3");
+    assert!(
+        stdout.contains("test-empty1.db"),
+        "stdout should list test-empty1.db"
+    );
+    assert!(
+        stdout.contains("test-empty2.db"),
+        "stdout should list test-empty2.db"
+    );
+    assert!(
+        stdout.contains("memory-store.sqlite3"),
+        "stdout should list memory-store.sqlite3"
+    );
     assert!(stdout.contains("active.db"), "stdout should list active.db");
 
     // Ensure files still exist (dry-run)
@@ -441,7 +452,10 @@ fn test_cli_cleanup_flow() {
         .env("XAVIER_DATA_DIR", legacy_dir.to_str().unwrap());
 
     let output = cmd.output().expect("failed to run xavier cleanup");
-    assert!(output.status.success(), "xavier cleanup --apply should succeed");
+    assert!(
+        output.status.success(),
+        "xavier cleanup --apply should succeed"
+    );
 
     // Ensure empty databases are deleted
     assert!(!empty_db1.exists(), "empty_db1 should be deleted");
