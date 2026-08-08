@@ -899,6 +899,227 @@
         "US-031",
         "US-032"
       ]
+    },
+    {
+      "id": "feat-clearance-levels",
+      "name": "Clasificación por niveles de sensibilidad",
+      "category": "security",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Documentos clasificados como gobierno: UNCLASSIFIED/INTERNAL/RESTRICTED/CONFIDENTIAL/SECRET/TOPSECRET con redacción por segmento",
+      "steps": [
+        "Definir enum ClearanceLevel (0-5)",
+        "Añadir clearance a MemoryRecord y DatasetMetadata",
+        "Middleware de lectura que redacta según clearance del solicitante",
+        "Soporte de secciones REDACTED dentro de un documento",
+        "Auditoría de accesos por clearance"
+      ],
+      "passes": false,
+      "verified_by": "orquestador-hermes",
+      "github_issue": "",
+      "last_tested": "2026-08-08",
+      "notes": "Visión F12-PRESERVACION-MINI-EXPERTOS.md §3",
+      "implemented_in": "",
+      "tests": 0,
+      "req_ids": [
+        "REQ-CLEAR-01"
+      ],
+      "user_stories": [
+        "US-CLEAR-01"
+      ]
+    },
+    {
+      "id": "feat-groups-permissions",
+      "name": "Grupos de información con permisos rigurosos",
+      "category": "security",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Grupos de información con ACL rigurosa (leer/escribir/auditar) y enforcement sin bypass",
+      "steps": [
+        "Modelo de grupos (core-xavier-dev, nodos-servicio, familia)",
+        "ACL por grupo con roles read/write/audit",
+        "Enforcement en TODAS las lecturas del servidor",
+        "Registro de auditoría de accesos",
+        "Tests de bypass (intentos no autorizados)"
+      ],
+      "passes": false,
+      "verified_by": "orquestador-hermes",
+      "github_issue": "",
+      "last_tested": "2026-08-08",
+      "notes": "Visión F12-PRESERVACION-MINI-EXPERTOS.md §4",
+      "implemented_in": "",
+      "tests": 0,
+      "req_ids": [
+        "REQ-GRP-01"
+      ],
+      "user_stories": [
+        "US-GRP-01"
+      ]
+    },
+    {
+      "id": "feat-training-datasets-api",
+      "name": "API de datasets para entrenamiento",
+      "category": "data",
+      "status": "planned",
+      "progress_pct": 10,
+      "description": "Endpoints /v1/training/* para servir datasets de entrenamiento (train/eval splits con consentimiento)",
+      "steps": [
+        "Exponer TrainingExporter existente vía REST",
+        "GET /v1/training/datasets + /datasets/{id}",
+        "GET /datasets/{id}/train + /eval (JSONL)",
+        "POST /v1/training/bundles (generar bundle con seed)",
+        "Metadata: clearance, consent, segment, idioma"
+      ],
+      "passes": false,
+      "verified_by": "orquestador-hermes",
+      "github_issue": "",
+      "last_tested": "2026-08-08",
+      "notes": "TrainingExporter YA existe (src/data_commons/training.rs) — falta exponerlo",
+      "implemented_in": "src/data_commons/training.rs",
+      "tests": 0,
+      "req_ids": [
+        "REQ-TRN-01"
+      ],
+      "user_stories": [
+        "US-TRN-01"
+      ]
+    },
+    {
+      "id": "feat-mini-experts",
+      "name": "Mini-expertos personales on-demand",
+      "category": "ai",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Modelos pequeños (1-3B) entrenados con datos propios del usuario, solo su idioma, servidos localmente con Ollama",
+      "steps": [
+        "Exportar dataset vía /v1/training/*",
+        "Pipeline de entrenamiento con Colab/Vertex (agy)",
+        "Conversión a GGUF + servir con Ollama/llama.cpp",
+        "Registro de mini-expertos con metadata (segmento, idioma, clearance)",
+        "Router de xavier incluye mini-expertos locales"
+      ],
+      "passes": false,
+      "verified_by": "orquestador-hermes",
+      "github_issue": "",
+      "last_tested": "2026-08-08",
+      "notes": "agy v1.1.8 disponible con cuenta Google; ProviderRouter ya soporta endpoints locales",
+      "implemented_in": "",
+      "tests": 0,
+      "req_ids": [
+        "REQ-ME-01"
+      ],
+      "user_stories": [
+        "US-ME-01"
+      ]
+    },
+    {
+      "id": "feat-mesh-service-network",
+      "name": "Red de servicio SWAL (telemetría interna)",
+      "category": "mesh",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Compartir benchmarks, logs, feedbacks y telemetría de funcionamiento entre nodos de servicio para mejorar Xavier — sin datos personales",
+      "steps": [
+        "Clasificar telemetría como INTERNAL",
+        "Publicar telemetría en la red de servicio",
+        "Consumo: nodos de servicio mejoran Xavier con datos reales",
+        "Exclusión garantizada de datos personales"
+      ],
+      "passes": false,
+      "verified_by": "orquestador-hermes",
+      "github_issue": "",
+      "last_tested": "2026-08-08",
+      "notes": "Capa 2 de la visión — red interna de trabajo",
+      "implemented_in": "",
+      "tests": 0,
+      "req_ids": [
+        "REQ-SVC-01"
+      ],
+      "user_stories": [
+        "US-SVC-01"
+      ]
+    },
+    {
+      "id": "feat-mesh-private-wallet",
+      "name": "Mesh privada por billetera de claves",
+      "category": "mesh",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos — terceros no los ven",
+      "steps": [
+        "Registro de nodos por billetera (Clavis)",
+        "Descubrimiento privado (solo misma billetera)",
+        "Sync de memoria + snapshots + modelos entre dispositivos",
+        "Cifrado de sesión entre nodos privados",
+        "Tests: nodo de otra billetera NO ve la mesh"
+      ],
+      "passes": false,
+      "verified_by": "orquestador-hermes",
+      "github_issue": "",
+      "last_tested": "2026-08-08",
+      "notes": "Parte de F9 v2 (F9-MESH-SWAL-PUBLICO-PRIVADO.md)",
+      "implemented_in": "",
+      "tests": 0,
+      "req_ids": [
+        "REQ-PW-01"
+      ],
+      "user_stories": [
+        "US-PW-01"
+      ]
+    },
+    {
+      "id": "feat-content-redaction",
+      "name": "Censura por partes (documentos redactados)",
+      "category": "security",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Documentos con secciones REDACTED: el servidor sirve versión censurada según clearance del solicitante",
+      "steps": [
+        "Formato de documento segmentado (secciones con nivel)",
+        "Motor de redacción por segmento",
+        "Servir versión redactada vs completa según clearance",
+        "Tests de redacción (sección secreta oculta a nivel bajo)"
+      ],
+      "passes": false,
+      "verified_by": "orquestador-hermes",
+      "github_issue": "",
+      "last_tested": "2026-08-08",
+      "notes": "Como documentos clasificados del gobierno — Visión §3",
+      "implemented_in": "",
+      "tests": 0,
+      "req_ids": [
+        "REQ-RED-01"
+      ],
+      "user_stories": [
+        "US-RED-01"
+      ]
+    },
+    {
+      "id": "feat-human-curation",
+      "name": "Curaduría humana de información",
+      "category": "governance",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Los humanos son curadores: revisan, aprueban, clasifican la información que Xavier preserva",
+      "steps": [
+        "UI/API para revisar información pendiente de clasificación",
+        "Flujo de aprobación humana (curar = clasificar + validar)",
+        "Historial de curaduría (quién clasificó qué, cuándo)",
+        "Los modelos personales se entrenan SOLO con info curada"
+      ],
+      "passes": false,
+      "verified_by": "orquestador-hermes",
+      "github_issue": "",
+      "last_tested": "2026-08-08",
+      "notes": "Misión: el futuro se construye con info real regenerada, no generada",
+      "implemented_in": "",
+      "tests": 0,
+      "req_ids": [
+        "REQ-CUR-01"
+      ],
+      "user_stories": [
+        "US-CUR-01"
+      ]
     }
   ],
   "verification_commands": {
