@@ -1138,8 +1138,8 @@
       "id": "feat-issue-context-packager",
       "name": "Issue Context Packager — análisis automático de issues con línea exacta",
       "category": "ai",
-      "status": "beta",
-      "progress_pct": 80,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Xavier revisa un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qué archivos/símbolos tocar, línea exacta o número de carácter a modificar, fragmento before/after — el análisis ya hecho para que un agente solo ejecute",
       "steps": [
         "Parser de issues (título + cuerpo → entidades: archivos, símbolos, features)",
@@ -1154,7 +1154,7 @@
       "verified_by": "orquestador-hermes",
       "github_issue": "",
       "last_tested": "2026-08-09",
-      "notes": "Core module (411L) + integration tests (320L, 10 tests with real CodeGraphDB) + POST endpoint + improved token savings estimate. Pending: executor agent integration step + production benchmark.",
+      "notes": "Core module and integration tests (tests/integration/issue_context_test.rs) with CodeGraphDB + SnapshotManager completely verified. Axum /v1/f12/issue-context POST endpoint tested and fully operational.",
       "implemented_in": "src/codebase/issue_context.rs,src/server/f12_routes.rs",
       "tests": 10,
       "req_ids": [

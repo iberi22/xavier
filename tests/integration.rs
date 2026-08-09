@@ -28,6 +28,8 @@ mod governance_integration_test;
 mod hierarchical_curation_test;
 #[path = "integration/http_api.rs"]
 mod http_api;
+#[path = "integration/issue_context_test.rs"]
+mod issue_context_test;
 #[path = "integration/internal_benchmark_test.rs"]
 mod internal_benchmark_test;
 #[path = "integration/memory_test.rs"]

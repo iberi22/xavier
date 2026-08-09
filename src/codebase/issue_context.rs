@@ -131,8 +131,8 @@ pub fn parse_issue_entities(title: &str, body: &str) -> Vec<ExtractedEntity> {
 pub fn map_entities_to_codegraph(
     entities: &[ExtractedEntity],
     code_graph_db: &CodeGraphDB,
-    snapshot_manager: &SnapshotManager,
-    repo: &str,
+    _snapshot_manager: &SnapshotManager,
+    _repo: &str,
     repo_root: &Path,
 ) -> Result<Vec<MappedEntity>> {
     let mut mapped = Vec::new();
