@@ -634,6 +634,7 @@ export default function GraphView({
               <button
                 onClick={() => setSelectedNode(null)}
                 className="p-2 text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full"
+                aria-label="Close details"
               >
                 <X className="w-4 h-4" />
               </button>
