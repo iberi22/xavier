@@ -298,11 +298,14 @@ pub fn assemble_package(
         })
         .collect();
 
-    // Estimate token savings: each PreciseChange saves ~500 tokens vs full file
+    // Estimate token savings: count actual lines in before_snippet vs full file
     let token_savings = if changes.is_empty() {
         None
     } else {
-        Some(changes.len() as f64 * 500.0)
+        let total_before_lines: usize = changes.iter().map(|c| c.before_snippet.lines().count()).sum();
+        let avg_file_lines = 200.0; // typical Rust file ~200 lines
+        let saved_tokens = (avg_file_lines - total_before_lines as f64).max(0.0) * 1.3; // ~1.3 tokens/line
+        Some(saved_tokens)
     };
 
     Ok(IssueContextPackage {
@@ -393,18 +396,8 @@ mod tests {
     }
 
     #[test]
-    fn test_assemble_package_empty_body() {
-        let result = assemble_package(
-            "123",
-            "Test issue",
-            "test/repo",
-            "",
-            // These would need real DB instances in integration tests
-            // For unit test, we just verify the parsing works
-            &parse_issue_entities("Test issue", ""),
-        );
-        // We can't call assemble_package with real DBs in unit tests,
-        // but we can test parse_issue_entities
+    fn test_parse_issue_entities_empty_body() {
+        // assemble_package requires real DB instances — test parse_issue_entities directly
         let entities = parse_issue_entities("Test issue", "");
         assert!(entities.is_empty());
     }

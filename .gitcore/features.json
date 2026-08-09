@@ -1017,7 +1017,7 @@
       "last_tested": "2026-08-08",
       "notes": "agy v1.1.8 disponible con cuenta Google; ProviderRouter ya soporta endpoints locales",
       "implemented_in": "",
-      "tests": 0,
+      "tests": 7,
       "req_ids": [
         "REQ-023"
       ],
@@ -1044,7 +1044,7 @@
       "last_tested": "2026-08-08",
       "notes": "Capa 2 de la visión — red interna de trabajo",
       "implemented_in": "",
-      "tests": 0,
+      "tests": 4,
       "req_ids": [
         "REQ-024"
       ],
@@ -1072,7 +1072,7 @@
       "last_tested": "2026-08-08",
       "notes": "Parte de F9 v2 (F9-MESH-SWAL-PUBLICO-PRIVADO.md)",
       "implemented_in": "",
-      "tests": 0,
+      "tests": 4,
       "req_ids": [
         "REQ-025"
       ],
@@ -1099,7 +1099,7 @@
       "last_tested": "2026-08-08",
       "notes": "Como documentos clasificados del gobierno — Visión §3",
       "implemented_in": "",
-      "tests": 0,
+      "tests": 5,
       "req_ids": [
         "REQ-026"
       ],
@@ -1126,7 +1126,7 @@
       "last_tested": "2026-08-08",
       "notes": "Misión: el futuro se construye con info real regenerada, no generada",
       "implemented_in": "",
-      "tests": 0,
+      "tests": 8,
       "req_ids": [
         "REQ-027"
       ],
