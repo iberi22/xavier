@@ -31,6 +31,7 @@ pub mod system_scan;
 pub mod system_scan_cli;
 pub mod tasks;
 pub mod tokens;
+pub mod training;
 pub mod usage;
 pub mod verify;
 pub mod workspace;
@@ -38,6 +39,7 @@ pub mod workspace_db;
 
 pub use agent::*;
 pub use agent_cli::*;
+pub use training::*;
 pub use auth::*;
 pub use code::*;
 pub use memory::*;
