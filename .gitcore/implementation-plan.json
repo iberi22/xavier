@@ -33,7 +33,10 @@
         }
       ],
       "depends_on": [],
-      "closes": ["REQ-028", "US-041"]
+      "closes": [
+        "REQ-028",
+        "US-041"
+      ]
     },
     {
       "wave": "W14",
@@ -61,8 +64,13 @@
           "tests": "script e2e: ambos nodos se descubren, handshake ok, health muestra peers"
         }
       ],
-      "depends_on": ["W13"],
-      "closes": ["#1254", "REQ-024"]
+      "depends_on": [
+        "W13"
+      ],
+      "closes": [
+        "#1254",
+        "REQ-024"
+      ]
     },
     {
       "wave": "W15",
@@ -83,8 +91,13 @@
           "tests": "invoke real contra el modelo GGUF servido (≥2 queries)"
         }
       ],
-      "depends_on": ["W14"],
-      "closes": ["REQ-023", "US-036"]
+      "depends_on": [
+        "W14"
+      ],
+      "closes": [
+        "REQ-023",
+        "US-036"
+      ]
     },
     {
       "wave": "W16",
@@ -105,8 +118,42 @@
           "tests": "goal_verifiable completo"
         }
       ],
-      "depends_on": ["W15"],
-      "closes": ["goal v0.15.0"]
+      "depends_on": [
+        "W15"
+      ],
+      "closes": [
+        "goal v0.15.0"
+      ]
+    },
+    {
+      "wave": "W17",
+      "name": "Compilación/checks delegados a Jules (GPU local en uso)",
+      "issues": [
+        {
+          "id": "JULES-01",
+          "title": "Fix OpenRouter provider + build release vía Jules",
+          "feature": "feat-model-provider",
+          "scope": "cambios ya aplicados localmente en src/agents/provider/config.rs (openrouter_cloud_from_env, DEFAULT_OPENROUTER_MODEL) y router.rs (ProviderKind::OpenRouter). Jules debe: cargo check --workspace 0 errores, arreglar errores restantes del worktree (issue_context.rs ya corregido: file_path/start_line/end_line), cargo build --release",
+          "tests": "cargo check 0 errores · cargo test -p xavier --lib 0 failed · health /v1/health llm.status=healthy con provider openrouter",
+          "context": "GPU local en uso — NO ejecutar cargo en la máquina de BELA. Todo build/check via Jules sandbox. Key OpenRouter en .env (XAVIER_OPENROUTER_API_KEY). Modelo gratuito default: nvidia/nemotron-3-super-120b-a12b:free, fallback deepseek/deepseek-v4-flash"
+        },
+        {
+          "id": "JULES-02",
+          "title": "Compilar synapse-trading release + walk-forward MeanReversion vía Jules",
+          "feature": "synapse-trading",
+          "scope": "repo ~/proyectosSWAL/synapse-trading: compilar release (PKG_CONFIG_PATH openssl nix, env -u CARGO_TARGET_DIR), validar walk-forward de MeanReversion (backtest walkforward --strategy MeanReversion --symbols ETHUSDT --is 60 --oos 14 --step 14 --total-days 120)",
+          "tests": "cargo build --release --bin synapse_trader OK · walkforward MeanReversion genera trades OOS con WR>=50% PF>=1.3 (o veredicto honesto)",
+          "context": "Nueva estrategia simulate_mean_reversion ya implementada en backend/src/backtest.rs (z-score/Bollinger, parametros bb_period/z_entry/z_exit). El fix de range por estrategia ya aplicado en walk_forward.rs. Ver skill synapse-trading-runtime"
+        },
+        {
+          "id": "JULES-03",
+          "title": "Verify-pipeline + suite completa en CI de Jules",
+          "feature": "all",
+          "scope": "bash .gitcore/scripts/verify-pipeline.sh → N/N PASS · cargo test -p xavier --lib → 0 failed · resumen de features stable",
+          "tests": "verify-pipeline N/N PASS · 0 failed",
+          "context": "No tocar hardware local. Solo sandbox Jules."
+        }
+      ]
     }
   ]
 }

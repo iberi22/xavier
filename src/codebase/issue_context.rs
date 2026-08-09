@@ -146,9 +146,9 @@ pub fn map_entities_to_codegraph(
                             entity: entity.clone(),
                             found: true,
                             symbol_name: Some(sym.name.clone()),
-                            file: Some(sym.path.clone()),
-                            start_line: Some(sym.line_start as u32),
-                            end_line: Some(sym.line_end as u32),
+                            file: Some(sym.file_path.clone()),
+                            start_line: Some(sym.start_line),
+                            end_line: Some(sym.end_line),
                         });
                     } else {
                         mapped.push(MappedEntity {
