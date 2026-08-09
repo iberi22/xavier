@@ -1,6 +1,6 @@
 {
   "protocol": "3.8.0",
-  "_comment": "Feature tracking \u2014 product 1.0 MVP 100% stable (Ola 6). Phase-2 mesh R&D on #115.",
+  "_comment": "Feature tracking — product 1.0 MVP 100% stable (Ola 6). Phase-2 mesh R&D on #115.",
   "metadata": {
     "project": "Xavier",
     "version": "0.13.0",
@@ -13,7 +13,7 @@
     "features_planned": 0,
     "features_stable": 35,
     "overall_progress_pct": 100.0,
-    "reconciliation_notes": "2026-08-08 v0.13.0: +8 features F12 (clearance, grupos, training, mini-experts, mesh servicio, mesh privada, redacci\u00f3n, curadur\u00eda) + snapshot manager + routers HTTP. 1472 tests passing."
+    "reconciliation_notes": "2026-08-08 v0.13.0: +8 features F12 (clearance, grupos, training, mini-experts, mesh servicio, mesh privada, redacción, curaduría) + snapshot manager + routers HTTP. 1472 tests passing."
   },
   "features": {
     "feat-unified-storage": {
@@ -279,7 +279,7 @@
       "category": "documentation",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Source Code Reference (SRC) \u2014 comprehensive documentation per GitCore protocol",
+      "description": "Source Code Reference (SRC) — comprehensive documentation per GitCore protocol",
       "steps": [
         "Document directory structure",
         "Document core modules (a2a, agents, memory, server, tasks)",
@@ -444,11 +444,11 @@
       "category": "enterprise",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Bicameral governance system \u2014 50% node operators + 50% Xavier Core Council \u2014 with weighted voting, veto, XIP lifecycle, and on-chain integration",
+      "description": "Bicameral governance system — 50% node operators + 50% Xavier Core Council — with weighted voting, veto, XIP lifecycle, and on-chain integration",
       "steps": [
         "Bicameral DAO design (users + council)",
         "Weighted voting by reputation + activity",
-        "XIP lifecycle (proposal \u2192 discussion \u2192 vote \u2192 execution)",
+        "XIP lifecycle (proposal → discussion → vote → execution)",
         "Veto mechanism (66% council for security)",
         "Community overrule (75% override veto)",
         "On-chain integration (Solana/Ethereum)",
@@ -511,7 +511,7 @@
       "category": "enterprise",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Closed-loop auto-improvement: benchmark \u2192 gap analysis \u2192 generate experiment \u2192 validate \u2192 merge \u2192 re-measure",
+      "description": "Closed-loop auto-improvement: benchmark → gap analysis → generate experiment → validate → merge → re-measure",
       "steps": [
         "Benchmark runner",
         "Gap analysis",
@@ -613,8 +613,8 @@
       "description": "Scans clawd/agents/ directories for OpenClaw agent memory files (MEMORY.md, SOUL.md, USER.md, daily logs)",
       "steps": [
         "Implement OpenClawAgentScanner struct",
-        "scan_all_agents() \u2014 recursive directory scan",
-        "scan_agent(name) \u2014 single agent scan",
+        "scan_all_agents() — recursive directory scan",
+        "scan_agent(name) — single agent scan",
         "Detect MEMORY.md, TOOLS.md, SOUL.md, USER.md, daily logs",
         "Integration with OpenClawAgentIndexer for embedding",
         "Wire into CloudMemorySync for Supabase push"
@@ -672,12 +672,12 @@
       "category": "local-first",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradaci\u00f3n elegante a memoria cuando ning\u00fan provider responde.",
+      "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
       "steps": [
-        "Ola 1 estabilizacion \u2014 DONE",
-        "Ola 2 fallback chain + local provider \u2014 DONE",
-        "Ola 3 observabilidad + panel LLM + UsageCounters \u2014 DONE",
-        "Ola 4 headless memory-fallback + Ollama hot-swap API/UI + metrics UI + docs \u2014 DONE"
+        "Ola 1 estabilizacion — DONE",
+        "Ola 2 fallback chain + local provider — DONE",
+        "Ola 3 observabilidad + panel LLM + UsageCounters — DONE",
+        "Ola 4 headless memory-fallback + Ollama hot-swap API/UI + metrics UI + docs — DONE"
       ],
       "passes": true,
       "verified_by": "integration-tests",
@@ -828,7 +828,7 @@
     },
     "feat-codegraph-maturity-bridge": {
       "id": "feat-codegraph-maturity-bridge",
-      "name": "Codegraph \u2192 Maturity/Docs Bridge",
+      "name": "Codegraph → Maturity/Docs Bridge",
       "category": "infra",
       "status": "stable",
       "progress_pct": 100,
@@ -836,7 +836,7 @@
       "steps": [
         "Shared codegraph path helper",
         "Soft auto-dump after CLI and HTTP scan/index",
-        "Maturity SQLite \u2192 JSON \u2192 grep chain",
+        "Maturity SQLite → JSON → grep chain",
         "Chronicle auto-docs/harvest path alignment",
         "Unit/smoke tests + docs + features.json reconcile"
       ],
@@ -868,7 +868,7 @@
         "F1 mesh challenge + namespace + ACL bridge + Pro heartbeat (100%)",
         "F2 Polygon ABI + live-prepared + dao-evm broadcast + deploy script (100% shippable; Amoy live tx = ops runbook)",
         "F3 hybrid Ed25519+ML-DSA packs + ML-KEM eval ADR (100%)",
-        "F4 research ADR + fuzzy-extractor spike + go/no-go medido (70%, non-blocking; NO-GO hot-path d\u00eda 1, watch-list)"
+        "F4 research ADR + fuzzy-extractor spike + go/no-go medido (70%, non-blocking; NO-GO hot-path día 1, watch-list)"
       ],
       "passes": true,
       "verified_by": "unit+e2e",
@@ -902,23 +902,23 @@
     },
     "feat-clearance-levels": {
       "id": "feat-clearance-levels",
-      "name": "Clasificaci\u00f3n por niveles de sensibilidad",
+      "name": "Clasificación por niveles de sensibilidad",
       "category": "security",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Documentos clasificados como gobierno: UNCLASSIFIED/INTERNAL/RESTRICTED/CONFIDENTIAL/SECRET/TOPSECRET con redacci\u00f3n por segmento",
+      "description": "Documentos clasificados como gobierno: UNCLASSIFIED/INTERNAL/RESTRICTED/CONFIDENTIAL/SECRET/TOPSECRET con redacción por segmento",
       "steps": [
         "Definir enum ClearanceLevel (0-5)",
-        "A\u00f1adir clearance a MemoryRecord y DatasetMetadata",
-        "Middleware de lectura que redacta seg\u00fan clearance del solicitante",
+        "Añadir clearance a MemoryRecord y DatasetMetadata",
+        "Middleware de lectura que redacta según clearance del solicitante",
         "Soporte de secciones REDACTED dentro de un documento",
-        "Auditor\u00eda de accesos por clearance"
+        "Auditoría de accesos por clearance"
       ],
       "passes": true,
       "verified_by": "orquestador-hermes",
       "github_issue": "",
       "last_tested": "2026-08-08",
-      "notes": "ClearanceLevel enum (5 levels), ClearanceManager with role\u2192level mapping, document access checks. Tests: 4/4 passing.",
+      "notes": "ClearanceLevel enum (5 levels), ClearanceManager with role→level mapping, document access checks. Tests: 4/4 passing.",
       "implemented_in": "src/security/acl/mod.rs",
       "tests": [
         "security::acl::clearance_tests::test_clearance_ordering",
@@ -935,16 +935,16 @@
     },
     "feat-groups-permissions": {
       "id": "feat-groups-permissions",
-      "name": "Grupos de informaci\u00f3n con permisos rigurosos",
+      "name": "Grupos de información con permisos rigurosos",
       "category": "security",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Grupos de informaci\u00f3n con ACL rigurosa (leer/escribir/auditar) y enforcement sin bypass",
+      "description": "Grupos de información con ACL rigurosa (leer/escribir/auditar) y enforcement sin bypass",
       "steps": [
         "Modelo de grupos (core-xavier-dev, nodos-servicio, familia)",
         "ACL por grupo con roles read/write/audit",
         "Enforcement en TODAS las lecturas del servidor",
-        "Registro de auditor\u00eda de accesos",
+        "Registro de auditoría de accesos",
         "Tests de bypass (intentos no autorizados)"
       ],
       "passes": true,
@@ -973,7 +973,7 @@
       "progress_pct": 100,
       "description": "Endpoints /v1/training/* para servir datasets de entrenamiento (train/eval splits con consentimiento)",
       "steps": [
-        "Exponer TrainingExporter existente v\u00eda REST",
+        "Exponer TrainingExporter existente vía REST",
         "GET /v1/training/datasets + /datasets/{id}",
         "GET /datasets/{id}/train + /eval (JSONL)",
         "POST /v1/training/bundles (generar bundle con seed)",
@@ -1003,11 +1003,11 @@
       "category": "ai",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Modelos peque\u00f1os (1-3B) entrenados con datos propios del usuario, solo su idioma, servidos localmente con Ollama",
+      "description": "Modelos pequeños (1-3B) entrenados con datos propios del usuario, solo su idioma, servidos localmente con Ollama",
       "steps": [
-        "Exportar dataset v\u00eda /v1/training/*",
+        "Exportar dataset vía /v1/training/*",
         "Pipeline de entrenamiento con Colab/Vertex (agy)",
-        "Conversi\u00f3n a GGUF + servir con Ollama/llama.cpp",
+        "Conversión a GGUF + servir con Ollama/llama.cpp",
         "Registro de mini-expertos con metadata (segmento, idioma, clearance)",
         "Router de xavier incluye mini-expertos locales"
       ],
@@ -1027,22 +1027,22 @@
     },
     "feat-mesh-service-network": {
       "id": "feat-mesh-service-network",
-      "name": "Red de servicio SWAL (telemetr\u00eda interna)",
+      "name": "Red de servicio SWAL (telemetría interna)",
       "category": "mesh",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Compartir benchmarks, logs, feedbacks y telemetr\u00eda de funcionamiento entre nodos de servicio para mejorar Xavier \u2014 sin datos personales",
+      "description": "Compartir benchmarks, logs, feedbacks y telemetría de funcionamiento entre nodos de servicio para mejorar Xavier — sin datos personales",
       "steps": [
-        "Clasificar telemetr\u00eda como INTERNAL",
-        "Publicar telemetr\u00eda en la red de servicio",
+        "Clasificar telemetría como INTERNAL",
+        "Publicar telemetría en la red de servicio",
         "Consumo: nodos de servicio mejoran Xavier con datos reales",
-        "Exclusi\u00f3n garantizada de datos personales"
+        "Exclusión garantizada de datos personales"
       ],
       "passes": false,
       "verified_by": "orquestador-hermes",
       "github_issue": "",
       "last_tested": "2026-08-08",
-      "notes": "Capa 2 de la visi\u00f3n \u2014 red interna de trabajo",
+      "notes": "Capa 2 de la visión — red interna de trabajo",
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
@@ -1058,12 +1058,12 @@
       "category": "mesh",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos \u2014 terceros no los ven",
+      "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos — terceros no los ven",
       "steps": [
         "Registro de nodos por billetera (Clavis)",
         "Descubrimiento privado (solo misma billetera)",
         "Sync de memoria + snapshots + modelos entre dispositivos",
-        "Cifrado de sesi\u00f3n entre nodos privados",
+        "Cifrado de sesión entre nodos privados",
         "Tests: nodo de otra billetera NO ve la mesh"
       ],
       "passes": false,
@@ -1086,18 +1086,18 @@
       "category": "security",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Documentos con secciones REDACTED: el servidor sirve versi\u00f3n censurada seg\u00fan clearance del solicitante",
+      "description": "Documentos con secciones REDACTED: el servidor sirve versión censurada según clearance del solicitante",
       "steps": [
         "Formato de documento segmentado (secciones con nivel)",
-        "Motor de redacci\u00f3n por segmento",
-        "Servir versi\u00f3n redactada vs completa seg\u00fan clearance",
-        "Tests de redacci\u00f3n (secci\u00f3n secreta oculta a nivel bajo)"
+        "Motor de redacción por segmento",
+        "Servir versión redactada vs completa según clearance",
+        "Tests de redacción (sección secreta oculta a nivel bajo)"
       ],
       "passes": false,
       "verified_by": "orquestador-hermes",
       "github_issue": "",
       "last_tested": "2026-08-08",
-      "notes": "Como documentos clasificados del gobierno \u2014 Visi\u00f3n \u00a73",
+      "notes": "Como documentos clasificados del gobierno — Visión §3",
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
@@ -1109,22 +1109,22 @@
     },
     "feat-human-curation": {
       "id": "feat-human-curation",
-      "name": "Curadur\u00eda humana de informaci\u00f3n",
+      "name": "Curaduría humana de información",
       "category": "governance",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Los humanos son curadores: revisan, aprueban, clasifican la informaci\u00f3n que Xavier preserva",
+      "description": "Los humanos son curadores: revisan, aprueban, clasifican la información que Xavier preserva",
       "steps": [
-        "UI/API para revisar informaci\u00f3n pendiente de clasificaci\u00f3n",
-        "Flujo de aprobaci\u00f3n humana (curar = clasificar + validar)",
-        "Historial de curadur\u00eda (qui\u00e9n clasific\u00f3 qu\u00e9, cu\u00e1ndo)",
+        "UI/API para revisar información pendiente de clasificación",
+        "Flujo de aprobación humana (curar = clasificar + validar)",
+        "Historial de curaduría (quién clasificó qué, cuándo)",
         "Los modelos personales se entrenan SOLO con info curada"
       ],
       "passes": false,
       "verified_by": "orquestador-hermes",
       "github_issue": "",
       "last_tested": "2026-08-08",
-      "notes": "Misi\u00f3n: el futuro se construye con info real regenerada, no generada",
+      "notes": "Misión: el futuro se construye con info real regenerada, no generada",
       "implemented_in": "",
       "tests": 0,
       "req_ids": [
@@ -1136,27 +1136,27 @@
     },
     "feat-issue-context-packager": {
       "id": "feat-issue-context-packager",
-      "name": "Issue Context Packager \u2014 an\u00e1lisis autom\u00e1tico de issues con l\u00ednea exacta",
+      "name": "Issue Context Packager — análisis automático de issues con línea exacta",
       "category": "ai",
       "status": "beta",
-      "progress_pct": 60,
-      "description": "Xavier revisa un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qu\u00e9 archivos/s\u00edmbolos tocar, l\u00ednea exacta o n\u00famero de car\u00e1cter a modificar, fragmento before/after \u2014 el an\u00e1lisis ya hecho para que un agente solo ejecute",
+      "progress_pct": 80,
+      "description": "Xavier revisa un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qué archivos/símbolos tocar, línea exacta o número de carácter a modificar, fragmento before/after — el análisis ya hecho para que un agente solo ejecute",
       "steps": [
-        "Parser de issues (t\u00edtulo + cuerpo \u2192 entidades: archivos, s\u00edmbolos, features)",
-        "Mapper issue\u2192CodeGraph: find_by_name + search para localizar s\u00edmbolos",
-        "Generador de paquete: PreciseChange por s\u00edmbolo (file, l\u00ednea, before/after)",
+        "Parser de issues (título + cuerpo → entidades: archivos, símbolos, features)",
+        "Mapper issue→CodeGraph: find_by_name + search para localizar símbolos",
+        "Generador de paquete: PreciseChange por símbolo (file, línea, before/after)",
         "Ensamblador: IssueContextPackage { issue_id, changes: [PreciseChange], deps, tests_a_fijar }",
-        "Endpoint POST /v1/f12/issue-context (issue body \u2192 paquete JSON)",
-        "Integraci\u00f3n: el agente ejecutor recibe el paquete y aplica los deltas",
-        "M\u00e9trica de ahorro: tokens sin paquete vs con paquete (benchmark)"
+        "Endpoint POST /v1/f12/issue-context (issue body → paquete JSON)",
+        "Integración: el agente ejecutor recibe el paquete y aplica los deltas",
+        "Métrica de ahorro: tokens sin paquete vs con paquete (benchmark)"
       ],
       "passes": true,
       "verified_by": "orquestador-hermes",
       "github_issue": "",
-      "last_tested": "2026-08-08",
-      "notes": "Core module implemented: parse_issue_entities + map_entities_to_codegraph + generate_changes + assemble_package + POST endpoint. Pending: integration tests with real CodeGraph DB, token savings benchmark.",
+      "last_tested": "2026-08-09",
+      "notes": "Core module (411L) + integration tests (320L, 10 tests with real CodeGraphDB) + POST endpoint + improved token savings estimate. Pending: executor agent integration step + production benchmark.",
       "implemented_in": "src/codebase/issue_context.rs,src/server/f12_routes.rs",
-      "tests": 4,
+      "tests": 10,
       "req_ids": [
         "REQ-028"
       ],
