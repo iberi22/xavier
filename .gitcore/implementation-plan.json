@@ -154,6 +154,68 @@
           "context": "No tocar hardware local. Solo sandbox Jules."
         }
       ]
+    },
+    {
+      "wave": "W18",
+      "name": "Puesta a punto funcional de Xavier — LLM, ICP, mesh, mini-experts, release",
+      "issues": [
+        {
+          "id": "XAV-01",
+          "title": "Activar OpenRouter como LLM provider + health healthy",
+          "feature": "feat-model-provider",
+          "scope": "Provider openrouter YA implementado (config.rs openrouter_cloud_from_env, router.rs ProviderKind::OpenRouter, commit 9f5a9d0f). Pendiente: set XAVIER_MODEL_PROVIDER=openrouter en .env, rebuild, deploy a .new + restart aprobado, verificar /v1/health llm.status=healthy con modelo nvidia/nemotron-3-super-120b-a12b:free (fallback deepseek/deepseek-v4-flash)",
+          "tests": "curl /v1/health → llm.status=healthy · chat de prueba responde (POST /v1/llm/chat o equivalente)",
+          "context": "Xavier en local-degraded — LLM es la única pieza rota. Ollama no instalado (solo modelos en ~/.ollama). OpenRouter key en .env (XAVIER_OPENROUTER_API_KEY)."
+        },
+        {
+          "id": "XAV-02",
+          "title": "Cerrar feat-issue-context-packager 60%→100% (ICP-03 + tests)",
+          "feature": "feat-issue-context-packager",
+          "scope": "ICP-03 benchmark: scripts/bench/issue_context_tokens.py mide tokens con/sin paquete sobre 5 issues reales (meta ≥50% ahorro). tests/integration/issue_context_test.rs (ya creado, sin commitear) → verificar + pasar. Reconciliar features.json a 100% stable",
+          "tests": "bench ≥50% ahorro · cargo test issue_context 0 failed · features.json stable",
+          "context": "Módulo core issue_context.rs (260 LOC + 4 tests unitarios) y endpoint POST /v1/f12/issue-context ya commiteados (854c676c). Fix E0609 aplicado (sym.file_path/start_line/end_line)."
+        },
+        {
+          "id": "XAV-03",
+          "title": "mesh-service-network + content-redaction (issues #1241, #1242 — 0%)",
+          "feature": "feat-mesh-network",
+          "scope": "src/mesh/service_network.rs y src/security/redaction.rs tienen cambios sin commitear (worktree M). Implementar features a 100%: service-network registra/descubre servicios mesh, content-redaction redacta secretos en respuestas. Cerrar issues #1241 y #1242",
+          "tests": "cargo test -p xavier --lib redaction + service_network 0 failed · verify endpoints /v1/security/* y /v1/mesh/*",
+          "context": "tests/security_redact.rs modificado en worktree — 23 cambios de redaction ya iniciados."
+        },
+        {
+          "id": "XAV-04",
+          "title": "Edge-hive build estable + registro en directorio (NODO-01/02)",
+          "feature": "feat-mesh-network",
+          "scope": "issue #1254 edge-hive: fix shared-protocol build script + .gitcore/features.json con 20+ features reales · NODO-02: edge-hive-core register_with_public_directory(node_id, capabilities, iroh_addr) → POST /v1/f12/directory/nodes",
+          "tests": "cargo check --workspace 0 errores en edge-hive · curl POST /v1/f12/directory/nodes registra nodo",
+          "context": "PR ghost #1268 cerrado (0 files). W14 pendiente."
+        },
+        {
+          "id": "XAV-05",
+          "title": "Mini-experto real: pipeline Colab + invocación sin mock (ME-01/02)",
+          "feature": "feat-mini-experts",
+          "scope": "ME-01: exportar dataset real vía /v1/training/bundles · colab upload + colab run --gpu T4 (train_lora_colab.py) · colab download GGUF · ME-02: conectar MiniExpertRegistry con ProviderKind::Local + POST /v1/agents/mini-experts/invoke real (sin mock)",
+          "tests": "GGUF responde localmente vía Ollama · invoke real devuelve respuesta no-mock",
+          "context": "feat-mini-experts 100% código pero pipeline Colab sin probar (issue #1240). ProviderRouter (provider_router.rs) modificado en worktree."
+        },
+        {
+          "id": "XAV-06",
+          "title": "Snapshot manager + estabilización worktree (issue #1253)",
+          "feature": "feat-context-regeneration",
+          "scope": "src/codebase/snapshot.rs tiene cambios sin commitear (PreciseChange/snapshot manager) · commit del worktree completo (11 archivos M + issue_context_test.rs nuevo) · verificar snapshot manager con issue #1253",
+          "tests": "cargo test -p xavier --lib 0 failed con worktree commiteado",
+          "context": "Commit 7da896f2 ya resolvió merges previos; snapshot.rs quedó M."
+        },
+        {
+          "id": "XAV-07",
+          "title": "Release v0.15.0: rebuild + runtime F12 + verify + tag (REL-01/02)",
+          "feature": "all",
+          "scope": "REL-01: cargo build --release · cp binario NUEVO · restart aprobado · smoke test /v1/f12/*, /v1/training/*, /v1/context/assemble · REL-02: cargo test --lib 0 failed · verify-pipeline 38/38 · features.json reconciliado · CHANGELOG v0.15.0 · tag SOLO si goal_verifiable completo (ICP real, mesh peers≥1, mini-experto GGUF, verify 38/38)",
+          "tests": "verify-pipeline N/N PASS · 0 failed · endpoints responden en runtime",
+          "context": "El tag v0.15.0 se aplica SOLO con los 5 criterios del goal_verifiable (PLANNING.md)."
+        }
+      ]
     }
   ]
 }

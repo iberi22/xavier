@@ -26,6 +26,7 @@
 | **W15** | Mini-experto real (Colab) | ME-01..02 | GGUF entrenado con datos propios responde localmente |
 | **W16** | Estabilización final + release | REL-01..02 | Runtime real + tag v0.15.0 |
 | **W17** | Compilación/checks delegados a Jules (GPU local en uso) | JULES-01..03 | Todo cargo build/check/test corre en sandbox Jules — cero ejecución local |
+| **W18** | Puesta a punto funcional — LLM, ICP, mesh, mini-experts, release | XAV-01..07 | Xavier de local-degraded → healthy + v0.15.0: OpenRouter activo, ICP 100%, mesh-service-network, edge-hive, mini-experto GGUF, snapshot manager, release |
 
 ## Estado por feature
 
