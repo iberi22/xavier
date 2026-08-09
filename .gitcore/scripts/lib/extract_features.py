@@ -1,5 +1,5 @@
-import json, sys
-sys.path.insert(0, "/home/belal/proyectosSWAL/xavier/.gitcore/scripts/lib")
+import json, sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from load_lenient import load_lenient
 d = load_lenient(sys.argv[1])
 features_raw = d["features"]
@@ -10,4 +10,6 @@ for f in items:
     us = ",".join(f.get("user_stories", []))
     impl = f.get("implemented_in", "") or ""
     tests = ",".join(f.get("tests", [])) if isinstance(f.get("tests"), list) else str(f.get("tests", ""))
-    print(f'{f["id"]}|{f.get("progress_pct",0)}|{reqs}|{us}|{impl}|{tests}')
+    passes = str(f.get("passes", True)).lower()
+    status = f.get("status", "")
+    print(f'{f["id"]}|{f.get("progress_pct",0)}|{reqs}|{us}|{impl}|{tests}|{passes}|{status}')
