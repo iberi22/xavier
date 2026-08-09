@@ -232,6 +232,9 @@ impl Cli {
             Command::Agent { cmd } => {
                 crate::cli::handlers::agent_cli::handle_agent_command(cmd.clone()).await
             }
+            Command::Training { cmd } => {
+                crate::cli::handlers::training::handle_training_command(cmd.clone()).await
+            }
             Command::Plugin { cmd } => match cmd {
                 PluginCommand::Install { name } => {
                     crate::cli::handlers::plugins::install_plugin(name.clone()).await
