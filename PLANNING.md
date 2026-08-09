@@ -25,6 +25,7 @@
 | **W14** | Nodo SWAL real + mesh 2 nodos | NODO-01..02, MESH-01 | edge-hive compila y se conecta; 2 xaviers conversan |
 | **W15** | Mini-experto real (Colab) | ME-01..02 | GGUF entrenado con datos propios responde localmente |
 | **W16** | Estabilización final + release | REL-01..02 | Runtime real + tag v0.15.0 |
+| **W17** | Compilación/checks delegados a Jules (GPU local en uso) | JULES-01..03 | Todo cargo build/check/test corre en sandbox Jules — cero ejecución local |
 
 ## Estado por feature
 

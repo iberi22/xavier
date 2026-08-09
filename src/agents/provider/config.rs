@@ -26,6 +26,10 @@ pub(crate) const DEFAULT_DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com/v1"
 pub(crate) const DEFAULT_MINIMAX_BASE_URL: &str = "https://api.minimax.chat/v1";
 pub(crate) const DEFAULT_GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
 pub(crate) const DEFAULT_ZAI_BASE_URL: &str = "https://api.z.ai/v1";
+pub(crate) const DEFAULT_OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
+// Modelo gratuito por defecto — nemotron-3-super-120b (ctx 262k, gratis en OpenRouter).
+// Cambiar via XAVIER_OPENROUTER_MODEL (ej: google/gemma-4-31b-it:free, deepseek/deepseek-v4-flash).
+pub(crate) const DEFAULT_OPENROUTER_MODEL: &str = "nvidia/nemotron-3-super-120b-a12b:free";
 
 /// Configuration for model provider key leasing.
 #[derive(Debug, Clone)]
@@ -89,6 +93,7 @@ impl ModelProviderConfig {
             "groq" => Self::groq_cloud_from_env(),
             "z.ai" | "zai" => Self::zai_cloud_from_env(),
             "opencode" => Self::opencode_from_env(),
+            "openrouter" => Self::openrouter_cloud_from_env(),
             _ => Self::local_from_env(),
         }
     }
@@ -497,6 +502,30 @@ impl ModelProviderConfig {
             api_key,
             base_url: None,
             target: ProviderTarget::OpenCodeCLI,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
+        }
+    }
+
+    /// OpenRouter cloud from env — modelos gratuitos (:free) + fallback.
+    pub(crate) fn openrouter_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        Self {
+            provider_mode: ProviderMode::Cloud,
+            api_flavor: ApiFlavor::OpenAICompatible,
+            provider_label: "openrouter".to_string(),
+            model: std::env::var("XAVIER_OPENROUTER_MODEL")
+                .or_else(|_| std::env::var("OPENROUTER_MODEL"))
+                .ok()
+                .or_else(|| settings.models.llm_model.clone())
+                .unwrap_or_else(|| DEFAULT_OPENROUTER_MODEL.to_string()),
+            api_key: std::env::var("XAVIER_OPENROUTER_API_KEY")
+                .ok()
+                .or_else(|| settings.models.llm_api_key.clone())
+                .or_else(|| HardwareVault::new("xavier").get_secret("OPENROUTER_API_KEY").ok()),
+            base_url: Some(DEFAULT_OPENROUTER_BASE_URL.to_string()),
+            target: ProviderTarget::GenericOpenAICompatible,
             lease_config: None,
             secret_injection_strategy: None,
             lease_token: None,
