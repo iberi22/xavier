@@ -15,10 +15,13 @@
 # non-zero = at least one gap). Meant to be run by agents AND humans before
 # closing waves, and wired into CI when Actions are re-enabled.
 #
-# Usage:
-#   bash .gitcore/scripts/verify-pipeline.sh            # fast: paths + SRS + stories
-#   bash .gitcore/scripts/verify-pipeline.sh --check    # + cargo check
-#   bash .gitcore/scripts/verify-pipeline.sh --test     # + cargo test -p xavier
+# Usage (Recommended Default):
+#   bash .gitcore/scripts/verify-pipeline.sh --strict   # full CI gate: fast checks + cargo check & test
+#
+# Alternative Usages:
+#   bash .gitcore/scripts/verify-pipeline.sh            # fast: paths + SRS + stories only
+#   bash .gitcore/scripts/verify-pipeline.sh --check    # fast checks + cargo check
+#   bash .gitcore/scripts/verify-pipeline.sh --test     # fast checks + cargo test -p xavier --lib
 #   bash .gitcore/scripts/verify-pipeline.sh --json     # machine-readable report
 # =============================================================================
 set -uo pipefail
@@ -29,12 +32,13 @@ SRS_MD="$ROOT/docs/SRS/REQUIREMENTS.md"
 STORIES_MD="$ROOT/docs/SRS/USER-STORIES.md"
 PYTHON="${PYTHON:-python3}"
 
-DO_CHECK=0; DO_TEST=0; DO_JSON=0
+DO_CHECK=0; DO_TEST=0; DO_JSON=0; DO_STRICT=0
 for arg in "$@"; do
   case "$arg" in
-    --check) DO_CHECK=1 ;;
-    --test)  DO_TEST=1 ;;
-    --json)  DO_JSON=1 ;;
+    --check)  DO_CHECK=1 ;;
+    --test)   DO_TEST=1 ;;
+    --json)   DO_JSON=1 ;;
+    --strict) DO_STRICT=1; DO_CHECK=1; DO_TEST=1 ;;
     *) echo "Unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -73,12 +77,12 @@ PYEOF
 fi
 
 # ---------------------------------------------------------------------------
-# Extraction: emit one line per feature: id|pct|req_ids|user_stories|implemented_in|tests
+# Extraction: emit one line per feature: id|pct|req_ids|user_stories|implemented_in|tests|passes|status
 # ---------------------------------------------------------------------------
 EXTRACT_PY="$ROOT/.gitcore/scripts/lib/extract_features.py"
 cat > "$EXTRACT_PY" <<PYEOF
-import json, sys
-sys.path.insert(0, "$ROOT/.gitcore/scripts/lib")
+import json, sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from load_lenient import load_lenient
 d = load_lenient(sys.argv[1])
 features_raw = d["features"]
@@ -89,17 +93,33 @@ for f in items:
     us = ",".join(f.get("user_stories", []))
     impl = f.get("implemented_in", "") or ""
     tests = ",".join(f.get("tests", [])) if isinstance(f.get("tests"), list) else str(f.get("tests", ""))
-    print(f'{f["id"]}|{f.get("progress_pct",0)}|{reqs}|{us}|{impl}|{tests}')
+    passes = str(f.get("passes", True)).lower()
+    status = f.get("status", "")
+    print(f'{f["id"]}|{f.get("progress_pct",0)}|{reqs}|{us}|{impl}|{tests}|{passes}|{status}')
 PYEOF
 
 declare -a FAILED=()
 TOTAL=0; PASS=0; FAIL=0
+REAL_COMPLETE_COUNT=0
 
 # Per-feature verification using the feature-verify.ps1 convention
 # (SRS_LINKS / EVIDENCE_PATHS) but shell-native.
-while IFS='|' read -r fid pct reqs us impl tests; do
+while IFS='|' read -r fid pct reqs us impl tests passes status; do
   TOTAL=$((TOTAL+1))
   problems=""
+
+  # Gate passes/status check (Sección A)
+  if [ "$passes" = "false" ]; then
+    problems="${problems}PASSES_FALSE "
+  fi
+  if { [ "$status" = "planned" ] || [ "$status" = "draft" ]; } && { [ "$pct" -eq 100 ] || [ "$passes" = "true" ]; }; then
+    problems="${problems}PLANNED_OR_DRAFT_COMPLETE_CONTRADICTION "
+  fi
+
+  # Track real complete stable features
+  if [ "$status" = "stable" ] && [ "$passes" = "true" ]; then
+    REAL_COMPLETE_COUNT=$((REAL_COMPLETE_COUNT+1))
+  fi
 
   # 1. implemented_in paths exist (file OR directory, with brace expansion)
   #    e.g. "src/mesh/{challenge,namespace,pro_gate}.rs" expands to 3 files
@@ -176,13 +196,35 @@ while IFS='|' read -r fid pct reqs us impl tests; do
 done < <("$PYTHON" "$EXTRACT_PY" "$FEATURES_JSON")
 
 # ---------------------------------------------------------------------------
+# Metadata discrepancy check (Sección D)
+# ---------------------------------------------------------------------------
+META_COMPLETE="$("$PYTHON" - "$FEATURES_JSON" <<PYEOF
+import json, sys
+sys.path.insert(0, "$ROOT/.gitcore/scripts/lib")
+from load_lenient import load_lenient
+d = load_lenient(sys.argv[1])
+print(d["metadata"].get("features_complete", 0))
+PYEOF
+)"
+
+if [ "$META_COMPLETE" -ne "$REAL_COMPLETE_COUNT" ]; then
+  FAIL=$((FAIL+1))
+  FAILED+=("metadata_discrepancy: features_complete ($META_COMPLETE) != real stable+passes features ($REAL_COMPLETE_COUNT)")
+fi
+
+# ---------------------------------------------------------------------------
 # 5. cargo check (optional)
 # ---------------------------------------------------------------------------
 CHECK_STATUS="skipped"
 if [ "$DO_CHECK" -eq 1 ]; then
   echo ""
   echo "── cargo check -p xavier ────────────────────────────────"
-  if (cd "$ROOT" && CARGO_TARGET_DIR=/build/rust-target/xavier-check cargo check -p xavier 2>&1 | tail -3); then
+  # Determine CARGO_TARGET_DIR with fallback
+  CTX_TARGET_DIR="/build/rust-target/xavier-check"
+  if [ ! -w "/build" ] 2>/dev/null; then
+    CTX_TARGET_DIR="/tmp/cargo-xavier"
+  fi
+  if (cd "$ROOT" && CARGO_TARGET_DIR="$CTX_TARGET_DIR" cargo check -p xavier 2>&1 | tail -3); then
     CHECK_STATUS="ok"
   else
     CHECK_STATUS="FAILED"
@@ -196,7 +238,12 @@ TEST_STATUS="skipped"
 if [ "$DO_TEST" -eq 1 ]; then
   echo ""
   echo "── cargo test -p xavier --lib ───────────────────────────"
-  if (cd "$ROOT" && CARGO_TARGET_DIR=/build/rust-target/xavier-check cargo test -p xavier --lib 2>&1 | tail -5); then
+  # Determine CARGO_TARGET_DIR with fallback
+  CTX_TARGET_DIR="/build/rust-target/xavier-check"
+  if [ ! -w "/build" ] 2>/dev/null; then
+    CTX_TARGET_DIR="/tmp/cargo-xavier"
+  fi
+  if (cd "$ROOT" && CARGO_TARGET_DIR="$CTX_TARGET_DIR" cargo test -p xavier --lib 2>&1 | tail -5); then
     TEST_STATUS="ok"
   else
     TEST_STATUS="FAILED"
@@ -223,28 +270,59 @@ d = load_lenient(sys.argv[1])
 print(d["metadata"].get("overall_progress_pct", "null"))
 PYEOF
 )"
-  "$PYTHON" - "$FAILED_JSON" "$CHECK_STATUS" "$TEST_STATUS" "$OVERALL_PCT" <<'PYEOF'
+  "$PYTHON" - "$FAILED_JSON" "$CHECK_STATUS" "$TEST_STATUS" "$OVERALL_PCT" "$TOTAL" "$DO_STRICT" <<'PYEOF'
 import json, sys
 failed = json.loads(sys.argv[1])
+cargo_check = sys.argv[2]
+cargo_test = sys.argv[3]
+total = int(sys.argv[5])
+is_strict = sys.argv[6] == "1"
+
+# Determine verdict
+if is_strict and (cargo_check != "ok" or cargo_test != "ok"):
+    verdict = "INCOMPLETE"
+elif len(failed) > 0:
+    verdict = "FAIL"
+else:
+    verdict = "PASS"
+
 print(json.dumps({
   'project': 'xavier',
   'generated_at': __import__('datetime').date.today().isoformat(),
-  'total': 27, 'pass': 27 - len(failed), 'fail': len(failed),
+  'verdict': verdict,
+  'total': total, 'pass': total - len(failed), 'fail': len(failed),
   'overall_progress_pct': json.loads(sys.argv[4]),
   'failed': failed,
-  'cargo_check': sys.argv[2],
-  'cargo_test': sys.argv[3]
+  'cargo_check': cargo_check,
+  'cargo_test': cargo_test
 }, indent=2))
 PYEOF
+
+  # Handle exit codes in JSON mode
+  if [ "$DO_STRICT" -eq 1 ] && { [ "$CHECK_STATUS" != "ok" ] || [ "$TEST_STATUS" != "ok" ]; }; then
+    exit 2
+  elif [ ${#FAILED[@]} -gt 0 ]; then
+    exit 1
+  fi
 else
   echo ""
   echo "══════════════════════════════════════════════════════════"
-  echo " Pipeline result: $PASS/$TOTAL features verified   (FAIL=$FAIL)"
-  echo " cargo check: $CHECK_STATUS   cargo test: $TEST_STATUS"
-  echo "══════════════════════════════════════════════════════════"
-  if [ ${#FAILED[@]} -gt 0 ]; then
-    printf '%s\n' "${FAILED[@]}" | sed 's/^/  ❌ /'
-    exit 1
+  if [ "$DO_STRICT" -eq 1 ] && { [ "$CHECK_STATUS" != "ok" ] || [ "$TEST_STATUS" != "ok" ]; }; then
+    echo " Pipeline result: INCOMPLETE (cargo check/test failed or skipped)"
+    echo " cargo check: $CHECK_STATUS   cargo test: $TEST_STATUS"
+    echo "══════════════════════════════════════════════════════════"
+    if [ ${#FAILED[@]} -gt 0 ]; then
+      printf '%s\n' "${FAILED[@]}" | sed 's/^/  ❌ /'
+    fi
+    exit 2
+  else
+    echo " Pipeline result: $PASS/$TOTAL features verified   (FAIL=$FAIL)"
+    echo " cargo check: $CHECK_STATUS   cargo test: $TEST_STATUS"
+    echo "══════════════════════════════════════════════════════════"
+    if [ ${#FAILED[@]} -gt 0 ]; then
+      printf '%s\n' "${FAILED[@]}" | sed 's/^/  ❌ /'
+      exit 1
+    fi
   fi
 fi
 exit 0
