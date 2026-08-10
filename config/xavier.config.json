@@ -44,10 +44,10 @@
     }
   },
   "models": {
-    "provider": "local",
-    "api_flavor": "openai-compatible",
-    "local_llm_url": "http://localhost:11434/v1",
-    "local_llm_model": "qwen3-coder",
+   "provider": "openrouter",
+   "api_flavor": "openai-compatible",
+   "local_llm_url": "http://localhost:11434/v1",
+   "local_llm_model": "qwen3-coder",
     "embedding_url": "http://localhost:11434/v1",
     "embedding_model": "embeddinggemma",
     "router_retrieved_model": "",
