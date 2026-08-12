@@ -34,3 +34,6 @@
 ## 2026-08-08 - [React.memo boundary for ChatHistory container]
  **Learning:** Large components rendering iterative child lists (like `ChatHistory` rendering `ChatMessageItem`) will still re-render when a high-frequency parent state changes (like typing inputs in `App.tsx`), even if the individual list items are memoized.
  **Action:** Always wrap top-level dynamic list containers in `React.memo()` to prevent O(1) container re-renders and expensive DOM tree traversal when the container props haven't changed.
+## $(date +%Y-%m-%d) - [Wrap GraphView in React.memo()]
+**Learning:** ForceGraph2D components are computationally expensive to render and should be wrapped in React.memo() when embedded inside complex container components like ConfigModal. Without it, parent state changes (like input typing or tab switching) trigger expensive layout recalculations.
+**Action:** Always verify that complex canvas components are wrapped in React.memo() to prevent unnecessary N+1 recalculations when parent states change.

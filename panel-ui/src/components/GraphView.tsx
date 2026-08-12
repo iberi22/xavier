@@ -31,7 +31,15 @@ interface GraphViewProps {
   isFullGraphEmpty?: boolean;
 }
 
-export default function GraphView({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped GraphView in React.memo()
+ * 🎯 Why: ForceGraph2D is computationally expensive to render. When rendering GraphView in ConfigModal,
+ *          parent state updates caused unnecessary re-renders of the entire graph subtree.
+ * 📊 Impact: Prevents expensive N+1 canvas recalculations when modal tabs or other config states change.
+ */
+export default React.memo(function GraphView({
   data,
   onUpdateData,
   isFullGraphEmpty = false,
@@ -775,4 +783,4 @@ export default function GraphView({
       </AnimatePresence>
     </motion.div>
   );
-}
+});
