@@ -35,6 +35,10 @@
  **Learning:** Large components rendering iterative child lists (like `ChatHistory` rendering `ChatMessageItem`) will still re-render when a high-frequency parent state changes (like typing inputs in `App.tsx`), even if the individual list items are memoized.
  **Action:** Always wrap top-level dynamic list containers in `React.memo()` to prevent O(1) container re-renders and expensive DOM tree traversal when the container props haven't changed.
 
+## 2026-08-12 - Ensure Proper Parent Memoization Callback Implementation
+**Learning:** Implementing React performance optimizations using `useCallback` and `React.memo` requires strict adherence to project boundaries. When tasked with modifying *only* a specific file (e.g. `App.tsx`) to implement `useCallback`, attempting to eagerly wrap child components located in *other* files with `React.memo()` violates constraints and can cause module resolution/runtime errors (like missing React imports in new environments).
+**Action:** Always strictly respect negative file constraints (e.g., "only App.tsx"). Implement `useCallback` in the parent as requested; if the children need `React.memo`, propose it as a separate optimization step or verify it does not break import invariants, but never bypass explicit "Limits: <file> only" instructions.
+
 ## 2026-08-13 - Memoization of GraphView components
 **Learning:** `ForceGraph2D` is computationally expensive to render. When rendering heavy wrapper components like `GraphView` in modals (e.g. `ConfigModal`), parent state updates (like tab switching) cause unnecessary re-renders of the entire graph subtree, leading to lag and layout thrashing.
 **Action:** Always wrap components returning `ForceGraph2D` like `GraphView` in `React.memo()` to establish a render boundary. This prevents expensive N+1 canvas recalculations during higher-level parent state changes.
