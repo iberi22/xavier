@@ -1,7 +1,7 @@
 # Xavier — Fast Vector Memory & Communal Context Runtime for AI Agents
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.13.0-brightgreen.svg)](https://github.com/iberi22/xavier)
+[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](https://github.com/iberi22/xavier)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](https://github.com/iberi22/xavier/actions)
 
