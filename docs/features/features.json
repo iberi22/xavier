@@ -717,7 +717,12 @@
       "github_issue": 496,
       "last_tested": "2026-08-04",
       "notes": "Progressive disclosure memory retrieval, saving up to 90% of model context tokens.",
-      "implemented_in": "src/server/mcp/tools_memory.rs, src/context/token_estimate.rs, src/memory/episodic.rs, docs/TOKEN_SAVINGS_ANALYSIS.md",
+      "implemented_in": [
+        "src/server/mcp/tools_memory.rs",
+        "src/context/token_estimate.rs",
+        "src/memory/episodic.rs",
+        "docs/archive/TOKEN_SAVINGS_ANALYSIS.md"
+      ],
       "tests": [
         "context::token_estimate::tests::test_estimate_tokens_empty",
         "context::token_estimate::tests::test_estimate_tokens_round_up"
