@@ -162,7 +162,7 @@ impl SqliteMemoryStore {
                 .and_then(|v| v.get("clearance").cloned())
                 .and_then(|v| {
                     v.as_str()
-                        .map(|s| crate::security::clearance::ClearanceLevel::from(s))
+                        .map(crate::security::clearance::ClearanceLevel::from)
                 })
                 .unwrap_or_default(),
             revisions: row
