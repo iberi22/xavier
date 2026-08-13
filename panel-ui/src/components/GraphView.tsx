@@ -533,7 +533,9 @@ export default React.memo(function GraphView({
             className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
-              handleDeleteNode(contextMenu.node.id);
+              if (window.confirm("Are you sure you want to delete this entity?")) {
+                handleDeleteNode(contextMenu.node.id);
+              }
             }}
           >
             Delete Entity
