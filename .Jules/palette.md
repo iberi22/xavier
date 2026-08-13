@@ -11,3 +11,6 @@ Critical UX/accessibility learnings only.
 ## 2026-08-09 - Add ARIA label to GraphView close button
 **Learning:** Found that the slide-over details panel in `GraphView.tsx` had an icon-only close button (`<X />`) missing an `aria-label`.
 **Action:** Added `aria-label="Close details"` to ensure screen reader users can understand the button's purpose when focused.
+## 2024-08-12 - [Confirmation Dialog for Destructive Actions]
+**Learning:** Adding a confirmation dialog for destructive actions like deleting entities prevents accidental data loss. This is especially important for actions that cannot be easily undone.
+**Action:** Use window.confirm for destructive actions to give the user a chance to cancel.

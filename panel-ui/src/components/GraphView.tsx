@@ -1,8 +1,6 @@
 import {
   Calendar,
   CheckSquare,
-  ChevronDown,
-  ChevronUp,
   FileText,
   Flag,
   GitCommit,
@@ -17,11 +15,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import ForceGraph2D, {
-  GraphData as FGData,
-  ForceGraphMethods,
-  NodeObject,
-} from "react-force-graph-2d";
+import ForceGraph2D from "react-force-graph-2d";
 import type { GraphData, GraphLink, GraphNode } from "../types";
 
 interface GraphViewProps {
@@ -31,7 +25,15 @@ interface GraphViewProps {
   isFullGraphEmpty?: boolean;
 }
 
-export default function GraphView({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped GraphView in React.memo()
+ * 🎯 Why: ForceGraph2D is computationally expensive to render. When rendering GraphView in ConfigModal,
+ *          parent state updates caused unnecessary re-renders of the entire graph subtree.
+ * 📊 Impact: Prevents expensive N+1 canvas recalculations when modal tabs or other config states change.
+ */
+export default React.memo(function GraphView({
   data,
   onUpdateData,
   isFullGraphEmpty = false,
@@ -52,7 +54,7 @@ export default function GraphView({
   } | null>(null);
   const [editNode, setEditNode] = useState<GraphNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [expandedNodes, _setExpandedNodes] = useState<Set<string>>(new Set());
   const [showStats, setShowStats] = useState(false);
 
   // Deep copy data to avoid mutation of react state by force-graph
@@ -120,7 +122,7 @@ export default function GraphView({
 
       if (n.date) {
         const dt = new Date(n.date);
-        if (!isNaN(dt.getTime()) && dt > newestDate) {
+        if (!Number.isNaN(dt.getTime()) && dt > newestDate) {
           newestDate = dt;
           newestNode = n;
         }
@@ -398,7 +400,7 @@ export default function GraphView({
             node.fx = node.x;
             node.fy = node.y;
           }}
-          onNodeRightClick={(node, e) => {
+          onNodeRightClick={(node, _e) => {
             // react-force-graph doesn't pass native event coords directly to onNodeRightClick easily,
             // so we use window mousePos tracker
             setContextMenu({
@@ -480,13 +482,13 @@ export default function GraphView({
               {(hoveredNode.relatedFiles?.length ?? 0) > 0 && (
                 <div className="flex items-center gap-2 text-[10px] text-white/60">
                   <FileText className="w-3 h-3 text-blue-400" />
-                  <span>{hoveredNode.relatedFiles!.length} linked files</span>
+                  <span>{hoveredNode.relatedFiles?.length} linked files</span>
                 </div>
               )}
               {(hoveredNode.commits?.length ?? 0) > 0 && (
                 <div className="flex items-center gap-2 text-[10px] text-white/60">
                   <GitCommit className="w-3 h-3 text-orange-400" />
-                  <span>{hoveredNode.commits!.length} recent commits</span>
+                  <span>{hoveredNode.commits?.length} recent commits</span>
                 </div>
               )}
             </div>
@@ -531,7 +533,9 @@ export default function GraphView({
             className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
-              handleDeleteNode(contextMenu.node.id);
+              if (window.confirm("Are you sure you want to delete this entity?")) {
+                handleDeleteNode(contextMenu.node.id);
+              }
             }}
           >
             Delete Entity
@@ -775,4 +779,4 @@ export default function GraphView({
       </AnimatePresence>
     </motion.div>
   );
-}
+});
