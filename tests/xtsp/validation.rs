@@ -994,3 +994,107 @@ async fn xtsp_search_8kb_cap() {
     assert_eq!(val["status"], "ok");
     assert_eq!(val["truncated"], true);
 }
+
+#[tokio::test]
+async fn xtsp_ssp_canonical_upsert() {
+    let _guard = TEST_MUTEX.lock().await;
+    let (state, workspace, _server) = test_state().await;
+    let app = v1_router(state.clone(), workspace.clone());
+
+    // 1. Post stability_report twice
+    let path = "stability/shelf/latest";
+    let res1 = post_v1_json(
+        app.clone(),
+        "/v1/memories",
+        json!({
+            "text": "STABLE v1 metrics",
+            "path": path,
+            "kind": "stability_report"
+        }),
+    )
+    .await;
+    assert_eq!(res1.status(), StatusCode::OK);
+
+    let res2 = post_v1_json(
+        app.clone(),
+        "/v1/memories",
+        json!({
+            "text": "STABLE v2 metrics updated",
+            "path": path,
+            "kind": "stability_report"
+        }),
+    )
+    .await;
+    assert_eq!(res2.status(), StatusCode::OK);
+
+    // 2. Re-sync/initialize workspace cache to ensure we list exactly what's in DB
+    workspace.workspace.memory.init().await.unwrap();
+
+    let list_res = get_v1(app.clone(), "/v1/memories?limit=100").await;
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list_body = read_v1_json_body(list_res).await;
+    let memories = list_body["memories"].as_array().expect("memories should be array");
+
+    let matches: Vec<_> = memories
+        .iter()
+        .filter(|m| m["user_id"].as_str() == Some(path))
+        .collect();
+
+    // Check we only have exactly 1 record for this path
+    assert_eq!(matches.len(), 1, "Expected exactly 1 stability_report memory for path");
+    assert_eq!(matches[0]["memory"].as_str().unwrap(), "STABLE v2 metrics updated");
+}
+
+#[tokio::test]
+async fn xtsp_context_assemble_ssp() {
+    let _guard = TEST_MUTEX.lock().await;
+    let (state, workspace, _server) = test_state().await;
+
+    // Create the full router so we can test /v1/context/assemble via standard app
+    let app = v1_router(state.clone(), workspace.clone());
+
+    // Seed feature snippet
+    let add_res = post_v1_json(
+        app.clone(),
+        "/v1/memories",
+        json!({
+            "text": "feat-p2p-sync: rate limiter active 100% real",
+            "path": "features/shelf/feat-p2p-sync",
+            "kind": "feature_snippet"
+        }),
+    )
+    .await;
+    assert_eq!(add_res.status(), StatusCode::OK);
+
+    // Call /v1/context/assemble via router
+    // Wait, let's manually call the handler or use a router that has it mounted
+    let router = Router::new()
+        .route("/v1/context/assemble", post(xavier::server::v1_api::v1_context_assemble))
+        .layer(Extension(workspace))
+        .with_state(state);
+
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/v1/context/assemble")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({
+                "task": "P2P sync rate limiter shelf",
+                "limit": 5
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert!(body_bytes.len() < 2048, "Response should be extremely compact (<2KB)");
+
+    let payload: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(payload["status"], "ok");
+    let snippets = payload["snippets"].as_array().expect("snippets should be array");
+    assert!(!snippets.is_empty(), "Expected to assemble at least 1 feature snippet");
+    assert_eq!(snippets[0]["path"].as_str(), Some("features/shelf/feat-p2p-sync"));
+}
