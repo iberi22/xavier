@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::codebase::snapshot::SnapshotManager;
 use crate::curation::CurationQueue;
+use crate::codebase::snapshot::SnapshotManager;
 use crate::mesh::private_mesh::{PrivateMeshRegistry, WalletNode};
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
@@ -415,79 +415,6 @@ pub async fn get_snapshot(
     }
 }
 
-// ---------- issue-context-packager ----------
-
-/// Request body for POST /v1/f12/issue-context
-#[derive(Deserialize)]
-pub struct IssueContextRequest {
-    /// GitHub issue number (as string).
-    pub issue_id: String,
-    /// Issue title.
-    pub title: String,
-    /// Repository name (owner/repo).
-    pub repo: String,
-    /// Issue body (markdown).
-    pub body: String,
-    /// Optional: repo root path (defaults to data_dir/repos/{repo}).
-    pub repo_root: Option<String>,
-}
-
-/// POST /v1/f12/issue-context — generate an IssueContextPackage from a GitHub issue.
-///
-/// Analyzes the issue body, maps entities to the CodeGraph, and returns
-/// PreciseChange objects that an executor agent can apply directly.
-pub async fn issue_context(
-    State(state): State<F12State>,
-    Json(req): Json<IssueContextRequest>,
-) -> impl IntoResponse {
-    use crate::codebase::issue_context;
-
-    let repo_root = req
-        .repo_root
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| state.data_dir.join("repos").join(&req.repo));
-
-    if !repo_root.exists() {
-        return (
-            StatusCode::BAD_REQUEST,
-            format!("repo_root not found: {:?}", repo_root),
-        )
-            .into_response();
-    }
-
-    // Open the code graph DB
-    let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(&repo_root);
-    let code_graph_db = match code_graph::db::CodeGraphDB::new(&db_path) {
-        Ok(db) => db,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to open CodeGraph DB: {}", e),
-            )
-                .into_response()
-        }
-    };
-
-    let snapshot_manager = SnapshotManager::new(&state.data_dir);
-
-    match issue_context::assemble_package(
-        &req.issue_id,
-        &req.title,
-        &req.repo,
-        &req.body,
-        &code_graph_db,
-        &snapshot_manager,
-        &repo_root,
-    ) {
-        Ok(package) => (StatusCode::OK, Json(package)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to assemble package: {}", e),
-        )
-            .into_response(),
-    }
-}
-
 // ---------- router ----------
 
 pub fn router(state: F12State) -> Router {
@@ -507,7 +434,6 @@ pub fn router(state: F12State) -> Router {
         .route("/v1/f12/snapshots", get(list_snapshots))
         .route("/v1/f12/snapshots", post(create_snapshot))
         .route("/v1/f12/snapshots/{repo}", get(get_snapshot))
-        .route("/v1/f12/issue-context", post(issue_context))
         .with_state(state)
 }
 
@@ -693,12 +619,7 @@ mod tests {
     async fn test_telemetry_metrics_whitelist() {
         let app = router(test_state());
         let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/f12/telemetry/metrics")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/v1/f12/telemetry/metrics").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -711,12 +632,7 @@ mod tests {
     async fn test_list_snapshots_empty_ok() {
         let app = router(test_state());
         let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/f12/snapshots")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/v1/f12/snapshots").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -729,12 +645,7 @@ mod tests {
     async fn test_get_snapshot_missing_404() {
         let app = router(test_state());
         let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/f12/snapshots/nope")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/v1/f12/snapshots/nope").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);

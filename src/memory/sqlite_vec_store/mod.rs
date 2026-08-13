@@ -149,7 +149,7 @@ impl VecSqliteMemoryStore {
                 .and_then(|v| v.get("clearance").cloned())
                 .and_then(|v| {
                     v.as_str()
-                        .map(crate::security::clearance::ClearanceLevel::from)
+                        .map(|s| crate::security::clearance::ClearanceLevel::from(s))
                 })
                 .unwrap_or_default(),
             revisions: row

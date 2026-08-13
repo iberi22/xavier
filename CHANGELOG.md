@@ -2,28 +2,6 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## v0.13.0 (2026-08-08)
-
-### F12 — Preservación + Mini-Expertos + Mesh SWAL
-
-- **Clearance levels**: clasificación UNCLASSIFIED→TOPSECRET con `can_access()`
-- **Grupos con permisos**: `GroupRegistry` con ACL read/write/audit + bypass tests
-- **Training datasets API**: `/v1/training/*` (datasets, splits JSONL, bundles) sobre `TrainingExporter`
-- **Mini-expertos**: registro `MiniExpert` + script `train_lora_colab.py` (pipeline Colab CLI oficial)
-- **Red de servicio SWAL**: `ServiceRegistry` para telemetría/descubrimiento de servicios internos
-- **Mesh privada por billetera**: `PrivateMeshRegistry` (nodos de la misma wallet)
-- **Redacción por secciones**: `RedactionEngine` (regex PII) + documentos segmentados
-- **Curaduría humana**: `CurationQueue` (submit→approve→entrenable)
-- **Snapshot manager**: `CodeSnapshot` + `PreciseChange` (fragmento exacto file+símbolo+líneas)
-- **Routers HTTP**: `/v1/f12/*` (RAG público, directorio, grupos, redacción, curaduría, snapshots) + `/v1/training/*`
-- **1472 tests passing, 0 failed** · verify-pipeline 35/35 PASS
-
-### Fixes
-
-- Path traversal sanitization preserva slashes canónicos (`features/shelf/x` ya no se rompe)
-- `public_rag` query vacío retorna `[]`
-- verify-pipeline soporta features.json en formato dict
-
 ## v0.12.0 (2026-07-05)
 
 ### Added

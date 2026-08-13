@@ -319,20 +319,3 @@ fn test_cli_handlers_memory_path_sanitization_pattern() {
         assert!(!path.contains("\0"));
     }
 }
-
-#[tokio::test]
-async fn test_training_command_variants() {
-    use crate::cli::commands::enums::TrainingCommand;
-    let cmd = TrainingCommand::Export {
-        output: std::path::PathBuf::from("/tmp/test-out"),
-        seed: 42,
-        eval_ratio: 0.2,
-        clearance: Some("INTERNAL".to_string()),
-        language: Some("en".to_string()),
-        segment: Some("telemetry".to_string()),
-    };
-    if let TrainingCommand::Export { seed, eval_ratio, .. } = &cmd {
-        assert_eq!(*seed, 42);
-        assert_eq!(*eval_ratio, 0.2);
-    }
-}
