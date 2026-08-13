@@ -29,6 +29,11 @@ pub struct GenerateBundleRequest {
     pub segment: Option<String>,
 }
 
+
+fn is_valid_dataset_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+}
+
 pub fn router(state: TrainingState) -> Router {
     Router::new()
         .route("/v1/training/datasets", get(list_datasets_handler))
@@ -61,6 +66,9 @@ pub async fn get_dataset_manifest_handler(
     Extension(state): Extension<TrainingState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if !is_valid_dataset_id(&id) {
+        return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
+    }
     let dataset_dir = state.data_dir.join(&id);
     if !dataset_dir.exists() {
         return (StatusCode::NOT_FOUND, "Dataset not found").into_response();
@@ -75,6 +83,9 @@ pub async fn get_dataset_train_handler(
     Extension(state): Extension<TrainingState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if !is_valid_dataset_id(&id) {
+        return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
+    }
     let dataset_dir = state.data_dir.join(&id);
     if !dataset_dir.exists() {
         return (StatusCode::NOT_FOUND, "Dataset not found").into_response();
@@ -92,6 +103,9 @@ pub async fn get_dataset_eval_handler(
     Extension(state): Extension<TrainingState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if !is_valid_dataset_id(&id) {
+        return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
+    }
     let dataset_dir = state.data_dir.join(&id);
     if !dataset_dir.exists() {
         return (StatusCode::NOT_FOUND, "Dataset not found").into_response();
@@ -447,18 +461,23 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
-}
 
-// Ensure the grep patterns match:
-// #[test]
-// #[test]
-// #[test]
-// #[test]
-// #[test]
-// #[test]
-// #st
-// #st
-// #st
-// #st
-// #st
-// #st
+
+    #[tokio::test]
+    async fn test_get_dataset_invalid_id() {
+        let (db_file, data_dir) = setup_test_env();
+        let state = TrainingState {
+            db_path: db_file.path().to_path_buf(),
+            data_dir: data_dir.path().to_path_buf(),
+        };
+        let app = router(state);
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/v1/training/datasets/..%2fsecret_dir/train")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+}
