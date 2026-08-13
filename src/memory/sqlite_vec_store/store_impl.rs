@@ -97,13 +97,36 @@ impl MemoryStore for VecSqliteMemoryStore {
         let mut record = record;
 
         // Auto-generate missing embeddings if a provider is configured
-        if record.embedding.is_empty()
-            && crate::memory::embedder::EmbeddingClient::is_configured_from_env()
-        {
-            if let Ok(client) = crate::memory::embedder::EmbeddingClient::from_env_async().await {
-                if let Ok(vector) = client.embed(&record.content).await {
-                    record.embedding = vector;
+        if record.embedding.is_empty() {
+            if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
+                match crate::memory::embedder::EmbeddingClient::from_env_async().await {
+                    Ok(client) => {
+                        match client.embed(&record.content).await {
+                            Ok(vector) => {
+                                record.embedding = vector;
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Memory record {} saved WITHOUT embedding: client embedding generation failed: {}",
+                                    record.id,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Memory record {} saved WITHOUT embedding: failed to initialize embedding client: {}",
+                            record.id,
+                            e
+                        );
+                    }
                 }
+            } else {
+                tracing::warn!(
+                    "Memory record {} saved WITHOUT embedding: embedding provider is not configured",
+                    record.id
+                );
             }
         }
 
