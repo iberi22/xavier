@@ -34,6 +34,7 @@ async fn test_v1_memories_add_path_traversal() {
     let payload = V1AddMemoryRequest {
         text: Some("hello".to_string()),
         user_id: Some("../../../etc/passwd".to_string()),
+        path: None,
         messages: None,
         metadata: None,
         kind: None,
