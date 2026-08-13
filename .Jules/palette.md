@@ -8,9 +8,3 @@ Critical UX/accessibility learnings only.
 ## 2026-08-06 - Added accessible form bindings
 **Learning:** Reusable form UI components must utilize React's `useId()` hook to generate unique identifiers, ensuring accessible `<label htmlFor="...">` to `<input id="...">` bindings without collisions.
 **Action:** Added `useId()` to `CloudRelayConfig.tsx` to bind inputs properly.
-## 2026-08-09 - Add ARIA label to GraphView close button
-**Learning:** Found that the slide-over details panel in `GraphView.tsx` had an icon-only close button (`<X />`) missing an `aria-label`.
-**Action:** Added `aria-label="Close details"` to ensure screen reader users can understand the button's purpose when focused.
-## 2024-08-12 - [Confirmation Dialog for Destructive Actions]
-**Learning:** Adding a confirmation dialog for destructive actions like deleting entities prevents accidental data loss. This is especially important for actions that cannot be easily undone.
-**Action:** Use window.confirm for destructive actions to give the user a chance to cancel.

@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Shield,
   Trash2,
+  Unlock,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
@@ -212,7 +213,6 @@ function TokensSection() {
           </p>
         </div>
         <button
-          type="button"
           onClick={() => setCreating(!creating)}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-[#39ff14]/8 border border-[#39ff14]/20 text-[#39ff14] text-xs rounded-lg hover:bg-[#39ff14]/12 transition-all"
         >
@@ -274,14 +274,10 @@ function TokensSection() {
                 />
               </div>
               <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  className="flex-1 py-2 bg-[#39ff14]/10 border border-[#39ff14]/20 text-[#39ff14] text-xs rounded-lg hover:bg-[#39ff14]/15 transition-all"
-                >
+                <button className="flex-1 py-2 bg-[#39ff14]/10 border border-[#39ff14]/20 text-[#39ff14] text-xs rounded-lg hover:bg-[#39ff14]/15 transition-all">
                   Generate Token (mock)
                 </button>
                 <button
-                  type="button"
                   onClick={() => setCreating(false)}
                   className="px-3 py-2 text-white/30 hover:text-white/60 text-xs border border-white/10 rounded-lg transition-all"
                 >
@@ -329,12 +325,6 @@ function TokensSection() {
                         : token.prefix}
                     </code>
                     <button
-                      type="button"
-                      aria-label={
-                        revealed.includes(token.id)
-                          ? "Hide token"
-                          : "Reveal token"
-                      }
                       onClick={() => toggleReveal(token.id)}
                       className="text-white/20 hover:text-white/50 transition-colors"
                     >
@@ -345,8 +335,6 @@ function TokensSection() {
                       )}
                     </button>
                     <button
-                      type="button"
-                      aria-label="Copy token"
                       onClick={() =>
                         navigator.clipboard.writeText("mock-token")
                       }
@@ -359,8 +347,6 @@ function TokensSection() {
               </div>
               {token.active && (
                 <button
-                  type="button"
-                  aria-label="Revoke token"
                   onClick={() => revoke(token.id)}
                   className="p-1.5 text-red-400/40 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
                   title="Revoke token"
@@ -410,7 +396,7 @@ function TokensSection() {
 }
 
 function ApiKeysSection() {
-  const [keys, _setKeys] = useState<ApiKey[]>(MOCK_API_KEYS);
+  const [keys, setKeys] = useState<ApiKey[]>(MOCK_API_KEYS);
   const [revealed, setRevealed] = useState<string[]>([]);
 
   return (
@@ -454,8 +440,6 @@ function ApiKeysSection() {
                     : "Not validated"}
                 </span>
                 <button
-                  type="button"
-                  aria-label="Re-validate token"
                   className="p-1.5 text-white/20 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-all"
                   title="Re-validate"
                 >
@@ -470,10 +454,6 @@ function ApiKeysSection() {
                 className="flex-1 bg-black/30 border border-white/10 text-white/60 text-xs px-3 py-2 rounded-lg outline-none font-mono focus:border-[#39ff14]/30 transition-all"
               />
               <button
-                type="button"
-                aria-label={
-                  revealed.includes(key.id) ? "Hide API key" : "Reveal API key"
-                }
                 onClick={() =>
                   setRevealed((prev) =>
                     prev.includes(key.id)
@@ -489,10 +469,7 @@ function ApiKeysSection() {
                   <Eye className="w-3.5 h-3.5" />
                 )}
               </button>
-              <button
-                type="button"
-                className="px-3 py-1 text-xs text-[#39ff14]/70 border border-[#39ff14]/20 rounded-lg hover:bg-[#39ff14]/5 transition-all"
-              >
+              <button className="px-3 py-1 text-xs text-[#39ff14]/70 border border-[#39ff14]/20 rounded-lg hover:bg-[#39ff14]/5 transition-all">
                 Save
               </button>
             </div>
@@ -528,10 +505,7 @@ function AuditLogSection() {
             Recent security-relevant events. Persistence pending backend.
           </p>
         </div>
-        <button
-          type="button"
-          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-white/30 border border-white/10 rounded-lg hover:border-white/20 hover:text-white/60 transition-all"
-        >
+        <button className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-white/30 border border-white/10 rounded-lg hover:border-white/20 hover:text-white/60 transition-all">
           <RefreshCw className="w-3 h-3" />
           Refresh
         </button>
@@ -617,13 +591,7 @@ function ProxySection() {
               Reject all non-TLS outbound connections
             </p>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked="true"
-            aria-label="Toggle HTTPS Only"
-            className="relative w-9 h-5 rounded-full bg-[#39ff14]/20 border border-[#39ff14]/30"
-          >
+          <button className="relative w-9 h-5 rounded-full bg-[#39ff14]/20 border border-[#39ff14]/30">
             <div className="absolute top-0.5 left-[calc(100%-18px)] w-4 h-4 rounded-full bg-[#39ff14] transition-all" />
           </button>
         </div>
@@ -711,7 +679,6 @@ export default function SecurityConfigPanel({
           </div>
           {sections.map((s) => (
             <button
-              type="button"
               key={s.id}
               onClick={() => setActiveSection(s.id)}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs transition-all ${
@@ -734,7 +701,6 @@ export default function SecurityConfigPanel({
           <div className="flex gap-1 mb-6 bg-black/20 rounded-lg p-1 w-fit">
             {sections.map((s) => (
               <button
-                type="button"
                 key={s.id}
                 onClick={() => setActiveSection(s.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest transition-all ${
