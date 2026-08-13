@@ -478,6 +478,15 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     xavier::adapters::inbound::http::handlers::sync::init_memory_sync(sync_service);
 
     let protected_routes = Router::new()
+        .merge(xavier::server::training_routes::router(
+            xavier::server::training_routes::TrainingState {
+                db_path: state.workspace_dir.clone().join("data/vec-store.sqlite3"),
+                data_dir: state.workspace_dir.clone().join("data/datasets"),
+            },
+        ).with_state(()))
+        .merge(xavier::server::f12_routes::router(
+            xavier::server::f12_routes::F12State::new(state.workspace_dir.clone().join("data")),
+        ).with_state(()))
         // ── Memory Sync endpoints ──────────────────────────────────────────
         .route(
             "/v1/memory/manifest",
@@ -1121,16 +1130,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let memory_port_cron = state.memory.clone();
     let app = app
         .with_state(state.clone())
-        .merge(xavier::maloca::nested_router(maloca_store))
-        .merge(xavier::server::training_routes::router(
-            xavier::server::training_routes::TrainingState {
-                db_path: state.workspace_dir.clone().join("data/vec-store.sqlite3"),
-                data_dir: state.workspace_dir.clone().join("data/datasets"),
-            },
-        ))
-        .merge(xavier::server::f12_routes::router(
-            xavier::server::f12_routes::F12State::new(state.workspace_dir.clone().join("data")),
-        ));
+        .merge(xavier::maloca::nested_router(maloca_store));
 
     #[cfg(feature = "enterprise")]
     let app = {
