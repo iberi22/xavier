@@ -188,8 +188,8 @@ Security is applied at:
 
 ## Extensions
 
-- [Security](./SECURITY.md) - Detailed security documentation
-- [Benchmark Comparison](../BENCHMARK_COMPARISON.md) - Performance vs competitors
+- [Security](../../SECURITY.md) - Detailed security documentation
+- [Benchmark Comparison](../benchmark/BENCHMARK_COMPARISON.md) - Performance vs competitors
 - [ROADMAP](../ROADMAP.md) - Development roadmap
 
 ## Workspace Evolution

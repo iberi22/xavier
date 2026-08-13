@@ -182,7 +182,7 @@ Env:
 xavier code scan .
 ```
 
-See `docs/ADR/007-codegraph-native-vs-colby.md`.
+See `docs/adr/007-codegraph-native-vs-colby.md`.
 
 ### `xavier code sync --git`
 
