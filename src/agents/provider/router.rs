@@ -22,7 +22,6 @@ pub enum ProviderKind {
     Local,
     Zai,
     OpenCode,
-    OpenRouter,
 }
 
 impl ProviderKind {
@@ -38,7 +37,6 @@ impl ProviderKind {
             Self::Local => "local",
             Self::Zai => "z.ai",
             Self::OpenCode => "opencode",
-            Self::OpenRouter => "openrouter",
         }
     }
 
@@ -55,7 +53,6 @@ impl ProviderKind {
             "local" => Some(Self::Local),
             "z.ai" | "zai" => Some(Self::Zai),
             "opencode" => Some(Self::OpenCode),
-            "openrouter" => Some(Self::OpenRouter),
             _ => None,
         }
     }
@@ -72,7 +69,6 @@ impl ProviderKind {
             Self::Local,
             Self::Zai,
             Self::OpenCode,
-            Self::OpenRouter,
         ]
     }
 }
