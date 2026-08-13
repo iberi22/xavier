@@ -124,15 +124,15 @@ async fn handle_export(
 
         let meta_clearance = res_val["metadata"]["clearance"]
             .as_str()
-            .or_else(|| clearance.as_deref())
+            .or(clearance.as_deref())
             .unwrap_or("INTERNAL");
         let meta_language = res_val["metadata"]["language"]
             .as_str()
-            .or_else(|| language.as_deref())
+            .or(language.as_deref())
             .unwrap_or("en");
         let meta_segment = res_val["metadata"]["segment"]
             .as_str()
-            .or_else(|| segment.as_deref())
+            .or(segment.as_deref())
             .unwrap_or("telemetry");
 
         let metadata_val = json!({

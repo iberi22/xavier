@@ -30,6 +30,8 @@ mod hierarchical_curation_test;
 mod http_api;
 #[path = "integration/internal_benchmark_test.rs"]
 mod internal_benchmark_test;
+#[path = "integration/issue_context_test.rs"]
+mod issue_context_test;
 #[path = "integration/memory_test.rs"]
 mod memory_test;
 #[path = "integration/notifications_test.rs"]

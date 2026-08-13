@@ -7,7 +7,7 @@
     "created": "2026-03-05",
     "last_verified": "2026-08-08",
     "total_features": 35,
-    "features_complete": 30,
+    "features_complete": 31,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
@@ -1139,7 +1139,7 @@
       "name": "Issue Context Packager — análisis automático de issues con línea exacta",
       "category": "ai",
       "status": "stable",
-      "progress_pct": 90,
+      "progress_pct": 100,
       "description": "Xavier revisa un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qué archivos/símbolos tocar, línea exacta o número de carácter a modificar, fragmento before/after — el análisis ya hecho para que un agente solo ejecute",
       "steps": [
         "Parser de issues (título + cuerpo → entidades: archivos, símbolos, features)",

@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 /// 3 = CONFIDENTIAL
 /// 4 = SECRET
 /// 5 = TOPSECRET
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
 pub enum ClearanceLevel {
     #[serde(rename = "UNCLASSIFIED")]
+    #[default]
     Unclassified = 0,
     #[serde(rename = "INTERNAL")]
     Internal = 1,
@@ -21,12 +22,6 @@ pub enum ClearanceLevel {
     Secret = 4,
     #[serde(rename = "TOPSECRET")]
     TopSecret = 5,
-}
-
-impl Default for ClearanceLevel {
-    fn default() -> Self {
-        Self::Unclassified
-    }
 }
 
 impl From<u8> for ClearanceLevel {

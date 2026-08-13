@@ -118,14 +118,12 @@ fn read_swap() -> SwapInfo {
         for line in meminfo.lines() {
             if let Some(rest) = line.strip_prefix("SwapTotal:") {
                 total_kb = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(0);
             } else if let Some(rest) = line.strip_prefix("SwapFree:") {
                 free_kb = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|v| v.parse().ok())
@@ -193,14 +191,12 @@ fn read_processes() -> (Vec<ProcInfo>, usize) {
                 state = rest.trim().chars().next().unwrap_or('?');
             } else if let Some(rest) = line.strip_prefix("VmRSS:") {
                 rss_kb = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(0);
             } else if let Some(rest) = line.strip_prefix("VmSwap:") {
                 vmswap_kb = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|v| v.parse().ok())
