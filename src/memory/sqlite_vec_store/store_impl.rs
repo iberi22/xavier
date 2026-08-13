@@ -168,12 +168,18 @@ impl MemoryStore for VecSqliteMemoryStore {
             }
         }
 
-        let dedup_settings = {
+        let mut dedup_settings = {
             let lock = self.dedup_config.read().await;
             lock.clone()
         };
 
-        if dedup_settings.enabled && is_dedup && !record.embedding.is_empty() {
+        let is_ssp_path = record.path.starts_with("stability/") || record.path.starts_with("features/");
+        if is_ssp_path {
+            dedup_settings.enabled = true;
+            dedup_settings.scope = crate::settings::types::DedupScope::PathExact;
+        }
+
+        if dedup_settings.enabled && (is_dedup || is_ssp_path) && !record.embedding.is_empty() {
             let record_c = record.clone();
             let project_id_c = self.project_id.clone();
             let dedup_settings_c = dedup_settings.clone();

@@ -61,6 +61,7 @@ fn bench_v1_api(c: &mut Criterion) {
                     text: Some("new benchmark memory".to_string()),
                     metadata: None,
                     user_id: Some("bench-user".to_string()),
+                    path: None,
                     kind: None,
                     evidence_kind: None,
                     namespace: None,

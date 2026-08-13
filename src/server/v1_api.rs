@@ -45,7 +45,8 @@ pub struct V1AddMemoryRequest {
     pub text: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub user_id: Option<String>,
-    pub kind: Option<MemoryKind>,
+    pub path: Option<String>,
+    pub kind: Option<String>,
     pub evidence_kind: Option<EvidenceKind>,
     pub namespace: Option<MemoryNamespace>,
     pub provenance: Option<MemoryProvenance>,
@@ -199,8 +200,9 @@ pub async fn v1_memories_add(
     let content_for_graph = content.clone();
 
     let mut path = payload
-        .user_id
+        .path
         .clone()
+        .or(payload.user_id.clone())
         .unwrap_or_else(|| "default".to_string());
     // Prevent path traversal (..) while preserving canonical slash-delimited
     // paths like "features/shelf/feat-p2p-sync" or "sessions/2026-08-08/...".
@@ -224,13 +226,25 @@ pub async fn v1_memories_add(
         path = "default".to_string();
     }
     let mut meta = payload.metadata.unwrap_or(serde_json::json!({}));
+
+    let payload_kind_str = payload.kind.as_deref().unwrap_or("");
+    let is_ssp = path.starts_with("stability/") || path.starts_with("features/") || payload_kind_str == "stability_report" || payload_kind_str == "feature_snippet";
+
     let is_dedup =
-        params.mode.as_deref() == Some("dedup") || payload.mode.as_deref() == Some("dedup");
+        params.mode.as_deref() == Some("dedup") || payload.mode.as_deref() == Some("dedup") || is_ssp;
     if is_dedup {
         if let Some(obj) = meta.as_object_mut() {
             obj.insert("dedup".to_string(), serde_json::json!(true));
         } else {
             meta = serde_json::json!({ "dedup": true });
+        }
+    }
+
+    if !payload_kind_str.is_empty() {
+        if let Some(obj) = meta.as_object_mut() {
+            if obj.get("kind").is_none() {
+                obj.insert("kind".to_string(), serde_json::json!(payload_kind_str));
+            }
         }
     }
     let mut namespace = payload.namespace;
@@ -259,6 +273,7 @@ pub async fn v1_memories_add(
         return crate::error::ApiError::validation(error.to_string()).into_ok_response();
     }
 
+    let resolved_kind = payload.kind.as_deref().and_then(MemoryKind::parse);
     match workspace
         .workspace
         .memory
@@ -267,7 +282,7 @@ pub async fn v1_memories_add(
             content,
             meta,
             Some(TypedMemoryPayload {
-                kind: payload.kind,
+                kind: resolved_kind,
                 evidence_kind: payload.evidence_kind,
                 namespace,
                 provenance: payload.provenance,
@@ -1484,8 +1499,9 @@ pub async fn v1_memories_update(
     };
 
     let path = payload
-        .user_id
+        .path
         .clone()
+        .or(payload.user_id.clone())
         .unwrap_or_else(|| existing.path.clone());
     let mut metadata = existing.metadata.clone();
     if let Some(extra) = payload.metadata {
@@ -1515,6 +1531,7 @@ pub async fn v1_memories_update(
         }
     }
 
+    let resolved_kind = payload.kind.as_deref().and_then(MemoryKind::parse);
     match workspace
         .workspace
         .update_primary_memory(
@@ -1523,7 +1540,7 @@ pub async fn v1_memories_update(
             content,
             metadata,
             Some(TypedMemoryPayload {
-                kind: payload.kind,
+                kind: resolved_kind,
                 evidence_kind: payload.evidence_kind,
                 namespace,
                 provenance: payload.provenance,
