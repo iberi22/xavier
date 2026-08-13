@@ -54,7 +54,7 @@ members = [
 # the directory and its files remain in the repo.
 
 [features]
-default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email"]
+default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage"]
 notification-in-app = []
 notification-webhook = []
 notification-email = []
@@ -62,7 +62,8 @@ data-commons = ["post-quantum"]
 post-quantum = ["oqs"]
 cli-interactive = ["ratatui", "crossterm"]
 # All features that are safe to run on host CI (no GUI/Winit issues)
-ci-safe = []
+ci-safe = ["self-manage"]
+self-manage = []
 gpu-search = ["dep:candle-core", "dep:candle-nn"]
 gpu-search-cuda = ["gpu-search", "candle-core/cuda", "candle-nn/cuda"]
 gpu-search-metal = ["gpu-search", "candle-core/metal", "candle-nn/metal"]
