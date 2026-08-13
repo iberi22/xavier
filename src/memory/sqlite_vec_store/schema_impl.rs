@@ -124,6 +124,11 @@ impl VecSqliteMemoryStore {
 
     /// Reindex null embeddings background.
     pub async fn reindex_null_embeddings_background(&self) -> Result<usize> {
+        self.reindex_null_embeddings_background_with_limit(None).await
+    }
+
+    /// Reindex null embeddings background with limit.
+    pub async fn reindex_null_embeddings_background_with_limit(&self, limit: Option<usize>) -> Result<usize> {
         let embedder = match crate::embedding::build_embedder_from_env().await {
             Ok(emb) => emb,
             Err(e) => {
@@ -135,9 +140,15 @@ impl VecSqliteMemoryStore {
         let project_id_c = self.project_id.clone();
         let records = ConnectionManager::global()
             .with_conn(&project_id_c, move |conn| {
-                let mut stmt = conn.prepare(
-                    "SELECT id, workspace_id, path, content, metadata, X'' AS embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE embedding IS NULL"
-                )?;
+                let sql = if let Some(lim) = limit {
+                    format!(
+                        "SELECT id, workspace_id, path, content, metadata, X'' AS embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE embedding IS NULL LIMIT {}",
+                        lim
+                    )
+                } else {
+                    "SELECT id, workspace_id, path, content, metadata, X'' AS embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE embedding IS NULL".to_string()
+                };
+                let mut stmt = conn.prepare(&sql)?;
                 let mut rows = stmt.query([])?;
                 let mut records = Vec::new();
                 while let Some(row) = rows.next()? {
@@ -959,5 +970,44 @@ mod tests {
             "Revisions must be capped at max_revisions (5), got {}",
             fetched.revisions.len()
         );
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_put_record_without_embedding_succeeds() {
+        use crate::memory::store::MemoryStore;
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        // Ensure embedding client is not configured
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::remove_var("OPENAI_API_KEY");
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_warn.db");
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        let record = crate::memory::store::MemoryRecord {
+            id: "test_warn_mem_1".to_string(),
+            workspace_id: "test_ws_1".to_string(),
+            path: "test/path".to_string(),
+            content: "Hello world without embedding".to_string(),
+            metadata: serde_json::json!({}),
+            embedding: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            ..Default::default()
+        };
+
+        let res = store.put(record).await;
+        assert!(res.is_ok());
+
+        // Verify the record is saved without embedding
+        let fetched = store.get("test_ws_1", "test_warn_mem_1").await.unwrap().unwrap();
+        assert!(fetched.embedding.is_empty());
     }
 }

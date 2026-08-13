@@ -93,6 +93,11 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             "/api/v1/memory/sync/resolve/{conflict_id}",
             post(crate::adapters::inbound::http::handlers::sync::sync_resolve_handler),
         )
+        // ── Maintenance API ──────────────────────────────────────────────
+        .route(
+            "/v1/maintenance/reindex-embeddings",
+            post(maintenance_reindex_handler),
+        )
         // ── Training Datasets API ─────────────────────────────────────────
         .route("/v1/training/export", post(training_export_handler))
         // ── Content Redaction API ─────────────────────────────────────────
@@ -141,6 +146,7 @@ pub struct RouteHealthResponse {
     pub database: RouteHealthDatabase,
     pub mesh: String,
     pub checks: Vec<RouteHealthCheck>,
+    pub embedding_coverage: crate::health::EmbeddingCoverage,
 }
 
 #[derive(Debug, Serialize)]
@@ -210,6 +216,7 @@ async fn health_handler() -> impl axum::response::IntoResponse {
                 detail: c.detail.clone(),
             })
             .collect(),
+        embedding_coverage: health.embedding_coverage,
     })
 }
 
@@ -481,6 +488,98 @@ pub fn init_plugin_registry() {
     let registry_arc = std::sync::Arc::new(tokio::sync::RwLock::new(registry));
     if PLUGIN_REGISTRY.set(registry_arc).is_err() {
         tracing::error!("Plugin registry already initialized");
+    }
+}
+
+// ─── Maintenance API ──────────────────────────────────────────────────────
+
+use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+use crate::codebase::connection_manager::ConnectionManager;
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ReindexMaintenanceRequest {
+    #[serde(default = "default_dry_run")]
+    pub dry_run: bool,
+    pub limit: Option<usize>,
+}
+
+fn default_dry_run() -> bool {
+    true
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReindexMaintenanceResponse {
+    pub status: String,
+    pub dry_run: bool,
+    pub null_embeddings_count: usize,
+    pub processed_count: usize,
+}
+
+/// POST /v1/maintenance/reindex-embeddings — trigger reindexing of memories lacking embeddings.
+pub async fn maintenance_reindex_handler(
+    Json(payload): Json<ReindexMaintenanceRequest>,
+) -> impl axum::response::IntoResponse {
+    let store_config = VecSqliteStoreConfig::from_env();
+
+    match VecSqliteMemoryStore::new(store_config).await {
+        Ok(store) => {
+            let project_id_c = store.connection_project_id().to_string();
+            let count_res: anyhow::Result<usize> = ConnectionManager::global()
+                .with_conn(&project_id_c, move |conn| {
+                    let count: usize = conn.query_row(
+                        "SELECT COUNT(*) FROM memory_records WHERE embedding IS NULL",
+                        [],
+                        |row| row.get(0),
+                    )?;
+                    Ok(count)
+                })
+                .await;
+
+            let null_count = count_res.unwrap_or(0);
+
+            if payload.dry_run {
+                Json(ReindexMaintenanceResponse {
+                    status: "ok".to_string(),
+                    dry_run: true,
+                    null_embeddings_count: null_count,
+                    processed_count: 0,
+                })
+                .into_response()
+            } else {
+                let limit = payload.limit;
+                // Spawn the background reindexing task!
+                tokio::spawn(async move {
+                    tracing::info!(
+                        "Starting triggered background reindexing (limit: {:?})...",
+                        limit
+                    );
+                    match store.reindex_null_embeddings_background_with_limit(limit).await {
+                        Ok(success_count) => {
+                            tracing::info!(
+                                "Triggered background reindexing completed. Success count: {}",
+                                success_count
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!("Triggered background reindexing failed: {}", e);
+                        }
+                    }
+                });
+
+                Json(ReindexMaintenanceResponse {
+                    status: "reindexing_started".to_string(),
+                    dry_run: false,
+                    null_embeddings_count: null_count,
+                    processed_count: limit.unwrap_or(null_count).min(null_count),
+                })
+                .into_response()
+            }
+        }
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to initialize memory store for reindexing: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -997,6 +1096,43 @@ mod route_tests {
         assert_eq!(parsed["status"], "success");
         assert_eq!(parsed["provider"], "agy");
         assert!(parsed["response"].as_str().unwrap().contains("Mock response"));
+    }
+
+    #[tokio::test]
+    async fn test_route_maintenance_reindex_dry_run() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let req_body = serde_json::json!({
+            "dry_run": true,
+            "limit": 5
+        });
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/maintenance/reindex-embeddings")
+                    .method(Method::POST)
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse reindex response");
+
+        assert_eq!(parsed["status"], "ok");
+        assert_eq!(parsed["dry_run"], true);
+        assert!(parsed.get("null_embeddings_count").is_some());
+        assert_eq!(parsed["processed_count"], 0);
     }
 }
 

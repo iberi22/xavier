@@ -27,6 +27,25 @@ static MESH_TELEMETRY: std::sync::OnceLock<Arc<MeshTelemetryCollector>> =
 /// Global health registry
 static HEALTH_REGISTRY: std::sync::OnceLock<Arc<RwLock<HealthState>>> = std::sync::OnceLock::new();
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EmbeddingCoverage {
+    pub indexed: u64,
+    pub total: u64,
+    pub percent: f64,
+    pub status: String,
+}
+
+impl Default for EmbeddingCoverage {
+    fn default() -> Self {
+        Self {
+            indexed: 0,
+            total: 0,
+            percent: 100.0,
+            status: "healthy".to_string(),
+        }
+    }
+}
+
 /// Unified health response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthResponse {
@@ -38,6 +57,7 @@ pub struct HealthResponse {
     pub embedding: EmbeddingHealth,
     pub mesh: MeshHealth,
     pub checks: Vec<HealthCheck>,
+    pub embedding_coverage: EmbeddingCoverage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +136,7 @@ pub struct HealthState {
     pub embedding: EmbeddingHealth,
     pub mesh: MeshHealth,
     pub checks: Vec<HealthCheck>,
+    pub embedding_coverage: EmbeddingCoverage,
 }
 
 impl Default for HealthState {
@@ -154,6 +175,7 @@ impl Default for HealthState {
                 maturity: crate::mesh::MeshMaturityReport::default(),
             },
             checks: Vec::new(),
+            embedding_coverage: EmbeddingCoverage::default(),
         }
     }
 }
@@ -296,6 +318,85 @@ pub async fn check_cloud_health(settings: &XavierSettings) -> CloudHealthRespons
     }
 }
 
+pub fn gather_embedding_coverage(settings: &XavierSettings) -> EmbeddingCoverage {
+    let mut paths = Vec::new();
+    if let Ok(p) = std::env::var("XAVIER_MEMORY_VEC_PATH") {
+        paths.push(std::path::PathBuf::from(p));
+    }
+    if !settings.memory.vec_path.trim().is_empty() {
+        paths.push(std::path::PathBuf::from(&settings.memory.vec_path));
+    }
+    paths.push(std::path::PathBuf::from(&settings.memory.data_dir).join("vec-store.sqlite3"));
+    paths.push(std::path::PathBuf::from(&settings.memory.data_dir).join("xavier_memory_vec.db"));
+    paths.push(std::path::PathBuf::from(&settings.memory.data_dir).join("xavier_memory.db"));
+    paths.push(std::path::PathBuf::from(&settings.memory.data_dir).join("memory.db"));
+
+    if let Ok(p) = std::env::var("XAVIER_MEMORY_SQLITE_PATH") {
+        paths.push(std::path::PathBuf::from(p));
+    }
+    if !settings.memory.sqlite_path.trim().is_empty() {
+        paths.push(std::path::PathBuf::from(&settings.memory.sqlite_path));
+    }
+
+    let mut total = 0;
+    let mut indexed = 0;
+    let mut found = false;
+
+    for path in paths {
+        if path.exists() {
+            if let Ok(conn) = rusqlite::Connection::open_with_flags(
+                &path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+            ) {
+                let table_exists: rusqlite::Result<i32> = conn.query_row(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_records'",
+                    [],
+                    |row| row.get(0),
+                );
+                if table_exists.is_ok() {
+                    let total_res: rusqlite::Result<u64> = conn.query_row(
+                        "SELECT COUNT(*) FROM memory_records",
+                        [],
+                        |row| row.get(0),
+                    );
+                    let indexed_res: rusqlite::Result<u64> = conn.query_row(
+                        "SELECT COUNT(*) FROM memory_records WHERE length(embedding) > 10",
+                        [],
+                        |row| row.get(0),
+                    );
+                    if let (Ok(t), Ok(ind)) = (total_res, indexed_res) {
+                        total = t;
+                        indexed = ind;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let percent = if found && total > 0 {
+        (indexed as f64 / total as f64) * 100.0
+    } else {
+        100.0
+    };
+
+    let status = if percent < 50.0 {
+        "unhealthy"
+    } else if percent < 80.0 {
+        "degraded"
+    } else {
+        "healthy"
+    };
+
+    EmbeddingCoverage {
+        indexed,
+        total,
+        percent,
+        status: status.to_string(),
+    }
+}
+
 /// Run a health check and return a structured response
 /// Internal impl shared by both `collect_health` and `collect_health_sync`.
 /// Metrics are passed in because `gather_system_metrics` contains
@@ -329,6 +430,9 @@ async fn collect_health_impl(
         disk_total_gb: disk_total,
         disk_usage_pct: disk_pct,
     };
+
+    // --- Embedding coverage ---
+    let embedding_coverage = gather_embedding_coverage(settings);
 
     // --- Database health ---
     let db_health = gather_db_health(settings);
@@ -502,6 +606,25 @@ async fn collect_health_impl(
         });
     }
 
+    // 5. Embedding coverage check
+    let coverage_check_status = if embedding_coverage.percent < 50.0 {
+        CheckStatus::Fail
+    } else if embedding_coverage.percent < 80.0 {
+        CheckStatus::Warn
+    } else {
+        CheckStatus::Pass
+    };
+
+    checks.push(HealthCheck {
+        name: "embedding_coverage".into(),
+        status: coverage_check_status,
+        detail: format!(
+            "Embedding coverage at {:.1}% ({}/{} records indexed)",
+            embedding_coverage.percent, embedding_coverage.indexed, embedding_coverage.total
+        ),
+        timestamp_secs: now_secs,
+    });
+
     let uptime = registry
         .read()
         .await
@@ -516,11 +639,11 @@ async fn collect_health_impl(
                 || c.name == "memory"
                 || c.name == "database_integrity"
                 || c.name == "sqlite_integrity")
-    });
+    }) || embedding_coverage.status == "unhealthy";
 
     let overall_status = if critical_failure {
         "unhealthy"
-    } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
+    } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) || embedding_coverage.status == "degraded" {
         "degraded"
     } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Warn)) {
         "warn"
@@ -537,6 +660,7 @@ async fn collect_health_impl(
         embedding,
         mesh,
         checks,
+        embedding_coverage,
     };
 
     // Update registry
@@ -547,6 +671,7 @@ async fn collect_health_impl(
         reg.embedding = response.embedding.clone();
         reg.mesh = response.mesh.clone();
         reg.checks = response.checks.clone();
+        reg.embedding_coverage = response.embedding_coverage.clone();
     }
 
     response
