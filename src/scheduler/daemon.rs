@@ -98,7 +98,92 @@ impl MemoryDaemon {
                 }
             }
         });
+
+        // Autonomous Self-Management Cron loop (Fase P3 & P4)
+        tokio::spawn(async move {
+            let sleep_minutes = std::env::var("XAVIER_CRON_SLEEP_MINUTES")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(5);
+            info!("MemoryDaemon: Scheduled self-manage loop started ({}m interval)", sleep_minutes);
+            loop {
+                sleep(Duration::from_secs(sleep_minutes * 60)).await;
+                info!("MemoryDaemon: Running scheduled self-management checks...");
+                if let Err(e) = run_self_manage_checks().await {
+                    error!("MemoryDaemon: Scheduled self-management check failed: {}", e);
+                }
+            }
+        });
     }
+}
+
+/// Run-once autonomous SRE monitoring check: monitors environment alerts,
+/// scans logs for Telegram failures, maps environment gaps and creates support tickets.
+async fn run_self_manage_checks() -> anyhow::Result<()> {
+    let args = crate::self_manage::EnvStatusArgs {
+        include_processes: Some(true),
+        top_n: Some(10),
+    };
+    let env_res = crate::self_manage::env_status(args);
+
+    let log_args = crate::self_manage::LogScanArgs {
+        since: None,
+        level_min: Some("warn".to_string()),
+        pattern: None,
+        source: None,
+        max_entries: 50,
+    };
+    let log_res = crate::self_manage::log_scan(log_args);
+
+    // If there are critical/major alerts or Telegram polling is dead, file support tickets!
+    let mut alerts = env_res.alerts.clone();
+    if log_res.telegram_polling_dead {
+        alerts.push(crate::self_manage::Alert {
+            severity: "critical".to_string(),
+            metric: "telegram_polling".to_string(),
+            value: "dead/CLOSE-WAIT".to_string(),
+            threshold: "get_me fails or CLOSE-WAIT threads".to_string(),
+        });
+    }
+
+    for alert in alerts {
+        if alert.severity == "critical" || alert.severity == "warn" {
+            let title = format!("[Incident] {} alert on host: {}", alert.severity.to_uppercase(), alert.metric);
+            let body = format!(
+                "### Self-Management Guardian Alert\n\n\
+                **Metric:** {}\n\
+                **Value:** {}\n\
+                **Threshold:** {}\n\
+                **Severity:** {}\n\n\
+                Please review and execute the appropriate runbook actions.",
+                alert.metric, alert.value, alert.threshold, alert.severity
+            );
+
+            let ticket_args = crate::self_manage::TicketCreateArgs {
+                title,
+                body,
+                labels: Some(vec!["runtime".to_string(), "incident".to_string()]),
+                severity: alert.severity,
+                fingerprint: None,
+                backend: Some("maloca".to_string()), // default to Maloca backlog
+            };
+
+            match crate::self_manage::ticket_create(ticket_args) {
+                Ok(res) => {
+                    if res.deduplicated {
+                        tracing::info!("Alert ticket already exists, skipping creation to prevent duplicates.");
+                    } else {
+                        tracing::warn!("Created auto-incident ticket: id={} ({})", res.id, res.backend);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to auto-create incident ticket: {}", e);
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// One scheduled auto-tune pass: measure current recall, compare it against the

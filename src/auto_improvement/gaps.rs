@@ -139,6 +139,69 @@ pub fn analyze_gaps(current: &BenchmarkSnapshot, previous: Option<&BenchmarkSnap
         }
     }
 
+    // Environment/Runtime Gaps (Fase P3)
+    let sys = crate::self_manage::collect_system_snapshot();
+    if let Some(io) = sys.psi.get("io") {
+        if io.full.avg10 > 30.0 {
+            gaps.push(Gap {
+                metric: "psi.io.full.avg10".to_string(),
+                current: io.full.avg10,
+                target: 30.0,
+                gap_pct: (io.full.avg10 - 30.0) / 30.0 * 100.0,
+                severity: if io.full.avg10 > 50.0 {
+                    GapSeverity::Critical
+                } else {
+                    GapSeverity::Major
+                },
+                suggested_experiments: vec![
+                    "Run swapon/swapoff to refresh swap space".to_string(),
+                    "Reduce swappiness vm parameter".to_string(),
+                    "Check for rogue disk I/O processes".to_string(),
+                ],
+            });
+        }
+    }
+
+    if sys.swap.used_percent > 60.0 {
+        gaps.push(Gap {
+            metric: "swap.used_percent".to_string(),
+            current: sys.swap.used_percent,
+            target: 60.0,
+            gap_pct: (sys.swap.used_percent - 60.0) / 60.0 * 100.0,
+            severity: if sys.swap.used_percent > 80.0 {
+                GapSeverity::Critical
+            } else {
+                GapSeverity::Major
+            },
+            suggested_experiments: vec![
+                "Reclaim memory from host cache (drop_caches)".to_string(),
+                "Allocate more zram or zswap memory".to_string(),
+            ],
+        });
+    }
+
+    let log_args = crate::self_manage::LogScanArgs {
+        since: None,
+        level_min: None,
+        pattern: None,
+        source: None,
+        max_entries: 50,
+    };
+    let log_res = crate::self_manage::log_scan(log_args);
+    if log_res.telegram_polling_dead {
+        gaps.push(Gap {
+            metric: "telegram_polling".to_string(),
+            current: 0.0,
+            target: 1.0,
+            gap_pct: 100.0,
+            severity: GapSeverity::Critical,
+            suggested_experiments: vec![
+                "Restart hermes.service or xavier.service".to_string(),
+                "Verify telegram token and webhooks".to_string(),
+            ],
+        });
+    }
+
     gaps
 }
 
