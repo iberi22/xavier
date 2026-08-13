@@ -50,10 +50,12 @@ export default function AgentsView({ token }: { token: string }) {
           </p>
         </div>
         <button
+          type="button"
           onClick={loadAgents}
+          aria-label="Refresh agents"
           className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold text-white transition-all"
         >
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden="true" />
           Refresh
         </button>
       </div>
@@ -79,7 +81,7 @@ export default function AgentsView({ token }: { token: string }) {
             >
               <div className="flex items-start justify-between mb-6">
                 <div className="p-3 bg-white/5 rounded-2xl group-hover:bg-[#39ff14]/10 group-hover:text-[#39ff14] transition-colors">
-                  <Bot size={24} />
+                  <Bot size={24} aria-hidden="true" />
                 </div>
                 <StatusBadge status={agent.status} />
               </div>
