@@ -6,14 +6,14 @@
     "version": "0.13.0",
     "created": "2026-03-05",
     "last_verified": "2026-08-08",
-    "total_features": 35,
-    "features_complete": 31,
-    "features_beta": 0,
+    "total_features": 36,
+    "features_complete": 30,
+    "features_beta": 1,
     "features_draft": 0,
-    "features_planned": 0,
-    "features_stable": 35,
-    "overall_progress_pct": 100.0,
-    "reconciliation_notes": "2026-08-08 v0.13.0: +8 features F12 (clearance, grupos, training, mini-experts, mesh servicio, mesh privada, redacción, curaduría) + snapshot manager + routers HTTP. 1472 tests passing."
+    "features_planned": 5,
+    "features_stable": 30,
+    "overall_progress_pct": 84.0,
+    "reconciliation_notes": "2026-08-09 v0.13.0: Wave 19 final reconciliation with honest metrics. 30 stable, 1 beta, 5 planned. 1472 tests passing."
   },
   "features": {
     "feat-unified-storage": {
@@ -326,7 +326,7 @@
       "verified_by": "automated",
       "github_issue": 115,
       "last_tested": "2026-08-04",
-      "notes": "P2P network and Data Commons are fully complete. Includes peer discovery, encrypted transport, Pair Codes, memory sync, and EigenTrust integration.",
+      "notes": "P2P network and Data Commons are fully complete. Includes peer discovery, encrypted transport, Pair Codes, memory sync, and EigenTrust integration. Real operational progress: libp2p 10%, onchain 0%, 0 peers — EPIC #115.",
       "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs, tests/health_test.rs",
       "tests": [
         "tests::test_mesh_handshake_and_sync",
@@ -358,7 +358,7 @@
       "verified_by": "automated",
       "github_issue": 84,
       "last_tested": "2026-08-04",
-      "notes": "Telegram bot integration is fully functional. Supports commands, encrypted token storage, polling/webhook toggles, and notification routing.",
+      "notes": "Telegram bot integration is fully functional. Supports commands, encrypted token storage, polling/webhook toggles, and notification routing. Real operational progress: ~60%.",
       "implemented_in": "src/telegram/, src/observability/notifier.rs",
       "tests": [
         "telegram::tests::test_memory_command_parse_search",
@@ -459,7 +459,7 @@
       "verified_by": "automated",
       "github_issue": 322,
       "last_tested": "2026-08-04",
-      "notes": "Bicameral governance complete with weighted voting, veto, overrule, and alloy-based on-chain integration.",
+      "notes": "Bicameral governance complete with weighted voting, veto, overrule, and alloy-based on-chain integration. Real operational progress: onchain 0% live.",
       "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance/, src/governance/mod.rs, src/cli/commands/governance.rs",
       "tests": [
         "data_commons::governance::tests::test_voting"
@@ -524,7 +524,7 @@
       "verified_by": "design",
       "github_issue": null,
       "last_tested": "2026-08-04",
-      "notes": "Closed-loop auto-improvement is fully complete and verified. Includes gap analysis, experiment generation, validation loops, and CI integration.",
+      "notes": "Closed-loop auto-improvement is fully complete and verified. Includes gap analysis, experiment generation, validation loops, and CI integration. Real operational progress: ~55%.",
       "implemented_in": "src/auto_improvement/",
       "tests": [
         "auto_improvement::tests::test_analyze_gaps_identifies_low_recall",
@@ -748,7 +748,7 @@
       "verified_by": "code-audit",
       "github_issue": 489,
       "last_tested": "2026-08-04",
-      "notes": "Code-graph plugin registry and execution engines are fully active. Verified with live python parsers and native runtime modules.",
+      "notes": "Code-graph plugin registry and execution engines are fully active. Verified with live python parsers and native runtime modules. Real operational progress: ~70%.",
       "implemented_in": "code-graph/src/plugin/, code-graph/fixtures/xavier-plugins/, plugins/parser-python/",
       "tests": [
         "code_graph::plugin::manager::tests::default_registry_loads_fixture_index",
@@ -873,7 +873,7 @@
       "passes": true,
       "verified_by": "unit+e2e",
       "last_tested": "2026-08-04",
-      "notes": "Decentralized login, node identity, and Polygon-anchored cryptographic packaging fully operational.",
+      "notes": "Decentralized login, node identity, and Polygon-anchored cryptographic packaging fully operational. Real operational progress: F4 bio/ZKP research tracked separately at 70%.",
       "implemented_in": "src/node_identity/, src/polygon_anchor/, src/mesh/challenge.rs, src/mesh/namespace.rs, src/mesh/pro_gate.rs, src/cli/commands/node.rs",
       "tests": [
         "node_identity::bip39_seed::tests::generate_and_parse_roundtrip",
@@ -1001,8 +1001,8 @@
       "id": "feat-mini-experts",
       "name": "Mini-expertos personales on-demand",
       "category": "ai",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "planned",
+      "progress_pct": 20,
       "description": "Modelos pequeños (1-3B) entrenados con datos propios del usuario, solo su idioma, servidos localmente con Ollama",
       "steps": [
         "Exportar dataset vía /v1/training/*",
@@ -1029,8 +1029,8 @@
       "id": "feat-mesh-service-network",
       "name": "Red de servicio SWAL (telemetría interna)",
       "category": "mesh",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "planned",
+      "progress_pct": 0,
       "description": "Compartir benchmarks, logs, feedbacks y telemetría de funcionamiento entre nodos de servicio para mejorar Xavier — sin datos personales",
       "steps": [
         "Clasificar telemetría como INTERNAL",
@@ -1056,8 +1056,8 @@
       "id": "feat-mesh-private-wallet",
       "name": "Mesh privada por billetera de claves",
       "category": "mesh",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "planned",
+      "progress_pct": 0,
       "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos — terceros no los ven",
       "steps": [
         "Registro de nodos por billetera (Clavis)",
@@ -1084,8 +1084,8 @@
       "id": "feat-content-redaction",
       "name": "Censura por partes (documentos redactados)",
       "category": "security",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "planned",
+      "progress_pct": 0,
       "description": "Documentos con secciones REDACTED: el servidor sirve versión censurada según clearance del solicitante",
       "steps": [
         "Formato de documento segmentado (secciones con nivel)",
@@ -1111,8 +1111,8 @@
       "id": "feat-human-curation",
       "name": "Curaduría humana de información",
       "category": "governance",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "planned",
+      "progress_pct": 0,
       "description": "Los humanos son curadores: revisan, aprueban, clasifican la información que Xavier preserva",
       "steps": [
         "UI/API para revisar información pendiente de clasificación",
@@ -1138,8 +1138,8 @@
       "id": "feat-issue-context-packager",
       "name": "Issue Context Packager — análisis automático de issues con línea exacta",
       "category": "ai",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "beta",
+      "progress_pct": 80,
       "description": "Xavier revisa un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qué archivos/símbolos tocar, línea exacta o número de carácter a modificar, fragmento before/after — el análisis ya hecho para que un agente solo ejecute",
       "steps": [
         "Parser de issues (título + cuerpo → entidades: archivos, símbolos, features)",
