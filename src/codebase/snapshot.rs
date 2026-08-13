@@ -123,7 +123,6 @@ impl SnapshotManager {
     /// Build a PreciseChange for a symbol in a repo's source file.
     /// `before_snippet` is the exact current fragment; `after_snippet` is the
     /// proposed replacement — the executor applies ONLY this delta.
-    #[allow(clippy::too_many_arguments)]
     pub fn build_precise_change(
         &self,
         repo: &str,

@@ -407,18 +407,6 @@ export default function App() {
     [],
   );
 
-  const handleCloseMaloca = useCallback(() => {
-    window.location.hash = "";
-  }, []);
-
-  const handleCloseOnboarding = useCallback(() => {
-    setShowOnboarding(false);
-  }, []);
-
-  const handleCloseConfig = useCallback(() => {
-    setIsConfigOpen(false);
-  }, []);
-
   if (health === "offline") {
     return (
       <div className="w-full h-screen bg-black flex items-center justify-center text-[#39ff14] font-mono">
@@ -453,11 +441,17 @@ export default function App() {
   if (hash === "#/master-key") return <MasterKeyPage />;
 
   if (hash === "#/maloca" || hash.startsWith("#/maloca/")) {
-    return <MalocaView onClose={handleCloseMaloca} />;
+    return (
+      <MalocaView
+        onClose={() => {
+          window.location.hash = "";
+        }}
+      />
+    );
   }
 
   if (showOnboarding) {
-    return <OnboardingFlow onComplete={handleCloseOnboarding} />;
+    return <OnboardingFlow onComplete={() => setShowOnboarding(false)} />;
   }
 
   return (
@@ -491,7 +485,7 @@ export default function App() {
             >
               <ConfigModal
                 key="modal"
-                onClose={handleCloseConfig}
+                onClose={() => setIsConfigOpen(false)}
                 graphData={graphData}
                 onUpdateGraphData={handleUpdateGraphData}
                 bookmarks={
