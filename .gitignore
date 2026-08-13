@@ -181,3 +181,7 @@ scripts/subagents/mcp/GENERATED/
 /LICENSE-AGPL
 /LICENSE-MESH
 /COMMERCIAL_LICENSE.md
+
+# Auto-generated docs (regenerable via `xavier chronicle auto-docs`)
+/docs/auto-docs/
+/docs/auto-docs.bak/

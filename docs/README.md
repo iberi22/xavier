@@ -14,14 +14,14 @@ Welcome to the Xavier documentation!
 
 ## Reference
 
-- [API Reference](../reference/API.md) - HTTP API endpoints
-- [Architecture](../ARCHITECTURE/README.md) - System design
-- [Security](./SECURITY.md) - Security model and configuration
+- [API Reference](../api/README.md) - HTTP API endpoints
+- [Architecture](../ARCHITECTURE/ARCHITECTURE.md) - System design
+- [Security](../SECURITY.md) - Security model and configuration
 
 ## Planning
 
 - [ROADMAP.md](./ROADMAP.md) - Development roadmap and feature planning
-- [Benchmark Comparison](./BENCHMARK_COMPARISON.md) - Performance vs competitors
+- [Benchmark Comparison](../benchmark/BENCHMARK_COMPARISON.md) - Performance vs competitors
 
 ## Contributing
 
@@ -32,8 +32,8 @@ Welcome to the Xavier documentation!
 
 | Topic | Description |
 |-------|-------------|
-| [Memory Types](./reference/MEMORY_TYPES.md) | Semantic, episodic, procedural memory |
-| [Security](./SECURITY.md) | Prompt injection protection |
-| [Benchmarks](./BENCHMARK_COMPARISON.md) | Performance analysis |
-| [Docker](./DOCKER_DEPLOY.md) | Container deployment |
+| [Memory Types](../reference/README.md) | Semantic, episodic, procedural memory |
+| [Security](../SECURITY.md) | Prompt injection protection |
+| [Benchmarks](../benchmark/BENCHMARK_COMPARISON.md) | Performance analysis |
+| [Docker](../DEPLOY/DOCKER_DEPLOY.md) | Container deployment |
 | [Advanced Settings](./advanced-settings.md) | PgHeart, Chronicle, and Agent configuration |
