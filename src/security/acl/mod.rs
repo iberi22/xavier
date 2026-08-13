@@ -139,7 +139,7 @@ impl std::fmt::Display for ClearanceLevel {
 
 impl ClearanceLevel {
     /// Parse from string, case-insensitive.
-    pub fn parse_from_str(s: &str) -> Option<Self> {
+    pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "public" => Some(ClearanceLevel::Public),
             "internal" => Some(ClearanceLevel::Internal),
@@ -339,14 +339,14 @@ mod clearance_tests {
     #[test]
     fn test_clearance_from_str() {
         assert_eq!(
-            ClearanceLevel::parse_from_str("public"),
+            ClearanceLevel::from_str("public"),
             Some(ClearanceLevel::Public)
         );
         assert_eq!(
-            ClearanceLevel::parse_from_str("TOP_SECRET"),
+            ClearanceLevel::from_str("TOP_SECRET"),
             Some(ClearanceLevel::TopSecret)
         );
-        assert_eq!(ClearanceLevel::parse_from_str("bogus"), None);
+        assert_eq!(ClearanceLevel::from_str("bogus"), None);
     }
 
     #[test]

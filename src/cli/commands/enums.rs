@@ -318,11 +318,6 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
-    /// Manage training datasets and exports
-    Training {
-        #[command(subcommand)]
-        cmd: TrainingCommand,
-    },
     /// Manage Xavier plugins
     Plugin {
         #[command(subcommand)]
@@ -1090,48 +1085,4 @@ pub enum PluginCommand {
     Install { name: String },
     /// List plugins
     List,
-}
-
-/// Training subcommands
-#[derive(Subcommand, Debug, Clone)]
-pub enum TrainingCommand {
-    /// Export telemetry data into a training bundle and write to files
-    Export {
-        /// Output directory where train.jsonl, eval.jsonl, and metadata.json will be written
-        #[arg(short, long)]
-        output: std::path::PathBuf,
-        /// Seed for deterministic split and anonymization
-        #[arg(short, long, default_value_t = 42)]
-        seed: u64,
-        /// Ratio for eval split (0.0 to 1.0)
-        #[arg(short, long, default_value_t = 0.2)]
-        eval_ratio: f32,
-        /// Optional clearance metadata
-        #[arg(long)]
-        clearance: Option<String>,
-        /// Optional language metadata
-        #[arg(long)]
-        language: Option<String>,
-        /// Optional segment metadata
-        #[arg(long)]
-        segment: Option<String>,
-    },
-    /// List all generated datasets
-    Datasets,
-    /// Print/save train.jsonl of a specific dataset ID
-    DatasetsTrain {
-        /// Dataset ID
-        id: String,
-        /// Optional output file path to write to instead of printing to stdout
-        #[arg(short, long)]
-        output: Option<std::path::PathBuf>,
-    },
-    /// Print/save eval.jsonl of a specific dataset ID
-    DatasetsEval {
-        /// Dataset ID
-        id: String,
-        /// Optional output file path to write to instead of printing to stdout
-        #[arg(short, long)]
-        output: Option<std::path::PathBuf>,
-    },
 }

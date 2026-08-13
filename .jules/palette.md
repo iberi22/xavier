@@ -27,7 +27,3 @@
 ## 2026-08-08 - Button Accessibility: Explicit type attributes
 **Learning:** Found a recurring pattern where `<button>` elements in interactive components (like `TopStatusBar.tsx`) lack the explicit `type="button"` attribute. Without this, buttons inside or near forms might default to `type="submit"`, causing unintended form submissions or page reloads when interacted with via keyboard or assistive technologies.
 **Action:** Always ensure that `<button>` elements used strictly for UI actions or toggling state explicitly declare `type="button"` to guarantee predictable behavior across all contexts.
-
-## 2026-08-10 - Adding Accessible Switch Roles to Custom UI Toggles
-**Learning:** When using generic HTML elements like `<button>` to represent toggles (like checkboxes or switches), relying purely on visual cues (CSS, colors, inner icons) leaves screen reader users unaware of the state. It's critical to add `role="switch"` and `aria-checked` to these interactive components so assistive technologies correctly interpret and announce state changes.
-**Action:** Always verify if a clickable UI component behaves as a toggle switch; if it does and it isn't a native `<input type="checkbox">`, mandate the addition of `role="switch"` and dynamic `aria-checked` attributes.
