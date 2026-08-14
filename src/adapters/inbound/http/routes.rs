@@ -65,6 +65,7 @@ pub fn create_router() -> Router {
 pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecyclePort>) -> Router {
     let router = Router::new()
         .route("/health", get(health_handler))
+        .route("/health/history", get(health_history_handler))
         .route("/health/cloud", get(cloud_health_handler))
         .route("/readiness", get(readiness_handler))
         .route("/build", get(build_handler))
@@ -145,6 +146,8 @@ pub struct RouteHealthResponse {
     pub system: RouteHealthSystem,
     pub database: RouteHealthDatabase,
     pub mesh: String,
+    pub telegram: crate::health::TelegramHealth,
+    pub dependency_graph: crate::health::ComponentDependencyGraph,
     pub checks: Vec<RouteHealthCheck>,
     pub embedding_coverage: crate::health::EmbeddingCoverage,
 }
@@ -189,6 +192,15 @@ async fn cloud_health_handler() -> impl axum::response::IntoResponse {
     Json(health)
 }
 
+async fn health_history_handler() -> impl axum::response::IntoResponse {
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let history = crate::health::history::fetch_health_history(now_secs);
+    Json(history)
+}
+
 async fn health_handler() -> impl axum::response::IntoResponse {
     let health = crate::health::collect_health_sync();
     Json(RouteHealthResponse {
@@ -207,6 +219,8 @@ async fn health_handler() -> impl axum::response::IntoResponse {
             needs_vacuum: health.database.needs_vacuum,
         },
         mesh: health.mesh.connectivity,
+        telegram: health.telegram,
+        dependency_graph: health.dependency_graph,
         checks: health
             .checks
             .iter()
