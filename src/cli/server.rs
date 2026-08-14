@@ -1467,6 +1467,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         encrypted_dek: None,
                         content_iv: None,
                         metadata_iv: None,
+                        ..Default::default()
                     };
                     let _ = memory_port_cron.add(record).await;
                 }

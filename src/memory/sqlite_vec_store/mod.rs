@@ -159,6 +159,8 @@ impl VecSqliteMemoryStore {
             encrypted_dek: row.get(15).ok(),
             content_iv: row.get(16).ok(),
             metadata_iv: row.get(17).ok(),
+            embedding_status: row.get::<_, Option<String>>(18).ok().flatten().unwrap_or_else(|| "pending".to_string()),
+            embedding_attempts: row.get::<_, Option<u32>>(19).ok().flatten().unwrap_or(0),
             score: 0.0,
             deleted_at: None,
         })

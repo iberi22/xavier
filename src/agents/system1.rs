@@ -645,6 +645,7 @@ mod budget_tests {
             metadata_iv: None,
             score: 0.0,
             deleted_at: None,
+            ..Default::default()
         }
     }
 
