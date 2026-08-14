@@ -17,6 +17,7 @@ pub struct McpToolCallPayload {
 pub async fn mcp_tools_call_handler(
     State(state): State<CliState>,
     Extension(workspace): Extension<WorkspaceContext>,
+    claims: Option<Extension<xavier::security::auth::Claims>>,
     Json(payload): Json<McpToolCallPayload>,
 ) -> impl axum::response::IntoResponse {
     use xavier::server::mcp::server::handle_tool_call;
@@ -42,7 +43,8 @@ pub async fn mcp_tools_call_handler(
         code_graph_dump_path: None,
     };
 
-    match handle_tool_call(app_state, workspace, &payload.name, payload.arguments).await {
+    let claims_ref = claims.as_ref().map(|c| &c.0);
+    match handle_tool_call(app_state, workspace, claims_ref, &payload.name, payload.arguments).await {
         Ok(result) => (StatusCode::OK, Json(result)).into_response(),
         Err(e) => {
             let message = e.to_string();
