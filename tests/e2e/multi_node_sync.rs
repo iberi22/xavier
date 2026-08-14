@@ -1,5 +1,5 @@
 use std::net::TcpListener;
-use std::process::{Child, Stdio};
+use std::process::Child;
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -33,11 +33,19 @@ impl NodeProcess {
 
     fn spawn_child(&mut self) {
         let url = format!("http://127.0.0.1:{}", self.port);
+        let log_path = std::env::temp_dir().join(format!("xavier-test-node-{}.log", self.port));
+        let log_file = std::fs::File::create(&log_path).expect("create node log");
+        // Run from an isolated working dir so the binary does NOT pick up the
+        // repo's config/xavier.config.json + .env (apply_to_env() would override
+        // the test's env vars and point every node at the SAME real DB).
+        let isolated_cwd = self.home_dir.path().join("cwd");
+        std::fs::create_dir_all(&isolated_cwd).expect("create isolated cwd");
         let child_proc = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
             .arg("http")
             .arg(self.port.to_string())
             .arg("--mcp-port")
             .arg("0")
+            .current_dir(&isolated_cwd)
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", self.port.to_string())
             .env("XAVIER_URL", &url)
@@ -45,6 +53,7 @@ impl NodeProcess {
             .env("XAVIER_MCP_PORT", "0")
             .env("XAVIER_HOME", self.home_dir.path())
             .env("XAVIER_STATE_DIR", self.home_dir.path())
+            .env("XAVIER_DATA_DIR", self.home_dir.path().join("data"))
             .env(
                 "XAVIER_CODE_GRAPH_DB_PATH",
                 self.home_dir.path().join("code_graph.db"),
@@ -53,8 +62,8 @@ impl NodeProcess {
                 "XAVIER_MEMORY_VEC_PATH",
                 self.home_dir.path().join("memory_vec.db"),
             )
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(log_file.try_clone().expect("clone stdout"))
+            .stderr(log_file)
             .spawn()
             .expect("failed to start xavier binary");
 
@@ -62,7 +71,18 @@ impl NodeProcess {
     }
 
     fn stop(&mut self) {
-        self.child = None;
+        // Kill the child and wait so the port is actually released before the
+        // test proceeds (otherwise a "push to offline peer" may still connect
+        // while the process is dying, and the record lands on B).
+        self.child = None; // drops ChildGuard → kill + wait
+        // Poll TCP connect until it fails (port closed → process is really gone).
+        use std::net::TcpStream;
+        for _ in 0..40 {
+            match TcpStream::connect(("127.0.0.1", self.port)) {
+                Ok(_) => std::thread::sleep(Duration::from_millis(150)),
+                Err(_) => break, // connection refused → port released
+            }
+        }
     }
 
     fn resume(&mut self) {
@@ -145,6 +165,7 @@ async fn trigger_sync_push(node: &NodeProcess, peer_url: &str) -> serde_json::Va
     });
     let resp = client
         .post(&url)
+        .header("X-Xavier-Token", &node.token)
         .json(&payload)
         .send()
         .await
@@ -164,6 +185,7 @@ async fn trigger_sync_pull(node: &NodeProcess, peer_url: &str) -> serde_json::Va
     });
     let resp = client
         .post(&url)
+        .header("X-Xavier-Token", &node.token)
         .json(&payload)
         .send()
         .await
@@ -189,8 +211,8 @@ async fn test_multi_node_e2e_sync() {
     let home_a = TempDir::new().expect("temp home A");
     let home_b = TempDir::new().expect("temp home B");
 
-    let node_a = NodeProcess::start(port_a, home_a, "token_a".to_string());
-    let mut node_b = NodeProcess::start(port_b, home_b, "token_b".to_string());
+    let node_a = NodeProcess::start(port_a, home_a, "mesh-token".to_string());
+    let mut node_b = NodeProcess::start(port_b, home_b, "mesh-token".to_string());
 
     node_a.wait_until_ready().await;
     node_b.wait_until_ready().await;
@@ -315,8 +337,11 @@ async fn test_multi_node_e2e_sync() {
     node_b.resume();
     node_b.wait_until_ready().await;
 
-    // B should still not have A's quantum record
-    let mut search_b_quantum = search_memory(&node_b, "Quantum").await;
+    // B should still not have A's quantum record.
+    // NOTE: query must be a term UNIQUE to A's record — "Quantum" alone
+    // collides with auto-indexed Cursor transcripts on this machine
+    // ("post-quantum crypto ML-KEM"), which the AgentIndexer captures on boot.
+    let mut search_b_quantum = search_memory(&node_b, "revolutionary").await;
     assert!(
         search_b_quantum.is_empty(),
         "Node B should not have the quantum record yet"
@@ -332,7 +357,7 @@ async fn test_multi_node_e2e_sync() {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Verify B now has the quantum record
-    search_b_quantum = search_memory(&node_b, "Quantum").await;
+    search_b_quantum = search_memory(&node_b, "revolutionary").await;
     assert!(
         !search_b_quantum.is_empty(),
         "Node B should have the quantum record after resync"
