@@ -97,6 +97,8 @@ pub struct PeerMemorySync {
     /// Shared mesh credential sent to peers as `X-Xavier-Token`.
     /// Peers in the same SWAL mesh authenticate with the same token.
     peer_token: Option<String>,
+    /// Last successful sync timestamp per peer URL.
+    last_sync_map: tokio::sync::RwLock<std::collections::HashMap<String, DateTime<Utc>>>,
 }
 
 impl PeerMemorySync {
@@ -120,7 +122,14 @@ impl PeerMemorySync {
             sync_interval: Duration::from_secs(300),
             node_id,
             peer_token,
+            last_sync_map: tokio::sync::RwLock::new(std::collections::HashMap::new()),
         }
+    }
+
+    /// Retrieve the last successful sync timestamp for a given peer URL.
+    pub async fn last_sync_at(&self, peer_url: &str) -> Option<DateTime<Utc>> {
+        let map = self.last_sync_map.read().await;
+        map.get(peer_url).cloned()
     }
 
     /// Borrow the underlying memory store.
@@ -165,14 +174,19 @@ impl PeerMemorySync {
             .await?;
 
         let duration_ms = start.elapsed().as_millis() as u64;
-        Ok(SyncSession {
+        let session = SyncSession {
             peer_id: peer_url.to_string(),
             chunks_sent,
             chunks_received,
             conflicts,
             duration_ms,
             success: true,
-        })
+        };
+        self.last_sync_map
+            .write()
+            .await
+            .insert(peer_url.to_string(), Utc::now());
+        Ok(session)
     }
 
     /// One-shot push: send local chunks newer than `since` to peer.
