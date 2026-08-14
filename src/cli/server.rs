@@ -471,9 +471,15 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     } else {
         "local".to_string()
     };
-    let sync_service = Arc::new(xavier::memory::sync::PeerMemorySync::new(
+    // Shared mesh token: peers in the same SWAL mesh authenticate with the
+    // same XAVIER_TOKEN (fallback: XAVIER_MESH_TOKEN, then none).
+    let mesh_token = std::env::var("XAVIER_TOKEN")
+        .ok()
+        .or_else(|| std::env::var("XAVIER_MESH_TOKEN").ok());
+    let sync_service = Arc::new(xavier::memory::sync::PeerMemorySync::with_peer_token(
         state.store.clone(),
         node_id,
+        mesh_token,
     ));
     xavier::adapters::inbound::http::handlers::sync::init_memory_sync(sync_service);
 
