@@ -34,6 +34,31 @@ impl Default for RedactionEngine {
                     mask: "[EMAIL]".to_string(),
                 },
                 RedactionRule {
+                    name: "iban".to_string(),
+                    pattern: r"\b[a-zA-Z]{2}\d{2}[a-zA-Z0-9]{11,30}\b|\b[a-zA-Z]{2}\d{2}(?:\s?[a-zA-Z0-9]{4}){3,7}(?:\s?[a-zA-Z0-9]{1,4})?\b".to_string(),
+                    mask: "[IBAN]".to_string(),
+                },
+                RedactionRule {
+                    name: "ipv6".to_string(),
+                    pattern: r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b|\b(?:[0-9a-fA-F]{1,4}:){1,7}:|:(?::[0-9a-fA-F]{1,4}){1,7}\b|\b(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b".to_string(),
+                    mask: "[IPV6]".to_string(),
+                },
+                RedactionRule {
+                    name: "ipv4".to_string(),
+                    pattern: r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b".to_string(),
+                    mask: "[IPV4]".to_string(),
+                },
+                RedactionRule {
+                    name: "gps".to_string(),
+                    pattern: r"[-+]?\b(?:90(?:\.0+)?|[1-8]?\d(?:\.\d+)?),\s*[-+]?(?:180(?:\.0+)?|1[0-7]\d(?:\.\d+)?|[1-9]?\d(?:\.\d+)?)\b".to_string(),
+                    mask: "[GPS]".to_string(),
+                },
+                RedactionRule {
+                    name: "cedula".to_string(),
+                    pattern: r"\b(?:C\.?C\.?|Cédula|cedula)\s*[:#]?\s*\d{6,10}\b|\b\d{6,10}\b".to_string(),
+                    mask: "[CEDULA]".to_string(),
+                },
+                RedactionRule {
                     name: "phone".to_string(),
                     pattern: r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}".to_string(),
                     mask: "[PHONE]".to_string(),
@@ -136,5 +161,69 @@ mod tests {
         let input = "Code: SEC-1234 and SEC-5678.";
         let redacted = engine.redact(input);
         assert_eq!(redacted, "Code: [SECRET] and [SECRET].");
+    }
+
+    #[test]
+    fn test_redact_cedula() {
+        let engine = RedactionEngine::default();
+        let inputs = vec![
+            ("Mi Cédula #1012345678 es esta.", "Mi [CEDULA] es esta."),
+            ("CC 523456789 es el documento.", "[CEDULA] es el documento."),
+            ("cedula: 123456", "[CEDULA]"),
+            ("El codigo es 123.", "El codigo es 123."), // Too short (< 6 digits) -> no match
+        ];
+        for (input, expected) in inputs {
+            assert_eq!(engine.redact(input), expected);
+        }
+    }
+
+    #[test]
+    fn test_redact_ipv4() {
+        let engine = RedactionEngine::default();
+        let inputs = vec![
+            ("Server IP is 192.168.1.1 or 10.0.0.254.", "Server IP is [IPV4] or [IPV4]."),
+            ("Invalid IP 999.999.999.999 should stay.", "Invalid IP 999.999.999.999 should stay."),
+        ];
+        for (input, expected) in inputs {
+            assert_eq!(engine.redact(input), expected);
+        }
+    }
+
+    #[test]
+    fn test_redact_ipv6() {
+        let engine = RedactionEngine::default();
+        let inputs = vec![
+            ("Address is 2001:0db8:85a3:0000:0000:8a2e:0370:7334.", "Address is [IPV6]."),
+            ("Loopback is ::1.", "Loopback is [IPV6]."),
+        ];
+        for (input, expected) in inputs {
+            assert_eq!(engine.redact(input), expected);
+        }
+    }
+
+    #[test]
+    fn test_redact_gps() {
+        let engine = RedactionEngine::default();
+        let inputs = vec![
+            ("Coordinates: 4.60971, -74.08175.", "Coordinates: [GPS]."),
+            ("Location -12.04637, 77.04279 ok", "Location [GPS] ok"),
+            ("Not GPS 999.999, 123.45", "Not GPS 999.999, 123.45"),
+        ];
+        for (input, expected) in inputs {
+            assert_eq!(engine.redact(input), expected);
+        }
+    }
+
+    #[test]
+    fn test_redact_iban() {
+        let engine = RedactionEngine::default();
+        let inputs = vec![
+            ("Transfer to GB33BUKB20201555555555.", "Transfer to [IBAN]."),
+            ("IBAN ES91 2100 0418 4502 0005 1332", "IBAN [IBAN]"),
+            ("Short text US12", "Short text US12"),
+        ];
+        for (input, expected) in inputs {
+            assert_eq!(engine.redact(input), expected);
+        }
     }
 }
