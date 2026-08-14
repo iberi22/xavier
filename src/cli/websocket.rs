@@ -100,6 +100,7 @@ pub async fn session_event_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        ..Default::default()
     };
     match state.memory.add(record).await {
         Ok(id) => {
@@ -232,6 +233,7 @@ pub async fn session_compact_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        ..Default::default()
     };
     match state.memory.add(record).await {
         Ok(id) => {
