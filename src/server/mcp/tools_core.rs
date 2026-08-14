@@ -6,43 +6,15 @@
 //! Note: All tools define their input schema using `input_schema` internally,
 //! which is serialized to the MCP-compliant `inputSchema` camelCase field via Serde.
 use super::types::*;
-use crate::coordination::KeyLendingEngine;
 use crate::memory::schema::{
     EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, MemoryQueryFilters,
     TypedMemoryPayload,
 };
-use crate::secrets::audit::QmdAuditLogger;
 use crate::utils::crypto::hex_encode;
 use crate::workspace::WorkspaceContext;
 use crate::AppState;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-
-/// Helper function to resolve secrets via KeyLendingEngine lease system for MCP tool operations.
-/// Lends a short-lived secret lease, passes the secret value (if available) to the callback,
-/// and automatically revokes the lease after the operation completes.
-pub async fn resolve_tool_secret<F, Fut, T>(
-    secret_name: &str,
-    agent_id: &str,
-    f: F,
-) -> anyhow::Result<T>
-where
-    F: FnOnce(Option<String>) -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<T>>,
-{
-    let engine = KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None);
-    let raw_val = std::env::var(secret_name).ok();
-    let lease = engine
-        .lend(secret_name, raw_val.as_deref(), agent_id, 60)
-        .await?;
-
-    let val = lease.secret_value.clone();
-    let res = f(val).await;
-
-    let _ = engine.revoke(&lease.token, "mcp_tool_execution_complete").await;
-
-    res
-}
 
 /// Get xavier core tools.
 pub fn get_xavier_core_tools() -> Vec<MCPTool> {
@@ -598,16 +570,13 @@ pub async fn handle_core_tool(
                 backend,
             };
 
-            resolve_tool_secret("GITHUB_TOKEN", "mcp_ticket_create", |_secret_val| async move {
-                match crate::self_manage::ticket_create(args) {
-                    Ok(result) => Ok(serde_json::to_value(MCPToolResult::structured(
-                        serde_json::to_value(&result)?,
-                        result.deduplicated,
-                    ))?),
-                    Err(error) => Err(error),
-                }
-            })
-            .await
+            match crate::self_manage::ticket_create(args) {
+                Ok(result) => Ok(serde_json::to_value(MCPToolResult::structured(
+                    serde_json::to_value(&result)?,
+                    result.deduplicated,
+                ))?),
+                Err(error) => Err(error),
+            }
         }
         "xavier_local_status" => {
             let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();

@@ -5,15 +5,16 @@
     "project": "Xavier",
     "version": "0.13.0",
     "created": "2026-03-05",
-    "last_verified": "2026-08-08",
-    "total_features": 36,
-    "features_complete": 30,
+    "last_verified": "2026-08-14",
+    "total_features": 38,
+    "features_complete": 32,
     "features_beta": 1,
     "features_draft": 0,
     "features_planned": 5,
-    "features_stable": 30,
-    "overall_progress_pct": 84.0,
-    "reconciliation_notes": "2026-08-09 v0.13.0: Wave 19 final reconciliation with honest metrics. 30 stable, 1 beta, 5 planned. 1472 tests passing."
+    "features_designed": 0,
+    "features_stable": 31,
+    "overall_progress_pct": 86.8,
+    "reconciliation_notes": "2026-08-14: verified feat-node-provisioning (status: implemented, Olas M6/M7, REQ-029..030 / US-042..043). Counts reconciled: 31 stable, 1 implemented, 1 beta, 5 planned."
   },
   "features": {
     "feat-unified-storage": {
@@ -1186,6 +1187,39 @@
       "implemented": true,
       "req_ids": [],
       "user_stories": []
+    },
+    "feat-node-provisioning": {
+      "id": "feat-node-provisioning",
+      "name": "SWAL Node Provisioning (BaaS tokens + SSH keys)",
+      "category": "mesh",
+      "status": "implemented",
+      "progress_pct": 100,
+      "description": "Register a cloud service (Supabase/Neon) or VPS as a SWAL node by pasting its API token or SSH key. Xavier provisions and administers it autonomously (Ola M6 BaaS + Ola M7 SSH/VPS). Credentials live ONLY in src/secrets/ (AES-256-GCM + EphemeralLease UUID/TTL).",
+      "steps": [
+        "CLI xavier nodes add|list|show|rotate|remove|status",
+        "API REST GET /mesh/public/nodes and /v1/mesh/public/nodes",
+        "Vault storage of BaaS tokens + SSH keys (AES-256-GCM + EphemeralLease UUID/TTL)",
+        "Provider provisioner: MockProvisioner / Supabase / Neon / VPS",
+        "SSH installer: dedicated Ed25519 keypair per node + wallet registration cert",
+        "Registration public or private per visibility",
+        "Revocation with PartialRevocation tracking on remote failures",
+        "Public mesh info sync & filtering"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": "",
+      "last_tested": "2026-08-14",
+      "notes": "Validated (Olas M6/M7). Docs: docs/design/F9-MESH-SWAL-PUBLICO-PRIVADO.md §3.8/§3.9, docs/adr/ADR-015-node-provisioning.md, SRS REQ-029..030 / US-042..043.",
+      "implemented_in": "src/nodes/, src/cli/commands/nodes.rs, src/adapters/inbound/http/handlers/nodes.rs, tests/nodes_provisioning_test.rs",
+      "tests": 25,
+      "req_ids": [
+        "REQ-029",
+        "REQ-030"
+      ],
+      "user_stories": [
+        "US-042",
+        "US-043"
+      ]
     }
   },
   "verification_commands": {

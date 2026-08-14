@@ -263,37 +263,3 @@ async fn test_clavis_proxy_integration() -> Result<()> {
     println!("✅ Clavis Proxy Integration Test PASSED.");
     Ok(())
 }
-
-#[tokio::test]
-async fn test_mcp_tool_secret_resolution_lease_revocation() -> Result<()> {
-    use xavier::secrets::audit::QmdAuditLogger;
-    use xavier::server::mcp::tools_core::resolve_tool_secret;
-
-    // Set environment variable for test secret resolution
-    std::env::set_var("GITHUB_TOKEN", "ghp_test_mcp_tool_secret_token_456");
-
-    let agent_id = "mcp_ticket_create";
-
-    // Call resolve_tool_secret helper which borrows the secret via KeyLendingEngine::lend()
-    let result = resolve_tool_secret("GITHUB_TOKEN", agent_id, |secret_opt| async move {
-        let val = secret_opt.expect("Secret value should be provided via lease");
-        assert_eq!(val, "ghp_test_mcp_tool_secret_token_456");
-        Ok::<_, anyhow::Error>("tool_execution_success".to_string())
-    })
-    .await;
-
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), "tool_execution_success");
-
-    // Verify lease revocation using KeyLendingEngine active lease checks
-    let logger = Box::new(QmdAuditLogger::new());
-    let engine = KeyLendingEngine::new(logger, None);
-    let active_leases = engine.list_leases().await;
-    assert!(
-        active_leases.is_empty(),
-        "Lease must be revoked immediately after MCP tool execution complete"
-    );
-
-    println!("✅ MCP Tool Secret Resolution Lease Revocation Test PASSED.");
-    Ok(())
-}

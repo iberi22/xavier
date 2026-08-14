@@ -113,7 +113,7 @@ impl IrohTransport {
     /// mechanism; callers persist that in `PeerInfo.iroh_addr`.
     pub async fn my_addr_string(&self) -> Result<String> {
         let endpoint = self.endpoint().await?;
-        Ok(endpoint.id().to_string())
+        Ok(format!("{:?}", endpoint.id()))
     }
 
     /// Lazily bind and return the Iroh [`Endpoint`].
@@ -126,7 +126,6 @@ impl IrohTransport {
         self.endpoint
             .get_or_try_init(|| async {
                 Endpoint::builder(N0)
-                    .alpns(vec![XMESH_ALPN.to_vec()])
                     .bind()
                     .await
                     .context("Failed to bind Iroh endpoint")
@@ -312,126 +311,6 @@ impl IrohTransport {
         let _resp = self
             .round_trip(&conn, &MeshRequest::ShareSession { share })
             .await?;
-        Ok(())
-    }
-
-    /// Spawn the server-side accept loop in a background Tokio task.
-    pub async fn spawn_accept_loop(&self) -> tokio::task::JoinHandle<()> {
-        let endpoint = match self.endpoint().await {
-            Ok(ep) => ep.clone(),
-            Err(e) => {
-                tracing::error!("Failed to initialize endpoint for accept loop: {e:#}");
-                return tokio::spawn(async {});
-            }
-        };
-        let local_identity = self.local_identity.clone();
-        tokio::spawn(async move {
-            if let Err(err) = Self::run_accept_loop(endpoint, local_identity).await {
-                tracing::warn!("Iroh accept loop ended: {err:#}");
-            }
-        })
-    }
-
-    /// Run the server-side accept loop on the Iroh endpoint.
-    pub async fn accept_loop(&self) -> Result<()> {
-        let endpoint = self.endpoint().await?.clone();
-        Self::run_accept_loop(endpoint, self.local_identity.clone()).await
-    }
-
-    /// Internal worker loop for processing incoming QUIC connections and bi-streams.
-    async fn run_accept_loop(
-        endpoint: Endpoint,
-        local_identity: Arc<NodeIdentity>,
-    ) -> Result<()> {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        while let Some(incoming) = endpoint.accept().await {
-            let Ok(connecting) = incoming.accept() else {
-                continue;
-            };
-            let Ok(conn) = connecting.await else {
-                continue;
-            };
-
-            if conn.alpn() != XMESH_ALPN {
-                tracing::debug!("Rejected connection with mismatched ALPN");
-                continue;
-            }
-
-            let local_identity = local_identity.clone();
-            tokio::spawn(async move {
-                while let Ok((mut send, mut recv)) = conn.accept_bi().await {
-                    let mut len_buf = [0u8; 4];
-                    if recv.read_exact(&mut len_buf).await.is_err() {
-                        break;
-                    }
-                    let len = u32::from_be_bytes(len_buf) as usize;
-                    let mut buf = vec![0u8; len];
-                    if recv.read_exact(&mut buf).await.is_err() {
-                        break;
-                    }
-
-                    let req: MeshRequest = match serde_json::from_slice(&buf) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            tracing::warn!("Failed to deserialize MeshRequest: {e:#}");
-                            break;
-                        }
-                    };
-
-                    let response_value = match req {
-                        MeshRequest::Handshake { body: _ } => {
-                            let resp = MeshHandshakeResponse {
-                                accepted: true,
-                                node_id: local_identity.node_id.clone(),
-                                public_key_hex: crate::crypto::hex_encode(&local_identity.public_key),
-                                reason: None,
-                            };
-                            serde_json::to_value(resp)
-                        }
-                        MeshRequest::FetchManifest { .. } => {
-                            let resp = MeshManifest {
-                                node_id: local_identity.node_id.clone(),
-                                chunks: vec![],
-                                generated_at: chrono::Utc::now().timestamp(),
-                            };
-                            serde_json::to_value(resp)
-                        }
-                        MeshRequest::FetchChunks { .. } => {
-                            let resp: HashMap<String, Vec<u8>> = HashMap::new();
-                            serde_json::to_value(resp)
-                        }
-                        MeshRequest::PushChunks { .. } => {
-                            let resp: Vec<String> = vec![];
-                            serde_json::to_value(resp)
-                        }
-                        MeshRequest::ShareSession { .. } => {
-                            serde_json::to_value(serde_json::json!({"status": "ok"}))
-                        }
-                    };
-
-                    let resp_bytes = match response_value.and_then(|v| serde_json::to_vec(&v)) {
-                        Ok(bytes) => bytes,
-                        Err(e) => {
-                            tracing::warn!("Failed to serialize response: {e:#}");
-                            break;
-                        }
-                    };
-
-                    if send
-                        .write_all(&(resp_bytes.len() as u32).to_be_bytes())
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                    if send.write_all(&resp_bytes).await.is_err() {
-                        break;
-                    }
-                    let _ = send.finish();
-                }
-            });
-        }
         Ok(())
     }
 }

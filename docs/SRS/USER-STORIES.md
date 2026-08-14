@@ -325,6 +325,20 @@ As a **human curator**, I want to review/approve/classify information so that **
 - **Feature:** `feat-human-curation` · **REQ:** REQ-027
 - **Acceptance:** Curation flow with approval; personal models train only on curated data.
 
+## US-042: Provision a BaaS cloud node with my token
+
+As a **user**, I can register a cloud service as a SWAL node by pasting its API token (Supabase/Neon), so that **Xavier provisions and administers it autonomously**.
+
+- **Feature:** `feat-node-provisioning` · **REQ:** REQ-029
+- **Acceptance:** `xavier nodes add --provider supabase --token sbp_xxx` provisions RLS + encrypted bucket + heartbeat; token lives only in Clavis (AES-256-GCM + lease TTL); node registers public (M1) or private (M3) per visibility.
+
+## US-043: Register my VPS as a private node
+
+As a **user**, I can register my VPS as a private SWAL node over SSH, so that **my private mesh info persists on my own infrastructure under my wallet's control**.
+
+- **Feature:** `feat-node-provisioning` · **REQ:** REQ-030
+- **Acceptance:** `xavier nodes add --provider vps --ssh user@host --key ~/.ssh/id_ed25519` installs edge-hive lite; SSH key only in Clavis; node syncs memory+snapshots with session encryption; other wallets cannot join.
+
 ---
 
-*Domain-specific US-033..040 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04.*
+*Domain-specific US-033..040 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04. US-042..043 added 2026-08-14 (node provisioning — Olas M6/M7). US-041 reserved by `feat-issue-context-packager`.*
