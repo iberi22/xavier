@@ -482,15 +482,18 @@ pub fn parse_log_line(line: &str) -> Option<LogScanEntry> {
     }
     let redacted = redact_secrets(line);
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&redacted) {
-        let timestamp = v.get("timestamp")
+        let timestamp = v
+            .get("timestamp")
             .and_then(|t| t.as_str())
             .unwrap_or("")
             .to_string();
-        let level = v.get("level")
+        let level = v
+            .get("level")
             .and_then(|l| l.as_str())
             .unwrap_or("INFO")
             .to_string();
-        let message = v.get("fields")
+        let message = v
+            .get("fields")
             .and_then(|f| f.get("message"))
             .and_then(|m| m.as_str())
             .or_else(|| v.get("message").and_then(|m| m.as_str()))
@@ -565,10 +568,17 @@ pub fn log_scan(args: LogScanArgs) -> LogScanResult {
     let mut new_cursor = cursor.clone();
     let mut start_reading = cursor.last_file.is_empty();
 
-    let since_time = args.since.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
+    let since_time = args
+        .since
+        .as_ref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
 
     for file_path in files {
-        let file_name = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let file_name = file_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
 
         if !start_reading {
             if file_name == cursor.last_file {
@@ -595,7 +605,9 @@ pub fn log_scan(args: LogScanArgs) -> LogScanResult {
                     }
 
                     if let Some(since) = since_time {
-                        if let Ok(entry_time) = chrono::DateTime::parse_from_rfc3339(&entry.timestamp) {
+                        if let Ok(entry_time) =
+                            chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+                        {
                             if entry_time < since {
                                 continue;
                             }
@@ -643,7 +655,12 @@ pub fn log_scan(args: LogScanArgs) -> LogScanResult {
     for entry in &entries {
         let msg = entry.message.to_lowercase();
         if msg.contains("telegram") || msg.contains("polling") {
-            if msg.contains("failed") || msg.contains("error") || msg.contains("close-wait") || msg.contains("dead") || msg.contains("retry") {
+            if msg.contains("failed")
+                || msg.contains("error")
+                || msg.contains("close-wait")
+                || msg.contains("dead")
+                || msg.contains("retry")
+            {
                 get_me_fails += 1;
                 if msg.contains("close-wait") || msg.contains("close_wait") {
                     has_close_wait = true;
@@ -688,6 +705,17 @@ mod log_scan_tests {
 
     #[test]
     fn test_telegram_polling_dead_detection() {
+        // Isolate from the real ~/.xavier/logs (exists on dev machines with a
+        // running server; resolve_logs_dir() prefers it and ignores XAVIER_HOME).
+        let orig_home = std::env::var_os("HOME");
+        let fake_home = std::env::temp_dir().join("xavier-test-home");
+        std::fs::create_dir_all(&fake_home).unwrap();
+        std::env::set_var("HOME", &fake_home);
+        // Clean the fallback dir so prior runs cannot pollute this one.
+        let fallback = std::env::temp_dir().join("xavier_logs");
+        let _ = std::fs::remove_dir_all(&fallback);
+        std::fs::create_dir_all(&fallback).unwrap();
+
         let args = LogScanArgs {
             since: Some("2026-08-01T00:00:00Z".to_string()),
             level_min: None,
@@ -709,6 +737,11 @@ mod log_scan_tests {
         let res = log_scan(args);
         assert!(res.telegram_polling_dead, "polling muerto no detectado");
         let _ = std::fs::remove_file(temp_file);
+        let _ = std::fs::remove_dir_all(&fallback);
+        std::env::remove_var("HOME");
+        if let Some(h) = orig_home {
+            std::env::set_var("HOME", h);
+        }
     }
 }
 
@@ -741,17 +774,18 @@ pub fn check_service_status(service: &str) -> String {
     use std::process::Command;
     match Command::new("systemctl")
         .args(["is-active", service])
-        .output() {
-            Ok(output) => {
-                let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if status.is_empty() {
-                    "inactive".to_string()
-                } else {
-                    status
-                }
+        .output()
+    {
+        Ok(output) => {
+            let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if status.is_empty() {
+                "inactive".to_string()
+            } else {
+                status
             }
-            Err(_) => "unknown (systemctl unavailable)".to_string(),
         }
+        Err(_) => "unknown (systemctl unavailable)".to_string(),
+    }
 }
 
 /// Performs a synchronous TCP connection check with 2s timeout
@@ -763,9 +797,17 @@ pub fn tcp_probe(addr: &str) -> String {
         Ok(sa) => sa,
         Err(_) => {
             use std::net::ToSocketAddrs;
-            match (addr, 0).to_socket_addrs().ok().and_then(|mut ips| ips.next()) {
+            match (addr, 0)
+                .to_socket_addrs()
+                .ok()
+                .and_then(|mut ips| ips.next())
+            {
                 Some(ip) => {
-                    let port = if addr.contains("telegram") || addr.contains("github") { 443 } else { 53 };
+                    let port = if addr.contains("telegram") || addr.contains("github") {
+                        443
+                    } else {
+                        53
+                    };
                     std::net::SocketAddr::new(ip.ip(), port)
                 }
                 None => return "failed: resolution failed".to_string(),
@@ -784,7 +826,12 @@ pub fn env_status(args: EnvStatusArgs) -> EnvStatusResult {
     let snapshot = collect_system_snapshot();
 
     // Query allowlisted service statuses
-    let allowlist = ["xavier.service", "hermes.service", "peerjs.service", "openclaw.service"];
+    let allowlist = [
+        "xavier.service",
+        "hermes.service",
+        "peerjs.service",
+        "openclaw.service",
+    ];
     let mut services = HashMap::new();
     for svc in allowlist {
         services.insert(svc.to_string(), check_service_status(svc));
@@ -793,7 +840,10 @@ pub fn env_status(args: EnvStatusArgs) -> EnvStatusResult {
     // Basic network connectivity probes (dns.google is reliable for general internet checks)
     let mut connectivity = HashMap::new();
     connectivity.insert("dns_google".to_string(), tcp_probe("8.8.8.8:53"));
-    connectivity.insert("telegram_api".to_string(), tcp_probe("api.telegram.org:443"));
+    connectivity.insert(
+        "telegram_api".to_string(),
+        tcp_probe("api.telegram.org:443"),
+    );
 
     let mut top_processes = snapshot.top_rss.clone();
     if let Some(top_n) = args.top_n {
@@ -920,11 +970,16 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
     let now = chrono::Utc::now().timestamp() as u64;
 
     // Prune timestamps older than 1 hour (3600s) for rate limit check
-    reg.creation_timestamps.retain(|&ts| now.saturating_sub(ts) < 3600);
+    reg.creation_timestamps
+        .retain(|&ts| now.saturating_sub(ts) < 3600);
 
     // 1. Strict Deduplication Check
     if reg.fingerprints.contains_key(&computed_fingerprint) {
-        let id = reg.fingerprints.get(&computed_fingerprint).cloned().unwrap_or_default();
+        let id = reg
+            .fingerprints
+            .get(&computed_fingerprint)
+            .cloned()
+            .unwrap_or_default();
         return Ok(TicketCreateResult {
             id,
             url: "".into(),
@@ -960,7 +1015,10 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
                 }
                 _ => {
                     // Fallback to maloca if gh command fails or is missing
-                    let data_dir = crate::settings::XavierSettings::current().memory.data_dir.clone();
+                    let data_dir = crate::settings::XavierSettings::current()
+                        .memory
+                        .data_dir
+                        .clone();
                     let store = crate::maloca::MalocaStore::open(std::path::Path::new(&data_dir));
                     let ticket = store.create_support(crate::maloca::types::CreateSupportBody {
                         title: args.title.clone(),
@@ -973,7 +1031,10 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
         }
         _ => {
             // Drop a support ticket into Maloca
-            let data_dir = crate::settings::XavierSettings::current().memory.data_dir.clone();
+            let data_dir = crate::settings::XavierSettings::current()
+                .memory
+                .data_dir
+                .clone();
             let store = crate::maloca::MalocaStore::open(std::path::Path::new(&data_dir));
             let ticket = store.create_support(crate::maloca::types::CreateSupportBody {
                 title: args.title.clone(),
@@ -985,7 +1046,8 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
     }
 
     // Record and Save tracking state
-    reg.fingerprints.insert(computed_fingerprint, ticket_id.clone());
+    reg.fingerprints
+        .insert(computed_fingerprint, ticket_id.clone());
     reg.creation_timestamps.push(now);
     save_tickets_registry(&reg);
 
@@ -1057,7 +1119,10 @@ mod ticket_create_tests {
         };
         let res4 = ticket_create(args4);
         assert!(res4.is_err());
-        assert!(res4.unwrap_err().to_string().contains("Rate limit exceeded"));
+        assert!(res4
+            .unwrap_err()
+            .to_string()
+            .contains("Rate limit exceeded"));
 
         // Clean up tickets registry
         save_tickets_registry(&CreatedTicketsRegistry::default());
