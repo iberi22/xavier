@@ -95,6 +95,15 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             "/api/v1/memory/sync/resolve/{conflict_id}",
             post(crate::adapters::inbound::http::handlers::sync::sync_resolve_handler),
         )
+        // ── Public Node Directory (SWAL Node Discovery) ──────────────────
+        .route(
+            "/mesh/public/nodes",
+            get(crate::adapters::inbound::http::handlers::nodes::list_public_nodes_handler),
+        )
+        .route(
+            "/v1/mesh/public/nodes",
+            get(crate::adapters::inbound::http::handlers::nodes::list_public_nodes_handler),
+        )
         // ── Maintenance API ──────────────────────────────────────────────
         .route(
             "/v1/maintenance/reindex-embeddings",

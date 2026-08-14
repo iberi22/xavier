@@ -25,7 +25,12 @@ pub async fn auth_middleware(
     next: Next,
 ) -> Response {
     let path = req.uri().path();
-    if path == "/health" || path == "/headless/health" || path == "/v1/mesh/workspaces/query" {
+    if path == "/health"
+        || path == "/headless/health"
+        || path == "/v1/mesh/workspaces/query"
+        || path == "/mesh/public/nodes"
+        || path == "/v1/mesh/public/nodes"
+    {
         return next.run(req).await;
     }
 

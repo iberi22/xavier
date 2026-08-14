@@ -551,4 +551,54 @@ Humans are curators: review, approve, classify the information Xavier preserves.
 
 ---
 
-*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032).*
+## REQ-029: SWAL node provisioning (BaaS tokens — Supabase/Neon)
+
+- **Category:** Mesh
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Features:** `feat-node-provisioning`
+- **Design:** `docs/design/F9-MESH-SWAL-PUBLICO-PRIVADO.md` §3.8 (Ola M6)
+
+### Description
+Register a cloud service as a SWAL node by pasting its API token (Supabase/Neon). Xavier provisions and administers it autonomously via the provider API (RLS policies, encrypted buckets, edge functions relay/heartbeat; Neon schema + replication). The token lives ONLY in `src/secrets/` (LocalSecretsVault/HardwareVault AES-256-GCM persistente) + `KeyLendingEngine`/`EphemeralLease` (TTL/revoke) — never plaintext on disk/config/logs. The BaaS node registers in the public directory (M1) or the private mesh (M3) per visibility. Public SWAL info replicates to local mesh nodes via Yjs CRDT. *(Revisado 2026-08-14: validación Kimi — SecretLease → EphemeralLease; rotación de tokens BaaS requiere token nuevo del usuario, nunca generación local; revocación incluye deprovisioning remoto.)*
+
+### Acceptance criteria
+- [ ] `xavier nodes add --provider supabase --token sbp_xxx` provisions RLS + encrypted bucket + edge functions (relay/heartbeat)
+- [ ] `xavier nodes add --provider neon --token npx_xxx` creates node schema + replication
+- [ ] Token stored ONLY in `src/secrets/` (LocalSecretsVault/HardwareVault AES-256-GCM persistente + EphemeralLease UUID/TTL); test asserts no plaintext on disk/config/logs
+- [ ] **Reinicio de Xavier: token del nodo sigue disponible** (persistencia real, no en memoria) — test de sobrevivencia a restart
+- [ ] `xavier nodes rotate {id}` = usuario provee token NUEVO (o Xavier lo emite vía management API del provider); lease anterior revocado; **nunca** generación local `clavis_{name}_{uuid}`
+- [ ] `xavier nodes remove {id}` → **deprovisioning remoto**: revoca token vía API del provider + deregistra (M1/M3); si la revocación remota falla → reporta "revocación parcial", nunca éxito falso
+- [ ] Public BaaS node appears in `GET /mesh/public/nodes`; private BaaS node invisible to other wallets
+- [ ] Supabase as persistent public admin node: `node_registry` (RLS anon READ, **write SOLO vía edge function que verifica firma Ed25519 del heartbeat contra node_id = hash(pubkey)**), `ops_feed` (public, mesh-replicable, **updates Yjs firmados + vector clock anti-rollback**), bucket `swal-vault` (private, E2E-encrypted JSON)
+- [ ] Public mesh info syncs to local mesh nodes via Yjs CRDT (ops_feed = store&forward relay, not authority)
+- [ ] Token en CLI `--token` solo para tests con mocks; en producción se lee de stdin/prompt/`XAVIER_NODE_TOKEN` (sin shell history ni `ps`)
+- [ ] Eventos add/rotate/remove quedan en audit log estructurado append-only con masking
+
+---
+
+## REQ-030: SSH/VPS private nodes
+
+- **Category:** Mesh
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Features:** `feat-node-provisioning`
+- **Design:** `docs/design/F9-MESH-SWAL-PUBLICO-PRIVADO.md` §3.9 (Ola M7)
+
+### Description
+Register a VPS as a private SWAL node over SSH. Xavier **genera un keypair SSH dedicado por nodo** (nunca importa la clave personal del usuario), stores it in `src/secrets/` (never plaintext), installs the node agent (edge-hive lite, verificación de host key TOFU + checksum firmado), and registers it in the user's key wallet via certificado de nodo firmado por la billetera. The private node persists the user's internal mesh info (memory + snapshots) with session encryption. Permission inheritance: the wallet governs what replicates and with what encryption. *(Revisado 2026-08-14: validación Kimi — keypair dedicado, host key pinning, certificado de nodo = aislamiento cross-wallet.)*
+
+### Acceptance criteria
+- [ ] `xavier nodes add --provider vps --ssh user@host` **genera keypair dedicado por nodo**, instala SOLO la pubkey vía acceso existente, instala edge-hive lite y registra en la wallet
+- [ ] **Prohibido** `--key ~/.ssh/id_ed25519` (clave personal): rechazo explícito si se intenta importar
+- [ ] SSH key stored ONLY in `src/secrets/` (AES-256-GCM + lease TTL); test asserts no plaintext on disk
+- [ ] **Host key pinning**: fingerprint del host verificado en provisioning (TOFU) y en cada conexión; flag `--host-key` para pinning estricto
+- [ ] Node registers via Ed25519 challenge-response (M3 protocol) **con certificado de nodo firmado por la billetera** `(node_pubkey + node_id + expiry)`; default visibility `private`
+- [ ] Private node syncs memory + snapshots of the internal mesh with session encryption (MeshSessionShare)
+- [ ] Permission inheritance: wallet ACL governs what replicates and with what encryption
+- [ ] `xavier nodes remove {id}` revoca el lease SSH **y ejecuta teardown**: desinstala agente + borra pubkey dedicada de `authorized_keys`; si falla → "revocación parcial"; **re-key de mesh** (nueva epoch de clave de sesión para nodos restantes)
+- [ ] Cross-wallet isolation test: a node from another wallet cannot join the private mesh (certificado inválido rechazado en handshake)
+
+---
+
+*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision.*
