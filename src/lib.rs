@@ -42,6 +42,7 @@ pub mod mesh;
 pub mod messaging;
 pub mod middleware;
 pub mod node_identity;
+pub mod nodes;
 pub mod notifications;
 pub mod observability;
 pub mod plugins;

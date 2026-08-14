@@ -27,6 +27,7 @@ pub mod memory;
 pub mod mesh;
 pub mod navigation;
 pub mod node;
+pub mod nodes;
 pub mod provider;
 pub mod regen;
 pub mod secrets;
@@ -216,6 +217,7 @@ impl Cli {
             Command::Session { cmd } => session::handle_session_command(cmd.clone()).await,
             Command::Mesh { cmd } => mesh::handle_mesh_command(cmd.clone()).await,
             Command::Node { cmd } => node::handle_node_command(cmd.clone()).await,
+            Command::Nodes { cmd } => nodes::handle_nodes_command(cmd.clone()).await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
