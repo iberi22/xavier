@@ -60,8 +60,24 @@ code-graph ask "How does auth work?"
 - **Multi-language**: Rust, TypeScript, Python, Go, Java, C++
 - **Tree-sitter AST**: Parse functions, classes, structs, imports
 - **Fast Index**: SQLite-based symbol index (< 1s for 10k files)
+- **Multi-Project Namespace Isolation**: Project-scoped deterministic IDs prevent symbol collisions across codebases in a single index
 - **Agentic Fallback**: Navigate filesystem when needed
 - **Zero Config**: Auto-detect language and structure
+
+## 🌐 Multi-Project Namespace Isolation
+
+`code-graph` supports indexing multiple projects into a unified database without symbol collisions.
+
+```rust
+use code-graph::types::Symbol;
+
+// Structural symbol identity includes `project_id`
+let symbol_id = symbol.deterministic_id("project_alpha");
+```
+
+- **Project Scoping**: Each symbol `stable_id` is derived from `v2|project_id|file_path|name|kind|parent|signature`.
+- **Zero Collisions**: Two projects containing identical file paths (`src/lib.rs`) and symbol names (`initialize`) generate distinct structural hashes and coexist safely in SQLite.
+- **Namespace Management**: Integrations use project ID parameters (`register_project` / `list_projects`) to organize and filter multi-project namespaces across cross-project queries.
 
 ## 📋 Commands
 
