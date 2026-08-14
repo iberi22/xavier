@@ -56,6 +56,10 @@ pub struct HealthResponse {
     pub database: DatabaseHealth,
     pub embedding: EmbeddingHealth,
     pub mesh: MeshHealth,
+    #[serde(default)]
+    pub telegram: TelegramHealth,
+    #[serde(default)]
+    pub dependency_graph: ComponentDependencyGraph,
     pub checks: Vec<HealthCheck>,
     pub embedding_coverage: EmbeddingCoverage,
 }
@@ -79,6 +83,8 @@ pub struct DatabaseHealth {
     pub fragmentation_pct: f64,
     pub needs_vacuum: bool,
     pub last_vacuum: Option<u64>,
+    #[serde(default)]
+    pub latency_ms: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,9 +101,86 @@ pub struct MeshHealth {
     pub peers_count: u32,
     pub connected_peers: u32,
     pub sync_lag_ms: f64,
+    #[serde(default)]
+    pub latency_ms: f64,
     pub connectivity: String,
     #[serde(default)]
     pub maturity: crate::mesh::MeshMaturityReport,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelegramHealth {
+    pub enabled: bool,
+    pub latency_ms: f64,
+    pub status: String,
+}
+
+impl Default for TelegramHealth {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            latency_ms: 0.0,
+            status: "disabled".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DependencyNode {
+    pub component: String,
+    pub status: String,
+    pub latency_ms: f64,
+    pub upstream_deps: Vec<String>,
+    pub propagated_status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ComponentDependencyGraph {
+    pub nodes: Vec<DependencyNode>,
+}
+
+impl ComponentDependencyGraph {
+    pub fn build(raw_nodes: Vec<(&str, &str, f64, Vec<&str>)>) -> Self {
+        let mut raw_map = std::collections::HashMap::new();
+        for (name, status, _latency_ms, _upstream) in &raw_nodes {
+            raw_map.insert((*name).to_string(), (*status).to_string());
+        }
+
+        let mut nodes = Vec::new();
+        for (name, status, latency_ms, upstream) in raw_nodes {
+            let upstream_strs: Vec<String> = upstream.iter().map(|s| s.to_string()).collect();
+            let mut propagated = status.to_string();
+
+            if status == "healthy" {
+                let mut upstream_degraded = false;
+                for up in &upstream_strs {
+                    if let Some(up_status) = raw_map.get(up) {
+                        if up_status == "degraded"
+                            || up_status == "unhealthy"
+                            || up_status == "fail"
+                            || up_status == "warn"
+                        {
+                            upstream_degraded = true;
+                            break;
+                        }
+                    }
+                }
+                if upstream_degraded {
+                    propagated = "degraded".to_string();
+                }
+            }
+
+            nodes.push(DependencyNode {
+                component: name.to_string(),
+                status: status.to_string(),
+                latency_ms,
+                upstream_deps: upstream_strs,
+                propagated_status: propagated,
+            });
+        }
+
+        ComponentDependencyGraph { nodes }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +218,8 @@ pub struct HealthState {
     pub database: DatabaseHealth,
     pub embedding: EmbeddingHealth,
     pub mesh: MeshHealth,
+    pub telegram: TelegramHealth,
+    pub dependency_graph: ComponentDependencyGraph,
     pub checks: Vec<HealthCheck>,
     pub embedding_coverage: EmbeddingCoverage,
 }
@@ -159,6 +244,7 @@ impl Default for HealthState {
                 fragmentation_pct: 0.0,
                 needs_vacuum: false,
                 last_vacuum: None,
+                latency_ms: 0.0,
             },
             embedding: EmbeddingHealth {
                 provider: String::new(),
@@ -171,9 +257,12 @@ impl Default for HealthState {
                 peers_count: 0,
                 connected_peers: 0,
                 sync_lag_ms: 0.0,
+                latency_ms: 0.0,
                 connectivity: "unknown".to_string(),
                 maturity: crate::mesh::MeshMaturityReport::default(),
             },
+            telegram: TelegramHealth::default(),
+            dependency_graph: ComponentDependencyGraph::default(),
             checks: Vec::new(),
             embedding_coverage: EmbeddingCoverage::default(),
         }
@@ -435,7 +524,9 @@ async fn collect_health_impl(
     let embedding_coverage = gather_embedding_coverage(settings);
 
     // --- Database health ---
-    let db_health = gather_db_health(settings);
+    let db_start = std::time::Instant::now();
+    let mut db_health = gather_db_health(settings);
+    db_health.latency_ms = db_start.elapsed().as_secs_f64() * 1000.0;
 
     // --- Embedding health ---
     // Build a basic EmbeddingHealth from settings (full async probe removed during refactor).
@@ -452,7 +543,8 @@ async fn collect_health_impl(
     push_embedding_alert_if_unhealthy(&embedding);
 
     // --- Mesh health ---
-    let mesh = if let Some(telemetry) = mesh_telemetry() {
+    let mesh_start = std::time::Instant::now();
+    let mut mesh = if let Some(telemetry) = mesh_telemetry() {
         let peers_count = telemetry.peer_count();
         let connected_peers = telemetry.connected_peer_count();
         let sync_lag_ms = telemetry.average_latency_ms();
@@ -460,6 +552,7 @@ async fn collect_health_impl(
             peers_count,
             connected_peers,
             sync_lag_ms,
+            latency_ms: 0.0,
             connectivity: if peers_count > 0 {
                 "online".to_string()
             } else {
@@ -472,6 +565,7 @@ async fn collect_health_impl(
             peers_count: 0,
             connected_peers: 0,
             sync_lag_ms: 0.0,
+            latency_ms: 0.0,
             connectivity: if settings.license.mesh_accepted {
                 if cfg!(feature = "mesh") {
                     "online"
@@ -485,6 +579,35 @@ async fn collect_health_impl(
             maturity: crate::mesh::MeshMaturityReport::default(),
         }
     };
+    mesh.latency_ms = mesh_start.elapsed().as_secs_f64() * 1000.0;
+
+    // --- Telegram health ---
+    let telegram_start = std::time::Instant::now();
+    let telegram_enabled = std::env::var("XAVIER_TELEGRAM_BOT_TOKEN").is_ok()
+        || settings.telegram.bot_token.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+    let telegram_latency_ms = telegram_start.elapsed().as_secs_f64() * 1000.0;
+    let telegram = TelegramHealth {
+        enabled: telegram_enabled,
+        latency_ms: telegram_latency_ms,
+        status: if telegram_enabled {
+            "healthy".to_string()
+        } else {
+            "disabled".to_string()
+        },
+    };
+
+    // --- Dependency Graph & Status Propagation ---
+    let db_status_str = if db_health.needs_vacuum { "degraded" } else { "healthy" };
+    let emb_status_str = if !embedding.connected || embedding.error_rate_pct > 10.0 { "unhealthy" } else { "healthy" };
+    let mesh_status_str = if mesh.connectivity == "online" || mesh.connectivity == "no peers" { "healthy" } else { "degraded" };
+    let tg_status_str = if telegram.enabled { "healthy" } else { "disabled" };
+
+    let dependency_graph = ComponentDependencyGraph::build(vec![
+        ("database", db_status_str, db_health.latency_ms, vec![]),
+        ("embedding", emb_status_str, embedding.latency_ms, vec!["database"]),
+        ("mesh", mesh_status_str, mesh.latency_ms, vec!["database"]),
+        ("telegram", tg_status_str, telegram.latency_ms, vec!["embedding", "database"]),
+    ]);
 
     // --- Checks ---
     let mut checks = Vec::new();
@@ -659,9 +782,31 @@ async fn collect_health_impl(
         database: db_health,
         embedding,
         mesh,
+        telegram,
+        dependency_graph: dependency_graph.clone(),
         checks,
         embedding_coverage,
     };
+
+    // Record snapshot to 24h history ring buffer
+    let mut comp_statuses = std::collections::BTreeMap::new();
+    let mut comp_latencies = std::collections::BTreeMap::new();
+    for node in &dependency_graph.nodes {
+        comp_statuses.insert(node.component.clone(), node.propagated_status.clone());
+        comp_latencies.insert(node.component.clone(), node.latency_ms);
+    }
+
+    history::record_health_history(history::HealthHistoryEntry {
+        timestamp_secs: now_secs,
+        status: response.status.clone(),
+        component_statuses: comp_statuses,
+        component_latencies_ms: comp_latencies,
+        transition_reason: if response.status != "healthy" {
+            Some(format!("System status: {}", response.status))
+        } else {
+            None
+        },
+    });
 
     // Update registry
     {
@@ -670,6 +815,8 @@ async fn collect_health_impl(
         reg.database = response.database.clone();
         reg.embedding = response.embedding.clone();
         reg.mesh = response.mesh.clone();
+        reg.telegram = response.telegram.clone();
+        reg.dependency_graph = response.dependency_graph.clone();
         reg.checks = response.checks.clone();
         reg.embedding_coverage = response.embedding_coverage.clone();
     }
@@ -887,9 +1034,11 @@ fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
         fragmentation_pct: fragmentation,
         needs_vacuum: fragmentation > 30.0 || page_count > 100000,
         last_vacuum: None,
+        latency_ms: 0.0,
     }
 }
 
+pub mod history;
 pub mod mesh_telemetry;
 pub mod repair;
 
@@ -1196,5 +1345,26 @@ mod tests {
             timestamp_secs: 0,
         }];
         assert_eq!(prioritize_status(&warn_only), "warn");
+    }
+
+    #[test]
+    fn test_component_dependency_graph_status_propagation() {
+        let graph = ComponentDependencyGraph::build(vec![
+            ("database", "degraded", 1.5, vec![]),
+            ("embedding", "healthy", 2.0, vec!["database"]),
+            ("telegram", "healthy", 0.5, vec!["embedding", "database"]),
+        ]);
+
+        let db_node = graph.nodes.iter().find(|n| n.component == "database").unwrap();
+        assert_eq!(db_node.status, "degraded");
+        assert_eq!(db_node.propagated_status, "degraded");
+
+        let emb_node = graph.nodes.iter().find(|n| n.component == "embedding").unwrap();
+        assert_eq!(emb_node.status, "healthy");
+        assert_eq!(emb_node.propagated_status, "degraded");
+
+        let tg_node = graph.nodes.iter().find(|n| n.component == "telegram").unwrap();
+        assert_eq!(tg_node.status, "healthy");
+        assert_eq!(tg_node.propagated_status, "degraded");
     }
 }
