@@ -1163,6 +1163,29 @@
       "user_stories": [
         "US-041"
       ]
+    },
+    "feat-maloca": {
+      "id": "feat-maloca",
+      "name": "Maloca Ops Domain",
+      "category": "governance",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Maloca governance/ops domain hosted by Xavier: proposals, votes, decisions, nodes, params, timeline, beliefs, commits graph, WS feed",
+      "steps": [
+        "Build /maloca router with store extension",
+        "Implement MalocaStore persistence (store.json)",
+        "Expose proposals, votes, decisions, nodes, params endpoints",
+        "Add timeline export (MS-002) and commits graph (MS-003)",
+        "Add beliefs graph (MS-005) and WS feed (MS-004)"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-08-14",
+      "notes": "Verified live 2026-08-14: /maloca/pack, /maloca/params, /maloca/proposals, /maloca/timeline (42k events), /maloca/nodes, /maloca/beliefs all HTTP 200. Only /maloca/stats is NOT a real route (not in source).",
+      "implemented": true,
+      "req_ids": [],
+      "user_stories": []
     }
   },
   "verification_commands": {
