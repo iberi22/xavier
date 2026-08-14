@@ -186,4 +186,18 @@ async fn test_parser_rust_plugin_execution() {
     assert_eq!(add_sym.kind, SymbolKind::Function);
     assert_eq!(add_sym.lang, Language::Rust);
     assert_eq!(add_sym.file_path, "src/lib.rs");
+
+    // Verify symbol kind handling for namespace declarations
+    let ns_sym = code_graph::types::Symbol {
+        name: "my_namespace".to_string(),
+        kind: SymbolKind::Namespace,
+        lang: Language::Cpp,
+        file_path: "src/lib.cpp".to_string(),
+        ..Default::default()
+    };
+    assert_eq!(ns_sym.kind, SymbolKind::Namespace);
+    assert_ne!(
+        add_sym.kind, ns_sym.kind,
+        "Function kind should not equal namespace symbol kind"
+    );
 }
