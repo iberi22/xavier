@@ -2,9 +2,6 @@
 //!
 //! Handles low-level HTTP requests between Xavier nodes (Phase 1).
 
-#[cfg(feature = "mesh")]
-pub mod libp2p;
-
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
 use crate::mesh::protocol::{
@@ -232,73 +229,5 @@ mod tests {
         // we can test the transport with a mock server if absolutely necessary.
         // For Phase 1 unit tests, we've verified the code compiles and logic looks sound.
         // Full integration tests will verify the actual HTTP calls.
-    }
-
-    #[tokio::test]
-    #[cfg(feature = "mesh")]
-    async fn transport_reconnects_on_disconnect() {
-        use crate::mesh::libp2p_transport::Libp2pTransport;
-        use ::libp2p::{Multiaddr, PeerId};
-
-        let identity = Arc::new(NodeIdentity::generate());
-        let mut transport = Libp2pTransport::new(identity).await.unwrap();
-
-        let mock_peer_id = PeerId::random();
-        let mock_addr: Multiaddr = "/dns4/mock-peer.local/tcp/12345".parse().unwrap();
-
-        {
-            let attempts = transport.reconnect_attempts.lock();
-            assert!(attempts.get(&mock_peer_id).is_none());
-        }
-
-        // Register the mock address in peer_addresses map to simulate a real dial registration
-        {
-            let mut map = transport.peer_addresses.lock();
-            map.insert(mock_peer_id, mock_addr.clone());
-        }
-
-        // Trigger a poll/event cycle by adding a reconnection attempt
-        {
-            let mut attempts = transport.reconnect_attempts.lock();
-            attempts.insert(mock_peer_id, (1, std::time::Instant::now()));
-        }
-
-        // Let's spawn a task to poll the transport
-        let tx = transport.dial_queue_tx.clone();
-        tokio::spawn(async move {
-            // Queue a dial to simulate the backoff task triggering
-            let _ = tx.send((mock_peer_id, mock_addr)).await;
-        });
-
-        // Verify we can receive the dial request via the queue
-        let received = transport.dial_queue_rx.recv().await.unwrap();
-        assert_eq!(received.0, mock_peer_id);
-    }
-
-    #[tokio::test]
-    #[cfg(feature = "mesh")]
-    async fn transport_metrics_recorded() {
-        use crate::mesh::libp2p_transport::Libp2pTransport;
-
-        let identity = Arc::new(NodeIdentity::generate());
-        let transport = Libp2pTransport::new(identity).await.unwrap();
-
-        assert_eq!(transport.active_connections(), 0);
-        assert_eq!(transport.latency_ms(), 0);
-        assert_eq!(transport.throughput(), (0, 0));
-
-        transport.record_sent_bytes(500);
-        transport.record_received_bytes(1000);
-        assert_eq!(transport.throughput(), (500, 1000));
-
-        transport
-            .active_connections
-            .store(3, std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(transport.active_connections(), 3);
-
-        transport
-            .latency_ms
-            .store(42, std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(transport.latency_ms(), 42);
     }
 }

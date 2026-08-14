@@ -44,8 +44,6 @@ pub mod crypto_gating;
 pub mod dashboard;
 pub mod data_consent;
 pub mod data_sanitizer;
-#[cfg(feature = "mesh")]
-pub mod discovery;
 pub mod governance;
 #[cfg(feature = "mesh")]
 pub mod heartbeat;
@@ -68,9 +66,6 @@ pub mod telemetry;
 pub mod telemetry_collector;
 pub mod tokenomics;
 pub mod transport;
-// Modernized libp2p transport (v0.56) with NAT traversal, reconnection backoff and metrics.
-#[cfg(feature = "mesh")]
-pub mod libp2p_transport;
 
 pub use acl::{MeshAcl, NamespaceAclEntry, NodeAclEntry};
 #[cfg(feature = "mesh")]
@@ -79,8 +74,6 @@ pub use context_bridge::{BridgeKind, BridgeRegistry, ContextBridge};
 pub use dashboard::{aggregate_dashboard, MeshBandwidth, MeshDashboardResponse, MeshPeerHealth};
 pub use data_consent::{ActiveConsent, ConsentLevel, ConsentRecord, DataConsentManager};
 pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
-#[cfg(feature = "mesh")]
-pub use discovery::DiscoveryService;
 #[cfg(feature = "mesh")]
 pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService, HeartbeatStatus};
 pub use maturity::MeshMaturityReport;
