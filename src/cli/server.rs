@@ -964,6 +964,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             "/v1/mesh/status",
             get(crate::cli::handlers::mesh::v1_mesh_status_handler),
         )
+        .route(
+            "/mesh/public/nodes",
+            get(crate::cli::handlers::nodes::list_public_nodes_handler),
+        )
+        .route(
+            "/v1/mesh/public/nodes",
+            get(crate::cli::handlers::nodes::list_public_nodes_handler),
+        )
         .route("/v1/mesh/peers", get(list_peers_handler))
         .route("/v1/mesh/peers/pair", post(pair_peer_handler))
         .route("/v1/mesh/peers/decode", post(decode_pairing_code_handler))
