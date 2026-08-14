@@ -103,6 +103,36 @@ where
 /// Vault key under which the Telegram bot token is stored in Clavis.
 pub const TELEGRAM_TOKEN_VAULT_KEY: &str = "telegram_bot_token";
 
+/// Standard Telegram Bot API header for webhook secret token verification.
+pub const X_TELEGRAM_BOT_API_SECRET_TOKEN: &str = "X-Telegram-Bot-Api-Secret-Token";
+
+/// Verify the webhook secret token header using constant-time comparison.
+///
+/// If `webhook_secret` is configured (`Some(secret)`):
+/// - Returns `Ok(())` if `provided_token` matches `secret` in constant time via `subtle::ConstantTimeEq`.
+/// - Returns `Err(StatusCode::UNAUTHORIZED)` (401) if `provided_token` is missing or mismatched.
+///
+/// If `webhook_secret` is `None`, verification is bypassed and returns `Ok(())`.
+pub fn verify_webhook_secret(
+    webhook_secret: Option<&str>,
+    provided_token: Option<&str>,
+) -> Result<(), axum::http::StatusCode> {
+    use subtle::ConstantTimeEq;
+    if let Some(expected) = webhook_secret {
+        match provided_token {
+            Some(token)
+                if expected.as_bytes().len() == token.as_bytes().len()
+                    && expected.as_bytes().ct_eq(token.as_bytes()).into() =>
+            {
+                Ok(())
+            }
+            _ => Err(axum::http::StatusCode::UNAUTHORIZED),
+        }
+    } else {
+        Ok(())
+    }
+}
+
 #[derive(BotCommands, Clone)]
 #[command(
     rename_rule = "lowercase",
@@ -201,6 +231,7 @@ pub struct TelegramConfig {
     pub admin_ids: Vec<u64>,
     pub enabled: bool,
     pub webhook_url: Option<String>,
+    pub webhook_secret: Option<String>,
     pub webhook_port: u16,
     pub notification_chat_id: Option<String>,
     #[serde(default)]
@@ -214,6 +245,10 @@ impl fmt::Debug for TelegramConfig {
             .field("admin_ids", &self.admin_ids)
             .field("enabled", &self.enabled)
             .field("webhook_url", &self.webhook_url)
+            .field(
+                "webhook_secret",
+                &self.webhook_secret.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("webhook_port", &self.webhook_port)
             .field(
                 "notification_chat_id",
@@ -227,11 +262,15 @@ impl fmt::Debug for TelegramConfig {
 impl Default for TelegramConfig {
     fn default() -> Self {
         let settings = crate::settings::XavierSettings::current();
+        let secret = std::env::var("TELEGRAM_WEBHOOK_SECRET")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
         Self {
             bot_token: settings.telegram.bot_token.clone().unwrap_or_default(),
             admin_ids: settings.telegram.admin_ids.clone(),
             enabled: settings.telegram.enabled,
             webhook_url: settings.telegram.webhook_url.clone(),
+            webhook_secret: secret,
             webhook_port: settings.telegram.webhook_port,
             notification_chat_id: settings.telegram.notification_chat_id.clone(),
             transport_mode: TelegramTransport::Polling,
@@ -427,9 +466,14 @@ impl XavierBot {
             .filter_command::<Command>()
             .endpoint(Self::handle_command);
 
+        let mut options = teloxide::update_listeners::webhooks::Options::new(addr, url);
+        if let Some(secret) = &self.config.webhook_secret {
+            options = options.secret_token(secret.clone());
+        }
+
         let listener = match teloxide::update_listeners::webhooks::axum(
             self.bot.clone(),
-            teloxide::update_listeners::webhooks::Options::new(addr, url),
+            options,
         )
         .await
         {
@@ -895,9 +939,14 @@ pub async fn start_webhook(
         .filter_command::<Command>()
         .endpoint(XavierBot::handle_command);
 
+    let mut options = teloxide::update_listeners::webhooks::Options::new(socket_addr, webhook_url);
+    if let Some(secret) = &bot.config.webhook_secret {
+        options = options.secret_token(secret.clone());
+    }
+
     let listener = teloxide::update_listeners::webhooks::axum(
         bot.bot.clone(),
-        teloxide::update_listeners::webhooks::Options::new(socket_addr, webhook_url),
+        options,
     )
     .await
     .map_err(|e| anyhow::anyhow!("failed to setup webhook listener: {}", e))?;
