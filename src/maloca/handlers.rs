@@ -206,3 +206,7 @@ pub async fn manager_action(
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }
+
+pub async fn feed_status() -> Json<super::ws::FeedStatus> {
+    Json(super::ws::get_feed_status())
+}
