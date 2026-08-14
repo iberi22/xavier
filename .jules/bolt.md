@@ -37,9 +37,3 @@
 ## 2024-08-14 - Fix unnecessary child component re-renders
 **Learning:** Wrapping callback props passed to child components in `useCallback` is important to prevent unnecessary re-renders in React when parent state updates.
 **Action:** Always wrap `onClose`, `onComplete`, and other callbacks in `useCallback` when passing them to memoized or expensive child components.
-## 2024-08-14 - Fix unnecessary child component re-renders
-**Learning:** Wrapping callback props passed to child components in `useCallback` is important to prevent unnecessary re-renders in React when parent state updates.
-**Action:** Always wrap `onClose`, `onComplete`, and other callbacks in `useCallback` when passing them to memoized or expensive child components.
-## 2024-08-14 - Fix unnecessary child component re-renders
-**Learning:** Wrapping callback props passed to child components in `useCallback` is important to prevent unnecessary re-renders in React when parent state updates.
-**Action:** Always wrap `onClose`, `onComplete`, and other callbacks in `useCallback` when passing them to memoized or expensive child components.
