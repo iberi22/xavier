@@ -1124,15 +1124,20 @@ mod route_tests {
             "dry_run": true,
             "limit": 5
         });
+        let mut req = Request::builder()
+            .uri("/v1/maintenance/reindex-embeddings")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+            .unwrap();
+        req.extensions_mut().insert(crate::security::auth::Claims::new(
+            "admin".to_string(),
+            "admin@example.com".to_string(),
+            crate::security::auth::UserRole::Admin,
+            chrono::Duration::hours(1),
+        ));
         let response: Response = create_router()
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/maintenance/reindex-embeddings")
-                    .method(Method::POST)
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
-                    .unwrap(),
-            )
+            .oneshot(req)
             .await
             .expect("request should complete");
 

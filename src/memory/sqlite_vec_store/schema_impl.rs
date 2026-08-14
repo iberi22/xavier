@@ -787,6 +787,121 @@ mod tests {
 
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
+    async fn test_reindex_null_embeddings_background_with_limit_batches() {
+        use crate::memory::store::MemoryStore;
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        for key in &[
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+        ] {
+            std::env::remove_var(key);
+        }
+
+        let mut server = mockito::Server::new_async().await;
+        let mock_url = server.url();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_reindex_limit.db");
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        // Insert 5 records with NULL embedding
+        for i in 1..=5 {
+            let record = crate::memory::store::MemoryRecord {
+                id: format!("test_batch_mem_{}", i),
+                workspace_id: "test_ws_1".to_string(),
+                path: format!("test/path/{}", i),
+                content: format!("Content number {}", i),
+                metadata: serde_json::json!({}),
+                embedding: vec![],
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                ..Default::default()
+            };
+            store.put(record).await.unwrap();
+        }
+
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
+        std::env::set_var(
+            "XAVIER_EMBEDDING_URL",
+            format!("{}/v1/embeddings", mock_url),
+        );
+        std::env::set_var("OPENAI_API_KEY", "test-api-key");
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "test-model");
+
+        let _mock = server
+            .mock("POST", "/v1/embeddings")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                "data": [
+                    {
+                        "embedding": [0.1, 0.2, 0.3]
+                    }
+                ]
+            }"#,
+            )
+            .expect_at_least(5)
+            .create_async()
+            .await;
+
+        // Force embeddings to NULL
+        ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                conn.execute("UPDATE memory_records SET embedding = NULL", [])
+                    .unwrap();
+                conn.execute("DELETE FROM memory_embeddings", []).unwrap();
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        // Batch 1: process 2 records
+        let res1 = store
+            .reindex_null_embeddings_background_with_limit(Some(2))
+            .await
+            .unwrap();
+        assert_eq!(res1, 2);
+
+        // Batch 2: process next 2 records
+        let res2 = store
+            .reindex_null_embeddings_background_with_limit(Some(2))
+            .await
+            .unwrap();
+        assert_eq!(res2, 2);
+
+        // Batch 3: process remaining 1 record
+        let res3 = store
+            .reindex_null_embeddings_background_with_limit(Some(2))
+            .await
+            .unwrap();
+        assert_eq!(res3, 1);
+
+        // Batch 4: no more records left
+        let res4 = store
+            .reindex_null_embeddings_background_with_limit(Some(2))
+            .await
+            .unwrap();
+        assert_eq!(res4, 0);
+
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::remove_var("XAVIER_EMBEDDING_URL");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_reindex_null_embeddings_background_with_errors() {
         use crate::memory::store::MemoryStore;
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
