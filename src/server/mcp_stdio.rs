@@ -29,7 +29,7 @@ pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Res
             Err(_) => continue,
         };
 
-        let Some(response) = dispatch_mcp_value(state.clone(), workspace.clone(), payload)
+        let Some(response) = dispatch_mcp_value(state.clone(), workspace.clone(), None, payload)
             .await
             .ok()
             .flatten()

@@ -3,6 +3,7 @@
 use anyhow::{anyhow, Result};
 use axum::{
     extract::DefaultBodyLimit,
+    handler::Handler,
     middleware::{self},
     routing::{delete, get, post, put},
     Router,
@@ -28,6 +29,8 @@ use xavier::api::graph::{
     memory_graph_entity, memory_graph_list_entities, memory_graph_relations, memory_graph_view,
 };
 use xavier::security::auth_store::AuthStore;
+use xavier::middleware::require_permission;
+use xavier::security::auth::{Permission, UserRole};
 
 use crate::settings::XavierSettings;
 use xavier::adapters::inbound::http::routes::{
@@ -527,25 +530,47 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             post(xavier::adapters::inbound::http::handlers::sync::sync_resolve_handler),
         )
         .route("/memory/search", post(search_handler))
-        .route("/memory/update", post(update_handler))
-        .route("/memory/delete", post(delete_handler))
-        .route("/memory/reindex", post(reindex_handler))
+        .route(
+            "/memory/update",
+            post(update_handler).layer(middleware::from_fn(require_permission(|r| r.can_add_memory()))),
+        )
+        .route(
+            "/memory/delete",
+            post(delete_handler).layer(middleware::from_fn(require_permission(|r| r.can_delete_memory()))),
+        )
+        .route(
+            "/memory/reindex",
+            post(reindex_handler).layer(middleware::from_fn(require_permission(|r| r.can_add_memory()))),
+        )
         .route("/memory/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
-        .route("/memory/decay", post(decay_handler))
-        .route("/memory/consolidate", post(consolidate_handler))
+        .route(
+            "/memory/decay",
+            post(decay_handler).layer(middleware::from_fn(require_permission(|r| r.can_delete_memory()))),
+        )
+        .route(
+            "/memory/consolidate",
+            post(consolidate_handler).layer(middleware::from_fn(require_permission(|r| r.can_delete_memory()))),
+        )
         .route("/memory/index-self", post(memory_index_self_handler))
-        .route("/memory/evict", axum::routing::delete(evict_handler))
+        .route(
+            "/memory/evict",
+            axum::routing::delete(evict_handler).layer(middleware::from_fn(require_permission(|r| r.can_delete_memory()))),
+        )
         .route("/memory/manage", post(manage_handler))
         .route("/memory/timeline/query", post(timeline_query_handler))
-        .route("/v1/memories", post(add_handler).get(stats_handler))
+        .route(
+            "/v1/memories",
+            post(add_handler.layer(middleware::from_fn(require_permission(|r| r.can_add_memory())))).get(stats_handler),
+        )
         .route(
             "/v1/memories/search",
             post(xavier::server::v1_api::v1_memories_search),
         )
         .route(
             "/v1/memories/prune",
-            post(xavier::server::v1_api::v1_memories_prune),
+            post(xavier::server::v1_api::v1_memories_prune)
+                .layer(middleware::from_fn(require_permission(|r| r.can_delete_memory()))),
         )
         .route(
             "/v1/context/assemble",
@@ -567,14 +592,19 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route(
             "/v1/workspaces/db/{id}",
-            delete(delete_workspace_db_handler),
+            delete(delete_workspace_db_handler)
+                .layer(middleware::from_fn(require_permission(|r| r.can_manage_users()))),
         )
         .route(
             "/v1/onboarding/suggestions",
             get(onboarding_suggestions_handler),
         )
         .route("/v1/auth/sessions", get(list_sessions_handler))
-        .route("/v1/auth/sessions/{id}", delete(revoke_session_handler))
+        .route(
+            "/v1/auth/sessions/{id}",
+            delete(revoke_session_handler)
+                .layer(middleware::from_fn(require_permission(|r| r.can_manage_users()))),
+        )
         .route("/mcp/tools", get(mcp_tools_handler))
         .route("/mcp/tools/call", post(mcp_tools_call_handler))
         // Memory Knowledge Graph (EntityGraph)
@@ -667,25 +697,25 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route(
             "/api/settings/cloud-node",
             get(xavier::api::settings::get_cloud_node)
-                .post(xavier::api::settings::update_cloud_node),
+                .post(xavier::api::settings::update_cloud_node.layer(middleware::from_fn(require_permission(|r| r.can_edit_config())))),
         )
         .route(
             "/api/settings/discord",
             get(xavier::api::settings::get_discord_settings)
-                .post(xavier::api::settings::update_discord_settings),
+                .post(xavier::api::settings::update_discord_settings.layer(middleware::from_fn(require_permission(|r| r.can_edit_config())))),
         )
         .route(
             "/api/settings/discord/test",
-            post(xavier::api::settings::test_discord_connection),
+            post(xavier::api::settings::test_discord_connection.layer(middleware::from_fn(require_permission(|r| r.can_edit_config())))),
         )
         .route(
             "/api/settings/telegram",
             get(xavier::api::settings::get_telegram_settings)
-                .post(xavier::api::settings::update_telegram_settings),
+                .post(xavier::api::settings::update_telegram_settings.layer(middleware::from_fn(require_permission(|r| r.can_edit_config())))),
         )
         .route(
             "/api/settings/telegram/test",
-            post(xavier::api::settings::test_telegram_connection),
+            post(xavier::api::settings::test_telegram_connection.layer(middleware::from_fn(require_permission(|r| r.can_edit_config())))),
         )
         .route("/xavier/events/session", post(session_event_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
@@ -763,9 +793,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/v1/security/approve", post(security_approve_handler))
         .route(
             "/security/tokens",
-            get(list_tokens_handler).post(create_token_handler),
+            get(list_tokens_handler).post(create_token_handler.layer(middleware::from_fn(require_permission(|r| r.can_manage_users())))),
         )
-        .route("/security/tokens/{id}", delete(revoke_token_handler))
+        .route(
+            "/security/tokens/{id}",
+            delete(revoke_token_handler).layer(middleware::from_fn(require_permission(|r| r.can_manage_users()))),
+        )
         .route("/security/tokens/{id}/rotate", post(rotate_token_handler))
         .route("/auth/recovery/seed/show", post(seed_show_handler))
         .route("/auth/recovery/seed/verify", post(seed_verify_handler))
@@ -822,7 +855,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route(
             "/v1/offline/config",
             get(crate::cli::handlers::offline_models::get_offline_config_handler)
-                .post(crate::cli::handlers::offline_models::update_offline_config_handler),
+                .post(crate::cli::handlers::offline_models::update_offline_config_handler.layer(middleware::from_fn(require_permission(|r| r.can_edit_config())))),
         )
         .route(
             "/v1/offline/models",
@@ -1057,7 +1090,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         ));
 
     let large_body_routes = Router::new()
-        .route("/memory/add", post(add_handler))
+        .route(
+            "/memory/add",
+            post(add_handler).layer(middleware::from_fn(require_permission(|r| r.can_add_memory()))),
+        )
         .route("/memory/export-pack", post(export_pack_handler))
         .route("/panel/api/chat", post(panel_process_chat))
         .route("/code/scan", post(code_scan_handler))

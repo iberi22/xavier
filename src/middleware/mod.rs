@@ -1,7 +1,9 @@
-//! HTTP middleware layer for Xaviers API server.
+//! HTTP middleware layer for Xavier's API server.
 //!
 //! Provides token-bucket rate limiting middleware that integrates with
-//! the enterprise rate-limit service. Middleware is applied via tower
-//! Layer pattern in the HTTP router setup.
+//! the enterprise rate-limit service and RBAC authorization middleware.
 
+pub mod auth;
 pub mod token_bucket;
+
+pub use auth::require_permission;

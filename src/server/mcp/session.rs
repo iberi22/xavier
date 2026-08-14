@@ -22,6 +22,7 @@ pub const ERROR_HEADER_MISMATCH: i32 = -32020;
 pub async fn mcp_post_handler(
     State(state): State<AppState>,
     Extension(workspace): Extension<WorkspaceContext>,
+    claims: Option<Extension<crate::security::auth::Claims>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -45,7 +46,8 @@ pub async fn mcp_post_handler(
             .into_response();
     }
 
-    match dispatch_mcp_value(state, workspace, payload).await {
+    let claims_ref = claims.as_ref().map(|c| &c.0);
+    match dispatch_mcp_value(state, workspace, claims_ref, payload).await {
         Ok(Some(response)) => (StatusCode::OK, Json(response)).into_response(),
         Ok(None) => StatusCode::ACCEPTED.into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
@@ -141,6 +143,7 @@ fn decode_mcp_header_value(value: &str) -> String {
 pub async fn dispatch_mcp_value(
     state: AppState,
     workspace: WorkspaceContext,
+    claims: Option<&crate::security::auth::Claims>,
     payload: Value,
 ) -> Result<Option<Value>, String> {
     match payload {
@@ -151,7 +154,7 @@ pub async fn dispatch_mcp_value(
             let mut responses = Vec::new();
             for message in messages {
                 if let Some(response) =
-                    dispatch_mcp_message(state.clone(), workspace.clone(), message).await?
+                    dispatch_mcp_message(state.clone(), workspace.clone(), claims, message).await?
                 {
                     responses.push(serde_json::to_value(response).map_err(|e| e.to_string())?);
                 }
@@ -162,7 +165,7 @@ pub async fn dispatch_mcp_value(
                 Ok(Some(Value::Array(responses)))
             }
         }
-        message => dispatch_mcp_message(state, workspace, message)
+        message => dispatch_mcp_message(state, workspace, claims, message)
             .await?
             .map(|response| serde_json::to_value(response).map_err(|e| e.to_string()))
             .transpose(),
@@ -172,6 +175,7 @@ pub async fn dispatch_mcp_value(
 async fn dispatch_mcp_message(
     state: AppState,
     workspace: WorkspaceContext,
+    claims: Option<&crate::security::auth::Claims>,
     message: Value,
 ) -> Result<Option<MCPResponse>, String> {
     let object = message
@@ -181,7 +185,7 @@ async fn dispatch_mcp_message(
         IncomingKind::Request => {
             let request: MCPRequest =
                 serde_json::from_value(Value::Object(object.clone())).map_err(|e| e.to_string())?;
-            handle_mcp_request(state, workspace, request).await
+            handle_mcp_request(state, workspace, claims, request).await
         }
         IncomingKind::Response => Ok(None),
     }
@@ -242,6 +246,7 @@ fn validate_tool_call_args(name: &str, arguments: &Value) -> Result<(), MCPError
 async fn handle_mcp_request(
     state: AppState,
     workspace: WorkspaceContext,
+    claims: Option<&crate::security::auth::Claims>,
     request: MCPRequest,
 ) -> Result<Option<MCPResponse>, String> {
     let request_id = request.id.clone();
@@ -349,7 +354,7 @@ async fn handle_mcp_request(
                 })
             } else {
                 Some(
-                    match super::server::handle_tool_call(state, workspace, name, arguments).await {
+                    match super::server::handle_tool_call(state, workspace, claims, name, arguments).await {
                         Ok(result) => MCPResponse {
                             jsonrpc: "2.0".to_string(),
                             id: request.id.unwrap_or(Value::Null),
@@ -397,6 +402,8 @@ fn classify_mcp_error(err: anyhow::Error) -> MCPError {
     let message = err.to_string();
     let code = if message.contains("Security policy violation")
         || message.contains("blocked by security policy")
+        || message.contains("Forbidden")
+        || message.contains("Insufficient permissions")
     {
         XAVIER_ERROR_SECURITY
     } else if message.contains("Missing")

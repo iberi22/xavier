@@ -17,6 +17,7 @@ use crate::adapters::outbound::http_health_adapter::HttpHealthAdapter;
 use crate::agents::unregister_agent_handler;
 use crate::coordination::SimpleAgentRegistry;
 use crate::ports::inbound::{AgentLifecyclePort, TimeMetricsPort};
+use crate::security::auth::Permission;
 use crate::security::SecurityService;
 use crate::session::event_mapper::PanelThreadEntry;
 use crate::session::types::SessionEvent;
@@ -96,7 +97,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         // ── Maintenance API ──────────────────────────────────────────────
         .route(
             "/v1/maintenance/reindex-embeddings",
-            post(maintenance_reindex_handler),
+            post(maintenance_reindex_handler).layer(axum::middleware::from_fn(
+                crate::middleware::require_permission(|r| r.can_edit_config()),
+            )),
         )
         // ── Training Datasets API ─────────────────────────────────────────
         .route("/v1/training/export", post(training_export_handler))

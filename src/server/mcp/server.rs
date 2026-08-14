@@ -40,9 +40,43 @@ pub fn get_xavier_resources() -> Vec<MCPResource> {
 pub async fn handle_tool_call(
     state: AppState,
     workspace: crate::workspace::WorkspaceContext,
+    claims: Option<&crate::security::auth::Claims>,
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
+    if let Some(claims) = claims {
+        let role = &claims.role;
+        use crate::security::auth::Permission;
+        match name {
+            // Addition / Creation tools
+            "create_memory"
+            | "save_fragment"
+            | "memoryfragment_save"
+            | "memory_save"
+            | "ticket_create"
+            | "sync_gitcore" => {
+                if !role.can_add_memory() {
+                    return Err(anyhow::anyhow!(
+                        "Forbidden: Insufficient permissions for role {:?} to execute tool '{}'",
+                        role,
+                        name
+                    ));
+                }
+            }
+            // Deletion / Pruning tools
+            "memoryfragment_delete" | "memory_prune" => {
+                if !role.can_delete_memory() {
+                    return Err(anyhow::anyhow!(
+                        "Forbidden: Insufficient permissions for role {:?} to execute tool '{}'",
+                        role,
+                        name
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+
     for (key, value) in arguments.as_object().unwrap_or(&serde_json::Map::new()) {
         if !should_prescan_tool_argument(name, key) {
             continue;
