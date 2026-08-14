@@ -173,6 +173,10 @@ name = "multi_node_sync"
 path = "tests/e2e/multi_node_sync.rs"
 
 [[test]]
+name = "clearance_access_audit"
+path = "tests/e2e/clearance_access_audit.rs"
+
+[[test]]
 name = "xtsp"
 path = "tests/xtsp/mod.rs"
 
