@@ -1,0 +1,13 @@
+--- panel-ui/src/App.tsx
++++ panel-ui/src/App.tsx
+@@ -454,9 +454,7 @@
+   if (hash === "#/master-key") return <MasterKeyPage />;
+
+   if (hash === "#/maloca" || hash.startsWith("#/maloca/")) {
+-    return (
+-      <MalocaView onClose={handleCloseMaloca} />
+-    );
++    return <MalocaView onClose={handleCloseMaloca} />;
+   }
+
+   if (showOnboarding) {

@@ -453,7 +453,9 @@ export default function App() {
   if (hash === "#/master-key") return <MasterKeyPage />;
 
   if (hash === "#/maloca" || hash.startsWith("#/maloca/")) {
-    return <MalocaView onClose={handleCloseMaloca} />;
+    return (
+      <MalocaView onClose={handleCloseMaloca} />
+    );
   }
 
   if (showOnboarding) {
