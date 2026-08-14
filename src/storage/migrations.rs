@@ -72,7 +72,9 @@ CREATE TABLE IF NOT EXISTS memory_records (
     cluster_id TEXT,
     level TEXT DEFAULT 'atom',
     relation TEXT,
-    revisions TEXT
+    revisions TEXT,
+    embedding_status TEXT DEFAULT 'pending',
+    embedding_attempts INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_memories_workspace ON memory_records (workspace_id);
 CREATE INDEX IF NOT EXISTS idx_memories_path ON memory_records (workspace_id, path);
@@ -405,6 +407,8 @@ impl LegacyMigration for MigrationV1InitialSchema {
             ("encrypted_dek", "BLOB"),
             ("content_iv", "BLOB"),
             ("metadata_iv", "BLOB"),
+            ("embedding_status", "TEXT DEFAULT 'pending'"),
+            ("embedding_attempts", "INTEGER DEFAULT 0"),
         ];
         for (col, def) in memory_columns {
             if !table_has_column(conn, "memory_records", col)? {
@@ -454,6 +458,28 @@ impl LegacyMigration for MigrationV1InitialSchema {
             conn.execute("ALTER TABLE memory_chain ADD COLUMN workspace_id TEXT", [])?;
         }
 
+        Ok(())
+    }
+}
+
+pub struct MigrationV9EmbeddingStatus;
+
+impl LegacyMigration for MigrationV9EmbeddingStatus {
+    fn version(&self) -> u32 {
+        9
+    }
+    fn description(&self) -> &str {
+        "Add embedding_status and embedding_attempts columns to memory_records"
+    }
+    fn run(&self, conn: &Connection) -> Result<()> {
+        if table_exists(conn, "memory_records")? {
+            if !table_has_column(conn, "memory_records", "embedding_status")? {
+                conn.execute("ALTER TABLE memory_records ADD COLUMN embedding_status TEXT DEFAULT 'pending'", [])?;
+            }
+            if !table_has_column(conn, "memory_records", "embedding_attempts")? {
+                conn.execute("ALTER TABLE memory_records ADD COLUMN embedding_attempts INTEGER DEFAULT 0", [])?;
+            }
+        }
         Ok(())
     }
 }

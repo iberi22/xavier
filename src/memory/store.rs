@@ -113,6 +113,14 @@ pub struct MemoryRecord {
     pub score: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deleted_at: Option<DateTime<Utc>>,
+    #[serde(default = "default_embedding_status")]
+    pub embedding_status: String,
+    #[serde(default)]
+    pub embedding_attempts: u32,
+}
+
+fn default_embedding_status() -> String {
+    "pending".to_string()
 }
 
 impl Default for MemoryRecord {
@@ -139,6 +147,8 @@ impl Default for MemoryRecord {
             metadata_iv: None,
             score: 0.0,
             deleted_at: None,
+            embedding_status: "pending".to_string(),
+            embedding_attempts: 0,
         }
     }
 }
@@ -300,6 +310,8 @@ impl MemoryRecord {
             }),
             deleted_at: None,
             score: document.score,
+            embedding_status: "pending".to_string(),
+            embedding_attempts: 0,
             revisions: vec![MemoryRevision {
                 revision,
                 recorded_at: updated_at,

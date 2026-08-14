@@ -51,6 +51,7 @@ impl VecSqliteMemoryStore {
                 manager.add_migration(crate::storage::migrations::MigrationV6RecoverySystem);
                 manager.add_migration(crate::storage::migrations::MigrationV7EmbeddingModelMeta);
                 manager.add_migration(crate::storage::migrations::MigrationV8EntityGraphSnapshots);
+                manager.add_migration(crate::storage::migrations::MigrationV9EmbeddingStatus);
                 manager.run_migrations(conn)?;
 
                 // Run automatic vector migration
@@ -142,11 +143,11 @@ impl VecSqliteMemoryStore {
             .with_conn(&project_id_c, move |conn| {
                 let sql = if let Some(lim) = limit {
                     format!(
-                        "SELECT id, workspace_id, path, content, metadata, X'' AS embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE embedding IS NULL LIMIT {}",
+                        "SELECT id, workspace_id, path, content, metadata, X'' AS embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv, embedding_status, embedding_attempts FROM memory_records WHERE embedding IS NULL AND (embedding_status IS NULL OR embedding_status = 'pending' OR embedding_status = 'retry') LIMIT {}",
                         lim
                     )
                 } else {
-                    "SELECT id, workspace_id, path, content, metadata, X'' AS embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE embedding IS NULL".to_string()
+                    "SELECT id, workspace_id, path, content, metadata, X'' AS embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv, embedding_status, embedding_attempts FROM memory_records WHERE embedding IS NULL AND (embedding_status IS NULL OR embedding_status = 'pending' OR embedding_status = 'retry')".to_string()
                 };
                 let mut stmt = conn.prepare(&sql)?;
                 let mut rows = stmt.query([])?;
@@ -244,7 +245,7 @@ impl VecSqliteMemoryStore {
 
                                     // Update memory_records
                                     conn.execute(
-                                        "UPDATE memory_records SET embedding = ?1, updated_at = ?2 WHERE id = ?3",
+                                        "UPDATE memory_records SET embedding = ?1, updated_at = ?2, embedding_status = 'completed', embedding_attempts = 0 WHERE id = ?3",
                                         params![
                                             embedding_blob,
                                             chrono::Utc::now().to_rfc3339(),
@@ -310,6 +311,27 @@ impl VecSqliteMemoryStore {
                             record_id,
                             err_details
                         );
+                        let project_id_c = self.project_id.clone();
+                        let record_id_for_db = record_id.clone();
+                        let chunk_rec = chunk.iter().find(|r| r.id == record_id);
+                        let attempts = chunk_rec.map(|r| r.embedding_attempts + 1).unwrap_or(1);
+                        let new_status = if attempts >= 5 { "failed" } else { "retry" };
+
+                        let _ = ConnectionManager::global()
+                            .with_conn(&project_id_c, move |conn| {
+                                conn.execute(
+                                    "UPDATE memory_records SET embedding_status = ?1, embedding_attempts = ?2, updated_at = ?3 WHERE id = ?4",
+                                    params![
+                                        new_status,
+                                        attempts,
+                                        chrono::Utc::now().to_rfc3339(),
+                                        record_id_for_db.as_str()
+                                    ],
+                                )?;
+                                Ok(())
+                            })
+                            .await;
+
                         fail_count += 1;
                     }
                 }
@@ -837,6 +859,120 @@ mod tests {
             success_count, 0,
             "Expected 0 records to be successfully reindexed on API error"
         );
+
+        // Verify that embedding_attempts was incremented and status set to 'retry'
+        let (status, attempts): (String, u32) = ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                let row = conn.query_row(
+                    "SELECT embedding_status, embedding_attempts FROM memory_records WHERE id = 'test_mem_err_1'",
+                    [],
+                    |r| Ok((r.get::<_, Option<String>>(0)?.unwrap_or_default(), r.get::<_, Option<u32>>(1)?.unwrap_or(0))),
+                ).unwrap();
+                Ok(row)
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(status, "retry");
+        assert_eq!(attempts, 1);
+
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::remove_var("XAVIER_EMBEDDING_URL");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_dead_letter_isolation_after_max_attempts() {
+        use crate::memory::store::MemoryStore;
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        for key in &[
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+        ] {
+            std::env::remove_var(key);
+        }
+
+        let mut server = mockito::Server::new_async().await;
+        let mock_url = server.url();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_dead_letter.db");
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        let record = crate::memory::store::MemoryRecord {
+            id: "test_dead_letter_1".to_string(),
+            workspace_id: "test_ws_1".to_string(),
+            path: "test/dead_letter".to_string(),
+            content: "Dead letter content".to_string(),
+            metadata: serde_json::json!({}),
+            embedding: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            ..Default::default()
+        };
+
+        store.put(record).await.unwrap();
+
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
+        std::env::set_var(
+            "XAVIER_EMBEDDING_URL",
+            format!("{}/v1/embeddings", mock_url),
+        );
+        std::env::set_var("OPENAI_API_KEY", "test-api-key");
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "test-model");
+
+        let _mock = server
+            .mock("POST", "/v1/embeddings")
+            .with_status(500)
+            .expect(5)
+            .create_async()
+            .await;
+
+        ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                conn.execute("UPDATE memory_records SET embedding = NULL", [])
+                    .unwrap();
+                conn.execute("DELETE FROM memory_embeddings", []).unwrap();
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        // Run 5 attempts to reach dead-letter 'failed' status
+        for _ in 0..5 {
+            let _ = store.reindex_null_embeddings_background().await;
+        }
+
+        let (status, attempts): (String, u32) = ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                let row = conn.query_row(
+                    "SELECT embedding_status, embedding_attempts FROM memory_records WHERE id = 'test_dead_letter_1'",
+                    [],
+                    |r| Ok((r.get::<_, Option<String>>(0)?.unwrap_or_default(), r.get::<_, Option<u32>>(1)?.unwrap_or(0))),
+                ).unwrap();
+                Ok(row)
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(status, "failed");
+        assert_eq!(attempts, 5);
+
+        // 6th run should not attempt to reindex the failed record
+        let reindex_result = store.reindex_null_embeddings_background().await.unwrap();
+        assert_eq!(reindex_result, 0, "Failed record must be skipped on subsequent reindex ticks");
 
         std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("XAVIER_EMBEDDING_URL");
