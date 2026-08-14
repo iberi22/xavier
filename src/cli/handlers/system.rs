@@ -15,6 +15,19 @@ pub async fn health_handler() -> Response {
     )
 }
 
+/// Health history handler.
+pub async fn health_history_handler() -> Response {
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let history = xavier_lib::health::history::fetch_health_history(now_secs);
+    json_response(
+        StatusCode::OK,
+        serde_json::to_value(history).unwrap_or_default(),
+    )
+}
+
 /// System alerts handler.
 pub async fn system_alerts_handler() -> Response {
     json_response(

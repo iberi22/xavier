@@ -1149,6 +1149,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             auth_routes::<CliState>(&state.state_dir.to_string_lossy()),
         )
         .route("/health", get(health_handler))
+        .route("/health/history", get(health_history_handler))
         .route("/metrics", get(metrics_handler))
         .route("/health/cloud", get(cloud_health_handler))
         .route(
