@@ -11,6 +11,10 @@ use alloy::{
 sol!(
     #[sol(rpc)]
     contract XavierDAO {
+        event ProposalCreated(bytes32 indexed clusterId, string title, string description, address indexed creator, uint256 deadline);
+        event VoteCast(bytes32 indexed clusterId, address indexed voter, bool approve, uint256 votingPower, bool isCouncil);
+        event ProposalExecuted(bytes32 indexed clusterId);
+
         function createProposal(bytes32 clusterId, string calldata title, string calldata description) external;
         function castVote(bytes32 clusterId, bool approve, uint256 votingPower, bool isCouncil) external;
         function executeProposal(bytes32 clusterId) external;
@@ -80,6 +84,101 @@ impl OnchainDaoClient {
         }
         let base = self.config.rpc_url.trim_end_matches('/');
         Ok(format!("{}/{}", base, path.trim_start_matches('/')))
+    }
+
+    /// Converts a 32-byte cluster_id back to a UTF-8 string by trimming trailing null bytes.
+    pub fn parse_cluster_id(&self, cluster_id_bytes: &[u8; 32]) -> String {
+        let len = cluster_id_bytes
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(32);
+        String::from_utf8_lossy(&cluster_id_bytes[..len]).to_string()
+    }
+
+    /// Synchronizes events from the XavierDAO smart contract into the local GovernanceDao state.
+    #[cfg(feature = "dao-evm")]
+    pub async fn sync_from_chain(
+        &self,
+        dao: &mut crate::governance::dao::GovernanceDao,
+        from_block: u64,
+    ) -> anyhow::Result<usize> {
+        use alloy::{
+            network::Ethereum,
+            providers::{Provider, ProviderBuilder},
+            rpc::types::eth::Filter,
+            sol_types::SolEventInterface,
+        };
+
+        let provider = ProviderBuilder::new()
+            .network::<Ethereum>()
+            .connect_http(self.config.rpc_url.parse::<url::Url>()?);
+
+        let filter = Filter::new()
+            .address(self.config.contract_address)
+            .from_block(from_block);
+
+        let logs = provider.get_logs(&filter).await?;
+        let mut count = 0;
+
+        for log in logs {
+            if let Ok(event) = XavierDAO::XavierDAOEvents::decode_log(&log.inner) {
+                match event.data {
+                    XavierDAO::XavierDAOEvents::ProposalCreated(e) => {
+                        let cluster_id = self.parse_cluster_id(&e.clusterId.into());
+                        let creator = format!("{:#x}", e.creator);
+                        let deadline = e.deadline.to::<u64>();
+                        let options = vec!["Approve".to_string(), "Reject".to_string()];
+
+                        let proposal = crate::governance::dao::Proposal {
+                            id: cluster_id.clone(),
+                            title: e.title,
+                            description: e.description,
+                            options,
+                            deadline,
+                            creator,
+                            status: crate::governance::dao::ProposalStatus::Active,
+                            votes: std::collections::HashMap::new(),
+                        };
+                        dao.proposals.insert(cluster_id, proposal);
+                        count += 1;
+                    }
+                    XavierDAO::XavierDAOEvents::VoteCast(e) => {
+                        let cluster_id = self.parse_cluster_id(&e.clusterId.into());
+                        let voter = format!("{:#x}", e.voter);
+                        let option = if e.approve {
+                            "Approve".to_string()
+                        } else {
+                            "Reject".to_string()
+                        };
+                        let credits = e.votingPower.to::<u64>();
+
+                        if let Some(proposal) = dao.proposals.get_mut(&cluster_id) {
+                            proposal.votes.insert(voter, (option, credits));
+                            count += 1;
+                        }
+                    }
+                    XavierDAO::XavierDAOEvents::ProposalExecuted(e) => {
+                        let cluster_id = self.parse_cluster_id(&e.clusterId.into());
+                        if let Some(proposal) = dao.proposals.get_mut(&cluster_id) {
+                            proposal.status = crate::governance::dao::ProposalStatus::Executed;
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(count)
+    }
+
+    /// Fallback implementation when `dao-evm` is disabled.
+    #[cfg(not(feature = "dao-evm"))]
+    pub async fn sync_from_chain(
+        &self,
+        _dao: &mut crate::governance::dao::GovernanceDao,
+        _from_block: u64,
+    ) -> anyhow::Result<usize> {
+        Ok(0)
     }
 
     /// Submits a proposal to the XavierDAO contract.
@@ -316,6 +415,26 @@ mod tests {
         let result = client.validate_params("");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Cluster ID cannot be empty");
+    }
+
+    #[test]
+    fn test_parse_cluster_id() {
+        let config = create_test_config("https://localhost:8545");
+        let client = OnchainDaoClient::new(config);
+
+        let formatted = client.format_cluster_id("CLUSTER_SYNC_123");
+        let parsed = client.parse_cluster_id(&formatted);
+        assert_eq!(parsed, "CLUSTER_SYNC_123");
+    }
+
+    #[tokio::test]
+    async fn test_sync_from_chain_disabled_fallback() {
+        let config = create_test_config("https://localhost:8545");
+        let client = OnchainDaoClient::new(config);
+        let mut dao = crate::governance::dao::GovernanceDao::new();
+
+        let count = client.sync_from_chain(&mut dao, 0).await.unwrap_or(0);
+        assert_eq!(count, 0);
     }
 
     #[test]

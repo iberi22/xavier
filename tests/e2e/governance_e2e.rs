@@ -114,6 +114,35 @@ fn test_governance_dao_complete_lifecycle_e2e() {
     assert_eq!(final_prop.status, ProposalStatus::Executed);
 }
 
+#[tokio::test]
+async fn test_onchain_sync_from_chain_e2e() {
+    use xavier::governance::dao::GovernanceDao;
+    use xavier::mesh::governance::onchain::{EvmDaoConfig, OnchainDaoClient};
+
+    #[cfg(feature = "dao-evm")]
+    let config = EvmDaoConfig {
+        rpc_url: "http://127.0.0.1:8545".to_string(),
+        contract_address: alloy::primitives::Address::ZERO,
+        chain_id: 80002,
+        private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string(),
+    };
+
+    #[cfg(not(feature = "dao-evm"))]
+    let config = EvmDaoConfig {
+        rpc_url: "http://127.0.0.1:8545".to_string(),
+        contract_address: "0x0000000000000000000000000000000000000000".to_string(),
+        chain_id: 80002,
+        private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string(),
+    };
+
+    let client = OnchainDaoClient::new(config);
+    let mut dao = GovernanceDao::new();
+
+    // Verify sync_from_chain handles unreachable/mock RPC cleanly by returning an error on invalid connection
+    let result = client.sync_from_chain(&mut dao, 0).await;
+    assert!(result.is_err(), "sync_from_chain should return an error when connecting to unreachable RPC endpoint");
+}
+
 #[test]
 fn test_dynamic_quorum_adjustments() {
     let dq = DynamicQuorum::new(0.20, 0.60);
