@@ -1070,8 +1070,13 @@ mod tests {
         });
     }
 
+    // Serializes tests that mutate the shared SYSTEM_ALERTS global (parallel
+    // test threads race on clear()/get_alerts() otherwise — flaky).
+    static ALERTS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_embedding_alert_on_unhealthy_provider() {
+        let _guard = ALERTS_LOCK.lock().unwrap();
         // An unhealthy embedding (disconnected) should push a WARN alert.
         crate::server::alerts::SYSTEM_ALERTS.clear();
         let embedding = EmbeddingHealth {
@@ -1094,6 +1099,7 @@ mod tests {
 
     #[test]
     fn test_embedding_alert_on_high_error_rate() {
+        let _guard = ALERTS_LOCK.lock().unwrap();
         // A connected but very flaky provider (>10% errors) should also alert.
         crate::server::alerts::SYSTEM_ALERTS.clear();
         let embedding = EmbeddingHealth {
@@ -1115,6 +1121,7 @@ mod tests {
 
     #[test]
     fn test_no_embedding_alert_when_healthy() {
+        let _guard = ALERTS_LOCK.lock().unwrap();
         // A healthy embedding must NOT push an alert.
         crate::server::alerts::SYSTEM_ALERTS.clear();
         let embedding = EmbeddingHealth {
