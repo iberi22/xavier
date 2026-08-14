@@ -5,6 +5,7 @@
 //! `(wallet_pubkey || node_pubkey || node_id || expiry)`.
 
 use anyhow::{anyhow, Context, Result};
+use crate::utils::crypto::{hex_decode, hex_encode};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -59,8 +60,8 @@ pub fn issue_cert(
     ttl_secs: u64,
 ) -> Result<NodeCertificate> {
     let wallet_vk = wallet_signing_key.verifying_key();
-    let wallet_pubkey_hex = hex::encode(wallet_vk.as_bytes());
-    let node_pubkey_hex = hex::encode(node_pubkey_bytes);
+    let wallet_pubkey_hex = hex_encode(wallet_vk.as_bytes());
+    let node_pubkey_hex = hex_encode(node_pubkey_bytes);
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -76,7 +77,7 @@ pub fn issue_cert(
     );
 
     let signature = wallet_signing_key.sign(&payload);
-    let signature_hex = hex::encode(signature.to_bytes());
+    let signature_hex = hex_encode(&signature.to_bytes());
 
     Ok(NodeCertificate {
         wallet_pubkey: wallet_pubkey_hex,
@@ -96,7 +97,7 @@ pub fn verify_cert(
         return Ok(false);
     }
 
-    let wallet_pk_bytes = hex::decode(&cert.wallet_pubkey)
+    let wallet_pk_bytes = hex_decode(&cert.wallet_pubkey)
         .map_err(|e| anyhow!("Invalid hex in certificate wallet_pubkey: {}", e))?;
     if wallet_pk_bytes.len() != 32 {
         return Ok(false);
@@ -111,7 +112,7 @@ pub fn verify_cert(
         }
     }
 
-    let sig_bytes = hex::decode(&cert.signature)
+    let sig_bytes = hex_decode(&cert.signature)
         .map_err(|e| anyhow!("Invalid hex in certificate signature: {}", e))?;
     if sig_bytes.len() != 64 {
         return Ok(false);

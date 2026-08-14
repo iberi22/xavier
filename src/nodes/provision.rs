@@ -8,6 +8,7 @@
 //! 5. Explicit `PartialRevocation` status if remote deprovisioning fails.
 
 use anyhow::{anyhow, Context, Result};
+use crate::utils::crypto::hex_encode;
 use async_trait::async_trait;
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
@@ -231,7 +232,7 @@ impl<P: NodeProvisioner> ProvisioningEngine<P> {
         // 1. Generate dedicated Ed25519 keypair for node
         let node_signing_key = SigningKey::generate(&mut OsRng);
         let node_pubkey_bytes = node_signing_key.verifying_key().to_bytes();
-        let node_pubkey_hex = hex::encode(node_pubkey_bytes);
+        let node_pubkey_hex = hex_encode(&node_pubkey_bytes);
 
         // Derivation: node_id = hash(pubkey) with xv1- prefix
         let node_id = NodeId::from_public_key_bytes(&node_pubkey_bytes).0;
@@ -252,7 +253,7 @@ impl<P: NodeProvisioner> ProvisioningEngine<P> {
                 .ok_or_else(|| anyhow!("Token required for BaaS provider {}", provider))?,
             Provider::Vps => {
                 // For VPS, store the dedicated private key hex
-                &hex::encode(node_signing_key.to_bytes())
+                &hex_encode(&node_signing_key.to_bytes())
             }
         };
 

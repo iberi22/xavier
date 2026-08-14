@@ -111,8 +111,7 @@ async fn cmd_add(
     let identity = NodeIdentity::load_or_create()
         .context("Failed to load or generate local wallet/node identity")?;
     let wallet_sk_bytes: [u8; 32] = identity
-        .private_key
-        .as_slice()
+        .private_key_bytes()
         .try_into()
         .map_err(|_| anyhow!("Invalid authority private key length in identity"))?;
     let wallet_signing_key = SigningKey::from_bytes(&wallet_sk_bytes);
