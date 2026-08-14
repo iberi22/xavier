@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
 
 use crate::memory::manager::core::MemoryManager;
+use crate::scheduler::retry::{CircuitBreaker, RetryPolicy};
 use crate::memory::qmd::QmdMemory;
 use crate::retrieval::eval::{is_hit, CaseResult, EvalDataset, RetrievalMetrics};
 use crate::retrieval::history::{self, HistoryEntry};
@@ -22,12 +24,31 @@ const AUTO_TUNE_DATASET: &str = "scripts/benchmarks/datasets/internal_swal_openc
 /// Background Daemon to run scheduled memory maintenance tasks autonomously.
 pub struct MemoryDaemon {
     manager: Arc<MemoryManager>,
+    retry_policy: RetryPolicy,
+    circuit_breaker: Arc<Mutex<CircuitBreaker>>,
 }
 
 impl MemoryDaemon {
     /// New.
     pub fn new(manager: Arc<MemoryManager>) -> Self {
-        Self { manager }
+        Self {
+            manager,
+            retry_policy: RetryPolicy::default(),
+            circuit_breaker: Arc::new(Mutex::new(CircuitBreaker::default())),
+        }
+    }
+
+    /// Create with custom retry policy and circuit breaker settings.
+    pub fn with_retry_and_circuit(
+        manager: Arc<MemoryManager>,
+        retry_policy: RetryPolicy,
+        circuit_breaker: CircuitBreaker,
+    ) -> Self {
+        Self {
+            manager,
+            retry_policy,
+            circuit_breaker: Arc::new(Mutex::new(circuit_breaker)),
+        }
     }
 
     /// Spawns the autonomous Tokio loops.
@@ -79,13 +100,15 @@ impl MemoryDaemon {
             }
         });
 
-        // Periodic retrieval auto-tune + drift detection.
+        // Periodic retrieval auto-tune + drift detection with exponential backoff & circuit breaker.
         //
         // Runs every 6h (see AUTO_TUNE_INTERVAL_SECS), gated on memory being
         // available and the benchmark dataset being present. Spawned the same
         // way as the maintenance loops above so it never blocks the daemon and
         // stays isolated from them.
         let manager_tune = self.manager.clone();
+        let retry_policy = self.retry_policy.clone();
+        let circuit = self.circuit_breaker.clone();
         tokio::spawn(async move {
             info!(
                 "MemoryDaemon: Scheduled retrieval auto-tune loop started ({}s interval)",
@@ -93,8 +116,54 @@ impl MemoryDaemon {
             );
             loop {
                 sleep(Duration::from_secs(AUTO_TUNE_INTERVAL_SECS)).await;
-                if let Err(e) = run_auto_tune(&manager_tune.memory()).await {
-                    warn!("MemoryDaemon: Auto-tune pass failed: {e}");
+
+                // Check circuit breaker status before proceeding
+                let can_exec = {
+                    let cb = circuit.lock().await;
+                    cb.can_execute()
+                };
+
+                if !can_exec {
+                    warn!("MemoryDaemon: Auto-tune circuit breaker is OPEN (cooldown active); skipping pass");
+                    continue;
+                }
+
+                let mut attempt = 1;
+                let max_retries = 3;
+                let mut success = false;
+
+                while attempt <= max_retries {
+                    match run_auto_tune(&manager_tune.memory()).await {
+                        Ok(()) => {
+                            let mut cb = circuit.lock().await;
+                            cb.record_success();
+                            success = true;
+                            break;
+                        }
+                        Err(e) => {
+                            let tripped = {
+                                let mut cb = circuit.lock().await;
+                                cb.record_failure()
+                            };
+
+                            if tripped {
+                                warn!("MemoryDaemon: Circuit breaker TRIPPED OPEN after consecutive auto-tune failures");
+                                break;
+                            }
+
+                            let delay = retry_policy.calculate_delay(attempt);
+                            warn!(
+                                "MemoryDaemon: Auto-tune pass attempt {}/{} failed: {e}. Applying exponential backoff with jitter, retrying in {:?}",
+                                attempt, max_retries, delay
+                            );
+                            sleep(delay).await;
+                            attempt += 1;
+                        }
+                    }
+                }
+
+                if !success {
+                    error!("MemoryDaemon: Auto-tune pass failed after retries/circuit open; backing off until next interval");
                 }
             }
         });

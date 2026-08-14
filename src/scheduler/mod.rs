@@ -4,9 +4,14 @@
 //! providing the public API surface for module consumers.
 pub mod daemon;
 pub mod job;
+pub mod retry;
+
+#[cfg(test)]
+mod retry_tests;
 
 pub use daemon::MemoryDaemon;
 pub use job::{RecoveryConfig, ScheduledJob};
+pub use retry::{CircuitBreaker, RetryPolicy};
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
