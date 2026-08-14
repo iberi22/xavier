@@ -442,13 +442,20 @@ pub async fn v1_mesh_handshake(
 
     match NodeIdentity::load_or_create() {
         Ok(identity) => {
-            if auto_register {
-                // Automatically add to PeerRegistry and MeshAcl
-                if let Ok(mut peers) = crate::mesh::PeerRegistry::load() {
-                    let _ = peers.add_peer(crate::mesh::PeerInfo {
+            // Register or update peer in registry on valid handshake
+            if let Ok(mut peers) = crate::mesh::PeerRegistry::load() {
+                let existing = peers.get_peer(&payload.node_id).cloned();
+                let peer_info = if let Some(mut existing_peer) = existing {
+                    existing_peer.last_seen_at = Some(chrono::Utc::now().timestamp());
+                    if !payload.public_key_hex.is_empty() {
+                        existing_peer.public_key_hex = payload.public_key_hex.clone();
+                    }
+                    existing_peer
+                } else {
+                    crate::mesh::PeerInfo {
                         node_id: payload.node_id.clone(),
                         alias: None,
-                        endpoint_url: String::new(), // We don't necessarily know their endpoint yet
+                        endpoint_url: String::new(),
                         public_key_hex: payload.public_key_hex.clone(),
                         added_at: chrono::Utc::now().timestamp(),
                         last_seen_at: Some(chrono::Utc::now().timestamp()),
@@ -457,22 +464,28 @@ pub async fn v1_mesh_handshake(
                         iroh_addr: None,
                         shared_workspace_ids: Vec::new(),
                         shared_workspace_tokens: std::collections::HashMap::new(),
-                    });
-                    info!("Auto-registered peer {} in PeerRegistry", payload.node_id);
-                }
+                    }
+                };
 
+                let _ = peers.add_peer(peer_info);
+                info!("Registered/updated peer {} in PeerRegistry", payload.node_id);
+            }
+
+            if auto_register {
                 if let Ok(mut acl) = crate::mesh::MeshAcl::load() {
-                    let _ = acl.set_entry(
-                        payload.node_id.clone(),
-                        crate::mesh::NodeAclEntry {
-                            role: crate::enterprise::rbac::Role::Viewer,
-                            clearance: crate::memory::schema::ClearanceLevel::Unclassified,
-                            namespaces: None,
-                            public_key_hex: payload.public_key_hex.clone(),
-                            namespace_acl: None,
-                        },
-                    );
-                    info!("Auto-registered peer {} in MeshAcl", payload.node_id);
+                    if acl.get_entry(&payload.node_id).is_none() {
+                        let _ = acl.set_entry(
+                            payload.node_id.clone(),
+                            crate::mesh::NodeAclEntry {
+                                role: crate::enterprise::rbac::Role::Viewer,
+                                clearance: crate::memory::schema::ClearanceLevel::Unclassified,
+                                namespaces: None,
+                                public_key_hex: payload.public_key_hex.clone(),
+                                namespace_acl: None,
+                            },
+                        );
+                        info!("Auto-registered peer {} in MeshAcl", payload.node_id);
+                    }
                 }
             }
 

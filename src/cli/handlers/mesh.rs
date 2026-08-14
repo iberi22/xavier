@@ -37,6 +37,106 @@ pub struct PairRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AddPeerRequest {
+    pub node_id: String,
+    pub endpoint_url: String,
+    pub alias: Option<String>,
+    pub public_key_hex: Option<String>,
+    pub is_cloud: Option<bool>,
+    pub sync_enabled: Option<bool>,
+    pub iroh_addr: Option<String>,
+}
+
+/// Add peer handler.
+pub async fn add_peer_handler(Json(payload): Json<AddPeerRequest>) -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    let node_id = match NodeId::parse(&payload.node_id) {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let mut registry = match PeerRegistry::load() {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let peer = PeerInfo {
+        node_id: node_id.clone(),
+        alias: payload.alias,
+        endpoint_url: payload.endpoint_url,
+        public_key_hex: payload.public_key_hex.unwrap_or_default(),
+        added_at: chrono::Utc::now().timestamp(),
+        last_seen_at: Some(chrono::Utc::now().timestamp()),
+        sync_enabled: payload.sync_enabled.unwrap_or(true),
+        is_cloud: payload.is_cloud.unwrap_or(false),
+        iroh_addr: payload.iroh_addr,
+        shared_workspace_ids: Vec::new(),
+        shared_workspace_tokens: std::collections::HashMap::new(),
+    };
+
+    if let Err(e) = registry.add_peer(peer) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response();
+    }
+
+    // Ensure default ACL entry exists
+    let mut acl = match MeshAcl::load() {
+        Ok(a) => a,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    if acl.get_entry(&node_id).is_none() {
+        let _ = acl.set_entry(
+            node_id.clone(),
+            NodeAclEntry {
+                role: Role::Viewer,
+                clearance: ClearanceLevel::Unclassified,
+                namespaces: None,
+                public_key_hex: String::new(),
+                namespace_acl: None,
+            },
+        );
+    }
+
+    info!("Added peer {}", node_id);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "status": "ok", "node_id": node_id.0 })),
+    )
+        .into_response()
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateAclRequest {
     pub role: Role,
     pub clearance: ClearanceLevel,
