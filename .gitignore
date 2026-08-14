@@ -116,3 +116,4 @@ scripts/subagents/mcp/GENERATED/
 # Machine-local MCP configs (copy from .mcp.example.json; secrets via .env wrapper)
 .mcp.json
 .cursor/mcp.json
+target-test/
