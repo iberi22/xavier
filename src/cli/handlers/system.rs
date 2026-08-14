@@ -8,7 +8,7 @@ use xavier::server::alerts::SYSTEM_ALERTS;
 
 /// Health handler.
 pub async fn health_handler() -> Response {
-    let status = xavier::observability::health::HEALTH.get_status().await;
+    let status = xavier::observability::health::HEALTH.run_checks().await;
     json_response(
         StatusCode::OK,
         serde_json::to_value(status).unwrap_or_default(),

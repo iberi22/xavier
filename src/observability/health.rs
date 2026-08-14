@@ -509,26 +509,37 @@ impl HealthMonitor {
     }
 
     async fn check_mesh(&self) -> MeshHealth {
-        let mut active_peers = 0;
         let mut peer_healths = vec![];
 
+        // First try the in-memory peer registry set on health monitor
         let reg_opt = self.peer_registry.read().await;
-        if let Some(ref registry) = *reg_opt {
-            let peers = registry.list_peers();
-            active_peers = peers.len();
+        let loaded_registry = if reg_opt.is_none() {
+            PeerRegistry::load().ok()
+        } else {
+            None
+        };
 
-            for peer in peers {
-                let last_seen = peer.last_seen_at.unwrap_or(0);
-                let now = chrono::Utc::now().timestamp();
-                let lag = (now - last_seen).max(0) as u64;
+        let peers: Vec<&crate::mesh::PeerInfo> = if let Some(ref registry) = *reg_opt {
+            registry.list_peers()
+        } else if let Some(ref registry) = loaded_registry {
+            registry.list_peers()
+        } else {
+            vec![]
+        };
 
-                peer_healths.push(PeerHealth {
-                    node_id: peer.node_id.to_string(),
-                    connectivity_ok: lag < 60, // 1 minute threshold for mesh connectivity alert
-                    sync_lag_secs: lag,
-                    trust_score: 1.0,
-                });
-            }
+        let active_peers = peers.len();
+
+        for peer in peers {
+            let last_seen = peer.last_seen_at.unwrap_or(0);
+            let now = chrono::Utc::now().timestamp();
+            let lag = (now - last_seen).max(0) as u64;
+
+            peer_healths.push(PeerHealth {
+                node_id: peer.node_id.to_string(),
+                connectivity_ok: lag < 60, // 1 minute threshold for mesh connectivity alert
+                sync_lag_secs: lag,
+                trust_score: 1.0,
+            });
         }
 
         let mut status = HealthLevel::Healthy;
