@@ -602,7 +602,10 @@ fn normalize_openai_embeddings_endpoint(raw: &str) -> String {
 fn embedding_dimension_for_model(model: &str) -> usize {
     match model.trim().to_ascii_lowercase().as_str() {
         "embeddinggemma" => 768,
-        "nomic-embed-text" | "nomic-embed-text-v1.5" => 768,
+        "nomic-embed-text"
+        | "nomic-embed-text:latest"
+        | "nomic-embed-text-v1"
+        | "nomic-embed-text-v1.5" => 768,
         "all-minilm" => 384,
         "qwen3-embedding" | "qwen3-embedding-0.6b" => 1024,
         "text-embedding-3-large" => 3072,
@@ -636,6 +639,14 @@ mod tests {
         );
         assert_eq!(gllm::dimension_for_model("all-MiniLM-L6-v2"), 384);
         assert_eq!(gllm::dimension_for_model("qwen3-embedding-0.6b"), 1024);
+    }
+
+    #[test]
+    fn embedding_dimension_for_model_returns_768_for_nomic() {
+        assert_eq!(embedding_dimension_for_model("nomic-embed-text"), 768);
+        assert_eq!(embedding_dimension_for_model("nomic-embed-text:latest"), 768);
+        assert_eq!(embedding_dimension_for_model("nomic-embed-text-v1.5"), 768);
+        assert_eq!(embedding_dimension_for_model("text-embedding-3-small"), 1536);
     }
 
     #[test]
