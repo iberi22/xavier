@@ -236,6 +236,12 @@ pub enum Command {
         cmd: NodeCommand,
     },
 
+    /// SWAL node provisioning (BaaS and SSH/VPS nodes)
+    Nodes {
+        #[command(subcommand)]
+        cmd: NodesCommand,
+    },
+
     /// Export memories to JSON
     Export {
         /// Export only public memories (exclude is_private: true)
@@ -800,6 +806,79 @@ pub enum NodeCommand {
         dry_run: bool,
         #[arg(long)]
         data_dir: Option<PathBuf>,
+    },
+}
+
+/// SWAL node provisioning (BaaS and SSH/VPS nodes) subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum NodesCommand {
+    /// Provision and register a new node (supabase, neon, or vps)
+    Add {
+        /// Node provider: supabase, neon, or vps
+        #[arg(short, long)]
+        provider: String,
+        /// Authentication token (permitted via flag ONLY if XAVIER_ALLOW_CLI_TOKEN=1)
+        #[arg(short, long)]
+        token: Option<String>,
+        /// SSH connection target in format user@host (for VPS provider)
+        #[arg(long)]
+        ssh: Option<String>,
+        /// Visibility in mesh directory: public or private (default: private)
+        #[arg(short, long, default_value = "private")]
+        visibility: String,
+        /// Expected SSH host key fingerprint (for VPS provider)
+        #[arg(long)]
+        host_key: Option<String>,
+        /// Personal SSH key path (strictly prohibited; will be rejected)
+        #[arg(short, long)]
+        key: Option<String>,
+        /// Certificate validity TTL in seconds (default: 30 days)
+        #[arg(long, default_value_t = 2592000)]
+        cert_ttl: u64,
+        /// Ephemeral secret lease TTL in seconds (default: 24h)
+        #[arg(long, default_value_t = 86400)]
+        lease_ttl: u64,
+    },
+    /// List all registered nodes in the local registry
+    List {
+        /// Filter by visibility: public or private
+        #[arg(short, long)]
+        visibility: Option<String>,
+        /// Filter by status: active, degraded, revoked, partial_revocation
+        #[arg(short, long)]
+        status: Option<String>,
+        /// Output as JSON instead of formatted table
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Show detailed metadata for a specific node
+    Show {
+        /// Target node ID
+        node_id: String,
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Rotate credentials/token for an existing node
+    Rotate {
+        /// Target node ID
+        node_id: String,
+        /// New token (permitted via flag ONLY if XAVIER_ALLOW_CLI_TOKEN=1; else env/stdin)
+        #[arg(short, long)]
+        token: Option<String>,
+        /// New secret lease TTL in seconds (default: 24h)
+        #[arg(long, default_value_t = 86400)]
+        lease_ttl: u64,
+    },
+    /// Remove/deprovision a node
+    Remove {
+        /// Target node ID
+        node_id: String,
+    },
+    /// Check lifecycle status and certificate health for a node
+    Status {
+        /// Target node ID
+        node_id: String,
     },
 }
 
