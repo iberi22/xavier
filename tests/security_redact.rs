@@ -42,6 +42,26 @@ async fn test_redaction_engine_basic_patterns() {
     let input_address = "Mail to 123 Main Street or 456 Oak Ave, Suite 12.";
     let redacted_address = engine.redact(input_address);
     assert_eq!(redacted_address, "Mail to [ADDRESS] or [ADDRESS], Suite 12.");
+
+    // 5. Cédula Redaction
+    let input_cedula = "Mi Cédula es 1018273645 y la otra es CC #52345678.";
+    let redacted_cedula = engine.redact(input_cedula);
+    assert_eq!(redacted_cedula, "Mi Cédula es [CEDULA] y la otra es [CEDULA].");
+
+    // 6. IPv4 & IPv6 Redaction
+    let input_ip = "Connect via 192.168.0.1 or 2001:0db8:85a3:0000:0000:8a2e:0370:7334.";
+    let redacted_ip = engine.redact(input_ip);
+    assert_eq!(redacted_ip, "Connect via [IPV4] or [IPV6].");
+
+    // 7. GPS Coordinates Redaction
+    let input_gps = "Target position at 4.60971, -74.08175.";
+    let redacted_gps = engine.redact(input_gps);
+    assert_eq!(redacted_gps, "Target position at [GPS].");
+
+    // 8. IBAN Redaction
+    let input_iban = "Wire funds to GB33BUKB20201555555555.";
+    let redacted_iban = engine.redact(input_iban);
+    assert_eq!(redacted_iban, "Wire funds to [IBAN].");
 }
 
 #[tokio::test]
