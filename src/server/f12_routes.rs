@@ -369,6 +369,9 @@ pub async fn create_snapshot(
     State(state): State<F12State>,
     Json(req): Json<CreateSnapshotRequest>,
 ) -> impl IntoResponse {
+    if !req.repo.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+        return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
+    }
     let manager = SnapshotManager::new(&state.data_dir);
     let repo_root = match &req.repo_root {
         Some(root) => PathBuf::from(root),
@@ -407,6 +410,9 @@ pub async fn get_snapshot(
     State(state): State<F12State>,
     axum::extract::Path(repo): axum::extract::Path<String>,
 ) -> impl IntoResponse {
+    if !repo.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+        return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
+    }
     let manager = SnapshotManager::new(&state.data_dir);
     match manager.get_snapshot(&repo) {
         Ok(Some(snapshot)) => Json(snapshot).into_response(),
