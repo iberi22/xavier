@@ -349,6 +349,18 @@ export default function App() {
     ]);
   }, []);
 
+  const handleCloseMaloca = useCallback(() => {
+    window.location.hash = "";
+  }, []);
+
+  const handleCompleteOnboarding = useCallback(() => {
+    setShowOnboarding(false);
+  }, []);
+
+  const handleCloseConfig = useCallback(() => {
+    setIsConfigOpen(false);
+  }, []);
+
   const handleUpdateBookmark = useCallback((_updated: BookmarkArtifact) => {
     // For demo purposes, sync local state
   }, []);
@@ -441,17 +453,11 @@ export default function App() {
   if (hash === "#/master-key") return <MasterKeyPage />;
 
   if (hash === "#/maloca" || hash.startsWith("#/maloca/")) {
-    return (
-      <MalocaView
-        onClose={() => {
-          window.location.hash = "";
-        }}
-      />
-    );
+    return <MalocaView onClose={handleCloseMaloca} />;
   }
 
   if (showOnboarding) {
-    return <OnboardingFlow onComplete={() => setShowOnboarding(false)} />;
+    return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
   }
 
   return (
@@ -485,7 +491,7 @@ export default function App() {
             >
               <ConfigModal
                 key="modal"
-                onClose={() => setIsConfigOpen(false)}
+                onClose={handleCloseConfig}
                 graphData={graphData}
                 onUpdateGraphData={handleUpdateGraphData}
                 bookmarks={

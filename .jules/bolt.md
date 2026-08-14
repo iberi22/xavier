@@ -34,3 +34,6 @@
 ## 2026-08-08 - [React.memo boundary for ChatHistory container]
  **Learning:** Large components rendering iterative child lists (like `ChatHistory` rendering `ChatMessageItem`) will still re-render when a high-frequency parent state changes (like typing inputs in `App.tsx`), even if the individual list items are memoized.
  **Action:** Always wrap top-level dynamic list containers in `React.memo()` to prevent O(1) container re-renders and expensive DOM tree traversal when the container props haven't changed.
+## 2024-08-14 - Fix unnecessary child component re-renders
+**Learning:** Wrapping callback props passed to child components in `useCallback` is important to prevent unnecessary re-renders in React when parent state updates.
+**Action:** Always wrap `onClose`, `onComplete`, and other callbacks in `useCallback` when passing them to memoized or expensive child components.
