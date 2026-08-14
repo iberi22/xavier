@@ -80,9 +80,9 @@ pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use private_mesh::{derive_wallet_id, is_same_wallet, PrivateMeshRegistry, WalletNode};
-pub use registry::PeerRegistrySyncAdapter;
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
 pub use public_rag::{search_public, PublicRagQuery, PublicRagResult};
+pub use registry::PeerRegistrySyncAdapter;
 pub use service_network::{ServiceInfo, ServiceKind, ServiceRegistry};
 pub use telemetry_collector::{
     RetentionPolicy, TelemetryAggregate, TelemetryCollector, TelemetrySample,
@@ -109,14 +109,4 @@ pub async fn connect_active_transport(
     peer_addr: &str,
 ) -> anyhow::Result<iroh::endpoint::Connection> {
     transport.connect(peer_addr).await
-}
-
-/// Initialize active Iroh transport and start the background accept loop.
-#[cfg(feature = "mesh")]
-pub async fn start_mesh_node(
-    identity: std::sync::Arc<NodeIdentity>,
-) -> (IrohTransport, tokio::task::JoinHandle<()>) {
-    let transport = init_active_transport(identity);
-    let handle = transport.spawn_accept_loop().await;
-    (transport, handle)
 }

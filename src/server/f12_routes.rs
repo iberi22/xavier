@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::curation::CurationQueue;
 use crate::codebase::snapshot::SnapshotManager;
+use crate::curation::CurationQueue;
 use crate::mesh::private_mesh::{PrivateMeshRegistry, WalletNode};
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
@@ -369,7 +369,11 @@ pub async fn create_snapshot(
     State(state): State<F12State>,
     Json(req): Json<CreateSnapshotRequest>,
 ) -> impl IntoResponse {
-    if !req.repo.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !req
+        .repo
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
     }
     let manager = SnapshotManager::new(&state.data_dir);
@@ -410,7 +414,10 @@ pub async fn get_snapshot(
     State(state): State<F12State>,
     axum::extract::Path(repo): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    if !repo.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !repo
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
     }
     let manager = SnapshotManager::new(&state.data_dir);
@@ -625,7 +632,12 @@ mod tests {
     async fn test_telemetry_metrics_whitelist() {
         let app = router(test_state());
         let resp = app
-            .oneshot(Request::builder().uri("/v1/f12/telemetry/metrics").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/telemetry/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -638,7 +650,12 @@ mod tests {
     async fn test_list_snapshots_empty_ok() {
         let app = router(test_state());
         let resp = app
-            .oneshot(Request::builder().uri("/v1/f12/snapshots").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/snapshots")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -651,7 +668,12 @@ mod tests {
     async fn test_get_snapshot_missing_404() {
         let app = router(test_state());
         let resp = app
-            .oneshot(Request::builder().uri("/v1/f12/snapshots/nope").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/snapshots/nope")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);

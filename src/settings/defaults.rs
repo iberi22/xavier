@@ -46,7 +46,7 @@ impl Default for WorkspaceSettings {
                     provider: "custom".to_string(),
                     endpoint: "https://custom.expert/api".to_string(),
                     api_key: Some("mock-custom-key".to_string()),
-                }
+                },
             ],
         }
     }

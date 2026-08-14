@@ -228,10 +228,14 @@ pub async fn v1_memories_add(
     let mut meta = payload.metadata.unwrap_or(serde_json::json!({}));
 
     let payload_kind_str = payload.kind.as_deref().unwrap_or("");
-    let is_ssp = path.starts_with("stability/") || path.starts_with("features/") || payload_kind_str == "stability_report" || payload_kind_str == "feature_snippet";
+    let is_ssp = path.starts_with("stability/")
+        || path.starts_with("features/")
+        || payload_kind_str == "stability_report"
+        || payload_kind_str == "feature_snippet";
 
-    let is_dedup =
-        params.mode.as_deref() == Some("dedup") || payload.mode.as_deref() == Some("dedup") || is_ssp;
+    let is_dedup = params.mode.as_deref() == Some("dedup")
+        || payload.mode.as_deref() == Some("dedup")
+        || is_ssp;
     if is_dedup {
         if let Some(obj) = meta.as_object_mut() {
             obj.insert("dedup".to_string(), serde_json::json!(true));

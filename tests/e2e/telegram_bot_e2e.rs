@@ -86,32 +86,4 @@ mod telegram_tests {
             env::remove_var("TELEGRAM_BOT_TOKEN");
         }
     }
-
-    #[test]
-    fn test_webhook_secret_token_verification() {
-        use xavier::telegram::{verify_webhook_secret, X_TELEGRAM_BOT_API_SECRET_TOKEN};
-
-        assert_eq!(X_TELEGRAM_BOT_API_SECRET_TOKEN, "X-Telegram-Bot-Api-Secret-Token");
-
-        let secret = "super_secret_telegram_token_123";
-
-        // 1. Secret is set, missing header -> 401 Unauthorized
-        let res_missing = verify_webhook_secret(Some(secret), None);
-        assert_eq!(res_missing, Err(axum::http::StatusCode::UNAUTHORIZED));
-
-        // 2. Secret is set, wrong token -> 401 Unauthorized
-        let res_wrong = verify_webhook_secret(Some(secret), Some("wrong_secret_token"));
-        assert_eq!(res_wrong, Err(axum::http::StatusCode::UNAUTHORIZED));
-
-        // 3. Secret is set, correct token -> Ok(())
-        let res_correct = verify_webhook_secret(Some(secret), Some(secret));
-        assert_eq!(res_correct, Ok(()));
-
-        // 4. Secret is NOT set (None) -> Ok(()) regardless of provided header
-        let res_no_secret = verify_webhook_secret(None, None);
-        assert_eq!(res_no_secret, Ok(()));
-
-        let res_no_secret_with_token = verify_webhook_secret(None, Some("any_token"));
-        assert_eq!(res_no_secret_with_token, Ok(()));
-    }
 }

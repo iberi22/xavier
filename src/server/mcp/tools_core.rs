@@ -6,43 +6,15 @@
 //! Note: All tools define their input schema using `input_schema` internally,
 //! which is serialized to the MCP-compliant `inputSchema` camelCase field via Serde.
 use super::types::*;
-use crate::coordination::KeyLendingEngine;
 use crate::memory::schema::{
     EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, MemoryQueryFilters,
     TypedMemoryPayload,
 };
-use crate::secrets::audit::QmdAuditLogger;
 use crate::utils::crypto::hex_encode;
 use crate::workspace::WorkspaceContext;
 use crate::AppState;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-
-/// Helper function to resolve secrets via KeyLendingEngine lease system for MCP tool operations.
-/// Lends a short-lived secret lease, passes the secret value (if available) to the callback,
-/// and automatically revokes the lease after the operation completes.
-pub async fn resolve_tool_secret<F, Fut, T>(
-    secret_name: &str,
-    agent_id: &str,
-    f: F,
-) -> anyhow::Result<T>
-where
-    F: FnOnce(Option<String>) -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<T>>,
-{
-    let engine = KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None);
-    let raw_val = std::env::var(secret_name).ok();
-    let lease = engine
-        .lend(secret_name, raw_val.as_deref(), agent_id, 60)
-        .await?;
-
-    let val = lease.secret_value.clone();
-    let res = f(val).await;
-
-    let _ = engine.revoke(&lease.token, "mcp_tool_execution_complete").await;
-
-    res
-}
 
 /// Get xavier core tools.
 pub fn get_xavier_core_tools() -> Vec<MCPTool> {
@@ -501,8 +473,9 @@ pub async fn handle_core_tool(
             let snapshot = crate::self_manage::collect_system_snapshot();
             let in_process_health = crate::health::collect_health_sync();
 
-            let db_integrity = in_process_health.checks.iter()
-                .any(|c| c.name == "sqlite_integrity" && matches!(c.status, crate::health::CheckStatus::Pass));
+            let db_integrity = in_process_health.checks.iter().any(|c| {
+                c.name == "sqlite_integrity" && matches!(c.status, crate::health::CheckStatus::Pass)
+            });
 
             let benchmark = crate::auto_improvement::benchmark::BenchmarkSnapshot {
                 timestamp_secs: chrono::Utc::now().timestamp() as u64,
@@ -542,11 +515,22 @@ pub async fn handle_core_tool(
             ))?)
         }
         "log_scan" => {
-            let since = arguments.get("since").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let level_min = arguments.get("level_min").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let pattern = arguments.get("pattern").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let source = arguments.get("source").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let max_entries = arguments.get("max_entries").and_then(|v| v.as_u64()).unwrap_or(500) as usize;
+            let since = arguments
+                .get("since")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let level_min = arguments
+                .get("level_min")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let pattern = arguments
+                .get("pattern")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let source = arguments
+                .get("source")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let max_entries = arguments
+                .get("max_entries")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(500) as usize;
 
             let args = crate::self_manage::LogScanArgs {
                 since,
@@ -564,7 +548,9 @@ pub async fn handle_core_tool(
         }
         "env_status" => {
             let include_processes = arguments.get("include_processes").and_then(|v| v.as_bool());
-            let top_n = arguments.get("top_n").and_then(|v| v.as_u64().map(|n| n as usize));
+            let top_n = arguments
+                .get("top_n")
+                .and_then(|v| v.as_u64().map(|n| n as usize));
 
             let args = crate::self_manage::EnvStatusArgs {
                 include_processes,
@@ -578,16 +564,34 @@ pub async fn handle_core_tool(
             ))?)
         }
         "ticket_create" => {
-            let title = arguments.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let body = arguments.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let title = arguments
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = arguments
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let labels = arguments.get("labels").and_then(|v| {
                 v.as_array().map(|arr| {
-                    arr.iter().filter_map(|item| item.as_str().map(|s| s.to_string())).collect::<Vec<String>>()
+                    arr.iter()
+                        .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<String>>()
                 })
             });
-            let severity = arguments.get("severity").and_then(|v| v.as_str()).unwrap_or("warn").to_string();
-            let fingerprint = arguments.get("fingerprint").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let backend = arguments.get("backend").and_then(|v| v.as_str().map(|s| s.to_string()));
+            let severity = arguments
+                .get("severity")
+                .and_then(|v| v.as_str())
+                .unwrap_or("warn")
+                .to_string();
+            let fingerprint = arguments
+                .get("fingerprint")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let backend = arguments
+                .get("backend")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
 
             let args = crate::self_manage::TicketCreateArgs {
                 title,
@@ -598,16 +602,13 @@ pub async fn handle_core_tool(
                 backend,
             };
 
-            resolve_tool_secret("GITHUB_TOKEN", "mcp_ticket_create", |_secret_val| async move {
-                match crate::self_manage::ticket_create(args) {
-                    Ok(result) => Ok(serde_json::to_value(MCPToolResult::structured(
-                        serde_json::to_value(&result)?,
-                        result.deduplicated,
-                    ))?),
-                    Err(error) => Err(error),
-                }
-            })
-            .await
+            match crate::self_manage::ticket_create(args) {
+                Ok(result) => Ok(serde_json::to_value(MCPToolResult::structured(
+                    serde_json::to_value(&result)?,
+                    result.deduplicated,
+                ))?),
+                Err(error) => Err(error),
+            }
         }
         "xavier_local_status" => {
             let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();

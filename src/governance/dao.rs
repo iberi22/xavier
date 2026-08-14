@@ -238,8 +238,13 @@ mod tests {
             .unwrap();
 
         // 2. Vote
-        dao.vote(&proposal_id, "voter_1".to_string(), "Approve".to_string(), 10)
-            .unwrap();
+        dao.vote(
+            &proposal_id,
+            "voter_1".to_string(),
+            "Approve".to_string(),
+            10,
+        )
+        .unwrap();
         dao.vote(&proposal_id, "voter_2".to_string(), "Reject".to_string(), 5)
             .unwrap();
 
@@ -302,16 +307,23 @@ mod tests {
             .unwrap();
 
         // First vote succeeds
-        dao.vote(&proposal_id, "voter_alice".to_string(), "OptionA".to_string(), 100)
-            .unwrap();
+        dao.vote(
+            &proposal_id,
+            "voter_alice".to_string(),
+            "OptionA".to_string(),
+            100,
+        )
+        .unwrap();
 
         // Second vote from same voter fails
-        let second_vote = dao.vote(&proposal_id, "voter_alice".to_string(), "OptionB".to_string(), 50);
-        assert!(second_vote.is_err());
-        assert_eq!(
-            second_vote.unwrap_err(),
-            "Double vote rejected".to_string()
+        let second_vote = dao.vote(
+            &proposal_id,
+            "voter_alice".to_string(),
+            "OptionB".to_string(),
+            50,
         );
+        assert!(second_vote.is_err());
+        assert_eq!(second_vote.unwrap_err(), "Double vote rejected".to_string());
     }
 
     #[test]

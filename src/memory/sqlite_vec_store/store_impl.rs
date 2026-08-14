@@ -100,20 +100,18 @@ impl MemoryStore for VecSqliteMemoryStore {
         if record.embedding.is_empty() {
             if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
                 match crate::memory::embedder::EmbeddingClient::from_env_async().await {
-                    Ok(client) => {
-                        match client.embed(&record.content).await {
-                            Ok(vector) => {
-                                record.embedding = vector;
-                            }
-                            Err(e) => {
-                                tracing::warn!(
+                    Ok(client) => match client.embed(&record.content).await {
+                        Ok(vector) => {
+                            record.embedding = vector;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
                                     "Memory record {} saved WITHOUT embedding: client embedding generation failed: {}",
                                     record.id,
                                     e
                                 );
-                            }
                         }
-                    }
+                    },
                     Err(e) => {
                         tracing::warn!(
                             "Memory record {} saved WITHOUT embedding: failed to initialize embedding client: {}",
@@ -173,7 +171,8 @@ impl MemoryStore for VecSqliteMemoryStore {
             lock.clone()
         };
 
-        let is_ssp_path = record.path.starts_with("stability/") || record.path.starts_with("features/");
+        let is_ssp_path =
+            record.path.starts_with("stability/") || record.path.starts_with("features/");
         if is_ssp_path {
             dedup_settings.enabled = true;
             dedup_settings.scope = crate::settings::types::DedupScope::PathExact;

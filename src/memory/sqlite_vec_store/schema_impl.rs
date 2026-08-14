@@ -125,11 +125,15 @@ impl VecSqliteMemoryStore {
 
     /// Reindex null embeddings background.
     pub async fn reindex_null_embeddings_background(&self) -> Result<usize> {
-        self.reindex_null_embeddings_background_with_limit(None).await
+        self.reindex_null_embeddings_background_with_limit(None)
+            .await
     }
 
     /// Reindex null embeddings background with limit.
-    pub async fn reindex_null_embeddings_background_with_limit(&self, limit: Option<usize>) -> Result<usize> {
+    pub async fn reindex_null_embeddings_background_with_limit(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<usize> {
         let embedder = match crate::embedding::build_embedder_from_env().await {
             Ok(emb) => emb,
             Err(e) => {
@@ -972,7 +976,10 @@ mod tests {
 
         // 6th run should not attempt to reindex the failed record
         let reindex_result = store.reindex_null_embeddings_background().await.unwrap();
-        assert_eq!(reindex_result, 0, "Failed record must be skipped on subsequent reindex ticks");
+        assert_eq!(
+            reindex_result, 0,
+            "Failed record must be skipped on subsequent reindex ticks"
+        );
 
         std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("XAVIER_EMBEDDING_URL");
@@ -1143,7 +1150,11 @@ mod tests {
         assert!(res.is_ok());
 
         // Verify the record is saved without embedding
-        let fetched = store.get("test_ws_1", "test_warn_mem_1").await.unwrap().unwrap();
+        let fetched = store
+            .get("test_ws_1", "test_warn_mem_1")
+            .await
+            .unwrap()
+            .unwrap();
         assert!(fetched.embedding.is_empty());
     }
 }

@@ -162,7 +162,11 @@ async fn test_prune_dry_run_does_not_delete() {
         ))
         .expect("build prune dry_run req");
 
-    let resp_prune = app.clone().oneshot(prune_req).await.expect("exec prune dry_run req");
+    let resp_prune = app
+        .clone()
+        .oneshot(prune_req)
+        .await
+        .expect("exec prune dry_run req");
     assert_eq!(resp_prune.status(), StatusCode::OK);
 
     let body = to_bytes(resp_prune.into_body(), usize::MAX)
@@ -250,7 +254,11 @@ async fn test_prune_older_than_days_removes_only_old_records() {
         ))
         .expect("build prune older_than_days req");
 
-    let resp_prune = app.clone().oneshot(prune_req).await.expect("exec prune req");
+    let resp_prune = app
+        .clone()
+        .oneshot(prune_req)
+        .await
+        .expect("exec prune req");
     assert_eq!(resp_prune.status(), StatusCode::OK);
 
     let body = to_bytes(resp_prune.into_body(), usize::MAX)
@@ -378,7 +386,9 @@ async fn test_consolidation_merge_duplicate_paths_after_dedup_config_change() {
         embedding_dimensions: 4,
     };
 
-    let store = VecSqliteMemoryStore::new(config).await.expect("initialize store");
+    let store = VecSqliteMemoryStore::new(config)
+        .await
+        .expect("initialize store");
     let workspace_id = "ws_dedup_test";
 
     // 1. Initial configuration: dedup disabled
@@ -412,6 +422,7 @@ async fn test_consolidation_merge_duplicate_paths_after_dedup_config_change() {
         metadata_iv: None,
         score: 0.0,
         deleted_at: None,
+        ..Default::default()
     };
 
     store.put(rec1.clone()).await.expect("put initial record");
@@ -433,7 +444,8 @@ async fn test_consolidation_merge_duplicate_paths_after_dedup_config_change() {
         id: "rec_2".to_string(),
         workspace_id: workspace_id.to_string(),
         path: "doc/knowledge".to_string(),
-        content: "Knowledge base entry regarding Xavier core features with consolidated updates".to_string(),
+        content: "Knowledge base entry regarding Xavier core features with consolidated updates"
+            .to_string(),
         metadata: serde_json::json!({ "dedup": true }),
         embedding: vec![0.11, 0.21, 0.31, 0.41],
         created_at: chrono::Utc::now(),
@@ -451,13 +463,21 @@ async fn test_consolidation_merge_duplicate_paths_after_dedup_config_change() {
         metadata_iv: None,
         score: 0.0,
         deleted_at: None,
+        ..Default::default()
     };
 
-    store.put(rec2).await.expect("put superset record with dedup active");
+    store
+        .put(rec2)
+        .await
+        .expect("put superset record with dedup active");
 
     // The store should merge into the existing record rather than duplicate rows
     let items_after = store.list(workspace_id).await.expect("list after dedup");
-    assert_eq!(items_after.len(), 1, "Duplicate paths should consolidate into a single record");
+    assert_eq!(
+        items_after.len(),
+        1,
+        "Duplicate paths should consolidate into a single record"
+    );
     assert_eq!(items_after[0].id, "rec_1");
     assert!(items_after[0].content.contains("consolidated updates"));
 }

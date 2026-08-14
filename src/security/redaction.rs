@@ -142,7 +142,10 @@ mod tests {
         let engine = RedactionEngine::default();
         let inputs = vec![
             ("I live at 123 Main St.", "I live at [ADDRESS]."),
-            ("Meet at 1600 Amphitheatre Pkwy.", "Meet at 1600 Amphitheatre Pkwy."), // no standard street suffix
+            (
+                "Meet at 1600 Amphitheatre Pkwy.",
+                "Meet at 1600 Amphitheatre Pkwy.",
+            ), // no standard street suffix
             ("Send mail to 456 Oak Avenue.", "Send mail to [ADDRESS]."),
         ];
         for (input, expected) in inputs {
@@ -181,8 +184,14 @@ mod tests {
     fn test_redact_ipv4() {
         let engine = RedactionEngine::default();
         let inputs = vec![
-            ("Server IP is 192.168.1.1 or 10.0.0.254.", "Server IP is [IPV4] or [IPV4]."),
-            ("Invalid IP 999.999.999.999 should stay.", "Invalid IP 999.999.999.999 should stay."),
+            (
+                "Server IP is 192.168.1.1 or 10.0.0.254.",
+                "Server IP is [IPV4] or [IPV4].",
+            ),
+            (
+                "Invalid IP 999.999.999.999 should stay.",
+                "Invalid IP 999.999.999.999 should stay.",
+            ),
         ];
         for (input, expected) in inputs {
             assert_eq!(engine.redact(input), expected);
@@ -193,7 +202,10 @@ mod tests {
     fn test_redact_ipv6() {
         let engine = RedactionEngine::default();
         let inputs = vec![
-            ("Address is 2001:0db8:85a3:0000:0000:8a2e:0370:7334.", "Address is [IPV6]."),
+            (
+                "Address is 2001:0db8:85a3:0000:0000:8a2e:0370:7334.",
+                "Address is [IPV6].",
+            ),
             ("Loopback is ::1.", "Loopback is [IPV6]."),
         ];
         for (input, expected) in inputs {

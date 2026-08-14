@@ -88,6 +88,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
                     content_iv: None,
                     encrypted_dek: None,
                     metadata_iv: None,
+                    ..Default::default()
                 })
                 .await
                 .expect("seed memory");
@@ -247,6 +248,7 @@ fn bench_memory_store_operations(c: &mut Criterion) {
                 content_iv: None,
                 encrypted_dek: None,
                 metadata_iv: None,
+                ..Default::default()
             };
 
             runtime.block_on(async {
@@ -284,6 +286,7 @@ fn bench_memory_store_operations(c: &mut Criterion) {
                 content_iv: None,
                 encrypted_dek: None,
                 metadata_iv: None,
+                ..Default::default()
             })
             .await
             .expect("seed target");
@@ -332,6 +335,7 @@ fn bench_memory_store_operations(c: &mut Criterion) {
                     content_iv: None,
                     encrypted_dek: None,
                     metadata_iv: None,
+                    ..Default::default()
                 };
                 store.put(record).await.unwrap();
 

@@ -61,7 +61,10 @@ pub async fn get_dataset_manifest_handler(
     Extension(state): Extension<TrainingState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
     }
     let dataset_dir = state.data_dir.join(&id);
@@ -78,7 +81,10 @@ pub async fn get_dataset_train_handler(
     Extension(state): Extension<TrainingState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
     }
     let dataset_dir = state.data_dir.join(&id);
@@ -98,7 +104,10 @@ pub async fn get_dataset_eval_handler(
     Extension(state): Extension<TrainingState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
     }
     let dataset_dir = state.data_dir.join(&id);

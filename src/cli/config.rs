@@ -154,10 +154,6 @@ pub fn resolve_http_bind_host() -> String {
 /// 3. Settings default `client_base_url()` if port matches default
 pub fn resolve_base_url_for_port(port: u16) -> String {
     std::env::var("XAVIER_URL").unwrap_or_else(|_| {
-        let settings = XavierSettings::current();
-        if port == settings.server.port {
-            return settings.client_base_url();
-        }
         let host = resolve_http_bind_host();
         format!("http://{}:{}", host, port)
     })

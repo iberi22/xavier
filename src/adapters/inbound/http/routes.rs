@@ -95,6 +95,15 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             "/api/v1/memory/sync/resolve/{conflict_id}",
             post(crate::adapters::inbound::http::handlers::sync::sync_resolve_handler),
         )
+        // ── Public Node Directory (SWAL Node Discovery) ──────────────────
+        .route(
+            "/mesh/public/nodes",
+            get(crate::adapters::inbound::http::handlers::nodes::list_public_nodes_handler),
+        )
+        .route(
+            "/v1/mesh/public/nodes",
+            get(crate::adapters::inbound::http::handlers::nodes::list_public_nodes_handler),
+        )
         // ── Maintenance API ──────────────────────────────────────────────
         .route(
             "/v1/maintenance/reindex-embeddings",
@@ -108,7 +117,10 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route("/v1/memories/redact", post(memories_redact_handler))
         // ── Mini-Experts API ──────────────────────────────────────────────
         .route("/v1/agents/mini-experts", get(mini_experts_list_handler))
-        .route("/v1/agents/mini-experts/invoke", post(mini_expert_invoke_handler));
+        .route(
+            "/v1/agents/mini-experts/invoke",
+            post(mini_expert_invoke_handler),
+        );
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
@@ -510,8 +522,8 @@ pub fn init_plugin_registry() {
 
 // ─── Maintenance API ──────────────────────────────────────────────────────
 
-use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ReindexMaintenanceRequest {
@@ -570,7 +582,10 @@ pub async fn maintenance_reindex_handler(
                         "Starting triggered background reindexing (limit: {:?})...",
                         limit
                     );
-                    match store.reindex_null_embeddings_background_with_limit(limit).await {
+                    match store
+                        .reindex_null_embeddings_background_with_limit(limit)
+                        .await
+                    {
                         Ok(success_count) => {
                             tracing::info!(
                                 "Triggered background reindexing completed. Success count: {}",
@@ -858,12 +873,10 @@ pub async fn mini_expert_invoke_handler(
     let provider = expert_config.provider.clone();
     let endpoint = expert_config.endpoint.clone();
 
-    let response = router.invoke(&payload.name, &payload.prompt).await.map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            e.to_string(),
-        )
-    })?;
+    let response = router
+        .invoke(&payload.name, &payload.prompt)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(MiniExpertInvokeResponse {
         status: "success".to_string(),
@@ -1070,8 +1083,7 @@ mod route_tests {
             .await
             .expect("collect body")
             .to_bytes();
-        let parsed: serde_json::Value =
-            serde_json::from_slice(&body).expect("parse list response");
+        let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse list response");
 
         assert!(parsed.is_array());
         let arr = parsed.as_array().unwrap();
@@ -1112,7 +1124,10 @@ mod route_tests {
 
         assert_eq!(parsed["status"], "success");
         assert_eq!(parsed["provider"], "agy");
-        assert!(parsed["response"].as_str().unwrap().contains("Mock response"));
+        assert!(parsed["response"]
+            .as_str()
+            .unwrap()
+            .contains("Mock response"));
     }
 
     #[tokio::test]
@@ -1124,15 +1139,22 @@ mod route_tests {
             "dry_run": true,
             "limit": 5
         });
+        let mut req = Request::builder()
+            .uri("/v1/maintenance/reindex-embeddings")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+            .unwrap();
+        req.extensions_mut()
+            .insert(crate::security::auth::Claims::new(
+                "test-user".to_string(),
+                "admin@example.com".to_string(),
+                crate::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
+
         let response: Response = create_router()
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/maintenance/reindex-embeddings")
-                    .method(Method::POST)
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
-                    .unwrap(),
-            )
+            .oneshot(req)
             .await
             .expect("request should complete");
 

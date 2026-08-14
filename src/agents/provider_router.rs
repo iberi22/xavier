@@ -35,12 +35,7 @@ impl ProviderRouter {
             .ok_or_else(|| anyhow!("Mini-expert '{}' not found", name))?;
 
         // If api_key starts with "mock-" or if name starts with "mock-", return mock response.
-        if expert
-            .api_key
-            .as_deref()
-            .unwrap_or("")
-            .starts_with("mock-")
-            || name.starts_with("mock-")
+        if expert.api_key.as_deref().unwrap_or("").starts_with("mock-") || name.starts_with("mock-")
         {
             return Ok(format!(
                 "Mock response from mini-expert '{}' (provider: {}) for prompt: '{}'",

@@ -474,10 +474,16 @@ impl LegacyMigration for MigrationV9EmbeddingStatus {
     fn run(&self, conn: &Connection) -> Result<()> {
         if table_exists(conn, "memory_records")? {
             if !table_has_column(conn, "memory_records", "embedding_status")? {
-                conn.execute("ALTER TABLE memory_records ADD COLUMN embedding_status TEXT DEFAULT 'pending'", [])?;
+                conn.execute(
+                    "ALTER TABLE memory_records ADD COLUMN embedding_status TEXT DEFAULT 'pending'",
+                    [],
+                )?;
             }
             if !table_has_column(conn, "memory_records", "embedding_attempts")? {
-                conn.execute("ALTER TABLE memory_records ADD COLUMN embedding_attempts INTEGER DEFAULT 0", [])?;
+                conn.execute(
+                    "ALTER TABLE memory_records ADD COLUMN embedding_attempts INTEGER DEFAULT 0",
+                    [],
+                )?;
             }
         }
         Ok(())

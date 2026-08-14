@@ -5,15 +5,16 @@
     "project": "Xavier",
     "version": "0.13.0",
     "created": "2026-03-05",
-    "last_verified": "2026-08-08",
-    "total_features": 36,
-    "features_complete": 30,
+    "last_verified": "2026-08-14",
+    "total_features": 38,
+    "features_complete": 32,
     "features_beta": 1,
     "features_draft": 0,
     "features_planned": 5,
-    "features_stable": 30,
-    "overall_progress_pct": 84.0,
-    "reconciliation_notes": "2026-08-09 v0.13.0: Wave 19 final reconciliation with honest metrics. 30 stable, 1 beta, 5 planned. 1472 tests passing."
+    "features_designed": 0,
+    "features_stable": 32,
+    "overall_progress_pct": 86.8,
+    "reconciliation_notes": "2026-08-14: feat-node-provisioning marked implemented/passes (100%). Total features=38: 32 stable/complete, 1 beta, 5 planned, 0 designed. Overall progress 86.8%."
   },
   "features": {
     "feat-unified-storage": {
@@ -1186,6 +1187,45 @@
       "implemented": true,
       "req_ids": [],
       "user_stories": []
+    },
+    "feat-node-provisioning": {
+      "id": "feat-node-provisioning",
+      "name": "SWAL Node Provisioning (BaaS tokens + SSH keys)",
+      "category": "mesh",
+      "status": "implemented",
+      "progress_pct": 100,
+      "description": "Register a cloud service (Supabase/Neon) or VPS as a SWAL node by pasting its API token or SSH key. Xavier provisions and administers it autonomously (Ola M6 BaaS + Ola M7 SSH/VPS). Credentials live ONLY in Clavis (AES-256-GCM + lease TTL + revoke + rotation).",
+      "steps": [
+        "CLI xavier nodes add|list|show|rotate|remove|status",
+        "API REST /v1/nodes (add/list/show/rotate/remove)",
+        "Clavis storage of BaaS tokens + SSH keys (AES-256-GCM + SecretLease UUID/TTL)",
+        "Provider provisioner: Supabase (RLS + encrypted bucket + edge functions relay/heartbeat), Neon (schema + replication)",
+        "SSH installer: edge-hive lite node agent + wallet registration (Ed25519 challenge)",
+        "Registration public (M1) or private (M3) per visibility",
+        "Supabase persistent public admin node: node_registry (RLS anon read), ops_feed, bucket swal-vault (E2E)",
+        "Public mesh info sync to local nodes via Yjs CRDT",
+        "Permission inheritance: wallet governs replication + encryption"
+      ],
+      "passes": true,
+      "verified_by": "integration-tests",
+      "github_issue": "",
+      "last_tested": "2026-08-14",
+      "notes": "REQ-029/REQ-030 and US-042/US-043 implemented across src/nodes/, CLI xavier nodes, and GET /mesh/public/nodes endpoint. Verified by 17 unit tests + 7 integration tests.",
+      "implemented_in": "src/nodes/, src/cli/commands/nodes.rs, src/cli/handlers/nodes.rs, src/adapters/inbound/http/handlers/nodes.rs",
+      "tests": [
+        "nodes::cert::tests::test_issue_and_verify_valid_certificate",
+        "nodes::provision::tests::test_provision_rotate_remove_lifecycle",
+        "nodes::registry::tests::test_list_public_filters_correctly",
+        "tests/nodes_provisioning_test.rs"
+      ],
+      "req_ids": [
+        "REQ-029",
+        "REQ-030"
+      ],
+      "user_stories": [
+        "US-042",
+        "US-043"
+      ]
     }
   },
   "verification_commands": {

@@ -16,8 +16,8 @@ pub mod initializer;
 pub mod layers;
 pub mod license;
 pub mod prompt_guard;
-pub mod redaction;
 pub mod recovery;
+pub mod redaction;
 pub mod rsa_keys;
 pub mod scanner;
 pub mod sessions;
@@ -26,10 +26,10 @@ pub mod tokens;
 pub mod url_validator;
 pub mod user_store;
 
-pub use redaction::{RedactionEngine, RedactionRule};
 pub use anticipator::{Anticipator, AnticipatorConfig};
 pub use detections::{ScanResult as AnticipatorScanResult, Severity, Threat, ThreatCategory};
 pub use prompt_guard::{AttackType, DetectionResult, PromptInjectionDetector};
+pub use redaction::{RedactionEngine, RedactionRule};
 pub use scanner::entropy::{
     EntropyCalculator, EntropyRegion, EntropyScanner, EntropyThreshold, SecretDetector, SecretMatch,
 };

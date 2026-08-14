@@ -5,11 +5,11 @@ use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
 
 use crate::memory::manager::core::MemoryManager;
-use crate::scheduler::retry::{CircuitBreaker, RetryPolicy};
 use crate::memory::qmd::QmdMemory;
 use crate::retrieval::eval::{is_hit, CaseResult, EvalDataset, RetrievalMetrics};
 use crate::retrieval::history::{self, HistoryEntry};
 use crate::retrieval::tuner::{detect_recall_drift, tune, RetrievalConfig};
+use crate::scheduler::retry::{CircuitBreaker, RetryPolicy};
 
 /// Interval between auto-tune passes. Mirrors the decay loop's 6h cadence: the
 /// tuner is cheap (a handful of synchronous searches) but recall only shifts
@@ -174,12 +174,18 @@ impl MemoryDaemon {
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(5);
-            info!("MemoryDaemon: Scheduled self-manage loop started ({}m interval)", sleep_minutes);
+            info!(
+                "MemoryDaemon: Scheduled self-manage loop started ({}m interval)",
+                sleep_minutes
+            );
             loop {
                 sleep(Duration::from_secs(sleep_minutes * 60)).await;
                 info!("MemoryDaemon: Running scheduled self-management checks...");
                 if let Err(e) = run_self_manage_checks().await {
-                    error!("MemoryDaemon: Scheduled self-management check failed: {}", e);
+                    error!(
+                        "MemoryDaemon: Scheduled self-management check failed: {}",
+                        e
+                    );
                 }
             }
         });
@@ -217,7 +223,11 @@ async fn run_self_manage_checks() -> anyhow::Result<()> {
 
     for alert in alerts {
         if alert.severity == "critical" || alert.severity == "warn" {
-            let title = format!("[Incident] {} alert on host: {}", alert.severity.to_uppercase(), alert.metric);
+            let title = format!(
+                "[Incident] {} alert on host: {}",
+                alert.severity.to_uppercase(),
+                alert.metric
+            );
             let body = format!(
                 "### Self-Management Guardian Alert\n\n\
                 **Metric:** {}\n\
@@ -240,9 +250,15 @@ async fn run_self_manage_checks() -> anyhow::Result<()> {
             match crate::self_manage::ticket_create(ticket_args) {
                 Ok(res) => {
                     if res.deduplicated {
-                        tracing::info!("Alert ticket already exists, skipping creation to prevent duplicates.");
+                        tracing::info!(
+                            "Alert ticket already exists, skipping creation to prevent duplicates."
+                        );
                     } else {
-                        tracing::warn!("Created auto-incident ticket: id={} ({})", res.id, res.backend);
+                        tracing::warn!(
+                            "Created auto-incident ticket: id={} ({})",
+                            res.id,
+                            res.backend
+                        );
                     }
                 }
                 Err(e) => {

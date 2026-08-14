@@ -168,7 +168,10 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 /// Index a repo name -> snapshot mapping from a directory of repo roots.
-pub fn snapshot_all_repos(repo_roots: &HashMap<String, PathBuf>, data_dir: &Path) -> Result<Vec<CodeSnapshot>> {
+pub fn snapshot_all_repos(
+    repo_roots: &HashMap<String, PathBuf>,
+    data_dir: &Path,
+) -> Result<Vec<CodeSnapshot>> {
     let manager = SnapshotManager::new(data_dir);
     let mut out = Vec::new();
     for (repo, root) in repo_roots {
