@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+pub mod dao;
+
 use crate::data_commons::governance::{GovernanceConfig, GovernanceEngine};
 use crate::data_commons::types::{
     BicameralResult, CouncilMember, CouncilRole, SystemParams, WalletAddress, XipProposal,
