@@ -110,3 +110,13 @@ pub async fn connect_active_transport(
 ) -> anyhow::Result<iroh::endpoint::Connection> {
     transport.connect(peer_addr).await
 }
+
+/// Initialize active Iroh transport and start the background accept loop.
+#[cfg(feature = "mesh")]
+pub async fn start_mesh_node(
+    identity: std::sync::Arc<NodeIdentity>,
+) -> (IrohTransport, tokio::task::JoinHandle<()>) {
+    let transport = init_active_transport(identity);
+    let handle = transport.spawn_accept_loop().await;
+    (transport, handle)
+}
