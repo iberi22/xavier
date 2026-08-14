@@ -685,6 +685,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         // ── Maloca WebSocket Live Feed (MS-004) ──────────────────────────
         .route("/maloca/ws/feed", get(xavier::maloca::ws::ws_live_feed))
+        .route(
+            "/maloca/feed/status",
+            get(|| async { axum::Json(xavier::maloca::ws::get_feed_status()) }),
+        )
         // ── Maloca Belief Graph Confidence (MS-005) ──────────────────────
         .route(
             "/maloca/beliefs",

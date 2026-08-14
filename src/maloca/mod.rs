@@ -50,6 +50,7 @@ pub fn router() -> Router {
             "/manager-actions",
             get(handlers::list_manager_actions).post(handlers::manager_action),
         )
+        .route("/feed/status", get(handlers::feed_status))
 }
 
 /// Convenience: nested `/maloca` tree with store extension applied.
