@@ -908,6 +908,13 @@ pub enum MeshCommand {
         #[arg(long, default_value = "bidirectional")]
         mode: String,
     },
+    /// Initiate private mesh sync with a same-wallet peer node
+    PrivateSync {
+        #[arg(long)]
+        wallet_id: String,
+        #[arg(long)]
+        target_node: String,
+    },
     /// Generate a temporary pairing code
     PairingCode {
         #[arg(long)]

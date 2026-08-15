@@ -20,7 +20,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::curation::CurationQueue;
 use crate::codebase::snapshot::SnapshotManager;
-use crate::mesh::private_mesh::{PrivateMeshRegistry, WalletNode};
+use crate::mesh::private_mesh::{
+    is_same_wallet, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncPayload, WalletNode,
+};
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
 use crate::mesh::node::NodeId;
@@ -196,6 +198,23 @@ pub struct PublishTelemetryRequest {
     pub ts: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PrivateSyncApiRequest {
+    pub wallet_id: String,
+    pub target_node: String,
+    pub source_node: Option<String>,
+    pub memories: Option<Vec<PrivateMemoryDelta>>,
+    pub snapshots: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PrivateSyncApiResponse {
+    pub status: String,
+    pub synced_memories: usize,
+    pub synced_snapshots: usize,
+    pub target_node: String,
+}
+
 // ---------- handlers ----------
 
 pub async fn rag_search(
@@ -320,6 +339,73 @@ pub async fn list_wallet_nodes(
         Json(mesh.get_nodes_by_wallet(wallet)).into_response()
     } else {
         Json(mesh.all_nodes().to_vec()).into_response()
+    }
+}
+
+pub async fn private_mesh_sync(
+    State(state): State<F12State>,
+    Json(req): Json<PrivateSyncApiRequest>,
+) -> impl IntoResponse {
+    let reg = state.private_mesh_mut();
+    let mesh = reg.private_mesh.as_ref().expect("mesh");
+
+    let target_node_record = mesh
+        .all_nodes()
+        .iter()
+        .find(|n| n.node_id.as_str() == req.target_node);
+
+    match target_node_record {
+        Some(node) => {
+            if !is_same_wallet(&req.wallet_id, &node.wallet_id) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    "Cross-wallet sync rejected: target node belongs to a different wallet",
+                )
+                    .into_response();
+            }
+        }
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                format!("Target node '{}' not found in private mesh registry", req.target_node),
+            )
+                .into_response();
+        }
+    }
+
+    let memories = req.memories.unwrap_or_default();
+    let snapshots = req.snapshots.unwrap_or_default();
+
+    let payload = PrivateSyncPayload {
+        memories: memories.clone(),
+        snapshots: snapshots.clone(),
+    };
+
+    match mesh.sync_deltas(&req.wallet_id, &req.wallet_id, payload) {
+        Ok(synced) => {
+            // Apply memory deltas locally to sync directory
+            if !memories.is_empty() {
+                let sync_memories_dir = state.data_dir.join("sync/memories");
+                let _ = std::fs::create_dir_all(&sync_memories_dir);
+                for mem in &synced.memories {
+                    let sanitized = mem.path.replace('/', "_");
+                    let file_path = sync_memories_dir.join(format!("{}.json", sanitized));
+                    let _ = std::fs::write(file_path, serde_json::to_string_pretty(mem).unwrap_or_default());
+                }
+            }
+
+            (
+                StatusCode::OK,
+                Json(PrivateSyncApiResponse {
+                    status: "success".to_string(),
+                    synced_memories: synced.memories.len(),
+                    synced_snapshots: synced.snapshots.len(),
+                    target_node: req.target_node,
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
 
@@ -602,6 +688,7 @@ pub fn router(state: F12State) -> Router {
         .route("/v1/f12/directory/nodes", post(register_node))
         .route("/v1/f12/private-mesh/nodes", post(register_wallet_node))
         .route("/v1/f12/private-mesh/nodes", get(list_wallet_nodes))
+        .route("/v1/f12/private-mesh/sync", post(private_mesh_sync))
         .route("/v1/f12/redact", post(redact_document))
         .route("/v1/f12/curation", post(submit_curation))
         .route("/v1/f12/curation/approve", post(approve_curation))
@@ -991,5 +1078,93 @@ mod tests {
         assert!(text_lvl5.contains("Master Vault Keys"));
         assert!(text_lvl5.contains("0xDEADBEEF42"));
         assert!(!text_lvl5.contains("[REDACTED: Master Vault Keys]"));
+    }
+
+    #[tokio::test]
+    async fn test_private_mesh_sync_endpoint_success() {
+        let app = router(test_state());
+        let register_req = r#"{"node_id": "xv1-b", "wallet_id": "w1", "name": "node-b", "iroh_addr": "addr-b"}"#;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/private-mesh/nodes")
+                    .header("content-type", "application/json")
+                    .body(Body::from(register_req))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let sync_req = r#"{"wallet_id": "w1", "target_node": "xv1-b"}"#;
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/private-mesh/sync")
+                    .header("content-type", "application/json")
+                    .body(Body::from(sync_req))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["status"], "success");
+        assert_eq!(v["target_node"], "xv1-b");
+    }
+
+    #[tokio::test]
+    async fn test_private_mesh_sync_endpoint_unregistered_node_not_found() {
+        let app = router(test_state());
+        let sync_req = r#"{"wallet_id": "w1", "target_node": "xv1-unknown"}"#;
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/private-mesh/sync")
+                    .header("content-type", "application/json")
+                    .body(Body::from(sync_req))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_private_mesh_sync_endpoint_cross_wallet_forbidden() {
+        let app = router(test_state());
+        let register_req = r#"{"node_id": "xv1-b", "wallet_id": "w2", "name": "node-b", "iroh_addr": "addr-b"}"#;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/private-mesh/nodes")
+                    .header("content-type", "application/json")
+                    .body(Body::from(register_req))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let sync_req = r#"{"wallet_id": "w1", "target_node": "xv1-b"}"#;
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/private-mesh/sync")
+                    .header("content-type", "application/json")
+                    .body(Body::from(sync_req))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 }
