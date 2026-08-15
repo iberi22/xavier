@@ -21,6 +21,31 @@ use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 
+/// Embedding stats handler.
+pub async fn embedding_stats_handler(
+    State(state): State<CliState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if let Some(metrics) = state.embedder.cache_metrics() {
+        Ok(Json(serde_json::json!({
+            "status": "ok",
+            "cache": metrics
+        })))
+    } else {
+        Ok(Json(serde_json::json!({
+            "status": "ok",
+            "cache": {
+                "enabled": false,
+                "hits": 0,
+                "misses": 0,
+                "hit_rate": 0.0,
+                "entries": 0,
+                "capacity": 0,
+                "ttl_hours": 0
+            }
+        })))
+    }
+}
+
 /// Embed handler.
 pub async fn embed_handler(
     State(state): State<CliState>,

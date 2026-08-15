@@ -32,6 +32,9 @@ pub enum EmbeddingError {
 pub trait Embedder: Send + Sync {
     async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
     fn dimension(&self) -> usize;
+    fn cache_metrics(&self) -> Option<cache::EmbeddingCacheMetrics> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
