@@ -6,7 +6,7 @@ pub mod benchmarks;
 use crate::error::{GraphError, Result};
 use crate::types::{
     CodeEdge, ComplexityHotspot, EdgeType, HubNode, IndexStats, Language, LanguageCount,
-    QueryResult, Symbol, SymbolKind,
+    MemorySymbolLink, QueryResult, Symbol, SymbolKind,
 };
 use rusqlite::{params, Connection};
 use std::path::Path;
@@ -218,6 +218,17 @@ impl CodeGraphDB {
                 path TEXT PRIMARY KEY,
                 mtime INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS memory_symbol_links (
+                memory_id TEXT NOT NULL,
+                symbol_id TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 1.0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (memory_id, symbol_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_msl_symbol ON memory_symbol_links(symbol_id);
+            CREATE INDEX IF NOT EXISTS idx_msl_memory ON memory_symbol_links(memory_id);
             "#,
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -1392,6 +1403,194 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// Insert a memory symbol link
+    pub fn insert_memory_symbol_link(
+        &self,
+        memory_id: &str,
+        symbol_id: &str,
+        confidence: f64,
+    ) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        conn.execute(
+            r#"INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence)
+               VALUES (?1, ?2, ?3)"#,
+            params![memory_id, symbol_id, confidence],
+        )
+        .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Batch insert memory symbol links
+    pub fn batch_insert_memory_symbol_links(&self, links: &[MemorySymbolLink]) -> Result<()> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        {
+            let mut stmt = tx
+                .prepare(
+                    r#"INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence)
+                       VALUES (?1, ?2, ?3)"#,
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            for link in links {
+                stmt.execute(params![link.memory_id, link.symbol_id, link.confidence])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Find memory links for a symbol name or stable_id
+    pub fn find_memories_for_symbol(
+        &self,
+        symbol: &str,
+        limit: usize,
+    ) -> Result<Vec<MemorySymbolLink>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT msl.memory_id, msl.symbol_id, msl.confidence
+                   FROM memory_symbol_links msl
+                   WHERE msl.symbol_id = ?1
+                      OR msl.symbol_id IN (SELECT stable_id FROM symbols WHERE name = ?1 OR stable_id = ?1)
+                      OR msl.symbol_id IN (SELECT name FROM symbols WHERE name = ?1)
+                   ORDER BY msl.confidence DESC
+                   LIMIT ?2"#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let links = stmt
+            .query_map(params![symbol, limit as isize], |row| {
+                Ok(MemorySymbolLink {
+                    memory_id: row.get(0)?,
+                    symbol_id: row.get(1)?,
+                    confidence: row.get(2)?,
+                })
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(links)
+    }
+
+    /// Find symbols linked to a specific memory_id
+    pub fn find_symbols_for_memory(&self, memory_id: &str) -> Result<Vec<Symbol>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT DISTINCT s.id, s.stable_id, s.name, s.kind, s.lang, s.file_path, s.start_line, s.end_line, s.start_col, s.end_col, s.signature, s.parent, s.complexity
+                   FROM symbols s
+                   JOIN memory_symbol_links msl ON (msl.symbol_id = s.stable_id OR msl.symbol_id = s.name)
+                   WHERE msl.memory_id = ?1"#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let symbols = stmt
+            .query_map(params![memory_id], |row| {
+                Ok(Symbol {
+                    id: Some(row.get(0)?),
+                    stable_id: Some(row.get(1)?),
+                    name: row.get(2)?,
+                    kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                    lang: parse_language(&row.get::<_, String>(4)?),
+                    file_path: row.get(5)?,
+                    start_line: row.get(6)?,
+                    end_line: row.get(7)?,
+                    start_col: row.get(8)?,
+                    end_col: row.get(9)?,
+                    signature: row.get(10)?,
+                    parent: row.get(11)?,
+                    complexity: row.get(12)?,
+                })
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(symbols)
+    }
+
+    /// Detect code symbols mentioned in memory content and create links asynchronously/at index time
+    pub fn link_memory_to_symbols(
+        &self,
+        memory_id: &str,
+        content: &str,
+    ) -> Result<Vec<MemorySymbolLink>> {
+        if content.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Tokenize content into candidate words (alphanumeric and underscores, len >= 4)
+        let candidates: std::collections::HashSet<&str> = content
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .filter(|w| w.len() >= 4)
+            .collect();
+
+        if candidates.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut links = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        for candidate in candidates {
+            let mut stmt = conn
+                .prepare("SELECT stable_id, name FROM symbols WHERE name = ?1 LIMIT 1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            let rows = stmt.query_map(params![candidate], |row| {
+                let stable_id: String = row.get(0)?;
+                let name: String = row.get(1)?;
+                Ok((stable_id, name))
+            });
+
+            if let Ok(rows) = rows {
+                for row in rows.flatten() {
+                    let (stable_id, name) = row;
+                    let symbol_key = if !stable_id.is_empty() { stable_id } else { name };
+                    if seen.insert(symbol_key.clone()) {
+                        links.push(MemorySymbolLink {
+                            memory_id: memory_id.to_string(),
+                            symbol_id: symbol_key,
+                            confidence: 1.0,
+                        });
+                    }
+                }
+            }
+        }
+
+        drop(conn);
+
+        if !links.is_empty() {
+            self.batch_insert_memory_symbol_links(&links)?;
+        }
+
+        Ok(links)
     }
 
     /// Clear all data

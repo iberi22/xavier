@@ -268,6 +268,14 @@ pub struct ComplexityHotspot {
     pub risk_score: f32,
 }
 
+/// Link between an agent memory record and a code symbol
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MemorySymbolLink {
+    pub memory_id: String,
+    pub symbol_id: String,
+    pub confidence: f64,
+}
+
 /// Content-addressed structural symbol id (v2).
 ///
 /// Hash input: `project|file|name|kind|parent|signature` (normalized whitespace
