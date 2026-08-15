@@ -16159,6 +16159,7 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "chrono",
+ "ciborium",
  "clap",
  "code-graph",
  "colored 2.2.0",
@@ -16233,6 +16234,7 @@ dependencies = [
  "x25519-dalek",
  "xxhash-rust",
  "zerocopy 0.8.55",
+ "zstd",
 ]
 
 [[package]]
