@@ -399,3 +399,9 @@ pub struct QueryResult {
     pub total: usize,
     pub query_time_ms: u64,
 }
+
+/// Trait for generating embeddings for code symbols.
+#[async_trait::async_trait]
+pub trait SymbolEmbedder: Send + Sync {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>, crate::error::GraphError>;
+}
