@@ -248,11 +248,21 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let code_db = Arc::new(::code_graph::db::CodeGraphDB::new(&code_db_path)?);
-    let symbol_embedder = Arc::new(crate::cli::handlers::code::XavierSymbolEmbedder::new(
-        embedder.clone(),
-    ));
+    // Skip symbol embeddings for bulk indexing when XAVIER_CODE_GRAPH_SKIP_EMBED=1
+    // (embeddings per symbol at ~1.5/s CPU make bulk index of 1k+ files take hours;
+    //  populate later via maintenance reindex or GPU-enabled embedding)
+    let skip_symbol_embed = std::env::var("XAVIER_CODE_GRAPH_SKIP_EMBED")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
     let mut code_indexer_obj = ::code_graph::indexer::Indexer::new(Arc::clone(&code_db));
-    code_indexer_obj.set_embedder(symbol_embedder);
+    if !skip_symbol_embed {
+        let symbol_embedder = Arc::new(crate::cli::handlers::code::XavierSymbolEmbedder::new(
+            embedder.clone(),
+        ));
+        code_indexer_obj.set_embedder(symbol_embedder);
+    } else {
+        tracing::info!("code-graph: symbol embeddings SKIPPED (XAVIER_CODE_GRAPH_SKIP_EMBED=1) — bulk index mode");
+    }
     let code_indexer = Arc::new(code_indexer_obj);
     let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
     let code_graph_state = Arc::new(tokio::sync::RwLock::new(
