@@ -251,3 +251,55 @@ pub struct MeshInfo {
     pub kind: String,
     pub description: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proposal_status_as_str() {
+        assert_eq!(ProposalStatus::Open.as_str(), "open");
+        assert_eq!(ProposalStatus::Closed.as_str(), "closed");
+        assert_eq!(ProposalStatus::Reconsidering.as_str(), "reconsidering");
+        assert_eq!(ProposalStatus::Analyzing.as_str(), "analyzing");
+    }
+
+    #[test]
+    fn proposal_status_serde() {
+        let json = serde_json::to_string(&ProposalStatus::Reconsidering).unwrap();
+        assert_eq!(json, "\"reconsidering\"");
+        let status: ProposalStatus = serde_json::from_str("\"analyzing\"").unwrap();
+        assert_eq!(status, ProposalStatus::Analyzing);
+    }
+
+    #[test]
+    fn manager_action_type_serde() {
+        let json = serde_json::to_string(&ManagerActionType::RequestReconsideration).unwrap();
+        assert_eq!(json, "\"request_reconsideration\"");
+        let action: ManagerActionType =
+            serde_json::from_str("\"request_scenario_analysis\"").unwrap();
+        assert_eq!(action, ManagerActionType::RequestScenarioAnalysis);
+    }
+
+    #[test]
+    fn vote_choice_serde() {
+        let json = serde_json::to_string(&VoteChoice::Yes).unwrap();
+        assert_eq!(json, "\"yes\"");
+        let choice: VoteChoice = serde_json::from_str("\"abstain\"").unwrap();
+        assert_eq!(choice, VoteChoice::Abstain);
+    }
+
+    #[test]
+    fn decision_kind_serde() {
+        let json = serde_json::to_string(&DecisionKind::ManagerRequestReconsideration).unwrap();
+        assert_eq!(json, "\"manager_request_reconsideration\"");
+        let kind: DecisionKind = serde_json::from_str("\"proposal_created\"").unwrap();
+        assert_eq!(kind, DecisionKind::ProposalCreated);
+    }
+
+    #[test]
+    fn default_node_id_helper() {
+        let body: ClaimBody = serde_json::from_str("{}").unwrap();
+        assert_eq!(body.node_id, "local");
+    }
+}
