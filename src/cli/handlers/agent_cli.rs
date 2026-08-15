@@ -11,7 +11,12 @@ use crate::cli::config::{require_xavier_token, resolve_base_url};
 pub async fn handle_agent_command(cmd: AgentCommand) -> Result<()> {
     match cmd {
         AgentCommand::Scan { agent, json } => handle_agent_scan(agent, json).await,
-        AgentCommand::Index { agent, json } => handle_agent_index(agent, json).await,
+        AgentCommand::Index {
+            agent,
+            codex,
+            jules,
+            json,
+        } => handle_agent_index(agent, codex, jules, json).await,
         AgentCommand::Push { agent, json } => handle_agent_sync(agent, false, json).await,
         AgentCommand::Pull { agent, json } => handle_agent_sync(agent, true, json).await,
     }
@@ -76,36 +81,77 @@ async fn handle_agent_scan(agent_filter: Option<String>, as_json: bool) -> Resul
     Ok(())
 }
 
-async fn handle_agent_index(_agent_filter: Option<String>, as_json: bool) -> Result<()> {
+async fn handle_agent_index(
+    _agent_filter: Option<String>,
+    codex: bool,
+    jules: bool,
+    as_json: bool,
+) -> Result<()> {
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
     let client = CLI_HTTP_CLIENT.clone();
 
-    if !as_json {
-        println!("{} Indexing agent sessions into memory...", "🤖".cyan());
+    let mut targets = Vec::new();
+    if codex {
+        targets.push(("Codex", format!("{}/xavier/codex/index", base_url)));
+    }
+    if jules {
+        targets.push(("Jules", format!("{}/xavier/jules/index", base_url)));
+    }
+    if targets.is_empty() {
+        targets.push(("OpenClaw", format!("{}/xavier/openclaw/index", base_url)));
     }
 
-    let resp = client
-        .post(format!("{}/xavier/openclaw/index", base_url))
-        .header("X-Xavier-Token", &token)
-        .send()
-        .await?;
+    let mut total_indexed = 0;
+    let mut results = Vec::new();
 
-    if resp.status().is_success() {
-        let data: serde_json::Value = resp.json().await?;
-        if as_json {
-            println!("{}", serde_json::to_string_pretty(&data)?);
-        } else {
+    for (target_name, endpoint) in targets {
+        if !as_json {
+            println!(
+                "{} Indexing {} agent sessions into memory...",
+                "🤖".cyan(),
+                target_name
+            );
+        }
+
+        let resp = client
+            .post(&endpoint)
+            .header("X-Xavier-Token", &token)
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let data: serde_json::Value = resp.json().await?;
             let count = data["indexed_count"].as_u64().unwrap_or(0);
-            println!("{} Successfully indexed {} sessions", "✅".green(), count);
-        }
-    } else {
-        let err = resp.text().await?;
-        if as_json {
-            println!("{}", json!({"status": "error", "message": err}));
+            total_indexed += count;
+            results.push(json!({ "target": target_name, "status": "ok", "indexed_count": count }));
+
+            if !as_json {
+                println!(
+                    "{} Successfully indexed {} {} sessions",
+                    "✅".green(),
+                    count,
+                    target_name
+                );
+            }
         } else {
-            println!("{} Indexing failed: {}", "❌".red(), err);
+            let err = resp.text().await?;
+            results.push(json!({ "target": target_name, "status": "error", "message": err.clone() }));
+            if !as_json {
+                println!("{} Indexing {} failed: {}", "❌".red(), target_name, err);
+            }
         }
+    }
+
+    if as_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "status": "ok",
+                "indexed_count": total_indexed,
+                "details": results
+            }))?
+        );
     }
 
     Ok(())
