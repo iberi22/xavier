@@ -41,8 +41,8 @@
       "notes": "Production ready. SQLite-Vec backend for mobile/desktop with storage, memory, and adapter integration.",
       "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/",
       "tests": [
-        "storage::multi_db::tests::test_multi_db_manager_lifecycle",
-        "storage::multi_db::tests::test_invalid_db_id"
+        "test_multi_db_manager_lifecycle",
+        "test_invalid_db_id"
       ],
       "req_ids": [
         "REQ-005",
@@ -74,10 +74,10 @@
       "notes": "BM25 + Vector with RRF merging, LRU cache, and Progressive Memory Disclosure.",
       "implemented_in": "src/search/, src/retrieval/, src/embedding/",
       "tests": [
-        "search::hybrid::tests::test_hybrid_search_basic",
-        "search::hybrid::tests::test_hybrid_search_with_hooks",
-        "search::rrf::tests::test_rrf_fusion_two_result_sets",
-        "search::rrf::tests::test_rrf_precise_mathematical_weights"
+        "test_hybrid_search_basic",
+        "test_hybrid_search_with_hooks",
+        "test_rrf_fusion_two_result_sets",
+        "test_rrf_precise_mathematical_weights"
       ],
       "req_ids": [
         "REQ-009"
@@ -109,9 +109,9 @@
       "notes": "Belief graph module complete. Inference engine, hourly decay, JSON/Bincode serialization, Criterion benchmarks, and EntityGraph snapshot durability.",
       "implemented_in": "src/memory/entity_graph/, src/domain/belief/",
       "tests": [
-        "memory::entity_graph::tests::test_decay",
-        "memory::entity_graph::tests::test_inference",
-        "memory::entity_graph::tests::test_semantic_extraction_large_text"
+        "test_decay",
+        "test_inference",
+        "test_semantic_extraction_large_text"
       ],
       "req_ids": [
         "REQ-009"
@@ -141,8 +141,8 @@
       "notes": "Progressive disclosure contract, tools, and tests. Aligned all schemas for alias tools to prevent client-side protocol drift with standard protocol version negotiation.",
       "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs",
       "tests": [
-        "server::mcp::tests::test_get_code_graph_success",
-        "server::mcp::tests::test_mcp_compact_outputs"
+        "test_get_code_graph_success",
+        "test_mcp_compact_outputs"
       ],
       "req_ids": [
         "REQ-005",
@@ -174,8 +174,8 @@
       "notes": "FTS5 and multi-lang indexer complete. Includes kind/pattern search, /code/graph/view force-graph payload, and headless endpoints.",
       "implemented_in": "code-graph/, src/codebase/",
       "tests": [
-        "code_graph::db::tests::test_fts5_symbols_search_and_sync",
-        "code_graph::indexer::call_resolution::tests::test_extract_call_names"
+        "test_fts5_symbols_search_and_sync",
+        "test_extract_call_names"
       ],
       "req_ids": [
         "REQ-011"
@@ -205,7 +205,7 @@
       "notes": "Session export, import, and cross-instance sharing via SessionBundle. Tiered context restore working perfectly.",
       "implemented_in": "src/session/, src/domain/memory/",
       "tests": [
-        "session::sharing::tests::test_session_export_import"
+        "test_session_export_import"
       ],
       "req_ids": [
         "REQ-004"
@@ -235,8 +235,8 @@
       "notes": "AES-256-GCM and Argon2 fully integrated into storage layer with secure key derivation.",
       "implemented_in": "src/crypto/, src/security/",
       "tests": [
-        "crypto::tests::test_encrypt_decrypt",
-        "crypto::tests::test_key_derivation"
+        "test_encrypt_decrypt",
+        "test_key_derivation"
       ],
       "req_ids": [
         "REQ-006"
@@ -296,8 +296,8 @@
       "verified_by": "repo-audit",
       "github_issue": 80,
       "last_tested": "2026-08-04",
-      "notes": "Comprehensive SRC reference documentation and SRC_CONFIG reference files complete with requirement mappings.",
-      "implemented_in": ".gitcore/SRC.md, .gitcore/SRC_CONFIG.md",
+      "notes": "Comprehensive SRC reference documentation and SRC_CONFIG reference files complete with requirement mappings. [2026-08-15: path SRC.md corregido a raíz]",
+      "implemented_in": "SRC.md, .gitcore/SRC_CONFIG.md",
       "tests": [
         "SRC reference and config references verified"
       ],
@@ -333,8 +333,8 @@
       "notes": "P2P network and Data Commons are fully complete. Includes peer discovery, encrypted transport, Pair Codes, memory sync, and EigenTrust integration. Real operational progress: libp2p 10%, onchain 0%, 0 peers — EPIC #115.",
       "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs, tests/health_test.rs",
       "tests": [
-        "tests::test_mesh_handshake_and_sync",
-        "tests::test_heartbeat_service_with_peer_count"
+        "test_mesh_handshake_and_sync",
+        "test_heartbeat_service_with_peer_count"
       ],
       "req_ids": [
         "REQ-012"
@@ -365,9 +365,9 @@
       "notes": "Telegram bot integration is fully functional. Supports commands, encrypted token storage, polling/webhook toggles, and notification routing. Real operational progress: ~60%.",
       "implemented_in": "src/telegram/, src/observability/notifier.rs",
       "tests": [
-        "telegram::tests::test_memory_command_parse_search",
-        "telegram::tests::test_memory_command_parse_stats",
-        "telegram::tests::test_handle_memory_command_usage_on_unknown"
+        "test_memory_command_parse_search",
+        "test_memory_command_parse_stats",
+        "test_handle_memory_command_usage_on_unknown"
       ],
       "req_ids": [
         "REQ-013"
@@ -402,7 +402,7 @@
       "notes": "Persistent notification system with Email, Webhook, and In-App channels fully functioning and verified via integration tests.",
       "implemented_in": "src/notifications/, src/cli/handlers/notifications.rs, src/cli/server.rs",
       "tests": [
-        "notifications_test::test_notification_delivery_and_persistence"
+        "test_notification_delivery_and_persistence"
       ],
       "req_ids": [
         "REQ-013"
@@ -433,7 +433,7 @@
       "notes": "Hierarchical memory navigation with RL policy, Textual Gradient Descent, and GRPO optimization complete.",
       "implemented_in": "src/agents/hormer/, src/retrieval/navigation.rs, src/cli/handlers/navigation.rs",
       "tests": [
-        "memory::hormer::tests::test_navigation"
+        "test_navigation"
       ],
       "req_ids": [
         "REQ-016"
@@ -466,7 +466,7 @@
       "notes": "Bicameral governance complete with weighted voting, veto, overrule, and alloy-based on-chain integration. Real operational progress: onchain 0% live.",
       "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance/, src/governance/mod.rs, src/cli/commands/governance.rs",
       "tests": [
-        "data_commons::governance::tests::test_voting"
+        "test_voting"
       ],
       "req_ids": [
         "REQ-014"
@@ -500,7 +500,7 @@
       "notes": "Health check endpoint with system metrics, database integrity checks, and auto-VACUUM thresholds.",
       "implemented_in": "src/health/, src/app/health_service.rs",
       "tests": [
-        "app::health_service::tests::test_health_check"
+        "test_health_check"
       ],
       "req_ids": [
         "REQ-015"
@@ -531,10 +531,10 @@
       "notes": "Closed-loop auto-improvement is fully complete and verified. Includes gap analysis, experiment generation, validation loops, and CI integration. Real operational progress: ~55%.",
       "implemented_in": "src/auto_improvement/",
       "tests": [
-        "auto_improvement::tests::test_analyze_gaps_identifies_low_recall",
-        "auto_improvement::tests::test_analyze_gaps_detects_regression",
-        "auto_improvement::tests::test_generate_experiments_deduplicates",
-        "auto_improvement::tests::test_engine_cycle_no_memory"
+        "test_analyze_gaps_identifies_low_recall",
+        "test_analyze_gaps_detects_regression",
+        "test_generate_experiments_deduplicates",
+        "test_engine_cycle_no_memory"
       ],
       "req_ids": [
         "REQ-016"
@@ -564,9 +564,9 @@
       "notes": "MIT and Mesh License dual-licensing scheme active. Compliance verified via REUSE tool.",
       "implemented_in": "src/security/license.rs, .reuse/dep5, LICENSE",
       "tests": [
-        "security::license::tests::test_default_license_is_agpl",
-        "security::license::tests::test_accept_mesh_upgrades_license_type",
-        "security::license::tests::test_require_mesh_license_passes_with_acceptance"
+        "test_default_license_is_agpl",
+        "test_accept_mesh_upgrades_license_type",
+        "test_require_mesh_license_passes_with_acceptance"
       ],
       "req_ids": [
         "REQ-018"
@@ -598,8 +598,8 @@
       "notes": "Context regeneration pipeline, Recall@K and MRR evaluation harness, and budget auto-tuning optimization loop complete.",
       "implemented_in": "src/context/pipeline.rs, tests/integration/context_regen_test.rs",
       "tests": [
-        "context::pipeline::tests::test_pipeline_basic_flow",
-        "context::pipeline::tests::test_episodic_summarization_heuristics"
+        "test_pipeline_basic_flow",
+        "test_episodic_summarization_heuristics"
       ],
       "req_ids": [
         "REQ-016"
@@ -630,7 +630,7 @@
       "notes": "Scans clawd directories for OpenClaw agent memory files with full async I/O and embedding indexing.",
       "implemented_in": "src/memory/openclaw_scanner.rs, src/memory/openclaw_indexer.rs",
       "tests": [
-        "memory::openclaw_scanner::tests::test_scan"
+        "test_scan"
       ],
       "req_ids": [
         "REQ-019"
@@ -658,7 +658,7 @@
       "verified_by": "build",
       "github_issue": 339,
       "last_tested": "2026-08-04",
-      "notes": "Agent CLI commands scan, index, push, pull, status, and sync fully functional.",
+      "notes": "Agent CLI commands scan, index, push, pull, status, and sync fully functional. [2026-08-15: verificación manual documentada — sin test automatizado]",
       "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs",
       "tests": [
         "agent CLI commands verified manually"
@@ -690,9 +690,9 @@
       "notes": "100% local operation using local LLM and embedding providers with smart cloud fallbacks.",
       "implemented_in": "src/embedding/",
       "tests": [
-        "embedding::tests::test_auto_respects_explicit_local_signal",
-        "embedding::tests::test_auto_triggers_probe_ollama_reachable_with_embeddinggemma",
-        "embedding::tests::test_cloud_config_priorities"
+        "test_auto_respects_explicit_local_signal",
+        "test_auto_triggers_probe_ollama_reachable_with_embeddinggemma",
+        "test_cloud_config_priorities"
       ],
       "req_ids": [
         "REQ-017"
@@ -723,8 +723,8 @@
       "notes": "Progressive disclosure memory retrieval, saving up to 90% of model context tokens.",
       "implemented_in": "src/server/mcp/tools_memory.rs, src/context/token_estimate.rs, src/memory/episodic.rs, docs/TOKEN_SAVINGS_ANALYSIS.md",
       "tests": [
-        "context::token_estimate::tests::test_estimate_tokens_empty",
-        "context::token_estimate::tests::test_estimate_tokens_round_up"
+        "test_estimate_tokens_empty",
+        "test_estimate_tokens_round_up"
       ],
       "req_ids": [
         "REQ-016"
@@ -786,9 +786,9 @@
       "notes": "Remediation of Dependabot alerts, including sub-dependency overrides and credential filtering.",
       "implemented_in": ".github/, Cargo.lock, panel-ui/package.json",
       "tests": [
-        "security::prompt_guard::tests::test_direct_injection_detection",
-        "security::prompt_guard::tests::test_sanitize",
-        "security::prompt_guard::tests::test_safe_input"
+        "test_direct_injection_detection",
+        "test_sanitize",
+        "test_safe_input"
       ],
       "req_ids": [
         "REQ-006"
@@ -851,7 +851,7 @@
       "notes": "Bridges indexed code artifacts into maturity audits and automatic chronicle documentation.",
       "implemented_in": "src/cli/code_dump.rs, src/maturity/scanner/code_graph.rs, src/chronicle/auto_docs.rs",
       "tests": [
-        "maturity::scanner::code_graph::tests::test_scan_code_graph_empty_dump_falls_back_to_grep"
+        "test_scan_code_graph_empty_dump_falls_back_to_grep"
       ],
       "req_ids": [
         "REQ-011"
@@ -925,10 +925,10 @@
       "notes": "ClearanceLevel enum (5 levels), ClearanceManager with role→level mapping, document access checks. Tests: 4/4 passing.",
       "implemented_in": "src/security/acl/mod.rs",
       "tests": [
-        "security::acl::clearance_tests::test_clearance_ordering",
-        "security::acl::clearance_tests::test_clearance_from_str",
-        "security::acl::clearance_tests::test_clearance_manager_default_mapping",
-        "security::acl::clearance_tests::test_clearance_manager_custom"
+        "test_clearance_ordering",
+        "test_clearance_from_str",
+        "test_clearance_manager_default_mapping",
+        "test_clearance_manager_custom"
       ],
       "req_ids": [
         "REQ-020"
@@ -958,9 +958,9 @@
       "notes": "GroupManager with create/remove groups, add/remove members, permission checks, max clearance union. Tests: 3/3 passing.",
       "implemented_in": "src/security/acl/mod.rs",
       "tests": [
-        "security::acl::group_tests::test_group_lifecycle",
-        "security::acl::group_tests::test_group_max_clearance_union",
-        "security::acl::group_tests::test_group_removal"
+        "test_group_lifecycle",
+        "test_group_max_clearance_union",
+        "test_group_removal"
       ],
       "req_ids": [
         "REQ-021"
@@ -990,9 +990,9 @@
       "notes": "TrainingExporter exists (247 lines) + POST /v1/training/export endpoint added. Handler wraps generate_bundle with seed+eval_ratio. Tests: 3/3 passing. Needs: CLI subcommand, output file writing.",
       "implemented_in": "src/data_commons/training.rs,src/adapters/inbound/http/routes.rs",
       "tests": [
-        "data_commons::training::tests::test_anonymization_consistency",
-        "data_commons::training::tests::test_export_logic_with_mock_db",
-        "data_commons::training::tests::test_deterministic_split"
+        "test_anonymization_consistency",
+        "test_export_logic_with_mock_db",
+        "test_deterministic_split"
       ],
       "req_ids": [
         "REQ-022"
@@ -1021,7 +1021,15 @@
       "last_tested": "2026-08-08",
       "notes": "agy v1.1.8 disponible con cuenta Google; ProviderRouter ya soporta endpoints locales",
       "implemented_in": "5f50dcff",
-      "tests": 7,
+      "tests": [
+        "test_anomaly_scanner_auto_fix",
+        "test_anomaly_scanner_human_escalation",
+        "test_anomaly_scanner_leak_detection",
+        "test_api_flavor_from_env",
+        "test_auto_strategy_setting",
+        "test_best_date_answer_prefers_relevant_explicit_over_irrelevant_relative",
+        "test_build_args_amd"
+      ],
       "req_ids": [
         "REQ-023"
       ],
@@ -1055,7 +1063,12 @@
       "last_tested": "2026-08-08",
       "notes": "Capa 2 de la visión — red interna de trabajo",
       "implemented_in": "d881e7b9",
-      "tests": 4,
+      "tests": [
+        "test_mesh_service_deregistration",
+        "test_mesh_service_health_aware_routing",
+        "test_mesh_service_registration_and_discovery",
+        "test_mesh_service_routing_with_peer_registry"
+      ],
       "req_ids": [
         "REQ-024"
       ],
@@ -1090,7 +1103,12 @@
       "last_tested": "2026-08-08",
       "notes": "Parte de F9 v2 (F9-MESH-SWAL-PUBLICO-PRIVADO.md)",
       "implemented_in": "99672677",
-      "tests": 4,
+      "tests": [
+        "test_derive_wallet_id",
+        "test_is_same_wallet",
+        "test_isolation_cross_wallet",
+        "test_load_nonexistent_file"
+      ],
       "req_ids": [
         "REQ-025"
       ],
@@ -1124,7 +1142,13 @@
       "last_tested": "2026-08-08",
       "notes": "Como documentos clasificados del gobierno — Visión §3",
       "implemented_in": "cea4546a",
-      "tests": 5,
+      "tests": [
+        "test_custom_rules",
+        "test_parse_segmented_markdown",
+        "test_redact_address",
+        "test_redact_cedula",
+        "test_redact_emails"
+      ],
       "req_ids": [
         "REQ-026"
       ],
@@ -1158,7 +1182,16 @@
       "last_tested": "2026-08-08",
       "notes": "Misión: el futuro se construye con info real regenerada, no generada",
       "implemented_in": "db9a309d",
-      "tests": 8,
+      "tests": [
+        "test_approve_item",
+        "test_approve_nonexistent",
+        "test_curated_dataset_only_approved_are_eligible",
+        "test_load_nonexistent_returns_empty",
+        "test_reject_item",
+        "test_reject_nonexistent",
+        "test_save_and_load_flow",
+        "test_submit_for_curation"
+      ],
       "req_ids": [
         "REQ-027"
       ],
@@ -1195,7 +1228,13 @@
       "last_tested": "2026-08-09",
       "notes": "Core module (411L) + integration tests (320L, 17 tests) + POST endpoint + clippy clean (Aug 9 fix: underscore unused params). Pending: executor agent integration step + production benchmark for 100%.",
       "implemented_in": "src/codebase/issue_context.rs,src/server/f12_routes.rs",
-      "tests": 10,
+      "tests": [
+        "test_parse_issue_entities_dedup",
+        "test_parse_issue_entities_empty_body",
+        "test_parse_issue_entities_features",
+        "test_parse_issue_entities_files",
+        "test_parse_issue_entities_symbols"
+      ],
       "req_ids": [
         "REQ-028"
       ],
@@ -1207,8 +1246,8 @@
       "id": "feat-maloca",
       "name": "Maloca Ops Domain",
       "category": "governance",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "beta",
+      "progress_pct": 50,
       "description": "Maloca governance/ops domain hosted by Xavier: proposals, votes, decisions, nodes, params, timeline, beliefs, commits graph, WS feed",
       "steps": [
         "Build /maloca router with store extension",
@@ -1221,7 +1260,7 @@
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-08-14",
-      "notes": "Verified live 2026-08-14: /maloca/pack, /maloca/params, /maloca/proposals, /maloca/timeline (42k events), /maloca/nodes, /maloca/beliefs all HTTP 200. Only /maloca/stats is NOT a real route (not in source).",
+      "notes": "Verified live 2026-08-14: /maloca/pack, /maloca/params, /maloca/proposals, /maloca/timeline (42k events), /maloca/nodes, /maloca/beliefs all HTTP 200. Only /maloca/stats is NOT a real route (not in source). [2026-08-15: sin tests declarados — % ajustado a 50, pendiente verificación]",
       "implemented": true,
       "req_ids": [],
       "user_stories": []
@@ -1250,7 +1289,25 @@
       "last_tested": "2026-08-14",
       "notes": "REQ-029/030 + US-042/043 implementados en src/nodes/, CLI xavier nodes, GET /mesh/public/nodes. Validado 2026-08-14 por Hermes: 17 unit tests (cert/provision/registry/secrets) + 7 integration tests (nodes_provisioning_test) = 24/24 PASS con target limpio. Rama merged a main 4388d6cb.",
       "implemented_in": "",
-      "tests": 0,
+      "tests": [
+        "test_allow_cli_token_with_env_flag",
+        "test_deprovision_failure_yields_partial_revocation",
+        "test_expired_certificate",
+        "test_issue_and_verify_valid_certificate",
+        "test_list_public_filters_correctly",
+        "test_mask_secret_long",
+        "test_mask_secret_short",
+        "test_node_secrets_roundtrip_and_revocation",
+        "test_provision_rotate_remove_lifecycle",
+        "test_read_token_from_env",
+        "test_registry_crud_in_memory",
+        "test_registry_disk_persistence_reopen",
+        "test_reject_certificate_from_different_wallet",
+        "test_reject_clavis_dummy_token_rotation",
+        "test_reject_cli_token_without_env_flag",
+        "test_reject_personal_ssh_key",
+        "test_reject_tampered_certificate"
+      ],
       "req_ids": [
         "REQ-029",
         "REQ-030"
