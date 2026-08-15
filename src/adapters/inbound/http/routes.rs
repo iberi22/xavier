@@ -5,7 +5,7 @@
 use axum::{
     extract::Json,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -117,7 +117,28 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route("/v1/memories/redact", post(memories_redact_handler))
         // ── Mini-Experts API ──────────────────────────────────────────────
         .route("/v1/agents/mini-experts", get(mini_experts_list_handler))
-        .route("/v1/agents/mini-experts/invoke", post(mini_expert_invoke_handler));
+        .route("/v1/agents/mini-experts/invoke", post(mini_expert_invoke_handler))
+        // ── Data Marketplace API ──────────────────────────────────────────
+        .route(
+            "/v1/marketplace/datasets",
+            post(crate::adapters::inbound::http::handlers::list_dataset_handler),
+        )
+        .route(
+            "/v1/marketplace/datasets",
+            get(crate::adapters::inbound::http::handlers::list_active_datasets_handler),
+        )
+        .route(
+            "/v1/marketplace/datasets/{id}/query",
+            post(crate::adapters::inbound::http::handlers::query_dataset_handler),
+        )
+        .route(
+            "/v1/marketplace/datasets/{id}",
+            delete(crate::adapters::inbound::http::handlers::revoke_dataset_handler),
+        )
+        .route(
+            "/v1/marketplace/pricing",
+            get(crate::adapters::inbound::http::handlers::get_pricing_preview_handler),
+        );
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
