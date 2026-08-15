@@ -325,20 +325,32 @@ pub async fn openclaw_index_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
     let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
-    match state
+    let mut openclaw_records = match state
         .openclaw_indexer
         .index_all_agents(&scanner, state.store.as_ref())
         .await
     {
-        Ok(records) => axum::Json(serde_json::json!({
-            "status": "ok",
-            "indexed_count": records.len(),
-        })),
-        Err(e) => axum::Json(serde_json::json!({
-            "status": "error",
-            "message": format!("Failed to index OpenClaw agents: {}", e),
-        })),
-    }
+        Ok(r) => r,
+        Err(e) => {
+            return axum::Json(serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to index OpenClaw agents: {}", e),
+            }));
+        }
+    };
+
+    let hermes_importer = crate::memory::hermes_importer::HermesImporter::new();
+    let hermes_records = hermes_importer
+        .import_all(state.store.as_ref())
+        .await
+        .unwrap_or_default();
+
+    openclaw_records.extend(hermes_records);
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "indexed_count": openclaw_records.len(),
+    }))
 }
 
 /// Agent sync handler.

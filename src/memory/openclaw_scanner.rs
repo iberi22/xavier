@@ -33,7 +33,7 @@ pub struct AgentMemory {
 
 /// Scanner para encontrar agentes y su memoria en el sistema de archivos.
 pub struct OpenClawAgentScanner {
-    agents_dir: PathBuf,
+    agents_dirs: Vec<PathBuf>,
 }
 
 impl Default for OpenClawAgentScanner {
@@ -43,97 +43,116 @@ impl Default for OpenClawAgentScanner {
 }
 
 impl OpenClawAgentScanner {
-    /// Crea un nuevo scanner. El directorio de agentes se resuelve desde:
-    /// 1. La variable de entorno `XAVIER_AGENTS_DIR`
-    /// 2. `%USERPROFILE%\clawd\agents` en Windows
-    /// 3. `~/clawd/agents` como fallback universal
+    /// Crea un nuevo scanner resolver los directorios conocidos:
+    /// 1. `XAVIER_AGENTS_DIR` si se especifica
+    /// 2. `~/.openclaw/agents`, `~/clawd/agents`, `~/.clawd/agents`
     pub fn new() -> Self {
-        let agents_dir = Self::resolve_agents_dir();
+        let agents_dirs = Self::resolve_agents_dirs();
         info!(
-            "🔍 OpenClawAgentScanner initialized with agents_dir: {:?}",
-            agents_dir
+            "🔍 OpenClawAgentScanner initialized with agents_dirs: {:?}",
+            agents_dirs
         );
-        Self { agents_dir }
+        Self { agents_dirs }
     }
 
     /// Crea un scanner apuntando a un directorio específico (útil para tests).
     pub fn with_dir<P: AsRef<Path>>(path: P) -> Self {
         Self {
-            agents_dir: path.as_ref().to_path_buf(),
+            agents_dirs: vec![path.as_ref().to_path_buf()],
         }
     }
 
-    fn resolve_agents_dir() -> PathBuf {
+    /// Crea un scanner apuntando a múltiples directorios específicos.
+    pub fn with_dirs(paths: Vec<PathBuf>) -> Self {
+        Self { agents_dirs: paths }
+    }
+
+    fn resolve_agents_dirs() -> Vec<PathBuf> {
+        let mut dirs = Vec::new();
+
         if let Ok(dir) = std::env::var("XAVIER_AGENTS_DIR") {
-            return PathBuf::from(dir);
+            dirs.push(PathBuf::from(dir));
         }
 
-        // Try Windows %USERPROFILE%\clawd\agents
+        // Windows candidate paths
         if let Ok(profile) = std::env::var("USERPROFILE") {
-            let win_path = PathBuf::from(profile).join("clawd").join("agents");
-            if win_path.exists() {
-                return win_path;
+            dirs.push(PathBuf::from(&profile).join(".openclaw").join("agents"));
+            dirs.push(PathBuf::from(&profile).join("clawd").join("agents"));
+            dirs.push(PathBuf::from(&profile).join(".clawd").join("agents"));
+        }
+
+        // Unix candidate paths
+        if let Ok(home) = std::env::var("HOME") {
+            dirs.push(PathBuf::from(&home).join(".openclaw").join("agents"));
+            dirs.push(PathBuf::from(&home).join("clawd").join("agents"));
+            dirs.push(PathBuf::from(&home).join(".clawd").join("agents"));
+        }
+
+        dirs.push(PathBuf::from(".openclaw/agents"));
+        dirs.push(PathBuf::from("clawd/agents"));
+
+        // Deduplicate
+        let mut unique = Vec::new();
+        for d in dirs {
+            if !unique.contains(&d) {
+                unique.push(d);
             }
         }
-
-        // Unix fallback: ~/clawd/agents
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join("clawd").join("agents");
-        }
-
-        PathBuf::from("clawd/agents")
+        unique
     }
 
-    /// Escanea todos los agentes en `agents_dir` de forma recursiva.
+    /// Escanea todos los agentes en `agents_dirs` de forma recursiva.
     /// Un directorio es reconocido como agente si contiene un archivo `MEMORY.md`.
     pub async fn scan_all_agents(&self) -> Result<Vec<AgentMemory>> {
         info!(
             "🔍 Starting recursive OpenClaw Agent scan in {:?}",
-            self.agents_dir
+            self.agents_dirs
         );
         let mut agents = Vec::new();
 
-        if !fs::try_exists(&self.agents_dir).await.unwrap_or(false) {
-            debug!(
-                "Agents directory {:?} does not exist, skipping scan",
-                self.agents_dir
-            );
-            return Ok(agents);
-        }
+        for agents_dir in &self.agents_dirs {
+            if !fs::try_exists(agents_dir).await.unwrap_or(false) {
+                debug!(
+                    "Agents directory {:?} does not exist, skipping scan",
+                    agents_dir
+                );
+                continue;
+            }
 
-        // Iterative DFS to avoid stack overflow on deep trees
-        let mut stack = vec![self.agents_dir.clone()];
+            // Iterative DFS to avoid stack overflow on deep trees
+            let mut stack = vec![agents_dir.clone()];
 
-        while let Some(current_path) = stack.pop() {
-            let mut entries = match fs::read_dir(&current_path).await {
-                Ok(e) => e,
-                Err(e) => {
-                    warn!("Could not read directory {:?}: {}", current_path, e);
-                    continue;
-                }
-            };
-
-            while let Some(entry) = entries.next_entry().await? {
-                let path = entry.path();
-                let metadata = match entry.metadata().await {
-                    Ok(m) => m,
+            while let Some(current_path) = stack.pop() {
+                let mut entries = match fs::read_dir(&current_path).await {
+                    Ok(e) => e,
                     Err(e) => {
-                        warn!("Could not read metadata for {:?}: {}", path, e);
+                        warn!("Could not read directory {:?}: {}", current_path, e);
                         continue;
                     }
                 };
 
-                if metadata.is_dir() {
-                    let memory_md_path = path.join("MEMORY.md");
-                    if fs::try_exists(&memory_md_path).await.unwrap_or(false) {
-                        match self.scan_agent_dir(&path).await {
-                            Ok(agent_memory) => agents.push(agent_memory),
-                            Err(e) => warn!("Failed to scan agent directory {:?}: {}", path, e),
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    let path = entry.path();
+                    let metadata = match entry.metadata().await {
+                        Ok(m) => m,
+                        Err(e) => {
+                            warn!("Could not read metadata for {:?}: {}", path, e);
+                            continue;
                         }
-                        // Don't recurse further into an agent dir
-                    } else {
-                        // Continue recursive search into non-agent subdirs
-                        stack.push(path);
+                    };
+
+                    if metadata.is_dir() {
+                        let memory_md_path = path.join("MEMORY.md");
+                        if fs::try_exists(&memory_md_path).await.unwrap_or(false) {
+                            match self.scan_agent_dir(&path).await {
+                                Ok(agent_memory) => agents.push(agent_memory),
+                                Err(e) => warn!("Failed to scan agent directory {:?}: {}", path, e),
+                            }
+                            // Don't recurse further into an agent dir
+                        } else {
+                            // Continue recursive search into non-agent subdirs
+                            stack.push(path);
+                        }
                     }
                 }
             }
@@ -145,21 +164,24 @@ impl OpenClawAgentScanner {
 
     /// Escanea un agente específico por nombre.
     pub async fn scan_agent(&self, name: &str) -> Result<Option<AgentMemory>> {
-        let agent_path = self.agents_dir.join(name);
-        if !fs::try_exists(&agent_path).await.unwrap_or(false) {
-            return Ok(None);
+        for agents_dir in &self.agents_dirs {
+            let agent_path = agents_dir.join(name);
+            if !fs::try_exists(&agent_path).await.unwrap_or(false) {
+                continue;
+            }
+            let metadata = fs::metadata(&agent_path).await?;
+            if !metadata.is_dir() {
+                continue;
+            }
+            if !fs::try_exists(&agent_path.join("MEMORY.md"))
+                .await
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            return Ok(Some(self.scan_agent_dir(&agent_path).await?));
         }
-        let metadata = fs::metadata(&agent_path).await?;
-        if !metadata.is_dir() {
-            return Ok(None);
-        }
-        if !fs::try_exists(&agent_path.join("MEMORY.md"))
-            .await
-            .unwrap_or(false)
-        {
-            return Ok(None);
-        }
-        Ok(Some(self.scan_agent_dir(&agent_path).await?))
+        Ok(None)
     }
 
     /// Lee y estructura todos los archivos de un directorio de agente.
@@ -249,6 +271,29 @@ impl OpenClawAgentScanner {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_scan_all_agents_multiple_dirs() -> Result<()> {
+        let dir1 = tempdir()?;
+        let dir2 = tempdir()?;
+
+        let agent1 = dir1.path().join("agent_one");
+        fs::create_dir(&agent1).await?;
+        fs::write(agent1.join("MEMORY.md"), "Memory 1").await?;
+
+        let agent2 = dir2.path().join("agent_two");
+        fs::create_dir(&agent2).await?;
+        fs::write(agent2.join("MEMORY.md"), "Memory 2").await?;
+
+        let scanner = OpenClawAgentScanner::with_dirs(vec![dir1.path().to_path_buf(), dir2.path().to_path_buf()]);
+        let agents = scanner.scan_all_agents().await?;
+
+        assert_eq!(agents.len(), 2);
+        assert!(agents.iter().any(|a| a.agent_id == "agent_one"));
+        assert!(agents.iter().any(|a| a.agent_id == "agent_two"));
+
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_scan_all_agents_empty_dir() -> Result<()> {
