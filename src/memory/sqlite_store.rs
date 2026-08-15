@@ -519,10 +519,19 @@ impl MemoryStore for SqliteMemoryStore {
                     TABLE_BELIEFS
                 ))?;
                 match stmt.query_row([&belief_key], |row| {
-                    let beliefs_str: String = row.get(0)?;
-                    Ok(beliefs_str)
+                    let val = row.get_ref(0)?;
+                    match val {
+                        rusqlite::types::ValueRef::Text(b) => {
+                            let s = std::str::from_utf8(b).unwrap_or("");
+                            Ok(serde_json::from_str(s).unwrap_or_default())
+                        }
+                        rusqlite::types::ValueRef::Blob(b) => {
+                            Ok(crate::utils::compression::decompress_payload(b).unwrap_or_default())
+                        }
+                        _ => Ok(Vec::new()),
+                    }
                 }) {
-                    Ok(beliefs_str) => serde_json::from_str(&beliefs_str).unwrap_or_default(),
+                    Ok(beliefs) => beliefs,
                     Err(_) => Vec::new(),
                 }
             };
@@ -562,10 +571,20 @@ impl MemoryStore for SqliteMemoryStore {
                 let mut rows = stmt.query([&workspace_id_c])?;
                 let mut checkpoints = Vec::new();
                 while let Some(row) = rows.next()? {
+                    let data = match row.get_ref(2)? {
+                        rusqlite::types::ValueRef::Text(b) => {
+                            let s = std::str::from_utf8(b).unwrap_or("");
+                            serde_json::from_str(s).unwrap_or_default()
+                        }
+                        rusqlite::types::ValueRef::Blob(b) => {
+                            crate::utils::compression::decompress_payload(b).unwrap_or_default()
+                        }
+                        _ => serde_json::Value::Null,
+                    };
                     checkpoints.push(Checkpoint {
                         task_id: row.get(0)?,
                         name: row.get(1)?,
-                        data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                        data,
                     });
                 }
                 checkpoints
@@ -584,7 +603,7 @@ impl MemoryStore for SqliteMemoryStore {
     async fn save_beliefs(&self, workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()> {
         let workspace_id = workspace_id.to_string();
         let belief_key = stable_key("belief_row", &[&workspace_id]);
-        let beliefs_json = serde_json::to_string(&beliefs)?;
+        let beliefs_blob = crate::utils::compression::compress_payload(&beliefs)?;
 
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             conn.execute(
@@ -592,7 +611,7 @@ impl MemoryStore for SqliteMemoryStore {
                     "INSERT OR REPLACE INTO {} (id, workspace_id, beliefs, updated_at) VALUES (?, ?, ?, ?)",
                     TABLE_BELIEFS
                 ),
-                params![belief_key, workspace_id, beliefs_json, Utc::now().to_rfc3339()],
+                params![belief_key, workspace_id, beliefs_blob, Utc::now().to_rfc3339()],
             )?;
             Ok(())
         }).await
@@ -668,7 +687,7 @@ impl MemoryStore for SqliteMemoryStore {
         );
         let task_id = checkpoint.task_id;
         let name = checkpoint.name;
-        let data_json = serde_json::to_string(&checkpoint.data)?;
+        let data_blob = crate::utils::compression::compress_payload(&checkpoint.data)?;
 
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             conn.execute(
@@ -676,7 +695,7 @@ impl MemoryStore for SqliteMemoryStore {
                     "INSERT OR REPLACE INTO {} (id, workspace_id, task_id, name, data) VALUES (?, ?, ?, ?, ?)",
                     TABLE_CHECKPOINTS
                 ),
-                params![checkpoint_key, workspace_id, task_id, name, data_json],
+                params![checkpoint_key, workspace_id, task_id, name, data_blob],
             )?;
             Ok(())
         }).await
@@ -700,8 +719,17 @@ impl MemoryStore for SqliteMemoryStore {
                 ))?;
 
                 match stmt.query_row(params![workspace_id, task_id, name], |row| {
-                    let data_str: String = row.get(0)?;
-                    Ok(serde_json::from_str(&data_str).unwrap_or_default())
+                    let val = row.get_ref(0)?;
+                    match val {
+                        rusqlite::types::ValueRef::Text(b) => {
+                            let s = std::str::from_utf8(b).unwrap_or("");
+                            Ok(serde_json::from_str(s).unwrap_or_default())
+                        }
+                        rusqlite::types::ValueRef::Blob(b) => {
+                            Ok(crate::utils::compression::decompress_payload(b).unwrap_or_default())
+                        }
+                        _ => Ok(serde_json::Value::Null),
+                    }
                 }) {
                     Ok(data) => Ok(Some(Checkpoint {
                         task_id,
@@ -729,10 +757,20 @@ impl MemoryStore for SqliteMemoryStore {
                 let mut rows = stmt.query(params![workspace_id, task_id])?;
                 let mut checkpoints = Vec::new();
                 while let Some(row) = rows.next()? {
+                    let data = match row.get_ref(2)? {
+                        rusqlite::types::ValueRef::Text(b) => {
+                            let s = std::str::from_utf8(b).unwrap_or("");
+                            serde_json::from_str(s).unwrap_or_default()
+                        }
+                        rusqlite::types::ValueRef::Blob(b) => {
+                            crate::utils::compression::decompress_payload(b).unwrap_or_default()
+                        }
+                        _ => serde_json::Value::Null,
+                    };
                     checkpoints.push(Checkpoint {
                         task_id: row.get(0)?,
                         name: row.get(1)?,
-                        data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                        data,
                     });
                 }
                 Ok(checkpoints)
