@@ -6,7 +6,7 @@
   "version": "0.13.0",
   "created": "2026-03-05",
   "last_verified": "2026-08-14",
-  "total_features": 41,
+  "total_features": 42,
   "features_complete": 32,
   "features_beta": 1,
   "features_draft": 0,
@@ -14,7 +14,7 @@
   "features_designed": 0,
   "features_stable": 32,
   "overall_progress_pct": 84.2,
-  "reconciliation_notes": "2026-08-14: added feat-node-provisioning (status: designed, Olas M6/M7, REQ-029..030 / US-042..043). Counts reconciled to real keys: 31 stable, 1 beta, 5 planned, 1 designed. Prior total_features=36 was stale. 2026-08-15: added feat-ivn/feat-ivn-api/feat-ivn-karma (planned, Wave IVN)."
+  "reconciliation_notes": "2026-08-14: added feat-node-provisioning (status: designed, Olas M6/M7, REQ-029..030 / US-042..043). Counts reconciled to real keys: 31 stable, 1 beta, 5 planned, 1 designed. Prior total_features=36 was stale. 2026-08-15: added feat-ivn/feat-ivn-api/feat-ivn-karma (planned, Wave IVN). 2026-08-15: added feat-marketplace-api (in_progress, Wave M)."
  },
  "features": {
   "feat-unified-storage": {
@@ -1294,6 +1294,29 @@
    "last_tested": null,
    "notes": "Designed 2026-08-15. Issue xavier#1381. SECUENCIAL tras feat-ivn (same file ivn.rs). Values validated by ivn_sim.py (commit 8befe47).",
    "spec": "docs/features/specs/FEATURE-feat-ivn-karma.md"
+  },
+  "feat-marketplace-api": {
+   "id": "feat-marketplace-api",
+   "name": "DataMarketplace HTTP API (list/query/revoke/pricing)",
+   "category": "marketplace",
+   "status": "in_progress",
+   "progress_pct": 40,
+   "description": "Expose data_commons::marketplace (DataMarketplace: list_dataset/query_dataset/revoke_dataset) + pricing.rs (PricingOracle) as REST API /v1/marketplace/*. Motor exists (16 unit tests), routes missing.",
+   "steps": [
+    "POST /v1/marketplace/datasets (list_dataset)",
+    "GET /v1/marketplace/datasets (metadata only)",
+    "POST /v1/marketplace/datasets/{id}/query (DataPage)",
+    "DELETE /v1/marketplace/datasets/{id} (revoke)",
+    "GET /v1/marketplace/pricing (oracle preview)",
+    "Wire DataMarketplace in shared state",
+    "tests/marketplace_api.rs"
+   ],
+   "passes": false,
+   "verified_by": null,
+   "github_issue": 1379,
+   "last_tested": null,
+   "notes": "Wave M (2026-08-15). Issue xavier#1379 (moved from gara-g#705 — repo mismatch fix). Motor done; API = wiring + routes.",
+   "spec": null
   }
  },
  "verification_commands": {
