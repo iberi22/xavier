@@ -656,6 +656,12 @@ pub enum CodeCommand {
         #[arg(short, long, default_value_t = 50)]
         limit: usize,
     },
+    /// Calculate blast radius of a symbol (call graph BFS traversal)
+    BlastRadius {
+        query: String,
+        #[arg(short, long, default_value_t = 3)]
+        depth: usize,
+    },
     /// Show highly connected symbols
     Hubs,
     /// Show complexity hotspots
