@@ -509,4 +509,47 @@ mod tests_inner {
         assert!(router_entry.is_some(), "router should be in depth 2 blast radius");
         assert_eq!(router_entry.unwrap().1, 2, "router depth should be 2");
     }
+
+    fn test_memories_for_symbol_linking() {
+        let db = setup_test_db();
+        let sym = Symbol {
+            id: None,
+            stable_id: None,
+            name: "require_permission".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "/src/middleware/auth.rs".to_string(),
+            start_line: 10,
+            end_line: 25,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("pub fn require_permission()".to_string()),
+            parent: None,
+            complexity: None,
+        };
+        db.insert_symbol(&sym).expect("test assertion");
+
+        let memory_id = "mem_agent_101";
+        let memory_content =
+            "This conversation discusses require_permission middleware for RBAC access control.";
+
+        let links = db
+            .link_memory_to_symbols(memory_id, memory_content)
+            .expect("test assertion");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].memory_id, memory_id);
+
+        let query = QueryEngine::new(Arc::new(db));
+        let mem_links = query
+            .memories_for_symbol("require_permission")
+            .expect("test assertion");
+        assert!(!mem_links.is_empty());
+        assert_eq!(mem_links[0].memory_id, memory_id);
+
+        let symbols = query
+            .symbols_for_memory(memory_id)
+            .expect("test assertion");
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "require_permission");
+    }
 }

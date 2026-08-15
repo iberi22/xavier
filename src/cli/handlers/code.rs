@@ -91,6 +91,77 @@ pub async fn code_index_handler(
     }
 }
 
+/// Code memories handler (`POST /code/memories`).
+/// Returns agent memories linked to a specific code symbol.
+pub async fn code_memories_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeMemoriesPayload>,
+) -> impl axum::response::IntoResponse {
+    let limit = payload.limit.clamp(1, 100);
+
+    let sec_result = state
+        .security
+        .process_input(&payload.symbol)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.symbol.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "blocked": true,
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    let symbol = sec_result
+        .sanitized_input
+        .unwrap_or_else(|| sec_result.original_input.clone());
+
+    let code_graph = state.code_graph.read().await;
+    let links = code_graph
+        .query
+        .memories_for_symbol_limit(&symbol, limit)
+        .unwrap_or_default();
+
+    let mut memories = Vec::new();
+    for link in &links {
+        if let Ok(Some(rec)) = state.store.get(&state.workspace_id, &link.memory_id).await {
+            memories.push(serde_json::json!({
+                "memory_id": rec.id,
+                "path": rec.path,
+                "content": rec.content,
+                "confidence": link.confidence,
+                "created_at": rec.created_at,
+            }));
+        } else {
+            memories.push(serde_json::json!({
+                "memory_id": link.memory_id,
+                "symbol_id": link.symbol_id,
+                "confidence": link.confidence,
+            }));
+        }
+    }
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "symbol": symbol,
+        "count": memories.len(),
+        "memories": memories,
+    }))
+}
+
 /// Code dump handler.
 pub async fn code_dump_handler(
     State(state): State<CliState>,
@@ -1710,5 +1781,33 @@ mod tests {
         assert_eq!(links[0]["target"], "stable-2");
         assert_eq!(links[0]["relation"], "Calls");
         assert_eq!(links[0]["weight"], 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_code_memories_linking_integration() {
+        use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+        use xavier::memory::store::{MemoryRecord, MemoryStore};
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_code_mem.db");
+        let config = VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        let memory = MemoryRecord {
+            id: "agent_mem_123".to_string(),
+            workspace_id: "default".to_string(),
+            path: "agent_memory://cursor/session-1".to_string(),
+            content: "Discussed RBAC enforcement using require_permission middleware.".to_string(),
+            ..Default::default()
+        };
+
+        store.put(memory).await.unwrap();
+
+        let symbols = store.symbols_for_memory("agent_mem_123").await.unwrap();
+        assert!(symbols.contains(&"require_permission".to_string()));
     }
 }

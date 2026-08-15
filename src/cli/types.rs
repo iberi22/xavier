@@ -64,6 +64,13 @@ pub struct CodeContextPayload {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CodeMemoriesPayload {
+    pub symbol: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CodeGraphQueryPayload {
     pub query: String,
     #[serde(default = "default_graph_depth")]
