@@ -26,7 +26,7 @@ pub mod tokens;
 pub mod url_validator;
 pub mod user_store;
 
-pub use redaction::{RedactionEngine, RedactionRule};
+pub use redaction::{parse_segmented, DocSection, RedactionEngine, RedactionRule, SegmentedDoc};
 pub use anticipator::{Anticipator, AnticipatorConfig};
 pub use detections::{ScanResult as AnticipatorScanResult, Severity, Threat, ThreatCategory};
 pub use prompt_guard::{AttackType, DetectionResult, PromptInjectionDetector};
