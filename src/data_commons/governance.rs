@@ -183,6 +183,19 @@ impl DynamicQuorum {
             base
         }
     }
+
+    /// Evaluate an IVN verification verdict using this DynamicQuorum configuration.
+    pub fn evaluate_ivn_verdict(
+        &self,
+        votes: &[crate::data_commons::ivn::Vote],
+        recent_participation_rate: f64,
+    ) -> crate::data_commons::ivn::Verdict {
+        crate::data_commons::ivn::VerdictEngine::evaluate_votes_with_dynamic_quorum(
+            votes,
+            self.base_user_quorum_pct,
+            Some((self, recent_participation_rate)),
+        )
+    }
 }
 
 /// Motor de gobernanza bicameral
