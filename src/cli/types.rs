@@ -39,6 +39,19 @@ pub struct CodeFindPayload {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CodeSearchPayload {
+    pub query: String,
+    #[serde(default = "default_search_mode")]
+    pub mode: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+pub fn default_search_mode() -> String {
+    "hybrid".to_string()
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CodeContextPayload {
     #[serde(default)]
     pub query: String,

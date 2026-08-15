@@ -248,7 +248,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let code_db = Arc::new(::code_graph::db::CodeGraphDB::new(&code_db_path)?);
-    let code_indexer = Arc::new(::code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
+    let symbol_embedder = Arc::new(crate::cli::handlers::code::XavierSymbolEmbedder::new(
+        embedder.clone(),
+    ));
+    let mut code_indexer_obj = ::code_graph::indexer::Indexer::new(Arc::clone(&code_db));
+    code_indexer_obj.set_embedder(symbol_embedder);
+    let code_indexer = Arc::new(code_indexer_obj);
     let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
     let code_graph_state = Arc::new(tokio::sync::RwLock::new(
         crate::cli::state::CodeGraphState {
@@ -623,6 +628,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/memory/graph/view", get(memory_graph_view))
         .route("/code/index", post(code_index_handler))
         .route("/code/find", post(code_find_handler))
+        .route("/code/search", post(code_search_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
         .route("/code/dump", post(code_dump_handler))
