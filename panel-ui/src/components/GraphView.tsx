@@ -632,10 +632,13 @@ export default function GraphView({
                 </h2>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedNode(null)}
-                className="p-2 text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full"
+                aria-label="Close details"
+                title="Close"
+                className="p-2 text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
