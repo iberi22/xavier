@@ -39,6 +39,76 @@ pub fn is_same_wallet(node_a_wallet: &str, node_b_wallet: &str) -> bool {
     node_a_wallet == node_b_wallet
 }
 
+/// A memory delta item transferred during private sync.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrivateMemoryDelta {
+    pub path: String,
+    pub content: String,
+    pub metadata: serde_json::Value,
+    pub created_at: i64,
+}
+
+/// The payload exchanged between nodes of the same wallet.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct PrivateSyncPayload {
+    pub memories: Vec<PrivateMemoryDelta>,
+    pub snapshots: Vec<String>,
+}
+
+/// Encrypted session payload wrapper for transport over Iroh.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EncryptedSessionPayload {
+    pub ciphertext_hex: String,
+    pub nonce_hex: String,
+}
+
+/// Derives a 32-byte AES key from a wallet ID for session encryption.
+pub fn derive_wallet_session_key(wallet_id: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"private_mesh_session:");
+    hasher.update(wallet_id.as_bytes());
+    hasher.finalize().into()
+}
+
+/// Encrypts a [`PrivateSyncPayload`] using the session key derived from `wallet_id`.
+pub fn encrypt_session_payload(
+    payload: &PrivateSyncPayload,
+    wallet_id: &str,
+) -> Result<EncryptedSessionPayload> {
+    let key = derive_wallet_session_key(wallet_id);
+    let nonce = crate::crypto::encryption::NonceBytes::generate();
+    let json_bytes = serde_json::to_vec(payload)?;
+    let blob = crate::crypto::encryption::encrypt_data(&json_bytes, &key, &nonce)
+        .map_err(|e| anyhow!("Encryption failed: {:?}", e))?;
+
+    Ok(EncryptedSessionPayload {
+        ciphertext_hex: crate::crypto::hex_encode(&blob.ciphertext),
+        nonce_hex: crate::crypto::hex_encode(&blob.nonce),
+    })
+}
+
+/// Decrypts an [`EncryptedSessionPayload`] using the session key derived from `wallet_id`.
+pub fn decrypt_session_payload(
+    encrypted: &EncryptedSessionPayload,
+    wallet_id: &str,
+) -> Result<PrivateSyncPayload> {
+    let key = derive_wallet_session_key(wallet_id);
+    let ciphertext = crate::crypto::hex_decode(&encrypted.ciphertext_hex)
+        .map_err(|e| anyhow!("Invalid ciphertext hex: {:?}", e))?;
+    let nonce_bytes = crate::crypto::hex_decode(&encrypted.nonce_hex)
+        .map_err(|e| anyhow!("Invalid nonce hex: {:?}", e))?;
+
+    let nonce: [u8; crate::crypto::NONCE_SIZE] = nonce_bytes
+        .try_into()
+        .map_err(|_| anyhow!("Invalid nonce size"))?;
+
+    let plaintext = crate::crypto::encryption::decrypt_data(&ciphertext, &key, &nonce)
+        .map_err(|e| anyhow!("Decryption failed: {:?}", e))?;
+
+    let payload: PrivateSyncPayload = serde_json::from_slice(&plaintext)?;
+    Ok(payload)
+}
+
 /// registry to load/save JSON data for private mesh nodes.
 #[derive(Debug)]
 pub struct PrivateMeshRegistry {
@@ -118,6 +188,32 @@ impl PrivateMeshRegistry {
     /// Returns a slice of all nodes currently in memory.
     pub fn all_nodes(&self) -> &[WalletNode] {
         &self.nodes
+    }
+
+    /// Synchronizes memory deltas and snapshots between two nodes.
+    /// Strictly verifies that both nodes belong to the exact same wallet (`is_same_wallet`).
+    /// Rejects cross-wallet transfers with an isolation error.
+    pub fn sync_deltas(
+        &self,
+        source_wallet: &str,
+        target_wallet: &str,
+        payload: PrivateSyncPayload,
+    ) -> Result<PrivateSyncPayload> {
+        if !is_same_wallet(source_wallet, target_wallet) {
+            return Err(anyhow!(
+                "Cross-wallet sync rejected: wallet_id '{}' does not match target wallet ID '{}'",
+                source_wallet,
+                target_wallet
+            ));
+        }
+
+        // Encrypt with session key derived from wallet_id
+        let encrypted = encrypt_session_payload(&payload, source_wallet)?;
+
+        // Decrypt on target node with same wallet_id
+        let decrypted = decrypt_session_payload(&encrypted, target_wallet)?;
+
+        Ok(decrypted)
     }
 }
 
@@ -258,5 +354,63 @@ mod tests {
 
         assert!(non_existent_path.exists());
         assert_eq!(registry.all_nodes().len(), 0);
+    }
+
+    #[test]
+    fn test_sync_rejects_cross_wallet() {
+        let file = NamedTempFile::new().unwrap();
+        let registry = PrivateMeshRegistry::load_or_create(file.path().to_path_buf()).unwrap();
+
+        let wallet_a = "wallet_alice_123";
+        let wallet_b = "wallet_bob_456";
+
+        let payload = PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "fact/secret_1".to_string(),
+                content: "Alice's secret memory".to_string(),
+                metadata: serde_json::json!({"level": "confidential"}),
+                created_at: Utc::now().timestamp(),
+            }],
+            snapshots: vec!["repo_alice_v1".to_string()],
+        };
+
+        let result = registry.sync_deltas(wallet_a, wallet_b, payload);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Cross-wallet sync rejected"));
+    }
+
+    #[test]
+    fn test_sync_same_wallet_memory_delta() {
+        let file = NamedTempFile::new().unwrap();
+        let mut registry = PrivateMeshRegistry::load_or_create(file.path().to_path_buf()).unwrap();
+
+        let wallet_id = "wallet_alice_123";
+        let node_a = make_test_node("xv1-alice-laptop", wallet_id, "Laptop");
+        let node_b = make_test_node("xv1-alice-phone", wallet_id, "Phone");
+
+        registry.register_wallet_node(node_a, wallet_id).unwrap();
+        registry.register_wallet_node(node_b, wallet_id).unwrap();
+
+        let memory_delta = PrivateMemoryDelta {
+            path: "fact/swal_node_1".to_string(),
+            content: "Shared wallet state delta".to_string(),
+            metadata: serde_json::json!({"synced": true}),
+            created_at: Utc::now().timestamp(),
+        };
+
+        let payload = PrivateSyncPayload {
+            memories: vec![memory_delta.clone()],
+            snapshots: vec!["snap_swal_repo".to_string()],
+        };
+
+        let synced = registry
+            .sync_deltas(wallet_id, wallet_id, payload)
+            .expect("Same wallet sync must succeed");
+
+        assert_eq!(synced.memories.len(), 1);
+        assert_eq!(synced.memories[0].path, "fact/swal_node_1");
+        assert_eq!(synced.memories[0].content, "Shared wallet state delta");
+        assert_eq!(synced.snapshots, vec!["snap_swal_repo"]);
     }
 }

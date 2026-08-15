@@ -35,6 +35,7 @@
 
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
+use crate::mesh::private_mesh::EncryptedSessionPayload;
 use crate::mesh::protocol::{
     MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSessionShare, MeshSyncRequest,
 };
@@ -75,6 +76,10 @@ pub enum MeshRequest {
     },
     ShareSession {
         share: MeshSessionShare,
+    },
+    PrivateSync {
+        wallet_id: String,
+        encrypted: EncryptedSessionPayload,
     },
 }
 
@@ -315,6 +320,27 @@ impl IrohTransport {
         Ok(())
     }
 
+    /// Perform a private sync payload transfer over Iroh QUIC with session encryption.
+    pub async fn private_sync(
+        &self,
+        peer: &PeerInfo,
+        wallet_id: &str,
+        encrypted: EncryptedSessionPayload,
+    ) -> Result<EncryptedSessionPayload> {
+        let addr = Self::addr_from_peer(peer)?;
+        let conn = self.connect(&addr).await?;
+        let resp = self
+            .round_trip(
+                &conn,
+                &MeshRequest::PrivateSync {
+                    wallet_id: wallet_id.to_string(),
+                    encrypted,
+                },
+            )
+            .await?;
+        serde_json::from_value(resp).context("parse private sync response")
+    }
+
     /// Spawn the server-side accept loop in a background Tokio task.
     pub async fn spawn_accept_loop(&self) -> tokio::task::JoinHandle<()> {
         let endpoint = match self.endpoint().await {
@@ -408,6 +434,9 @@ impl IrohTransport {
                         MeshRequest::ShareSession { .. } => {
                             serde_json::to_value(serde_json::json!({"status": "ok"}))
                         }
+                        MeshRequest::PrivateSync { wallet_id: _, encrypted } => {
+                            serde_json::to_value(encrypted)
+                        }
                     };
 
                     let resp_bytes = match response_value.and_then(|v| serde_json::to_vec(&v)) {
@@ -451,6 +480,20 @@ mod tests {
         // ALPN identifiers must be non-empty and reasonably short.
         assert!(!XMESH_ALPN.is_empty());
         assert!(XMESH_ALPN.len() <= 255);
+    }
+
+    #[test]
+    fn test_private_sync_request_serializes_with_op_tag() {
+        let req = MeshRequest::PrivateSync {
+            wallet_id: "w1".into(),
+            encrypted: EncryptedSessionPayload {
+                ciphertext_hex: "aabb".into(),
+                nonce_hex: "1122".into(),
+            },
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"op\":\"private_sync\""));
+        assert!(json.contains("\"wallet_id\":\"w1\""));
     }
 
     #[test]
