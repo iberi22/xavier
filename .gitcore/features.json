@@ -14,7 +14,10 @@
     "features_designed": 0,
     "features_stable": 32,
     "overall_progress_pct": 84.2,
-    "reconciliation_notes": "2026-08-14: added feat-node-provisioning (status: designed, Olas M6/M7, REQ-029..030 / US-042..043). Counts reconciled to real keys: 31 stable, 1 beta, 5 planned, 1 designed. Prior total_features=36 was stale."
+    "reconciliation_notes": "2026-08-14: added feat-node-provisioning (status: designed, Olas M6/M7, REQ-029..030 / US-042..043). Counts reconciled to real keys: 31 stable, 1 beta, 5 planned, 1 designed. Prior total_features=36 was stale.",
+    "complete": 6,
+    "percent": 15.8,
+    "updated": "2026-08-15"
   },
   "features": {
     "feat-unified-storage": {
@@ -1002,8 +1005,8 @@
       "id": "feat-mini-experts",
       "name": "Mini-expertos personales on-demand",
       "category": "ai",
-      "status": "planned",
-      "progress_pct": 20,
+      "status": "implemented",
+      "progress_pct": 100,
       "description": "Modelos pequeños (1-3B) entrenados con datos propios del usuario, solo su idioma, servidos localmente con Ollama",
       "steps": [
         "Exportar dataset vía /v1/training/*",
@@ -1017,21 +1020,28 @@
       "github_issue": "",
       "last_tested": "2026-08-08",
       "notes": "agy v1.1.8 disponible con cuenta Google; ProviderRouter ya soporta endpoints locales",
-      "implemented_in": "",
+      "implemented_in": "5f50dcff",
       "tests": 7,
       "req_ids": [
         "REQ-023"
       ],
       "user_stories": [
         "US-036"
-      ]
+      ],
+      "evidence": {
+        "pr": "#1364",
+        "commit": "5f50dcff",
+        "note": "MiniExpertRegistry + Ollama local runtime, merged wave-16",
+        "verified": "2026-08-15",
+        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+      }
     },
     "feat-mesh-service-network": {
       "id": "feat-mesh-service-network",
       "name": "Red de servicio SWAL (telemetría interna)",
       "category": "mesh",
-      "status": "planned",
-      "progress_pct": 0,
+      "status": "implemented",
+      "progress_pct": 100,
       "description": "Compartir benchmarks, logs, feedbacks y telemetría de funcionamiento entre nodos de servicio para mejorar Xavier — sin datos personales",
       "steps": [
         "Clasificar telemetría como INTERNAL",
@@ -1044,21 +1054,28 @@
       "github_issue": "",
       "last_tested": "2026-08-08",
       "notes": "Capa 2 de la visión — red interna de trabajo",
-      "implemented_in": "",
+      "implemented_in": "d881e7b9",
       "tests": 4,
       "req_ids": [
         "REQ-024"
       ],
       "user_stories": [
         "US-037"
-      ]
+      ],
+      "evidence": {
+        "pr": "#1343",
+        "commit": "d881e7b9",
+        "note": "ServiceRegistry + TelemetrySample INTERNAL con PII redaction, merged wave-16",
+        "verified": "2026-08-15",
+        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+      }
     },
     "feat-mesh-private-wallet": {
       "id": "feat-mesh-private-wallet",
       "name": "Mesh privada por billetera de claves",
       "category": "mesh",
-      "status": "planned",
-      "progress_pct": 0,
+      "status": "implemented",
+      "progress_pct": 100,
       "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos — terceros no los ven",
       "steps": [
         "Registro de nodos por billetera (Clavis)",
@@ -1072,21 +1089,28 @@
       "github_issue": "",
       "last_tested": "2026-08-08",
       "notes": "Parte de F9 v2 (F9-MESH-SWAL-PUBLICO-PRIVADO.md)",
-      "implemented_in": "",
+      "implemented_in": "99672677",
       "tests": 4,
       "req_ids": [
         "REQ-025"
       ],
       "user_stories": [
         "US-038"
-      ]
+      ],
+      "evidence": {
+        "pr": "#1346",
+        "commit": "99672677",
+        "note": "PrivateMeshSync con cifrado de sesión (merge manual conflictos resueltos), merged wave-16",
+        "verified": "2026-08-15",
+        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+      }
     },
     "feat-content-redaction": {
       "id": "feat-content-redaction",
       "name": "Censura por partes (documentos redactados)",
       "category": "security",
-      "status": "planned",
-      "progress_pct": 0,
+      "status": "implemented",
+      "progress_pct": 100,
       "description": "Documentos con secciones REDACTED: el servidor sirve versión censurada según clearance del solicitante",
       "steps": [
         "Formato de documento segmentado (secciones con nivel)",
@@ -1099,21 +1123,28 @@
       "github_issue": "",
       "last_tested": "2026-08-08",
       "notes": "Como documentos clasificados del gobierno — Visión §3",
-      "implemented_in": "",
+      "implemented_in": "cea4546a",
       "tests": 5,
       "req_ids": [
         "REQ-026"
       ],
       "user_stories": [
         "US-039"
-      ]
+      ],
+      "evidence": {
+        "pr": "#1344",
+        "commit": "cea4546a",
+        "note": "RedactionEngine segmented + render_for_clearance, merged wave-16",
+        "verified": "2026-08-15",
+        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+      }
     },
     "feat-human-curation": {
       "id": "feat-human-curation",
       "name": "Curaduría humana de información",
       "category": "governance",
-      "status": "planned",
-      "progress_pct": 0,
+      "status": "implemented",
+      "progress_pct": 100,
       "description": "Los humanos son curadores: revisan, aprueban, clasifican la información que Xavier preserva",
       "steps": [
         "UI/API para revisar información pendiente de clasificación",
@@ -1126,14 +1157,21 @@
       "github_issue": "",
       "last_tested": "2026-08-08",
       "notes": "Misión: el futuro se construye con info real regenerada, no generada",
-      "implemented_in": "",
+      "implemented_in": "db9a309d",
       "tests": 8,
       "req_ids": [
         "REQ-027"
       ],
       "user_stories": [
         "US-040"
-      ]
+      ],
+      "evidence": {
+        "pr": "#1345",
+        "commit": "db9a309d",
+        "note": "CurationQueue + review API + training gate, merged wave-16",
+        "verified": "2026-08-15",
+        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+      }
     },
     "feat-issue-context-packager": {
       "id": "feat-issue-context-packager",
