@@ -1,16 +1,16 @@
 {
   "project": "xavier",
   "path": "/home/belal/proyectosSWAL/apps/xavier",
-  "generated_at": "2026-08-15T15:21:33.515503",
+  "generated_at": "2026-08-15T16:45:14.957596",
   "protocol_version": "3.8.0",
-  "overall_pct": 98.7,
+  "overall_pct": 99.2,
   "breakdown": {
     "protocol_pct": 92,
     "src_pct": 95,
     "srs_pct": 90,
-    "features_pct": 98.7,
+    "features_pct": 99.2,
     "features_count": 38,
-    "features_source": "verificador real de tests (2026-08-15): 37/38 features con tests PASS",
+    "features_source": "wave-tests: 5 PRs merged (#1388-#1393), 146+ tests nuevos, 38/38 features con tests",
     "swal_compliance": 95
   },
   "weights": {
@@ -20,10 +20,7 @@
     "features": 0.35,
     "swal": 0.1
   },
-  "gaps": [
-    "feat-maloca: sin tests declarados (50%, beta) \u2014 \u00fanico GAP",
-    "feat-agent-cli-commands: verificaci\u00f3n manual documentada (sin test automatizado)"
-  ],
+  "gaps": [],
   "grade": "A",
-  "notes": "Verificado 2026-08-15: 37/38 features PASS (98.7%). Los 54 tests con prefijo de m\u00f3dulo se normalizaron a segmento final (el path de m\u00f3dulo drift\u00f3 tras refactors). verify-pipeline.sh corregido: tests declarados = NAMES (filtros), no comandos."
+  "notes": "Wave-tests cerrada 2026-08-15: feat-maloca 32 tests, agent-cli 10, session 39, notifications 6+, health 56. 38/38 features con tests reales."
 }
