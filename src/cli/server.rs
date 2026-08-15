@@ -629,6 +629,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/code/index", post(code_index_handler))
         .route("/code/find", post(code_find_handler))
         .route("/code/search", post(code_search_handler))
+        .route("/code/memories", post(code_memories_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
         .route("/code/dump", post(code_dump_handler))

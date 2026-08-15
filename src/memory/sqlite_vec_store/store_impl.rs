@@ -576,6 +576,36 @@ impl MemoryStore for VecSqliteMemoryStore {
                     params![chain_id, prev_hash, content_hash],
                 )?;
 
+                // Auto-link code symbols mentioned in content
+                let candidate_words: std::collections::HashSet<&str> = record_c
+                    .content
+                    .split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .filter(|w| w.len() >= 4)
+                    .collect();
+
+                let code_db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(
+                    std::path::Path::new("."),
+                );
+                if code_db_path.exists() {
+                    if let Ok(code_db) = code_graph::db::CodeGraphDB::new(&code_db_path) {
+                        if let Ok(links) = code_db.link_memory_to_symbols(&record_c.id, &record_c.content) {
+                            for link in links {
+                                let _ = conn.execute(
+                                    "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, ?3)",
+                                    params![link.memory_id, link.symbol_id, link.confidence],
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    for word in candidate_words {
+                        let _ = conn.execute(
+                            "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, 1.0)",
+                            params![record_c.id, word],
+                        );
+                    }
+                }
+
                 // Call refined append_timeline_event (now sync inside with_conn)
                 // Need a reference to Self, but we're inside closure.
                 // Wait, append_timeline_event can be a static-like helper or we can pass store state.
@@ -1153,6 +1183,23 @@ impl MemoryStore for VecSqliteMemoryStore {
                     params![workspace_id, data, now],
                 )?;
                 Ok(())
+            })
+            .await
+    }
+
+    async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
+        let memory_id = memory_id.to_string();
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT symbol_id FROM memory_symbol_links WHERE memory_id = ? ORDER BY confidence DESC",
+                )?;
+                let rows = stmt.query_map([&memory_id], |row| row.get::<_, String>(0))?;
+                let mut symbols = Vec::new();
+                for symbol in rows.flatten() {
+                    symbols.push(symbol);
+                }
+                Ok(symbols)
             })
             .await
     }
