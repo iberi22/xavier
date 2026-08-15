@@ -5,12 +5,14 @@
 //! These modules are pure libraries; this file adds the HTTP surface.
 
 use axum::{
-    extract::State,
-    http::StatusCode,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use crate::security::clearance::ClearanceLevel;
+use crate::security::redaction::{parse_segmented, SegmentedDoc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -470,6 +472,65 @@ pub async fn get_snapshot(
     }
 }
 
+pub async fn get_document_handler(
+    State(state): State<F12State>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        return (StatusCode::BAD_REQUEST, "Invalid document ID").into_response();
+    }
+
+    // Extract clearance header (support X-Clearance, Clearance, or fallback to UNCLASSIFIED / level 0)
+    let clearance_val = headers
+        .get("x-clearance")
+        .or_else(|| headers.get("clearance"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("0");
+
+    let requester_clearance = if let Ok(num) = clearance_val.parse::<u8>() {
+        ClearanceLevel::from(num)
+    } else {
+        ClearanceLevel::from(clearance_val)
+    };
+
+    let doc_path = state.data_dir.join("documents").join(format!("{}.md", id));
+    let raw_content = if doc_path.exists() {
+        match std::fs::read_to_string(&doc_path) {
+            Ok(c) => c,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Error reading document").into_response(),
+        }
+    } else if id == "doc1" {
+        // Built-in fallback sample document for testing/verification
+        r#"# Classified Operation Protocol
+
+## [CLEARANCE:1] Executive Summary
+Operation Delta is active. Primary contact is ops@swal.io.
+
+## Operational Directives [CLEARANCE:3]
+Target coordinates in Sector 7 are confidential. Contact supervisor at +1-555-0199 for authorization.
+
+## [CLEARANCE:5] Master Vault Keys
+The root decryption key is 0xDEADBEEF42.
+"#.to_string()
+    } else {
+        return (StatusCode::NOT_FOUND, "Document not found").into_response();
+    };
+
+    let segmented_doc = parse_segmented(&raw_content);
+    let rendered = segmented_doc.render_for_clearance(requester_clearance);
+
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; charset=utf-8")],
+        rendered,
+    )
+        .into_response()
+}
+
 // ---------- router ----------
 
 pub fn router(state: F12State) -> Router {
@@ -491,6 +552,8 @@ pub fn router(state: F12State) -> Router {
         .route("/v1/f12/snapshots", get(list_snapshots))
         .route("/v1/f12/snapshots", post(create_snapshot))
         .route("/v1/f12/snapshots/{repo}", get(get_snapshot))
+        .route("/v1/documents/{id}", get(get_document_handler))
+        .route("/v1/f12/documents/{id}", get(get_document_handler))
         .with_state(state)
 }
 
@@ -752,5 +815,50 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_get_document_clearance_redaction() {
+        let app = router(test_state());
+
+        // Requester level 1
+        let resp_lvl1 = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/documents/doc1")
+                    .header("X-Clearance", "1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_lvl1.status(), StatusCode::OK);
+        let body_lvl1 = resp_lvl1.into_body().collect().await.unwrap().to_bytes();
+        let text_lvl1 = String::from_utf8(body_lvl1.to_vec()).unwrap();
+        assert!(text_lvl1.contains("[EMAIL]"));
+        assert!(text_lvl1.contains("[REDACTED: Operational Directives]"));
+        assert!(text_lvl1.contains("[REDACTED: Master Vault Keys]"));
+        assert!(!text_lvl1.contains("0xDEADBEEF42"));
+
+        // Requester level 5
+        let resp_lvl5 = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/documents/doc1")
+                    .header("X-Clearance", "5")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp_lvl5.status(), StatusCode::OK);
+        let body_lvl5 = resp_lvl5.into_body().collect().await.unwrap().to_bytes();
+        let text_lvl5 = String::from_utf8(body_lvl5.to_vec()).unwrap();
+        assert!(text_lvl5.contains("Executive Summary"));
+        assert!(text_lvl5.contains("Operational Directives"));
+        assert!(text_lvl5.contains("Master Vault Keys"));
+        assert!(text_lvl5.contains("0xDEADBEEF42"));
+        assert!(!text_lvl5.contains("[REDACTED: Master Vault Keys]"));
     }
 }

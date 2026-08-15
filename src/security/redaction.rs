@@ -5,6 +5,140 @@
 
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
+use crate::security::clearance::ClearanceLevel;
+
+/// A section within a segmented document with its own clearance level requirement.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DocSection {
+    /// Section ID or index key
+    pub id: String,
+    /// Title of the section (e.g. "Public Summary" or "Secret Ops")
+    pub title: String,
+    /// Clearance level required to view this section
+    pub clearance_level: ClearanceLevel,
+    /// Raw content of the section
+    pub content: String,
+}
+
+/// A document structured into multiple clearance-level sections.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct SegmentedDoc {
+    /// Document title
+    pub title: String,
+    /// List of document sections
+    pub sections: Vec<DocSection>,
+}
+
+impl SegmentedDoc {
+    /// Render document for a requester with a specific clearance level.
+    /// Sections requiring higher clearance than `requester_level` will be rendered as `[REDACTED: <title>]`.
+    /// Accessible sections will also have PII / sensitive patterns masked with `RedactionEngine::default()`.
+    pub fn render_for_clearance(&self, requester_level: ClearanceLevel) -> String {
+        let default_engine = RedactionEngine::default();
+        self.render_for_clearance_with_engine(requester_level, &default_engine)
+    }
+
+    /// Render document for a requester with a specific clearance level and a custom `RedactionEngine`.
+    pub fn render_for_clearance_with_engine(
+        &self,
+        requester_level: ClearanceLevel,
+        engine: &RedactionEngine,
+    ) -> String {
+        let mut rendered = Vec::new();
+
+        if !self.title.is_empty() {
+            rendered.push(format!("# {}\n", self.title));
+        }
+
+        for section in &self.sections {
+            if requester_level >= section.clearance_level {
+                let clean_content = engine.redact(&section.content);
+                if !section.title.is_empty() {
+                    rendered.push(format!("## {}\n{}", section.title, clean_content));
+                } else {
+                    rendered.push(clean_content);
+                }
+            } else {
+                let section_title = if section.title.is_empty() {
+                    "Untitled Section"
+                } else {
+                    &section.title
+                };
+                rendered.push(format!("[REDACTED: {}]", section_title));
+            }
+        }
+
+        rendered.join("\n\n")
+    }
+}
+
+/// Parse a Markdown string containing clearance markers (e.g., `## [CLEARANCE:3] Title` or `## Title [CLEARANCE:INTERNAL]`)
+/// into a structured `SegmentedDoc`.
+pub fn parse_segmented(markdown: &str) -> SegmentedDoc {
+    let mut doc = SegmentedDoc::default();
+    let mut current_section: Option<DocSection> = None;
+    let mut title_found = false;
+
+    let clearance_regex = Regex::new(r"(?i)\[CLEARANCE:\s*([A-Z0-9_]+)\]").unwrap();
+
+    for line in markdown.lines() {
+        if line.starts_with("# ") && !title_found {
+            doc.title = line.trim_start_matches("# ").trim().to_string();
+            title_found = true;
+            continue;
+        }
+
+        if line.starts_with("## ") {
+            if let Some(sec) = current_section.take() {
+                doc.sections.push(sec);
+            }
+
+            let header_text = line.trim_start_matches("## ").trim();
+            let (clearance_level, clean_title) = if let Some(captures) = clearance_regex.captures(header_text) {
+                let level_str = captures.get(1).unwrap().as_str();
+                let parsed_level = if let Ok(num) = level_str.parse::<u8>() {
+                    ClearanceLevel::from(num)
+                } else {
+                    ClearanceLevel::from(level_str)
+                };
+                let clean = clearance_regex.replace(header_text, "").trim().to_string();
+                (parsed_level, clean)
+            } else {
+                (ClearanceLevel::Unclassified, header_text.to_string())
+            };
+
+            let sec_id = format!("sec-{}", doc.sections.len() + 1);
+            current_section = Some(DocSection {
+                id: sec_id,
+                title: clean_title,
+                clearance_level,
+                content: String::new(),
+            });
+            continue;
+        }
+
+        if let Some(ref mut sec) = current_section {
+            if !sec.content.is_empty() {
+                sec.content.push('\n');
+            }
+            sec.content.push_str(line);
+        } else if !title_found && doc.title.is_empty() && !line.trim().is_empty() {
+            // Content prior to any heading or section
+            current_section = Some(DocSection {
+                id: "sec-1".to_string(),
+                title: "Introduction".to_string(),
+                clearance_level: ClearanceLevel::Unclassified,
+                content: line.to_string(),
+            });
+        }
+    }
+
+    if let Some(sec) = current_section {
+        doc.sections.push(sec);
+    }
+
+    doc
+}
 
 /// A rule defining a sensitive pattern and its mask replacement.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,5 +359,68 @@ mod tests {
         for (input, expected) in inputs {
             assert_eq!(engine.redact(input), expected);
         }
+    }
+
+    #[test]
+    fn test_segmented_doc_render_for_clearance() {
+        let doc = SegmentedDoc {
+            title: "Project Alpha Plan".to_string(),
+            sections: vec![
+                DocSection {
+                    id: "sec-1".to_string(),
+                    title: "Public Overview".to_string(),
+                    clearance_level: ClearanceLevel::Internal, // Level 1
+                    content: "This project aims to optimize response times. Contact boss@company.org.".to_string(),
+                },
+                DocSection {
+                    id: "sec-2".to_string(),
+                    title: "Secret Infrastructure".to_string(),
+                    clearance_level: ClearanceLevel::Confidential, // Level 3
+                    content: "Database credentials are stored in Vault cluster alpha-9.".to_string(),
+                },
+            ],
+        };
+
+        // Level 1 requester: Section 2 must be redacted
+        let rendered_lvl1 = doc.render_for_clearance(ClearanceLevel::Internal);
+        assert!(rendered_lvl1.contains("## Public Overview"));
+        assert!(rendered_lvl1.contains("[EMAIL]")); // PII redacted
+        assert!(rendered_lvl1.contains("[REDACTED: Secret Infrastructure]"));
+        assert!(!rendered_lvl1.contains("Vault cluster alpha-9"));
+
+        // Level 3 requester: Section 2 must be visible
+        let rendered_lvl3 = doc.render_for_clearance(ClearanceLevel::Confidential);
+        assert!(rendered_lvl3.contains("## Public Overview"));
+        assert!(rendered_lvl3.contains("## Secret Infrastructure"));
+        assert!(rendered_lvl3.contains("Vault cluster alpha-9"));
+        assert!(!rendered_lvl3.contains("[REDACTED: Secret Infrastructure]"));
+    }
+
+    #[test]
+    fn test_parse_segmented_markdown() {
+        let markdown = r#"# Classified Mission Document
+
+## [CLEARANCE:1] Public Briefing
+Welcome team. Contact admin@swal.io for info.
+
+## Strategic Targets [CLEARANCE:3]
+Target sector 7 contains sensitive assets.
+
+## [CLEARANCE:TOPSECRET] Vault Key
+The nuclear launch codes are 000000.
+"#;
+
+        let parsed = parse_segmented(markdown);
+        assert_eq!(parsed.title, "Classified Mission Document");
+        assert_eq!(parsed.sections.len(), 3);
+
+        assert_eq!(parsed.sections[0].title, "Public Briefing");
+        assert_eq!(parsed.sections[0].clearance_level, ClearanceLevel::Internal);
+
+        assert_eq!(parsed.sections[1].title, "Strategic Targets");
+        assert_eq!(parsed.sections[1].clearance_level, ClearanceLevel::Confidential);
+
+        assert_eq!(parsed.sections[2].title, "Vault Key");
+        assert_eq!(parsed.sections[2].clearance_level, ClearanceLevel::TopSecret);
     }
 }
