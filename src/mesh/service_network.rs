@@ -6,8 +6,20 @@
 
 use crate::mesh::node::NodeId;
 use crate::mesh::peer::PeerRegistry;
+use crate::security::redaction::RedactionEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Telemetry sample published across the service network.
+/// Must always be classified as INTERNAL and contain no personal data (PII).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelemetrySample {
+    pub node_id: NodeId,
+    pub kind: ServiceKind,
+    pub payload: String,
+    pub ts: i64,
+    pub classification: String,
+}
 
 /// Types of services available in the Xavier Mesh.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -44,6 +56,8 @@ pub struct ServiceInfo {
 pub struct ServiceRegistry {
     /// Maps service kind to a list of node-hosted service instances.
     pub services: HashMap<ServiceKind, Vec<ServiceInfo>>,
+    /// Collected telemetry samples from nodes in the service network.
+    pub telemetry: Vec<TelemetrySample>,
 }
 
 impl ServiceRegistry {
@@ -51,6 +65,7 @@ impl ServiceRegistry {
     pub fn new() -> Self {
         Self {
             services: HashMap::new(),
+            telemetry: Vec::new(),
         }
     }
 
@@ -93,6 +108,53 @@ impl ServiceRegistry {
         self.route_service(kind, |node_id| {
             registry.get_peer(node_id).map(|p| p.is_healthy()).unwrap_or(false)
         })
+    }
+
+    /// Publish a telemetry sample to the service network.
+    ///
+    /// The payload is automatically scrubbed for PII (emails, phone numbers, addresses, etc.)
+    /// via `RedactionEngine`, and `classification` is enforced to be "INTERNAL".
+    pub fn publish_telemetry(&mut self, mut sample: TelemetrySample) -> TelemetrySample {
+        let engine = RedactionEngine::default();
+        sample.payload = engine.redact(&sample.payload);
+        sample.classification = "INTERNAL".to_string();
+        if sample.ts == 0 {
+            sample.ts = chrono::Utc::now().timestamp();
+        }
+        self.telemetry.push(sample.clone());
+        sample
+    }
+
+    /// Consume telemetry samples recorded since the given timestamp (`since`).
+    pub fn consume_telemetry(&self, since: i64) -> Vec<TelemetrySample> {
+        self.telemetry
+            .iter()
+            .filter(|s| s.ts >= since)
+            .cloned()
+            .collect()
+    }
+
+    /// Helper to collect system health info as a telemetry snapshot sample.
+    pub fn collect_health_telemetry(
+        &mut self,
+        node_id: NodeId,
+        health: &crate::observability::health::HealthStatus,
+    ) -> TelemetrySample {
+        let payload = format!(
+            "health status={:?} cpu={:.1}% ram={:.1}% active_peers={}",
+            health.status,
+            health.system.cpu_usage,
+            health.system.ram_usage_percent,
+            health.mesh.active_peers
+        );
+        let sample = TelemetrySample {
+            node_id,
+            kind: ServiceKind::Custom("health_snapshot".to_string()),
+            payload,
+            ts: health.timestamp.timestamp(),
+            classification: "INTERNAL".to_string(),
+        };
+        self.publish_telemetry(sample)
     }
 }
 
@@ -187,6 +249,64 @@ mod tests {
         // Case 3: None healthy -> should return None
         let routed_none = registry.route_service(&ServiceKind::CodeGraph, |_| false);
         assert!(routed_none.is_none());
+    }
+
+    #[test]
+    fn test_telemetry_publish_classification_and_pii_redaction() {
+        let mut registry = ServiceRegistry::new();
+        let node_id = NodeId("xv1-telemetry-node".to_string());
+
+        let raw_sample = TelemetrySample {
+            node_id: node_id.clone(),
+            kind: ServiceKind::Memory,
+            payload: "Node error when contacting user john.doe@example.com or calling +1-555-123-4567 during bench".to_string(),
+            ts: 1000,
+            classification: "PUBLIC".to_string(), // Attempting to publish non-INTERNAL
+        };
+
+        let published = registry.publish_telemetry(raw_sample);
+
+        // 1. Classification forced to INTERNAL
+        assert_eq!(published.classification, "INTERNAL");
+
+        // 2. PII excluded (email and phone redacted)
+        assert!(!published.payload.contains("john.doe@example.com"));
+        assert!(!published.payload.contains("+1-555-123-4567"));
+        assert!(published.payload.contains("[EMAIL]"));
+        assert!(published.payload.contains("[PHONE]"));
+
+        // 3. Telemetry stored and consumable
+        let consumed = registry.consume_telemetry(500);
+        assert_eq!(consumed.len(), 1);
+        assert_eq!(consumed[0], published);
+    }
+
+    #[test]
+    fn test_telemetry_consume_since() {
+        let mut registry = ServiceRegistry::new();
+        let node_id = NodeId("xv1-node".to_string());
+
+        let s1 = TelemetrySample {
+            node_id: node_id.clone(),
+            kind: ServiceKind::Search,
+            payload: "sample 1".to_string(),
+            ts: 100,
+            classification: "INTERNAL".to_string(),
+        };
+        let s2 = TelemetrySample {
+            node_id: node_id.clone(),
+            kind: ServiceKind::Search,
+            payload: "sample 2".to_string(),
+            ts: 200,
+            classification: "INTERNAL".to_string(),
+        };
+
+        registry.publish_telemetry(s1);
+        registry.publish_telemetry(s2);
+
+        let consumed = registry.consume_telemetry(150);
+        assert_eq!(consumed.len(), 1);
+        assert_eq!(consumed[0].payload, "sample 2");
     }
 
     #[test]
