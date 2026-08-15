@@ -1353,8 +1353,8 @@
    "id": "feat-ivn",
    "name": "Identity Verification Core (selection + verdict + sanctions)",
    "category": "identity",
-   "status": "in_progress",
-   "progress_pct": 60,
+   "status": "implemented",
+   "progress_pct": 100,
    "description": "Karma-weighted validator selection, dynamic quorum votes, sanctions. Root of Xavier's truth pyramid — verified real identity before human refinement.",
    "steps": [
     "IvnConfig (5 validators, karma>=300, quorum 0.8, karma^2)",
@@ -1421,8 +1421,8 @@
    "id": "feat-marketplace-api",
    "name": "DataMarketplace HTTP API (list/query/revoke/pricing)",
    "category": "marketplace",
-   "status": "in_progress",
-   "progress_pct": 60,
+   "status": "implemented",
+   "progress_pct": 100,
    "description": "Expose data_commons::marketplace (DataMarketplace: list_dataset/query_dataset/revoke_dataset) + pricing.rs (PricingOracle) as REST API /v1/marketplace/*. Motor exists (16 unit tests), routes added by PR #1394.",
    "steps": [
     "POST /v1/marketplace/datasets (list_dataset)",
