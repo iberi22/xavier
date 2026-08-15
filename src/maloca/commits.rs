@@ -263,3 +263,54 @@ pub async fn commits_graph(
         "links": links,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_query_functions() {
+        assert_eq!(default_limit(), 50);
+        assert_eq!(default_since_days(), 30);
+    }
+
+    #[test]
+    fn test_graph_node_and_link_serde() {
+        let node = GraphNode::Commit {
+            id: "abc1234".into(),
+            short_hash: "abc1234".into(),
+            hash: "abc1234567890".into(),
+            message: "feat: test commit".into(),
+            author: "Developer".into(),
+            timestamp: "2026-02-15T20:27:00Z".into(),
+            files_changed: 2,
+            lines_added: 10,
+            lines_deleted: 5,
+        };
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("\"type\":\"commit\""));
+        assert!(json.contains("\"short_hash\":\"abc1234\""));
+
+        let symbol_node = GraphNode::Symbol {
+            id: "sym:123".into(),
+            label: "fn_test".into(),
+            name: "fn_test".into(),
+            symbol_type: "function".into(),
+            kind: "function".into(),
+            file_path: "src/main.rs".into(),
+            file: "src/main.rs".into(),
+        };
+        let sym_json = serde_json::to_string(&symbol_node).unwrap();
+        assert!(sym_json.contains("\"type\":\"symbol\""));
+        assert!(sym_json.contains("\"label\":\"fn_test\""));
+
+        let link = GraphLink::CommitFile {
+            source: "abc1234".into(),
+            target: "src/main.rs".into(),
+            insertions: 10,
+            deletions: 5,
+        };
+        let link_json = serde_json::to_string(&link).unwrap();
+        assert!(link_json.contains("\"type\":\"commit_file\""));
+    }
+}
