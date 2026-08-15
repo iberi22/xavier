@@ -485,4 +485,73 @@ mod tests {
         assert_eq!(received.body, "Test Body");
         assert_eq!(received.severity, "info");
     }
+
+    #[test]
+    fn test_island_id_as_str_and_from_str() {
+        assert_eq!(IslandId::System.as_str(), "system");
+        assert_eq!(IslandId::Memory.as_str(), "memory");
+        assert_eq!(IslandId::Agents.as_str(), "agents");
+        assert_eq!(IslandId::Errors.as_str(), "errors");
+
+        assert!(matches!(IslandId::from_str("memory"), IslandId::Memory));
+        assert!(matches!(IslandId::from_str("agents"), IslandId::Agents));
+        assert!(matches!(IslandId::from_str("errors"), IslandId::Errors));
+        assert!(matches!(IslandId::from_str("unknown"), IslandId::System));
+    }
+
+    #[test]
+    fn test_notification_provider_ids_and_is_enabled() {
+        let in_app = InAppProvider;
+        assert_eq!(in_app.id(), "in_app");
+        assert!(in_app.is_enabled());
+
+        let webhook = WebhookProvider;
+        assert_eq!(webhook.id(), "webhook");
+        assert!(webhook.is_enabled());
+
+        let email = EmailProvider;
+        assert_eq!(email.id(), "email");
+        assert!(email.is_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_email_provider_send() {
+        let provider = EmailProvider;
+        let notification = Notification {
+            id: "email-test-id".to_string(),
+            island_id: IslandId::Agents,
+            title: "Email Title".to_string(),
+            body: "Email Body".to_string(),
+            timestamp: Utc::now(),
+            read: false,
+            severity: "warning".to_string(),
+        };
+
+        let result = provider.send(&notification).await;
+        assert!(result.is_ok());
+
+        let emails = SENT_EMAILS.lock().await;
+        assert!(!emails.is_empty());
+        assert!(emails.iter().any(|n| n.title == "Email Title"));
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_notify() {
+        let manager = NotificationManager::new();
+        let mut rx = manager.subscribe();
+
+        let notified = manager
+            .notify(IslandId::Errors, "Error Alert", "Disk full", "error")
+            .await
+            .expect("notify failed");
+
+        assert_eq!(notified.island_id.as_str(), "errors");
+        assert_eq!(notified.title, "Error Alert");
+        assert_eq!(notified.body, "Disk full");
+        assert_eq!(notified.severity, "error");
+        assert!(!notified.read);
+
+        let rx_received = rx.recv().await.unwrap();
+        assert_eq!(rx_received.id, notified.id);
+    }
 }

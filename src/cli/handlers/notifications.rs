@@ -24,6 +24,25 @@ pub async fn list_notifications_handler(State(_state): State<CliState>) -> Respo
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_subscription_payload_deserialization() {
+        let json_data = serde_json::json!({
+            "url": "https://example.com/webhook",
+            "event_types": ["system", "memory"]
+        });
+
+        let payload: CreateSubscriptionPayload =
+            serde_json::from_value(json_data).expect("Failed to deserialize payload");
+
+        assert_eq!(payload.url, "https://example.com/webhook");
+        assert_eq!(payload.event_types, vec!["system", "memory"]);
+    }
+}
+
 use serde::Deserialize;
 
 #[derive(Deserialize)]
