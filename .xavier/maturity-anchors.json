@@ -1,0 +1,1983 @@
+{
+  "version": "2.0.0",
+  "generated": "2026-06-19T02:00:00Z",
+  "features": [
+    {
+      "id": "memory-rag",
+      "name": "Memory RAG",
+      "priority": "high",
+      "subcomponents": [
+        {
+          "name": "Vector search (filtered)",
+          "weight": 40,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "search_filtered"
+            },
+            {
+              "symbol": "SearchResult"
+            },
+            {
+              "symbol": "SearchResult"
+            }
+          ],
+          "test_anchors": [
+            "context::bm25::tests::empty_query_or_limit_returns_no_hits",
+            "context::bm25::tests::ranks_matching_document_first",
+            "context::bm25::tests::tokenizes_whitespace_and_lowercases",
+            "embedding::cache::tests::test_cache_hit_and_miss",
+            "embedding::cache::tests::test_cached_embedder_delegates_dimension",
+            "embedding::cache::tests::test_clear_invalidates_all",
+            "embedding::cache::tests::test_config_defaults",
+            "embedding::cache::tests::test_config_from_env",
+            "embedding::cache::tests::test_content_hash_differs_for_different_inputs",
+            "embedding::cache::tests::test_content_hash_is_deterministic"
+          ],
+          "memory_keywords": [
+            "rag",
+            "search_filtered",
+            "semantic_search",
+            "memory.query",
+            "vector_embedding",
+            "embedder"
+          ],
+          "issue_labels": [
+            "feature:memory-rag",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Memory indexing & embedding",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "FileIndexer"
+            },
+            {
+              "symbol": "AgentIndexer"
+            },
+            {
+              "symbol": "EmbeddingClient"
+            }
+          ],
+          "test_anchors": [
+            "context::bm25::tests::empty_query_or_limit_returns_no_hits",
+            "context::bm25::tests::ranks_matching_document_first",
+            "context::bm25::tests::tokenizes_whitespace_and_lowercases",
+            "embedding::cache::tests::test_cache_hit_and_miss",
+            "embedding::cache::tests::test_cached_embedder_delegates_dimension",
+            "embedding::cache::tests::test_clear_invalidates_all",
+            "embedding::cache::tests::test_config_defaults",
+            "embedding::cache::tests::test_config_from_env",
+            "embedding::cache::tests::test_content_hash_differs_for_different_inputs",
+            "embedding::cache::tests::test_content_hash_is_deterministic"
+          ],
+          "memory_keywords": [
+            "rag",
+            "search_filtered",
+            "semantic_search",
+            "memory.query",
+            "vector_embedding",
+            "embedder"
+          ],
+          "issue_labels": [
+            "feature:memory-rag",
+            "area:high"
+          ]
+        },
+        {
+          "name": "QMD scoring",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "QmdSearchTools"
+            },
+            {
+              "symbol": "score"
+            },
+            {
+              "symbol": "DocumentScore"
+            }
+          ],
+          "test_anchors": [
+            "context::bm25::tests::empty_query_or_limit_returns_no_hits",
+            "context::bm25::tests::ranks_matching_document_first",
+            "context::bm25::tests::tokenizes_whitespace_and_lowercases",
+            "embedding::cache::tests::test_cache_hit_and_miss",
+            "embedding::cache::tests::test_cached_embedder_delegates_dimension",
+            "embedding::cache::tests::test_clear_invalidates_all",
+            "embedding::cache::tests::test_config_defaults",
+            "embedding::cache::tests::test_config_from_env",
+            "embedding::cache::tests::test_content_hash_differs_for_different_inputs",
+            "embedding::cache::tests::test_content_hash_is_deterministic"
+          ],
+          "memory_keywords": [
+            "rag",
+            "search_filtered",
+            "semantic_search",
+            "memory.query",
+            "vector_embedding",
+            "embedder"
+          ],
+          "issue_labels": [
+            "feature:memory-rag",
+            "area:high"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "code-graph",
+      "name": "Code Graph",
+      "priority": "high",
+      "subcomponents": [
+        {
+          "name": "Portable JSON dump/load",
+          "weight": 40,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "code_dump"
+            },
+            {
+              "symbol": "CodeGraphDump"
+            },
+            {
+              "symbol": "dump"
+            },
+            {
+              "symbol": "load"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "cli::tests::test_code_dump_basic",
+            "cli::tests::test_code_graph_load",
+            "code_graph::tests::test_dump_roundtrip"
+          ],
+          "memory_keywords": [
+            "code-graph"
+          ],
+          "issue_labels": [
+            "feature:code-graph",
+            "area:high"
+          ]
+        },
+        {
+          "name": "MCP Code-graph tool",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "CodeContextPayload"
+            },
+            {
+              "symbol": "code_call_chain_handler"
+            },
+            {
+              "symbol": "MCPContextResult"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "server::mcp::tests::test_tools_core_code_graph",
+            "server::mcp::tests::test_code_graph_tool"
+          ],
+          "memory_keywords": [
+            "code-graph"
+          ],
+          "issue_labels": [
+            "feature:code-graph",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Symbol query & analysis",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "QueryProcessor"
+            },
+            {
+              "symbol": "IndexResult"
+            },
+            {
+              "symbol": "CodeContextPayload"
+            }
+          ],
+          "test_anchors": [
+            "code_graph::tests::test_symbol_query",
+            "code_graph::tests::test_dependency_resolution"
+          ],
+          "memory_keywords": [
+            "code-graph"
+          ],
+          "issue_labels": [
+            "feature:code-graph",
+            "area:high"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "memory-sync",
+      "name": "Memory Sync",
+      "priority": "high",
+      "subcomponents": [
+        {
+          "name": "HTTP sync endpoints",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "http"
+            },
+            {
+              "symbol": "PlankaSyncService"
+            },
+            {
+              "symbol": "PlankaSyncService"
+            }
+          ],
+          "test_anchors": [
+            "sync::tests::test_http_sync_push",
+            "sync::tests::test_http_sync_pull",
+            "sync::tests::test_http_sync_bidirectional"
+          ],
+          "memory_keywords": [
+            "memory-sync"
+          ],
+          "issue_labels": [
+            "feature:memory-sync",
+            "area:high"
+          ]
+        },
+        {
+          "name": "libp2p transport",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "Libp2pTransport"
+            },
+            {
+              "symbol": "Libp2pTransport"
+            },
+            {
+              "symbol": "MeshTelemetryCollector"
+            }
+          ],
+          "test_anchors": [
+            "mesh::tests::test_libp2p_discovery",
+            "mesh::tests::test_libp2p_message_exchange"
+          ],
+          "memory_keywords": [
+            "memory-sync"
+          ],
+          "issue_labels": [
+            "feature:memory-sync",
+            "area:high"
+          ]
+        },
+        {
+          "name": "E2E multi-node sync",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "sync"
+            },
+            {
+              "symbol": "sync"
+            }
+          ],
+          "test_anchors": [
+            "sync::tests::test_e2e_two_nodes",
+            "sync::tests::test_e2e_three_nodes"
+          ],
+          "memory_keywords": [
+            "memory-sync"
+          ],
+          "issue_labels": [
+            "feature:memory-sync",
+            "area:high"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mcp-server",
+      "name": "MCP Server",
+      "priority": "high",
+      "subcomponents": [
+        {
+          "name": "Tools (memory + core)",
+          "weight": 40,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "MCPContextResult"
+            },
+            {
+              "symbol": "tools_memory"
+            },
+            {
+              "symbol": "tools_core"
+            },
+            {
+              "symbol": "MCPRequest"
+            }
+          ],
+          "test_anchors": [
+            "a2a::tests::client_registry_returns_registered_agent",
+            "a2a::tests::create_xavier_agent_card_exposes_expected_metadata",
+            "a2a::tests::handle_cancel_acknowledges_successful_cancellation",
+            "a2a::tests::handle_get_returns_missing_task_error",
+            "a2a::tests::handle_send_rejects_invalid_message_payload",
+            "a2a::tests::handle_send_returns_serialized_task",
+            "a2a::tests::handle_unknown_method_returns_method_not_found",
+            "a2a::tests::task_status_uses_protocol_friendly_serialization",
+            "a2a::tests::type_fields_serialize_as_json_type",
+            "server::mcp::tests::all_tools_have_valid_schema"
+          ],
+          "memory_keywords": [
+            "mcp",
+            "tool_registry",
+            "tool_discovery",
+            "mcp_transport",
+            "mcp_protocol"
+          ],
+          "issue_labels": [
+            "feature:mcp-server",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Auth/security",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "McpAuthService"
+            },
+            {
+              "symbol": "McpAuthService"
+            },
+            {
+              "symbol": "McpAuthMiddleware"
+            }
+          ],
+          "test_anchors": [
+            "a2a::tests::client_registry_returns_registered_agent",
+            "a2a::tests::create_xavier_agent_card_exposes_expected_metadata",
+            "a2a::tests::handle_cancel_acknowledges_successful_cancellation",
+            "a2a::tests::handle_get_returns_missing_task_error",
+            "a2a::tests::handle_send_rejects_invalid_message_payload",
+            "a2a::tests::handle_send_returns_serialized_task",
+            "a2a::tests::handle_unknown_method_returns_method_not_found",
+            "a2a::tests::task_status_uses_protocol_friendly_serialization",
+            "a2a::tests::type_fields_serialize_as_json_type",
+            "server::mcp::tests::all_tools_have_valid_schema"
+          ],
+          "memory_keywords": [
+            "mcp",
+            "tool_registry",
+            "tool_discovery",
+            "mcp_transport",
+            "mcp_protocol"
+          ],
+          "issue_labels": [
+            "feature:mcp-server",
+            "area:high"
+          ]
+        },
+        {
+          "name": "HTTP+SSE & Stdio transports",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "mcp_stdio"
+            },
+            {
+              "symbol": "MCPTextContent"
+            },
+            {
+              "symbol": "MCPHealthResult"
+            }
+          ],
+          "test_anchors": [
+            "a2a::tests::client_registry_returns_registered_agent",
+            "a2a::tests::create_xavier_agent_card_exposes_expected_metadata",
+            "a2a::tests::handle_cancel_acknowledges_successful_cancellation",
+            "a2a::tests::handle_get_returns_missing_task_error",
+            "a2a::tests::handle_send_rejects_invalid_message_payload",
+            "a2a::tests::handle_send_returns_serialized_task",
+            "a2a::tests::handle_unknown_method_returns_method_not_found",
+            "a2a::tests::task_status_uses_protocol_friendly_serialization",
+            "a2a::tests::type_fields_serialize_as_json_type",
+            "server::mcp::tests::all_tools_have_valid_schema"
+          ],
+          "memory_keywords": [
+            "mcp",
+            "tool_registry",
+            "tool_discovery",
+            "mcp_transport",
+            "mcp_protocol"
+          ],
+          "issue_labels": [
+            "feature:mcp-server",
+            "area:high"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hormer-navigation",
+      "name": "HORMER Navigation",
+      "priority": "high",
+      "subcomponents": [
+        {
+          "name": "Dynamic directory hierarchy",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "HierarchyManager"
+            },
+            {
+              "symbol": "DynamicDirectory"
+            }
+          ],
+          "test_anchors": [
+            "retrieval::gating::tests::test_adaptive_booster_defaults",
+            "retrieval::gating::tests::test_adaptive_booster_feedback_adapts",
+            "retrieval::gating::tests::test_adaptive_booster_hit_rate",
+            "retrieval::gating::tests::test_adaptive_booster_insufficient_data",
+            "retrieval::gating::tests::test_adaptive_booster_reset_all",
+            "retrieval::gating::tests::test_adaptive_booster_reset_user",
+            "retrieval::gating::tests::test_layer_weights_adaptive",
+            "retrieval::gating::tests::test_layer_weights_custom",
+            "retrieval::gating::tests::test_layer_weights_default",
+            "retrieval::gating::tests::test_multi_layer_retrieval"
+          ],
+          "memory_keywords": [
+            "hormer-navigation"
+          ],
+          "issue_labels": [
+            "feature:hormer-navigation",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Navigation policy (scoring + GRPO)",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "NavigationPolicy"
+            },
+            {
+              "symbol": "ScoredResult"
+            },
+            {
+              "symbol": "GRPO"
+            }
+          ],
+          "test_anchors": [
+            "retrieval::gating::tests::test_adaptive_booster_defaults",
+            "retrieval::gating::tests::test_adaptive_booster_feedback_adapts",
+            "retrieval::gating::tests::test_adaptive_booster_hit_rate",
+            "retrieval::gating::tests::test_adaptive_booster_insufficient_data",
+            "retrieval::gating::tests::test_adaptive_booster_reset_all",
+            "retrieval::gating::tests::test_adaptive_booster_reset_user",
+            "retrieval::gating::tests::test_layer_weights_adaptive",
+            "retrieval::gating::tests::test_layer_weights_custom",
+            "retrieval::gating::tests::test_layer_weights_default",
+            "retrieval::gating::tests::test_multi_layer_retrieval"
+          ],
+          "memory_keywords": [
+            "hormer-navigation"
+          ],
+          "issue_labels": [
+            "feature:hormer-navigation",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Textual Gradient Descent",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "TgdEngine"
+            },
+            {
+              "symbol": "TgdCache"
+            },
+            {
+              "symbol": "TgdConfig"
+            }
+          ],
+          "test_anchors": [
+            "retrieval::gating::tests::test_adaptive_booster_defaults",
+            "retrieval::gating::tests::test_adaptive_booster_feedback_adapts",
+            "retrieval::gating::tests::test_adaptive_booster_hit_rate",
+            "retrieval::gating::tests::test_adaptive_booster_insufficient_data",
+            "retrieval::gating::tests::test_adaptive_booster_reset_all",
+            "retrieval::gating::tests::test_adaptive_booster_reset_user",
+            "retrieval::gating::tests::test_layer_weights_adaptive",
+            "retrieval::gating::tests::test_layer_weights_custom",
+            "retrieval::gating::tests::test_layer_weights_default",
+            "retrieval::gating::tests::test_multi_layer_retrieval"
+          ],
+          "memory_keywords": [
+            "hormer-navigation"
+          ],
+          "issue_labels": [
+            "feature:hormer-navigation",
+            "area:high"
+          ]
+        },
+        {
+          "name": "CLI navigation tools",
+          "weight": 20,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "NavigationPolicyConfig"
+            },
+            {
+              "symbol": "NavCommand"
+            },
+            {
+              "symbol": "visualize_handler"
+            }
+          ],
+          "test_anchors": [
+            "retrieval::gating::tests::test_adaptive_booster_defaults",
+            "retrieval::gating::tests::test_adaptive_booster_feedback_adapts",
+            "retrieval::gating::tests::test_adaptive_booster_hit_rate",
+            "retrieval::gating::tests::test_adaptive_booster_insufficient_data",
+            "retrieval::gating::tests::test_adaptive_booster_reset_all",
+            "retrieval::gating::tests::test_adaptive_booster_reset_user",
+            "retrieval::gating::tests::test_layer_weights_adaptive",
+            "retrieval::gating::tests::test_layer_weights_custom",
+            "retrieval::gating::tests::test_layer_weights_default",
+            "retrieval::gating::tests::test_multi_layer_retrieval"
+          ],
+          "memory_keywords": [
+            "hormer-navigation"
+          ],
+          "issue_labels": [
+            "feature:hormer-navigation",
+            "area:high"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tgd-optimization",
+      "name": "TGD Optimization",
+      "priority": "medium",
+      "subcomponents": [
+        {
+          "name": "Consolidation engine",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "mod"
+            },
+            {
+              "symbol": "consolidation"
+            },
+            {
+              "symbol": "consolidate"
+            },
+            {
+              "symbol": "TgdCache"
+            }
+          ],
+          "test_anchors": [
+            "auto_improvement::tests::test_analyze_gaps_detects_regression",
+            "auto_improvement::tests::test_analyze_gaps_identifies_low_recall",
+            "auto_improvement::tests::test_analyze_gaps_skips_when_above_target",
+            "auto_improvement::tests::test_autonomous_mode_accepts_experiments",
+            "auto_improvement::tests::test_benchmark_history",
+            "auto_improvement::tests::test_cycle_does_not_panic_with_default_settings",
+            "auto_improvement::tests::test_engine_cycle_no_memory",
+            "auto_improvement::tests::test_generate_experiments_deduplicates",
+            "tgd::cache::tests::test_hash_changes",
+            "tgd::cache::tests::test_hash_consistency"
+          ],
+          "memory_keywords": [
+            "tgd-optimization"
+          ],
+          "issue_labels": [
+            "feature:tgd-optimization",
+            "area:medium"
+          ]
+        },
+        {
+          "name": "Per-session impact reporting",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "ImpactReport"
+            },
+            {
+              "symbol": "SessionImpact"
+            },
+            {
+              "symbol": "ImpactReport"
+            }
+          ],
+          "test_anchors": [
+            "auto_improvement::tests::test_analyze_gaps_detects_regression",
+            "auto_improvement::tests::test_analyze_gaps_identifies_low_recall",
+            "auto_improvement::tests::test_analyze_gaps_skips_when_above_target",
+            "auto_improvement::tests::test_autonomous_mode_accepts_experiments",
+            "auto_improvement::tests::test_benchmark_history",
+            "auto_improvement::tests::test_cycle_does_not_panic_with_default_settings",
+            "auto_improvement::tests::test_engine_cycle_no_memory",
+            "auto_improvement::tests::test_generate_experiments_deduplicates",
+            "tgd::cache::tests::test_hash_changes",
+            "tgd::cache::tests::test_hash_consistency"
+          ],
+          "memory_keywords": [
+            "tgd-optimization"
+          ],
+          "issue_labels": [
+            "feature:tgd-optimization",
+            "area:medium"
+          ]
+        },
+        {
+          "name": "Rollback mechanism",
+          "weight": 20,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "RollbackManager"
+            },
+            {
+              "symbol": "rollback"
+            }
+          ],
+          "test_anchors": [
+            "auto_improvement::tests::test_analyze_gaps_detects_regression",
+            "auto_improvement::tests::test_analyze_gaps_identifies_low_recall",
+            "auto_improvement::tests::test_analyze_gaps_skips_when_above_target",
+            "auto_improvement::tests::test_autonomous_mode_accepts_experiments",
+            "auto_improvement::tests::test_benchmark_history",
+            "auto_improvement::tests::test_cycle_does_not_panic_with_default_settings",
+            "auto_improvement::tests::test_engine_cycle_no_memory",
+            "auto_improvement::tests::test_generate_experiments_deduplicates",
+            "tgd::cache::tests::test_hash_changes",
+            "tgd::cache::tests::test_hash_consistency"
+          ],
+          "memory_keywords": [
+            "tgd-optimization"
+          ],
+          "issue_labels": [
+            "feature:tgd-optimization",
+            "area:medium"
+          ]
+        },
+        {
+          "name": "Nightly consolidation",
+          "weight": 15,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "nightly_consolidate"
+            },
+            {
+              "symbol": "NightlyScheduler"
+            }
+          ],
+          "test_anchors": [
+            "auto_improvement::tests::test_analyze_gaps_detects_regression",
+            "auto_improvement::tests::test_analyze_gaps_identifies_low_recall",
+            "auto_improvement::tests::test_analyze_gaps_skips_when_above_target",
+            "auto_improvement::tests::test_autonomous_mode_accepts_experiments",
+            "auto_improvement::tests::test_benchmark_history",
+            "auto_improvement::tests::test_cycle_does_not_panic_with_default_settings",
+            "auto_improvement::tests::test_engine_cycle_no_memory",
+            "auto_improvement::tests::test_generate_experiments_deduplicates",
+            "tgd::cache::tests::test_hash_changes",
+            "tgd::cache::tests::test_hash_consistency"
+          ],
+          "memory_keywords": [
+            "tgd-optimization"
+          ],
+          "issue_labels": [
+            "feature:tgd-optimization",
+            "area:medium"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli-tools",
+      "name": "CLI Tools",
+      "priority": "high",
+      "subcomponents": [
+        {
+          "name": "Server commands",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "server"
+            },
+            {
+              "symbol": "ServiceLogStore"
+            },
+            {
+              "symbol": "http_setup"
+            }
+          ],
+          "test_anchors": [
+            "server::headless::auth::tests::test_validate_token_test_mode",
+            "settings::tests::test_apply_to_env_all_new_sections",
+            "settings::tests::test_apply_to_env_respects_existing_vars",
+            "settings::tests::test_apply_to_env_sets_vars",
+            "settings::tests::test_client_base_url",
+            "settings::tests::test_config_file_missing_returns_none",
+            "settings::tests::test_current_falls_back_to_defaults",
+            "settings::tests::test_default_settings",
+            "settings::tests::test_non_empty_helper",
+            "settings::tests::test_resolve_data_dir"
+          ],
+          "memory_keywords": [
+            "cli-tools"
+          ],
+          "issue_labels": [
+            "feature:cli-tools",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Memory & navigation commands",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "MemoryCommand"
+            },
+            {
+              "symbol": "NavigationPolicyConfig"
+            },
+            {
+              "symbol": "SyncCommand"
+            }
+          ],
+          "test_anchors": [
+            "server::headless::auth::tests::test_validate_token_test_mode",
+            "settings::tests::test_apply_to_env_all_new_sections",
+            "settings::tests::test_apply_to_env_respects_existing_vars",
+            "settings::tests::test_apply_to_env_sets_vars",
+            "settings::tests::test_client_base_url",
+            "settings::tests::test_config_file_missing_returns_none",
+            "settings::tests::test_current_falls_back_to_defaults",
+            "settings::tests::test_default_settings",
+            "settings::tests::test_non_empty_helper",
+            "settings::tests::test_resolve_data_dir"
+          ],
+          "memory_keywords": [
+            "cli-tools"
+          ],
+          "issue_labels": [
+            "feature:cli-tools",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Mesh & sync commands",
+          "weight": 20,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "MeshCommand"
+            },
+            {
+              "symbol": "SecurityScanner"
+            },
+            {
+              "symbol": "MeshCommand"
+            }
+          ],
+          "test_anchors": [
+            "server::headless::auth::tests::test_validate_token_test_mode",
+            "settings::tests::test_apply_to_env_all_new_sections",
+            "settings::tests::test_apply_to_env_respects_existing_vars",
+            "settings::tests::test_apply_to_env_sets_vars",
+            "settings::tests::test_client_base_url",
+            "settings::tests::test_config_file_missing_returns_none",
+            "settings::tests::test_current_falls_back_to_defaults",
+            "settings::tests::test_default_settings",
+            "settings::tests::test_non_empty_helper",
+            "settings::tests::test_resolve_data_dir"
+          ],
+          "memory_keywords": [
+            "cli-tools"
+          ],
+          "issue_labels": [
+            "feature:cli-tools",
+            "area:high"
+          ]
+        },
+        {
+          "name": "System & security commands",
+          "weight": 15,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "SystemCommand"
+            },
+            {
+              "symbol": "VerificationService"
+            },
+            {
+              "symbol": "ScanCommand"
+            }
+          ],
+          "test_anchors": [
+            "server::headless::auth::tests::test_validate_token_test_mode",
+            "settings::tests::test_apply_to_env_all_new_sections",
+            "settings::tests::test_apply_to_env_respects_existing_vars",
+            "settings::tests::test_apply_to_env_sets_vars",
+            "settings::tests::test_client_base_url",
+            "settings::tests::test_config_file_missing_returns_none",
+            "settings::tests::test_current_falls_back_to_defaults",
+            "settings::tests::test_default_settings",
+            "settings::tests::test_non_empty_helper",
+            "settings::tests::test_resolve_data_dir"
+          ],
+          "memory_keywords": [
+            "cli-tools"
+          ],
+          "issue_labels": [
+            "feature:cli-tools",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Maturity scanner CLI",
+          "weight": 10,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "MaturityCommand"
+            },
+            {
+              "symbol": "MaturityCommand"
+            },
+            {
+              "symbol": "MaturityScanner"
+            }
+          ],
+          "test_anchors": [
+            "server::headless::auth::tests::test_validate_token_test_mode",
+            "settings::tests::test_apply_to_env_all_new_sections",
+            "settings::tests::test_apply_to_env_respects_existing_vars",
+            "settings::tests::test_apply_to_env_sets_vars",
+            "settings::tests::test_client_base_url",
+            "settings::tests::test_config_file_missing_returns_none",
+            "settings::tests::test_current_falls_back_to_defaults",
+            "settings::tests::test_default_settings",
+            "settings::tests::test_non_empty_helper",
+            "settings::tests::test_resolve_data_dir"
+          ],
+          "memory_keywords": [
+            "cli-tools"
+          ],
+          "issue_labels": [
+            "feature:cli-tools",
+            "area:high"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "self-monitoring",
+      "name": "Self-Monitoring",
+      "priority": "high",
+      "subcomponents": [
+        {
+          "name": "Health check system",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "HealthCheck"
+            },
+            {
+              "symbol": "health_check"
+            },
+            {
+              "symbol": "health_check_all"
+            }
+          ],
+          "test_anchors": [
+            "health::repair::tests::test_check_and_repair_returns_report",
+            "health::repair::tests::test_check_and_repair_with_db_callback",
+            "health::repair::tests::test_embedding_failure_tracking",
+            "health::repair::tests::test_empty_settings_no_panic",
+            "health::repair::tests::test_is_running_false_by_default",
+            "health::repair::tests::test_last_report_populated",
+            "health::repair::tests::test_repair_action_display",
+            "health::repair::tests::test_repair_config_defaults",
+            "health::repair::tests::test_report_tracks_counts",
+            "health::repair::tests::test_start_stop_monitoring"
+          ],
+          "memory_keywords": [
+            "self-monitoring"
+          ],
+          "issue_labels": [
+            "feature:self-monitoring",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Observability (metrics, tracing)",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "MetricType"
+            },
+            {
+              "symbol": "TelemetryCollector"
+            },
+            {
+              "symbol": "tracing_config"
+            }
+          ],
+          "test_anchors": [
+            "health::repair::tests::test_check_and_repair_returns_report",
+            "health::repair::tests::test_check_and_repair_with_db_callback",
+            "health::repair::tests::test_embedding_failure_tracking",
+            "health::repair::tests::test_empty_settings_no_panic",
+            "health::repair::tests::test_is_running_false_by_default",
+            "health::repair::tests::test_last_report_populated",
+            "health::repair::tests::test_repair_action_display",
+            "health::repair::tests::test_repair_config_defaults",
+            "health::repair::tests::test_report_tracks_counts",
+            "health::repair::tests::test_start_stop_monitoring"
+          ],
+          "memory_keywords": [
+            "self-monitoring"
+          ],
+          "issue_labels": [
+            "feature:self-monitoring",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Automated alerts",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "AlertManager"
+            },
+            {
+              "symbol": "AlertRule"
+            },
+            {
+              "symbol": "alert_fail"
+            }
+          ],
+          "test_anchors": [
+            "health::repair::tests::test_check_and_repair_returns_report",
+            "health::repair::tests::test_check_and_repair_with_db_callback",
+            "health::repair::tests::test_embedding_failure_tracking",
+            "health::repair::tests::test_empty_settings_no_panic",
+            "health::repair::tests::test_is_running_false_by_default",
+            "health::repair::tests::test_last_report_populated",
+            "health::repair::tests::test_repair_action_display",
+            "health::repair::tests::test_repair_config_defaults",
+            "health::repair::tests::test_report_tracks_counts",
+            "health::repair::tests::test_start_stop_monitoring"
+          ],
+          "memory_keywords": [
+            "self-monitoring"
+          ],
+          "issue_labels": [
+            "feature:self-monitoring",
+            "area:high"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mesh-network",
+      "name": "Mesh Network",
+      "priority": "high",
+      "subcomponents": [
+        {
+          "name": "P2P transport (libp2p)",
+          "weight": 20,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "Libp2pTransport"
+            },
+            {
+              "symbol": "MeshTelemetryCollector"
+            }
+          ],
+          "test_anchors": [
+            "coordination::agent_registry::tests::test_get_active_agents_filters_stale",
+            "coordination::agent_registry::tests::test_register_and_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_creation",
+            "coordination::message_bus::tests::test_agent_message_error",
+            "coordination::message_bus::tests::test_agent_message_fluent_interface",
+            "coordination::message_bus::tests::test_agent_message_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_result",
+            "coordination::message_bus::tests::test_agent_message_task",
+            "coordination::message_bus::tests::test_agent_status_default",
+            "coordination::message_bus::tests::test_agent_status_enum"
+          ],
+          "memory_keywords": [
+            "mesh",
+            "cluster",
+            "node_discovery",
+            "p2p",
+            "gossip",
+            "peer"
+          ],
+          "issue_labels": [
+            "feature:mesh-network",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Data Commons economy",
+          "weight": 20,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "DataCommonsCommand"
+            },
+            {
+              "symbol": "wallet"
+            },
+            {
+              "symbol": "DataCommonsCommand"
+            }
+          ],
+          "test_anchors": [
+            "coordination::agent_registry::tests::test_get_active_agents_filters_stale",
+            "coordination::agent_registry::tests::test_register_and_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_creation",
+            "coordination::message_bus::tests::test_agent_message_error",
+            "coordination::message_bus::tests::test_agent_message_fluent_interface",
+            "coordination::message_bus::tests::test_agent_message_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_result",
+            "coordination::message_bus::tests::test_agent_message_task",
+            "coordination::message_bus::tests::test_agent_status_default",
+            "coordination::message_bus::tests::test_agent_status_enum"
+          ],
+          "memory_keywords": [
+            "mesh",
+            "cluster",
+            "node_discovery",
+            "p2p",
+            "gossip",
+            "peer"
+          ],
+          "issue_labels": [
+            "feature:mesh-network",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Dual License (MIT + Mesh)",
+          "weight": 10,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "LicenseCommand"
+            },
+            {
+              "symbol": "LicenseCommand"
+            }
+          ],
+          "test_anchors": [
+            "coordination::agent_registry::tests::test_get_active_agents_filters_stale",
+            "coordination::agent_registry::tests::test_register_and_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_creation",
+            "coordination::message_bus::tests::test_agent_message_error",
+            "coordination::message_bus::tests::test_agent_message_fluent_interface",
+            "coordination::message_bus::tests::test_agent_message_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_result",
+            "coordination::message_bus::tests::test_agent_message_task",
+            "coordination::message_bus::tests::test_agent_status_default",
+            "coordination::message_bus::tests::test_agent_status_enum"
+          ],
+          "memory_keywords": [
+            "mesh",
+            "cluster",
+            "node_discovery",
+            "p2p",
+            "gossip",
+            "peer"
+          ],
+          "issue_labels": [
+            "feature:mesh-network",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Governance DAO (mock)",
+          "weight": 15,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "DaoGovernanceSystem"
+            },
+            {
+              "symbol": "submit_proposal"
+            },
+            {
+              "symbol": "cast_vote"
+            },
+            {
+              "symbol": "evaluate_consensus"
+            }
+          ],
+          "test_anchors": [
+            "coordination::agent_registry::tests::test_get_active_agents_filters_stale",
+            "coordination::agent_registry::tests::test_register_and_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_creation",
+            "coordination::message_bus::tests::test_agent_message_error",
+            "coordination::message_bus::tests::test_agent_message_fluent_interface",
+            "coordination::message_bus::tests::test_agent_message_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_result",
+            "coordination::message_bus::tests::test_agent_message_task",
+            "coordination::message_bus::tests::test_agent_status_default",
+            "coordination::message_bus::tests::test_agent_status_enum"
+          ],
+          "memory_keywords": [
+            "mesh",
+            "cluster",
+            "node_discovery",
+            "p2p",
+            "gossip",
+            "peer"
+          ],
+          "issue_labels": [
+            "feature:mesh-network",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Governance DAO (on-chain)",
+          "weight": 20,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "with_evm"
+            },
+            {
+              "symbol": "EvmDaoConfig"
+            },
+            {
+              "symbol": "submit_proposal_evm"
+            },
+            {
+              "symbol": "cast_vote_evm"
+            },
+            {
+              "symbol": "sync_from_chain"
+            }
+          ],
+          "required_feature": "dao-evm",
+          "test_anchors": [
+            "coordination::agent_registry::tests::test_get_active_agents_filters_stale",
+            "coordination::agent_registry::tests::test_register_and_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_creation",
+            "coordination::message_bus::tests::test_agent_message_error",
+            "coordination::message_bus::tests::test_agent_message_fluent_interface",
+            "coordination::message_bus::tests::test_agent_message_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_result",
+            "coordination::message_bus::tests::test_agent_message_task",
+            "coordination::message_bus::tests::test_agent_status_default",
+            "coordination::message_bus::tests::test_agent_status_enum"
+          ],
+          "memory_keywords": [
+            "mesh",
+            "cluster",
+            "node_discovery",
+            "p2p",
+            "gossip",
+            "peer"
+          ],
+          "issue_labels": [
+            "feature:mesh-network",
+            "area:high"
+          ]
+        },
+        {
+          "name": "Tokenomics & XP wallet",
+          "weight": 15,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "tokenomics"
+            },
+            {
+              "symbol": "XpWallet"
+            }
+          ],
+          "test_anchors": [
+            "coordination::agent_registry::tests::test_get_active_agents_filters_stale",
+            "coordination::agent_registry::tests::test_register_and_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_creation",
+            "coordination::message_bus::tests::test_agent_message_error",
+            "coordination::message_bus::tests::test_agent_message_fluent_interface",
+            "coordination::message_bus::tests::test_agent_message_heartbeat",
+            "coordination::message_bus::tests::test_agent_message_result",
+            "coordination::message_bus::tests::test_agent_message_task",
+            "coordination::message_bus::tests::test_agent_status_default",
+            "coordination::message_bus::tests::test_agent_status_enum"
+          ],
+          "memory_keywords": [
+            "mesh",
+            "cluster",
+            "node_discovery",
+            "p2p",
+            "gossip",
+            "peer"
+          ],
+          "issue_labels": [
+            "feature:mesh-network",
+            "area:high"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "benchmarks",
+      "name": "Benchmarks",
+      "priority": "medium",
+      "subcomponents": [
+        {
+          "name": "Memory RAG benchmarks",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "memory_rag"
+            },
+            {
+              "symbol": "MemoryManagementAction"
+            }
+          ],
+          "test_anchors": [
+            "verification::auto_verifier::tests::exact_match_scores_one",
+            "verification::auto_verifier::tests::moderate_partial_match_scores_below_healthy_threshold",
+            "verification::auto_verifier::tests::strong_partial_match_can_satisfy_healthy_threshold",
+            "verification::auto_verifier::tests::weak_length_only_partial_scores_low"
+          ],
+          "memory_keywords": [
+            "benchmarks"
+          ],
+          "issue_labels": [
+            "feature:benchmarks",
+            "area:medium"
+          ]
+        },
+        {
+          "name": "HORMER navigation benchmarks",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "hormer_nav"
+            },
+            {
+              "symbol": "Hormer"
+            }
+          ],
+          "test_anchors": [
+            "verification::auto_verifier::tests::exact_match_scores_one",
+            "verification::auto_verifier::tests::moderate_partial_match_scores_below_healthy_threshold",
+            "verification::auto_verifier::tests::strong_partial_match_can_satisfy_healthy_threshold",
+            "verification::auto_verifier::tests::weak_length_only_partial_scores_low"
+          ],
+          "memory_keywords": [
+            "benchmarks"
+          ],
+          "issue_labels": [
+            "feature:benchmarks",
+            "area:medium"
+          ]
+        },
+        {
+          "name": "MinHash similarity benchmarks",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "minhash"
+            },
+            {
+              "symbol": "MinHashBench"
+            }
+          ],
+          "test_anchors": [
+            "verification::auto_verifier::tests::exact_match_scores_one",
+            "verification::auto_verifier::tests::moderate_partial_match_scores_below_healthy_threshold",
+            "verification::auto_verifier::tests::strong_partial_match_can_satisfy_healthy_threshold",
+            "verification::auto_verifier::tests::weak_length_only_partial_scores_low"
+          ],
+          "memory_keywords": [
+            "benchmarks"
+          ],
+          "issue_labels": [
+            "feature:benchmarks",
+            "area:medium"
+          ]
+        },
+        {
+          "name": "Memory sync benchmarks",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "sync"
+            },
+            {
+              "symbol": "SyncSession"
+            }
+          ],
+          "test_anchors": [
+            "verification::auto_verifier::tests::exact_match_scores_one",
+            "verification::auto_verifier::tests::moderate_partial_match_scores_below_healthy_threshold",
+            "verification::auto_verifier::tests::strong_partial_match_can_satisfy_healthy_threshold",
+            "verification::auto_verifier::tests::weak_length_only_partial_scores_low"
+          ],
+          "memory_keywords": [
+            "benchmarks"
+          ],
+          "issue_labels": [
+            "feature:benchmarks",
+            "area:medium"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "telegram-bot",
+      "name": "Telegram Bot",
+      "priority": "medium",
+      "subcomponents": [
+        {
+          "name": "Command Handling",
+          "weight": 40,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "XavierBot"
+            },
+            {
+              "symbol": "handle_memory_command"
+            },
+            {
+              "symbol": "load_bot_token"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_memory_command_parse_stats",
+            "test_memory_command_parse_search"
+          ],
+          "memory_keywords": [
+            "telegram",
+            "bot",
+            "command"
+          ],
+          "issue_labels": [
+            "feature:telegram-bot"
+          ]
+        },
+        {
+          "name": "Token Storage",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "load_bot_token"
+            },
+            {
+              "symbol": "TelegramConfig"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_load_bot_token_env_fallback_and_missing"
+          ],
+          "memory_keywords": [
+            "telegram",
+            "bot_token",
+            "vault"
+          ],
+          "issue_labels": [
+            "feature:telegram-bot"
+          ]
+        },
+        {
+          "name": "Webhook Mode",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "start_webhook"
+            },
+            {
+              "symbol": "XavierBot"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_escape_markdown_v2_escapes_special_chars"
+          ],
+          "memory_keywords": [
+            "telegram",
+            "webhook"
+          ],
+          "issue_labels": [
+            "feature:telegram-bot"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "notification-system",
+      "name": "Notification System",
+      "priority": "medium",
+      "subcomponents": [
+        {
+          "name": "Persistence",
+          "weight": 40,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "Notifier"
+            },
+            {
+              "symbol": "publish"
+            },
+            {
+              "symbol": "subscribe"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_notify_error_critical",
+            "test_notify_fixer_result_success"
+          ],
+          "memory_keywords": [
+            "notification",
+            "notifier",
+            "alert"
+          ],
+          "issue_labels": [
+            "feature:notifier"
+          ]
+        },
+        {
+          "name": "Event Bus",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "Notifier"
+            },
+            {
+              "symbol": "subscribe"
+            },
+            {
+              "symbol": "publish"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_notification_level_error",
+            "test_notification_level_success"
+          ],
+          "memory_keywords": [
+            "notification",
+            "event",
+            "bus"
+          ],
+          "issue_labels": [
+            "feature:notifier"
+          ]
+        },
+        {
+          "name": "Delivery",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "Notifier"
+            },
+            {
+              "symbol": "publish"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_notify_fixer_result_success"
+          ],
+          "memory_keywords": [
+            "notification",
+            "delivery",
+            "telegram"
+          ],
+          "issue_labels": [
+            "feature:notifier"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runtime-health",
+      "name": "Runtime Health",
+      "priority": "medium",
+      "subcomponents": [
+        {
+          "name": "Health Checks",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "collect_health"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_collect_health_returns_valid_structure",
+            "test_health_check_disk_pass"
+          ],
+          "memory_keywords": [
+            "health",
+            "collect_health",
+            "disk"
+          ],
+          "issue_labels": [
+            "feature:health"
+          ]
+        },
+        {
+          "name": "DB Integrity",
+          "weight": 35,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "run_integrity_check"
+            },
+            {
+              "symbol": "auto_vacuum_if_needed"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_integrity_check_on_dummy_db",
+            "test_auto_vacuum_no_op_on_healthy_db",
+            "test_conn_fragmentation_zero_on_fresh_db"
+          ],
+          "memory_keywords": [
+            "health",
+            "integrity",
+            "vacuum",
+            "sqlite"
+          ],
+          "issue_labels": [
+            "feature:health"
+          ]
+        },
+        {
+          "name": "Alerts",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "collect_health"
+            },
+            {
+              "symbol": "auto_vacuum_if_needed"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_health_check_disk_pass",
+            "test_conn_fragmentation_zero_on_fresh_db"
+          ],
+          "memory_keywords": [
+            "health",
+            "alert",
+            "fragmentation"
+          ],
+          "issue_labels": [
+            "feature:health"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "auto-improvement",
+      "name": "Auto Improvement",
+      "priority": "medium",
+      "subcomponents": [
+        {
+          "name": "Benchmark",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "AutoImprovementEngine"
+            },
+            {
+              "symbol": "run_cycle"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_metrics_perfect_recall"
+          ],
+          "memory_keywords": [
+            "auto-improvement",
+            "benchmark",
+            "recall"
+          ],
+          "issue_labels": [
+            "feature:auto-improvement"
+          ]
+        },
+        {
+          "name": "Gap Analysis",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "AutoImprovementEngine"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_analyze_gaps_identifies_low_recall"
+          ],
+          "memory_keywords": [
+            "auto-improvement",
+            "gap",
+            "recall"
+          ],
+          "issue_labels": [
+            "feature:auto-improvement"
+          ]
+        },
+        {
+          "name": "Experiments",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "AutoImprovementEngine"
+            },
+            {
+              "symbol": "run_cycle"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_generate_experiments_emits_overrides",
+            "test_engine_cycle_no_memory"
+          ],
+          "memory_keywords": [
+            "auto-improvement",
+            "experiment",
+            "override"
+          ],
+          "issue_labels": [
+            "feature:auto-improvement"
+          ]
+        },
+        {
+          "name": "Validation",
+          "weight": 25,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "validate_experiments"
+            },
+            {
+              "symbol": "AutoImprovementEngine"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_config_overrides_for_recall_are_concrete"
+          ],
+          "memory_keywords": [
+            "auto-improvement",
+            "validation",
+            "experiment"
+          ],
+          "issue_labels": [
+            "feature:auto-improvement"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "context-regeneration",
+      "name": "Context Regeneration",
+      "priority": "medium",
+      "subcomponents": [
+        {
+          "name": "Eval Harness",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "RetrievalMetrics"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_is_hit_case_insensitive_substring",
+            "test_metrics_perfect_recall"
+          ],
+          "memory_keywords": [
+            "retrieval",
+            "eval",
+            "recall",
+            "precision"
+          ],
+          "issue_labels": [
+            "feature:retrieval-eval"
+          ]
+        },
+        {
+          "name": "RRF Tuner",
+          "weight": 30,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "TuningHistory"
+            },
+            {
+              "symbol": "tune"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_tune_picks_best_candidate"
+          ],
+          "memory_keywords": [
+            "retrieval",
+            "tuner",
+            "rrf",
+            "rrf_k"
+          ],
+          "issue_labels": [
+            "feature:retrieval-tuner"
+          ]
+        },
+        {
+          "name": "Drift Detection",
+          "weight": 20,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "detect_recall_drift"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_detect_recall_drift_floor_crossing"
+          ],
+          "memory_keywords": [
+            "retrieval",
+            "drift",
+            "recall"
+          ],
+          "issue_labels": [
+            "feature:retrieval-tuner"
+          ]
+        },
+        {
+          "name": "Persistence",
+          "weight": 20,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "TuningHistory"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "test_apply_retrieval_config_changes_layer_weights"
+          ],
+          "memory_keywords": [
+            "retrieval",
+            "tuning",
+            "history",
+            "persist"
+          ],
+          "issue_labels": [
+            "feature:retrieval-tuner"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mesh-iroh-transport",
+      "name": "Mesh Iroh Transport",
+      "priority": "medium",
+      "subcomponents": [
+        {
+          "name": "Transport",
+          "weight": 50,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "IrohTransport"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "xmesh_alpn_is_valid"
+          ],
+          "memory_keywords": [
+            "mesh",
+            "iroh",
+            "transport",
+            "p2p"
+          ],
+          "issue_labels": [
+            "feature:iroh_transport"
+          ]
+        },
+        {
+          "name": "Protocol",
+          "weight": 50,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "XMESH_ALPN"
+            },
+            {
+              "symbol": "MeshRequest"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "mesh_request_serializes_with_op_tag"
+          ],
+          "memory_keywords": [
+            "mesh",
+            "xmesh",
+            "alpn",
+            "protocol"
+          ],
+          "issue_labels": [
+            "feature:iroh_transport"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "storage-migrations",
+      "name": "Storage Migrations",
+      "priority": "medium",
+      "subcomponents": [
+        {
+          "name": "Migration Runner",
+          "weight": 40,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "MigrationRunner"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "fresh_db_migrates_to_latest_version",
+            "rerunning_is_a_no_op",
+            "migration_failure_rolls_back_transaction"
+          ],
+          "memory_keywords": [
+            "migration",
+            "schema",
+            "runner",
+            "sqlite"
+          ],
+          "issue_labels": [
+            "feature:storage-migrations"
+          ]
+        },
+        {
+          "name": "Baseline Migrations",
+          "weight": 40,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "baseline_migrations"
+            },
+            {
+              "symbol": "schema_migrations"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "fresh_db_migrates_to_latest_version",
+            "rerunning_is_a_no_op"
+          ],
+          "memory_keywords": [
+            "migration",
+            "baseline",
+            "schema"
+          ],
+          "issue_labels": [
+            "feature:storage-migrations"
+          ]
+        },
+        {
+          "name": "Legacy Backfill",
+          "weight": 20,
+          "max_maturity": 100,
+          "static_checks": [
+            {
+              "symbol": "baseline_migrations"
+            }
+          ],
+          "required_feature": null,
+          "test_anchors": [
+            "legacy_db_is_detected_and_backfilled"
+          ],
+          "memory_keywords": [
+            "migration",
+            "legacy",
+            "backfill"
+          ],
+          "issue_labels": [
+            "feature:storage-migrations"
+          ]
+        }
+      ]
+    }
+  ]
+}
