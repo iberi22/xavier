@@ -561,17 +561,32 @@ fn build_edges(
         .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
         .collect();
 
+    let source_lines: HashMap<&str, Vec<&str>> = sources
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.lines().collect()))
+        .collect();
+
     let resolver = CallResolver::new(all_symbols, sources);
 
     for caller in &new_callable_symbols {
-        let Some(source) = sources.get(&caller.file_path) else {
+        let Some(lines) = source_lines.get(caller.file_path.as_str()) else {
             continue;
         };
         let caller_id = caller
             .stable_id
             .clone()
             .unwrap_or_else(|| caller.deterministic_id("default"));
-        let body = symbol_source_slice(source, caller);
+
+        let start = caller.start_line.saturating_sub(1) as usize;
+        let end = caller.end_line as usize;
+        let body = if start < lines.len() {
+            let take_len = end.saturating_sub(start).max(1);
+            let end_idx = (start + take_len).min(lines.len());
+            lines[start..end_idx].join("\n")
+        } else {
+            String::new()
+        };
+
         let callee_names = extract_call_names(&body);
 
         for name in callee_names {
@@ -614,6 +629,7 @@ fn build_edges(
     edges
 }
 
+#[allow(dead_code)]
 fn symbol_source_slice(source: &str, symbol: &Symbol) -> String {
     let start = symbol.start_line.saturating_sub(1) as usize;
     let end = symbol.end_line as usize;
@@ -1057,4 +1073,46 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn build_edges_10k_symbols_benchmark() {
+        let mut symbols = Vec::with_capacity(10_000);
+        let mut sources = HashMap::new();
+
+        for f in 0..1000 {
+            let file_path = format!("src/file_{}.rs", f);
+            let mut file_source = String::new();
+            for s in 0..10 {
+                let sym_name = format!("func_{}_{}", f, s);
+                let next_sym = format!("func_{}_{}", f, (s + 1) % 10);
+                file_source.push_str(&format!(
+                    "fn {}() {{\n    {}();\n    extern_call_{}();\n}}\n\n",
+                    sym_name, next_sym, s
+                ));
+                symbols.push(Symbol {
+                    name: sym_name.clone(),
+                    file_path: file_path.clone(),
+                    kind: SymbolKind::Function,
+                    lang: Language::Rust,
+                    start_line: (s * 5 + 1) as u32,
+                    end_line: (s * 5 + 4) as u32,
+                    stable_id: Some(format!("sym:{}:{}", file_path, sym_name)),
+                    ..Default::default()
+                });
+            }
+            sources.insert(file_path, file_source);
+        }
+
+        let start = std::time::Instant::now();
+        let edges = build_edges(&symbols, &symbols, &sources);
+        let duration = start.elapsed();
+
+        println!("DEBUG BENCHMARK DURATION: {:.4}s, edges count: {}", duration.as_secs_f64(), edges.len());
+        assert!(
+            duration.as_secs_f64() < 5.0,
+            "build_edges took {:.2}s, expected < 5s (O(n) hash-map; original double-loop ~40s+)",
+            duration.as_secs_f64()
+        );
+    }
 }
+
