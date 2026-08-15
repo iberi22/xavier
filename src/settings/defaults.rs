@@ -46,7 +46,25 @@ impl Default for WorkspaceSettings {
                     provider: "custom".to_string(),
                     endpoint: "https://custom.expert/api".to_string(),
                     api_key: Some("mock-custom-key".to_string()),
-                }
+                },
+                MiniExpertConfig {
+                    name: "qwen3-4b".to_string(),
+                    provider: "local".to_string(),
+                    endpoint: "http://localhost:11434/v1".to_string(),
+                    api_key: None,
+                },
+                MiniExpertConfig {
+                    name: "gemma-3-4b".to_string(),
+                    provider: "local".to_string(),
+                    endpoint: "http://localhost:11434/v1".to_string(),
+                    api_key: None,
+                },
+                MiniExpertConfig {
+                    name: "llama-3.2-3b".to_string(),
+                    provider: "local".to_string(),
+                    endpoint: "http://localhost:11434/v1".to_string(),
+                    api_key: None,
+                },
             ],
         }
     }
