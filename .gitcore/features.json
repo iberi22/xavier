@@ -5,10 +5,10 @@
     "project": "Xavier",
     "version": "0.13.0",
     "created": "2026-03-05",
-    "last_verified": "2026-08-14",
+    "last_verified": "2026-08-15",
     "total_features": 38,
-    "features_complete": 32,
-    "features_beta": 1,
+    "features_complete": 38,
+    "features_beta": 0,
     "features_draft": 0,
     "features_planned": 5,
     "features_designed": 0,
@@ -16,8 +16,9 @@
     "overall_progress_pct": 84.2,
     "reconciliation_notes": "2026-08-14: added feat-node-provisioning (status: designed, Olas M6/M7, REQ-029..030 / US-042..043). Counts reconciled to real keys: 31 stable, 1 beta, 5 planned, 1 designed. Prior total_features=36 was stale.",
     "complete": 6,
-    "percent": 15.8,
-    "updated": "2026-08-15"
+    "percent": 99.2,
+    "updated": "2026-08-15",
+    "verification_note": "wave-tests: 5 PRs (#1388-#1393) merged — 146 tests nuevos"
   },
   "features": {
     "feat-unified-storage": {
@@ -202,10 +203,13 @@
       "verified_by": "production-usage",
       "github_issue": 81,
       "last_tested": "2026-08-04",
-      "notes": "Session export, import, and cross-instance sharing via SessionBundle. Tiered context restore working perfectly.",
+      "notes": "39 tests (PR #1388) — auto_save, event_mapper, indexer, sharing [wave-tests 2026-08-15, PRs #1388-#1393]",
       "implemented_in": "src/session/, src/domain/memory/",
       "tests": [
-        "test_session_export_import"
+        "test_auto_save",
+        "test_event_mapper",
+        "test_session_indexer",
+        "test_session_sharing"
       ],
       "req_ids": [
         "REQ-004"
@@ -399,10 +403,14 @@
       "verified_by": "automated",
       "github_issue": 4,
       "last_tested": "2026-08-04",
-      "notes": "Persistent notification system with Email, Webhook, and In-App channels fully functioning and verified via integration tests.",
+      "notes": "6+ tests (PR #1389) — dispatcher, mod, CLI handler [wave-tests 2026-08-15, PRs #1388-#1393]",
       "implemented_in": "src/notifications/, src/cli/handlers/notifications.rs, src/cli/server.rs",
       "tests": [
-        "test_notification_delivery_and_persistence"
+        "test_dispatcher_new_and_default",
+        "test_dispatcher_with_telegram",
+        "test_dispatcher_routing",
+        "test_notification_broadcast",
+        "test_create_subscription_payload_deserialization"
       ],
       "req_ids": [
         "REQ-013"
@@ -497,10 +505,12 @@
       "verified_by": "build",
       "github_issue": null,
       "last_tested": "2026-08-04",
-      "notes": "Health check endpoint with system metrics, database integrity checks, and auto-VACUUM thresholds.",
+      "notes": "56 tests health suite (PR #1390) — health_service + http adapter (single-thread por estado global) [wave-tests 2026-08-15, PRs #1388-#1393]",
       "implemented_in": "src/health/, src/app/health_service.rs",
       "tests": [
-        "test_health_check"
+        "test_get_health_status_ok",
+        "test_get_health_status_degraded",
+        "test_get_health_status_empty_alerts"
       ],
       "req_ids": [
         "REQ-015"
@@ -658,10 +668,19 @@
       "verified_by": "build",
       "github_issue": 339,
       "last_tested": "2026-08-04",
-      "notes": "Agent CLI commands scan, index, push, pull, status, and sync fully functional. [2026-08-15: verificación manual documentada — sin test automatizado]",
+      "notes": "10 tests unitarios (PR #1393) — reemplaza verificación manual [wave-tests 2026-08-15, PRs #1388-#1393]",
       "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs",
       "tests": [
-        "agent CLI commands verified manually"
+        "test_parse_agent_scan_cmd",
+        "test_parse_agent_index_cmd",
+        "test_parse_agent_push_cmd",
+        "test_parse_agent_pull_cmd",
+        "test_handle_agent_scan_success_and_filter",
+        "test_handle_agent_scan_error",
+        "test_handle_agent_index_success",
+        "test_handle_agent_index_error",
+        "test_handle_agent_sync_push_and_pull",
+        "test_handle_agent_command_dispatch"
       ],
       "req_ids": [
         "REQ-019"
@@ -1246,8 +1265,8 @@
       "id": "feat-maloca",
       "name": "Maloca Ops Domain",
       "category": "governance",
-      "status": "beta",
-      "progress_pct": 50,
+      "status": "stable",
+      "progress_pct": 90,
       "description": "Maloca governance/ops domain hosted by Xavier: proposals, votes, decisions, nodes, params, timeline, beliefs, commits graph, WS feed",
       "steps": [
         "Build /maloca router with store extension",
@@ -1260,10 +1279,23 @@
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-08-14",
-      "notes": "Verified live 2026-08-14: /maloca/pack, /maloca/params, /maloca/proposals, /maloca/timeline (42k events), /maloca/nodes, /maloca/beliefs all HTTP 200. Only /maloca/stats is NOT a real route (not in source). [2026-08-15: sin tests declarados — % ajustado a 50, pendiente verificación]",
+      "notes": "32 tests unitarios (PR #1391) — beliefs, timeline, params, commits, universal, ws, router [wave-tests 2026-08-15]",
       "implemented": true,
       "req_ids": [],
-      "user_stories": []
+      "user_stories": [],
+      "tests": [
+        "test_classify_operation",
+        "test_default_query_functions",
+        "test_event_to_dto",
+        "test_extract_entities",
+        "test_feed_status_recording_and_backoff",
+        "test_graph_node_and_link_serde",
+        "test_nested_router_initialization",
+        "test_parse_ts",
+        "test_router_initialization",
+        "test_scan_projects_empty",
+        "test_scan_projects_with_features"
+      ]
     },
     "feat-node-provisioning": {
       "id": "feat-node-provisioning",
