@@ -434,6 +434,12 @@ pub enum AgentCommand {
         /// Filter by agent/IDE name
         #[arg(short, long)]
         agent: Option<String>,
+        /// Index local Codex CLI sessions (~/.codex/sessions)
+        #[arg(long, default_value_t = false)]
+        codex: bool,
+        /// Index Jules sessions / issues
+        #[arg(long, default_value_t = false)]
+        jules: bool,
         /// Output in JSON format
         #[arg(long)]
         json: bool,

@@ -145,6 +145,40 @@ pub async fn agent_push_context_handler(
     }
 }
 
+/// Codex index handler.
+pub async fn codex_index_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let importer = crate::memory::codex_importer::CodexImporter::new();
+    match importer.import_all(state.store.as_ref()).await {
+        Ok(records) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "indexed_count": records.len(),
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to index Codex sessions: {}", e),
+        })),
+    }
+}
+
+/// Jules index handler.
+pub async fn jules_index_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let importer = crate::memory::jules_importer::JulesImporter::new();
+    match importer.import_all(state.store.as_ref()).await {
+        Ok(records) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "indexed_count": records.len(),
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to index Jules sessions: {}", e),
+        })),
+    }
+}
+
 /// Agent unregister handler.
 pub async fn agent_unregister_handler(
     State(state): State<CliState>,

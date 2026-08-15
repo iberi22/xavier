@@ -20,6 +20,8 @@ pub mod hierarchy;
 pub mod languages;
 pub mod layers_config;
 pub mod manager;
+pub mod codex_importer;
+pub mod jules_importer;
 pub mod openclaw_indexer;
 pub mod openclaw_scanner;
 pub mod pack;
