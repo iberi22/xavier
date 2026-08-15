@@ -160,6 +160,89 @@ pub struct V1ExportParams {
     pub public: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RecallEvalCase {
+    pub query: String,
+    pub expected_path: String,
+    #[serde(default = "default_expected_rank")]
+    pub expected_rank: usize,
+}
+
+fn default_expected_rank() -> usize {
+    1
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RecallEvalRequest {
+    pub query: Option<String>,
+    pub queries: Option<Vec<String>>,
+    pub limit: Option<usize>,
+    pub cases: Option<Vec<RecallEvalCase>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RecallHitSource {
+    pub id: String,
+    pub path: String,
+    pub source: String,
+    pub score: f32,
+    pub rank: usize,
+    pub expected_rank: usize,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RecallEvalResponse {
+    pub status: String,
+    pub hits: Vec<RecallHitSource>,
+    pub metrics: crate::retrieval::eval::RetrievalMetrics,
+    pub source_count: usize,
+    pub sources_by_namespace: std::collections::HashMap<String, usize>,
+    pub embedding_coverage: crate::health::EmbeddingCoverage,
+}
+
+pub fn extract_source_namespace(path: &str, metadata: &serde_json::Value) -> String {
+    if let Some(src) = metadata
+        .get("provenance")
+        .and_then(|p| p.get("source_app"))
+        .and_then(|v| v.as_str())
+    {
+        if !src.trim().is_empty() && src != "unknown" {
+            return src.to_string();
+        }
+    }
+    if let Some(ns) = metadata
+        .get("namespace")
+        .and_then(|n| n.get("project"))
+        .and_then(|v| v.as_str())
+    {
+        if !ns.trim().is_empty() && ns != "unknown" {
+            return ns.to_string();
+        }
+    }
+    let lower_path = path.to_lowercase();
+    if lower_path.contains("openclaw") {
+        "openclaw".to_string()
+    } else if lower_path.contains("jules") {
+        "jules".to_string()
+    } else if lower_path.contains("hermes") {
+        "hermes".to_string()
+    } else if lower_path.starts_with("features") {
+        "features".to_string()
+    } else if lower_path.starts_with("stability") {
+        "stability".to_string()
+    } else if !path.trim().is_empty() {
+        let seg = path.split(['/', ':', '_']).next().unwrap_or("default");
+        if seg.is_empty() {
+            "default".to_string()
+        } else {
+            seg.to_string()
+        }
+    } else {
+        "default".to_string()
+    }
+}
+
 /// V1 memories export.
 pub async fn v1_memories_export(
     Extension(workspace): Extension<WorkspaceContext>,
@@ -1183,6 +1266,150 @@ pub async fn v1_context_assemble(
     .into_response()
 }
 
+/// POST /v1/memory/recall-eval endpoint
+///
+/// Evaluates retrieval quality over test queries/cases, reporting rank deviation σ,
+/// hit rate, source provenance breakdown, and embedding coverage %.
+pub async fn v1_memory_recall_eval(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<RecallEvalRequest>,
+) -> impl IntoResponse {
+    let limit = payload.limit.unwrap_or(5).clamp(1, 50);
+
+    let cases: Vec<RecallEvalCase> = if let Some(cs) = payload.cases {
+        cs
+    } else if let Some(queries) = payload.queries {
+        queries
+            .into_iter()
+            .map(|q| RecallEvalCase {
+                expected_path: q.clone(),
+                query: q,
+                expected_rank: 1,
+            })
+            .collect()
+    } else if let Some(q) = payload.query {
+        vec![RecallEvalCase {
+            expected_path: q.clone(),
+            query: q,
+            expected_rank: 1,
+        }]
+    } else {
+        return crate::error::ApiError::validation("query, queries, or cases required")
+            .into_ok_response();
+    };
+
+    let mut case_results = Vec::new();
+    let mut hits_out = Vec::new();
+    let mut expected_ranks = Vec::new();
+    let mut sources_by_namespace: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+
+    for (idx, case) in cases.iter().enumerate() {
+        expected_ranks.push(case.expected_rank);
+        let docs = query_with_embedding_filtered(
+            &workspace.workspace.memory,
+            &case.query,
+            limit,
+            None,
+        )
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|doc| is_primary_memory(&doc.metadata))
+        .collect::<Vec<_>>();
+
+        let mut first_hit_rank = None;
+        let mut hit_found = false;
+
+        for (rank_idx, doc) in docs.iter().enumerate() {
+            let rank = rank_idx + 1;
+            let is_match = crate::retrieval::eval::is_hit(&doc.path, &case.expected_path)
+                || crate::retrieval::eval::is_hit(&doc.content, &case.expected_path);
+
+            let source_ns = extract_source_namespace(&doc.path, &doc.metadata);
+            *sources_by_namespace.entry(source_ns.clone()).or_insert(0) += 1;
+
+            if is_match && !hit_found {
+                hit_found = true;
+                first_hit_rank = Some(rank);
+            }
+
+            hits_out.push(RecallHitSource {
+                id: doc.id.clone().unwrap_or_else(|| doc.path.clone()),
+                path: doc.path.clone(),
+                source: source_ns,
+                score: doc.score,
+                rank,
+                expected_rank: case.expected_rank,
+                confidence: (doc.score as f64).clamp(0.0, 1.0),
+            });
+        }
+
+        case_results.push(crate::retrieval::eval::CaseResult {
+            case_id: format!("case-{idx}"),
+            hit: hit_found,
+            first_hit_rank,
+        });
+    }
+
+    let metrics = crate::retrieval::eval::RetrievalMetrics::from_results_with_expected(
+        "recall-eval",
+        &case_results,
+        limit,
+        &expected_ranks,
+    );
+
+    let settings = crate::settings::XavierSettings::current();
+    let embedding_coverage = crate::health::gather_embedding_coverage(&settings);
+
+    let source_count = hits_out
+        .iter()
+        .filter(|h| h.source != "unknown")
+        .count();
+
+    Json(RecallEvalResponse {
+        status: "ok".to_string(),
+        hits: hits_out,
+        metrics,
+        source_count,
+        sources_by_namespace,
+        embedding_coverage,
+    })
+    .into_response()
+}
+
+/// GET /v1/memory/recall/stats endpoint
+///
+/// Returns stats on recall metrics, active memory store size, and embedding coverage.
+pub async fn v1_memory_recall_stats(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    let all_docs = workspace.workspace.memory.all_documents().await;
+    let primary_docs: Vec<_> = all_docs
+        .into_iter()
+        .filter(|d| is_primary_memory(&d.metadata))
+        .collect();
+
+    let mut sources_by_namespace: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+
+    for doc in &primary_docs {
+        let ns = extract_source_namespace(&doc.path, &doc.metadata);
+        *sources_by_namespace.entry(ns).or_insert(0) += 1;
+    }
+
+    let settings = crate::settings::XavierSettings::current();
+    let embedding_coverage = crate::health::gather_embedding_coverage(&settings);
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "total_documents": primary_docs.len(),
+        "sources_by_namespace": sources_by_namespace,
+        "embedding_coverage": embedding_coverage,
+    }))
+    .into_response()
+}
+
 /// V1 memories list.
 pub async fn v1_memories_list(
     Extension(workspace): Extension<WorkspaceContext>,
@@ -1796,9 +2023,108 @@ mod tests {
             .route("/v1/memories/search", post(v1_memories_search))
             .route("/v1/memories/prune", post(v1_memories_prune))
             .route("/v1/context/assemble", post(v1_context_assemble))
+            .route("/v1/memory/recall-eval", post(v1_memory_recall_eval))
+            .route("/v1/memory/recall/stats", get(v1_memory_recall_stats))
             .route("/v1/mesh/health", get(v1_mesh_health))
             .layer(Extension(workspace))
             .with_state(state)
+    }
+
+    #[tokio::test]
+    async fn test_v1_memory_recall_eval_5_known_memories() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // 1. Insert 5 known test memories across different namespaces/sources
+        let test_docs = vec![
+            ("features/node-provisioning", "SWAL node provisioning cloud VPS registration script", "features"),
+            ("stability/repo/latest", "ssp stability report pass rate 100 percent", "stability"),
+            ("openclaw://agent1/session", "openclaw agent telemetry observation delta", "openclaw"),
+            ("jules://session1/task", "jules cloud coding session task resolution", "jules"),
+            ("hermes/session1/logs", "hermes session log database entry", "hermes"),
+        ];
+
+        for (path, text, kind) in &test_docs {
+            let add_req = Request::builder()
+                .method("POST")
+                .uri("/v1/memories")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "text": text,
+                        "path": path,
+                        "kind": kind,
+                        "provenance": {
+                            "source_app": kind
+                        }
+                    })
+                    .to_string(),
+                ))
+                .expect("failed build add req");
+            let resp = app.clone().oneshot(add_req).await.expect("execute add req");
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+
+        // 2. Perform recall evaluation with cases for these 5 memories
+        let cases = vec![
+            serde_json::json!({"query": "node provisioning", "expected_path": "node-provisioning", "expected_rank": 1}),
+            serde_json::json!({"query": "ssp stability", "expected_path": "stability/repo/latest", "expected_rank": 1}),
+            serde_json::json!({"query": "openclaw agent telemetry", "expected_path": "openclaw", "expected_rank": 1}),
+            serde_json::json!({"query": "jules cloud coding", "expected_path": "jules", "expected_rank": 1}),
+            serde_json::json!({"query": "hermes session log", "expected_path": "hermes/session1/logs", "expected_rank": 1}),
+        ];
+
+        let eval_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memory/recall-eval")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "limit": 5,
+                    "cases": cases,
+                })
+                .to_string(),
+            ))
+            .expect("build eval req");
+
+        let resp = app.clone().oneshot(eval_req).await.expect("execute eval req");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let eval_resp: RecallEvalResponse = serde_json::from_slice(&body).expect("parse recall eval JSON");
+
+        assert_eq!(eval_resp.status, "ok");
+        assert_eq!(eval_resp.metrics.num_cases, 5);
+        assert!((eval_resp.metrics.recall_at_k - 1.0).abs() < 1e-6, "recall_at_k should be 1.0");
+        assert!(eval_resp.metrics.sigma <= 0.1, "sigma rank deviation should be <= 0.1, got {}", eval_resp.metrics.sigma);
+        assert!(eval_resp.source_count > 0, "source_count should be > 0");
+
+        // Assert hits have source != "unknown"
+        for hit in &eval_resp.hits {
+            assert_ne!(hit.source, "unknown", "source should not be unknown for hit {}", hit.path);
+        }
+
+        // Assert namespace breakdown contains the sources
+        assert!(eval_resp.sources_by_namespace.contains_key("features"));
+        assert!(eval_resp.sources_by_namespace.contains_key("stability"));
+        assert!(eval_resp.sources_by_namespace.contains_key("openclaw"));
+        assert!(eval_resp.sources_by_namespace.contains_key("jules"));
+        assert!(eval_resp.sources_by_namespace.contains_key("hermes"));
+
+        // 3. Test GET /v1/memory/recall/stats
+        let stats_req = Request::builder()
+            .method("GET")
+            .uri("/v1/memory/recall/stats")
+            .body(Body::empty())
+            .expect("build stats req");
+
+        let resp = app.oneshot(stats_req).await.expect("execute stats req");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let stats_val: serde_json::Value = serde_json::from_slice(&body).expect("parse stats JSON");
+        assert_eq!(stats_val["status"], "ok");
+        assert_eq!(stats_val["total_documents"].as_u64(), Some(5));
+        assert!(stats_val.get("embedding_coverage").is_some());
     }
 
     #[tokio::test]
