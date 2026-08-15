@@ -838,11 +838,21 @@ pub struct MiniExpertInvokeResponse {
 
 /// GET /v1/agents/mini-experts — list configured mini-experts.
 pub async fn mini_experts_list_handler() -> impl axum::response::IntoResponse {
+    let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
+    let reg_entries = registry.list();
+
     let settings = XavierSettings::current();
     let mut mini_experts = settings.workspace.mini_experts;
     if mini_experts.is_empty() {
         mini_experts = XavierSettings::default().workspace.mini_experts;
     }
+
+    for entry in reg_entries {
+        if !mini_experts.iter().any(|e| e.name == entry.name) {
+            mini_experts.push(entry.to_config());
+        }
+    }
+
     Json(mini_experts)
 }
 
@@ -850,12 +860,17 @@ pub async fn mini_experts_list_handler() -> impl axum::response::IntoResponse {
 pub async fn mini_expert_invoke_handler(
     Json(payload): Json<MiniExpertInvokeRequest>,
 ) -> Result<Json<MiniExpertInvokeResponse>, (axum::http::StatusCode, String)> {
+    let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
     let settings = XavierSettings::current();
     let mut mini_experts = settings.workspace.mini_experts;
     if mini_experts.is_empty() {
         mini_experts = XavierSettings::default().workspace.mini_experts;
     }
-    let router = crate::agents::provider_router::ProviderRouter::new(mini_experts);
+
+    let router = crate::agents::provider_router::ProviderRouter::from_registry_and_configs(
+        &registry,
+        mini_experts,
+    );
 
     let expert_config = router.route(&payload.name).ok_or_else(|| {
         (
