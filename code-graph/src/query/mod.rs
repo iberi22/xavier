@@ -184,6 +184,75 @@ impl QueryEngine {
         self.dependencies(query, Some(EdgeType::Calls), depth, limit)
     }
 
+    /// Calculate blast radius of a symbol using BFS on incoming Calls edges.
+    ///
+    /// Returns a list of tuple `(Symbol, usize)` where `usize` is the depth
+    /// (1 for direct callers, 2 for callers of direct callers, etc.) up to `max_depth`.
+    pub fn blast_radius(
+        &self,
+        symbol_name: &str,
+        max_depth: usize,
+    ) -> Result<Vec<(Symbol, usize)>> {
+        let max_depth = max_depth.clamp(1, 8);
+
+        let mut start_ids = Vec::new();
+        if symbol_name.len() == 64 && symbol_name.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            if let Some(sym) = self.db.symbol_by_stable_id(symbol_name)? {
+                if let Some(id) = sym.stable_id {
+                    start_ids.push(id);
+                }
+            }
+        } else {
+            let matches = self.db.find_by_name(symbol_name, 10)?;
+            let matches = if matches.is_empty() {
+                self.db.find_symbols(symbol_name, 10)?.symbols
+            } else {
+                matches
+            };
+            for sym in matches {
+                if let Some(id) = sym.stable_id {
+                    if !start_ids.contains(&id) {
+                        start_ids.push(id);
+                    }
+                }
+            }
+        }
+
+        if start_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut visited: HashSet<String> = start_ids.iter().cloned().collect();
+        let mut queue: VecDeque<(String, usize)> =
+            start_ids.into_iter().map(|id| (id, 0)).collect();
+        let mut results = Vec::new();
+
+        while let Some((curr_id, curr_depth)) = queue.pop_front() {
+            if curr_depth >= max_depth {
+                continue;
+            }
+
+            let edges = self
+                .db
+                .find_edges_to(&curr_id, Some(EdgeType::Calls), 1000)?;
+            for edge in edges {
+                let caller_id = edge.from_symbol;
+                if caller_id.starts_with("file:") || caller_id.starts_with("module:") {
+                    continue;
+                }
+                if visited.insert(caller_id.clone()) {
+                    let next_depth = curr_depth + 1;
+                    if let Some(sym) = self.db.symbol_by_stable_id(&caller_id)? {
+                        results.push((sym, next_depth));
+                        queue.push_back((caller_id, next_depth));
+                    }
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     pub fn hubs(&self, min_degree: u64, limit: usize) -> Result<Vec<HubNode>> {
         self.db.hub_nodes(min_degree, limit)
     }

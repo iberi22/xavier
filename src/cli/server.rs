@@ -634,6 +634,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             post(code_reverse_dependencies_handler),
         )
         .route("/code/call-chain", post(code_call_chain_handler))
+        .route("/code/blast-radius", post(code_blast_radius_handler))
         // Code graph canvas projection
         .route("/code/graph/view", get(code_graph_view_handler))
         .route("/code/hubs", get(code_hubs_handler))

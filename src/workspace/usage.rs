@@ -115,6 +115,7 @@ impl UsageEvent {
             | ("POST", "/code/dependencies")
             | ("POST", "/code/reverse-dependencies")
             | ("POST", "/code/call-chain")
+            | ("POST", "/code/blast-radius")
             | ("GET", "/code/hubs")
             | ("GET", "/code/hotspots") => Self {
                 category: UsageCategory::Code,
