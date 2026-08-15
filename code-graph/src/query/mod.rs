@@ -5,7 +5,8 @@ pub mod tests;
 use crate::db::CodeGraphDB;
 use crate::error::Result;
 use crate::types::{
-    CodeEdge, ComplexityHotspot, EdgeType, HubNode, QueryResult, Symbol, SymbolKind,
+    CodeEdge, ComplexityHotspot, EdgeType, HubNode, MemorySymbolLink, QueryResult, Symbol,
+    SymbolKind,
 };
 use std::collections::HashMap;
 use std::collections::{HashSet, VecDeque};
@@ -274,5 +275,24 @@ impl QueryEngine {
     /// Get indexing statistics
     pub fn stats(&self) -> Result<crate::types::IndexStats> {
         self.db.stats()
+    }
+
+    /// Get memories that mention a given symbol
+    pub fn memories_for_symbol(&self, symbol: &str) -> Result<Vec<MemorySymbolLink>> {
+        self.db.find_memories_for_symbol(symbol, 100)
+    }
+
+    /// Get memories that mention a given symbol with limit
+    pub fn memories_for_symbol_limit(
+        &self,
+        symbol: &str,
+        limit: usize,
+    ) -> Result<Vec<MemorySymbolLink>> {
+        self.db.find_memories_for_symbol(symbol, limit)
+    }
+
+    /// Get symbols mentioned by a memory_id
+    pub fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<Symbol>> {
+        self.db.find_symbols_for_memory(memory_id)
     }
 }

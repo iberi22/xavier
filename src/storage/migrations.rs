@@ -273,6 +273,16 @@ CREATE TABLE IF NOT EXISTS notifications (
     read INTEGER NOT NULL DEFAULT 0,
     severity TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS memory_symbol_links (
+    memory_id TEXT NOT NULL,
+    symbol_id TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (memory_id, symbol_id)
+);
+CREATE INDEX IF NOT EXISTS idx_msl_symbol ON memory_symbol_links(symbol_id);
+CREATE INDEX IF NOT EXISTS idx_msl_memory ON memory_symbol_links(memory_id);
 "#;
 
 // ===========================================================================

@@ -619,6 +619,12 @@ pub trait MemoryStore: Send + Sync {
     async fn save_entity_graph_snapshot(&self, _workspace_id: &str, _data: &str) -> Result<()> {
         Ok(())
     }
+
+    /// Return code symbols linked to a given memory_id.
+    async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
+        let _ = memory_id;
+        Ok(Vec::new())
+    }
 }
 
 // ---------------------------------------------------------------------------

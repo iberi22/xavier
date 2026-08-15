@@ -412,6 +412,7 @@ async fn test_consolidation_merge_duplicate_paths_after_dedup_config_change() {
         metadata_iv: None,
         score: 0.0,
         deleted_at: None,
+        ..Default::default()
     };
 
     store.put(rec1.clone()).await.expect("put initial record");
@@ -451,6 +452,7 @@ async fn test_consolidation_merge_duplicate_paths_after_dedup_config_change() {
         metadata_iv: None,
         score: 0.0,
         deleted_at: None,
+        ..Default::default()
     };
 
     store.put(rec2).await.expect("put superset record with dedup active");
