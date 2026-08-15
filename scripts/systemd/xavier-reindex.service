@@ -1,0 +1,11 @@
+[Unit]
+Description=Xavier Embeddings Daily Reindex Task
+Documentation=file://%h/proyectosSWAL/cores/xavier/docs/ops/reindex-embeddings.md
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/proyectosSWAL/cores/xavier
+ExecStart=%h/proyectosSWAL/cores/xavier/scripts/reindex-embeddings.sh --limit 500
+StandardOutput=journal
+StandardError=journal
