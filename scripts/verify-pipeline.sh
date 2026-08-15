@@ -112,11 +112,17 @@ PY
 if [ "$MODE" = "full" ] && command -v cargo >/dev/null 2>&1; then
   echo "==> [4/5] Executing declared tests (stable + beta)..."
   FAILED=0
-  while IFS= read -r cmd; do
-    [ -z "$cmd" ] && continue
-    echo "  ▶ $cmd"
-    if ! (cd "$ROOT" && eval "$cmd" >/dev/null 2>&1); then
-      echo "  ❌ FAILED: $cmd"
+  while IFS= read -r testname; do
+    [ -z "$testname" ] && continue
+    echo "  ▶ $testname"
+    # Wrap: features.json declares test NAMES (filter), not commands.
+    # Detect crate by prefix: code_graph_*/query::/indexer::/db:: → code-graph, else xavier.
+    case "$testname" in
+      code_graph_*|query::*|indexer::*|db::*) CRATE="code-graph" ;;
+      *) CRATE="xavier" ;;
+    esac
+    if ! (cd "$ROOT" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}" cargo test -p "$CRATE" --lib "$testname" >/dev/null 2>&1); then
+      echo "  ❌ FAILED: $testname"
       FAILED=1
     fi
   done < <(python3 - "$LEDGER" << 'PY'
