@@ -118,7 +118,11 @@ scripts/subagents/mcp/GENERATED/
 .cursor/mcp.json
 
 # ==== Public launch purge (2026-08-13) — private/personal files ====
-/.gitcore/
+# .gitcore: el LEDGER del protocolo (features.json, MANIFEST, AGENT_INDEX) ES público y trackeado;
+# solo se ignoran las partes privadas/operativas
+/.gitcore/features/
+/.gitcore/features-detailed.json.bak
+/.gitcore/scripts/
 /memory/
 /skills/
 /docs/agent-docs/
