@@ -158,12 +158,28 @@ pub struct RedactRequest {
 pub struct SubmitCurationRequest {
     pub content_ref: String,
     pub proposed_clearance: String,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ApproveCurationRequest {
     pub id: String,
     pub curator: String,
+    pub classification: Option<String>,
+    pub clearance: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApproveReviewRequest {
+    pub curator: String,
+    pub classification: Option<String>,
+    pub clearance: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RejectReviewRequest {
+    pub curator: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -334,7 +350,7 @@ pub async fn submit_curation(
 ) -> impl IntoResponse {
     let mut reg = state.curation_mut();
     let queue = reg.curation.as_mut().expect("curation");
-    let item = queue.submit_for_curation(req.content_ref, req.proposed_clearance);
+    let item = queue.submit_for_curation(req.content_ref, req.proposed_clearance, req.source);
     let _ = queue.save();
     (StatusCode::CREATED, Json(item)).into_response()
 }
@@ -345,7 +361,7 @@ pub async fn approve_curation(
 ) -> impl IntoResponse {
     let mut reg = state.curation_mut();
     let queue = reg.curation.as_mut().expect("curation");
-    match queue.approve(&req.id, req.curator.clone()) {
+    match queue.approve(&req.id, req.curator.clone(), req.classification, req.clearance) {
         Ok(item) => {
             let _ = queue.save();
             Json(item).into_response()
@@ -358,6 +374,50 @@ pub async fn list_curation(State(state): State<F12State>) -> impl IntoResponse {
     let reg = state.curation_mut();
     let queue = reg.curation.as_ref().expect("curation");
     Json(queue.items.clone()).into_response()
+}
+
+pub async fn list_pending_curation_review(State(state): State<F12State>) -> impl IntoResponse {
+    let reg = state.curation_mut();
+    let queue = reg.curation.as_ref().expect("curation");
+    Json(queue.pending_items()).into_response()
+}
+
+pub async fn approve_curation_review(
+    State(state): State<F12State>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(req): Json<ApproveReviewRequest>,
+) -> impl IntoResponse {
+    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+        return (StatusCode::BAD_REQUEST, "Invalid item ID").into_response();
+    }
+    let mut reg = state.curation_mut();
+    let queue = reg.curation.as_mut().expect("curation");
+    match queue.approve(&id, req.curator, req.classification, req.clearance) {
+        Ok(item) => {
+            let _ = queue.save();
+            (StatusCode::OK, Json(item)).into_response()
+        }
+        Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
+    }
+}
+
+pub async fn reject_curation_review(
+    State(state): State<F12State>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(req): Json<RejectReviewRequest>,
+) -> impl IntoResponse {
+    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+        return (StatusCode::BAD_REQUEST, "Invalid item ID").into_response();
+    }
+    let mut reg = state.curation_mut();
+    let queue = reg.curation.as_mut().expect("curation");
+    match queue.reject(&id, req.curator, req.reason) {
+        Ok(item) => {
+            let _ = queue.save();
+            (StatusCode::OK, Json(item)).into_response()
+        }
+        Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
+    }
 }
 
 pub async fn telemetry_metrics() -> impl IntoResponse {
@@ -546,6 +606,15 @@ pub fn router(state: F12State) -> Router {
         .route("/v1/f12/curation", post(submit_curation))
         .route("/v1/f12/curation/approve", post(approve_curation))
         .route("/v1/f12/curation", get(list_curation))
+        .route("/v1/f12/curation/review", get(list_pending_curation_review))
+        .route(
+            "/v1/f12/curation/review/{id}/approve",
+            post(approve_curation_review),
+        )
+        .route(
+            "/v1/f12/curation/review/{id}/reject",
+            post(reject_curation_review),
+        )
         .route("/v1/f12/telemetry/metrics", get(telemetry_metrics))
         .route("/v1/f12/service-network/telemetry", post(publish_service_telemetry))
         .route("/v1/f12/service-network/telemetry", get(consume_service_telemetry))
@@ -669,7 +738,7 @@ mod tests {
     #[tokio::test]
     async fn test_curation_flow() {
         let app = router(test_state());
-        // submit
+        // submit 1
         let resp = app
             .clone()
             .oneshot(
@@ -678,7 +747,7 @@ mod tests {
                     .uri("/v1/f12/curation")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"content_ref": "mem-1", "proposed_clearance": "INTERNAL"}"#,
+                        r#"{"content_ref": "mem-1", "proposed_clearance": "INTERNAL", "source": "session"}"#,
                     ))
                     .unwrap(),
             )
@@ -687,33 +756,95 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::CREATED);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let id = v["id"].as_str().unwrap().to_string();
-        // list
+        let id1 = v["id"].as_str().unwrap().to_string();
+
+        // submit 2
         let resp = app
             .clone()
             .oneshot(
                 Request::builder()
+                    .method("POST")
                     .uri("/v1/f12/curation")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"content_ref": "mem-2", "proposed_clearance": "RESTRICTED", "source": "import"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let id2 = v["id"].as_str().unwrap().to_string();
+
+        // list pending review
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/curation/review")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        // approve
-        let req = format!(r#"{{"id": "{}", "curator": "bela"}}"#, id);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let pending: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(pending.as_array().unwrap().len(), 2);
+
+        // approve review for item 1
+        let req_app = r#"{"curator": "bela", "classification": "internal_doc", "clearance": "INTERNAL"}"#;
         let resp = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/f12/curation/approve")
+                    .uri(format!("/v1/f12/curation/review/{}/approve", id1))
                     .header("content-type", "application/json")
-                    .body(Body::from(req))
+                    .body(Body::from(req_app))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let item1_approved: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(item1_approved["classification"], "internal_doc");
+        assert_eq!(item1_approved["curated_by"], "bela");
+
+        // reject review for item 2
+        let req_rej = r#"{"curator": "bela", "reason": "untrusted_source"}"#;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/f12/curation/review/{}/reject", id2))
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_rej))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // list pending review again - should be empty
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/curation/review")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let pending_after: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(pending_after.as_array().unwrap().len(), 0);
     }
 
     #[tokio::test]
