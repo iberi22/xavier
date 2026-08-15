@@ -940,12 +940,39 @@ pub async fn mini_expert_invoke_handler(
     let provider = expert_config.provider.clone();
     let endpoint = expert_config.endpoint.clone();
 
-    let response = router.invoke(&payload.name, &payload.prompt).await.map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            e.to_string(),
-        )
-    })?;
+    let response = router
+        .invoke(&payload.name, &payload.prompt)
+        .await
+        .map_err(|e| match e {
+            crate::agents::provider_router::MiniExpertInvokeError::NotFound(name) => (
+                axum::http::StatusCode::NOT_FOUND,
+                format!("Mini-expert '{}' not found", name),
+            ),
+            crate::agents::provider_router::MiniExpertInvokeError::ModelNotInstalled {
+                model,
+            } => (
+                axum::http::StatusCode::NOT_FOUND,
+                format!(
+                    "Model '{}' not found in local provider. Please run: ollama pull {}",
+                    model, model
+                ),
+            ),
+            crate::agents::provider_router::MiniExpertInvokeError::ProviderError {
+                name,
+                status,
+                details,
+            } => (
+                axum::http::StatusCode::BAD_GATEWAY,
+                format!(
+                    "Failed to invoke mini-expert '{}' (HTTP {}): {}",
+                    name, status, details
+                ),
+            ),
+            crate::agents::provider_router::MiniExpertInvokeError::NetworkError(err) => (
+                axum::http::StatusCode::BAD_GATEWAY,
+                format!("Network error invoking mini-expert: {}", err),
+            ),
+        })?;
 
     Ok(Json(MiniExpertInvokeResponse {
         status: "success".to_string(),
@@ -973,6 +1000,80 @@ mod route_tests {
             .method(Method::POST)
             .body(Body::empty())
             .expect("build POST request")
+    }
+
+    #[tokio::test]
+    async fn test_route_mini_expert_invoke_missing_expert_404() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let req_body = serde_json::json!({
+            "name": "nonexistent-expert",
+            "prompt": "hello"
+        });
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/agents/mini-experts/invoke")
+                    .method(Method::POST)
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let err_msg = String::from_utf8_lossy(&body);
+        assert!(err_msg.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_route_mini_expert_invoke_missing_model_404() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("POST", "/v1/chat/completions")
+            .with_status(404)
+            .with_body(r#"{"error":"model 'qwen3-4b' not found"}"#)
+            .create_async()
+            .await;
+
+        let temp_dir = std::env::temp_dir().join(format!("xavier_test_route_mexp_{}", ulid::Ulid::new()));
+        let db_file = temp_dir.join("mini_experts.json");
+        let registry = crate::agents::mini_experts::MiniExpertRegistry::new(&db_file);
+        registry
+            .register(crate::agents::mini_experts::MiniExpertEntry {
+                name: "test-qwen3-4b".to_string(),
+                segment: "codebase/test".to_string(),
+                language: "es".to_string(),
+                clearance: 1,
+                source_dataset: "ds1".to_string(),
+                model_gguf_path: "/models/qwen3.gguf".to_string(),
+                provider: "local".to_string(),
+                endpoint: format!("{}/v1", server.url()),
+                api_key: None,
+            })
+            .unwrap();
+
+        let router = crate::agents::provider_router::ProviderRouter::from_registry_and_configs(
+            &registry,
+            vec![],
+        );
+        let err = router.invoke("test-qwen3-4b", "write rust code").await.unwrap_err();
+        match err {
+            crate::agents::provider_router::MiniExpertInvokeError::ModelNotInstalled { model } => {
+                assert_eq!(model, "test-qwen3-4b");
+            }
+            other => panic!("expected ModelNotInstalled, got {:?}", other),
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[tokio::test]
