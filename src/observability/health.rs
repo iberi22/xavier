@@ -63,6 +63,8 @@ pub struct EmbeddingHealth {
     pub latency_ms: u64,
     pub error_rate: f32,
     pub status: HealthLevel,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache: Option<crate::embedding::cache::EmbeddingCacheMetrics>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,6 +124,7 @@ impl Default for HealthStatus {
                 latency_ms: 0,
                 error_rate: 0.0,
                 status: HealthLevel::Healthy,
+                cache: None,
             },
             llm: LlmHealth {
                 provider: "unknown".into(),
@@ -419,12 +422,17 @@ impl HealthMonitor {
             }
         }
 
+        let cache = embedder_opt
+            .as_ref()
+            .and_then(|e| e.cache_metrics());
+
         EmbeddingHealth {
             provider,
             model,
             latency_ms,
             error_rate: 0.0,
             status,
+            cache,
         }
     }
 

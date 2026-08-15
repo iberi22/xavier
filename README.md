@@ -131,6 +131,8 @@ Runtime configurations live in `config/xavier.config.json`. Sensitive credential
 | `XAVIER_TOKEN` | String | Master authentication token for HTTP REST routes |
 | `XAVIER_WORKSPACE_DIR` | Path | Root repository path for active indexing operations |
 | `XAVIER_EMBEDDING_CACHE_ENABLED` | Boolean | Activates persistent SQLite LRU cache for vector mappings |
+| `XAVIER_EMBEDDING_CACHE_CAPACITY` | Integer | Maximum in-memory LRU cache capacity (default: `10000`) |
+| `XAVIER_EMBEDDING_CACHE_TTL` | Integer | Cache TTL in hours (default: `24`) |
 | `XAVIER_DEV_MODE` | Boolean | Bypasses HTTP middleware authentication for rapid testing |
 
 ---
