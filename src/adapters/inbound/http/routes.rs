@@ -611,12 +611,17 @@ pub async fn maintenance_reindex_handler(
 
 // ─── Training Datasets API ─────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct TrainingExportRequest {
     /// Deterministic seed for reproducible splits.
+    #[serde(default)]
     pub seed: u64,
     /// Fraction of records for the eval split (0.0..1.0).
+    #[serde(default)]
     pub eval_ratio: f32,
+    #[serde(default)]
+    pub curated_only: Option<bool>,
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -635,31 +640,83 @@ pub struct TrainingAuditDto {
     pub excluded_revoked: usize,
 }
 
-/// POST /v1/training/export — generate a training bundle from telemetry data.
+/// POST /v1/training/export — generate a training bundle from telemetry data or curated items.
 pub async fn training_export_handler(
     Json(payload): Json<TrainingExportRequest>,
-) -> Result<Json<TrainingExportResponse>, (axum::http::StatusCode, String)> {
+) -> impl axum::response::IntoResponse {
+    if payload.curated_only.unwrap_or(false) {
+        let queue = crate::curation::CurationQueue::load().unwrap_or_default();
+        let mut approved_items = queue.curated_dataset();
+
+        if payload.seed > 0 || payload.eval_ratio > 0.0 {
+            use rand::seq::SliceRandom;
+            use rand::SeedableRng;
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(payload.seed);
+            approved_items.shuffle(&mut rng);
+        }
+
+        if let Some(limit) = payload.limit {
+            approved_items.truncate(limit);
+        }
+
+        let redactor = crate::security::redaction::RedactionEngine::default();
+        let mut lines = Vec::new();
+
+        for item in approved_items {
+            let redacted = redactor.redact(&item.content_ref);
+            let obj = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&redacted) {
+                parsed
+            } else {
+                serde_json::json!({
+                    "text": redacted,
+                    "id": item.id,
+                    "clearance": item.proposed_clearance
+                })
+            };
+            if let Ok(line_str) = serde_json::to_string(&obj) {
+                lines.push(line_str);
+            }
+        }
+
+        let body_str = if lines.is_empty() {
+            String::new()
+        } else {
+            lines.join("\n") + "\n"
+        };
+
+        return axum::response::Response::builder()
+            .header("content-type", "application/x-ndjson")
+            .body(axum::body::Body::from(body_str))
+            .unwrap_or_else(|e| {
+                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+            });
+    }
+
     let db_path = std::path::PathBuf::from(
         std::env::var("XAVIER_TELEMETRY_DB_PATH")
             .unwrap_or_else(|_| ".xavier/telemetry.db".to_string()),
     );
 
     if !db_path.exists() {
-        return Err((
+        return (
             axum::http::StatusCode::NOT_FOUND,
             format!("Telemetry DB not found at {}", db_path.display()),
-        ));
+        )
+            .into_response();
     }
 
     let exporter = crate::data_commons::training::TrainingExporter::new(&db_path);
-    let bundle = exporter
-        .generate_bundle(payload.seed, payload.eval_ratio, None)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let bundle = match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
+        Ok(b) => b,
+        Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
 
-    let manifest = serde_json::to_value(&bundle.manifest)
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let manifest = match serde_json::to_value(&bundle.manifest) {
+        Ok(m) => m,
+        Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
 
-    Ok(Json(TrainingExportResponse {
+    Json(TrainingExportResponse {
         manifest,
         train_count: bundle.train_split.len(),
         eval_count: bundle.eval_split.len(),
@@ -669,7 +726,8 @@ pub async fn training_export_handler(
             excluded_no_consent: bundle.audit_summary.excluded_records_no_consent,
             excluded_revoked: bundle.audit_summary.excluded_records_revoked,
         },
-    }))
+    })
+    .into_response()
 }
 
 // ─── Content Redaction API ─────────────────────────────────────────────────

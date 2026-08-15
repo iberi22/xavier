@@ -1,9 +1,11 @@
 //! Rest API routes for training datasets under `/v1/training/*`
 
+use crate::curation::CurationQueue;
 use crate::data_commons::training::{
     load_dataset_manifest, load_dataset_metadata, load_dataset_split, scan_datasets,
     write_bundle_to_dir, TrainingExporter,
 };
+use crate::security::redaction::RedactionEngine;
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
@@ -29,6 +31,17 @@ pub struct GenerateBundleRequest {
     pub segment: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct ExportRequest {
+    #[serde(default)]
+    pub seed: u64,
+    #[serde(default)]
+    pub eval_ratio: f32,
+    #[serde(default)]
+    pub curated_only: bool,
+    pub limit: Option<usize>,
+}
+
 pub fn router(state: TrainingState) -> Router {
     Router::new()
         .route("/v1/training/datasets", get(list_datasets_handler))
@@ -45,6 +58,7 @@ pub fn router(state: TrainingState) -> Router {
             get(get_dataset_eval_handler),
         )
         .route("/v1/training/bundles", post(generate_bundle_handler))
+        .route("/v1/training/export", post(export_handler))
         .layer(Extension(state))
 }
 
@@ -173,6 +187,112 @@ pub async fn generate_bundle_handler(
         )
             .into_response(),
     }
+}
+
+pub async fn export_handler(
+    Extension(state): Extension<TrainingState>,
+    Json(payload): Json<ExportRequest>,
+) -> impl IntoResponse {
+    if payload.curated_only {
+        let queue = load_curation_queue(&state);
+        let mut approved_items = queue.curated_dataset();
+
+        if payload.seed > 0 || payload.eval_ratio > 0.0 {
+            use rand::seq::SliceRandom;
+            use rand::SeedableRng;
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(payload.seed);
+            approved_items.shuffle(&mut rng);
+        }
+
+        if let Some(limit) = payload.limit {
+            approved_items.truncate(limit);
+        }
+
+        let redactor = RedactionEngine::default();
+        let mut lines = Vec::new();
+
+        for item in approved_items {
+            let redacted = redactor.redact(&item.content_ref);
+            let obj = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&redacted) {
+                parsed
+            } else {
+                serde_json::json!({
+                    "text": redacted,
+                    "id": item.id,
+                    "clearance": item.proposed_clearance
+                })
+            };
+            if let Ok(line_str) = serde_json::to_string(&obj) {
+                lines.push(line_str);
+            }
+        }
+
+        let body_str = if lines.is_empty() {
+            String::new()
+        } else {
+            lines.join("\n") + "\n"
+        };
+
+        return axum::response::Response::builder()
+            .header("content-type", "application/x-ndjson")
+            .body(axum::body::Body::from(body_str))
+            .unwrap_or_else(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+            });
+    }
+
+    let exporter = TrainingExporter::new(&state.db_path);
+    match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
+        Ok(bundle) => {
+            let manifest = match serde_json::to_value(&bundle.manifest) {
+                Ok(v) => v,
+                Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+            };
+            Json(serde_json::json!({
+                "manifest": manifest,
+                "train_count": bundle.train_split.len(),
+                "eval_count": bundle.eval_split.len(),
+                "audit": {
+                    "total_records_found": bundle.audit_summary.total_records_found,
+                    "included_records": bundle.audit_summary.included_records,
+                    "excluded_no_consent": bundle.audit_summary.excluded_records_no_consent,
+                    "excluded_revoked": bundle.audit_summary.excluded_records_revoked
+                }
+            }))
+            .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            format!("Failed to generate bundle: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+fn load_curation_queue(state: &TrainingState) -> CurationQueue {
+    let parent_path = state
+        .data_dir
+        .parent()
+        .unwrap_or(&state.data_dir)
+        .join("curation/queue.json");
+    if parent_path.exists() {
+        if let Ok(queue) = CurationQueue::load_from_path(&parent_path) {
+            return queue;
+        }
+    }
+    let state_path = state.data_dir.join("curation/queue.json");
+    if state_path.exists() {
+        if let Ok(queue) = CurationQueue::load_from_path(&state_path) {
+            return queue;
+        }
+    }
+    let default_path = std::path::Path::new("data/curation/queue.json");
+    if default_path.exists() {
+        if let Ok(queue) = CurationQueue::load_from_path(default_path) {
+            return queue;
+        }
+    }
+    CurationQueue::load().unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -455,6 +575,118 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_export_curated_only_approved_and_redacted() {
+        let (db_file, data_dir) = setup_test_env();
+        let curation_dir = data_dir.path().join("curation");
+        std::fs::create_dir_all(&curation_dir).unwrap();
+        let queue_file = curation_dir.join("queue.json");
+
+        let mut queue = CurationQueue::new_with_path(queue_file);
+        let item1 = queue.submit_for_curation(
+            "Contact boss@company.org or call 123-456-7890 for approved access.".to_string(),
+            "INTERNAL".to_string(),
+            Some("agent".to_string()),
+        );
+        let item2 = queue.submit_for_curation(
+            "Rejected confidential content".to_string(),
+            "SECRET".to_string(),
+            Some("import".to_string()),
+        );
+        let _item3 = queue.submit_for_curation(
+            "Pending item content".to_string(),
+            "PUBLIC".to_string(),
+            None,
+        );
+
+        queue
+            .approve(&item1.id, "curator_alice".to_string(), None, None)
+            .unwrap();
+        queue
+            .reject(&item2.id, "curator_bob".to_string(), "Spam or invalid".to_string())
+            .unwrap();
+        queue.save().unwrap();
+
+        let state = TrainingState {
+            db_path: db_file.path().to_path_buf(),
+            data_dir: data_dir.path().join("datasets"),
+        };
+        let app = router(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/training/export")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "curated_only": true,
+                    "limit": 10
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/x-ndjson"
+        );
+
+        let body_bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+        let lines: Vec<&str> = body_str.lines().filter(|l| !l.is_empty()).collect();
+
+        // Exactly 1 line (only Approved item)
+        assert_eq!(lines.len(), 1);
+
+        let parsed: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        let text = parsed["text"].as_str().unwrap();
+
+        // Check PII redaction
+        assert!(text.contains("[EMAIL]"));
+        assert!(text.contains("[PHONE]"));
+        assert!(!text.contains("boss@company.org"));
+        assert!(!text.contains("123-456-7890"));
+
+        // Rejected and Pending items must be excluded
+        assert!(!body_str.contains("Rejected confidential content"));
+        assert!(!body_str.contains("Pending item content"));
+    }
+
+    #[tokio::test]
+    async fn test_export_backward_compatibility() {
+        let (db_file, data_dir) = setup_test_env();
+        let state = TrainingState {
+            db_path: db_file.path().to_path_buf(),
+            data_dir: data_dir.path().to_path_buf(),
+        };
+        let app = router(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/training/export")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "curated_only": false,
+                    "seed": 42,
+                    "eval_ratio": 0.2
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let res_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert!(res_json.get("manifest").is_some());
+        assert_eq!(res_json["train_count"], 8);
+        assert_eq!(res_json["eval_count"], 2);
     }
 }
 
