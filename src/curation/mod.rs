@@ -18,6 +18,10 @@ pub struct CurationItem {
     pub status: CurationStatus,
     pub curated_by: Option<String>,
     pub curated_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classification: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -78,6 +82,7 @@ impl CurationQueue {
         &mut self,
         content_ref: String,
         proposed_clearance: String,
+        source: Option<String>,
     ) -> CurationItem {
         let id = ulid::Ulid::new().to_string();
         let item = CurationItem {
@@ -87,16 +92,30 @@ impl CurationQueue {
             status: CurationStatus::Pending,
             curated_by: None,
             curated_at: None,
+            source,
+            classification: None,
         };
         self.items.push(item.clone());
         item
     }
 
-    pub fn approve(&mut self, id: &str, curator: String) -> Result<CurationItem, String> {
+    pub fn approve(
+        &mut self,
+        id: &str,
+        curator: String,
+        classification: Option<String>,
+        clearance: Option<String>,
+    ) -> Result<CurationItem, String> {
         if let Some(item) = self.items.iter_mut().find(|i| i.id == id) {
             item.status = CurationStatus::Approved;
             item.curated_by = Some(curator);
             item.curated_at = Some(Utc::now());
+            if let Some(cls) = classification {
+                item.classification = Some(cls);
+            }
+            if let Some(clr) = clearance {
+                item.proposed_clearance = clr;
+            }
             Ok(item.clone())
         } else {
             Err(format!("Item with id {} not found", id))
@@ -119,12 +138,24 @@ impl CurationQueue {
         }
     }
 
+    pub fn pending_items(&self) -> Vec<CurationItem> {
+        self.items
+            .iter()
+            .filter(|i| matches!(i.status, CurationStatus::Pending))
+            .cloned()
+            .collect()
+    }
+
     pub fn curated_items(&self) -> Vec<CurationItem> {
         self.items
             .iter()
             .filter(|i| matches!(i.status, CurationStatus::Approved))
             .cloned()
             .collect()
+    }
+
+    pub fn curated_dataset(&self) -> Vec<CurationItem> {
+        self.curated_items()
     }
 }
 
@@ -136,9 +167,10 @@ mod tests {
     #[test]
     fn test_submit_for_curation() {
         let mut queue = CurationQueue::new();
-        let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string());
+        let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string(), Some("session".to_string()));
         assert_eq!(item.content_ref, "doc-123");
         assert_eq!(item.proposed_clearance, "confidential");
+        assert_eq!(item.source, Some("session".to_string()));
         assert_eq!(item.status, CurationStatus::Pending);
         assert_eq!(queue.items.len(), 1);
     }
@@ -146,17 +178,19 @@ mod tests {
     #[test]
     fn test_approve_item() {
         let mut queue = CurationQueue::new();
-        let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string());
-        let approved = queue.approve(&item.id, "alice".to_string()).unwrap();
+        let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string(), Some("import".to_string()));
+        let approved = queue.approve(&item.id, "alice".to_string(), Some("internal".to_string()), Some("restricted".to_string())).unwrap();
         assert_eq!(approved.status, CurationStatus::Approved);
         assert_eq!(approved.curated_by, Some("alice".to_string()));
+        assert_eq!(approved.classification, Some("internal".to_string()));
+        assert_eq!(approved.proposed_clearance, "restricted");
         assert!(approved.curated_at.is_some());
     }
 
     #[test]
     fn test_reject_item() {
         let mut queue = CurationQueue::new();
-        let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string());
+        let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string(), None);
         let rejected = queue
             .reject(&item.id, "bob".to_string(), "offensive content".to_string())
             .unwrap();
@@ -172,7 +206,7 @@ mod tests {
     #[test]
     fn test_approve_nonexistent() {
         let mut queue = CurationQueue::new();
-        let res = queue.approve("invalid-id", "alice".to_string());
+        let res = queue.approve("invalid-id", "alice".to_string(), None, None);
         assert!(res.is_err());
     }
 
@@ -184,34 +218,40 @@ mod tests {
     }
 
     #[test]
-    fn test_curated_items_only_approved_are_eligible() {
+    fn test_curated_dataset_only_approved_are_eligible() {
         let mut queue = CurationQueue::new();
-        let item1 = queue.submit_for_curation("doc-1".to_string(), "public".to_string());
-        let item2 = queue.submit_for_curation("doc-2".to_string(), "secret".to_string());
-        let _item3 = queue.submit_for_curation("doc-3".to_string(), "internal".to_string());
+        let item1 = queue.submit_for_curation("doc-1".to_string(), "public".to_string(), Some("agent".to_string()));
+        let item2 = queue.submit_for_curation("doc-2".to_string(), "secret".to_string(), Some("import".to_string()));
+        let _item3 = queue.submit_for_curation("doc-3".to_string(), "internal".to_string(), Some("session".to_string()));
 
-        queue.approve(&item1.id, "alice".to_string()).unwrap();
+        queue.approve(&item1.id, "alice".to_string(), Some("public_data".to_string()), None).unwrap();
         queue
             .reject(&item2.id, "bob".to_string(), "bad format".to_string())
             .unwrap();
 
-        let eligible = queue.curated_items();
+        let eligible = queue.curated_dataset();
         assert_eq!(eligible.len(), 1);
         assert_eq!(eligible[0].id, item1.id);
         assert_eq!(eligible[0].status, CurationStatus::Approved);
+        assert_eq!(eligible[0].classification, Some("public_data".to_string()));
+
+        let pending = queue.pending_items();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].content_ref, "doc-3");
     }
 
     #[test]
     fn test_save_and_load_flow() {
         let file = NamedTempFile::new().unwrap();
         let mut queue = CurationQueue::new_with_path(file.path().to_path_buf());
-        let item = queue.submit_for_curation("ref-789".to_string(), "secret".to_string());
+        let item = queue.submit_for_curation("ref-789".to_string(), "secret".to_string(), Some("agent".to_string()));
         queue.save().unwrap();
 
         let loaded = CurationQueue::load_from_path(file.path()).unwrap();
         assert_eq!(loaded.items.len(), 1);
         assert_eq!(loaded.items[0].id, item.id);
         assert_eq!(loaded.items[0].content_ref, "ref-789");
+        assert_eq!(loaded.items[0].source, Some("agent".to_string()));
     }
 
     #[test]
