@@ -48,6 +48,7 @@ fn parse_symbol_kind(value: &str) -> SymbolKind {
         "Export" => SymbolKind::Export,
         "Module" => SymbolKind::Module,
         "File" => SymbolKind::File,
+        "Route" => SymbolKind::Route,
         _ => SymbolKind::Symbol,
     })
 }

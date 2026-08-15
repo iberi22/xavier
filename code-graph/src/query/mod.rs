@@ -147,6 +147,7 @@ impl QueryEngine {
             "struct_definition" | "struct" => SymbolKind::Struct,
             "class_definition" | "class" => SymbolKind::Class,
             "enum_definition" | "enum" => SymbolKind::Enum,
+            "route_definition" | "route" | "http_route" => SymbolKind::Route,
             "module_definition" | "module" => SymbolKind::Module,
             "import" | "use_statement" => SymbolKind::Module, // Treat imports as modules
             _ => return Ok(vec![]),
@@ -158,6 +159,11 @@ impl QueryEngine {
     /// Find all enums
     pub fn enums(&self, limit: usize) -> Result<Vec<Symbol>> {
         self.db.find_by_kind(SymbolKind::Enum, limit)
+    }
+
+    /// Find all HTTP routes
+    pub fn routes(&self, limit: usize) -> Result<Vec<Symbol>> {
+        self.db.find_by_kind(SymbolKind::Route, limit)
     }
 
     pub fn dependencies(
