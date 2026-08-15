@@ -5,7 +5,7 @@ pub mod tests;
 use crate::db::CodeGraphDB;
 use crate::error::Result;
 use crate::types::{
-    CodeEdge, ComplexityHotspot, EdgeType, HubNode, QueryResult, Symbol, SymbolKind,
+    CodeEdge, ComplexityHotspot, EdgeType, HubNode, QueryResult, Symbol, SymbolEmbedder, SymbolKind,
 };
 use std::collections::HashMap;
 use std::collections::{HashSet, VecDeque};
@@ -274,5 +274,117 @@ impl QueryEngine {
     /// Get indexing statistics
     pub fn stats(&self) -> Result<crate::types::IndexStats> {
         self.db.stats()
+    }
+
+    /// Semantic search for symbols using cosine similarity over symbol embeddings
+    pub async fn semantic_search(
+        &self,
+        query: &str,
+        embedder: &dyn SymbolEmbedder,
+        limit: usize,
+    ) -> Result<QueryResult> {
+        let start = Instant::now();
+        let query_vector = embedder.embed(query).await?;
+        if query_vector.is_empty() {
+            return Ok(QueryResult {
+                symbols: Vec::new(),
+                total: 0,
+                query_time_ms: start.elapsed().as_millis() as u64,
+            });
+        }
+
+        let all_embeddings = self.db.get_all_symbol_embeddings()?;
+        let mut scored_symbols: Vec<(f32, Symbol)> = Vec::new();
+
+        for (stable_id, emb) in all_embeddings {
+            if emb.len() != query_vector.len() {
+                continue;
+            }
+            let sim = cosine_similarity(&query_vector, &emb);
+            if let Ok(Some(symbol)) = self.db.symbol_by_stable_id(&stable_id) {
+                scored_symbols.push((sim, symbol));
+            }
+        }
+
+        scored_symbols.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored_symbols.truncate(limit);
+
+        let symbols: Vec<Symbol> = scored_symbols.into_iter().map(|(_, sym)| sym).collect();
+        let total = symbols.len();
+
+        Ok(QueryResult {
+            symbols,
+            total,
+            query_time_ms: start.elapsed().as_millis() as u64,
+        })
+    }
+
+    /// Hybrid search combining BM25 (FTS5) and Semantic search using Reciprocal Rank Fusion (RRF)
+    pub async fn hybrid_search(
+        &self,
+        query: &str,
+        embedder: &dyn SymbolEmbedder,
+        limit: usize,
+    ) -> Result<QueryResult> {
+        let start = Instant::now();
+        let rrf_k = 60.0f64;
+
+        // 1. BM25 results
+        let bm25_res = self.search(query, limit * 2).unwrap_or(QueryResult {
+            symbols: Vec::new(),
+            total: 0,
+            query_time_ms: 0,
+        });
+
+        // 2. Semantic search results
+        let sem_res = self
+            .semantic_search(query, embedder, limit * 2)
+            .await
+            .unwrap_or(QueryResult {
+                symbols: Vec::new(),
+                total: 0,
+                query_time_ms: 0,
+            });
+
+        let mut rrf_scores: HashMap<String, (f64, Symbol)> = HashMap::new();
+
+        for (rank, sym) in bm25_res.symbols.into_iter().enumerate() {
+            let key = sym.stable_id.clone().unwrap_or_else(|| sym.name.clone());
+            let score = 1.0 / (rrf_k + (rank as f64 + 1.0));
+            rrf_scores.insert(key, (score, sym));
+        }
+
+        for (rank, sym) in sem_res.symbols.into_iter().enumerate() {
+            let key = sym.stable_id.clone().unwrap_or_else(|| sym.name.clone());
+            let score = 1.0 / (rrf_k + (rank as f64 + 1.0));
+            rrf_scores
+                .entry(key)
+                .and_modify(|(s, _)| *s += score)
+                .or_insert((score, sym));
+        }
+
+        let mut scored_list: Vec<(f64, Symbol)> = rrf_scores.into_values().collect();
+        scored_list.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored_list.truncate(limit);
+
+        let symbols: Vec<Symbol> = scored_list.into_iter().map(|(_, sym)| sym).collect();
+        let total = symbols.len();
+
+        Ok(QueryResult {
+            symbols,
+            total,
+            query_time_ms: start.elapsed().as_millis() as u64,
+        })
+    }
+}
+
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|y| y * y).sum::<f32>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a * norm_b)
     }
 }

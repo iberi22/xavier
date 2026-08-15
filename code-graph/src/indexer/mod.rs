@@ -12,7 +12,7 @@ use crate::db::CodeGraphDB;
 use crate::error::{GraphError, Result};
 use crate::parser::parse_source;
 use crate::plugin_host::PluginHost;
-use crate::types::{CodeEdge, EdgeType, IndexStats, Language, Symbol, SymbolKind};
+use crate::types::{CodeEdge, EdgeType, IndexStats, Language, Symbol, SymbolEmbedder, SymbolKind};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
 use std::collections::HashMap;
@@ -79,6 +79,7 @@ pub struct Indexer {
     db: Arc<CodeGraphDB>,
     max_concurrent: usize,
     plugin_host: Arc<PluginHost>,
+    embedder: Option<Arc<dyn SymbolEmbedder>>,
 }
 
 impl Indexer {
@@ -87,7 +88,21 @@ impl Indexer {
             db,
             max_concurrent: 8,
             plugin_host: Arc::new(PluginHost::new()),
+            embedder: None,
         }
+    }
+
+    pub fn with_embedder(db: Arc<CodeGraphDB>, embedder: Arc<dyn SymbolEmbedder>) -> Self {
+        Self {
+            db,
+            max_concurrent: 8,
+            plugin_host: Arc::new(PluginHost::new()),
+            embedder: Some(embedder),
+        }
+    }
+
+    pub fn set_embedder(&mut self, embedder: Arc<dyn SymbolEmbedder>) {
+        self.embedder = Some(embedder);
     }
 
     /// Index a directory.
@@ -341,10 +356,37 @@ impl Indexer {
         let edges_len = edges.len();
         let new_symbols_len = new_symbols.len();
 
+        // Generate embeddings for new symbols if embedder is configured
+        let mut symbol_embeddings = Vec::new();
+        if let Some(ref embedder) = self.embedder {
+            for symbol in &new_symbols {
+                if let Some(ref stable_id) = symbol.stable_id {
+                    let text_to_embed = format!(
+                        "{} {} {}",
+                        symbol.name,
+                        symbol.signature.as_deref().unwrap_or(""),
+                        symbol.file_path
+                    );
+                    if let Ok(vec) = embedder.embed(&text_to_embed).await {
+                        if !vec.is_empty() {
+                            symbol_embeddings.push((stable_id.clone(), vec));
+                        }
+                    }
+                }
+            }
+        }
+
         let db = Arc::clone(&self.db);
         let stats = tokio::task::spawn_blocking(move || {
             db.insert_symbols(&new_symbols)?;
             db.insert_edges(&edges)?;
+            if !symbol_embeddings.is_empty() {
+                let batch_refs: Vec<(&str, &[f32])> = symbol_embeddings
+                    .iter()
+                    .map(|(id, vec)| (id.as_str(), vec.as_slice()))
+                    .collect();
+                let _ = db.insert_symbol_embeddings_batch(&batch_refs);
+            }
             db.batch_upsert_file_metadata(files_to_mtime)?;
             db.stats()
         })

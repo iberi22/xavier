@@ -2820,6 +2820,7 @@ name = "code-graph"
 version = "0.6.1-beta"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum 0.8.9",
  "chrono",
  "clap",

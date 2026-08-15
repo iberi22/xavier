@@ -52,6 +52,16 @@ fn parse_symbol_kind(value: &str) -> SymbolKind {
     })
 }
 
+pub fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
+    embedding.iter().flat_map(|v| v.to_le_bytes()).collect()
+}
+
+pub fn deserialize_embedding(data: &[u8]) -> Vec<f32> {
+    data.chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
+
 fn parse_edge_type(value: &str) -> EdgeType {
     serde_json::from_str(value).unwrap_or(match value {
         "Calls" => EdgeType::Calls,
@@ -218,6 +228,14 @@ impl CodeGraphDB {
                 path TEXT PRIMARY KEY,
                 mtime INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS symbol_embeddings (
+                stable_id TEXT PRIMARY KEY,
+                embedding BLOB NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_symbol_embeddings_stable_id ON symbol_embeddings(stable_id);
             "#,
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -1331,6 +1349,75 @@ impl CodeGraphDB {
         Ok(deleted)
     }
 
+    /// Insert an embedding vector for a symbol by stable_id
+    pub fn insert_symbol_embedding(&self, stable_id: &str, embedding: &[f32]) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        let blob = serialize_embedding(embedding);
+        conn.execute(
+            "INSERT INTO symbol_embeddings (stable_id, embedding) VALUES (?1, ?2)
+             ON CONFLICT(stable_id) DO UPDATE SET embedding = excluded.embedding",
+            params![stable_id, blob],
+        )
+        .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Insert multiple symbol embeddings in a batch
+    pub fn insert_symbol_embeddings_batch(&self, embeddings: &[(&str, &[f32])]) -> Result<()> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO symbol_embeddings (stable_id, embedding) VALUES (?1, ?2)
+                     ON CONFLICT(stable_id) DO UPDATE SET embedding = excluded.embedding",
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            for (stable_id, embedding) in embeddings {
+                let blob = serialize_embedding(embedding);
+                stmt.execute(params![stable_id, blob])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Retrieve all symbol embeddings from the database
+    pub fn get_all_symbol_embeddings(&self) -> Result<Vec<(String, Vec<f32>)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare("SELECT stable_id, embedding FROM symbol_embeddings")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let stable_id: String = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                Ok((stable_id, deserialize_embedding(&blob)))
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     /// Delete all data associated with multiple file paths in a single transaction
     pub fn batch_delete_file_data(&self, file_paths: &[String]) -> Result<()> {
         if file_paths.is_empty() {
@@ -1347,6 +1434,9 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
         {
+            let mut stmt_embeddings = tx
+                .prepare("DELETE FROM symbol_embeddings WHERE stable_id IN (SELECT stable_id FROM symbols WHERE file_path = ?1)")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
             let mut stmt_symbols = tx
                 .prepare("DELETE FROM symbols WHERE file_path = ?1")
                 .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -1367,6 +1457,9 @@ impl CodeGraphDB {
                 .map_err(|e| GraphError::Database(e.to_string()))?;
 
             for path in file_paths {
+                stmt_embeddings
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
                 stmt_symbols
                     .execute(params![path])
                     .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -1406,6 +1499,7 @@ impl CodeGraphDB {
             DELETE FROM refs;
             DELETE FROM imports;
             DELETE FROM edges;
+            DELETE FROM symbol_embeddings;
             DELETE FROM symbols;
             DELETE FROM symbols_fts;
             DELETE FROM file_metadata;

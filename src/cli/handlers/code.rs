@@ -418,6 +418,119 @@ pub async fn code_find_handler(
     }))
 }
 
+/// Bridge between Xavier's Embedder and code_graph's SymbolEmbedder
+pub struct XavierSymbolEmbedder {
+    embedder: std::sync::Arc<dyn xavier::embedding::Embedder>,
+}
+
+impl XavierSymbolEmbedder {
+    pub fn new(embedder: std::sync::Arc<dyn xavier::embedding::Embedder>) -> Self {
+        Self { embedder }
+    }
+}
+
+#[async_trait::async_trait]
+impl code_graph::types::SymbolEmbedder for XavierSymbolEmbedder {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>, code_graph::GraphError> {
+        self.embedder
+            .encode(text)
+            .await
+            .map_err(|e| code_graph::GraphError::Database(e.to_string()))
+    }
+}
+
+/// Code search handler (BM25, semantic, or hybrid mode).
+pub async fn code_search_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeSearchPayload>,
+) -> impl axum::response::IntoResponse {
+    let sec_result = state
+        .security
+        .process_input(&payload.query)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.query.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "code/search blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "blocked": true,
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    let query = sec_result
+        .sanitized_input
+        .as_deref()
+        .unwrap_or(&sec_result.original_input)
+        .to_string();
+
+    let limit = payload.limit.clamp(1, 100);
+    let mode = payload.mode.to_lowercase();
+    info!("Code search request: query={}, mode={}, limit={}", query, mode, limit);
+
+    let code_graph = state.code_graph.read().await;
+    let symbol_embedder = XavierSymbolEmbedder::new(state.embedder.clone());
+
+    let result = match mode.as_str() {
+        "bm25" | "fts" => code_graph.query.search(&query, limit),
+        "semantic" => code_graph.query.semantic_search(&query, &symbol_embedder, limit).await,
+        _ => code_graph.query.hybrid_search(&query, &symbol_embedder, limit).await,
+    };
+
+    match result {
+        Ok(query_res) => {
+            let results: Vec<_> = query_res
+                .symbols
+                .into_iter()
+                .map(|symbol| {
+                    serde_json::json!({
+                        "id": symbol.id,
+                        "stable_id": symbol.stable_id,
+                        "path": symbol.file_path,
+                        "symbol": symbol.name,
+                        "symbol_type": format!("{:?}", symbol.kind),
+                        "language": format!("{:?}", symbol.lang),
+                        "line": symbol.start_line,
+                        "end_line": symbol.end_line,
+                        "signature": symbol.signature,
+                        "parent": symbol.parent,
+                        "complexity": symbol.complexity,
+                    })
+                })
+                .collect();
+
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "query": query,
+                "mode": mode,
+                "count": results.len(),
+                "query_time_ms": query_res.query_time_ms,
+                "results": results,
+            }))
+        }
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+        })),
+    }
+}
+
 /// Code stats handler.
 pub async fn code_stats_handler(
     State(state): State<CliState>,
