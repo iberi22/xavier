@@ -640,6 +640,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/code/hotspots", get(code_hotspots_handler))
         .route("/v1/account/usage", get(account_usage_handler))
         .route("/v1/embeddings", post(embed_handler))
+        .route("/v1/embeddings/stats", get(embedding_stats_handler))
         .route("/v1/auth/session", post(session_create_handler))
         .nest(
             "/v1/auth",
