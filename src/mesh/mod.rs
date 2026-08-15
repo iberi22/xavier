@@ -83,9 +83,9 @@ pub use private_mesh::{derive_wallet_id, is_same_wallet, PrivateMeshRegistry, Wa
 pub use registry::PeerRegistrySyncAdapter;
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
 pub use public_rag::{search_public, PublicRagQuery, PublicRagResult};
-pub use service_network::{ServiceInfo, ServiceKind, ServiceRegistry};
+pub use service_network::{ServiceInfo, ServiceKind, ServiceRegistry, TelemetrySample};
 pub use telemetry_collector::{
-    RetentionPolicy, TelemetryAggregate, TelemetryCollector, TelemetrySample,
+    RetentionPolicy, TelemetryAggregate, TelemetryCollector,
 };
 pub use tokenomics::{
     ContributionType, RewardEngine, RewardEvent, Transaction, TransactionKind, Wallet,

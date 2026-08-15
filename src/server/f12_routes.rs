@@ -21,7 +21,8 @@ use crate::codebase::snapshot::SnapshotManager;
 use crate::mesh::private_mesh::{PrivateMeshRegistry, WalletNode};
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
-use crate::mesh::service_network::ServiceKind;
+use crate::mesh::node::NodeId;
+use crate::mesh::service_network::{ServiceKind, ServiceRegistry, TelemetrySample};
 use crate::security::groups::GroupRegistry;
 
 /// Shared F12 state: data dir paths + in-memory registries (lazy loaded).
@@ -37,6 +38,7 @@ pub struct F12Registries {
     pub directory: Option<PublicDirectory>,
     pub private_mesh: Option<PrivateMeshRegistry>,
     pub curation: Option<CurationQueue>,
+    pub service_network: Option<ServiceRegistry>,
 }
 
 impl F12State {
@@ -91,6 +93,14 @@ impl F12State {
             reg.curation = Some(CurationQueue::new_with_path(
                 self.data_dir.join("curation/queue.json"),
             ));
+        }
+        reg
+    }
+
+    fn service_network_mut(&self) -> std::sync::MutexGuard<'_, F12Registries> {
+        let mut reg = self.registry.lock().unwrap();
+        if reg.service_network.is_none() {
+            reg.service_network = Some(ServiceRegistry::new());
         }
         reg
     }
@@ -158,6 +168,14 @@ pub struct ApproveCurationRequest {
 pub struct CreateSnapshotRequest {
     pub repo: String,
     pub repo_root: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PublishTelemetryRequest {
+    pub node_id: String,
+    pub kind: Option<ServiceKind>,
+    pub payload: String,
+    pub ts: Option<i64>,
 }
 
 // ---------- handlers ----------
@@ -357,6 +375,37 @@ pub async fn telemetry_metrics() -> impl IntoResponse {
     Json(safe).into_response()
 }
 
+pub async fn publish_service_telemetry(
+    State(state): State<F12State>,
+    Json(req): Json<PublishTelemetryRequest>,
+) -> impl IntoResponse {
+    let sample = TelemetrySample {
+        node_id: NodeId(req.node_id),
+        kind: req.kind.unwrap_or(ServiceKind::Custom("ops".to_string())),
+        payload: req.payload,
+        ts: req.ts.unwrap_or(0),
+        classification: "INTERNAL".to_string(),
+    };
+    let mut reg = state.service_network_mut();
+    let service_network = reg.service_network.as_mut().expect("service network");
+    let published = service_network.publish_telemetry(sample);
+    Json(published).into_response()
+}
+
+pub async fn consume_service_telemetry(
+    State(state): State<F12State>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let since = params
+        .get("since")
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(0);
+    let reg = state.service_network_mut();
+    let service_network = reg.service_network.as_ref().expect("service network");
+    let samples = service_network.consume_telemetry(since);
+    Json(samples).into_response()
+}
+
 pub async fn list_snapshots(State(state): State<F12State>) -> impl IntoResponse {
     let manager = SnapshotManager::new(&state.data_dir);
     match manager.list_snapshots() {
@@ -437,6 +486,8 @@ pub fn router(state: F12State) -> Router {
         .route("/v1/f12/curation/approve", post(approve_curation))
         .route("/v1/f12/curation", get(list_curation))
         .route("/v1/f12/telemetry/metrics", get(telemetry_metrics))
+        .route("/v1/f12/service-network/telemetry", post(publish_service_telemetry))
+        .route("/v1/f12/service-network/telemetry", get(consume_service_telemetry))
         .route("/v1/f12/snapshots", get(list_snapshots))
         .route("/v1/f12/snapshots", post(create_snapshot))
         .route("/v1/f12/snapshots/{repo}", get(get_snapshot))
@@ -632,6 +683,52 @@ mod tests {
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(v.as_array().unwrap().len() >= 3);
+    }
+
+    #[tokio::test]
+    async fn test_service_network_telemetry_publish_and_consume_endpoints() {
+        let state = test_state();
+        let app = router(state.clone());
+
+        // Publish endpoint POST /v1/f12/service-network/telemetry with PII email & phone
+        let req_body = r#"{"node_id": "xv1", "payload": "bench test user user@example.com phone +1-555-123-4567"}"#;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/service-network/telemetry")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["classification"].as_str().unwrap(), "INTERNAL");
+        let payload = v["payload"].as_str().unwrap();
+        assert!(!payload.contains("user@example.com"));
+        assert!(!payload.contains("+1-555-123-4567"));
+        assert!(payload.contains("[EMAIL]"));
+        assert!(payload.contains("[PHONE]"));
+
+        // Consume endpoint GET /v1/f12/service-network/telemetry?since=0
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/service-network/telemetry?since=0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let samples: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0]["node_id"].as_str().unwrap(), "xv1");
     }
 
     #[tokio::test]
