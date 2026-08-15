@@ -167,6 +167,68 @@ fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// Discover repository roots under SWAL projects workspace.
+///
+/// Looks under `base_dir` (or `SWAL_REPOS_DIR` env var, or `~/proyectosSWAL`, or `/home/belal/proyectosSWAL`).
+/// Checks direct child directories as well as subcategory directories (`cores/`, `apps/`, `synapse/`, `periferia/`).
+/// A directory is considered a repo root if it contains `.git` or `.gitcore`.
+pub fn discover_swal_repo_roots(base_dir: Option<&Path>) -> HashMap<String, PathBuf> {
+    let mut map = HashMap::new();
+
+    let root_path = if let Some(b) = base_dir {
+        b.to_path_buf()
+    } else if let Ok(env_path) = std::env::var("SWAL_REPOS_DIR") {
+        PathBuf::from(env_path)
+    } else {
+        let home = std::env::var("HOME").map(PathBuf::from).ok();
+        let swal_home = home.as_ref().map(|h| h.join("proyectosSWAL"));
+        if let Some(ref p) = swal_home {
+            if p.exists() {
+                p.clone()
+            } else {
+                PathBuf::from("proyectosSWAL")
+            }
+        } else {
+            PathBuf::from("proyectosSWAL")
+        }
+    };
+
+    if !root_path.exists() {
+        return map;
+    }
+
+    let scan_dir = |dir: &Path, out: &mut HashMap<String, PathBuf>| {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.is_dir() {
+                    let is_repo = path.join(".git").exists() || path.join(".gitcore").exists();
+                    if is_repo {
+                        if let Some(repo_name) = path.file_name().and_then(|n| n.to_str()) {
+                            out.insert(repo_name.to_string(), path);
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    // 1. Scan direct subdirectories
+    scan_dir(&root_path, &mut map);
+
+    // 2. Scan subcategories (cores, apps, synapse, periferia, etc.)
+    if let Ok(entries) = std::fs::read_dir(&root_path) {
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() && !path.join(".git").exists() && !path.join(".gitcore").exists() {
+                scan_dir(&path, &mut map);
+            }
+        }
+    }
+
+    map
+}
+
 /// Index a repo name -> snapshot mapping from a directory of repo roots.
 pub fn snapshot_all_repos(repo_roots: &HashMap<String, PathBuf>, data_dir: &Path) -> Result<Vec<CodeSnapshot>> {
     let manager = SnapshotManager::new(data_dir);
@@ -258,5 +320,76 @@ mod tests {
     fn test_hex_encode_padding() {
         let hex = hex_encode(&[0u8, 1u8, 255u8]);
         assert_eq!(hex, "0001ff");
+    }
+
+    #[test]
+    fn test_discover_swal_repo_roots_with_categories() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path();
+
+        // Direct repo
+        let direct = base.join("direct-repo");
+        std::fs::create_dir_all(direct.join(".git")).unwrap();
+
+        // Subcategory repo (e.g. cores/core-repo)
+        let cores = base.join("cores");
+        let core_repo = cores.join("core-repo");
+        std::fs::create_dir_all(core_repo.join(".gitcore")).unwrap();
+
+        let discovered = discover_swal_repo_roots(Some(base));
+        assert_eq!(discovered.len(), 2);
+        assert_eq!(discovered.get("direct-repo"), Some(&direct));
+        assert_eq!(discovered.get("core-repo"), Some(&core_repo));
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_all_repos_multi_language() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path();
+
+        // Repo 1: Rust
+        let repo1 = base.join("repo-rust");
+        let src1 = repo1.join("src");
+        std::fs::create_dir_all(&src1).unwrap();
+        std::fs::create_dir_all(repo1.join(".git")).unwrap();
+        std::fs::write(src1.join("lib.rs"), "pub fn rust_fn() {}\npub struct RustStruct;\n").unwrap();
+
+        // Repo 2: TypeScript & Python
+        let repo2 = base.join("repo-ts-py");
+        let src2 = repo2.join("src");
+        std::fs::create_dir_all(&src2).unwrap();
+        std::fs::create_dir_all(repo2.join(".git")).unwrap();
+        std::fs::write(src2.join("app.ts"), "export function tsFunction(): string { return 'hello'; }\n").unwrap();
+        std::fs::write(src2.join("script.py"), "def py_function():\n    pass\n").unwrap();
+
+        // Index CodeGraph for both repos
+        let db_path1 = crate::codebase::codegraph_paths::code_graph_db_path_for(&repo1);
+        let db_path2 = crate::codebase::codegraph_paths::code_graph_db_path_for(&repo2);
+
+        std::fs::create_dir_all(db_path1.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(db_path2.parent().unwrap()).unwrap();
+
+        let db1 = std::sync::Arc::new(CodeGraphDB::new(&db_path1).unwrap());
+        let db2 = std::sync::Arc::new(CodeGraphDB::new(&db_path2).unwrap());
+
+        let indexer1 = code_graph::indexer::Indexer::new(db1);
+        let indexer2 = code_graph::indexer::Indexer::new(db2);
+
+        indexer1.index(&repo1, false).await.unwrap();
+        indexer2.index(&repo2, false).await.unwrap();
+
+        let repo_roots = discover_swal_repo_roots(Some(base));
+        assert_eq!(repo_roots.len(), 2);
+
+        let data_dir = base.join("data");
+        let snapshots = snapshot_all_repos(&repo_roots, &data_dir).unwrap();
+
+        assert_eq!(snapshots.len(), 2);
+
+        let rust_snap = snapshots.iter().find(|s| s.repo == "repo-rust").unwrap();
+        assert!(rust_snap.symbols_total > 0);
+
+        let multi_snap = snapshots.iter().find(|s| s.repo == "repo-ts-py").unwrap();
+        assert!(multi_snap.symbols_total >= 2);
     }
 }

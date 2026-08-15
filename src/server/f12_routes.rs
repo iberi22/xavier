@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::curation::CurationQueue;
-use crate::codebase::snapshot::SnapshotManager;
+use crate::codebase::snapshot::{discover_swal_repo_roots, SnapshotManager};
 use crate::mesh::private_mesh::{
     is_same_wallet, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncPayload, WalletNode,
 };
@@ -573,19 +573,24 @@ pub async fn create_snapshot(
     let repo_root = match &req.repo_root {
         Some(root) => PathBuf::from(root),
         None => {
-            let base = state
-                .data_dir
-                .parent()
-                .and_then(|p| p.parent())
-                .map(|p| p.join("proyectosSWAL").join(&req.repo));
-            match base {
-                Some(p) if p.exists() => p,
-                _ => {
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        "repo_root required (SWAL root not derivable from data_dir)",
-                    )
-                        .into_response();
+            let discovered = discover_swal_repo_roots(None);
+            if let Some(found) = discovered.get(&req.repo) {
+                found.clone()
+            } else {
+                let base = state
+                    .data_dir
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .map(|p| p.join("proyectosSWAL").join(&req.repo));
+                match base {
+                    Some(p) if p.exists() => p,
+                    _ => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            "repo_root required (SWAL root not derivable from data_dir)",
+                        )
+                            .into_response();
+                    }
                 }
             }
         }
