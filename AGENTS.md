@@ -1,91 +1,70 @@
+# AGENTS.md — Xavier
 
-## SWAL ecosystem goal (do not disconnect)
+Xavier is a **high-performance vector memory runtime for AI agents**, written in
+Rust. It provides persistent, searchable, interpretable memory with native HTTP,
+CLI, and MCP entry points (SQLite + `sqlite-vec`, BM25, hybrid search).
 
-- **Canonical:** monorepo `docs/SWAL/GOAL.md` · `docs/SWAL/PROJECT_MAP.md` · `docs/SWAL/README.md`
-- **Local copy:** `.gitcore/docs/SWAL_GOAL.md` (via `gitcore-update`)
-- **Pro:** active SWAL node only — **no Stripe** as Pro unlock
-- **Memory:** Xavier HTTP/MCP · namespaces `app/{appId}/instance/{instanceId}`
-- **Mesh:** edge-mesh · `swal/{appId}/{instanceId}` (when P2P applies)
-- **Token:** $SWAL ownership + stake yield (not parallel OMNI/XAV coins)
-- **Backoffice:** `maloca/apps/swal-backoffice`
-- **Protocol:** GitCore 3.8 · feature-verify / implementation-score under `.gitcore/scripts/`
+This file is a contract for anyone — human or AI agent — working on this repo.
 
-> **GitCore 3.8.0** applied 2026-07-17. Full bootstrap rules are in protocol sections; preserve project-specific content below.
-# AGENTS.md - Xavier Workspace
+## 1. Purpose & vision
 
-## Identity
-Xavier is the **CEO of the SWAL project** alongside BELA. It is the central system for memory and continuous improvement.
+Xavier is the cognitive memory brain of the SWAL ecosystem. The repo is built
+in **waves** (sprints) with a **verifiable feature ledger**: nothing is "done"
+by declaration, only by a green verification run.
 
-## Essential Files (Read at the start of every session)
-1. `SOUL.md` — Who Xavier is
-2. `USER.md` — Who BELA is
-3. `MEMORY.md` — Long-term memory
-4. `memory/YYYY-MM-DD.md` — Daily logs and notes
+## 2. Setup commands
 
-## Core Memory (Xavier Core)
-Xavier is the global memory brain. **Cortex** (previously the synchronization plugin) has been fully removed:
-|-**Xavier URL:** http://localhost:8006
-|- Durable Memory: Always search Xavier (`http://localhost:8006`) for past context BEFORE starting complex tasks. See [.gitcore/rules/GLOBAL_XAVIER_INTEGRATION.md](file:///e:/scripts-python/xavier-v1/.gitcore/rules/GLOBAL_XAVIER_INTEGRATION.md) and [.gitcore/rules/XAVIER_AGENT_RULES.md](file:///e:/scripts-python/xavier-v1/.gitcore/rules/XAVIER_AGENT_RULES.md) for concrete guidelines.
-- **Cascade Integration**: Integrate Xavier into every turn of the agentic flow for turn-based context and atomic verification.
-- **Durable Learning**: Store deep research findings or architectural decisions in Xavier after task completion.
-- **Roadmap Management** — Manage and update the project roadmap.
-- **Continuous Improvement** — Identify opportunities for enhancement.
-- **Coordination** — Ensure all agents are aligned.
-- **Strategic Decisions** — Make architectural and priority decisions.
-- **DevLog Management** — Document the deep technical "why". See `docs/devlog/`.
+```bash
+# Install deps (NixOS): nix-shell (see shell.nix) — needs openssl + pkg-config
+cargo build --release --features local-gllm   # or: --features ci-safe for CI
+cargo test --workspace                         # full suite
+cargo clippy --all-targets -- -D warnings      # warnings are errors
+```
 
-## 🧠 Subagents: Xavier as the shared brain (MANDATORY protocol)
+## 3. Development by waves
 
-This repo is worked on by **two kinds of subagent**. ALL of them MUST treat Xavier
-(`http://localhost:8006`, or the MCP server `xavier-memory`) as their **sole durable memory**.
-Your own context is discarded between sessions — only what you store in Xavier persists.
+- Work is organized in waves: research → issues → execution → verification.
+- Full protocol: `docs/protocol/` (README first).
+- A new wave does not open until the previous one's features are `stable`.
 
-### 1. AGI CLIs (synchronous) — codex / opencode / gemini / claude / qwen
-Launched locally with Xavier wired as an MCP server (see `scripts/subagents/mcp/`).
-- **Recall**: call `mem_search(query=<your task>, filters={project:<your-project>})` BEFORE working.
-- **Persist**: call `create_memory(path=<descriptive-slug>, content=<result>, kind=<decision|fact|task|bug>)` AFTER.
+## 4. Feature verification
 
-### 2. Google Jules (asynchronous)
-Triggered by applying the `jules` label to a GitHub issue. Runs in its own sandbox and
-opens a Pull Request. Jules reads this `AGENTS.md` first, so:
-- **Recall**: read the "Contexto recuperado de Xavier" block injected in the issue body
-  (the dispatcher puts it there — use it, do not re-discover what is already decided).
-- **Persist**: document your decision/finding in the PR description so it can be back-filled.
+- `docs/features/features.json` is the source of truth (status, tests, files).
+- Run `scripts/verify-pipeline.sh` to see the real state — it EXECUTES the
+  declared tests. The pipeline is the judge; status is never hand-promoted.
+- CI runs the same pipeline on every PR.
 
-- **Progressive Memory Disclosure**: To save tokens, **ALWAYS** use `mem_search` (Fat Search) first to identify relevant memories via metadata and snippets. Only use `memory_context` or `get_memory` (Page-In) for the specific IDs or paths you need to see in full.
-- **Skill canónico:** `.agents/skills/xavier-memory-protocol/SKILL.md` (índice en `.agents/skills/README.md`).
+## 5. Modifying features.json
 
-## Best Practices & Performance
-- **Golden Rule (Tokio + Rayon)**: When combining both, never call Rayon's `.par_iter()` directly within a Tokio worker thread, as this will block the event loop and halt Webhooks and I/O tasks. Always wrap Rayon-based computation inside `tokio::task::spawn_blocking`. This is critical for high-performance modules like the BM25 indexer or concurrent key encryption in Clavis.
+- Never change `status` to a higher value by hand — a green run promotes it.
+- New feature: PR that adds the spec (`docs/features/specs/FEATURE-*.md`) +
+  the ledger entry (`status: planned`) + implementation + tests.
 
-## 🌍 Entorno de Xavier (Environment Detection)
-Xavier checks the following environment variables at startup to configure paths and behaviors:
+## 6. Architecture decisions
 
-### `XAVIER_HOME` (optional)
-The workspace directory where Xavier stores configuration and data beyond the SQLite database.
-- If `$XAVIER_HOME` is set, Xavier uses it directly.
-- Otherwise, Xavier walks up the file tree from the current directory looking for a `.xavier-root` file or `.git` directory and places `XAVIER_HOME` at the repo root under `.xavier/`.
-- This directory stores non-DB artifacts: cron logs, lock files, temporary states.
+- Non-obvious decisions become ADRs in `docs/adr/`
+  (numbered, context → decision → consequences). Debates happen in public.
+- A change that contradicts an ADR must update it or open a new one.
 
-### `XAVIER_CRON_SLEEP_MINUTES` (optional)
-How many minutes to wait between cron cycles.
-- Default: `1` (one minute).
-- Values below `1` are clamped to `1`; values above `60` are clamped to `60`
+## 7. Configuration & secrets (12-factor)
 
-### `XAVIER_WORKTREE` (internal use)
-Used by the `worktree` command to delegate a full copy of Xavier to a subagent worktree.
-- Path to a full Xavier worktree copy.
+- All configuration lives in environment variables. No hardcoded credentials,
+  environment endpoints, or personal paths in the code.
+- `.env` is never committed. `.env.example` documents every variable with
+  placeholder values — if you add a `std::env::var`, add the key to
+  `.env.example` in the same PR.
+- Secrets are scanned by `scripts/check-secrets.sh` (gitleaks) before merge.
 
----
+## 8. Code style
 
-## GitHub Integration
-- Repo: `iberi22/xavier` — Open source context engine.
-- Stack: Rust + SQLite-Vec.
-- Plugins: PgHeart ("~/dev/pgheart").
-- Objective: To become the central memory system for all SWAL agents.
+- `cargo fmt` required; clippy must be warning-free (`-D warnings`).
+- Errors: `thiserror` in libs, `anyhow` in binaries (follow existing patterns).
+- Golden rule (Tokio + Rayon): never call Rayon `.par_iter()` directly inside
+  a Tokio worker — wrap in `tokio::task::spawn_blocking`.
+- Comments in English, minimal density.
 
----
+## 9. Pull requests
 
-_Last updated: 2026-05-13_
-
-
+- 1 PR = 1 feature (or a bounded part of it), referencing its feature id.
+- CI runs: fmt, clippy, tests, feature verification, secret scan.
+- Never commit: session state, output artifacts, `.env`, logs, databases.
