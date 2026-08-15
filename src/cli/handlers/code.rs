@@ -563,6 +563,7 @@ pub async fn code_context_handler(
             "struct" => code_graph.query.structs(kind_limit).unwrap_or_default(),
             "class" => code_graph.query.classes(kind_limit).unwrap_or_default(),
             "enum" => code_graph.query.enums(kind_limit).unwrap_or_default(),
+            "route" | "http_route" => code_graph.query.routes(kind_limit).unwrap_or_default(),
             _ => code_graph
                 .query
                 .search(&payload.query, limit)
@@ -838,6 +839,7 @@ fn code_find_symbols(
             "struct" => (code_query.structs(broad_limit).unwrap_or_default(), true),
             "class" => (code_query.classes(broad_limit).unwrap_or_default(), true),
             "enum" => (code_query.enums(broad_limit).unwrap_or_default(), true),
+            "route" | "http_route" => (code_query.routes(broad_limit).unwrap_or_default(), true),
             _ => (
                 search_code_symbols_with_fallback(code_query, query, broad_limit),
                 false,
@@ -869,6 +871,9 @@ fn is_supported_code_pattern(pattern: &str) -> bool {
             | "class"
             | "enum_definition"
             | "enum"
+            | "route_definition"
+            | "route"
+            | "http_route"
             | "module_definition"
             | "module"
             | "import"
