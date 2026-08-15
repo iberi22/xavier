@@ -542,6 +542,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             "/memory/reindex",
             post(reindex_handler).layer(middleware::from_fn(require_permission(|r| r.can_add_memory()))),
         )
+        .route(
+            "/v1/maintenance/reindex-embeddings",
+            post(xavier::adapters::inbound::http::routes::maintenance_reindex_handler).layer(
+                middleware::from_fn(xavier::middleware::require_permission(|r| r.can_edit_config())),
+            ),
+        )
         .route("/memory/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
         .route(
@@ -685,10 +691,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         // ── Maloca WebSocket Live Feed (MS-004) ──────────────────────────
         .route("/maloca/ws/feed", get(xavier::maloca::ws::ws_live_feed))
-        .route(
-            "/maloca/feed/status",
-            get(|| async { axum::Json(xavier::maloca::ws::get_feed_status()) }),
-        )
+        // NOTE: GET /maloca/feed/status se registra en maloca::nested_router (src/maloca/mod.rs:53)
+        // y se mergea abajo — NO duplicar aquí (panic axum "Overlapping method route").
         // ── Maloca Belief Graph Confidence (MS-005) ──────────────────────
         .route(
             "/maloca/beliefs",
