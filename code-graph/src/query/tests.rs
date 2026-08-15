@@ -221,4 +221,149 @@ mod tests_inner {
         assert_eq!(reverse.len(), 1);
         assert_eq!(reverse[0].from_symbol, main);
     }
+
+    #[test]
+    fn test_blast_radius_multi_caller_and_transitivity() {
+        let db = CodeGraphDB::in_memory().expect("in-memory db");
+
+        // Create helper symbol
+        let helper = Symbol {
+            name: "require_permission".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "/src/middleware/auth.rs".to_string(),
+            start_line: 1,
+            end_line: 10,
+            ..Default::default()
+        };
+        db.insert_symbol(&helper).expect("insert helper");
+        let helper_id = db
+            .find_by_name("require_permission", 1)
+            .expect("find helper")[0]
+            .stable_id
+            .clone()
+            .unwrap();
+
+        // Create 3 handlers (direct callers, depth 1)
+        let handler_a = Symbol {
+            name: "delete_memory_handler".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "/src/cli/handlers/memory.rs".to_string(),
+            start_line: 20,
+            end_line: 35,
+            ..Default::default()
+        };
+        let handler_b = Symbol {
+            name: "update_memory_handler".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "/src/cli/handlers/memory.rs".to_string(),
+            start_line: 40,
+            end_line: 55,
+            ..Default::default()
+        };
+        let handler_c = Symbol {
+            name: "create_token_handler".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "/src/cli/handlers/tokens.rs".to_string(),
+            start_line: 10,
+            end_line: 25,
+            ..Default::default()
+        };
+
+        db.insert_symbol(&handler_a).expect("insert handler_a");
+        db.insert_symbol(&handler_b).expect("insert handler_b");
+        db.insert_symbol(&handler_c).expect("insert handler_c");
+
+        let ha_id = db.find_by_name("delete_memory_handler", 1).unwrap()[0]
+            .stable_id
+            .clone()
+            .unwrap();
+        let hb_id = db.find_by_name("update_memory_handler", 1).unwrap()[0]
+            .stable_id
+            .clone()
+            .unwrap();
+        let hc_id = db.find_by_name("create_token_handler", 1).unwrap()[0]
+            .stable_id
+            .clone()
+            .unwrap();
+
+        // Create level 2 caller (router calling delete_memory_handler)
+        let router = Symbol {
+            name: "server_router".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "/src/cli/server.rs".to_string(),
+            start_line: 100,
+            end_line: 200,
+            ..Default::default()
+        };
+        db.insert_symbol(&router).expect("insert router");
+        let router_id = db.find_by_name("server_router", 1).unwrap()[0]
+            .stable_id
+            .clone()
+            .unwrap();
+
+        // Insert Calls edges
+        // Handlers call helper
+        for caller in [&ha_id, &hb_id, &hc_id] {
+            db.insert_edge(&CodeEdge {
+                id: None,
+                from_symbol: caller.clone(),
+                to_symbol: helper_id.clone(),
+                edge_type: EdgeType::Calls,
+                file_path: "/src/test.rs".to_string(),
+                line: 1,
+                confidence: 1.0,
+                metadata: None,
+            })
+            .expect("insert edge");
+        }
+
+        // Router calls handler A
+        db.insert_edge(&CodeEdge {
+            id: None,
+            from_symbol: router_id.clone(),
+            to_symbol: ha_id.clone(),
+            edge_type: EdgeType::Calls,
+            file_path: "/src/cli/server.rs".to_string(),
+            line: 150,
+            confidence: 1.0,
+            metadata: None,
+        })
+        .expect("insert router edge");
+
+        let query = QueryEngine::new(Arc::new(db));
+
+        // Test depth 1
+        let depth1 = query.blast_radius("require_permission", 1).expect("blast radius d1");
+        assert_eq!(depth1.len(), 3, "should find all 3 direct callers at depth 1");
+        for (sym, d) in &depth1 {
+            assert_eq!(*d, 1);
+            assert!(
+                sym.name == "delete_memory_handler"
+                    || sym.name == "update_memory_handler"
+                    || sym.name == "create_token_handler"
+            );
+        }
+
+        // Test depth 2
+        let depth2 = query.blast_radius("require_permission", 2).expect("blast radius d2");
+        assert_eq!(depth2.len(), 4, "should find 3 direct callers + 1 transitive caller at depth 2");
+
+        // Verify transitivity: blast_radius(X, 2) contains all elements of blast_radius(X, 1)
+        for (d1_sym, _) in &depth1 {
+            assert!(
+                depth2.iter().any(|(d2_sym, _)| d2_sym.name == d1_sym.name),
+                "depth2 must contain all depth1 symbols"
+            );
+        }
+
+        // Verify depth 2 caller
+        let router_entry = depth2.iter().find(|(s, _)| s.name == "server_router");
+        assert!(router_entry.is_some(), "router should be in depth 2 blast radius");
+        assert_eq!(router_entry.unwrap().1, 2, "router depth should be 2");
+    }
 }

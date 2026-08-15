@@ -64,6 +64,18 @@ pub struct CodeGraphQueryPayload {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CodeBlastRadiusPayload {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub query: Option<String>,
+    #[serde(default = "default_graph_depth")]
+    pub depth: usize,
+    #[serde(default = "default_graph_limit")]
+    pub limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AddPayload {
     pub content: String,
     #[serde(default)]

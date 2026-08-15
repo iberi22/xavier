@@ -75,6 +75,17 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .send()
                 .await?
         }
+        CodeCommand::BlastRadius { query, depth } => {
+            client
+                .post(format!("{}/code/blast-radius", base_url))
+                .header("X-Xavier-Token", &token)
+                .json(&serde_json::json!({
+                    "query": query,
+                    "depth": depth,
+                }))
+                .send()
+                .await?
+        }
         CodeCommand::Find { query, limit, kind } => {
             client
                 .post(format!("{}/code/find", base_url))
