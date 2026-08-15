@@ -338,6 +338,7 @@ mod tests {
             hit_rate: 0.70,
             k: 5,
             precision_at_k: 0.14,
+            sigma: 0.0,
             category: None,
         };
         let current = RetrievalMetrics {
@@ -359,6 +360,7 @@ mod tests {
             hit_rate: 0.90,
             k: 5,
             precision_at_k: 0.18,
+            sigma: 0.0,
             category: None,
         };
         let current = RetrievalMetrics {
@@ -380,6 +382,7 @@ mod tests {
             hit_rate: 0.80,
             k: 5,
             precision_at_k: 0.16,
+            sigma: 0.0,
             category: None,
         };
         let improved = RetrievalMetrics {
@@ -407,6 +410,7 @@ mod tests {
             hit_rate: 0.0,
             k: 5,
             precision_at_k: 0.0,
+            sigma: 0.0,
             category: None,
         };
         let current = RetrievalMetrics {

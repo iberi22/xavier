@@ -131,6 +131,12 @@ pub struct RetrievalMetrics {
     pub k: usize,
     /// Precision@k: hits / (num_cases * k) — how many of the retrieved slots were correct.
     pub precision_at_k: f64,
+    /// Rank deviation σ = sqrt( 1/N * sum( (actual_rank - expected_rank)^2 ) ).
+    ///
+    /// Evaluates how far actual hit ranks deviate from the expected rank (defaulting to 1).
+    /// Unhit queries contribute penalty rank (k + 1). Perfect retrieval yields σ = 0.0.
+    #[serde(default)]
+    pub sigma: f64,
     /// If this metrics was computed for a specific category group, the category name.
     pub category: Option<String>,
 }
@@ -138,6 +144,20 @@ pub struct RetrievalMetrics {
 impl RetrievalMetrics {
     /// Compute metrics from per-case outcomes.
     pub fn from_results(dataset: &str, results: &[CaseResult], k: usize) -> Self {
+        Self::from_results_with_expected(dataset, results, k, &[])
+    }
+
+    /// Compute metrics from per-case outcomes with optional per-case expected ranks.
+    ///
+    /// Rank deviation σ is calculated as:
+    ///   σ = sqrt( 1/N * sum( (actual_rank_i - expected_rank_i)^2 ) )
+    /// where actual_rank_i is the 1-based rank of the first hit (or k+1 if missed).
+    pub fn from_results_with_expected(
+        dataset: &str,
+        results: &[CaseResult],
+        k: usize,
+        expected_ranks: &[usize],
+    ) -> Self {
         let num = results.len();
         if num == 0 {
             return Self {
@@ -148,6 +168,7 @@ impl RetrievalMetrics {
                 hit_rate: 0.0,
                 k,
                 precision_at_k: 0.0,
+                sigma: 0.0,
                 category: None,
             };
         }
@@ -159,6 +180,26 @@ impl RetrievalMetrics {
             .filter_map(|r| r.first_hit_rank.map(|rank| 1.0 / rank as f64))
             .sum::<f64>()
             / num as f64;
+
+        let sum_sq_diff: f64 = results
+            .iter()
+            .enumerate()
+            .map(|(idx, r)| {
+                let exp = expected_ranks
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(1) as f64;
+                let actual = r
+                    .first_hit_rank
+                    .map(|rank| rank as f64)
+                    .unwrap_or((k + 1) as f64);
+                let diff = actual - exp;
+                diff * diff
+            })
+            .sum();
+
+        let sigma = (sum_sq_diff / num as f64).sqrt();
+
         Self {
             dataset: dataset.to_string(),
             num_cases: num,
@@ -167,6 +208,7 @@ impl RetrievalMetrics {
             hit_rate: recall, // with a single expected_path per case, hit_rate == recall
             k,
             precision_at_k: precision,
+            sigma,
             category: None,
         }
     }
@@ -341,5 +383,40 @@ mod tests {
         // precision = 2 / (3 * 5) = 2/15 ≈ 0.1333
         assert!(m.precision_at_k < 1.0);
         assert!((m.precision_at_k - (2.0 / 15.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_sigma_rank_deviation_calculation() {
+        // Perfect rank 1 retrieval for all expected rank 1 -> sigma = 0.0
+        let results = vec![
+            CaseResult {
+                case_id: "a".into(),
+                hit: true,
+                first_hit_rank: Some(1),
+            },
+            CaseResult {
+                case_id: "b".into(),
+                hit: true,
+                first_hit_rank: Some(1),
+            },
+        ];
+        let m = RetrievalMetrics::from_results_with_expected("t", &results, 5, &[1, 1]);
+        assert_eq!(m.sigma, 0.0);
+
+        // Actual ranks [2, 1] vs expected [1, 1] -> diffs [1, 0] -> sq_diffs [1, 0] -> mean 0.5 -> sigma = sqrt(0.5) ≈ 0.7071
+        let results_dev = vec![
+            CaseResult {
+                case_id: "a".into(),
+                hit: true,
+                first_hit_rank: Some(2),
+            },
+            CaseResult {
+                case_id: "b".into(),
+                hit: true,
+                first_hit_rank: Some(1),
+            },
+        ];
+        let m_dev = RetrievalMetrics::from_results_with_expected("t", &results_dev, 5, &[1, 1]);
+        assert!((m_dev.sigma - (0.5_f64).sqrt()).abs() < 1e-6);
     }
 }
