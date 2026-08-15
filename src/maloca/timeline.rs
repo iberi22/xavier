@@ -233,3 +233,79 @@ fn parse_ts(s: &str) -> Option<DateTime<Utc>> {
         .ok()
         .map(|d| d.with_timezone(&Utc))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_classify_operation() {
+        assert_eq!(classify_operation("decision"), "decision");
+        assert_eq!(classify_operation("DECISION_MADE"), "decision");
+        assert_eq!(classify_operation("criterion_change"), "decision");
+        assert_eq!(classify_operation("commit"), "commit");
+        assert_eq!(classify_operation("git_commit"), "commit");
+        assert_eq!(classify_operation("chronicle"), "commit");
+        assert_eq!(classify_operation("error"), "error");
+        assert_eq!(classify_operation("failure"), "error");
+        assert_eq!(classify_operation("unknown_op"), "memory_created");
+    }
+
+    #[test]
+    fn test_extract_entities() {
+        // String array entities
+        let payload1 = serde_json::json!({
+            "entities": ["entity1", "entity2"]
+        });
+        assert_eq!(extract_entities(&payload1), vec!["entity1", "entity2"]);
+
+        // Object array entities
+        let payload2 = serde_json::json!({
+            "entities": [{"name": "obj_entity1"}, {"name": "obj_entity2"}]
+        });
+        assert_eq!(extract_entities(&payload2), vec!["obj_entity1", "obj_entity2"]);
+
+        // Empty / missing entities
+        let payload3 = serde_json::json!({});
+        assert!(extract_entities(&payload3).is_empty());
+    }
+
+    #[test]
+    fn test_parse_ts() {
+        let valid_ts = "2026-02-15T20:27:00Z";
+        assert!(parse_ts(valid_ts).is_some());
+
+        let invalid_ts = "invalid-date";
+        assert!(parse_ts(invalid_ts).is_none());
+    }
+
+    #[test]
+    fn test_event_to_dto() {
+        let realtime_ev = RealtimeEvent {
+            event_id: "evt-123".to_string(),
+            workspace_id: "ws-test".to_string(),
+            event_type: "memory_added".to_string(),
+            timestamp: "2026-02-15T20:27:00Z".to_string(),
+            agent_id: "agent-007".to_string(),
+            project_id: Some("proj-1".to_string()),
+            payload: serde_json::json!({
+                "summary": "Created new memory",
+                "operation": "decision",
+                "memory_id": "mem-456",
+                "entities": ["nodeA"],
+                "details": {"key": "val"}
+            }),
+        };
+
+        let dto = event_to_dto(&realtime_ev);
+        assert_eq!(dto.id, "evt-123");
+        assert_eq!(dto.agent, "agent-007");
+        assert_eq!(dto.event_type, "decision");
+        assert_eq!(dto.summary, "Created new memory");
+        assert_eq!(dto.memory_id, Some("mem-456".to_string()));
+        assert_eq!(dto.session_id, Some("mem-456".to_string()));
+        assert_eq!(dto.app_id, Some("proj-1".to_string()));
+        assert_eq!(dto.entities, vec!["nodeA"]);
+        assert_eq!(dto.context, Some(serde_json::json!({"key": "val"})));
+    }
+}

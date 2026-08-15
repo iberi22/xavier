@@ -96,3 +96,47 @@ pub fn network_parameters() -> Vec<NetworkParam> {
         },
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn network_parameters_returns_expected_params() {
+        let params = network_parameters();
+        assert!(!params.is_empty());
+
+        let keys: Vec<&str> = params.iter().map(|p| p.key.as_str()).collect();
+
+        // Check for specific essential parameters
+        assert!(keys.contains(&"vote_karma_min"));
+        assert!(keys.contains(&"genesis_node_id"));
+        assert!(keys.contains(&"manager_adds_vote_weight"));
+        assert!(keys.contains(&"ledger_chain"));
+
+        // Ensure no duplicate keys exist
+        let mut unique_keys = keys.clone();
+        unique_keys.sort();
+        unique_keys.dedup();
+        assert_eq!(keys.len(), unique_keys.len());
+    }
+
+    #[test]
+    fn network_parameters_specific_values() {
+        let params = network_parameters();
+
+        let karma = params
+            .iter()
+            .find(|p| p.key == "vote_karma_min")
+            .expect("vote_karma_min present");
+        assert_eq!(karma.default, "500");
+        assert!(karma.locked_until_quorum);
+
+        let manager_weight = params
+            .iter()
+            .find(|p| p.key == "manager_adds_vote_weight")
+            .expect("manager_adds_vote_weight present");
+        assert_eq!(manager_weight.default, "false");
+        assert!(!manager_weight.locked_until_quorum);
+    }
+}

@@ -59,3 +59,21 @@ pub fn nested_router(store: Arc<MalocaStore>) -> Router {
         .nest("/maloca", router())
         .layer(axum::Extension(store))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_router_initialization() {
+        let _r = router();
+    }
+
+    #[test]
+    fn test_nested_router_initialization() {
+        let dir = std::env::temp_dir().join(format!("maloca-mod-test-{}", uuid::Uuid::new_v4()));
+        let store = MalocaStore::open(&dir);
+        let _r = nested_router(store);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
