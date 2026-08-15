@@ -46,5 +46,5 @@ docker run -p 8006:8006 ghcr.io/iberi22/xavier:latest
 ## Next Steps
 
 - [CLI Reference](./CLI_REFERENCE.md) - Full CLI documentation
-- [API Reference](../reference/API.md) - HTTP API details
+- [API Reference](../api/README.md) - HTTP API details
 - [MCP Integration](./MCP_INTEGRATION.md) - Connect to AI clients

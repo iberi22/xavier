@@ -3,7 +3,7 @@ burn-candle = { path = "patches/burn-candle" }
 
 [package]
 name = "xavier"
-version = "0.12.0"
+version = "0.13.0"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
@@ -20,7 +20,6 @@ brand = "Xavier"
 compatibility_alias = "xavier"
 open_source_license = "AGPL-3.0"
 commercial_license = "Xavier-Commercial-1.0"
-mesh_license = "Xavier-Mesh-1.0"
 
 enterprise_contact = "iberi22"
 support_model = "dual-license-open-core"

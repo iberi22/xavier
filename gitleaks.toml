@@ -1,0 +1,32 @@
+# gitleaks config — Xavier public repo
+# Run: gitleaks detect --source . --config gitleaks.toml
+# Or:  scripts/check-secrets.sh
+
+title = "Xavier gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Files that legitimately document secret patterns (never real values)"
+paths = [
+  '''docs/features/specs/FEATURE-.*\.md''',
+  '''\.env\.example$''',
+  '''docs/protocol/.*\.md$''',
+  '''AGENTS\.md$''',
+  '''SECURITY\.md$''',
+]
+
+[[rules]]
+id = "xavier-token-placeholder"
+description = "Xavier token placeholder in .env.example"
+regex = '''XAVIER_TOKEN=replace-with-a-long-random-token'''
+secretGroup = 1
+allowlist = { paths = ['''\.env\.example$'''] }
+
+[[rules]]
+id = "swal-dev-email"
+description = "SWAL dev emails (public identity, but block accidental real creds)"
+regex = '''[a-zA-Z0-9._%+-]+@swal\.dev'''
+secretGroup = 1
+allowlist = { paths = ['''Cargo\.toml$'''] }

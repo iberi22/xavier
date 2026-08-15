@@ -1,1 +1,0 @@
-{"feature": "test-memory-bridge", "progress_pct": 100, "status": "stable", "passes": true, "last_tested": "2026-07-22", "tests": ["memory::bridge::tests::imports_openclaw_markdown_files", "memory::bridge::tests::imports_engram_export_records"]}
