@@ -770,6 +770,84 @@ pub async fn code_call_chain_handler(
     code_graph_edges_response(&state, payload, false, true).await
 }
 
+/// Code blast radius handler.
+pub async fn code_blast_radius_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeBlastRadiusPayload>,
+) -> impl axum::response::IntoResponse {
+    let name_or_query = payload
+        .name
+        .as_deref()
+        .or(payload.query.as_deref())
+        .unwrap_or("")
+        .to_string();
+
+    let sec_result = state
+        .security
+        .process_input(&name_or_query)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: name_or_query.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "blocked": true,
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    let query = sec_result
+        .sanitized_input
+        .unwrap_or_else(|| sec_result.original_input.clone());
+
+    let depth = payload.depth.clamp(1, 8);
+    let code_graph = state.code_graph.read().await;
+
+    match code_graph.query.blast_radius(&query, depth) {
+        Ok(results) => {
+            let json_results: Vec<_> = results
+                .into_iter()
+                .map(|(sym, d)| {
+                    serde_json::json!({
+                        "symbol": sym.name,
+                        "symbol_type": format!("{:?}", sym.kind),
+                        "path": sym.file_path,
+                        "line": sym.start_line,
+                        "end_line": sym.end_line,
+                        "depth": d,
+                        "stable_id": sym.stable_id,
+                        "signature": sym.signature,
+                    })
+                })
+                .collect();
+
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "name": query,
+                "depth": depth,
+                "count": json_results.len(),
+                "results": json_results,
+            }))
+        }
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+        })),
+    }
+}
+
 /// Code hubs handler.
 pub async fn code_hubs_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
     let code_graph = state.code_graph.read().await;
