@@ -5,15 +5,15 @@
   "project": "Xavier",
   "version": "0.13.0",
   "created": "2026-03-05",
-  "last_verified": "2026-08-15",
+  "last_verified": "2026-08-16",
   "total_features": 42,
-  "features_complete": 38,
-  "features_beta": 0,
+  "features_complete": 41,
+  "features_beta": 1,
   "features_draft": 0,
-  "features_planned": 5,
+  "features_planned": 0,
   "features_designed": 0,
-  "features_stable": 32,
-  "overall_progress_pct": 84.2,
+  "features_stable": 31,
+  "overall_progress_pct": 99.3,
   "reconciliation_notes": "2026-08-14: added feat-node-provisioning (status: designed, Olas M6/M7, REQ-029..030 / US-042..043). Counts reconciled to real keys: 31 stable, 1 beta, 5 planned, 1 designed. Prior total_features=36 was stale. 2026-08-15 22:30: restored feat-ivn/feat-ivn-api/feat-ivn-karma/feat-marketplace-api (lost by wave-tests commit ef88787a).",
   "complete": 6,
   "percent": 99.2,
@@ -1375,8 +1375,8 @@
    "id": "feat-ivn-api",
    "name": "Identity Verification HTTP API + Storage",
    "category": "identity",
-   "status": "planned",
-   "progress_pct": 0,
+   "status": "implemented",
+   "progress_pct": 100,
    "description": "REST API for identity verification: requests, validator votes, verified nodes. Verdict history stored in Xavier (SQLite).",
    "steps": [
     "POST /v1/identity/request",
@@ -1388,19 +1388,30 @@
     "Storage in existing SQLite store",
     "tests/ivn_api.rs"
    ],
-   "passes": false,
-   "verified_by": null,
+   "passes": true,
+   "verified_by": "verify-pipeline",
    "github_issue": 1382,
-   "last_tested": null,
-   "notes": "Designed 2026-08-15. Issue xavier#1382. Depends on feat-ivn (ivn.rs). Follows marketplace.rs handler pattern (PR #1394).",
+   "last_tested": "2026-08-16",
+   "notes": "Implemented by PR #1395 (merged 2026-08-16). tests/ivn_api.rs 1/1 PASS (test_ivn_api_full_lifecycle). Status promoted by green pipeline run.",
+   "test_names": [
+    "test_ivn_api_full_lifecycle"
+   ],
+   "implemented_in": [
+    "src/adapters/inbound/http/handlers/ivn.rs",
+    "src/adapters/inbound/http/routes.rs",
+    "tests/ivn_api.rs"
+   ],
+   "tests": [
+    "test_ivn_api_full_lifecycle"
+   ],
    "spec": "docs/features/specs/FEATURE-feat-ivn-api.md"
   },
   "feat-ivn-karma": {
    "id": "feat-ivn-karma",
    "name": "IVN Karma Rewards & Sanctions",
    "category": "identity",
-   "status": "planned",
-   "progress_pct": 0,
+   "status": "implemented",
+   "progress_pct": 100,
    "description": "Karma deltas: +20 verified, +5 correct validator, +1 abstain, -10 false positive (+90d), -50 liar (+180d). Integrated with EigenTrustEngine (hybrid karma, decision b).",
    "steps": [
     "Constants in IvnConfig (bonus/penalty exact)",
@@ -1410,11 +1421,26 @@
     "adjust_karma in reputation.rs (minimal)",
     "tests/ivn_karma.rs"
    ],
-   "passes": false,
-   "verified_by": null,
+   "passes": true,
+   "verified_by": "verify-pipeline",
    "github_issue": 1381,
-   "last_tested": null,
-   "notes": "Designed 2026-08-15. Issue xavier#1381. SECUENCIAL tras feat-ivn (same file ivn.rs). Values validated by ivn_sim.py (commit 8befe47).",
+   "last_tested": "2026-08-16",
+   "notes": "Implemented by PR #1396 (merged 2026-08-16). tests/ivn_karma.rs 3/3 PASS (test_reward_application_exact_deltas, test_sanction_application_and_eigentrust_routing, test_exclusion_window_integration_with_selection). Status promoted by green pipeline run.",
+   "test_names": [
+    "test_reward_application_exact_deltas",
+    "test_sanction_application_and_eigentrust_routing",
+    "test_exclusion_window_integration_with_selection"
+   ],
+   "implemented_in": [
+    "src/data_commons/ivn.rs",
+    "src/data_commons/reputation.rs",
+    "tests/ivn_karma.rs"
+   ],
+   "tests": [
+    "test_reward_application_exact_deltas",
+    "test_sanction_application_and_eigentrust_routing",
+    "test_exclusion_window_integration_with_selection"
+   ],
    "spec": "docs/features/specs/FEATURE-feat-ivn-karma.md"
   },
   "feat-marketplace-api": {
