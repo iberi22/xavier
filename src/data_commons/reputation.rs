@@ -68,6 +68,8 @@ pub struct EigenTrustEngine {
     last_result: Option<EigenTrustResult>,
     /// Computed global trust scores (wallet string → score), populated after compute()
     computed_scores: HashMap<String, f64>,
+    /// Storage for wallet karma balances (soulbound + EigenTrust integration)
+    karma_store: HashMap<WalletAddress, i64>,
 }
 
 impl EigenTrustEngine {
@@ -79,7 +81,20 @@ impl EigenTrustEngine {
             attestations: Vec::new(),
             last_result: None,
             computed_scores: HashMap::new(),
+            karma_store: HashMap::new(),
         }
+    }
+
+    /// Adjust karma balance for a wallet address and return the new balance.
+    pub fn adjust_karma(&mut self, wallet: &WalletAddress, delta: i64) -> i64 {
+        let current = self.karma_store.entry(wallet.clone()).or_insert(0);
+        *current += delta;
+        *current
+    }
+
+    /// Query current karma balance of a wallet address.
+    pub fn karma_of(&self, wallet: &WalletAddress) -> i64 {
+        self.karma_store.get(wallet).copied().unwrap_or(0)
     }
 
     /// Registrar una atestación de reputación
