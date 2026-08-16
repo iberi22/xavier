@@ -138,6 +138,27 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route(
             "/v1/marketplace/pricing",
             get(crate::adapters::inbound::http::handlers::get_pricing_preview_handler),
+        )
+        // ── Identity Verification Network (IVN) API ─────────────────────────
+        .route(
+            "/v1/identity/request",
+            post(crate::adapters::inbound::http::handlers::create_identity_request_handler),
+        )
+        .route(
+            "/v1/identity/request/{id}",
+            get(crate::adapters::inbound::http::handlers::get_identity_request_handler),
+        )
+        .route(
+            "/v1/identity/{id}/vote",
+            post(crate::adapters::inbound::http::handlers::vote_identity_request_handler),
+        )
+        .route(
+            "/v1/identity/requests",
+            get(crate::adapters::inbound::http::handlers::list_identity_requests_handler),
+        )
+        .route(
+            "/v1/identity/verified",
+            get(crate::adapters::inbound::http::handlers::list_verified_nodes_handler),
         );
 
     // Add enterprise plugin routes if feature is enabled
