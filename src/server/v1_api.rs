@@ -873,6 +873,17 @@ pub async fn v1_session_export(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(session_id): Path<String>,
 ) -> impl IntoResponse {
+    if !session_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid session ID" })),
+        )
+            .into_response();
+    }
+
     // Session export/import is often used for mesh sharing, but can be standalone.
     // However, the design docs link it to the Mesh License when used for network sharing.
     // We'll gate it if it's part of the Mesh/V1 API surface.
@@ -926,6 +937,17 @@ pub async fn v1_mesh_session_share(
     Path(session_id): Path<String>,
     Json(payload): Json<V1SessionShareRequest>,
 ) -> impl IntoResponse {
+    if !session_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid session ID" })),
+        )
+            .into_response();
+    }
+
     // License check
     let settings = crate::settings::XavierSettings::current();
     if let Err(e) = crate::security::license::require_mesh_license(&settings) {
@@ -1536,6 +1558,13 @@ pub async fn v1_memories_get(
     Path(id): Path<String>,
     Query(params): Query<V1GetParams>,
 ) -> impl IntoResponse {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        return crate::error::ApiError::bad_request("Invalid memory ID").into_ok_response();
+    }
+
     match workspace.workspace.memory.get(&id).await {
         Ok(Some(doc)) if is_primary_memory(&doc.metadata) => {
             let mut final_content = doc.content.clone();
@@ -1596,6 +1625,13 @@ pub async fn v1_memories_outline(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        return crate::error::ApiError::bad_request("Invalid memory ID").into_ok_response();
+    }
+
     match workspace.workspace.memory.get(&id).await {
         Ok(Some(doc)) if is_primary_memory(&doc.metadata) => {
             let sections = split_markdown_by_sections_with_levels(&doc.content);
@@ -1722,6 +1758,13 @@ pub async fn v1_memories_update(
     Path(id): Path<String>,
     Json(payload): Json<V1AddMemoryRequest>,
 ) -> impl IntoResponse {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        return crate::error::ApiError::bad_request("Invalid memory ID").into_ok_response();
+    }
+
     let Some(existing) = workspace.workspace.memory.get(&id).await.ok().flatten() else {
         return crate::error::ApiError::not_found("Memory not found").into_ok_response();
     };
@@ -1805,6 +1848,13 @@ pub async fn v1_memories_delete(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        return crate::error::ApiError::bad_request("Invalid memory ID").into_ok_response();
+    }
+
     match workspace.workspace.memory.delete(&id).await {
         Ok(Some(doc)) => {
             if let Some(memory_id) = doc.id.clone().or_else(|| Some(doc.path.clone())) {
