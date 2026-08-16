@@ -42,7 +42,9 @@ fn test_reward_application_exact_deltas() {
 
 #[test]
 fn test_sanction_application_and_eigentrust_routing() {
-    clear_exclusions();
+    // NOTE: wallet names below are unique per test; do NOT call clear_exclusions()
+    // here — EXCLUSION_STORE is a process-global and clearing it races with other
+    // tests in this binary (parallel execution).
     let mut engine = EigenTrustEngine::new(ReputationConfig::default(), vec![]);
 
     let fp_val1 = WalletAddress("xv1_fp_val_1".into());
@@ -84,7 +86,8 @@ fn test_sanction_application_and_eigentrust_routing() {
 
 #[test]
 fn test_exclusion_window_integration_with_selection() {
-    clear_exclusions();
+    // NOTE: no clear_exclusions() here — unique wallet names keep tests disjoint;
+    // the global store is shared across tests in this binary (parallel execution).
 
     let excluded_val = WalletAddress("xv1_excluded_val".into());
     // Record exclusion until far into the future relative to current time
