@@ -1,6 +1,6 @@
 import { Folder } from "lucide-react";
 import { motion } from "motion/react";
-import type React from "react";
+import React from "react";
 import { useMemo, useState } from "react";
 import type { BookmarkArtifact } from "../types";
 import BookmarkItem from "./BookmarkItem";
@@ -12,7 +12,7 @@ interface BookmarksViewProps {
   onUpdateBookmark: (updated: BookmarkArtifact) => void;
 }
 
-export default function BookmarksView({
+export default React.memo(function BookmarksView({
   bookmarks,
   onPinArtifact,
   onUpdateBookmark,
@@ -24,10 +24,19 @@ export default function BookmarksView({
     return ["All", ...Array.from(cats)];
   }, [bookmarks]);
 
-  const filteredBookmarks =
-    activeCategory === "All"
+  /**
+   * ⚡ Bolt Performance Optimization
+   *
+   * 💡 What: Wrapped filteredBookmarks in useMemo() and BookmarksView in React.memo()
+   * 🎯 Why: filteredBookmarks was re-calculated on every render of BookmarksView, doing an O(N) filter.
+   *         Additionally, BookmarksView itself was unmemoized, leading to unnecessary re-renders when parent state changed.
+   * 📊 Impact: O(1) filtering on re-renders, preventing expensive filtering and DOM reconciliation on every un-related state change.
+   */
+  const filteredBookmarks = useMemo(() => {
+    return activeCategory === "All"
       ? bookmarks
       : bookmarks.filter((b) => b.category === activeCategory);
+  }, [bookmarks, activeCategory]);
 
   return (
     <motion.div
@@ -75,4 +84,4 @@ export default function BookmarksView({
       </div>
     </motion.div>
   );
-}
+});
