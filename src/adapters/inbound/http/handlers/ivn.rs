@@ -407,7 +407,7 @@ pub async fn list_identity_requests_handler(
     let limit = query.limit.unwrap_or(10).max(1);
 
     let mut all_requests: Vec<IdentityRequestRecord> = store.requests.values().cloned().collect();
-    all_requests.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    all_requests.sort_by_key(|r| std::cmp::Reverse(r.created_at));
 
     let total = all_requests.len();
     let start = (page - 1) * limit;
