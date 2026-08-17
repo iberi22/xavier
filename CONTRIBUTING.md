@@ -208,4 +208,4 @@ Xavier uses a **hexagonal architecture** (ports & adapters):
 
 ## License
 
-By contributing to Xavier, you agree that your contributions will be licensed under the MIT License. Enterprise features are subject to a separate Enterprise License.
+By contributing to Xavier, you agree that your contributions will be licensed under the AGPL-3.0-only License (or applicable SWAL dual licensing model) as specified in [LICENSE](LICENSE) and [CLA.md](CLA.md). Enterprise features are subject to a separate Enterprise License.

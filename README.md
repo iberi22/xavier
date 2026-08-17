@@ -152,4 +152,4 @@ For agents indexing the repository, use these entry paths:
 
 ## 🛡️ License
 
-MIT — see [LICENSE](LICENSE) for details. Communal code for autonomous agents.
+AGPL-3.0-only — see [LICENSE](LICENSE) for details. Cognitive memory runtime for autonomous agents within SouthWest AI Labs (SWAL).
