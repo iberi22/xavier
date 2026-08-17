@@ -100,20 +100,18 @@ impl MemoryStore for VecSqliteMemoryStore {
         if record.embedding.is_empty() {
             if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
                 match crate::memory::embedder::EmbeddingClient::from_env_async().await {
-                    Ok(client) => {
-                        match client.embed(&record.content).await {
-                            Ok(vector) => {
-                                record.embedding = vector;
-                            }
-                            Err(e) => {
-                                tracing::warn!(
+                    Ok(client) => match client.embed(&record.content).await {
+                        Ok(vector) => {
+                            record.embedding = vector;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
                                     "Memory record {} saved WITHOUT embedding: client embedding generation failed: {}",
                                     record.id,
                                     e
                                 );
-                            }
                         }
-                    }
+                    },
                     Err(e) => {
                         tracing::warn!(
                             "Memory record {} saved WITHOUT embedding: failed to initialize embedding client: {}",
@@ -173,7 +171,8 @@ impl MemoryStore for VecSqliteMemoryStore {
             lock.clone()
         };
 
-        let is_ssp_path = record.path.starts_with("stability/") || record.path.starts_with("features/");
+        let is_ssp_path =
+            record.path.starts_with("stability/") || record.path.starts_with("features/");
         if is_ssp_path {
             dedup_settings.enabled = true;
             dedup_settings.scope = crate::settings::types::DedupScope::PathExact;
@@ -210,21 +209,29 @@ impl MemoryStore for VecSqliteMemoryStore {
 
                 // 1. Try sqlite-vec cosine distance query (vector_distance equivalent)
                 if let Ok(emb_json) = serde_json::to_string(&record_c.embedding) {
+                    let table_name = if record_c.embedding.len() == 768 {
+                        "memory_embeddings_768"
+                    } else {
+                        "memory_embeddings"
+                    };
                     let (sql, query_params) = match dedup_settings_c.scope {
                         crate::settings::types::DedupScope::PathExact => {
                             (
-                                r#"
-                                SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
-                                       m.created_at, m.updated_at, m.revision, m.primary_flag,
-                                       m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
-                                       m.encrypted_dek, m.content_iv, m.metadata_iv,
-                                       CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
-                                FROM memory_embeddings e
-                                JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
-                                WHERE e.workspace_id = ?2 AND m.path = ?3
-                                ORDER BY distance ASC
-                                LIMIT 1
-                                "#.to_string(),
+                                format!(
+                                    r#"
+                                 SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                        m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                        m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                        m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                        CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                                 FROM {} e
+                                 JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                                 WHERE e.workspace_id = ?2 AND m.path = ?3
+                                 ORDER BY distance ASC
+                                 LIMIT 1
+                                 "#,
+                                    table_name
+                                ),
                                 vec![
                                     rusqlite::types::Value::Text(emb_json),
                                     rusqlite::types::Value::Text(record_c.workspace_id.clone()),
@@ -234,24 +241,27 @@ impl MemoryStore for VecSqliteMemoryStore {
                         }
                         crate::settings::types::DedupScope::Namespace => {
                             (
-                                r#"
-                                SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
-                                       m.created_at, m.updated_at, m.revision, m.primary_flag,
-                                       m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
-                                       m.encrypted_dek, m.content_iv, m.metadata_iv,
-                                       CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
-                                FROM memory_embeddings e
-                                JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
-                                WHERE e.workspace_id = ?2
-                                  AND json_extract(m.metadata, '$.namespace.org_id') IS ?3
-                                  AND json_extract(m.metadata, '$.namespace.user_id') IS ?4
-                                  AND json_extract(m.metadata, '$.namespace.agent_id') IS ?5
-                                  AND json_extract(m.metadata, '$.namespace.session_id') IS ?6
-                                  AND json_extract(m.metadata, '$.namespace.project') IS ?7
-                                  AND json_extract(m.metadata, '$.namespace.scope') IS ?8
-                                ORDER BY distance ASC
-                                LIMIT 1
-                                "#.to_string(),
+                                format!(
+                                    r#"
+                                 SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                        m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                        m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                        m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                        CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                                 FROM {} e
+                                 JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                                 WHERE e.workspace_id = ?2
+                                   AND json_extract(m.metadata, '$.namespace.org_id') IS ?3
+                                   AND json_extract(m.metadata, '$.namespace.user_id') IS ?4
+                                   AND json_extract(m.metadata, '$.namespace.agent_id') IS ?5
+                                   AND json_extract(m.metadata, '$.namespace.session_id') IS ?6
+                                   AND json_extract(m.metadata, '$.namespace.project') IS ?7
+                                   AND json_extract(m.metadata, '$.namespace.scope') IS ?8
+                                 ORDER BY distance ASC
+                                 LIMIT 1
+                                 "#,
+                                    table_name
+                                ),
                                 vec![
                                     rusqlite::types::Value::Text(emb_json),
                                     rusqlite::types::Value::Text(record_c.workspace_id.clone()),
@@ -615,8 +625,17 @@ impl MemoryStore for VecSqliteMemoryStore {
             // Store vector in native vector search table
             if !record_c.embedding.is_empty() {
                 let embedding_json = serde_json::to_string(&record_c.embedding).unwrap_or_default();
+                let table_name = if record_c.embedding.len() == 768 {
+                    "memory_embeddings_768"
+                } else {
+                    "memory_embeddings"
+                };
+                let sql = format!(
+                    "INSERT OR REPLACE INTO {}(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                    table_name
+                );
                 conn.execute(
-                    "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                    &sql,
                     params![record_c.id, record_c.workspace_id, embedding_json],
                 )?;
             }
@@ -716,14 +735,24 @@ impl MemoryStore for VecSqliteMemoryStore {
                         params![workspace_id, workspace_id, record_id],
                     )?;
 
-                    // Delete from vector table
+                    // Delete from vector tables
                     tx.execute(
                         "DELETE FROM memory_embeddings WHERE id = ? AND workspace_id = ?",
+                        params![record_id, workspace_id],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM memory_embeddings_768 WHERE id = ? AND workspace_id = ?",
                         params![record_id, workspace_id],
                     )?;
 
                     tx.execute(
                         "DELETE FROM memory_embeddings WHERE workspace_id = ? AND id IN (
+                        SELECT id FROM memory_records WHERE workspace_id = ? AND parent_id = ?
+                    )",
+                        params![workspace_id, workspace_id, record_id],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM memory_embeddings_768 WHERE workspace_id = ? AND id IN (
                         SELECT id FROM memory_records WHERE workspace_id = ? AND parent_id = ?
                     )",
                         params![workspace_id, workspace_id, record_id],

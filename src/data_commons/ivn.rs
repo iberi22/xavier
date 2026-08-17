@@ -309,7 +309,13 @@ pub fn apply_rewards(
     applicant: &WalletAddress,
     validator_votes: &[(WalletAddress, Vote)],
 ) -> KarmaRewardSummary {
-    apply_rewards_with_config(&IvnConfig::default(), engine, verdict, applicant, validator_votes)
+    apply_rewards_with_config(
+        &IvnConfig::default(),
+        engine,
+        verdict,
+        applicant,
+        validator_votes,
+    )
 }
 
 /// Apply rewards using a custom IvnConfig
@@ -368,7 +374,13 @@ pub fn apply_sanctions(
     liar: Option<&WalletAddress>,
     current_time: u64,
 ) -> KarmaSanctionSummary {
-    apply_sanctions_with_config(&IvnConfig::default(), engine, fp_validators, liar, current_time)
+    apply_sanctions_with_config(
+        &IvnConfig::default(),
+        engine,
+        fp_validators,
+        liar,
+        current_time,
+    )
 }
 
 /// Apply sanctions with a custom IvnConfig
@@ -393,7 +405,7 @@ pub fn apply_sanctions_with_config(
     if let Some(applicant) = liar {
         let sanction = SanctionResult {
             karma_penalty: config.penalty_karma_lie, // -50
-            exclusion_days: config.retry_days,        // 180d
+            exclusion_days: config.retry_days,       // 180d
         };
         engine.adjust_karma(applicant, sanction.karma_penalty); // -50 karma
         let until = current_time + (sanction.exclusion_days as u64 * 86_400);

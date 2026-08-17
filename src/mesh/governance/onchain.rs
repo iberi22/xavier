@@ -88,10 +88,7 @@ impl OnchainDaoClient {
 
     /// Converts a 32-byte cluster_id back to a UTF-8 string by trimming trailing null bytes.
     pub fn parse_cluster_id(&self, cluster_id_bytes: &[u8; 32]) -> String {
-        let len = cluster_id_bytes
-            .iter()
-            .position(|&b| b == 0)
-            .unwrap_or(32);
+        let len = cluster_id_bytes.iter().position(|&b| b == 0).unwrap_or(32);
         String::from_utf8_lossy(&cluster_id_bytes[..len]).to_string()
     }
 

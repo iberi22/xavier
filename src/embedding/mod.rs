@@ -10,8 +10,11 @@ use tracing::info;
 
 pub mod cache;
 pub mod gllm;
+pub mod ollama;
 pub mod openai;
 pub mod pipeline;
+
+pub const DIMENSION_768: usize = 768;
 
 const DEFAULT_LOCAL_EMBEDDING_ENDPOINT: &str = "http://localhost:11434/v1/embeddings";
 const DEFAULT_LOCAL_EMBEDDING_MODEL: &str = "embeddinggemma";
@@ -90,9 +93,17 @@ pub(crate) struct GllmConfig {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct OllamaConfig {
+    endpoint: String,
+    model: String,
+    dimension: usize,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum EmbedderBackendConfig {
     Gllm(GllmConfig),
     OpenAICompatible(OpenAICompatibleConfig),
+    Ollama(OllamaConfig),
 }
 
 #[derive(Clone, Debug)]
@@ -117,6 +128,10 @@ impl EmbedderConfig {
             .ok()
             .map(|value| value.trim().to_ascii_lowercase());
 
+        let embed_provider = std::env::var("XAVIER_EMBED_PROVIDER")
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase());
+
         if provider_mode == Some(ProviderMode::Disabled)
             || explicit_embedder.as_deref() == Some("disabled")
         {
@@ -131,13 +146,33 @@ impl EmbedderConfig {
             return Self::Noop;
         }
 
+        if let Some(ref provider) = embed_provider {
+            if provider == "openrouter" {
+                let mut backends = vec![EmbedderBackendConfig::OpenAICompatible(cloud_config())];
+                backends.push(EmbedderBackendConfig::Ollama(ollama_config()));
+                return Self::Fallback(backends);
+            } else if provider == "ollama" {
+                let mut backends = vec![EmbedderBackendConfig::Ollama(ollama_config())];
+                if cloud_embedding_signal_present() {
+                    backends.push(EmbedderBackendConfig::OpenAICompatible(cloud_config()));
+                }
+                return Self::Fallback(backends);
+            }
+        }
+
         match provider_mode {
             Some(ProviderMode::Local) => Self::local_only(api_flavor),
             Some(ProviderMode::LocalGllm) => Self::gllm_only(),
             Some(ProviderMode::Cloud) => Self::cloud_only(api_flavor),
             Some(ProviderMode::Auto) => Self::auto_explicit(api_flavor),
             Some(ProviderMode::Disabled) => Self::Noop,
-            None => Self::auto(api_flavor),
+            None => {
+                let mut backends = vec![EmbedderBackendConfig::Ollama(ollama_config())];
+                if cloud_embedding_signal_present() {
+                    backends.push(EmbedderBackendConfig::OpenAICompatible(cloud_config()));
+                }
+                Self::Fallback(backends)
+            }
         }
     }
 
@@ -156,6 +191,7 @@ impl EmbedderConfig {
                         EmbedderBackendConfig::OpenAICompatible(cfg) => {
                             return Some(cfg.model.clone())
                         }
+                        EmbedderBackendConfig::Ollama(cfg) => return Some(cfg.model.clone()),
                     }
                 }
                 None
@@ -313,6 +349,7 @@ impl EmbedderConfig {
 
     fn local_only(_api_flavor: ApiFlavor) -> Self {
         Self::Fallback(vec![
+            EmbedderBackendConfig::Ollama(ollama_config()),
             EmbedderBackendConfig::Gllm(gllm_config()),
             EmbedderBackendConfig::OpenAICompatible(local_config()),
         ])
@@ -410,8 +447,8 @@ impl Embedder for NoopEmbedder {
     }
 }
 
-struct FallbackEmbedder {
-    embedders: Vec<Arc<dyn Embedder>>,
+pub(crate) struct FallbackEmbedder {
+    pub(crate) embedders: Vec<Arc<dyn Embedder>>,
 }
 
 #[async_trait]
@@ -511,6 +548,34 @@ fn build_backend(config: EmbedderBackendConfig) -> Result<Arc<dyn Embedder>, Emb
                 std::time::Duration::from_secs(timeout_secs),
             )?))
         }
+        EmbedderBackendConfig::Ollama(config) => {
+            let timeout_secs = crate::settings::XavierSettings::current()
+                .embedding
+                .timeout_secs;
+            Ok(Arc::new(ollama::OllamaEmbedder::new(
+                config.model,
+                config.endpoint,
+                config.dimension,
+                std::time::Duration::from_secs(timeout_secs),
+            )?))
+        }
+    }
+}
+
+fn ollama_config() -> OllamaConfig {
+    let endpoint = std::env::var("XAVIER_OLLAMA_URL")
+        .unwrap_or_else(|_| "http://localhost:11434/api/embed".to_string());
+    let model =
+        std::env::var("XAVIER_OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
+    let dimension = std::env::var("XAVIER_OLLAMA_DIMS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(768);
+
+    OllamaConfig {
+        endpoint,
+        model,
+        dimension,
     }
 }
 
@@ -647,9 +712,15 @@ mod tests {
     #[test]
     fn embedding_dimension_for_model_returns_768_for_nomic() {
         assert_eq!(embedding_dimension_for_model("nomic-embed-text"), 768);
-        assert_eq!(embedding_dimension_for_model("nomic-embed-text:latest"), 768);
+        assert_eq!(
+            embedding_dimension_for_model("nomic-embed-text:latest"),
+            768
+        );
         assert_eq!(embedding_dimension_for_model("nomic-embed-text-v1.5"), 768);
-        assert_eq!(embedding_dimension_for_model("text-embedding-3-small"), 1536);
+        assert_eq!(
+            embedding_dimension_for_model("text-embedding-3-small"),
+            1536
+        );
     }
 
     #[test]

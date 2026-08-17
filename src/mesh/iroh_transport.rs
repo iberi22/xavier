@@ -365,10 +365,7 @@ impl IrohTransport {
     }
 
     /// Internal worker loop for processing incoming QUIC connections and bi-streams.
-    async fn run_accept_loop(
-        endpoint: Endpoint,
-        local_identity: Arc<NodeIdentity>,
-    ) -> Result<()> {
+    async fn run_accept_loop(endpoint: Endpoint, local_identity: Arc<NodeIdentity>) -> Result<()> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         while let Some(incoming) = endpoint.accept().await {
@@ -410,7 +407,9 @@ impl IrohTransport {
                             let resp = MeshHandshakeResponse {
                                 accepted: true,
                                 node_id: local_identity.node_id.clone(),
-                                public_key_hex: crate::crypto::hex_encode(&local_identity.public_key),
+                                public_key_hex: crate::crypto::hex_encode(
+                                    &local_identity.public_key,
+                                ),
                                 reason: None,
                             };
                             serde_json::to_value(resp)
@@ -434,9 +433,10 @@ impl IrohTransport {
                         MeshRequest::ShareSession { .. } => {
                             serde_json::to_value(serde_json::json!({"status": "ok"}))
                         }
-                        MeshRequest::PrivateSync { wallet_id: _, encrypted } => {
-                            serde_json::to_value(encrypted)
-                        }
+                        MeshRequest::PrivateSync {
+                            wallet_id: _,
+                            encrypted,
+                        } => serde_json::to_value(encrypted),
                     };
 
                     let resp_bytes = match response_value.and_then(|v| serde_json::to_vec(&v)) {

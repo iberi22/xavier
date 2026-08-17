@@ -15,7 +15,11 @@ mod tests_inner {
     impl SymbolEmbedder for DummyEmbedder {
         async fn embed(&self, text: &str) -> Result<Vec<f32>, GraphError> {
             let lower = text.to_lowercase();
-            if lower.contains("token") || lower.contains("permission") || lower.contains("auth") || lower.contains("cli") {
+            if lower.contains("token")
+                || lower.contains("permission")
+                || lower.contains("auth")
+                || lower.contains("cli")
+            {
                 // Return 2D embedding vector near (1.0, 0.0) for auth/token concepts
                 Ok(vec![1.0, 0.0])
             } else if lower.contains("data") || lower.contains("calc") {
@@ -256,7 +260,9 @@ mod tests_inner {
             end_line: 1370,
             start_col: 0,
             end_col: 0,
-            signature: Some("pub fn check_cli_token(headers: &HeaderMap) -> Result<(), Response>".to_string()),
+            signature: Some(
+                "pub fn check_cli_token(headers: &HeaderMap) -> Result<(), Response>".to_string(),
+            ),
             parent: None,
             complexity: None,
         };
@@ -300,16 +306,25 @@ mod tests_inner {
         db.insert_symbol(&sym3).unwrap();
 
         let embedder = DummyEmbedder;
-        db.insert_symbol_embedding(&s1_id, &embedder.embed("check_cli_token").await.unwrap()).unwrap();
-        db.insert_symbol_embedding(&s2_id, &embedder.embed("require_permission").await.unwrap()).unwrap();
-        db.insert_symbol_embedding(&s3_id, &embedder.embed("calculate_total").await.unwrap()).unwrap();
+        db.insert_symbol_embedding(&s1_id, &embedder.embed("check_cli_token").await.unwrap())
+            .unwrap();
+        db.insert_symbol_embedding(&s2_id, &embedder.embed("require_permission").await.unwrap())
+            .unwrap();
+        db.insert_symbol_embedding(&s3_id, &embedder.embed("calculate_total").await.unwrap())
+            .unwrap();
 
         let query = QueryEngine::new(Arc::new(db));
-        let results = query.semantic_search("token validation", &embedder, 5).await.unwrap();
+        let results = query
+            .semantic_search("token validation", &embedder, 5)
+            .await
+            .unwrap();
 
         assert!(!results.symbols.is_empty());
         let names: Vec<String> = results.symbols.iter().map(|s| s.name.clone()).collect();
-        assert!(names.contains(&"check_cli_token".to_string()) || names.contains(&"require_permission".to_string()));
+        assert!(
+            names.contains(&"check_cli_token".to_string())
+                || names.contains(&"require_permission".to_string())
+        );
     }
 
     #[tokio::test]
@@ -326,7 +341,9 @@ mod tests_inner {
             end_line: 1370,
             start_col: 0,
             end_col: 0,
-            signature: Some("pub fn check_cli_token(headers: &HeaderMap) -> Result<(), Response>".to_string()),
+            signature: Some(
+                "pub fn check_cli_token(headers: &HeaderMap) -> Result<(), Response>".to_string(),
+            ),
             parent: None,
             complexity: None,
         };
@@ -353,14 +370,19 @@ mod tests_inner {
         db.insert_symbol(&sym2).unwrap();
 
         let embedder = DummyEmbedder;
-        db.insert_symbol_embedding(&s1_id, &embedder.embed("check_cli_token").await.unwrap()).unwrap();
-        db.insert_symbol_embedding(&s2_id, &embedder.embed("require_permission").await.unwrap()).unwrap();
+        db.insert_symbol_embedding(&s1_id, &embedder.embed("check_cli_token").await.unwrap())
+            .unwrap();
+        db.insert_symbol_embedding(&s2_id, &embedder.embed("require_permission").await.unwrap())
+            .unwrap();
 
         let query_engine = QueryEngine::new(Arc::new(db));
 
         // Paraphrased query that BM25 alone fails on
         let bm25_results = query_engine.search("token validation", 5).unwrap();
-        let hybrid_results = query_engine.hybrid_search("token validation", &embedder, 5).await.unwrap();
+        let hybrid_results = query_engine
+            .hybrid_search("token validation", &embedder, 5)
+            .await
+            .unwrap();
 
         assert!(hybrid_results.symbols.len() >= bm25_results.symbols.len());
     }
@@ -481,8 +503,14 @@ mod tests_inner {
         let query = QueryEngine::new(Arc::new(db));
 
         // Test depth 1
-        let depth1 = query.blast_radius("require_permission", 1).expect("blast radius d1");
-        assert_eq!(depth1.len(), 3, "should find all 3 direct callers at depth 1");
+        let depth1 = query
+            .blast_radius("require_permission", 1)
+            .expect("blast radius d1");
+        assert_eq!(
+            depth1.len(),
+            3,
+            "should find all 3 direct callers at depth 1"
+        );
         for (sym, d) in &depth1 {
             assert_eq!(*d, 1);
             assert!(
@@ -493,8 +521,14 @@ mod tests_inner {
         }
 
         // Test depth 2
-        let depth2 = query.blast_radius("require_permission", 2).expect("blast radius d2");
-        assert_eq!(depth2.len(), 4, "should find 3 direct callers + 1 transitive caller at depth 2");
+        let depth2 = query
+            .blast_radius("require_permission", 2)
+            .expect("blast radius d2");
+        assert_eq!(
+            depth2.len(),
+            4,
+            "should find 3 direct callers + 1 transitive caller at depth 2"
+        );
 
         // Verify transitivity: blast_radius(X, 2) contains all elements of blast_radius(X, 1)
         for (d1_sym, _) in &depth1 {
@@ -506,7 +540,10 @@ mod tests_inner {
 
         // Verify depth 2 caller
         let router_entry = depth2.iter().find(|(s, _)| s.name == "server_router");
-        assert!(router_entry.is_some(), "router should be in depth 2 blast radius");
+        assert!(
+            router_entry.is_some(),
+            "router should be in depth 2 blast radius"
+        );
         assert_eq!(router_entry.unwrap().1, 2, "router depth should be 2");
     }
 
@@ -546,9 +583,7 @@ mod tests_inner {
         assert!(!mem_links.is_empty());
         assert_eq!(mem_links[0].memory_id, memory_id);
 
-        let symbols = query
-            .symbols_for_memory(memory_id)
-            .expect("test assertion");
+        let symbols = query.symbols_for_memory(memory_id).expect("test assertion");
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "require_permission");
     }

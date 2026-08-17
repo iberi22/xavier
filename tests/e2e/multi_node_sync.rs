@@ -75,7 +75,7 @@ impl NodeProcess {
         // test proceeds (otherwise a "push to offline peer" may still connect
         // while the process is dying, and the record lands on B).
         self.child = None; // drops ChildGuard → kill + wait
-        // Poll TCP connect until it fails (port closed → process is really gone).
+                           // Poll TCP connect until it fails (port closed → process is really gone).
         use std::net::TcpStream;
         for _ in 0..40 {
             match TcpStream::connect(("127.0.0.1", self.port)) {

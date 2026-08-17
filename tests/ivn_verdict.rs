@@ -124,8 +124,7 @@ fn test_exclusion_of_shared_seed_and_insufficient_karma() {
         },
     ];
 
-    let selected =
-        ValidatorSelection::select_validators(&pool, shared_seed, &mut rng).unwrap();
+    let selected = ValidatorSelection::select_validators(&pool, shared_seed, &mut rng).unwrap();
 
     assert_eq!(selected.len(), 5);
     for v in &selected {

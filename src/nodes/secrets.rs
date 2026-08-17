@@ -31,7 +31,10 @@ pub fn store_node_secret<A: AuditLogger>(
     ttl_secs: u64,
 ) -> Result<String> {
     if secret_value.trim().is_empty() {
-        return Err(anyhow!("Cannot store an empty secret for node '{}'", node_id));
+        return Err(anyhow!(
+            "Cannot store an empty secret for node '{}'",
+            node_id
+        ));
     }
 
     let secret_key = secret_key_for_node(node_id);
@@ -180,7 +183,14 @@ impl NodeSecretsManager {
             .lending
             .lock()
             .map_err(|_| anyhow!("Failed to acquire lending engine lock"))?;
-        store_node_secret(&self.vault, &mut *lending, node_id, provider, secret_value, ttl_secs)
+        store_node_secret(
+            &self.vault,
+            &mut *lending,
+            node_id,
+            provider,
+            secret_value,
+            ttl_secs,
+        )
     }
 
     /// Retrieve a node secret.

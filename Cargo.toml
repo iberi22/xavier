@@ -325,6 +325,10 @@ name = "xavier-tui"
 path = "src/main_tui.rs"
 required-features = ["cli-interactive"]
 
+[[bin]]
+name = "backfill_embeddings"
+path = "src/bin/backfill_embeddings.rs"
+
 [profile.release]
 opt-level = 3
 lto = "thin"

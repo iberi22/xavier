@@ -250,8 +250,10 @@ pub async fn create_identity_request_handler(
             }
         };
 
-    let assigned_dtos: Vec<ValidatorCandidateDto> =
-        selected_validators.iter().map(ValidatorCandidateDto::from).collect();
+    let assigned_dtos: Vec<ValidatorCandidateDto> = selected_validators
+        .iter()
+        .map(ValidatorCandidateDto::from)
+        .collect();
 
     let record = IdentityRequestRecord {
         id: request_id.clone(),
@@ -282,9 +284,7 @@ pub async fn create_identity_request_handler(
 }
 
 /// `GET /v1/identity/request/{id}` — Query status and votes for an identity request.
-pub async fn get_identity_request_handler(
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+pub async fn get_identity_request_handler(Path(id): Path<String>) -> impl IntoResponse {
     let store = current_ivn_store();
 
     if let Some(record) = store.requests.get(&id) {

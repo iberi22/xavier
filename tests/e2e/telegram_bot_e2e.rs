@@ -91,7 +91,10 @@ mod telegram_tests {
     fn test_webhook_secret_token_verification() {
         use xavier::telegram::{verify_webhook_secret, X_TELEGRAM_BOT_API_SECRET_TOKEN};
 
-        assert_eq!(X_TELEGRAM_BOT_API_SECRET_TOKEN, "X-Telegram-Bot-Api-Secret-Token");
+        assert_eq!(
+            X_TELEGRAM_BOT_API_SECRET_TOKEN,
+            "X-Telegram-Bot-Api-Secret-Token"
+        );
 
         let secret = "super_secret_telegram_token_123";
 

@@ -45,12 +45,7 @@ impl std::fmt::Display for NodeAuditEvent {
 }
 
 /// Log a structured node audit event with automatic secret masking.
-pub fn log_node_audit(
-    event: NodeAuditEvent,
-    node_id: &str,
-    provider: Provider,
-    details: &str,
-) {
+pub fn log_node_audit(event: NodeAuditEvent, node_id: &str, provider: Provider, details: &str) {
     let now = Utc::now().to_rfc3339();
     info!(
         audit = true,

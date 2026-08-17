@@ -95,12 +95,13 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
 
     let mut req = req;
     if is_match {
-        req.extensions_mut().insert(crate::security::auth::Claims::new(
-            "root".to_string(),
-            "admin@swal.dev".to_string(),
-            crate::security::auth::UserRole::Admin,
-            chrono::Duration::hours(1),
-        ));
+        req.extensions_mut()
+            .insert(crate::security::auth::Claims::new(
+                "root".to_string(),
+                "admin@swal.dev".to_string(),
+                crate::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
         return next.run(req).await;
     }
 

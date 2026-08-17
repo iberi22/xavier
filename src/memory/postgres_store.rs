@@ -167,8 +167,13 @@ impl PostgresMemoryStore {
             metadata_iv: row.try_get("metadata_iv")?,
             score: 0.0,
             deleted_at: None,
-            embedding_status: row.try_get("embedding_status").unwrap_or_else(|_| "pending".to_string()),
-            embedding_attempts: row.try_get::<i32, _>("embedding_attempts").map(|v| v as u32).unwrap_or(0),
+            embedding_status: row
+                .try_get("embedding_status")
+                .unwrap_or_else(|_| "pending".to_string()),
+            embedding_attempts: row
+                .try_get::<i32, _>("embedding_attempts")
+                .map(|v| v as u32)
+                .unwrap_or(0),
         })
     }
 }

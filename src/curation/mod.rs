@@ -167,7 +167,11 @@ mod tests {
     #[test]
     fn test_submit_for_curation() {
         let mut queue = CurationQueue::new();
-        let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string(), Some("session".to_string()));
+        let item = queue.submit_for_curation(
+            "doc-123".to_string(),
+            "confidential".to_string(),
+            Some("session".to_string()),
+        );
         assert_eq!(item.content_ref, "doc-123");
         assert_eq!(item.proposed_clearance, "confidential");
         assert_eq!(item.source, Some("session".to_string()));
@@ -178,8 +182,19 @@ mod tests {
     #[test]
     fn test_approve_item() {
         let mut queue = CurationQueue::new();
-        let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string(), Some("import".to_string()));
-        let approved = queue.approve(&item.id, "alice".to_string(), Some("internal".to_string()), Some("restricted".to_string())).unwrap();
+        let item = queue.submit_for_curation(
+            "doc-123".to_string(),
+            "confidential".to_string(),
+            Some("import".to_string()),
+        );
+        let approved = queue
+            .approve(
+                &item.id,
+                "alice".to_string(),
+                Some("internal".to_string()),
+                Some("restricted".to_string()),
+            )
+            .unwrap();
         assert_eq!(approved.status, CurationStatus::Approved);
         assert_eq!(approved.curated_by, Some("alice".to_string()));
         assert_eq!(approved.classification, Some("internal".to_string()));
@@ -190,7 +205,8 @@ mod tests {
     #[test]
     fn test_reject_item() {
         let mut queue = CurationQueue::new();
-        let item = queue.submit_for_curation("doc-123".to_string(), "confidential".to_string(), None);
+        let item =
+            queue.submit_for_curation("doc-123".to_string(), "confidential".to_string(), None);
         let rejected = queue
             .reject(&item.id, "bob".to_string(), "offensive content".to_string())
             .unwrap();
@@ -220,11 +236,30 @@ mod tests {
     #[test]
     fn test_curated_dataset_only_approved_are_eligible() {
         let mut queue = CurationQueue::new();
-        let item1 = queue.submit_for_curation("doc-1".to_string(), "public".to_string(), Some("agent".to_string()));
-        let item2 = queue.submit_for_curation("doc-2".to_string(), "secret".to_string(), Some("import".to_string()));
-        let _item3 = queue.submit_for_curation("doc-3".to_string(), "internal".to_string(), Some("session".to_string()));
+        let item1 = queue.submit_for_curation(
+            "doc-1".to_string(),
+            "public".to_string(),
+            Some("agent".to_string()),
+        );
+        let item2 = queue.submit_for_curation(
+            "doc-2".to_string(),
+            "secret".to_string(),
+            Some("import".to_string()),
+        );
+        let _item3 = queue.submit_for_curation(
+            "doc-3".to_string(),
+            "internal".to_string(),
+            Some("session".to_string()),
+        );
 
-        queue.approve(&item1.id, "alice".to_string(), Some("public_data".to_string()), None).unwrap();
+        queue
+            .approve(
+                &item1.id,
+                "alice".to_string(),
+                Some("public_data".to_string()),
+                None,
+            )
+            .unwrap();
         queue
             .reject(&item2.id, "bob".to_string(), "bad format".to_string())
             .unwrap();
@@ -244,7 +279,11 @@ mod tests {
     fn test_save_and_load_flow() {
         let file = NamedTempFile::new().unwrap();
         let mut queue = CurationQueue::new_with_path(file.path().to_path_buf());
-        let item = queue.submit_for_curation("ref-789".to_string(), "secret".to_string(), Some("agent".to_string()));
+        let item = queue.submit_for_curation(
+            "ref-789".to_string(),
+            "secret".to_string(),
+            Some("agent".to_string()),
+        );
         queue.save().unwrap();
 
         let loaded = CurationQueue::load_from_path(file.path()).unwrap();

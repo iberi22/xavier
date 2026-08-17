@@ -23,13 +23,19 @@ pub async fn query_with_embedding(
     query_with_embedding_filtered(memory, query_text, limit, None).await
 }
 
+/// Result of an embedding-based search, including degradation status.
+pub struct EmbeddingSearchResult {
+    pub documents: Vec<MemoryDocument>,
+    pub degraded: bool,
+}
+
 /// Embedding-based search with optional filters.
 pub async fn query_with_embedding_filtered(
     memory: &QmdMemory,
     query_text: &str,
     limit: usize,
     filters: Option<&MemoryQueryFilters>,
-) -> Result<Vec<MemoryDocument>> {
+) -> Result<EmbeddingSearchResult> {
     let mut processed_query = query_text.to_string();
 
     let all_docs = memory.all_documents().await;
@@ -56,18 +62,34 @@ pub async fn query_with_embedding_filtered(
     }
 
     if locomo_only {
-        return query_filtered(memory, &processed_query, Vec::new(), limit, filters).await;
+        return query_filtered(memory, &processed_query, Vec::new(), limit, filters)
+            .await
+            .map(|docs| EmbeddingSearchResult {
+                documents: docs,
+                degraded: false,
+            });
     }
 
-    let query_vector = generate_embedding(&processed_query)
-        .await
-        .unwrap_or_default();
+    let (query_vector, degraded) = match generate_embedding(&processed_query).await {
+        Ok(v) if !v.is_empty() => (v, false),
+        Ok(_) => (Vec::new(), true),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "embedding generation failed, falling back to BM25/substring"
+            );
+            (Vec::new(), true)
+        }
+    };
 
     if query_vector.is_empty() {
         return memory
             .search_with_cache_filtered(&processed_query, limit, filters)
             .await
-            .map(|r| r.documents);
+            .map(|r| EmbeddingSearchResult {
+                documents: r.documents,
+                degraded,
+            });
     }
 
     let initial_results = vsearch(memory, query_vector.clone(), 3)
@@ -111,11 +133,20 @@ pub async fn query_with_embedding_filtered(
                         limit,
                         filters,
                     )
-                    .await;
+                    .await
+                    .map(|docs| EmbeddingSearchResult {
+                        documents: docs,
+                        degraded: false,
+                    });
                 }
             }
         }
     }
 
-    query_filtered(memory, &processed_query, query_vector, limit, filters).await
+    query_filtered(memory, &processed_query, query_vector, limit, filters)
+        .await
+        .map(|docs| EmbeddingSearchResult {
+            documents: docs,
+            degraded,
+        })
 }
