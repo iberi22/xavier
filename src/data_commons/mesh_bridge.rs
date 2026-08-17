@@ -148,6 +148,7 @@ impl MeshCommonsBridge {
     }
 
     /// Announces a data package (dataset) to the Data Commons marketplace on behalf of a mesh node.
+    #[allow(clippy::too_many_arguments)]
     pub fn announce_dataset_mesh(
         &self,
         marketplace: &mut DataMarketplace,
@@ -183,6 +184,7 @@ impl MeshCommonsBridge {
     /// Consumes a data package (dataset) from the marketplace.
     /// Enforces access control by verifying the buyer is not a freeloader (bad karma) in the mesh,
     /// executes the query with payment, and handles transaction settlements by updating resource accounting.
+    #[allow(clippy::too_many_arguments)]
     pub fn consume_dataset_mesh(
         &self,
         marketplace: &DataMarketplace,

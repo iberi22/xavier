@@ -162,7 +162,7 @@ impl SqliteMemoryStore {
                 .and_then(|v| v.get("clearance").cloned())
                 .and_then(|v| {
                     v.as_str()
-                        .map(|s| crate::security::clearance::ClearanceLevel::from(s))
+                        .map(crate::security::clearance::ClearanceLevel::from)
                 })
                 .unwrap_or_default(),
             revisions: row
@@ -522,7 +522,7 @@ impl MemoryStore for SqliteMemoryStore {
                     "SELECT beliefs FROM {} WHERE id = ?",
                     TABLE_BELIEFS
                 ))?;
-                match stmt.query_row([&belief_key], |row| {
+                stmt.query_row([&belief_key], |row| {
                     let val = row.get_ref(0)?;
                     match val {
                         rusqlite::types::ValueRef::Text(b) => {
@@ -534,10 +534,8 @@ impl MemoryStore for SqliteMemoryStore {
                         }
                         _ => Ok(Vec::new()),
                     }
-                }) {
-                    Ok(beliefs) => beliefs,
-                    Err(_) => Vec::new(),
-                }
+                })
+                .unwrap_or_default()
             };
 
             // Load session tokens (filter expired)

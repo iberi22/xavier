@@ -17,9 +17,9 @@ use std::sync::Arc;
 use tempfile::tempdir;
 
 use xavier::nodes::{
-    issue_cert, resolve_token, validate_no_personal_ssh_key, validate_rotation_token, verify_cert,
-    MockProvisioner, NodeRecord, NodeRegistry, NodeSecretsManager, NodeStatus, NodeVisibility,
-    Provider, ProvisioningEngine, PublicNodeInfo,
+    issue_cert, resolve_token, validate_no_personal_ssh_key, verify_cert, MockProvisioner,
+    NodeRecord, NodeRegistry, NodeSecretsManager, NodeStatus, NodeVisibility, Provider,
+    ProvisioningEngine, PublicNodeInfo,
 };
 
 fn sample_record(node_id: &str, provider: Provider, visibility: NodeVisibility) -> NodeRecord {

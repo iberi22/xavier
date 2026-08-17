@@ -1095,10 +1095,12 @@ pub async fn v1_memories_search(
         Some(&filters),
     )
     .await
-    .unwrap_or_else(|_| crate::memory::qmd_memory::search::EmbeddingSearchResult {
-        documents: Vec::new(),
-        degraded: true,
-    });
+    .unwrap_or_else(
+        |_| crate::memory::qmd_memory::search::EmbeddingSearchResult {
+            documents: Vec::new(),
+            degraded: true,
+        },
+    );
     let degraded = search_result.degraded;
     let documents = search_result
         .documents
@@ -1122,6 +1124,7 @@ pub async fn v1_memories_search(
             status: "ok".to_string(),
             results,
             truncated: None,
+            degraded: Some(degraded),
         };
         let response = apply_hard_cap_and_truncate(
             response,
@@ -1168,6 +1171,7 @@ pub async fn v1_memories_search(
             workspace_id: workspace.workspace_id.clone(),
             mode: "snippet".to_string(),
             truncated: None,
+            degraded: Some(degraded),
         };
         let response = apply_hard_cap_and_truncate(
             response,
@@ -1195,6 +1199,7 @@ pub async fn v1_memories_search(
             status: "ok".to_string(),
             results,
             truncated: None,
+            degraded: Some(degraded),
         };
         let response = apply_hard_cap_and_truncate(
             response,
@@ -1258,6 +1263,7 @@ pub async fn v1_context_assemble(
     let documents =
         query_with_embedding_filtered(&workspace.workspace.memory, task, limit * 3, Some(&filters))
             .await
+            .map(|r| r.documents)
             .unwrap_or_default()
             .into_iter()
             .filter(|doc| is_primary_memory(&doc.metadata))
@@ -1350,6 +1356,7 @@ pub async fn v1_memory_recall_eval(
         let docs =
             query_with_embedding_filtered(&workspace.workspace.memory, &case.query, limit, None)
                 .await
+                .map(|r| r.documents)
                 .unwrap_or_default()
                 .into_iter()
                 .filter(|doc| is_primary_memory(&doc.metadata))

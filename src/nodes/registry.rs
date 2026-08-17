@@ -106,7 +106,7 @@ impl NodeRegistry {
         let cert_json = record
             .cert
             .as_ref()
-            .map(|c| serde_json::to_string(c))
+            .map(serde_json::to_string)
             .transpose()
             .context("Failed to serialize NodeCertificate to JSON")?;
 

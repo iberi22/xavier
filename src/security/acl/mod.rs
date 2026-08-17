@@ -139,6 +139,7 @@ impl std::fmt::Display for ClearanceLevel {
 
 impl ClearanceLevel {
     /// Parse from string, case-insensitive.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "public" => Some(ClearanceLevel::Public),

@@ -55,15 +55,11 @@ impl std::fmt::Display for Provider {
 /// Visibility of a node in the mesh network.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum NodeVisibility {
     Public,
+    #[default]
     Private,
-}
-
-impl Default for NodeVisibility {
-    fn default() -> Self {
-        NodeVisibility::Private
-    }
 }
 
 impl std::str::FromStr for NodeVisibility {

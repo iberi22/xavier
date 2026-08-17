@@ -218,6 +218,7 @@ impl<P: NodeProvisioner> ProvisioningEngine<P> {
     }
 
     /// Provision a new node (BaaS or SSH/VPS).
+    #[allow(clippy::too_many_arguments)]
     pub async fn provision_node(
         &self,
         wallet_signing_key: &SigningKey,

@@ -121,14 +121,12 @@ fn read_swap() -> SwapInfo {
         for line in meminfo.lines() {
             if let Some(rest) = line.strip_prefix("SwapTotal:") {
                 total_kb = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(0);
             } else if let Some(rest) = line.strip_prefix("SwapFree:") {
                 free_kb = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|v| v.parse().ok())
@@ -196,14 +194,12 @@ fn read_processes() -> (Vec<ProcInfo>, usize) {
                 state = rest.trim().chars().next().unwrap_or('?');
             } else if let Some(rest) = line.strip_prefix("VmRSS:") {
                 rss_kb = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(0);
             } else if let Some(rest) = line.strip_prefix("VmSwap:") {
                 vmswap_kb = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|v| v.parse().ok())
@@ -221,7 +217,7 @@ fn read_processes() -> (Vec<ProcInfo>, usize) {
             vmswap_mb: vmswap_kb / 1024,
         });
     }
-    procs.sort_by(|a, b| b.rss_mb.cmp(&a.rss_mb));
+    procs.sort_by_key(|p| std::cmp::Reverse(p.rss_mb));
     procs.truncate(10);
     (procs, d_state)
 }
@@ -376,10 +372,12 @@ mod tests {
         let mut sample = PsiSample::default();
         sample.full.avg10 = 5.0;
         psi.insert("io".to_string(), sample);
-        let mut swap = SwapInfo::default();
-        swap.total_mb = 1000;
-        swap.used_mb = 100;
-        swap.used_percent = 10.0;
+        let swap = SwapInfo {
+            total_mb: 1000,
+            used_mb: 100,
+            used_percent: 10.0,
+            ..Default::default()
+        };
         let alerts = evaluate_alerts(&psi, &swap, &[]);
         assert!(alerts.is_empty(), "host sano no debe alertar: {:?}", alerts);
     }
@@ -654,17 +652,16 @@ pub fn log_scan(args: LogScanArgs) -> LogScanResult {
 
     for entry in &entries {
         let msg = entry.message.to_lowercase();
-        if msg.contains("telegram") || msg.contains("polling") {
-            if msg.contains("failed")
+        if (msg.contains("telegram") || msg.contains("polling"))
+            && (msg.contains("failed")
                 || msg.contains("error")
                 || msg.contains("close-wait")
                 || msg.contains("dead")
-                || msg.contains("retry")
-            {
-                get_me_fails += 1;
-                if msg.contains("close-wait") || msg.contains("close_wait") {
-                    has_close_wait = true;
-                }
+                || msg.contains("retry"))
+        {
+            get_me_fails += 1;
+            if msg.contains("close-wait") || msg.contains("close_wait") {
+                has_close_wait = true;
             }
         }
     }
@@ -995,7 +992,7 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
 
     // 3. Create Ticket using specified/detected backend
     let backend_selected = args.backend.unwrap_or_else(|| "maloca".to_string());
-    let mut ticket_id = format!("t-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+    let mut ticket_id = format!("t-{}", &uuid::Uuid::new_v4().to_string()[..8]);
     let mut url = "".to_string();
 
     match backend_selected.as_str() {
@@ -1011,7 +1008,7 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
             match cmd.output() {
                 Ok(output) if output.status.success() => {
                     url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    ticket_id = url.split('/').last().unwrap_or("issue").to_string();
+                    ticket_id = url.split('/').next_back().unwrap_or("issue").to_string();
                 }
                 _ => {
                     // Fallback to maloca if gh command fails or is missing

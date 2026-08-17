@@ -344,12 +344,20 @@ pub async fn add_handler(
     let mut path = payload
         .path
         .unwrap_or_else(|| format!("memory/{}", ulid::Ulid::new()));
-    path = path
-        .replace("..", "")
-        .replace("/", "")
-        .replace("\\", "")
-        .replace("\0", "");
-    path.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+    // Normalizar separadores y bloquear traversal SIN destruir la jerarquía.
+    // El path es el identificador canónico (hermes/2026-08-17/...): los slashes
+    // se PRESERVAN. Solo se rechazan segmentos "..", NUL y control chars.
+    path = path.replace('\\', "/");
+    if path.split('/').any(|seg| seg == "..") || path.contains('\0') {
+        path = format!("memory/{}", ulid::Ulid::new());
+    } else {
+        path = path.chars().filter(|c| !c.is_control()).collect::<String>();
+        path = path
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("/");
+    }
     if path.is_empty() {
         path = format!("memory/{}", ulid::Ulid::new());
     }
@@ -553,12 +561,18 @@ pub async fn update_handler(
     let mut path = payload
         .path
         .unwrap_or_else(|| format!("memory/{}", payload.id));
-    path = path
-        .replace("..", "")
-        .replace("/", "")
-        .replace("\\", "")
-        .replace("\0", "");
-    path.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+    // Normalizar separadores y bloquear traversal SIN destruir la jerarquía.
+    path = path.replace('\\', "/");
+    if path.split('/').any(|seg| seg == "..") || path.contains('\0') {
+        path = format!("memory/{}", payload.id);
+    } else {
+        path = path.chars().filter(|c| !c.is_control()).collect::<String>();
+        path = path
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("/");
+    }
     if path.is_empty() {
         path = format!("memory/{}", payload.id);
     }

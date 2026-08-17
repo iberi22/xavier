@@ -416,7 +416,7 @@ fn test_cli_cleanup_flow() {
 
     // 1. Run xavier cleanup (dry-run)
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
-    cmd.args(&["cleanup", "--dry-run"])
+    cmd.args(["cleanup", "--dry-run"])
         .env("HOME", temp_path)
         .env("XAVIER_DATA_DIR", legacy_dir.to_str().unwrap());
 
@@ -447,7 +447,7 @@ fn test_cli_cleanup_flow() {
 
     // 2. Run xavier cleanup --apply
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
-    cmd.args(&["cleanup", "--apply"])
+    cmd.args(["cleanup", "--apply"])
         .env("HOME", temp_path)
         .env("XAVIER_DATA_DIR", legacy_dir.to_str().unwrap());
 

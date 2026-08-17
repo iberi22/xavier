@@ -20,7 +20,9 @@ pub async fn query_with_embedding(
     query_text: &str,
     limit: usize,
 ) -> Result<Vec<MemoryDocument>> {
-    query_with_embedding_filtered(memory, query_text, limit, None).await
+    query_with_embedding_filtered(memory, query_text, limit, None)
+        .await
+        .map(|r| r.documents)
 }
 
 /// Result of an embedding-based search, including degradation status.

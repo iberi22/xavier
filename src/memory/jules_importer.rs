@@ -104,7 +104,7 @@ impl JulesImporter {
     /// Fetch issues with label `jules` using `gh` CLI.
     pub async fn fetch_github_jules_issues(&self) -> Result<Vec<JulesItem>> {
         let output = tokio::process::Command::new("gh")
-            .args(&[
+            .args([
                 "issue",
                 "list",
                 "--label",
