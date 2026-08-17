@@ -124,7 +124,8 @@ async fn test_onchain_sync_from_chain_e2e() {
         rpc_url: "http://127.0.0.1:8545".to_string(),
         contract_address: alloy::primitives::Address::ZERO,
         chain_id: 80002,
-        private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string(),
+        private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+            .to_string(),
     };
 
     #[cfg(not(feature = "dao-evm"))]
@@ -132,7 +133,8 @@ async fn test_onchain_sync_from_chain_e2e() {
         rpc_url: "http://127.0.0.1:8545".to_string(),
         contract_address: "0x0000000000000000000000000000000000000000".to_string(),
         chain_id: 80002,
-        private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string(),
+        private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+            .to_string(),
     };
 
     let client = OnchainDaoClient::new(config);
@@ -140,7 +142,10 @@ async fn test_onchain_sync_from_chain_e2e() {
 
     // Verify sync_from_chain handles unreachable/mock RPC cleanly by returning an error on invalid connection
     let result = client.sync_from_chain(&mut dao, 0).await;
-    assert!(result.is_err(), "sync_from_chain should return an error when connecting to unreachable RPC endpoint");
+    assert!(
+        result.is_err(),
+        "sync_from_chain should return an error when connecting to unreachable RPC endpoint"
+    );
 }
 
 #[test]

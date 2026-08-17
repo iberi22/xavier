@@ -2,8 +2,8 @@
 //!
 //! Exposes public node discovery without revealing private nodes or credentials.
 
-use axum::{http::StatusCode, response::IntoResponse, Json};
 use crate::nodes::{NodeRegistry, PublicNodeInfo};
+use axum::{http::StatusCode, response::IntoResponse, Json};
 
 /// Handler for `GET /mesh/public/nodes` and `GET /v1/mesh/public/nodes`.
 ///

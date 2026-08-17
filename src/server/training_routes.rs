@@ -75,7 +75,10 @@ pub async fn get_dataset_manifest_handler(
     Extension(state): Extension<TrainingState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
     }
     let dataset_dir = state.data_dir.join(&id);
@@ -92,7 +95,10 @@ pub async fn get_dataset_train_handler(
     Extension(state): Extension<TrainingState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
     }
     let dataset_dir = state.data_dir.join(&id);
@@ -112,7 +118,10 @@ pub async fn get_dataset_eval_handler(
     Extension(state): Extension<TrainingState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
     }
     let dataset_dir = state.data_dir.join(&id);
@@ -246,7 +255,9 @@ pub async fn export_handler(
         Ok(bundle) => {
             let manifest = match serde_json::to_value(&bundle.manifest) {
                 Ok(v) => v,
-                Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+                Err(e) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+                }
             };
             Json(serde_json::json!({
                 "manifest": manifest,
@@ -605,7 +616,11 @@ mod tests {
             .approve(&item1.id, "curator_alice".to_string(), None, None)
             .unwrap();
         queue
-            .reject(&item2.id, "curator_bob".to_string(), "Spam or invalid".to_string())
+            .reject(
+                &item2.id,
+                "curator_bob".to_string(),
+                "Spam or invalid".to_string(),
+            )
             .unwrap();
         queue.save().unwrap();
 

@@ -136,7 +136,8 @@ async fn handle_agent_index(
             }
         } else {
             let err = resp.text().await?;
-            results.push(json!({ "target": target_name, "status": "error", "message": err.clone() }));
+            results
+                .push(json!({ "target": target_name, "status": "error", "message": err.clone() }));
             if !as_json {
                 println!("{} Indexing {} failed: {}", "❌".red(), target_name, err);
             }
@@ -231,10 +232,8 @@ mod tests {
     #[test]
     fn test_parse_agent_index_cmd() {
         use crate::cli::state::Cli;
-        let cli = Cli::try_parse_from([
-            "xavier", "agent", "index", "--codex", "--jules", "--json",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["xavier", "agent", "index", "--codex", "--jules", "--json"])
+            .unwrap();
         match cli.cmd {
             Some(Command::Agent {
                 cmd:
@@ -257,8 +256,7 @@ mod tests {
     #[test]
     fn test_parse_agent_push_cmd() {
         use crate::cli::state::Cli;
-        let cli = Cli::try_parse_from(["xavier", "agent", "push", "--agent", "windsurf"])
-            .unwrap();
+        let cli = Cli::try_parse_from(["xavier", "agent", "push", "--agent", "windsurf"]).unwrap();
         match cli.cmd {
             Some(Command::Agent {
                 cmd: AgentCommand::Push { agent, json },

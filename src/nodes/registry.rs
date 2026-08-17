@@ -81,8 +81,8 @@ impl NodeRegistry {
 
     /// Open an ephemeral in-memory registry for tests.
     pub fn open_in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()
-            .context("Failed to open in-memory SQLite connection")?;
+        let conn =
+            Connection::open_in_memory().context("Failed to open in-memory SQLite connection")?;
         Self::init_db(&conn)?;
 
         Ok(Self {
@@ -184,18 +184,7 @@ impl NodeRegistry {
             .optional()?;
 
         match record {
-            Some((
-                id,
-                p_str,
-                v_str,
-                s_str,
-                pk,
-                c_json,
-                hk_fp,
-                l_id,
-                c_at,
-                l_hb,
-            )) => {
+            Some((id, p_str, v_str, s_str, pk, c_json, hk_fp, l_id, c_at, l_hb)) => {
                 let provider: Provider = p_str.parse().map_err(|e: anyhow::Error| {
                     rusqlite::Error::FromSqlConversionFailure(
                         1,
@@ -281,18 +270,7 @@ impl NodeRegistry {
 
         let mut list = Vec::new();
         for r in rows {
-            let (
-                id,
-                p_str,
-                v_str,
-                s_str,
-                pk,
-                c_json,
-                hk_fp,
-                l_id,
-                c_at,
-                l_hb,
-            ) = r?;
+            let (id, p_str, v_str, s_str, pk, c_json, hk_fp, l_id, c_at, l_hb) = r?;
             let provider: Provider = p_str.parse()?;
             let visibility: NodeVisibility = v_str.parse()?;
             let status: NodeStatus = s_str.parse()?;

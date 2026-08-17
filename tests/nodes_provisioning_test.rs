@@ -46,7 +46,11 @@ fn test_registry_persistence_survives_db_reopen() {
     let tmp = tempdir().unwrap();
     let db_path = tmp.path().join("nodes_test_registry.db");
 
-    let rec1 = sample_record("xv1-node-supabase-1", Provider::Supabase, NodeVisibility::Public);
+    let rec1 = sample_record(
+        "xv1-node-supabase-1",
+        Provider::Supabase,
+        NodeVisibility::Public,
+    );
     let rec2 = sample_record("xv1-node-neon-2", Provider::Neon, NodeVisibility::Private);
 
     // Initial session: register records
@@ -64,15 +68,22 @@ fn test_registry_persistence_survives_db_reopen() {
         assert_eq!(loaded1.provider, Provider::Supabase);
         assert_eq!(loaded1.visibility, NodeVisibility::Public);
         assert_eq!(loaded1.status, NodeStatus::Active);
-        assert_eq!(loaded1.host_key_fingerprint.as_deref(), Some("SHA256:mockfingerprint1234567890"));
+        assert_eq!(
+            loaded1.host_key_fingerprint.as_deref(),
+            Some("SHA256:mockfingerprint1234567890")
+        );
 
         let loaded2 = registry.get("xv1-node-neon-2").unwrap().unwrap();
         assert_eq!(loaded2.node_id, "xv1-node-neon-2");
         assert_eq!(loaded2.visibility, NodeVisibility::Private);
 
         // Update status and touch heartbeat
-        registry.update_status("xv1-node-supabase-1", NodeStatus::Degraded).unwrap();
-        registry.touch_heartbeat("xv1-node-supabase-1", 1700001000).unwrap();
+        registry
+            .update_status("xv1-node-supabase-1", NodeStatus::Degraded)
+            .unwrap();
+        registry
+            .touch_heartbeat("xv1-node-supabase-1", 1700001000)
+            .unwrap();
     }
 
     // Third session: verify updates persisted after another reopen
@@ -185,11 +196,17 @@ fn test_cert_issuance_and_wallet_isolation() {
 
     // 2. Verification against wallet1's expected pubkey succeeds
     let valid_wallet1 = verify_cert(&cert, Some(&wallet1_pk)).unwrap();
-    assert!(valid_wallet1, "Valid signature must verify with wallet 1 key");
+    assert!(
+        valid_wallet1,
+        "Valid signature must verify with wallet 1 key"
+    );
 
     // 3. Verification against wallet2's expected pubkey FAILS (wallet isolation)
     let valid_wallet2 = verify_cert(&cert, Some(&wallet2_pk)).unwrap();
-    assert!(!valid_wallet2, "Certificate from wallet 1 must NOT verify against wallet 2");
+    assert!(
+        !valid_wallet2,
+        "Certificate from wallet 1 must NOT verify against wallet 2"
+    );
 
     // 4. Tampering node_id in cert payload fails verification
     let mut tampered_cert = cert.clone();
@@ -283,9 +300,21 @@ async fn test_http_get_mesh_public_nodes_filters_private_nodes() {
     // Populate registry with 1 public node and 2 private nodes
     {
         let registry = NodeRegistry::open_path(&db_path).unwrap();
-        let pub_node = sample_record("xv1-public-visible", Provider::Supabase, NodeVisibility::Public);
-        let priv_node1 = sample_record("xv1-private-hidden-1", Provider::Neon, NodeVisibility::Private);
-        let priv_node2 = sample_record("xv1-private-hidden-2", Provider::Vps, NodeVisibility::Private);
+        let pub_node = sample_record(
+            "xv1-public-visible",
+            Provider::Supabase,
+            NodeVisibility::Public,
+        );
+        let priv_node1 = sample_record(
+            "xv1-private-hidden-1",
+            Provider::Neon,
+            NodeVisibility::Private,
+        );
+        let priv_node2 = sample_record(
+            "xv1-private-hidden-2",
+            Provider::Vps,
+            NodeVisibility::Private,
+        );
 
         registry.register(&pub_node).unwrap();
         registry.register(&priv_node1).unwrap();
@@ -293,11 +322,17 @@ async fn test_http_get_mesh_public_nodes_filters_private_nodes() {
     }
 
     // Call the adapter HTTP handler
-    let response = xavier::adapters::inbound::http::handlers::nodes::list_public_nodes_handler().await;
+    let response =
+        xavier::adapters::inbound::http::handlers::nodes::list_public_nodes_handler().await;
     let response_into = response.into_response();
     assert_eq!(response_into.status(), axum::http::StatusCode::OK);
 
-    let body_bytes = response_into.into_body().collect().await.unwrap().to_bytes();
+    let body_bytes = response_into
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
     let public_nodes: Vec<PublicNodeInfo> = serde_json::from_slice(&body_bytes).unwrap();
 
     // 1. Only 1 public node returned
@@ -305,7 +340,10 @@ async fn test_http_get_mesh_public_nodes_filters_private_nodes() {
     assert_eq!(public_nodes[0].node_id, "xv1-public-visible");
     assert_eq!(public_nodes[0].provider, Provider::Supabase);
     assert_eq!(public_nodes[0].status, NodeStatus::Active);
-    assert_eq!(public_nodes[0].pubkey, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    assert_eq!(
+        public_nodes[0].pubkey,
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    );
     assert_eq!(public_nodes[0].last_heartbeat, Some(1700000500));
 
     // 2. Verify complete absence of private nodes

@@ -285,7 +285,10 @@ mod tests {
         fs::create_dir(&agent2).await?;
         fs::write(agent2.join("MEMORY.md"), "Memory 2").await?;
 
-        let scanner = OpenClawAgentScanner::with_dirs(vec![dir1.path().to_path_buf(), dir2.path().to_path_buf()]);
+        let scanner = OpenClawAgentScanner::with_dirs(vec![
+            dir1.path().to_path_buf(),
+            dir2.path().to_path_buf(),
+        ]);
         let agents = scanner.scan_all_agents().await?;
 
         assert_eq!(agents.len(), 2);

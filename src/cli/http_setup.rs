@@ -72,12 +72,13 @@ pub async fn auth_middleware(
             user_id: None,
             lease: None,
         });
-        req.extensions_mut().insert(xavier::security::auth::Claims::new(
-            "root".to_string(),
-            "admin@swal.dev".to_string(),
-            xavier::security::auth::UserRole::Admin,
-            chrono::Duration::hours(1),
-        ));
+        req.extensions_mut()
+            .insert(xavier::security::auth::Claims::new(
+                "root".to_string(),
+                "admin@swal.dev".to_string(),
+                xavier::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
         return next.run(req).await;
     }
 
@@ -91,12 +92,13 @@ pub async fn auth_middleware(
                 user_id: None,
                 lease: Some(lease),
             });
-            req.extensions_mut().insert(xavier::security::auth::Claims::new(
-                "agent_lease".to_string(),
-                "agent@swal.dev".to_string(),
-                xavier::security::auth::UserRole::User,
-                chrono::Duration::hours(1),
-            ));
+            req.extensions_mut()
+                .insert(xavier::security::auth::Claims::new(
+                    "agent_lease".to_string(),
+                    "agent@swal.dev".to_string(),
+                    xavier::security::auth::UserRole::User,
+                    chrono::Duration::hours(1),
+                ));
             return next.run(req).await;
         }
     }
@@ -110,12 +112,13 @@ pub async fn auth_middleware(
             user_id: None,
             lease: None,
         });
-        req.extensions_mut().insert(xavier::security::auth::Claims::new(
-            "ephemeral_session".to_string(),
-            "session@swal.dev".to_string(),
-            xavier::security::auth::UserRole::User,
-            chrono::Duration::hours(1),
-        ));
+        req.extensions_mut()
+            .insert(xavier::security::auth::Claims::new(
+                "ephemeral_session".to_string(),
+                "session@swal.dev".to_string(),
+                xavier::security::auth::UserRole::User,
+                chrono::Duration::hours(1),
+            ));
         return next.run(req).await;
     }
 
@@ -170,12 +173,13 @@ pub async fn auth_middleware(
                 user_id: None,
                 lease: None,
             });
-            req.extensions_mut().insert(xavier::security::auth::Claims::new(
-                "api_token".to_string(),
-                "api_token@swal.dev".to_string(),
-                xavier::security::auth::UserRole::User,
-                chrono::Duration::hours(1),
-            ));
+            req.extensions_mut()
+                .insert(xavier::security::auth::Claims::new(
+                    "api_token".to_string(),
+                    "api_token@swal.dev".to_string(),
+                    xavier::security::auth::UserRole::User,
+                    chrono::Duration::hours(1),
+                ));
             return next.run(req).await;
         }
     }

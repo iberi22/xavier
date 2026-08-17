@@ -230,7 +230,10 @@ pub fn discover_swal_repo_roots(base_dir: Option<&Path>) -> HashMap<String, Path
 }
 
 /// Index a repo name -> snapshot mapping from a directory of repo roots.
-pub fn snapshot_all_repos(repo_roots: &HashMap<String, PathBuf>, data_dir: &Path) -> Result<Vec<CodeSnapshot>> {
+pub fn snapshot_all_repos(
+    repo_roots: &HashMap<String, PathBuf>,
+    data_dir: &Path,
+) -> Result<Vec<CodeSnapshot>> {
     let manager = SnapshotManager::new(data_dir);
     let mut out = Vec::new();
     for (repo, root) in repo_roots {
@@ -352,14 +355,22 @@ mod tests {
         let src1 = repo1.join("src");
         std::fs::create_dir_all(&src1).unwrap();
         std::fs::create_dir_all(repo1.join(".git")).unwrap();
-        std::fs::write(src1.join("lib.rs"), "pub fn rust_fn() {}\npub struct RustStruct;\n").unwrap();
+        std::fs::write(
+            src1.join("lib.rs"),
+            "pub fn rust_fn() {}\npub struct RustStruct;\n",
+        )
+        .unwrap();
 
         // Repo 2: TypeScript & Python
         let repo2 = base.join("repo-ts-py");
         let src2 = repo2.join("src");
         std::fs::create_dir_all(&src2).unwrap();
         std::fs::create_dir_all(repo2.join(".git")).unwrap();
-        std::fs::write(src2.join("app.ts"), "export function tsFunction(): string { return 'hello'; }\n").unwrap();
+        std::fs::write(
+            src2.join("app.ts"),
+            "export function tsFunction(): string { return 'hello'; }\n",
+        )
+        .unwrap();
         std::fs::write(src2.join("script.py"), "def py_function():\n    pass\n").unwrap();
 
         // Index CodeGraph for both repos

@@ -4,8 +4,8 @@
 //! It consists of a wallet signature (Ed25519) over:
 //! `(wallet_pubkey || node_pubkey || node_id || expiry)`.
 
-use anyhow::{anyhow, Context, Result};
 use crate::utils::crypto::{hex_decode, hex_encode};
+use anyhow::{anyhow, Context, Result};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -69,12 +69,8 @@ pub fn issue_cert(
         .as_secs();
     let expiry = now.saturating_add(ttl_secs);
 
-    let payload = NodeCertificate::payload_bytes(
-        &wallet_pubkey_hex,
-        &node_pubkey_hex,
-        node_id,
-        expiry,
-    );
+    let payload =
+        NodeCertificate::payload_bytes(&wallet_pubkey_hex, &node_pubkey_hex, node_id, expiry);
 
     let signature = wallet_signing_key.sign(&payload);
     let signature_hex = hex_encode(&signature.to_bytes());
@@ -160,7 +156,10 @@ mod tests {
         assert!(valid, "Certificate must verify with correct wallet key");
 
         let valid_no_expected = verify_cert(&cert, None).unwrap();
-        assert!(valid_no_expected, "Certificate must verify against self-contained wallet key");
+        assert!(
+            valid_no_expected,
+            "Certificate must verify against self-contained wallet key"
+        );
     }
 
     #[test]
@@ -177,7 +176,10 @@ mod tests {
 
         // Verification against wallet2's expected pubkey must fail
         let valid = verify_cert(&cert, Some(&wallet2_pk)).unwrap();
-        assert!(!valid, "Certificate from wallet 1 must not verify against wallet 2");
+        assert!(
+            !valid,
+            "Certificate from wallet 1 must not verify against wallet 2"
+        );
     }
 
     #[test]
@@ -193,7 +195,10 @@ mod tests {
         cert.node_id = "xv1-tamperednode".to_string();
 
         let valid = verify_cert(&cert, Some(&wallet_pk)).unwrap();
-        assert!(!valid, "Tampered certificate payload must fail verification");
+        assert!(
+            !valid,
+            "Tampered certificate payload must fail verification"
+        );
     }
 
     #[test]

@@ -20,8 +20,8 @@ pub fn compress_payload<T: Serialize>(payload: &T) -> Result<Vec<u8>> {
 /// Decompresses Zstd data and deserializes it from CBOR back into the struct.
 pub fn decompress_payload<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
     // Decompress with Zstd
-    let decompressed_data = zstd::stream::decode_all(Cursor::new(bytes))
-        .context("Failed to decompress Zstd data")?;
+    let decompressed_data =
+        zstd::stream::decode_all(Cursor::new(bytes)).context("Failed to decompress Zstd data")?;
 
     // Deserialize from CBOR
     let payload: T = ciborium::from_reader(Cursor::new(decompressed_data))
@@ -54,8 +54,8 @@ mod tests {
         let compressed_bytes = compress_payload(&original).expect("Should compress successfully");
 
         // Decompress
-        let recovered: DummyPayload = decompress_payload(&compressed_bytes)
-            .expect("Should decompress successfully");
+        let recovered: DummyPayload =
+            decompress_payload(&compressed_bytes).expect("Should decompress successfully");
 
         assert_eq!(original, recovered);
     }

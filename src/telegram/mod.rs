@@ -471,18 +471,14 @@ impl XavierBot {
             options = options.secret_token(secret.clone());
         }
 
-        let listener = match teloxide::update_listeners::webhooks::axum(
-            self.bot.clone(),
-            options,
-        )
-        .await
-        {
-            Ok(l) => l,
-            Err(e) => {
-                error!("Failed to setup webhook listener: {e}");
-                return;
-            }
-        };
+        let listener =
+            match teloxide::update_listeners::webhooks::axum(self.bot.clone(), options).await {
+                Ok(l) => l,
+                Err(e) => {
+                    error!("Failed to setup webhook listener: {e}");
+                    return;
+                }
+            };
 
         Dispatcher::builder(self.bot.clone(), handler)
             .dependencies(dptree::deps![
@@ -944,12 +940,9 @@ pub async fn start_webhook(
         options = options.secret_token(secret.clone());
     }
 
-    let listener = teloxide::update_listeners::webhooks::axum(
-        bot.bot.clone(),
-        options,
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("failed to setup webhook listener: {}", e))?;
+    let listener = teloxide::update_listeners::webhooks::axum(bot.bot.clone(), options)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to setup webhook listener: {}", e))?;
 
     info!("Telegram webhook listener bound on {} ({})", addr, path);
 

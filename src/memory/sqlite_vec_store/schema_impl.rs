@@ -52,6 +52,7 @@ impl VecSqliteMemoryStore {
                 manager.add_migration(crate::storage::migrations::MigrationV7EmbeddingModelMeta);
                 manager.add_migration(crate::storage::migrations::MigrationV8EntityGraphSnapshots);
                 manager.add_migration(crate::storage::migrations::MigrationV9EmbeddingStatus);
+                manager.add_migration(crate::storage::migrations::MigrationV10Embeddings768);
                 manager.run_migrations(conn)?;
 
                 // Run automatic vector migration
@@ -125,11 +126,15 @@ impl VecSqliteMemoryStore {
 
     /// Reindex null embeddings background.
     pub async fn reindex_null_embeddings_background(&self) -> Result<usize> {
-        self.reindex_null_embeddings_background_with_limit(None).await
+        self.reindex_null_embeddings_background_with_limit(None)
+            .await
     }
 
     /// Reindex null embeddings background with limit.
-    pub async fn reindex_null_embeddings_background_with_limit(&self, limit: Option<usize>) -> Result<usize> {
+    pub async fn reindex_null_embeddings_background_with_limit(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<usize> {
         let embedder = match crate::embedding::build_embedder_from_env().await {
             Ok(emb) => emb,
             Err(e) => {
@@ -253,15 +258,28 @@ impl VecSqliteMemoryStore {
                                         ],
                                     )?;
 
-                                    // Update memory_embeddings (delete + insert is reliable for vec0)
+                                    // Update vector table (delete + insert is reliable for vec0)
                                     conn.execute(
                                         "DELETE FROM memory_embeddings WHERE id = ?1",
                                         params![record_id_for_db.as_str()],
                                     )?;
+                                    conn.execute(
+                                        "DELETE FROM memory_embeddings_768 WHERE id = ?1",
+                                        params![record_id_for_db.as_str()],
+                                    )?;
                                     let embedding_json =
                                         serde_json::to_string(&embedding_c).unwrap_or_default();
+                                    let table_name = if embedding_c.len() == 768 {
+                                        "memory_embeddings_768"
+                                    } else {
+                                        "memory_embeddings"
+                                    };
+                                    let sql = format!(
+                                        "INSERT INTO {}(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                                        table_name
+                                    );
                                     let inserted = conn.execute(
-                                        "INSERT INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                                        &sql,
                                         params![
                                             record_id_for_db.as_str(),
                                             workspace_id.as_str(),
@@ -270,18 +288,22 @@ impl VecSqliteMemoryStore {
                                     )?;
                                     if inserted == 0 {
                                         anyhow::bail!(
-                                            "memory_embeddings insert affected 0 rows for {}",
+                                            "vector table insert affected 0 rows for {}",
                                             record_id_for_db
                                         );
                                     }
+                                    let count_sql = format!(
+                                        "SELECT COUNT(*) FROM {} WHERE id = ?1",
+                                        table_name
+                                    );
                                     let vec_rows: i64 = conn.query_row(
-                                        "SELECT COUNT(*) FROM memory_embeddings WHERE id = ?1",
+                                        &count_sql,
                                         params![record_id_for_db.as_str()],
                                         |r| r.get(0),
                                     )?;
                                     if vec_rows == 0 {
                                         anyhow::bail!(
-                                            "memory_embeddings missing row after insert for {}",
+                                            "vector table missing row after insert for {}",
                                             record_id_for_db
                                         );
                                     }
@@ -1087,7 +1109,10 @@ mod tests {
 
         // 6th run should not attempt to reindex the failed record
         let reindex_result = store.reindex_null_embeddings_background().await.unwrap();
-        assert_eq!(reindex_result, 0, "Failed record must be skipped on subsequent reindex ticks");
+        assert_eq!(
+            reindex_result, 0,
+            "Failed record must be skipped on subsequent reindex ticks"
+        );
 
         std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("XAVIER_EMBEDDING_URL");
@@ -1258,7 +1283,11 @@ mod tests {
         assert!(res.is_ok());
 
         // Verify the record is saved without embedding
-        let fetched = store.get("test_ws_1", "test_warn_mem_1").await.unwrap().unwrap();
+        let fetched = store
+            .get("test_ws_1", "test_warn_mem_1")
+            .await
+            .unwrap()
+            .unwrap();
         assert!(fetched.embedding.is_empty());
     }
 }

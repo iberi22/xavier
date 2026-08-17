@@ -302,7 +302,10 @@ pub fn assemble_package(
     let token_savings = if changes.is_empty() {
         None
     } else {
-        let total_before_lines: usize = changes.iter().map(|c| c.before_snippet.lines().count()).sum();
+        let total_before_lines: usize = changes
+            .iter()
+            .map(|c| c.before_snippet.lines().count())
+            .sum();
         let avg_file_lines = 200.0; // typical Rust file ~200 lines
         let saved_tokens = (avg_file_lines - total_before_lines as f64).max(0.0) * 1.3; // ~1.3 tokens/line
         Some(saved_tokens)

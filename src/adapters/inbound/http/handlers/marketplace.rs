@@ -2,7 +2,6 @@
 //!
 //! Exposes dataset listing, query with payment, revocation, and pricing oracle previews over REST.
 
-use std::sync::{Arc, LazyLock, RwLock};
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
@@ -11,6 +10,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::data_commons::marketplace::{DataMarketplace, DatasetId, DatasetMetadata};
 use crate::data_commons::pricing::{
@@ -86,9 +86,7 @@ pub struct PricingPreviewQuery {
 /// `POST /v1/marketplace/datasets` — list a new dataset (auth: wallet signature ML-DSA-65).
 ///
 /// Note: Full ML-DSA-65 wallet signature verification TODO; signature validated if present.
-pub async fn list_dataset_handler(
-    Json(req): Json<ListDatasetRequest>,
-) -> impl IntoResponse {
+pub async fn list_dataset_handler(Json(req): Json<ListDatasetRequest>) -> impl IntoResponse {
     let metadata = DatasetMetadata {
         name: req.name,
         description: req.description,
@@ -188,9 +186,7 @@ pub async fn query_dataset_handler(
 }
 
 /// `DELETE /v1/marketplace/datasets/{id}` — revoke a dataset (seller only).
-pub async fn revoke_dataset_handler(
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+pub async fn revoke_dataset_handler(Path(id): Path<String>) -> impl IntoResponse {
     let mut marketplace = current_marketplace_mut();
     let dataset_id = DatasetId(id.clone());
 

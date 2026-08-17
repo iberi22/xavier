@@ -208,7 +208,10 @@ impl RustParser {
                 if let Some(field_node) = func_node.child_by_field_name("field") {
                     let field_name = field_node.utf8_text(source.as_bytes()).unwrap_or("");
                     if field_name == "route"
-                        || matches!(field_name, "get" | "post" | "put" | "delete" | "patch" | "head")
+                        || matches!(
+                            field_name,
+                            "get" | "post" | "put" | "delete" | "patch" | "head"
+                        )
                     {
                         if let Some(args_node) = node.child_by_field_name("arguments") {
                             let mut cursor = args_node.walk();
@@ -219,7 +222,8 @@ impl RustParser {
                                     if let Ok(raw_text) = child.utf8_text(source.as_bytes()) {
                                         let route_path = unquote_string(raw_text);
                                         if route_path.starts_with('/') {
-                                            let handler = extract_handler_from_args(args_node, source);
+                                            let handler =
+                                                extract_handler_from_args(args_node, source);
                                             let start = node.start_position();
                                             let end = node.end_position();
                                             symbols.push(Symbol {
@@ -429,11 +433,27 @@ pub(crate) fn extract_handler_from_args(args_node: Node, source: &str) -> Option
         if child.kind() == "call_expression" {
             if let Some(func) = child.child_by_field_name("function") {
                 let func_name = func.utf8_text(source.as_bytes()).unwrap_or("");
-                if matches!(func_name, "get" | "post" | "put" | "delete" | "patch" | "head" | "axum::routing::get" | "axum::routing::post" | "axum::routing::put" | "axum::routing::delete" | "axum::routing::patch" | "axum::routing::head") {
+                if matches!(
+                    func_name,
+                    "get"
+                        | "post"
+                        | "put"
+                        | "delete"
+                        | "patch"
+                        | "head"
+                        | "axum::routing::get"
+                        | "axum::routing::post"
+                        | "axum::routing::put"
+                        | "axum::routing::delete"
+                        | "axum::routing::patch"
+                        | "axum::routing::head"
+                ) {
                     if let Some(inner_args) = child.child_by_field_name("arguments") {
                         let mut inner_cursor = inner_args.walk();
                         for inner_child in inner_args.children(&mut inner_cursor) {
-                            if inner_child.kind() == "identifier" || inner_child.kind() == "scoped_identifier" {
+                            if inner_child.kind() == "identifier"
+                                || inner_child.kind() == "scoped_identifier"
+                            {
                                 if let Ok(handler_name) = inner_child.utf8_text(source.as_bytes()) {
                                     return Some(handler_name.to_string());
                                 }
