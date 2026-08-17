@@ -102,6 +102,11 @@ pub async fn panel_index() -> impl IntoResponse {
 
 /// Panel asset.
 pub async fn panel_asset(AxumPath(path): AxumPath<String>) -> impl IntoResponse {
+    // 🛡️ Sentinel: Prevent path traversal vulnerabilities
+    if path.contains("..") || path.starts_with('/') || path.starts_with('\\') {
+        return (StatusCode::BAD_REQUEST, "Invalid path").into_response();
+    }
+
     let asset_path = panel_build_path(&format!("assets/{path}"));
     match tokio::fs::read(&asset_path).await {
         Ok(bytes) => asset_response(bytes, asset_content_type(&asset_path)),
