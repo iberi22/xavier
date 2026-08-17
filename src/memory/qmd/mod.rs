@@ -36,6 +36,7 @@ pub use writer::*;
 use crate::memory::hierarchy::MemoryHierarchyNode;
 use crate::memory::schema::{matches_filters, MemoryQueryFilters, TypedMemoryPayload};
 use crate::memory::store::MemoryStore;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
 #[derive(Clone)]
 pub struct QmdMemory {
@@ -46,6 +47,10 @@ pub struct QmdMemory {
     pub(crate) store: Arc<AsyncRwLock<Option<Arc<dyn MemoryStore>>>>,
     pub(crate) cache_warmup: Option<Arc<PredictiveCacheWarmup>>,
     pub(crate) belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
+    /// When true, documents are loaded lazily on first access instead of at init().
+    pub(crate) lazy_loaded: Arc<AtomicBool>,
+    /// Whether the lazy load has been triggered at least once.
+    pub(crate) loaded: Arc<AtomicBool>,
 }
 
 impl fmt::Debug for QmdMemory {
@@ -118,6 +123,25 @@ impl QmdMemory {
             store: Arc::new(AsyncRwLock::new(None)),
             cache_warmup: Some(Arc::new(PredictiveCacheWarmup::new())),
             belief_graph: None,
+            lazy_loaded: Arc::new(AtomicBool::new(false)),
+            loaded: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// New with workspace and lazy loading flag.
+    pub fn new_lazy(
+        workspace_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            docs: Arc::new(AsyncRwLock::new(Vec::new())),
+            search_cache: Arc::new(AsyncRwLock::new(HashMap::new())),
+            cache_counters: Arc::new(CacheCounters::default()),
+            store: Arc::new(AsyncRwLock::new(None)),
+            cache_warmup: Some(Arc::new(PredictiveCacheWarmup::new())),
+            belief_graph: None,
+            lazy_loaded: Arc::new(AtomicBool::new(true)),
+            loaded: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -145,7 +169,43 @@ impl QmdMemory {
     /// This is CRITICAL for persistence - without this, data written to the configured store
     /// before a restart would be lost on restart.
     pub async fn init(&self) -> Result<()> {
+        if self.lazy_loaded.load(AtomicOrdering::Relaxed) {
+            // Lazy mode: skip loading docs at init, they'll be loaded on first access.
+            tracing::info!(
+                workspace_id = %self.workspace_id,
+                "QmdMemory initialized in lazy mode (docs will load on first access)"
+            );
+            return Ok(());
+        }
         reader::init(self).await
+    }
+
+    /// Ensure documents are loaded from persistent store.
+    /// In lazy mode, this is a no-op on subsequent calls.
+    /// In eager mode (default), this is also a no-op since init() already loaded.
+    pub async fn ensure_loaded(&self) -> Result<()> {
+        if !self.lazy_loaded.load(AtomicOrdering::Relaxed) {
+            // Eager mode: already loaded by init(), nothing to do.
+            return Ok(());
+        }
+        if self.loaded.load(AtomicOrdering::Acquire) {
+            // Already loaded in a previous call.
+            return Ok(());
+        }
+        // Load from persistent store now.
+        reader::init(self).await?;
+        self.loaded.store(true, AtomicOrdering::Release);
+        Ok(())
+    }
+
+    /// Returns true if this instance uses lazy loading.
+    pub fn is_lazy(&self) -> bool {
+        self.lazy_loaded.load(AtomicOrdering::Relaxed)
+    }
+
+    /// Returns true if the lazy pool has been loaded at least once.
+    pub fn is_loaded(&self) -> bool {
+        self.loaded.load(AtomicOrdering::Relaxed)
     }
 
     /// Activate or deactivate cache warming.
@@ -269,6 +329,7 @@ impl QmdMemory {
 
     /// Export.
     pub async fn export(&self, public_only: bool) -> Result<Vec<MemoryDocument>> {
+        self.ensure_loaded().await?;
         reader::export(self, public_only).await
     }
 
@@ -335,6 +396,7 @@ impl QmdMemory {
 
     /// Get.
     pub async fn get(&self, path_or_id: &str) -> Result<Option<MemoryDocument>> {
+        self.ensure_loaded().await?;
         reader::get(self, path_or_id).await
     }
 
@@ -395,16 +457,19 @@ impl QmdMemory {
 
     /// Count.
     pub async fn count(&self) -> Result<usize> {
+        self.ensure_loaded().await?;
         Ok(self.docs.read().await.len())
     }
 
     /// All documents.
     pub async fn all_documents(&self) -> Vec<MemoryDocument> {
+        let _ = self.ensure_loaded().await;
         self.docs.read().await.clone()
     }
 
     /// Ls.
     pub async fn ls(&self, path_prefix: &str) -> Result<Vec<NavEntry>> {
+        self.ensure_loaded().await?;
         // [B1] Predictive cache warming based on navigation patterns
         if let Some(warmup) = &self.cache_warmup {
             let _ = warmup
@@ -477,6 +542,7 @@ impl QmdMemory {
 
     /// Usage.
     pub async fn usage(&self) -> MemoryUsage {
+        let _ = self.ensure_loaded().await;
         reader::usage(self).await
     }
 
