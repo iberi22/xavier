@@ -35,6 +35,7 @@ pub mod enterprise;
 pub mod error;
 pub mod governance;
 pub mod health;
+pub mod humanchallenge;
 pub mod maloca;
 pub mod maturity;
 pub mod memory;
