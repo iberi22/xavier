@@ -553,15 +553,28 @@ pub async fn code_search_handler(
 
     let limit = payload.limit.clamp(1, 100);
     let mode = payload.mode.to_lowercase();
-    info!("Code search request: query={}, mode={}, limit={}", query, mode, limit);
+    info!(
+        "Code search request: query={}, mode={}, limit={}",
+        query, mode, limit
+    );
 
     let code_graph = state.code_graph.read().await;
     let symbol_embedder = XavierSymbolEmbedder::new(state.embedder.clone());
 
     let result = match mode.as_str() {
         "bm25" | "fts" => code_graph.query.search(&query, limit),
-        "semantic" => code_graph.query.semantic_search(&query, &symbol_embedder, limit).await,
-        _ => code_graph.query.hybrid_search(&query, &symbol_embedder, limit).await,
+        "semantic" => {
+            code_graph
+                .query
+                .semantic_search(&query, &symbol_embedder, limit)
+                .await
+        }
+        _ => {
+            code_graph
+                .query
+                .hybrid_search(&query, &symbol_embedder, limit)
+                .await
+        }
     };
 
     match result {

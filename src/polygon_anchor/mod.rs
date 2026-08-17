@@ -243,15 +243,15 @@ impl AnchorTransport for EnvAnchorTransport {
                 let rt = tokio::runtime::Handle::try_current();
                 let fut =
                     broadcast::broadcast_from_env(content_hash_hex, chain, contract, self.kind);
-                let hash = match rt {
+
+                match rt {
                     Ok(handle) => tokio::task::block_in_place(|| handle.block_on(fut))?,
                     Err(_) => {
                         let runtime = tokio::runtime::Runtime::new()
                             .context("tokio runtime for polygon broadcast")?;
                         runtime.block_on(fut)?
                     }
-                };
-                hash
+                }
             }
             #[cfg(not(feature = "dao-evm"))]
             {

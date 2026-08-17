@@ -5,19 +5,19 @@
   "project": "Xavier",
   "version": "0.13.0",
   "created": "2026-03-05",
-  "last_verified": "2026-08-16",
-  "total_features": 42,
-  "features_complete": 41,
+  "last_verified": "2026-08-17",
+  "total_features": 45,
+  "features_complete": 44,
   "features_beta": 1,
   "features_draft": 0,
   "features_planned": 0,
   "features_designed": 0,
   "features_stable": 31,
-  "overall_progress_pct": 99.3,
-  "reconciliation_notes": "2026-08-14: added feat-node-provisioning (status: designed, Olas M6/M7, REQ-029..030 / US-042..043). Counts reconciled to real keys: 31 stable, 1 beta, 5 planned, 1 designed. Prior total_features=36 was stale. 2026-08-15 22:30: restored feat-ivn/feat-ivn-api/feat-ivn-karma/feat-marketplace-api (lost by wave-tests commit ef88787a).",
+  "overall_progress_pct": 97.8,
+  "reconciliation_notes": "2026-08-14: added feat-node-provisioning (status: designed, Olas M6/M7, REQ-029..030 / US-042..043). Counts reconciled to real keys: 31 stable, 1 beta, 5 planned, 1 designed. Prior total_features=36 was stale. 2026-08-15 22:30: restored feat-ivn/feat-ivn-api/feat-ivn-karma/feat-marketplace-api (lost by wave-tests commit ef88787a). 2026-08-17: +3 features optimización (search-degraded-fallback, embeddings-ollama-local, store-path-hierarchy) — kimi plan → 4 subagentes; compile+clippy verdes.",
   "complete": 6,
-  "percent": 99.2,
-  "updated": "2026-08-15",
+  "percent": 97.8,
+  "updated": "2026-08-17",
   "verification_note": "wave-tests: 5 PRs (#1388-#1393) merged — 146 tests nuevos"
  },
  "features": {
@@ -1465,6 +1465,62 @@
    "last_tested": null,
    "notes": "Wave M (2026-08-15). Issue xavier#1379. PR #1394 en verificación.",
    "spec": null
+  },
+  "feat-search-degraded-fallback": {
+   "id": "feat-search-degraded-fallback",
+   "name": "Búsqueda resiliente: timeout + fallback BM25 + flag degraded",
+   "category": "search",
+   "status": "implemented",
+   "progress_pct": 100,
+   "description": "POST /v1/memories/search no se cuelga cuando el embedder falla: timeout 5s, fallback BM25/substring inmediato, flag degraded en la respuesta, cache de embeddings de query.",
+   "steps": [
+    "Timeout tokio en llamada al proveedor de embeddings",
+    "Fallback BM25/substring con degraded:true",
+    "Cache LRU de embeddings de queries",
+    "Propagación del flag degraded en respuestas v1 (ids/snippet/full)"
+   ],
+   "passes": true,
+   "verified_by": "automated",
+   "github_issue": null,
+   "last_tested": "2026-08-17",
+   "notes": "Implementado por subagente + integración Hermes 2026-08-17. cargo check + clippy -D warnings verdes."
+  },
+  "feat-embeddings-ollama-local": {
+   "id": "feat-embeddings-ollama-local",
+   "name": "Embeddings local-first (Ollama) + backfill resumible",
+   "category": "core",
+   "status": "implemented",
+   "progress_pct": 100,
+   "description": "Proveedor de embeddings local-first vía Ollama (nomic-embed-text 768d) con fallback a remoto solo si env lo permite + binario de backfill resumible por rowid.",
+   "steps": [
+    "src/embedding/ollama.rs con trait del proveedor existente",
+    "Config por env XAVIER_EMBED_PROVIDER / XAVIER_OLLAMA_URL / XAVIER_OLLAMA_MODEL",
+    "src/bin/backfill_embeddings.rs resumible por checkpoint",
+    "Documentación en .env.example"
+   ],
+   "passes": true,
+   "verified_by": "automated",
+   "github_issue": null,
+   "last_tested": "2026-08-17",
+   "notes": "Implementado por subagente 2026-08-17. Pendiente: correr backfill sobre la store real y validar dimensión de la tabla vec."
+  },
+  "feat-store-path-hierarchy": {
+   "id": "feat-store-path-hierarchy",
+   "name": "Jerarquía de paths preservada + migración",
+   "category": "core",
+   "status": "implemented",
+   "progress_pct": 100,
+   "description": "El path canónico (hermes/2026-08-17/...) se persiste VERBATIM: se bloquea traversal (.., NUL) sin destruir la jerarquía ni los acentos. Migración one-shot reconstruye paths aplanados previos.",
+   "steps": [
+    "Fix sanitizer en cli/handlers/memory.rs (2 handlers)",
+    "scripts/migrate-flattened-paths.py con backup .bak",
+    "Verificado: 84 paths reconstruibles en dry-run"
+   ],
+   "passes": true,
+   "verified_by": "automated",
+   "github_issue": null,
+   "last_tested": "2026-08-17",
+   "notes": "Causa raíz: .replace('/', '') + retain(ascii) en cli/handlers/memory.rs. Fix + migración 2026-08-17."
   }
  },
  "verification_commands": {

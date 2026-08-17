@@ -27,7 +27,12 @@ async fn test_marketplace_full_lifecycle() {
     assert_eq!(pricing_json["status"], "ok");
     assert_eq!(pricing_json["preview_size"], 500);
     assert_eq!(pricing_json["pricing_tiers"]["Free"], 0);
-    assert!(pricing_json["pricing_tiers"]["Colaborador"].as_u64().unwrap() > 0);
+    assert!(
+        pricing_json["pricing_tiers"]["Colaborador"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
 
     // 2. POST /v1/marketplace/datasets list dataset
     let list_payload = json!({

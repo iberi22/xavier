@@ -16,9 +16,9 @@ use std::sync::Arc;
 use crate::cli::commands::enums::NodesCommand;
 use xavier::mesh::node::NodeIdentity;
 use xavier::nodes::{
-    mask_secret, resolve_token, validate_no_personal_ssh_key, validate_rotation_token,
-    verify_cert, MockProvisioner, NodeRecord, NodeRegistry, NodeSecretsManager, NodeStatus,
-    NodeVisibility, Provider, ProvisioningEngine, PublicNodeInfo,
+    mask_secret, resolve_token, validate_no_personal_ssh_key, validate_rotation_token, verify_cert,
+    MockProvisioner, NodeRecord, NodeRegistry, NodeSecretsManager, NodeStatus, NodeVisibility,
+    Provider, ProvisioningEngine, PublicNodeInfo,
 };
 
 /// Main handler for `xavier nodes ...` commands.
@@ -180,8 +180,8 @@ async fn cmd_list(
 
     let filtered: Vec<NodeRecord> = records
         .into_iter()
-        .filter(|r| vis_filter.map_or(true, |v| r.visibility == v))
-        .filter(|r| stat_filter.map_or(true, |s| r.status == s))
+        .filter(|r| vis_filter.is_none_or(|v| r.visibility == v))
+        .filter(|r| stat_filter.is_none_or(|s| r.status == s))
         .collect();
 
     if json_output {
@@ -329,7 +329,10 @@ async fn cmd_remove(node_id: &str) -> Result<()> {
             );
         }
         other => {
-            println!("\nNode '{}' removal finished with status: {}", node_id, other);
+            println!(
+                "\nNode '{}' removal finished with status: {}",
+                node_id, other
+            );
         }
     }
 

@@ -107,7 +107,10 @@ async fn handle_socket(mut socket: WebSocket, bus: XavierEventBus) {
             reconnects, backoff_ms
         );
     } else {
-        info!("maloca ws feed: client connected (active: {})", prev_clients + 1);
+        info!(
+            "maloca ws feed: client connected (active: {})",
+            prev_clients + 1
+        );
     }
 
     record_heartbeat();

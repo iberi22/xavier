@@ -1666,7 +1666,11 @@ impl CodeGraphDB {
             if let Ok(rows) = rows {
                 for row in rows.flatten() {
                     let (stable_id, name) = row;
-                    let symbol_key = if !stable_id.is_empty() { stable_id } else { name };
+                    let symbol_key = if !stable_id.is_empty() {
+                        stable_id
+                    } else {
+                        name
+                    };
                     if seen.insert(symbol_key.clone()) {
                         links.push(MemorySymbolLink {
                             memory_id: memory_id.to_string(),

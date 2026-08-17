@@ -120,8 +120,8 @@ impl PeerRegistrySyncAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::sync::manifest::tests::TestStore;
     use crate::memory::store::MemoryStore;
+    use crate::memory::sync::manifest::tests::TestStore;
     use crate::mesh::node::NodeId;
     use std::collections::HashMap;
     use tempfile::tempdir;

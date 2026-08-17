@@ -4,6 +4,8 @@
 //! curation, private mesh, service network) over HTTP under `/v1/f12/*`.
 //! These modules are pure libraries; this file adds the HTTP surface.
 
+use crate::security::clearance::ClearanceLevel;
+use crate::security::redaction::{parse_segmented, SegmentedDoc};
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
@@ -11,21 +13,19 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use crate::security::clearance::ClearanceLevel;
-use crate::security::redaction::{parse_segmented, SegmentedDoc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::curation::CurationQueue;
 use crate::codebase::snapshot::{discover_swal_repo_roots, SnapshotManager};
+use crate::curation::CurationQueue;
+use crate::mesh::node::NodeId;
 use crate::mesh::private_mesh::{
     is_same_wallet, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncPayload, WalletNode,
 };
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
-use crate::mesh::node::NodeId;
 use crate::mesh::service_network::{ServiceKind, ServiceRegistry, TelemetrySample};
 use crate::security::groups::GroupRegistry;
 
@@ -367,7 +367,10 @@ pub async fn private_mesh_sync(
         None => {
             return (
                 StatusCode::NOT_FOUND,
-                format!("Target node '{}' not found in private mesh registry", req.target_node),
+                format!(
+                    "Target node '{}' not found in private mesh registry",
+                    req.target_node
+                ),
             )
                 .into_response();
         }
@@ -390,7 +393,10 @@ pub async fn private_mesh_sync(
                 for mem in &synced.memories {
                     let sanitized = mem.path.replace('/', "_");
                     let file_path = sync_memories_dir.join(format!("{}.json", sanitized));
-                    let _ = std::fs::write(file_path, serde_json::to_string_pretty(mem).unwrap_or_default());
+                    let _ = std::fs::write(
+                        file_path,
+                        serde_json::to_string_pretty(mem).unwrap_or_default(),
+                    );
                 }
             }
 
@@ -447,7 +453,12 @@ pub async fn approve_curation(
 ) -> impl IntoResponse {
     let mut reg = state.curation_mut();
     let queue = reg.curation.as_mut().expect("curation");
-    match queue.approve(&req.id, req.curator.clone(), req.classification, req.clearance) {
+    match queue.approve(
+        &req.id,
+        req.curator.clone(),
+        req.classification,
+        req.clearance,
+    ) {
         Ok(item) => {
             let _ = queue.save();
             Json(item).into_response()
@@ -473,7 +484,10 @@ pub async fn approve_curation_review(
     axum::extract::Path(id): axum::extract::Path<String>,
     Json(req): Json<ApproveReviewRequest>,
 ) -> impl IntoResponse {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid item ID").into_response();
     }
     let mut reg = state.curation_mut();
@@ -492,7 +506,10 @@ pub async fn reject_curation_review(
     axum::extract::Path(id): axum::extract::Path<String>,
     Json(req): Json<RejectReviewRequest>,
 ) -> impl IntoResponse {
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid item ID").into_response();
     }
     let mut reg = state.curation_mut();
@@ -566,7 +583,11 @@ pub async fn create_snapshot(
     State(state): State<F12State>,
     Json(req): Json<CreateSnapshotRequest>,
 ) -> impl IntoResponse {
-    if !req.repo.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !req
+        .repo
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
     }
     let manager = SnapshotManager::new(&state.data_dir);
@@ -612,7 +633,10 @@ pub async fn get_snapshot(
     State(state): State<F12State>,
     axum::extract::Path(repo): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    if !repo.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !repo
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
     }
     let manager = SnapshotManager::new(&state.data_dir);
@@ -652,7 +676,10 @@ pub async fn get_document_handler(
     let raw_content = if doc_path.exists() {
         match std::fs::read_to_string(&doc_path) {
             Ok(c) => c,
-            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Error reading document").into_response(),
+            Err(_) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Error reading document")
+                    .into_response()
+            }
         }
     } else if id == "doc1" {
         // Built-in fallback sample document for testing/verification
@@ -708,8 +735,14 @@ pub fn router(state: F12State) -> Router {
             post(reject_curation_review),
         )
         .route("/v1/f12/telemetry/metrics", get(telemetry_metrics))
-        .route("/v1/f12/service-network/telemetry", post(publish_service_telemetry))
-        .route("/v1/f12/service-network/telemetry", get(consume_service_telemetry))
+        .route(
+            "/v1/f12/service-network/telemetry",
+            post(publish_service_telemetry),
+        )
+        .route(
+            "/v1/f12/service-network/telemetry",
+            get(consume_service_telemetry),
+        )
         .route("/v1/f12/snapshots", get(list_snapshots))
         .route("/v1/f12/snapshots", post(create_snapshot))
         .route("/v1/f12/snapshots/{repo}", get(get_snapshot))
@@ -887,7 +920,8 @@ mod tests {
         assert_eq!(pending.as_array().unwrap().len(), 2);
 
         // approve review for item 1
-        let req_app = r#"{"curator": "bela", "classification": "internal_doc", "clearance": "INTERNAL"}"#;
+        let req_app =
+            r#"{"curator": "bela", "classification": "internal_doc", "clearance": "INTERNAL"}"#;
         let resp = app
             .clone()
             .oneshot(
@@ -962,7 +996,12 @@ mod tests {
     async fn test_telemetry_metrics_whitelist() {
         let app = router(test_state());
         let resp = app
-            .oneshot(Request::builder().uri("/v1/f12/telemetry/metrics").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/telemetry/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -1021,7 +1060,12 @@ mod tests {
     async fn test_list_snapshots_empty_ok() {
         let app = router(test_state());
         let resp = app
-            .oneshot(Request::builder().uri("/v1/f12/snapshots").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/snapshots")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -1034,7 +1078,12 @@ mod tests {
     async fn test_get_snapshot_missing_404() {
         let app = router(test_state());
         let resp = app
-            .oneshot(Request::builder().uri("/v1/f12/snapshots/nope").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/snapshots/nope")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -1088,7 +1137,8 @@ mod tests {
     #[tokio::test]
     async fn test_private_mesh_sync_endpoint_success() {
         let app = router(test_state());
-        let register_req = r#"{"node_id": "xv1-b", "wallet_id": "w1", "name": "node-b", "iroh_addr": "addr-b"}"#;
+        let register_req =
+            r#"{"node_id": "xv1-b", "wallet_id": "w1", "name": "node-b", "iroh_addr": "addr-b"}"#;
         let resp = app
             .clone()
             .oneshot(
@@ -1143,7 +1193,8 @@ mod tests {
     #[tokio::test]
     async fn test_private_mesh_sync_endpoint_cross_wallet_forbidden() {
         let app = router(test_state());
-        let register_req = r#"{"node_id": "xv1-b", "wallet_id": "w2", "name": "node-b", "iroh_addr": "addr-b"}"#;
+        let register_req =
+            r#"{"node_id": "xv1-b", "wallet_id": "w2", "name": "node-b", "iroh_addr": "addr-b"}"#;
         let resp = app
             .clone()
             .oneshot(

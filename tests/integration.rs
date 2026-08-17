@@ -237,7 +237,10 @@ mod integration {
         // Accept "ok", "healthy", "warn" or "unhealthy" — unhealthy can happen
         // when system metrics (swap zram 100%, disk) degrade in the test env.
         assert!(
-            body["status"] == "ok" || body["status"] == "healthy" || body["status"] == "warn" || body["status"] == "unhealthy",
+            body["status"] == "ok"
+                || body["status"] == "healthy"
+                || body["status"] == "warn"
+                || body["status"] == "unhealthy",
             "expected ok, healthy, warn or unhealthy, got {}",
             body["status"]
         );

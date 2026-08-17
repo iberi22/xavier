@@ -54,11 +54,17 @@ impl HermesImporter {
 
     /// Import all session SQLite files found in sessions_dir into MemoryStore.
     pub async fn import_all(&self, store: &dyn MemoryStore) -> Result<Vec<MemoryRecord>> {
-        info!("🔍 HermesImporter scanning directory: {:?}", self.sessions_dir);
+        info!(
+            "🔍 HermesImporter scanning directory: {:?}",
+            self.sessions_dir
+        );
         let mut imported_records = Vec::new();
 
         if !self.sessions_dir.exists() {
-            info!("Hermes sessions dir {:?} does not exist. Skipping.", self.sessions_dir);
+            info!(
+                "Hermes sessions dir {:?} does not exist. Skipping.",
+                self.sessions_dir
+            );
             return Ok(imported_records);
         }
 
@@ -67,7 +73,15 @@ impl HermesImporter {
             let path = entry.path();
             if path.is_file() {
                 let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                if ext == "db" || ext == "sqlite" || ext == "sqlite3" || path.file_name().and_then(|s| s.to_str()).unwrap_or("").contains("session") {
+                if ext == "db"
+                    || ext == "sqlite"
+                    || ext == "sqlite3"
+                    || path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .contains("session")
+                {
                     match self.import_db_file(&path, store).await {
                         Ok(mut records) => imported_records.append(&mut records),
                         Err(e) => warn!("Failed to import Hermes session db {:?}: {}", path, e),
@@ -76,11 +90,18 @@ impl HermesImporter {
             }
         }
 
-        info!("✅ HermesImporter imported {} records", imported_records.len());
+        info!(
+            "✅ HermesImporter imported {} records",
+            imported_records.len()
+        );
         Ok(imported_records)
     }
 
-    async fn import_db_file(&self, db_path: &Path, store: &dyn MemoryStore) -> Result<Vec<MemoryRecord>> {
+    async fn import_db_file(
+        &self,
+        db_path: &Path,
+        store: &dyn MemoryStore,
+    ) -> Result<Vec<MemoryRecord>> {
         let db_path_buf = db_path.to_path_buf();
         let session_id = db_path
             .file_stem()

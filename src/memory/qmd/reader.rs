@@ -61,11 +61,13 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
     let mut last_error = None;
     let mut delay_ms: u64 = 100;
     let max_delay_ms: u64 = 2000;
+    let embed_timeout = std::time::Duration::from_secs(5);
 
     let embedder = crate::memory::embedder::EmbeddingClient::from_env()?;
     for attempt in 0..3 {
-        match embedder.embed(&preprocessed).await {
-            Ok(vector) => {
+        let embed_future = embedder.embed(&preprocessed);
+        match tokio::time::timeout(embed_timeout, embed_future).await {
+            Ok(Ok(vector)) => {
                 let mut cache = EMBEDDING_CACHE.write().await;
                 cache.insert(
                     cache_key,
@@ -80,8 +82,15 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
                 }
                 return Ok(vector);
             }
-            Err(error) => {
+            Ok(Err(error)) => {
                 last_error = Some(error);
+                if attempt < 2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    delay_ms = (delay_ms * 2).min(max_delay_ms);
+                }
+            }
+            Err(_timeout_err) => {
+                last_error = Some(anyhow::anyhow!("embedding request timed out after 5s"));
                 if attempt < 2 {
                     tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                     delay_ms = (delay_ms * 2).min(max_delay_ms);

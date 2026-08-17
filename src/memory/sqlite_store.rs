@@ -162,7 +162,7 @@ impl SqliteMemoryStore {
                 .and_then(|v| v.get("clearance").cloned())
                 .and_then(|v| {
                     v.as_str()
-                        .map(|s| crate::security::clearance::ClearanceLevel::from(s))
+                        .map(crate::security::clearance::ClearanceLevel::from)
                 })
                 .unwrap_or_default(),
             revisions: row
@@ -172,7 +172,11 @@ impl SqliteMemoryStore {
             encrypted_dek: row.get(15)?,
             content_iv: row.get(16)?,
             metadata_iv: row.get(17)?,
-            embedding_status: row.get::<_, Option<String>>(18).ok().flatten().unwrap_or_else(|| "pending".to_string()),
+            embedding_status: row
+                .get::<_, Option<String>>(18)
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "pending".to_string()),
             embedding_attempts: row.get::<_, Option<u32>>(19).ok().flatten().unwrap_or(0),
             score: 0.0,
             deleted_at: None,
@@ -518,7 +522,7 @@ impl MemoryStore for SqliteMemoryStore {
                     "SELECT beliefs FROM {} WHERE id = ?",
                     TABLE_BELIEFS
                 ))?;
-                match stmt.query_row([&belief_key], |row| {
+                stmt.query_row([&belief_key], |row| {
                     let val = row.get_ref(0)?;
                     match val {
                         rusqlite::types::ValueRef::Text(b) => {
@@ -530,10 +534,8 @@ impl MemoryStore for SqliteMemoryStore {
                         }
                         _ => Ok(Vec::new()),
                     }
-                }) {
-                    Ok(beliefs) => beliefs,
-                    Err(_) => Vec::new(),
-                }
+                })
+                .unwrap_or_default()
             };
 
             // Load session tokens (filter expired)
@@ -725,9 +727,9 @@ impl MemoryStore for SqliteMemoryStore {
                             let s = std::str::from_utf8(b).unwrap_or("");
                             Ok(serde_json::from_str(s).unwrap_or_default())
                         }
-                        rusqlite::types::ValueRef::Blob(b) => {
-                            Ok(crate::utils::compression::decompress_payload(b).unwrap_or_default())
-                        }
+                        rusqlite::types::ValueRef::Blob(b) => Ok(
+                            crate::utils::compression::decompress_payload(b).unwrap_or_default(),
+                        ),
                         _ => Ok(serde_json::Value::Null),
                     }
                 }) {

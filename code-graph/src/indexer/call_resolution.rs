@@ -232,7 +232,8 @@ pub fn extract_call_names(source: &str) -> Vec<String> {
     static RE_METHOD: OnceLock<regex::Regex> = OnceLock::new();
 
     let re = RE_CALL.get_or_init(|| regex::Regex::new(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(").unwrap());
-    let re_method = RE_METHOD.get_or_init(|| regex::Regex::new(r"\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(").unwrap());
+    let re_method =
+        RE_METHOD.get_or_init(|| regex::Regex::new(r"\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(").unwrap());
 
     let mut names = Vec::new();
     for cap in re.captures_iter(source) {

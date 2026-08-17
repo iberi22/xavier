@@ -233,8 +233,8 @@ impl QmdMemory {
             if let Ok(results) =
                 query_with_embedding_filtered(self, query_text, limit, filters).await
             {
-                if !results.is_empty() {
-                    return Ok(results);
+                if !results.documents.is_empty() {
+                    return Ok(results.documents);
                 }
             }
         }
@@ -634,7 +634,7 @@ pub async fn query_with_embedding_filtered(
     query_text: &str,
     limit: usize,
     filters: Option<&MemoryQueryFilters>,
-) -> Result<Vec<MemoryDocument>> {
+) -> Result<search::EmbeddingSearchResult> {
     search::query_with_embedding_filtered(memory, query_text, limit, filters).await
 }
 

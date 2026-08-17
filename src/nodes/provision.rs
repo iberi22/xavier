@@ -7,8 +7,8 @@
 //! 4. Secrets persistence strictly in `src/secrets/` with `KeyLendingEngine` leases.
 //! 5. Explicit `PartialRevocation` status if remote deprovisioning fails.
 
-use anyhow::{anyhow, Context, Result};
 use crate::utils::crypto::hex_encode;
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
@@ -218,6 +218,7 @@ impl<P: NodeProvisioner> ProvisioningEngine<P> {
     }
 
     /// Provision a new node (BaaS or SSH/VPS).
+    #[allow(clippy::too_many_arguments)]
     pub async fn provision_node(
         &self,
         wallet_signing_key: &SigningKey,

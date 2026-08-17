@@ -369,8 +369,6 @@ impl QueryEngine {
         self.db.find_symbols_for_memory(memory_id)
     }
 
-
-
     /// Semantic search for symbols using cosine similarity over symbol embeddings
     pub async fn semantic_search(
         &self,

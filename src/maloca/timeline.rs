@@ -263,7 +263,10 @@ mod tests {
         let payload2 = serde_json::json!({
             "entities": [{"name": "obj_entity1"}, {"name": "obj_entity2"}]
         });
-        assert_eq!(extract_entities(&payload2), vec!["obj_entity1", "obj_entity2"]);
+        assert_eq!(
+            extract_entities(&payload2),
+            vec!["obj_entity1", "obj_entity2"]
+        );
 
         // Empty / missing entities
         let payload3 = serde_json::json!({});

@@ -3,9 +3,9 @@
 //! Provides features to detect and mask PII patterns (emails, phones, SSNs, addresses)
 //! with configurable redaction rules.
 
+use crate::security::clearance::ClearanceLevel;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
-use crate::security::clearance::ClearanceLevel;
 
 /// A section within a segmented document with its own clearance level requirement.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -94,18 +94,19 @@ pub fn parse_segmented(markdown: &str) -> SegmentedDoc {
             }
 
             let header_text = line.trim_start_matches("## ").trim();
-            let (clearance_level, clean_title) = if let Some(captures) = clearance_regex.captures(header_text) {
-                let level_str = captures.get(1).unwrap().as_str();
-                let parsed_level = if let Ok(num) = level_str.parse::<u8>() {
-                    ClearanceLevel::from(num)
+            let (clearance_level, clean_title) =
+                if let Some(captures) = clearance_regex.captures(header_text) {
+                    let level_str = captures.get(1).unwrap().as_str();
+                    let parsed_level = if let Ok(num) = level_str.parse::<u8>() {
+                        ClearanceLevel::from(num)
+                    } else {
+                        ClearanceLevel::from(level_str)
+                    };
+                    let clean = clearance_regex.replace(header_text, "").trim().to_string();
+                    (parsed_level, clean)
                 } else {
-                    ClearanceLevel::from(level_str)
+                    (ClearanceLevel::Unclassified, header_text.to_string())
                 };
-                let clean = clearance_regex.replace(header_text, "").trim().to_string();
-                (parsed_level, clean)
-            } else {
-                (ClearanceLevel::Unclassified, header_text.to_string())
-            };
 
             let sec_id = format!("sec-{}", doc.sections.len() + 1);
             current_section = Some(DocSection {
@@ -276,7 +277,10 @@ mod tests {
         let engine = RedactionEngine::default();
         let inputs = vec![
             ("I live at 123 Main St.", "I live at [ADDRESS]."),
-            ("Meet at 1600 Amphitheatre Pkwy.", "Meet at 1600 Amphitheatre Pkwy."), // no standard street suffix
+            (
+                "Meet at 1600 Amphitheatre Pkwy.",
+                "Meet at 1600 Amphitheatre Pkwy.",
+            ), // no standard street suffix
             ("Send mail to 456 Oak Avenue.", "Send mail to [ADDRESS]."),
         ];
         for (input, expected) in inputs {
@@ -315,8 +319,14 @@ mod tests {
     fn test_redact_ipv4() {
         let engine = RedactionEngine::default();
         let inputs = vec![
-            ("Server IP is 192.168.1.1 or 10.0.0.254.", "Server IP is [IPV4] or [IPV4]."),
-            ("Invalid IP 999.999.999.999 should stay.", "Invalid IP 999.999.999.999 should stay."),
+            (
+                "Server IP is 192.168.1.1 or 10.0.0.254.",
+                "Server IP is [IPV4] or [IPV4].",
+            ),
+            (
+                "Invalid IP 999.999.999.999 should stay.",
+                "Invalid IP 999.999.999.999 should stay.",
+            ),
         ];
         for (input, expected) in inputs {
             assert_eq!(engine.redact(input), expected);
@@ -327,7 +337,10 @@ mod tests {
     fn test_redact_ipv6() {
         let engine = RedactionEngine::default();
         let inputs = vec![
-            ("Address is 2001:0db8:85a3:0000:0000:8a2e:0370:7334.", "Address is [IPV6]."),
+            (
+                "Address is 2001:0db8:85a3:0000:0000:8a2e:0370:7334.",
+                "Address is [IPV6].",
+            ),
             ("Loopback is ::1.", "Loopback is [IPV6]."),
         ];
         for (input, expected) in inputs {
@@ -370,13 +383,16 @@ mod tests {
                     id: "sec-1".to_string(),
                     title: "Public Overview".to_string(),
                     clearance_level: ClearanceLevel::Internal, // Level 1
-                    content: "This project aims to optimize response times. Contact boss@company.org.".to_string(),
+                    content:
+                        "This project aims to optimize response times. Contact boss@company.org."
+                            .to_string(),
                 },
                 DocSection {
                     id: "sec-2".to_string(),
                     title: "Secret Infrastructure".to_string(),
                     clearance_level: ClearanceLevel::Confidential, // Level 3
-                    content: "Database credentials are stored in Vault cluster alpha-9.".to_string(),
+                    content: "Database credentials are stored in Vault cluster alpha-9."
+                        .to_string(),
                 },
             ],
         };
@@ -418,9 +434,15 @@ The nuclear launch codes are 000000.
         assert_eq!(parsed.sections[0].clearance_level, ClearanceLevel::Internal);
 
         assert_eq!(parsed.sections[1].title, "Strategic Targets");
-        assert_eq!(parsed.sections[1].clearance_level, ClearanceLevel::Confidential);
+        assert_eq!(
+            parsed.sections[1].clearance_level,
+            ClearanceLevel::Confidential
+        );
 
         assert_eq!(parsed.sections[2].title, "Vault Key");
-        assert_eq!(parsed.sections[2].clearance_level, ClearanceLevel::TopSecret);
+        assert_eq!(
+            parsed.sections[2].clearance_level,
+            ClearanceLevel::TopSecret
+        );
     }
 }

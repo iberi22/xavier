@@ -39,7 +39,9 @@ where
     let val = lease.secret_value.clone();
     let res = f(val).await;
 
-    let _ = engine.revoke(&lease.token, "mcp_tool_execution_complete").await;
+    let _ = engine
+        .revoke(&lease.token, "mcp_tool_execution_complete")
+        .await;
 
     res
 }
@@ -501,8 +503,9 @@ pub async fn handle_core_tool(
             let snapshot = crate::self_manage::collect_system_snapshot();
             let in_process_health = crate::health::collect_health_sync();
 
-            let db_integrity = in_process_health.checks.iter()
-                .any(|c| c.name == "sqlite_integrity" && matches!(c.status, crate::health::CheckStatus::Pass));
+            let db_integrity = in_process_health.checks.iter().any(|c| {
+                c.name == "sqlite_integrity" && matches!(c.status, crate::health::CheckStatus::Pass)
+            });
 
             let benchmark = crate::auto_improvement::benchmark::BenchmarkSnapshot {
                 timestamp_secs: chrono::Utc::now().timestamp() as u64,
@@ -542,11 +545,22 @@ pub async fn handle_core_tool(
             ))?)
         }
         "log_scan" => {
-            let since = arguments.get("since").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let level_min = arguments.get("level_min").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let pattern = arguments.get("pattern").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let source = arguments.get("source").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let max_entries = arguments.get("max_entries").and_then(|v| v.as_u64()).unwrap_or(500) as usize;
+            let since = arguments
+                .get("since")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let level_min = arguments
+                .get("level_min")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let pattern = arguments
+                .get("pattern")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let source = arguments
+                .get("source")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let max_entries = arguments
+                .get("max_entries")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(500) as usize;
 
             let args = crate::self_manage::LogScanArgs {
                 since,
@@ -564,7 +578,9 @@ pub async fn handle_core_tool(
         }
         "env_status" => {
             let include_processes = arguments.get("include_processes").and_then(|v| v.as_bool());
-            let top_n = arguments.get("top_n").and_then(|v| v.as_u64().map(|n| n as usize));
+            let top_n = arguments
+                .get("top_n")
+                .and_then(|v| v.as_u64().map(|n| n as usize));
 
             let args = crate::self_manage::EnvStatusArgs {
                 include_processes,
@@ -578,16 +594,34 @@ pub async fn handle_core_tool(
             ))?)
         }
         "ticket_create" => {
-            let title = arguments.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let body = arguments.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let title = arguments
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = arguments
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let labels = arguments.get("labels").and_then(|v| {
                 v.as_array().map(|arr| {
-                    arr.iter().filter_map(|item| item.as_str().map(|s| s.to_string())).collect::<Vec<String>>()
+                    arr.iter()
+                        .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<String>>()
                 })
             });
-            let severity = arguments.get("severity").and_then(|v| v.as_str()).unwrap_or("warn").to_string();
-            let fingerprint = arguments.get("fingerprint").and_then(|v| v.as_str().map(|s| s.to_string()));
-            let backend = arguments.get("backend").and_then(|v| v.as_str().map(|s| s.to_string()));
+            let severity = arguments
+                .get("severity")
+                .and_then(|v| v.as_str())
+                .unwrap_or("warn")
+                .to_string();
+            let fingerprint = arguments
+                .get("fingerprint")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let backend = arguments
+                .get("backend")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
 
             let args = crate::self_manage::TicketCreateArgs {
                 title,
@@ -598,15 +632,19 @@ pub async fn handle_core_tool(
                 backend,
             };
 
-            resolve_tool_secret("GITHUB_TOKEN", "mcp_ticket_create", |_secret_val| async move {
-                match crate::self_manage::ticket_create(args) {
-                    Ok(result) => Ok(serde_json::to_value(MCPToolResult::structured(
-                        serde_json::to_value(&result)?,
-                        result.deduplicated,
-                    ))?),
-                    Err(error) => Err(error),
-                }
-            })
+            resolve_tool_secret(
+                "GITHUB_TOKEN",
+                "mcp_ticket_create",
+                |_secret_val| async move {
+                    match crate::self_manage::ticket_create(args) {
+                        Ok(result) => Ok(serde_json::to_value(MCPToolResult::structured(
+                            serde_json::to_value(&result)?,
+                            result.deduplicated,
+                        ))?),
+                        Err(error) => Err(error),
+                    }
+                },
+            )
             .await
         }
         "xavier_local_status" => {
