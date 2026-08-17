@@ -443,11 +443,8 @@ pub fn gather_embedding_coverage(settings: &XavierSettings) -> EmbeddingCoverage
                     |row| row.get(0),
                 );
                 if table_exists.is_ok() {
-                    let total_res: rusqlite::Result<u64> = conn.query_row(
-                        "SELECT COUNT(*) FROM memory_records",
-                        [],
-                        |row| row.get(0),
-                    );
+                    let total_res: rusqlite::Result<u64> =
+                        conn.query_row("SELECT COUNT(*) FROM memory_records", [], |row| row.get(0));
                     let indexed_res: rusqlite::Result<u64> = conn.query_row(
                         "SELECT COUNT(*) FROM memory_records WHERE length(embedding) > 10",
                         [],
@@ -584,7 +581,12 @@ async fn collect_health_impl(
     // --- Telegram health ---
     let telegram_start = std::time::Instant::now();
     let telegram_enabled = std::env::var("XAVIER_TELEGRAM_BOT_TOKEN").is_ok()
-        || settings.telegram.bot_token.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+        || settings
+            .telegram
+            .bot_token
+            .as_ref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
     let telegram_latency_ms = telegram_start.elapsed().as_secs_f64() * 1000.0;
     let telegram = TelegramHealth {
         enabled: telegram_enabled,
@@ -597,16 +599,42 @@ async fn collect_health_impl(
     };
 
     // --- Dependency Graph & Status Propagation ---
-    let db_status_str = if db_health.needs_vacuum { "degraded" } else { "healthy" };
-    let emb_status_str = if !embedding.connected || embedding.error_rate_pct > 10.0 { "unhealthy" } else { "healthy" };
-    let mesh_status_str = if mesh.connectivity == "online" || mesh.connectivity == "no peers" { "healthy" } else { "degraded" };
-    let tg_status_str = if telegram.enabled { "healthy" } else { "disabled" };
+    let db_status_str = if db_health.needs_vacuum {
+        "degraded"
+    } else {
+        "healthy"
+    };
+    let emb_status_str = if !embedding.connected || embedding.error_rate_pct > 10.0 {
+        "unhealthy"
+    } else {
+        "healthy"
+    };
+    let mesh_status_str = if mesh.connectivity == "online" || mesh.connectivity == "no peers" {
+        "healthy"
+    } else {
+        "degraded"
+    };
+    let tg_status_str = if telegram.enabled {
+        "healthy"
+    } else {
+        "disabled"
+    };
 
     let dependency_graph = ComponentDependencyGraph::build(vec![
         ("database", db_status_str, db_health.latency_ms, vec![]),
-        ("embedding", emb_status_str, embedding.latency_ms, vec!["database"]),
+        (
+            "embedding",
+            emb_status_str,
+            embedding.latency_ms,
+            vec!["database"],
+        ),
         ("mesh", mesh_status_str, mesh.latency_ms, vec!["database"]),
-        ("telegram", tg_status_str, telegram.latency_ms, vec!["embedding", "database"]),
+        (
+            "telegram",
+            tg_status_str,
+            telegram.latency_ms,
+            vec!["embedding", "database"],
+        ),
     ]);
 
     // --- Checks ---
@@ -766,7 +794,9 @@ async fn collect_health_impl(
 
     let overall_status = if critical_failure {
         "unhealthy"
-    } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) || embedding_coverage.status == "degraded" {
+    } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail))
+        || embedding_coverage.status == "degraded"
+    {
         "degraded"
     } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Warn)) {
         "warn"
@@ -1355,15 +1385,27 @@ mod tests {
             ("telegram", "healthy", 0.5, vec!["embedding", "database"]),
         ]);
 
-        let db_node = graph.nodes.iter().find(|n| n.component == "database").unwrap();
+        let db_node = graph
+            .nodes
+            .iter()
+            .find(|n| n.component == "database")
+            .unwrap();
         assert_eq!(db_node.status, "degraded");
         assert_eq!(db_node.propagated_status, "degraded");
 
-        let emb_node = graph.nodes.iter().find(|n| n.component == "embedding").unwrap();
+        let emb_node = graph
+            .nodes
+            .iter()
+            .find(|n| n.component == "embedding")
+            .unwrap();
         assert_eq!(emb_node.status, "healthy");
         assert_eq!(emb_node.propagated_status, "degraded");
 
-        let tg_node = graph.nodes.iter().find(|n| n.component == "telegram").unwrap();
+        let tg_node = graph
+            .nodes
+            .iter()
+            .find(|n| n.component == "telegram")
+            .unwrap();
         assert_eq!(tg_node.status, "healthy");
         assert_eq!(tg_node.propagated_status, "degraded");
     }

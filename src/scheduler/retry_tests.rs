@@ -21,12 +21,7 @@ fn test_retry_policy_exponential_backoff_calculation() {
 
 #[test]
 fn test_retry_policy_max_delay_cap() {
-    let policy = RetryPolicy::new(
-        Duration::from_secs(1),
-        Duration::from_secs(5),
-        2.0,
-        0,
-    );
+    let policy = RetryPolicy::new(Duration::from_secs(1), Duration::from_secs(5), 2.0, 0);
 
     assert_eq!(policy.calculate_delay(1), Duration::from_secs(1));
     assert_eq!(policy.calculate_delay(2), Duration::from_secs(2));

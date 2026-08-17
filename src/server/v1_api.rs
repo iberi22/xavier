@@ -96,6 +96,8 @@ pub struct V1MemorySearchResponse {
     pub results: Vec<V1MemoryResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -117,6 +119,8 @@ pub struct V1MemorySearchSnippetResponse {
     pub mode: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -132,6 +136,8 @@ pub struct V1MemorySearchIdsResponse {
     pub results: Vec<V1MemoryIdResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub degraded: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -311,10 +317,14 @@ pub async fn v1_memories_add(
     let mut meta = payload.metadata.unwrap_or(serde_json::json!({}));
 
     let payload_kind_str = payload.kind.as_deref().unwrap_or("");
-    let is_ssp = path.starts_with("stability/") || path.starts_with("features/") || payload_kind_str == "stability_report" || payload_kind_str == "feature_snippet";
+    let is_ssp = path.starts_with("stability/")
+        || path.starts_with("features/")
+        || payload_kind_str == "stability_report"
+        || payload_kind_str == "feature_snippet";
 
-    let is_dedup =
-        params.mode.as_deref() == Some("dedup") || payload.mode.as_deref() == Some("dedup") || is_ssp;
+    let is_dedup = params.mode.as_deref() == Some("dedup")
+        || payload.mode.as_deref() == Some("dedup")
+        || is_ssp;
     if is_dedup {
         if let Some(obj) = meta.as_object_mut() {
             obj.insert("dedup".to_string(), serde_json::json!(true));
@@ -551,7 +561,10 @@ pub async fn v1_mesh_handshake(
                 };
 
                 let _ = peers.add_peer(peer_info);
-                info!("Registered/updated peer {} in PeerRegistry", payload.node_id);
+                info!(
+                    "Registered/updated peer {} in PeerRegistry",
+                    payload.node_id
+                );
             }
 
             if auto_register {
@@ -1075,17 +1088,25 @@ pub async fn v1_memories_search(
         filters.zones = Some(zones);
     }
 
-    let documents = query_with_embedding_filtered(
+    let search_result = query_with_embedding_filtered(
         &workspace.workspace.memory,
         &payload.query,
         limit,
         Some(&filters),
     )
     .await
-    .unwrap_or_default()
-    .into_iter()
-    .filter(|doc| is_primary_memory(&doc.metadata))
-    .collect::<Vec<_>>();
+    .unwrap_or_else(
+        |_| crate::memory::qmd_memory::search::EmbeddingSearchResult {
+            documents: Vec::new(),
+            degraded: true,
+        },
+    );
+    let degraded = search_result.degraded;
+    let documents = search_result
+        .documents
+        .into_iter()
+        .filter(|doc| is_primary_memory(&doc.metadata))
+        .collect::<Vec<_>>();
 
     let mode = payload.mode.as_deref().unwrap_or("full");
 
@@ -1103,6 +1124,7 @@ pub async fn v1_memories_search(
             status: "ok".to_string(),
             results,
             truncated: None,
+            degraded: Some(degraded),
         };
         let response = apply_hard_cap_and_truncate(
             response,
@@ -1149,6 +1171,7 @@ pub async fn v1_memories_search(
             workspace_id: workspace.workspace_id.clone(),
             mode: "snippet".to_string(),
             truncated: None,
+            degraded: Some(degraded),
         };
         let response = apply_hard_cap_and_truncate(
             response,
@@ -1176,6 +1199,7 @@ pub async fn v1_memories_search(
             status: "ok".to_string(),
             results,
             truncated: None,
+            degraded: Some(degraded),
         };
         let response = apply_hard_cap_and_truncate(
             response,
@@ -1239,6 +1263,7 @@ pub async fn v1_context_assemble(
     let documents =
         query_with_embedding_filtered(&workspace.workspace.memory, task, limit * 3, Some(&filters))
             .await
+            .map(|r| r.documents)
             .unwrap_or_default()
             .into_iter()
             .filter(|doc| is_primary_memory(&doc.metadata))
@@ -1328,17 +1353,14 @@ pub async fn v1_memory_recall_eval(
 
     for (idx, case) in cases.iter().enumerate() {
         expected_ranks.push(case.expected_rank);
-        let docs = query_with_embedding_filtered(
-            &workspace.workspace.memory,
-            &case.query,
-            limit,
-            None,
-        )
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|doc| is_primary_memory(&doc.metadata))
-        .collect::<Vec<_>>();
+        let docs =
+            query_with_embedding_filtered(&workspace.workspace.memory, &case.query, limit, None)
+                .await
+                .map(|r| r.documents)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|doc| is_primary_memory(&doc.metadata))
+                .collect::<Vec<_>>();
 
         let mut first_hit_rank = None;
         let mut hit_found = false;
@@ -1384,10 +1406,7 @@ pub async fn v1_memory_recall_eval(
     let settings = crate::settings::XavierSettings::current();
     let embedding_coverage = crate::health::gather_embedding_coverage(&settings);
 
-    let source_count = hits_out
-        .iter()
-        .filter(|h| h.source != "unknown")
-        .count();
+    let source_count = hits_out.iter().filter(|h| h.source != "unknown").count();
 
     Json(RecallEvalResponse {
         status: "ok".to_string(),
@@ -2081,17 +2100,51 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_v1_memory_recall_eval_5_known_memories() {
+        // Blindar contra env-race: otros tests setean XAVIER_EMBEDDING_* sin restaurar
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        for key in [
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBED_PROVIDER",
+        ] {
+            std::env::remove_var(key);
+        }
         let (state, workspace) = test_state().await;
         let app = test_router(state, workspace);
 
         // 1. Insert 5 known test memories across different namespaces/sources
         let test_docs = vec![
-            ("features/node-provisioning", "SWAL node provisioning cloud VPS registration script", "features"),
-            ("stability/repo/latest", "ssp stability report pass rate 100 percent", "stability"),
-            ("openclaw://agent1/session", "openclaw agent telemetry observation delta", "openclaw"),
-            ("jules://session1/task", "jules cloud coding session task resolution", "jules"),
-            ("hermes/session1/logs", "hermes session log database entry", "hermes"),
+            (
+                "features/node-provisioning",
+                "SWAL node provisioning cloud VPS registration script",
+                "features",
+            ),
+            (
+                "stability/repo/latest",
+                "ssp stability report pass rate 100 percent",
+                "stability",
+            ),
+            (
+                "openclaw://agent1/session",
+                "openclaw agent telemetry observation delta",
+                "openclaw",
+            ),
+            (
+                "jules://session1/task",
+                "jules cloud coding session task resolution",
+                "jules",
+            ),
+            (
+                "hermes/session1/logs",
+                "hermes session log database entry",
+                "hermes",
+            ),
         ];
 
         for (path, text, kind) in &test_docs {
@@ -2137,21 +2190,39 @@ mod tests {
             ))
             .expect("build eval req");
 
-        let resp = app.clone().oneshot(eval_req).await.expect("execute eval req");
+        let resp = app
+            .clone()
+            .oneshot(eval_req)
+            .await
+            .expect("execute eval req");
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
-        let eval_resp: RecallEvalResponse = serde_json::from_slice(&body).expect("parse recall eval JSON");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        let eval_resp: RecallEvalResponse =
+            serde_json::from_slice(&body).expect("parse recall eval JSON");
 
         assert_eq!(eval_resp.status, "ok");
         assert_eq!(eval_resp.metrics.num_cases, 5);
-        assert!((eval_resp.metrics.recall_at_k - 1.0).abs() < 1e-6, "recall_at_k should be 1.0");
-        assert!(eval_resp.metrics.sigma <= 0.1, "sigma rank deviation should be <= 0.1, got {}", eval_resp.metrics.sigma);
+        assert!(
+            (eval_resp.metrics.recall_at_k - 1.0).abs() < 1e-6,
+            "recall_at_k should be 1.0"
+        );
+        assert!(
+            eval_resp.metrics.sigma <= 0.1,
+            "sigma rank deviation should be <= 0.1, got {}",
+            eval_resp.metrics.sigma
+        );
         assert!(eval_resp.source_count > 0, "source_count should be > 0");
 
         // Assert hits have source != "unknown"
         for hit in &eval_resp.hits {
-            assert_ne!(hit.source, "unknown", "source should not be unknown for hit {}", hit.path);
+            assert_ne!(
+                hit.source, "unknown",
+                "source should not be unknown for hit {}",
+                hit.path
+            );
         }
 
         // Assert namespace breakdown contains the sources
@@ -2170,7 +2241,9 @@ mod tests {
 
         let resp = app.oneshot(stats_req).await.expect("execute stats req");
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let stats_val: serde_json::Value = serde_json::from_slice(&body).expect("parse stats JSON");
         assert_eq!(stats_val["status"], "ok");
         assert_eq!(stats_val["total_documents"].as_u64(), Some(5));

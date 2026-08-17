@@ -117,7 +117,10 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route("/v1/memories/redact", post(memories_redact_handler))
         // ── Mini-Experts API ──────────────────────────────────────────────
         .route("/v1/agents/mini-experts", get(mini_experts_list_handler))
-        .route("/v1/agents/mini-experts/invoke", post(mini_expert_invoke_handler))
+        .route(
+            "/v1/agents/mini-experts/invoke",
+            post(mini_expert_invoke_handler),
+        )
         // ── Data Marketplace API ──────────────────────────────────────────
         .route(
             "/v1/marketplace/datasets",
@@ -561,8 +564,8 @@ pub fn init_plugin_registry() {
 
 // ─── Maintenance API ──────────────────────────────────────────────────────
 
-use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ReindexMaintenanceRequest {
@@ -621,7 +624,10 @@ pub async fn maintenance_reindex_handler(
                         "Starting triggered background reindexing (limit: {:?})...",
                         limit
                     );
-                    match store.reindex_null_embeddings_background_with_limit(limit).await {
+                    match store
+                        .reindex_null_embeddings_background_with_limit(limit)
+                        .await
+                    {
                         Ok(success_count) => {
                             tracing::info!(
                                 "Triggered background reindexing completed. Success count: {}",
@@ -755,7 +761,9 @@ pub async fn training_export_handler(
 
     let manifest = match serde_json::to_value(&bundle.manifest) {
         Ok(m) => m,
-        Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        }
     };
 
     Json(TrainingExportResponse {
@@ -990,9 +998,7 @@ pub async fn mini_expert_invoke_handler(
                 axum::http::StatusCode::NOT_FOUND,
                 format!("Mini-expert '{}' not found", name),
             ),
-            crate::agents::provider_router::MiniExpertInvokeError::ModelNotInstalled {
-                model,
-            } => (
+            crate::agents::provider_router::MiniExpertInvokeError::ModelNotInstalled { model } => (
                 axum::http::StatusCode::NOT_FOUND,
                 format!(
                     "Model '{}' not found in local provider. Please run: ollama pull {}",
@@ -1086,7 +1092,8 @@ mod route_tests {
             .create_async()
             .await;
 
-        let temp_dir = std::env::temp_dir().join(format!("xavier_test_route_mexp_{}", ulid::Ulid::new()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("xavier_test_route_mexp_{}", ulid::Ulid::new()));
         let db_file = temp_dir.join("mini_experts.json");
         let registry = crate::agents::mini_experts::MiniExpertRegistry::new(&db_file);
         registry
@@ -1107,7 +1114,10 @@ mod route_tests {
             &registry,
             vec![],
         );
-        let err = router.invoke("test-qwen3-4b", "write rust code").await.unwrap_err();
+        let err = router
+            .invoke("test-qwen3-4b", "write rust code")
+            .await
+            .unwrap_err();
         match err {
             crate::agents::provider_router::MiniExpertInvokeError::ModelNotInstalled { model } => {
                 assert_eq!(model, "test-qwen3-4b");
@@ -1295,8 +1305,7 @@ mod route_tests {
             .await
             .expect("collect body")
             .to_bytes();
-        let parsed: serde_json::Value =
-            serde_json::from_slice(&body).expect("parse list response");
+        let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse list response");
 
         assert!(parsed.is_array());
         let arr = parsed.as_array().unwrap();
@@ -1337,7 +1346,10 @@ mod route_tests {
 
         assert_eq!(parsed["status"], "success");
         assert_eq!(parsed["provider"], "agy");
-        assert!(parsed["response"].as_str().unwrap().contains("Mock response"));
+        assert!(parsed["response"]
+            .as_str()
+            .unwrap()
+            .contains("Mock response"));
     }
 
     #[tokio::test]
@@ -1355,12 +1367,13 @@ mod route_tests {
             .header("content-type", "application/json")
             .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
             .unwrap();
-        req.extensions_mut().insert(crate::security::auth::Claims::new(
-            "admin".to_string(),
-            "admin@example.com".to_string(),
-            crate::security::auth::UserRole::Admin,
-            chrono::Duration::hours(1),
-        ));
+        req.extensions_mut()
+            .insert(crate::security::auth::Claims::new(
+                "admin".to_string(),
+                "admin@example.com".to_string(),
+                crate::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
         let response: Response = create_router()
             .oneshot(req)
             .await

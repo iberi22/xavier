@@ -88,12 +88,7 @@ impl ProviderRouter {
             .ok_or_else(|| MiniExpertInvokeError::NotFound(name.to_string()))?;
 
         // If api_key starts with "mock-" or if name starts with "mock-", return mock response.
-        if expert
-            .api_key
-            .as_deref()
-            .unwrap_or("")
-            .starts_with("mock-")
-            || name.starts_with("mock-")
+        if expert.api_key.as_deref().unwrap_or("").starts_with("mock-") || name.starts_with("mock-")
         {
             return Ok(format!(
                 "Mock response from mini-expert '{}' (provider: {}) for prompt: '{}'",
@@ -228,7 +223,8 @@ mod tests {
 
     #[test]
     fn test_provider_router_from_registry() {
-        let temp_dir = std::env::temp_dir().join(format!("xavier_test_router_{}", ulid::Ulid::new()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("xavier_test_router_{}", ulid::Ulid::new()));
         let db_file = temp_dir.join("mini_experts.json");
 
         let registry = MiniExpertRegistry::new(&db_file);
@@ -293,7 +289,9 @@ mod tests {
             .mock("POST", "/v1/chat/completions")
             .with_status(404)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"error":{"message":"model 'qwen3-4b' not found, try pulling it first"}}"#)
+            .with_body(
+                r#"{"error":{"message":"model 'qwen3-4b' not found, try pulling it first"}}"#,
+            )
             .create_async()
             .await;
 

@@ -188,7 +188,7 @@ impl System1Retriever {
                 )
                 .await
                 {
-                    Ok(results) => results,
+                    Ok(results) => results.documents,
                     Err(error) => {
                         warn!(
                             "Hybrid search failed, falling back to keyword search: {}",
@@ -208,7 +208,7 @@ impl System1Retriever {
                 .await;
 
                 match semantic_results {
-                    Ok(results) if !results.is_empty() => results,
+                    Ok(results) if !results.documents.is_empty() => results.documents,
                     Ok(_) => {
                         warn!("Semantic search returned no results, falling back to hybrid search");
                         let hybrid_results = self

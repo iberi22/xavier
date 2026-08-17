@@ -185,10 +185,7 @@ impl RetrievalMetrics {
             .iter()
             .enumerate()
             .map(|(idx, r)| {
-                let exp = expected_ranks
-                    .get(idx)
-                    .copied()
-                    .unwrap_or(1) as f64;
+                let exp = expected_ranks.get(idx).copied().unwrap_or(1) as f64;
                 let actual = r
                     .first_hit_rank
                     .map(|rank| rank as f64)

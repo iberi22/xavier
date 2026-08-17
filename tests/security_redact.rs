@@ -20,18 +20,12 @@ async fn test_redaction_engine_basic_patterns() {
     // 1. Email Redaction
     let input_email = "My email is john.doe@example.com, support@test.co.uk is also good.";
     let redacted_email = engine.redact(input_email);
-    assert_eq!(
-        redacted_email,
-        "My email is [EMAIL], [EMAIL] is also good."
-    );
+    assert_eq!(redacted_email, "My email is [EMAIL], [EMAIL] is also good.");
 
     // 2. Phone Redaction
     let input_phone = "Call +1-555-123-4567 or (555) 123-4567 or 123-456-7890.";
     let redacted_phone = engine.redact(input_phone);
-    assert_eq!(
-        redacted_phone,
-        "Call [PHONE] or [PHONE] or [PHONE]."
-    );
+    assert_eq!(redacted_phone, "Call [PHONE] or [PHONE] or [PHONE].");
 
     // 3. SSN Redaction
     let input_ssn = "Do not share 123-45-6789 or 987-65-4321.";
@@ -41,12 +35,18 @@ async fn test_redaction_engine_basic_patterns() {
     // 4. Address Redaction
     let input_address = "Mail to 123 Main Street or 456 Oak Ave, Suite 12.";
     let redacted_address = engine.redact(input_address);
-    assert_eq!(redacted_address, "Mail to [ADDRESS] or [ADDRESS], Suite 12.");
+    assert_eq!(
+        redacted_address,
+        "Mail to [ADDRESS] or [ADDRESS], Suite 12."
+    );
 
     // 5. Cédula Redaction
     let input_cedula = "Mi Cédula es 1018273645 y la otra es CC #52345678.";
     let redacted_cedula = engine.redact(input_cedula);
-    assert_eq!(redacted_cedula, "Mi Cédula es [CEDULA] y la otra es [CEDULA].");
+    assert_eq!(
+        redacted_cedula,
+        "Mi Cédula es [CEDULA] y la otra es [CEDULA]."
+    );
 
     // 6. IPv4 & IPv6 Redaction
     let input_ip = "Connect via 192.168.0.1 or 2001:0db8:85a3:0000:0000:8a2e:0370:7334.";
@@ -107,13 +107,9 @@ async fn test_api_memories_redact_endpoint() {
         .expect("collect body")
         .to_bytes();
 
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&body).expect("parse redact response");
+    let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse redact response");
 
-    assert_eq!(
-        parsed["redacted_text"],
-        "Send SSN [SSN] to [EMAIL]."
-    );
+    assert_eq!(parsed["redacted_text"], "Send SSN [SSN] to [EMAIL].");
 }
 
 #[tokio::test(flavor = "multi_thread")]

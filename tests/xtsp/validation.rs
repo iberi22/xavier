@@ -1033,7 +1033,9 @@ async fn xtsp_ssp_canonical_upsert() {
     let list_res = get_v1(app.clone(), "/v1/memories?limit=100").await;
     assert_eq!(list_res.status(), StatusCode::OK);
     let list_body = read_v1_json_body(list_res).await;
-    let memories = list_body["memories"].as_array().expect("memories should be array");
+    let memories = list_body["memories"]
+        .as_array()
+        .expect("memories should be array");
 
     let matches: Vec<_> = memories
         .iter()
@@ -1041,8 +1043,15 @@ async fn xtsp_ssp_canonical_upsert() {
         .collect();
 
     // Check we only have exactly 1 record for this path
-    assert_eq!(matches.len(), 1, "Expected exactly 1 stability_report memory for path");
-    assert_eq!(matches[0]["memory"].as_str().unwrap(), "STABLE v2 metrics updated");
+    assert_eq!(
+        matches.len(),
+        1,
+        "Expected exactly 1 stability_report memory for path"
+    );
+    assert_eq!(
+        matches[0]["memory"].as_str().unwrap(),
+        "STABLE v2 metrics updated"
+    );
 }
 
 #[tokio::test]
@@ -1069,7 +1078,10 @@ async fn xtsp_context_assemble_ssp() {
     // Call /v1/context/assemble via router
     // Wait, let's manually call the handler or use a router that has it mounted
     let router = Router::new()
-        .route("/v1/context/assemble", post(xavier::server::v1_api::v1_context_assemble))
+        .route(
+            "/v1/context/assemble",
+            post(xavier::server::v1_api::v1_context_assemble),
+        )
         .layer(Extension(workspace))
         .with_state(state);
 
@@ -1089,12 +1101,25 @@ async fn xtsp_context_assemble_ssp() {
     let resp = router.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    assert!(body_bytes.len() < 2048, "Response should be extremely compact (<2KB)");
+    let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(
+        body_bytes.len() < 2048,
+        "Response should be extremely compact (<2KB)"
+    );
 
     let payload: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(payload["status"], "ok");
-    let snippets = payload["snippets"].as_array().expect("snippets should be array");
-    assert!(!snippets.is_empty(), "Expected to assemble at least 1 feature snippet");
-    assert_eq!(snippets[0]["path"].as_str(), Some("features/shelf/feat-p2p-sync"));
+    let snippets = payload["snippets"]
+        .as_array()
+        .expect("snippets should be array");
+    assert!(
+        !snippets.is_empty(),
+        "Expected to assemble at least 1 feature snippet"
+    );
+    assert_eq!(
+        snippets[0]["path"].as_str(),
+        Some("features/shelf/feat-p2p-sync")
+    );
 }

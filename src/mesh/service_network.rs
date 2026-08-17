@@ -104,9 +104,16 @@ impl ServiceRegistry {
     }
 
     /// Route a request using a PeerRegistry to check node health.
-    pub fn route_service_with_registry(&self, kind: &ServiceKind, registry: &PeerRegistry) -> Option<&ServiceInfo> {
+    pub fn route_service_with_registry(
+        &self,
+        kind: &ServiceKind,
+        registry: &PeerRegistry,
+    ) -> Option<&ServiceInfo> {
         self.route_service(kind, |node_id| {
-            registry.get_peer(node_id).map(|p| p.is_healthy()).unwrap_or(false)
+            registry
+                .get_peer(node_id)
+                .map(|p| p.is_healthy())
+                .unwrap_or(false)
         })
     }
 
@@ -374,7 +381,8 @@ mod tests {
         service_registry.register_service(s1);
 
         // Routing with registry should skip node2 (which is unhealthy, even though registered first) and route to node1
-        let routed = service_registry.route_service_with_registry(&ServiceKind::Memory, &peer_registry);
+        let routed =
+            service_registry.route_service_with_registry(&ServiceKind::Memory, &peer_registry);
         assert_eq!(routed.map(|s| &s.node_id), Some(&node1));
     }
 }

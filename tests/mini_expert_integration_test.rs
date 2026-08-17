@@ -57,7 +57,10 @@ async fn test_mini_expert_invoke_integration() {
     let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(parsed["status"], "success");
     assert_eq!(parsed["provider"], "custom");
-    assert!(parsed["response"].as_str().unwrap().contains("Mock response"));
+    assert!(parsed["response"]
+        .as_str()
+        .unwrap()
+        .contains("Mock response"));
 }
 
 #[tokio::test]

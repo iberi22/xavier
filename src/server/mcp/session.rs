@@ -354,7 +354,9 @@ async fn handle_mcp_request(
                 })
             } else {
                 Some(
-                    match super::server::handle_tool_call(state, workspace, claims, name, arguments).await {
+                    match super::server::handle_tool_call(state, workspace, claims, name, arguments)
+                        .await
+                    {
                         Ok(result) => MCPResponse {
                             jsonrpc: "2.0".to_string(),
                             id: request.id.unwrap_or(Value::Null),

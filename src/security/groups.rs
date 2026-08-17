@@ -168,11 +168,11 @@ mod tests {
         registry.create(group).unwrap();
 
         let join_res1 = registry.join("core-dev", "bela");
-        assert_eq!(join_res1.unwrap(), true);
+        assert!(join_res1.unwrap());
 
         // Try joining again - should return false as already joined
         let join_res2 = registry.join("core-dev", "bela");
-        assert_eq!(join_res2.unwrap(), false);
+        assert!(!join_res2.unwrap());
 
         let group = registry.get_group("core-dev").unwrap();
         assert_eq!(group.members, vec!["bela".to_string()]);
@@ -196,7 +196,7 @@ mod tests {
         registry.create(group).unwrap();
         registry.join("readers", "bela").unwrap();
 
-        assert_eq!(registry.check_access("readers", "bela", "read"), true);
+        assert!(registry.check_access("readers", "bela", "read"));
     }
 
     #[test]
@@ -208,7 +208,7 @@ mod tests {
         registry.create(group).unwrap();
         registry.join("no-read", "bela").unwrap();
 
-        assert_eq!(registry.check_access("no-read", "bela", "read"), false);
+        assert!(!registry.check_access("no-read", "bela", "read"));
     }
 
     #[test]
@@ -220,7 +220,7 @@ mod tests {
         registry.create(group).unwrap();
         registry.join("writers", "bela").unwrap();
 
-        assert_eq!(registry.check_access("writers", "bela", "write"), true);
+        assert!(registry.check_access("writers", "bela", "write"));
     }
 
     #[test]
@@ -233,7 +233,7 @@ mod tests {
         registry.create(group).unwrap();
         registry.join("readers", "bela").unwrap();
 
-        assert_eq!(registry.check_access("readers", "bela", "write"), false);
+        assert!(!registry.check_access("readers", "bela", "write"));
     }
 
     #[test]
@@ -245,7 +245,7 @@ mod tests {
         registry.create(group).unwrap();
         registry.join("auditors", "bela").unwrap();
 
-        assert_eq!(registry.check_access("auditors", "bela", "audit"), true);
+        assert!(registry.check_access("auditors", "bela", "audit"));
     }
 
     #[test]
@@ -257,7 +257,7 @@ mod tests {
         registry.create(group).unwrap();
         registry.join("no-audit", "bela").unwrap();
 
-        assert_eq!(registry.check_access("no-audit", "bela", "audit"), false);
+        assert!(!registry.check_access("no-audit", "bela", "audit"));
     }
 
     #[test]
@@ -269,9 +269,9 @@ mod tests {
         registry.create(group).unwrap();
 
         // 'stranger' is not a member of the group
-        assert_eq!(registry.check_access("writers", "stranger", "read"), false);
-        assert_eq!(registry.check_access("writers", "stranger", "write"), false);
-        assert_eq!(registry.check_access("writers", "stranger", "audit"), false);
+        assert!(!registry.check_access("writers", "stranger", "read"));
+        assert!(!registry.check_access("writers", "stranger", "write"));
+        assert!(!registry.check_access("writers", "stranger", "audit"));
     }
 
     #[test]
@@ -279,7 +279,7 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let registry = GroupRegistry::load_from(temp_file.path()).unwrap();
 
-        assert_eq!(registry.check_access("nonexistent", "bela", "read"), false);
+        assert!(!registry.check_access("nonexistent", "bela", "read"));
     }
 
     #[test]
@@ -291,8 +291,8 @@ mod tests {
         registry.create(group).unwrap();
         registry.join("writers", "bela").unwrap();
 
-        assert_eq!(registry.check_access("writers", "bela", "delete"), false);
-        assert_eq!(registry.check_access("writers", "bela", "manage"), false);
+        assert!(!registry.check_access("writers", "bela", "delete"));
+        assert!(!registry.check_access("writers", "bela", "manage"));
     }
 
     #[test]
@@ -314,8 +314,8 @@ mod tests {
         let g = group.unwrap();
         assert_eq!(g.name, "Family Group");
         assert_eq!(g.members, vec!["bela".to_string()]);
-        assert_eq!(g.acl.read, true);
-        assert_eq!(g.acl.write, true);
-        assert_eq!(g.acl.audit, true);
+        assert!(g.acl.read);
+        assert!(g.acl.write);
+        assert!(g.acl.audit);
     }
 }

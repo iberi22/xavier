@@ -422,9 +422,7 @@ impl HealthMonitor {
             }
         }
 
-        let cache = embedder_opt
-            .as_ref()
-            .and_then(|e| e.cache_metrics());
+        let cache = embedder_opt.as_ref().and_then(|e| e.cache_metrics());
 
         EmbeddingHealth {
             provider,

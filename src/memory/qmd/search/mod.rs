@@ -25,7 +25,7 @@ pub mod vector;
 pub mod tests;
 
 // Re-export all public functions from sub-modules for backward compatibility.
-pub use embedding::{query_with_embedding, query_with_embedding_filtered};
+pub use embedding::{query_with_embedding, query_with_embedding_filtered, EmbeddingSearchResult};
 pub use hybrid::{
     bm25_search, merge_ranked_candidates, multi_hop_context, query_filtered,
     query_with_hybrid_search, search_hybrid_optimized,

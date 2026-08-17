@@ -349,7 +349,9 @@ impl HealthAutoRepair {
         // Base delay: 5s. Double each failure beyond threshold, capped at 300s (5m)
         let excess_failures = failures.saturating_sub(self.config.embedding_failure_threshold);
         let base_delay_secs = 5u64;
-        let exponential_delay_secs = base_delay_secs.saturating_mul(1u64 << excess_failures.min(6)).min(300);
+        let exponential_delay_secs = base_delay_secs
+            .saturating_mul(1u64 << excess_failures.min(6))
+            .min(300);
 
         use rand::Rng;
         let mut rng = rand::thread_rng();

@@ -91,7 +91,10 @@ impl CodexImporter {
         let mut sessions = Vec::new();
 
         if !fs::try_exists(&self.sessions_dir).await.unwrap_or(false) {
-            debug!("Codex sessions directory {:?} does not exist", self.sessions_dir);
+            debug!(
+                "Codex sessions directory {:?} does not exist",
+                self.sessions_dir
+            );
             return Ok(sessions);
         }
 
@@ -271,7 +274,10 @@ impl CodexImporter {
             }
         }
 
-        info!("✅ Successfully imported {} Codex session records", imported.len());
+        info!(
+            "✅ Successfully imported {} Codex session records",
+            imported.len()
+        );
         Ok(imported)
     }
 }

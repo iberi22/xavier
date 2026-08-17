@@ -44,7 +44,15 @@ pub async fn mcp_tools_call_handler(
     };
 
     let claims_ref = claims.as_ref().map(|c| &c.0);
-    match handle_tool_call(app_state, workspace, claims_ref, &payload.name, payload.arguments).await {
+    match handle_tool_call(
+        app_state,
+        workspace,
+        claims_ref,
+        &payload.name,
+        payload.arguments,
+    )
+    .await
+    {
         Ok(result) => (StatusCode::OK, Json(result)).into_response(),
         Err(e) => {
             let message = e.to_string();

@@ -104,7 +104,7 @@ impl JulesImporter {
     /// Fetch issues with label `jules` using `gh` CLI.
     pub async fn fetch_github_jules_issues(&self) -> Result<Vec<JulesItem>> {
         let output = tokio::process::Command::new("gh")
-            .args(&[
+            .args([
                 "issue",
                 "list",
                 "--label",
@@ -214,7 +214,9 @@ impl JulesImporter {
                 vec![JulesItem {
                     id: "jules-default-1".to_string(),
                     title: "Jules session indexer integration".to_string(),
-                    body: Some("Index Jules cloud sessions and GitHub issues into memory.".to_string()),
+                    body: Some(
+                        "Index Jules cloud sessions and GitHub issues into memory.".to_string(),
+                    ),
                     status: Some("in_progress".to_string()),
                     url: Some("https://github.com/issues/jules".to_string()),
                     updated_at: Some(chrono::Utc::now().to_rfc3339()),

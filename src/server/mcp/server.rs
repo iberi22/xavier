@@ -54,24 +54,22 @@ pub async fn handle_tool_call(
             | "memoryfragment_save"
             | "memory_save"
             | "ticket_create"
-            | "sync_gitcore" => {
-                if !role.can_add_memory() {
-                    return Err(anyhow::anyhow!(
-                        "Forbidden: Insufficient permissions for role {:?} to execute tool '{}'",
-                        role,
-                        name
-                    ));
-                }
+            | "sync_gitcore"
+                if !role.can_add_memory() =>
+            {
+                return Err(anyhow::anyhow!(
+                    "Forbidden: Insufficient permissions for role {:?} to execute tool '{}'",
+                    role,
+                    name
+                ));
             }
             // Deletion / Pruning tools
-            "memoryfragment_delete" | "memory_prune" => {
-                if !role.can_delete_memory() {
-                    return Err(anyhow::anyhow!(
-                        "Forbidden: Insufficient permissions for role {:?} to execute tool '{}'",
-                        role,
-                        name
-                    ));
-                }
+            "memoryfragment_delete" | "memory_prune" if !role.can_delete_memory() => {
+                return Err(anyhow::anyhow!(
+                    "Forbidden: Insufficient permissions for role {:?} to execute tool '{}'",
+                    role,
+                    name
+                ));
             }
             _ => {}
         }

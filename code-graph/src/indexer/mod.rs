@@ -1107,7 +1107,11 @@ mod tests {
         let edges = build_edges(&symbols, &symbols, &sources);
         let duration = start.elapsed();
 
-        println!("DEBUG BENCHMARK DURATION: {:.4}s, edges count: {}", duration.as_secs_f64(), edges.len());
+        println!(
+            "DEBUG BENCHMARK DURATION: {:.4}s, edges count: {}",
+            duration.as_secs_f64(),
+            edges.len()
+        );
         assert!(
             duration.as_secs_f64() < 5.0,
             "build_edges took {:.2}s, expected < 5s (O(n) hash-map; original double-loop ~40s+)",
@@ -1115,4 +1119,3 @@ mod tests {
         );
     }
 }
-
