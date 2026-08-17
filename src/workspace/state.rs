@@ -184,17 +184,34 @@ impl WorkspaceState {
             }
         };
         store.set_dedup_settings(config.dedup.clone()).await;
-        let durable_state = store.load_workspace_state(&config.id).await?;
-        let docs = Arc::new(RwLock::new(
-            durable_state
-                .memories
-                .iter()
-                .map(MemoryRecord::to_document)
-                .collect(),
-        ));
-        let mut memory = QmdMemory::new_with_workspace(Arc::clone(&docs), config.id.clone());
-        memory.set_store(Arc::clone(&store)).await;
-        memory.init().await?;
+
+        // LAZY LOADING: Skip loading all documents into RAM at startup.
+        // The pool is loaded on first access (search, get, ls, etc.) instead.
+        // Beliefs are always loaded (small payload).
+        let eager_load = std::env::var("XAVIER_MEMORY_EAGER_LOAD")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
+
+        let (mut memory, docs): (QmdMemory, Arc<tokio::sync::RwLock<Vec<crate::memory::qmd_memory::MemoryDocument>>>) = if eager_load {
+            let durable_state = store.load_workspace_state(&config.id).await?;
+            let docs = Arc::new(tokio::sync::RwLock::new(
+                durable_state
+                    .memories
+                    .iter()
+                    .map(MemoryRecord::to_document)
+                    .collect(),
+            ));
+            let mem = QmdMemory::new_with_workspace(Arc::clone(&docs), config.id.clone());
+            mem.set_store(Arc::clone(&store)).await;
+            mem.init().await?;
+            (mem, docs)
+        } else {
+            let mem = QmdMemory::new_lazy(config.id.clone());
+            mem.set_store(Arc::clone(&store)).await;
+            mem.init().await?;
+            let docs = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+            (mem, docs)
+        };
 
         let working_memory = Arc::new(RwLock::new(WorkingMemory::with_config(
             WorkingMemoryConfig::from_env(),
@@ -219,10 +236,13 @@ impl WorkspaceState {
         }
 
         let belief_graph = Arc::new(RwLock::new(BeliefGraph::new()));
-        belief_graph
-            .read()
-            .await
-            .replace_relations(durable_state.beliefs.clone());
+        // Load beliefs from store (small payload, needed for belief graph init).
+        if let Ok((beliefs, _tokens)) = store.load_workspace_metadata(&config.id).await {
+            belief_graph
+                .read()
+                .await
+                .replace_relations(beliefs);
+        }
         memory.set_belief_graph(Arc::clone(&belief_graph));
         let memory = Arc::new(memory);
         let entity_graph = Arc::new(EntityGraph::new());
