@@ -2100,7 +2100,21 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_v1_memory_recall_eval_5_known_memories() {
+        // Blindar contra env-race: otros tests setean XAVIER_EMBEDDING_* sin restaurar
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        for key in [
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBED_PROVIDER",
+        ] {
+            std::env::remove_var(key);
+        }
         let (state, workspace) = test_state().await;
         let app = test_router(state, workspace);
 
