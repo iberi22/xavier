@@ -547,6 +547,7 @@ mod tests_inner {
         assert_eq!(router_entry.unwrap().1, 2, "router depth should be 2");
     }
 
+    #[test]
     fn test_memories_for_symbol_linking() {
         let db = setup_test_db();
         let sym = Symbol {
