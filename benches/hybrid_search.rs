@@ -88,6 +88,8 @@ fn bench_hybrid_search(c: &mut Criterion) {
                     content_iv: None,
                     encrypted_dek: None,
                     metadata_iv: None,
+                    embedding_status: "pending".to_string(),
+                    embedding_attempts: 0,
                 })
                 .await
                 .expect("seed memory");
@@ -247,6 +249,8 @@ fn bench_memory_store_operations(c: &mut Criterion) {
                 content_iv: None,
                 encrypted_dek: None,
                 metadata_iv: None,
+                embedding_status: "pending".to_string(),
+                embedding_attempts: 0,
             };
 
             runtime.block_on(async {
@@ -284,6 +288,8 @@ fn bench_memory_store_operations(c: &mut Criterion) {
                 content_iv: None,
                 encrypted_dek: None,
                 metadata_iv: None,
+                embedding_status: "pending".to_string(),
+                embedding_attempts: 0,
             })
             .await
             .expect("seed target");
@@ -332,6 +338,8 @@ fn bench_memory_store_operations(c: &mut Criterion) {
                     content_iv: None,
                     encrypted_dek: None,
                     metadata_iv: None,
+                    embedding_status: "pending".to_string(),
+                    embedding_attempts: 0,
                 };
                 store.put(record).await.unwrap();
 

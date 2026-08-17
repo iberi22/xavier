@@ -78,7 +78,7 @@ impl DaoGovernanceSystem {
             );
 
             #[cfg(feature = "dao-evm")]
-            if let Some(_) = &self.evm_config {
+            if self.evm_config.is_some() {
                 let _ = self
                     .submit_proposal_evm(cluster_id, title, description)
                     .await;
@@ -130,7 +130,7 @@ impl DaoGovernanceSystem {
         }
 
         #[cfg(feature = "dao-evm")]
-        if let Some(_) = &self.evm_config {
+        if self.evm_config.is_some() {
             let _ = self
                 .cast_vote_evm(cluster_id, approve, voting_power, is_council)
                 .await;

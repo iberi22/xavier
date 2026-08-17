@@ -180,8 +180,8 @@ async fn cmd_list(
 
     let filtered: Vec<NodeRecord> = records
         .into_iter()
-        .filter(|r| vis_filter.map_or(true, |v| r.visibility == v))
-        .filter(|r| stat_filter.map_or(true, |s| r.status == s))
+        .filter(|r| vis_filter.is_none_or(|v| r.visibility == v))
+        .filter(|r| stat_filter.is_none_or(|s| r.status == s))
         .collect();
 
     if json_output {

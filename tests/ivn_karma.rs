@@ -1,8 +1,8 @@
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use xavier::data_commons::ivn::{
-    apply_rewards, apply_sanctions, clear_exclusions, is_excluded, is_excluded_at,
-    record_exclusion, ValidatorCandidate, ValidatorSelection, VerdictEngine, Vote,
+    apply_rewards, apply_sanctions, is_excluded, is_excluded_at, record_exclusion,
+    ValidatorCandidate, ValidatorSelection, VerdictEngine, Vote,
 };
 use xavier::data_commons::reputation::{EigenTrustEngine, ReputationConfig};
 use xavier::data_commons::types::WalletAddress;

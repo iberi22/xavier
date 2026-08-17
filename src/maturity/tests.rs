@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod unit_tests {
     use crate::maturity::MaturityScanner;
     use std::fs;
     use tempfile::tempdir;
