@@ -15,6 +15,46 @@ pub async fn health_handler() -> Response {
     )
 }
 
+/// /healthz — lightweight liveness probe with embedder reachability.
+///
+/// Reports `"ok"`, `"degraded"`, or `"down"` for the embedding subsystem
+/// so orchestrators can route traffic away from degraded instances.
+pub async fn healthz_handler() -> Response {
+    use xavier::observability::health::HEALTH;
+
+    let status = HEALTH.run_checks().await;
+    let embedder_status = match status.embedding.status {
+        xavier::observability::health::HealthLevel::Healthy => "ok",
+        xavier::observability::health::HealthLevel::Degraded => "degraded",
+        xavier::observability::health::HealthLevel::Unhealthy => "down",
+    };
+
+    let overall = if embedder_status == "down" {
+        "degraded"
+    } else {
+        "ok"
+    };
+
+    let http_status = if embedder_status == "down" {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+
+    json_response(
+        http_status,
+        serde_json::json!({
+            "status": overall,
+            "embedder": {
+                "status": embedder_status,
+                "provider": status.embedding.provider,
+                "model": status.embedding.model,
+                "latency_ms": status.embedding.latency_ms,
+            },
+        }),
+    )
+}
+
 /// Health history handler.
 pub async fn health_history_handler() -> Response {
     let now_secs = std::time::SystemTime::now()

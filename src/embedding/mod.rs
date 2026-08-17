@@ -414,20 +414,41 @@ pub async fn build_embedder_from_env() -> Result<Arc<dyn Embedder>, EmbeddingErr
 
     // Wrap in the persistent cache if enabled.
     let cache_config = cache::EmbeddingCacheConfig::from_env();
-    if cache_config.enabled && embedder.dimension() > 0 {
+    let embedder: Arc<dyn Embedder> = if cache_config.enabled && embedder.dimension() > 0 {
         info!(
             capacity = cache_config.max_capacity,
             ttl_hours = cache_config.ttl_hours,
             db = %cache_config.db_path.display(),
             "embedding cache enabled"
         );
-        Ok(Arc::new(cache::CachedEmbedder::new(
+        Arc::new(cache::CachedEmbedder::new(
             embedder,
             Arc::new(cache::EmbeddingCache::new(cache_config)),
-        )))
+        ))
     } else if cache_config.enabled && embedder.dimension() == 0 {
         info!("embedding cache skipped: noop embedder (dimension=0)");
-        Ok(embedder)
+        embedder
+    } else {
+        embedder
+    };
+
+    // Wrap in circuit breaker: trips after N consecutive failures, cools down for 60s.
+    let threshold: u32 = std::env::var("XAVIER_EMBEDDER_CB_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    let cooldown_secs: u64 = std::env::var("XAVIER_EMBEDDER_CB_COOLDOWN_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+    if !matches!(embedder.dimension(), 0) {
+        let cb = Arc::new(CircuitBreakerEmbedder::new(
+            embedder,
+            threshold,
+            std::time::Duration::from_secs(cooldown_secs),
+        ));
+        info!(threshold, cooldown_secs, "embedder circuit breaker enabled");
+        Ok(cb)
     } else {
         Ok(embedder)
     }
@@ -478,6 +499,129 @@ impl Embedder for FallbackEmbedder {
             .map(|embedder| embedder.dimension())
             .find(|dimension| *dimension > 0)
             .unwrap_or(0)
+    }
+}
+
+/// Circuit breaker states for the embedder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CircuitState {
+    /// Normal operation — requests pass through.
+    Closed,
+    /// Too many consecutive failures — requests are rejected.
+    Open,
+    /// Cooldown elapsed — allow a single probe request.
+    HalfOpen,
+}
+
+/// Embedder wrapper that trips open after `threshold` consecutive failures,
+/// then enters a cooldown period before allowing a probe request.
+pub struct CircuitBreakerEmbedder {
+    inner: Arc<dyn Embedder>,
+    failure_count: std::sync::atomic::AtomicU32,
+    threshold: u32,
+    cooldown: std::time::Duration,
+    last_failure: std::sync::atomic::AtomicU64,
+}
+
+impl CircuitBreakerEmbedder {
+    /// Wrap an embedder with a circuit breaker.
+    pub fn new(inner: Arc<dyn Embedder>, threshold: u32, cooldown: std::time::Duration) -> Self {
+        Self {
+            inner,
+            failure_count: std::sync::atomic::AtomicU32::new(0),
+            threshold,
+            cooldown,
+            last_failure: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    /// Current state of the circuit breaker.
+    pub fn state(&self) -> CircuitState {
+        let failures = self
+            .failure_count
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if failures < self.threshold {
+            return CircuitState::Closed;
+        }
+        let last = self.last_failure.load(std::sync::atomic::Ordering::Relaxed);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if now.saturating_sub(last) >= self.cooldown.as_secs() {
+            CircuitState::HalfOpen
+        } else {
+            CircuitState::Open
+        }
+    }
+
+    /// Consecutive failure count.
+    pub fn consecutive_failures(&self) -> u32 {
+        self.failure_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+#[async_trait]
+impl Embedder for CircuitBreakerEmbedder {
+    async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        match self.state() {
+            CircuitState::Open => {
+                return Err(EmbeddingError::Network(
+                    "circuit breaker open: too many consecutive failures".to_string(),
+                ));
+            }
+            CircuitState::HalfOpen => {
+                // Allow one probe — if it fails, trip again.
+            }
+            CircuitState::Closed => {
+                // Normal path.
+            }
+        }
+
+        match self.inner.encode(text).await {
+            Ok(vector) => {
+                self.failure_count
+                    .store(0, std::sync::atomic::Ordering::Relaxed);
+                Ok(vector)
+            }
+            Err(error) => {
+                let prev = self
+                    .failure_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                self.last_failure
+                    .store(now, std::sync::atomic::Ordering::Relaxed);
+                if prev + 1 >= self.threshold {
+                    tracing::warn!(
+                        threshold = self.threshold,
+                        cooldown_secs = self.cooldown.as_secs(),
+                        "circuit breaker TRIPPED — embedder entering cooldown"
+                    );
+                    crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                        "WARN",
+                        &format!(
+                            "Embedder circuit breaker tripped after {} consecutive failures; cooldown {}s",
+                            self.threshold,
+                            self.cooldown.as_secs()
+                        ),
+                        "embedding",
+                    );
+                }
+                Err(error)
+            }
+        }
+    }
+
+    fn dimension(&self) -> usize {
+        self.inner.dimension()
+    }
+
+    fn cache_metrics(&self) -> Option<cache::EmbeddingCacheMetrics> {
+        self.inner.cache_metrics()
     }
 }
 

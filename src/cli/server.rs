@@ -135,6 +135,53 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let cm = ConnectionManager::global();
 
     let config = VecSqliteStoreConfig::from_env();
+    // ── Startup guard: detect store fragmentation ────────────────────────────
+    // Warn if multiple vec-store*.sqlite3 files exist outside the canonical data/
+    // directory. This prevents silent data split across locations.
+    {
+        let mut fragment_count: u32 = 0;
+        let mut fragment_paths: Vec<String> = Vec::new();
+        // Scan workspace root for vec-store*.sqlite3 outside data/
+        if let Ok(entries) = std::fs::read_dir(".") {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if name.starts_with("vec-store") && name.ends_with(".sqlite3") {
+                        // Skip the canonical store
+                        if let Ok(canonical) = std::fs::canonicalize(&p)
+                            .and_then(|c| std::fs::canonicalize(&config.path).map(|k| (c, k)))
+                        {
+                            if canonical.0 == canonical.1 {
+                                continue;
+                            }
+                        }
+                        fragment_count += 1;
+                        fragment_paths.push(p.display().to_string());
+                    }
+                }
+            }
+        }
+        if fragment_count > 0 {
+            tracing::warn!(
+                fragment_count,
+                canonical = %config.path.display(),
+                ?fragment_paths,
+                "Store fragmentation detected — multiple vec-store files found outside canonical data/ dir. \
+                 Run scripts/consolidate-stores.py to merge."
+            );
+            xavier::server::alerts::SYSTEM_ALERTS.push_alert(
+                "WARN",
+                &format!(
+                    "Store fragmentation: {} legacy vec-store files detected outside data/. \
+                     Run scripts/consolidate-stores.py to merge.",
+                    fragment_count
+                ),
+                "storage",
+            );
+        }
+    }
+
     if let Some(parent) = config.path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
@@ -1253,6 +1300,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             auth_routes::<CliState>(&state.state_dir.to_string_lossy()),
         )
         .route("/health", get(health_handler))
+        .route(
+            "/healthz",
+            get(crate::cli::handlers::system::healthz_handler),
+        )
         .route("/health/history", get(health_history_handler))
         .route("/metrics", get(metrics_handler))
         .route("/health/cloud", get(cloud_health_handler))
