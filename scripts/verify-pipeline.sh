@@ -121,7 +121,7 @@ if [ "$MODE" = "full" ] && command -v cargo >/dev/null 2>&1; then
       code_graph_*|query::*|indexer::*|db::*) CRATE="code-graph" ;;
       *) CRATE="xavier" ;;
     esac
-    if ! (cd "$ROOT" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}" cargo test -p "$CRATE" --lib "$testname" >/dev/null 2>&1); then
+    if ! (cd "$ROOT" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/build/rust-target/xavier-verify}" cargo test -p "$CRATE" --lib "$testname" >/dev/null 2>&1); then
       echo "  ❌ FAILED: $testname"
       FAILED=1
     fi
