@@ -6,6 +6,20 @@ CLI, and MCP entry points (SQLite + `sqlite-vec`, BM25, hybrid search).
 
 This file is a contract for anyone — human or AI agent — working on this repo.
 
+## 🌐 SWAL Ecosystem Integration Block
+
+- **GOAL:** Defined in `.gitcore/docs/SWAL_GOAL.md`. Decoupled, local-first, privacy-preserving AI context & memory architecture.
+- **PROJECT MAP:**
+  - `src/` — Main Rust domain logic, HTTP/MCP servers, security, and storage adapters.
+  - `xavier-core/` — Core vector store & embedding calculation primitives.
+  - `code-graph/` — Static AST code indexer & symbol graph engine.
+  - `panel-ui/` — React frontend presentation layer & Maloca web portal.
+  - `.gitcore/` — GitCore protocol ledger (`features.json`, `MANIFEST.json`, `AGENT_INDEX.md`).
+  - `docs/` — SRS requirements (`docs/SRS/REQUIREMENTS.md`), design ADRs, and operational guides.
+- **Xavier Namespace:** `swal/{app_id}/{instance_id}` for workspace isolation across multi-instance agent nodes.
+- **SWAL Mesh & Node Identity:** Node identity authenticated via Ed25519 BIP39-24 keypair (`src/node_identity/`) with zero central user accounts. Pro features gated by SWAL active node state (`pro_gate.rs`), never Stripe or paywalls.
+- **Protocol Reference:** GitCore 3.8.0 specification compliant (`.git-core-protocol-version`).
+
 ## 1. Purpose & vision
 
 Xavier is the cognitive memory brain of the SWAL ecosystem. The repo is built
