@@ -76,8 +76,15 @@ export default function GraphView({
     return counts;
   }, [data]);
 
+  /**
+   * ⚡ Bolt Performance Optimization
+   *
+   * 💡 What: Replaced spread operator (...Object.values) with .reduce()
+   * 🎯 Why: Using the spread operator on a large array passes each element as an argument to Math.max. For very large graphs, this can exceed the maximum call stack size and cause a crash.
+   * 📊 Impact: O(N) evaluation that uses no extra call stack memory and handles arbitrarily large arrays safely.
+   */
   const maxLinks = useMemo(
-    () => Math.max(1, ...(Object.values(linkCounts) as number[])),
+    () => (Object.values(linkCounts) as number[]).reduce((max, val) => Math.max(max, val), 1),
     [linkCounts],
   );
 
