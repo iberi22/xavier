@@ -154,7 +154,7 @@ Local login without central account: BIP39-24 + Shamir 2-of-3 + vault; mesh chal
 - [x] Anchor dry-run / live-prepared / broadcast (`dao-evm`)
 - [x] E2E pipeline `decentralized_login_e2e` (5/5 PASS, 2026-07-28)
 - [ ] Deploy Amoy + live smoke (ops)
-- [ ] Maloca UI `obtainDeviceKeyViaWebAuthn` (product)
+- [x] Maloca UI `obtainDeviceKeyViaWebAuthn` (product)
 
 ### Phase ↔ issue ↔ % traceability
 
