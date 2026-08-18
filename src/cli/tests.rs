@@ -161,96 +161,41 @@ async fn external_security_uses_sanitized_input() {
 
 #[test]
 fn config_resolve_port_respects_env_xavier_port() {
-    // Save original env value
-    let orig = std::env::var("XAVIER_PORT").ok();
+    let _env = crate::settings::tests::TempEnv::new();
     std::env::set_var("XAVIER_PORT", "8016");
     assert_eq!(resolve_http_port(), 8016);
-    // Restore
-    if let Some(v) = orig {
-        std::env::set_var("XAVIER_PORT", v);
-    } else {
-        std::env::remove_var("XAVIER_PORT");
-    }
 }
 
 #[test]
 fn config_resolve_url_uses_xavier_url_when_set() {
-    let orig_url = std::env::var("XAVIER_URL").ok();
-    let orig_host = std::env::var("XAVIER_HOST").ok();
-    let orig_port = std::env::var("XAVIER_PORT").ok();
+    let _env = crate::settings::tests::TempEnv::new();
     std::env::set_var("XAVIER_URL", "http://myhost:9090");
     std::env::remove_var("XAVIER_HOST");
     std::env::remove_var("XAVIER_PORT");
     assert_eq!(resolve_base_url(), "http://myhost:9090");
-    // Restore
-    if let Some(v) = orig_url {
-        std::env::set_var("XAVIER_URL", v);
-    } else {
-        std::env::remove_var("XAVIER_URL");
-    }
-    if let Some(v) = orig_host {
-        std::env::set_var("XAVIER_HOST", v);
-    } else {
-        std::env::remove_var("XAVIER_HOST");
-    }
-    if let Some(v) = orig_port {
-        std::env::set_var("XAVIER_PORT", v);
-    } else {
-        std::env::remove_var("XAVIER_PORT");
-    }
 }
 
 #[test]
 fn config_resolve_url_uses_host_and_port_when_url_not_set() {
-    let orig_url = std::env::var("XAVIER_URL").ok();
-    let orig_host = std::env::var("XAVIER_HOST").ok();
-    let orig_port = std::env::var("XAVIER_PORT").ok();
+    let _env = crate::settings::tests::TempEnv::new();
     std::env::remove_var("XAVIER_URL");
     std::env::set_var("XAVIER_HOST", "192.168.1.100");
     std::env::set_var("XAVIER_PORT", "8016");
     assert_eq!(resolve_base_url_for_port(8016), "http://192.168.1.100:8016");
-    // Restore
-    if let Some(v) = orig_url {
-        std::env::set_var("XAVIER_URL", v);
-    } else {
-        std::env::remove_var("XAVIER_URL");
-    }
-    if let Some(v) = orig_host {
-        std::env::set_var("XAVIER_HOST", v);
-    } else {
-        std::env::remove_var("XAVIER_HOST");
-    }
-    if let Some(v) = orig_port {
-        std::env::set_var("XAVIER_PORT", v);
-    } else {
-        std::env::remove_var("XAVIER_PORT");
-    }
 }
 
 #[test]
 fn config_resolve_url_favors_xavier_url_over_host_port() {
-    let orig_url = std::env::var("XAVIER_URL").ok();
-    let orig_port = std::env::var("XAVIER_PORT").ok();
+    let _env = crate::settings::tests::TempEnv::new();
     std::env::set_var("XAVIER_URL", "http://primary:8006");
     std::env::set_var("XAVIER_PORT", "9999");
     // XAVIER_URL should take precedence even if XAVIER_PORT is different
     assert_eq!(resolve_base_url(), "http://primary:8006");
-    // Restore
-    if let Some(v) = orig_url {
-        std::env::set_var("XAVIER_URL", v);
-    } else {
-        std::env::remove_var("XAVIER_URL");
-    }
-    if let Some(v) = orig_port {
-        std::env::set_var("XAVIER_PORT", v);
-    } else {
-        std::env::remove_var("XAVIER_PORT");
-    }
 }
 
 #[test]
 fn config_resolve_base_url_for_port_respects_custom_port() {
-    let orig_url = std::env::var("XAVIER_URL").ok();
+    let _env = crate::settings::tests::TempEnv::new();
     std::env::remove_var("XAVIER_URL");
     // When port differs from settings default, it should be reflected in URL
     let url = resolve_base_url_for_port(8016);
@@ -259,12 +204,6 @@ fn config_resolve_base_url_for_port_respects_custom_port() {
         "URL should contain the custom port: {}",
         url
     );
-    // Restore
-    if let Some(v) = orig_url {
-        std::env::set_var("XAVIER_URL", v);
-    } else {
-        std::env::remove_var("XAVIER_URL");
-    }
 }
 
 #[tokio::test]
