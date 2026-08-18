@@ -244,15 +244,30 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     });
 
     let workspace_id = XavierSettings::current().workspace.default_workspace_id;
-    let durable_state = store.load_workspace_state(&workspace_id).await?;
-    let docs = Arc::new(RwLock::new(
-        durable_state
-            .memories
-            .iter()
-            .map(MemoryRecord::to_document)
-            .collect::<Vec<MemoryDocument>>(),
-    ));
-    let memory = Arc::new(QmdMemory::new_with_workspace(docs, workspace_id.clone()));
+
+    // LAZY LOADING: Skip loading all 30K+ documents into RAM at startup.
+    // The pool is loaded on first access (search, get, ls, etc.) instead.
+    // Env var XAVIER_MEMORY_EAGER_LOAD=1 restores the old behavior.
+    let eager_load = std::env::var("XAVIER_MEMORY_EAGER_LOAD")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+
+    let memory = if eager_load {
+        tracing::info!("Memory pool: EAGER mode (XAVIER_MEMORY_EAGER_LOAD=1)");
+        let durable_state = store.load_workspace_state(&workspace_id).await?;
+        let docs = Arc::new(RwLock::new(
+            durable_state
+                .memories
+                .iter()
+                .map(MemoryRecord::to_document)
+                .collect::<Vec<MemoryDocument>>(),
+        ));
+        Arc::new(QmdMemory::new_with_workspace(docs, workspace_id.clone()))
+    } else {
+        tracing::info!("Memory pool: LAZY mode (docs load on first access)");
+        Arc::new(QmdMemory::new_lazy(workspace_id.clone()))
+    };
+
     let dyn_store: Arc<dyn MemoryStore> = store.clone();
     memory.set_store(dyn_store.clone()).await;
     memory.init().await?;
