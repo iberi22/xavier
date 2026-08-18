@@ -112,6 +112,7 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
           </p>
         </div>
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving}
           className="flex items-center gap-2 px-6 py-2.5 bg-[#39ff14] text-black font-bold rounded-xl hover:shadow-[0_0_20px_rgba(57,255,20,0.4)] transition-all disabled:opacity-50"
@@ -187,10 +188,14 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
                     </h4>
                     <div className="flex items-center gap-4">
                       <div className="flex flex-col items-end">
-                        <span className="text-[9px] text-white/30 uppercase font-bold">
+                        <label
+                          htmlFor={`${config.provider}-model-input`}
+                          className="text-[9px] text-white/30 uppercase font-bold"
+                        >
                           Model
-                        </span>
+                        </label>
                         <input
+                          id={`${config.provider}-model-input`}
                           value={config.model}
                           onChange={(e) =>
                             updateConfig(config.provider, {
@@ -217,10 +222,14 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
                   />
                   {config.provider === "local" && (
                     <div className="mt-4">
-                      <label className="text-[10px] uppercase text-white/50 tracking-widest block mb-2">
+                      <label
+                        htmlFor={`${config.provider}-endpoint-input`}
+                        className="text-[10px] uppercase text-white/50 tracking-widest block mb-2"
+                      >
                         Endpoint URL
                       </label>
                       <input
+                        id={`${config.provider}-endpoint-input`}
                         value={config.base_url || ""}
                         onChange={(e) =>
                           updateConfig(config.provider, {
