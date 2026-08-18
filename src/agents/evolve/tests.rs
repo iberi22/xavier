@@ -45,7 +45,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "EvolveModule::new() requires vec_store pool — needs mock infra"]
     async fn test_evolution_does_not_panic_on_empty_config() {
         let config = EvolveConfig::new("test".to_string());
         let evolve = EvolveModule::new(config).await.unwrap();
@@ -103,7 +102,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "EvolveModule::new() requires vec_store pool — needs mock infra"]
     async fn test_full_evolution_cycle_logic_mock() {
         // Mocking the full cycle is hard due to file system and script dependencies
         // But we can verify the EvolveModule can be created and has the expected members
