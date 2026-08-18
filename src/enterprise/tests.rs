@@ -207,7 +207,7 @@ mod http_tests {
     /// Build a router with the enterprise routes (no auth layer — tested separately via CLI integration).
     fn test_router() -> Router {
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -275,7 +275,7 @@ mod http_tests {
     async fn list_tenants_returns_created_tenant() {
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -309,7 +309,7 @@ mod http_tests {
     async fn get_tenant_by_id_returns_correct_tenant() {
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -363,7 +363,7 @@ mod http_tests {
     async fn create_api_key_returns_raw_key() {
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -432,7 +432,7 @@ mod http_tests {
     async fn revoke_api_key_returns_204() {
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -485,7 +485,7 @@ mod http_tests {
     async fn audit_log_records_key_creation() {
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -557,7 +557,7 @@ mod http_tests {
     async fn patch_rate_limits_returns_200() {
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
