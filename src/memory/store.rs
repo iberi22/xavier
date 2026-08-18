@@ -544,6 +544,15 @@ pub trait MemoryStore: Send + Sync {
         )
     }
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState>;
+    /// Load only workspace metadata (beliefs, session tokens) without memories.
+    /// This is used for lazy loading: avoids loading all memory records into RAM at startup.
+    async fn load_workspace_metadata(
+        &self,
+        workspace_id: &str,
+    ) -> Result<(Vec<crate::domain::memory::belief::BeliefEdge>, Vec<SessionTokenRecord>)> {
+        let state = self.load_workspace_state(workspace_id).await?;
+        Ok((state.beliefs, state.session_tokens))
+    }
     async fn save_beliefs(&self, workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()>;
     async fn save_session_token(&self, workspace_id: &str, token: SessionTokenRecord)
         -> Result<()>;
