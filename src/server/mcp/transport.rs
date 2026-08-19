@@ -15,7 +15,7 @@
 use crate::workspace::WorkspaceContext;
 use crate::AppState;
 use anyhow::Result;
-use axum::{routing::post, Router};
+use axum::{extract::DefaultBodyLimit, routing::post, Router};
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -30,6 +30,7 @@ use super::session::mcp_post_handler;
 pub fn build_mcp_http_router(state: AppState, workspace: WorkspaceContext) -> Router {
     Router::new()
         .route("/mcp", post(mcp_post_handler))
+        .layer(DefaultBodyLimit::max(4 * 1024 * 1024))
         .layer(axum::middleware::from_fn(mcp_auth_middleware))
         .layer(axum::Extension(workspace))
         .with_state(state)
