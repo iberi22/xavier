@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub mod dao;
+pub mod quadratic_voting;
 
 use crate::data_commons::governance::{GovernanceConfig, GovernanceEngine};
 use crate::data_commons::types::{
