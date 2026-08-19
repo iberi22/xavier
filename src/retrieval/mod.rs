@@ -8,6 +8,7 @@ pub mod eval;
 pub mod gating;
 pub mod history;
 pub mod policy;
+pub mod regeneration;
 pub mod tuner;
 
 pub use gating::{
@@ -15,5 +16,8 @@ pub use gating::{
     SessionSummary,
 };
 pub mod navigation;
+pub use regeneration::{
+    ContextRegenerator, ContextRegeneratorConfig, RegenerationResult,
+};
 pub mod scoring;
 pub use policy::{NavigationPolicy, TraversalWeights};
