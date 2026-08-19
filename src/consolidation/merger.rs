@@ -21,6 +21,7 @@ pub struct MergeOutcome {
     pub similarity: f32,
 }
 
+/// Cluster similar memories.
 pub fn cluster_similar_memories(
     memories: &[ManagedMemory],
     similarity_threshold: f32,
@@ -67,6 +68,7 @@ pub fn cluster_similar_memories(
     clusters
 }
 
+/// Merge documents.
 pub fn merge_documents(memories: &[ManagedMemory]) -> Result<MergeOutcome> {
     if memories.is_empty() {
         bail!("cannot merge an empty memory set");
@@ -143,6 +145,7 @@ pub fn merge_documents(memories: &[ManagedMemory]) -> Result<MergeOutcome> {
     })
 }
 
+/// Similarity.
 pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
     // [G3] Language boundary awareness: documents of different languages
     // should not be merged without explicit evidence (same entity, high confidence)
@@ -225,6 +228,7 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
     (semantic * 0.50 + lexical * 0.40 + path_boost * 0.10).clamp(0.0, 1.0)
 }
 
+/// Importance score.
 pub fn importance_score(
     access_count: usize,
     last_access: Option<DateTime<Utc>>,
@@ -243,6 +247,7 @@ pub fn importance_score(
         .clamp(0.0, 1.0)
 }
 
+/// Decay importance.
 pub fn decay_importance(
     importance: f32,
     last_access: Option<DateTime<Utc>>,
@@ -261,15 +266,18 @@ pub fn decay_importance(
     score.clamp(0.0, 1.0)
 }
 
+/// Age days.
 pub fn age_days(last_access: Option<DateTime<Utc>>, created_at: Option<DateTime<Utc>>) -> f32 {
     let reference = last_access.or(created_at).unwrap_or_else(Utc::now);
     (Utc::now() - reference).num_seconds().max(0) as f32 / 86_400.0
 }
 
+/// Similarity to summary.
 pub fn similarity_to_summary(content: &str, summary: &str) -> f32 {
     lexical_similarity(content, summary)
 }
 
+/// Cleanup redundant text.
 pub fn cleanup_redundant_text(content: &str) -> String {
     let mut seen = HashSet::new();
     let mut output = Vec::new();

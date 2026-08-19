@@ -29,6 +29,7 @@ pub struct SessionCheckpoint {
 }
 
 impl SessionCheckpoint {
+    /// From state.
     pub fn from_state(state: &crate::checkpoint::state::CheckpointState) -> Self {
         Self {
             session_id: state.session_id.clone(),
@@ -65,6 +66,7 @@ impl SessionCheckpoint {
         }
     }
 
+    /// To bytes.
     pub fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
         Ok(serde_json::to_vec(self)?)
     }

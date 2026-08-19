@@ -22,12 +22,14 @@ use crate::utils::crypto::hex_encode;
 
 // ── Embedding cache operations ───────────────────────────────────────
 
+/// Embedding cache key.
 pub fn embedding_cache_key(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     hex_encode(&hasher.finalize())
 }
 
+/// Clean embedding cache.
 pub async fn clean_embedding_cache() {
     let mut cache = EMBEDDING_CACHE.write().await;
     let now = Instant::now();
@@ -36,6 +38,7 @@ pub async fn clean_embedding_cache() {
     });
 }
 
+/// Generate embedding.
 pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
     if !crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
         return Ok(Vec::new());
@@ -58,11 +61,13 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
     let mut last_error = None;
     let mut delay_ms: u64 = 100;
     let max_delay_ms: u64 = 2000;
+    let embed_timeout = std::time::Duration::from_secs(5);
 
     let embedder = crate::memory::embedder::EmbeddingClient::from_env()?;
     for attempt in 0..3 {
-        match embedder.embed(&preprocessed).await {
-            Ok(vector) => {
+        let embed_future = embedder.embed(&preprocessed);
+        match tokio::time::timeout(embed_timeout, embed_future).await {
+            Ok(Ok(vector)) => {
                 let mut cache = EMBEDDING_CACHE.write().await;
                 cache.insert(
                     cache_key,
@@ -77,8 +82,15 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
                 }
                 return Ok(vector);
             }
-            Err(error) => {
+            Ok(Err(error)) => {
                 last_error = Some(error);
+                if attempt < 2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    delay_ms = (delay_ms * 2).min(max_delay_ms);
+                }
+            }
+            Err(_timeout_err) => {
+                last_error = Some(anyhow::anyhow!("embedding request timed out after 5s"));
                 if attempt < 2 {
                     tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                     delay_ms = (delay_ms * 2).min(max_delay_ms);
@@ -90,6 +102,7 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("embedding generation failed")))
 }
 
+/// Preprocess for embedding.
 pub fn preprocess_for_embedding(text: &str) -> String {
     let speakers = extract_speakers(text);
 
@@ -112,6 +125,7 @@ pub fn preprocess_for_embedding(text: &str) -> String {
     format!("{}{}", speaker_ctx, text_with_quotes)
 }
 
+/// Preserve quoted speech.
 pub fn preserve_quoted_speech(text: &str) -> String {
     // Replace quoted text with a marker to emphasize it in embeddings
     let mut result = text.to_string();
@@ -132,6 +146,7 @@ pub fn preserve_quoted_speech(text: &str) -> String {
 
 // ── Search cache operations ───────────────────────────────────────────
 
+/// Search with cache filtered.
 pub async fn search_with_cache_filtered(
     memory: &QmdMemory,
     query_text: &str,
@@ -197,6 +212,7 @@ pub async fn search_with_cache_filtered(
     })
 }
 
+/// Invalidate cache.
 pub async fn invalidate_cache(memory: &QmdMemory) {
     memory.search_cache.write().await.clear();
     crate::search::hybrid::invalidate_hybrid_cache().await;
@@ -204,6 +220,7 @@ pub async fn invalidate_cache(memory: &QmdMemory) {
 
 // ── Read / query operations ───────────────────────────────────────────
 
+/// Init.
 pub async fn init(memory: &QmdMemory) -> Result<()> {
     if let Some(store) = memory.store().await {
         let state = store.load_workspace_state(&memory.workspace_id).await?;
@@ -223,6 +240,7 @@ pub async fn init(memory: &QmdMemory) -> Result<()> {
     Ok(())
 }
 
+/// Get.
 pub async fn get(memory: &QmdMemory, path_or_id: &str) -> Result<Option<MemoryDocument>> {
     let docs = memory.docs.read().await;
     Ok(docs
@@ -231,6 +249,7 @@ pub async fn get(memory: &QmdMemory, path_or_id: &str) -> Result<Option<MemoryDo
         .cloned())
 }
 
+/// Usage.
 pub async fn usage(memory: &QmdMemory) -> MemoryUsage {
     let docs = memory.docs.read().await;
     MemoryUsage {
@@ -239,6 +258,7 @@ pub async fn usage(memory: &QmdMemory) -> MemoryUsage {
     }
 }
 
+/// Cache metrics.
 pub async fn cache_metrics(memory: &QmdMemory) -> crate::memory::qmd_memory::types::CacheMetrics {
     crate::memory::qmd_memory::types::CacheMetrics {
         hits: memory.cache_counters.hits.load(AtomicOrdering::Relaxed),
@@ -247,9 +267,10 @@ pub async fn cache_metrics(memory: &QmdMemory) -> crate::memory::qmd_memory::typ
     }
 }
 
+/// Export.
 pub async fn export(memory: &QmdMemory, public_only: bool) -> Result<Vec<MemoryDocument>> {
     let docs = memory.docs.read().await;
-    let exported = docs
+    let mut exported: Vec<MemoryDocument> = docs
         .iter()
         .filter(|doc| {
             if !public_only {
@@ -271,5 +292,12 @@ pub async fn export(memory: &QmdMemory, public_only: bool) -> Result<Vec<MemoryD
         })
         .cloned()
         .collect();
+
+    // Auto-redact sensitive PII data before exporting/sharing
+    let redaction_engine = crate::security::redaction::RedactionEngine::default();
+    for doc in &mut exported {
+        doc.content = redaction_engine.redact(&doc.content);
+    }
+
     Ok(exported)
 }

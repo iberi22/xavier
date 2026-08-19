@@ -44,6 +44,7 @@ pub enum ApiFlavor {
 }
 
 impl ApiFlavor {
+    /// From env.
     pub(crate) fn from_env(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "openai" | "openai-compatible" => Some(Self::OpenAICompatible),
@@ -52,6 +53,7 @@ impl ApiFlavor {
         }
     }
 
+    /// As str.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::OpenAICompatible => "openai-compatible",

@@ -1,0 +1,953 @@
+openapi: 3.1.0
+info:
+  title: Xavier REST API
+  description: >
+    Comprehensive REST API for Xavier, a decentralized semantic context, memory integration,
+    and P2P mesh network engine. Xavier supports multi-node federation, secure memory storage with
+    decay policies, local GGUF and Ollama model discovery, code graph indexing, and intelligent agent dispatching.
+  version: 0.10.0-12-06-2026
+servers:
+  - url: http://localhost:8006
+    description: Local development / production default instance
+paths:
+
+  # --- SYSTEM & HEALTH ---
+  /health:
+    get:
+      summary: Get general system health
+      description: Returns runtime health, version, provider status, and storage indicators.
+      responses:
+        "200":
+          description: System is healthy or degraded (with details)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemHealthResponse"
+              example:
+                status: "ok"
+                mode: "LOCAL"
+                version: "0.10.0"
+                llm:
+                  provider: "ollama"
+                  model: "qwen3-coder"
+                  endpoint: "http://localhost:11434"
+                  reachable: true
+                embedding:
+                  provider: "openai"
+                  model: "text-embedding-3-small"
+                  status: "Healthy"
+                vector_db:
+                  backend: "sqlite-vec"
+                  path: "./state/.xavier/memory.db"
+
+  /ready:
+    get:
+      summary: Readiness alias
+      description: Standard health readiness indicator endpoint.
+      responses:
+        "200":
+          description: Ready
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "OK"
+
+  /readiness:
+    get:
+      summary: Readiness check
+      description: Returns service readiness check.
+      responses:
+        "200":
+          description: Ready
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "OK"
+
+  /build:
+    get:
+      summary: Get build metadata
+      description: Returns the build time, Git commit hash, and profile details.
+      responses:
+        "200":
+          description: Build metadata details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                  commit:
+                    type: string
+                  build_time:
+                    type: string
+              example:
+                version: "0.10.0"
+                commit: "f7a39d2c4b8b"
+                build_time: "2026-06-12T10:00:00Z"
+
+  /v1/version:
+    get:
+      summary: Get v1 version metadata
+      description: Returns API and system version metadata.
+      responses:
+        "200":
+          description: Version metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+              example:
+                version: "0.10.0-12-06-2026"
+
+  /system/alerts:
+    get:
+      summary: Get current system alerts
+      description: Returns actively logged system errors or degradation notices.
+      security:
+        - XavierToken: []
+      responses:
+        "200":
+          description: Active alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SystemAlert"
+              example:
+                - level: "WARN"
+                  message: "Local embedding model has changed. Reindexing spawned."
+                  category: "embeddings"
+
+  # --- AUTHENTICATION ---
+  /auth/register:
+    post:
+      summary: User registration
+      description: Registers a new user. Persists the registration safely into `auth.db`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  user:
+                    $ref: "#/components/schemas/PublicUser"
+              example:
+                status: "ok"
+                user:
+                  id: "usr_01J239FJKSL"
+                  email: "user@example.com"
+                  is_mfa_enabled: false
+                  created_at: "2026-06-12T12:00:00Z"
+        "400":
+          description: Registration error (e.g. email already exists or invalid payload)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/auth/login:
+    post:
+      summary: User login
+      description: Logs in a user. Tracks failures and triggers rate limits on successive bad requests (max 5 failed attempts per 15 mins).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login initiated or complete. If MFA is required, `totp_required` is true.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  token:
+                    type: string
+                    description: JWT access token (omitted if TOTP verification is required first)
+                  totp_required:
+                    type: boolean
+              example:
+                status: "ok"
+                token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                totp_required: false
+        "401":
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded (IP blocked temporarily due to multiple failed login attempts)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/auth/totp/verify:
+    post:
+      summary: Verify TOTP token (2FA)
+      description: >
+        Completes the second factor of authentication. Due to double-division bug-compatibility,
+        the server divides incoming Unix timestamps by 30 twice, requiring the client to adjust TOTP generation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+                  description: 6-digit TOTP code
+      responses:
+        "200":
+          description: 2FA Verification successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  token:
+                    type: string
+              example:
+                status: "ok"
+                token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+  # --- V1 MEMORIES ---
+  /v1/memories:
+    get:
+      summary: List all memories
+      description: Retrieves a paginated list of memories stored in the current active workspace.
+      security:
+        - XavierToken: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Paginated memories list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memories:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MemoryRecord"
+                  pagination:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      limit:
+                        type: integer
+                      offset:
+                        type: integer
+              example:
+                memories:
+                  - id: "01J21XPVSTN..."
+                    path: "notes/mesh-decision"
+                    content: "Decision: use signed mesh manifests"
+                    metadata:
+                      project: "xavier"
+                    created_at: "2026-06-12T10:00:00Z"
+                    updated_at: "2026-06-12T10:05:00Z"
+                    score: 0.95
+                pagination:
+                  total: 1
+                  limit: 100
+                  offset: 0
+    post:
+      summary: Add or update a memory
+      description: >
+        Adds a new semantic memory to the current workspace. Alternatively accepts a
+        chat-style list of messages to index conversations.
+      security:
+        - XavierToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/AddMemoryPayload"
+                - $ref: "#/components/schemas/ChatMemoryPayload"
+      responses:
+        "200":
+          description: Memory successfully indexed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  id:
+                    type: string
+              example:
+                status: "ok"
+                message: "Memory added successfully"
+                id: "01J21XPVSTN..."
+
+  /v1/memories/{id}:
+    get:
+      summary: Get a memory by ID
+      description: Retrieves the detailed record of a single indexed memory.
+      security:
+        - XavierToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Detailed memory record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  memory:
+                    $ref: "#/components/schemas/MemoryRecord"
+              example:
+                status: "ok"
+                memory:
+                  id: "01J21XPVSTN..."
+                  path: "notes/mesh-decision"
+                  content: "Decision: use signed mesh manifests"
+                  metadata:
+                    project: "xavier"
+                  created_at: "2026-06-12T10:00:00Z"
+                  updated_at: "2026-06-12T10:05:00Z"
+                  score: 0.95
+        "440":
+          description: Memory not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      summary: Update an existing memory
+      description: Modifies an existing memory record by ID.
+      security:
+        - XavierToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddMemoryPayload"
+      responses:
+        "200":
+          description: Memory successfully updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+              example:
+                status: "ok"
+                message: "Memory updated successfully"
+
+    delete:
+      summary: Delete a memory by ID
+      description: Removes a memory record from the database.
+      security:
+        - XavierToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Memory successfully deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+              example:
+                status: "ok"
+                message: "Memory deleted successfully"
+
+  /v1/memories/search:
+    post:
+      summary: Search memories
+      description: Performs a hybrid search over indexed memory records using text and vector embeddings.
+      security:
+        - XavierToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemorySearchRequest"
+      responses:
+        "200":
+          description: Found matches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MemoryRecord"
+              example:
+                status: "ok"
+                results:
+                  - id: "01J21XPVSTN..."
+                    path: "notes/mesh-decision"
+                    content: "Decision: use signed mesh manifests"
+                    metadata:
+                      project: "xavier"
+                    score: 0.89
+
+  # --- HEADLESS & AI PROXY ---
+  /v1/chat/completions:
+    post:
+      summary: Headless chat completions with local fallback
+      description: >
+        Executes an OpenAI-compatible chat completion. If the secure LLM proxy fails or is unreachable,
+        automatically falls back to search local memories (returning a synthetic fallback completion with prefix
+        `[Modo memoria - LLM no disponible]`).
+      security:
+        - XavierToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - messages
+                - model
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role:
+                        type: string
+                        enum: [user, assistant, system]
+                      content:
+                        type: string
+                model:
+                  type: string
+                stream:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Completion response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  object:
+                    type: string
+                  created:
+                    type: integer
+                  model:
+                    type: string
+                  choices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message:
+                          type: object
+                          properties:
+                            role:
+                              type: string
+                            content:
+                              type: string
+                        finish_reason:
+                          type: string
+              example:
+                id: "chatcmpl-98127398127"
+                object: "chat.completion"
+                created: 1718192301
+                model: "qwen3-coder"
+                choices:
+                  - message:
+                      role: "assistant"
+                      content: "Para configurar el nodo mesh, debes firmar el manifest con tu identidad Ed25519."
+                    finish_reason: "stop"
+
+  /v1/embeddings:
+    post:
+      summary: Generate vector embeddings
+      description: Generates an embedding vector for a given input text using the configured embedder.
+      security:
+        - XavierToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - input
+              properties:
+                input:
+                  type: string
+                model:
+                  type: string
+      responses:
+        "200":
+          description: Generated embedding vectors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        object:
+                          type: string
+                        embedding:
+                          type: array
+                          items:
+                            type: number
+                        index:
+                          type: integer
+              example:
+                object: "list"
+                data:
+                  - object: "embedding"
+                    embedding: [0.0123, -0.0456, 0.789, 0.124]
+                    index: 0
+
+  # --- MESH & P2P ---
+  /v1/mesh/identity:
+    get:
+      summary: Local node identity
+      description: Returns public metadata, including public Ed25519 keys, used to identify this node in the peer-to-peer mesh.
+      security:
+        - XavierToken: []
+      responses:
+        "200":
+          description: Public node identity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  node_id:
+                    type: string
+                  public_key_hex:
+                    type: string
+              example:
+                node_id: "node_abc123"
+                public_key_hex: "d83f2a89cde99a836cb127..."
+
+  /v1/mesh/handshake:
+    post:
+      summary: Mesh peer handshake
+      description: Validates incoming peer handshake requests, verifying cryptographically signed signatures and pairing credentials.
+      security:
+        - XavierToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeshHandshakePayload"
+      responses:
+        "200":
+          description: Handshake approved and completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+              example:
+                status: "ok"
+                message: "Handshake verified and peer registry updated."
+        "401":
+          description: Invalid handshake signature or token credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # --- CODE GRAPH ---
+  /code/scan:
+    post:
+      summary: Scan and index codebase
+      description: Initiates a deep static analysis of files in a codebase directory and builds its structural relationship index.
+      security:
+        - XavierToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Absolute path of the codebase directory
+      responses:
+        "200":
+          description: Code scan execution started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  files_found:
+                    type: integer
+                  message:
+                    type: string
+              example:
+                status: "ok"
+                files_found: 142
+                message: "Scanning complete. Symbols index updated."
+
+  /code/find:
+    post:
+      summary: Find code symbols
+      description: Search inside the compiled code graph for classes, structs, functions, or variables.
+      security:
+        - XavierToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                limit:
+                  type: integer
+                  default: 10
+                kind:
+                  type: string
+                  enum: [struct, class, function, trait, impl, enum, module]
+      responses:
+        "200":
+          description: Code graph query matches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  symbols:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        kind:
+                          type: string
+                        filepath:
+                          type: string
+                        line:
+                          type: integer
+              example:
+                symbols:
+                  - name: "MemoryManager"
+                    kind: "struct"
+                    filepath: "src/memory/store.rs"
+                    line: 25
+
+components:
+  securitySchemes:
+    XavierToken:
+      type: apiKey
+      in: header
+      name: X-Xavier-Token
+      description: Preshared secret key configured at startup for server protection.
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token returned upon successful user authentication.
+
+  schemas:
+    SystemHealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        mode:
+          type: string
+          enum: [LOCAL, "LOCAL (DEGRADED)", CLOUD, DISABLED]
+        version:
+          type: string
+        llm:
+          type: object
+          properties:
+            provider:
+              type: string
+            model:
+              type: string
+            endpoint:
+              type: string
+            reachable:
+              type: boolean
+        embedding:
+          type: object
+          properties:
+            provider:
+              type: string
+            model:
+              type: string
+            status:
+              type: string
+        vector_db:
+          type: object
+          properties:
+            backend:
+              type: string
+            path:
+              type: string
+
+    SystemAlert:
+      type: object
+      properties:
+        level:
+          type: string
+          enum: [INFO, WARN, ERROR]
+        message:
+          type: string
+        category:
+          type: string
+
+    PublicUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        is_mfa_enabled:
+          type: boolean
+        created_at:
+          type: string
+
+    MemoryRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+        content:
+          type: string
+        metadata:
+          type: object
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        score:
+          type: number
+
+    AddMemoryPayload:
+      type: object
+      required:
+        - text
+        - user_id
+      properties:
+        text:
+          type: string
+          description: Plaintext content of the memory
+        user_id:
+          type: string
+          default: default
+        metadata:
+          type: object
+          description: Key-value attributes
+        kind:
+          type: string
+          description: Priority or structural category of the memory
+        namespace:
+          type: object
+          properties:
+            project:
+              type: string
+            session_id:
+              type: string
+
+    ChatMemoryPayload:
+      type: object
+      required:
+        - messages
+        - user_id
+      properties:
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+              content:
+                type: string
+        user_id:
+          type: string
+
+    MemorySearchRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+        limit:
+          type: integer
+          default: 10
+        filters:
+          type: object
+          properties:
+            kinds:
+              type: array
+              items:
+                type: string
+            project:
+              type: string
+            user_id:
+              type: string
+        active_zones:
+          type: array
+          items:
+            type: string
+            enum: [working, semantic, episodic, long_term]
+
+    MeshHandshakePayload:
+      type: object
+      required:
+        - node_id
+        - public_key_hex
+        - nonce
+        - signature_hex
+      properties:
+        node_id:
+          type: string
+        public_key_hex:
+          type: string
+        nonce:
+          type: string
+        signature_hex:
+          type: string
+        pairing_secret:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: integer
+            message:
+              type: string
+            details:
+              type: string

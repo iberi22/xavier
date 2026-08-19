@@ -15,6 +15,7 @@
 //! through re-exports so that external consumers are unaffected.
 
 pub mod billing;
+pub mod cleanup;
 pub mod code;
 pub mod data_commons;
 pub mod enums;
@@ -25,6 +26,8 @@ pub mod license;
 pub mod memory;
 pub mod mesh;
 pub mod navigation;
+pub mod node;
+pub mod nodes;
 pub mod provider;
 pub mod regen;
 pub mod secrets;
@@ -74,12 +77,14 @@ impl Cli {
                 max_results,
                 cluster,
                 level,
+                offline_ok,
             } => {
                 let base_url = resolve_base_url();
                 println!("Searching memories via HTTP API on {}", base_url);
                 // Prefer --max-results / -n flag over positional limit
-                let lim = max_results.clone().or(limit.clone()).unwrap_or(10);
-                search_memories_filtered(query, lim, cluster.clone(), level.clone()).await
+                let lim = (*max_results).or(*limit).unwrap_or(10);
+                search_memories_filtered(query, lim, cluster.clone(), level.clone(), *offline_ok)
+                    .await
             }
             Command::Usage { cmd } => usage::handle_usage_command(cmd.clone()).await,
             Command::Add {
@@ -101,15 +106,19 @@ impl Cli {
                 )
                 .await
             }
-            Command::Recall { query, limit } => http::recall_memories(query, *limit).await,
+            Command::Recall {
+                query,
+                limit,
+                offline_ok,
+            } => http::recall_memories(query, *limit, *offline_ok).await,
             Command::ExportPack {
                 topic,
                 max_level,
                 out,
             } => http::export_context_pack(topic, *max_level, out).await,
-            Command::Stats => {
+            Command::Stats { offline_ok } => {
                 println!("Fetching Xavier statistics...");
-                http::show_stats().await
+                http::show_stats(*offline_ok).await
             }
             Command::Reindex => {
                 println!("Re-indexing memories missing embeddings...");
@@ -207,6 +216,8 @@ impl Cli {
             Command::Wallet { cmd } => wallet::handle_wallet_command(cmd.clone()).await,
             Command::Session { cmd } => session::handle_session_command(cmd.clone()).await,
             Command::Mesh { cmd } => mesh::handle_mesh_command(cmd.clone()).await,
+            Command::Node { cmd } => node::handle_node_command(cmd.clone()).await,
+            Command::Nodes { cmd } => nodes::handle_nodes_command(cmd.clone()).await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
@@ -223,8 +234,14 @@ impl Cli {
             Command::Agent { cmd } => {
                 crate::cli::handlers::agent_cli::handle_agent_command(cmd.clone()).await
             }
-            Command::Scan { cmd: _ } => {
-                crate::cli::handlers::system_scan_cli::handle_scan_command().await
+            Command::Plugin { cmd } => match cmd {
+                PluginCommand::Install { name } => {
+                    crate::cli::handlers::plugins::install_plugin(name.clone()).await
+                }
+                PluginCommand::List => crate::cli::handlers::plugins::list_plugins().await,
+            },
+            Command::Scan { cmd } => {
+                crate::cli::handlers::system_scan_cli::handle_scan_command(cmd.clone()).await
             }
             Command::License { cmd } => {
                 crate::cli::commands::license::handle_license_command(cmd.clone()).await
@@ -275,8 +292,13 @@ impl Cli {
             Command::Health { cloud } => {
                 crate::cli::handlers::system::handle_health_command(*cloud).await
             }
-            Command::Improve { cmd } => improve::handle_improve_command(cmd.clone()).await,
+            Command::Improve { ci, cmd } => improve::handle_improve_command(*ci, cmd.clone()).await,
             Command::Regen { cmd } => regen::handle_regen_command(cmd.clone()).await,
+            Command::Cleanup {
+                dry_run,
+                apply,
+                days,
+            } => cleanup::handle_cleanup(*dry_run, *apply, *days).await,
         }
     }
 }

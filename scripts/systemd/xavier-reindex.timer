@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Timer for Xavier Embeddings Reindexing
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

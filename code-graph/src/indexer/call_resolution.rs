@@ -25,6 +25,8 @@ pub struct CallResolver {
     import_map: HashMap<String, Vec<ResolvedImport>>,
     /// All symbols in the current index, by name
     symbol_index: HashMap<String, Vec<SymbolRef>>,
+    /// Symbols grouped by name length for O(1) fuzzy bucket lookup
+    symbols_by_len: HashMap<usize, Vec<(String, Vec<SymbolRef>)>>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,9 +90,18 @@ impl CallResolver {
             }
         }
 
+        let mut symbols_by_len: HashMap<usize, Vec<(String, Vec<SymbolRef>)>> = HashMap::new();
+        for (name, cand) in &symbol_index {
+            symbols_by_len
+                .entry(name.len())
+                .or_default()
+                .push((name.clone(), cand.clone()));
+        }
+
         Self {
             import_map,
             symbol_index,
+            symbols_by_len,
         }
     }
 
@@ -181,16 +192,32 @@ impl CallResolver {
 
         // Strategy 6: Fuzzy
         // String similarity (Levenshtein) as last resort
-        for (name, candidates) in &self.symbol_index {
-            let distance = levenshtein_distance(callee_name, name);
-            let similarity = 1.0 - (distance as f32 / callee_name.len().max(name.len()) as f32);
-            if similarity > 0.8 {
-                for cand in candidates {
-                    results.push(ResolvedCall {
-                        stable_id: cand.stable_id.clone(),
-                        confidence: 0.30 + (similarity * 0.1),
-                        strategy: "Fuzzy",
-                    });
+        let callee_len = callee_name.len();
+        if callee_len >= 4 {
+            let min_len = ((callee_len as f32) * 0.7999).floor() as usize;
+            let max_len = ((callee_len as f32) / 0.7999).ceil() as usize;
+
+            for len in min_len..=max_len {
+                if let Some(entries) = self.symbols_by_len.get(&len) {
+                    let max_l = callee_len.max(len);
+                    let max_dist = (max_l as f32 * 0.2) as usize;
+                    for (name, candidates) in entries {
+                        let diff = (callee_len as isize - len as isize).unsigned_abs();
+                        if diff > max_dist {
+                            continue;
+                        }
+                        let distance = levenshtein_distance(callee_name, name);
+                        let similarity = 1.0 - (distance as f32 / max_l as f32);
+                        if similarity > 0.8 {
+                            for cand in candidates {
+                                results.push(ResolvedCall {
+                                    stable_id: cand.stable_id.clone(),
+                                    confidence: 0.30 + (similarity * 0.1),
+                                    strategy: "Fuzzy",
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -200,13 +227,18 @@ impl CallResolver {
 }
 
 pub fn extract_call_names(source: &str) -> Vec<String> {
+    use std::sync::OnceLock;
+    static RE_CALL: OnceLock<regex::Regex> = OnceLock::new();
+    static RE_METHOD: OnceLock<regex::Regex> = OnceLock::new();
+
+    let re = RE_CALL.get_or_init(|| regex::Regex::new(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(").unwrap());
+    let re_method =
+        RE_METHOD.get_or_init(|| regex::Regex::new(r"\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(").unwrap());
+
     let mut names = Vec::new();
-    let re = regex::Regex::new(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(").unwrap();
     for cap in re.captures_iter(source) {
         names.push(cap[1].to_string());
     }
-    // Also look for method calls like .foo()
-    let re_method = regex::Regex::new(r"\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(").unwrap();
     for cap in re_method.captures_iter(source) {
         names.push(cap[1].to_string());
     }

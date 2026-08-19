@@ -24,6 +24,7 @@ pub struct Checkpoint {
 }
 
 impl Checkpoint {
+    /// New.
     pub fn new(task_id: String, name: String, data: serde_json::Value) -> Self {
         Self {
             task_id,
@@ -46,6 +47,7 @@ impl Default for CheckpointManager {
 }
 
 impl CheckpointManager {
+    /// New.
     pub fn new() -> Self {
         Self {
             checkpoints: RwLock::new(HashMap::new()),
@@ -54,6 +56,7 @@ impl CheckpointManager {
         }
     }
 
+    /// With store.
     pub fn with_store(workspace_id: impl Into<String>, store: Arc<dyn MemoryStore>) -> Self {
         Self {
             checkpoints: RwLock::new(HashMap::new()),
@@ -66,6 +69,7 @@ impl CheckpointManager {
         format!("{task_id}::{name}")
     }
 
+    /// Save.
     pub async fn save(&self, checkpoint: Checkpoint) -> Result<()> {
         self.checkpoints.write().await.insert(
             Self::key(&checkpoint.task_id, &checkpoint.name),
@@ -77,6 +81,7 @@ impl CheckpointManager {
         Ok(())
     }
 
+    /// Load.
     pub async fn load(&self, task_id: String, name: String) -> Result<Option<Checkpoint>> {
         if let Some(checkpoint) = self
             .checkpoints
@@ -102,6 +107,7 @@ impl CheckpointManager {
         Ok(None)
     }
 
+    /// List.
     pub async fn list(&self, task_id: String) -> Result<Vec<Checkpoint>> {
         if let (Some(workspace_id), Some(store)) = (&self.workspace_id, &self.store) {
             let checkpoints = store.list_checkpoints(workspace_id, &task_id).await?;
@@ -125,6 +131,7 @@ impl CheckpointManager {
             .collect())
     }
 
+    /// Delete.
     pub async fn delete(&self, task_id: String, name: String) -> Result<()> {
         self.checkpoints
             .write()

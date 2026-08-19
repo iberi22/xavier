@@ -20,6 +20,7 @@ pub struct UpdateProvidersPayload {
     pub providers: Vec<ProviderConfigPayload>,
 }
 
+/// Get providers config handler.
 pub async fn get_providers_config_handler() -> Response {
     let settings = XavierSettings::current();
 
@@ -43,6 +44,7 @@ pub async fn get_providers_config_handler() -> Response {
     )
 }
 
+/// Update providers config handler.
 pub async fn update_providers_config_handler(
     State(_state): State<CliState>,
     Json(payload): Json<UpdateProvidersPayload>,
@@ -70,6 +72,7 @@ pub async fn update_providers_config_handler(
     )
 }
 
+/// Test provider handler.
 pub async fn test_provider_handler(
     State(_state): State<CliState>,
     axum::extract::Path(name): axum::extract::Path<String>,

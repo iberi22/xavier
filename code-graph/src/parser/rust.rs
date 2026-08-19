@@ -53,6 +53,7 @@ impl RustParser {
 
         match kind {
             "function_item" | "function_declaration" => {
+                self.extract_attribute_routes(node, source, file_path, symbols);
                 if let Some(name_node) = node.child_by_field_name("name") {
                     let kind = if parent.is_some() {
                         SymbolKind::Method
@@ -69,6 +70,9 @@ impl RustParser {
                         parent.clone(),
                     );
                 }
+            }
+            "call_expression" => {
+                self.extract_call_route(node, source, file_path, symbols, parent.clone());
             }
             "struct_item" => {
                 if let Some(name_node) = node.child_by_field_name("name") {
@@ -194,6 +198,125 @@ impl RustParser {
         }
     }
 
+    fn extract_call_route(
+        &self,
+        node: Node,
+        source: &str,
+        file_path: &str,
+        symbols: &mut Vec<Symbol>,
+        parent: Option<String>,
+    ) {
+        if let Some(func_node) = node.child_by_field_name("function") {
+            if func_node.kind() == "field_expression" {
+                if let Some(field_node) = func_node.child_by_field_name("field") {
+                    let field_name = field_node.utf8_text(source.as_bytes()).unwrap_or("");
+                    if field_name == "route"
+                        || matches!(
+                            field_name,
+                            "get" | "post" | "put" | "delete" | "patch" | "head"
+                        )
+                    {
+                        if let Some(args_node) = node.child_by_field_name("arguments") {
+                            let mut cursor = args_node.walk();
+                            for child in args_node.children(&mut cursor) {
+                                if child.kind() == "string_literal"
+                                    || child.kind() == "raw_string_literal"
+                                {
+                                    if let Ok(raw_text) = child.utf8_text(source.as_bytes()) {
+                                        let route_path = unquote_string(raw_text);
+                                        if route_path.starts_with('/') {
+                                            let handler =
+                                                extract_handler_from_args(args_node, source);
+                                            let start = node.start_position();
+                                            let end = node.end_position();
+                                            symbols.push(Symbol {
+                                                id: None,
+                                                stable_id: None,
+                                                name: route_path.to_string(),
+                                                kind: SymbolKind::Route,
+                                                lang: Language::Rust,
+                                                file_path: file_path.to_string(),
+                                                start_line: (start.row + 1) as u32,
+                                                end_line: (end.row + 1) as u32,
+                                                start_col: start.column as u32,
+                                                end_col: end.column as u32,
+                                                signature: compact_node_signature(node, source),
+                                                parent: handler.or(parent.clone()),
+                                                complexity: None,
+                                            });
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn extract_attribute_routes(
+        &self,
+        node: Node,
+        source: &str,
+        file_path: &str,
+        symbols: &mut Vec<Symbol>,
+    ) {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "attribute_item" {
+                if let Ok(attr_text) = child.utf8_text(source.as_bytes()) {
+                    if attr_text.contains("get(")
+                        || attr_text.contains("post(")
+                        || attr_text.contains("put(")
+                        || attr_text.contains("delete(")
+                        || attr_text.contains("route(")
+                    {
+                        let mut stack = vec![child];
+                        while let Some(n) = stack.pop() {
+                            if n.kind() == "string_literal" || n.kind() == "raw_string_literal" {
+                                if let Ok(raw) = n.utf8_text(source.as_bytes()) {
+                                    let path = unquote_string(raw);
+                                    if path.starts_with('/') {
+                                        let fn_name = node
+                                            .child_by_field_name("name")
+                                            .and_then(|name_node| {
+                                                name_node.utf8_text(source.as_bytes()).ok()
+                                            })
+                                            .map(|s| s.to_string());
+                                        let start = child.start_position();
+                                        let end = node.end_position();
+                                        symbols.push(Symbol {
+                                            id: None,
+                                            stable_id: None,
+                                            name: path.to_string(),
+                                            kind: SymbolKind::Route,
+                                            lang: Language::Rust,
+                                            file_path: file_path.to_string(),
+                                            start_line: (start.row + 1) as u32,
+                                            end_line: (end.row + 1) as u32,
+                                            start_col: start.column as u32,
+                                            end_col: end.column as u32,
+                                            signature: compact_node_signature(node, source),
+                                            parent: fn_name,
+                                            complexity: None,
+                                        });
+                                    }
+                                }
+                            } else {
+                                let mut c = n.walk();
+                                for ch in n.children(&mut c) {
+                                    stack.push(ch);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn extract_impl_name(&self, node: Node, source: &str) -> Option<String> {
         // impl Trait for Struct { ... } -> Struct
         // impl Struct { ... } -> Struct
@@ -293,6 +416,66 @@ impl RustParser {
     }
 }
 
+pub(crate) fn unquote_string(s: &str) -> &str {
+    let s = s.trim();
+    let s = if s.starts_with('r') {
+        s.trim_start_matches('r').trim_matches('#')
+    } else {
+        s
+    };
+    if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+        &s[1..s.len() - 1]
+    } else {
+        s
+    }
+}
+
+pub(crate) fn extract_handler_from_args(args_node: Node, source: &str) -> Option<String> {
+    let mut cursor = args_node.walk();
+    for child in args_node.children(&mut cursor) {
+        if child.kind() == "call_expression" {
+            if let Some(func) = child.child_by_field_name("function") {
+                let func_name = func.utf8_text(source.as_bytes()).unwrap_or("");
+                if matches!(
+                    func_name,
+                    "get"
+                        | "post"
+                        | "put"
+                        | "delete"
+                        | "patch"
+                        | "head"
+                        | "axum::routing::get"
+                        | "axum::routing::post"
+                        | "axum::routing::put"
+                        | "axum::routing::delete"
+                        | "axum::routing::patch"
+                        | "axum::routing::head"
+                ) {
+                    if let Some(inner_args) = child.child_by_field_name("arguments") {
+                        let mut inner_cursor = inner_args.walk();
+                        for inner_child in inner_args.children(&mut inner_cursor) {
+                            if inner_child.kind() == "identifier"
+                                || inner_child.kind() == "scoped_identifier"
+                            {
+                                if let Ok(handler_name) = inner_child.utf8_text(source.as_bytes()) {
+                                    return Some(handler_name.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if child.kind() == "identifier" || child.kind() == "scoped_identifier" {
+            if let Ok(name) = child.utf8_text(source.as_bytes()) {
+                if !name.starts_with('/') {
+                    return Some(name.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 impl Default for RustParser {
     fn default() -> Self {
         Self::new().expect("failed to initialize Rust parser")
@@ -369,5 +552,61 @@ mod tests {
 
         assert!(signature.ends_with("..."));
         assert!(signature.is_char_boundary(signature.len()));
+    }
+
+    #[test]
+    fn extracts_axum_routes_from_source() {
+        let mut parser = RustParser::new().unwrap();
+        let source = r#"
+            pub fn build_app() -> Router {
+                Router::new()
+                    .route("/code/find", post(code_find_handler))
+                    .route("/code/stats", get(code_stats_handler))
+            }
+        "#;
+        let symbols = parser.parse(source, "server.rs").expect("parse");
+        let routes: Vec<_> = symbols
+            .into_iter()
+            .filter(|s| s.kind == SymbolKind::Route)
+            .collect();
+
+        assert_eq!(routes.len(), 2);
+        assert!(
+            routes.iter().any(|r| r.name == "/code/find" && r.parent.as_deref() == Some("code_find_handler")),
+            "expected route /code/find"
+        );
+        assert!(
+            routes
+                .iter()
+                .any(|r| r.name == "/code/stats"
+                    && r.parent.as_deref() == Some("code_stats_handler")),
+            "expected route /code/stats"
+        );
+    }
+
+    #[test]
+    fn extracts_routes_from_real_server_file() {
+        let mut parser = RustParser::new().unwrap();
+        let server_code = std::fs::read_to_string("src/cli/server.rs")
+            .or_else(|_| std::fs::read_to_string("../src/cli/server.rs"))
+            .expect("read server.rs");
+
+        let symbols = parser
+            .parse(&server_code, "src/cli/server.rs")
+            .expect("parse server.rs");
+        let routes: Vec<_> = symbols
+            .into_iter()
+            .filter(|s| s.kind == SymbolKind::Route)
+            .collect();
+
+        assert!(
+            routes.len() >= 10,
+            "expected >= 10 routes in server.rs, found {}",
+            routes.len()
+        );
+        assert!(
+            routes.iter().any(|r| r.name == "/code/stats"),
+            "expected route /code/stats to be extracted"
+        );
     }
 }

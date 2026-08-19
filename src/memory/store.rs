@@ -3,6 +3,8 @@
 //! Defines the MemoryStore trait and all shared data structures
 //! used by concrete store implementations (SqliteMemoryStore in sqlite_store.rs,
 //! VecSqliteMemoryStore in sqlite_vec_store.rs, etc.).
+//! Includes references to semantic deduplication (dedup/deduplicate) using
+//! cosine similarity or vector_distance metrics during insertion.
 
 use std::{any::Any as StdAny, collections::HashMap, fmt, path::PathBuf, sync::Arc};
 
@@ -37,6 +39,7 @@ pub enum MemoryBackend {
 }
 
 impl MemoryBackend {
+    /// From env.
     pub fn from_env(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "auto" => Self::Auto,
@@ -50,6 +53,7 @@ impl MemoryBackend {
         }
     }
 
+    /// As str.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -96,7 +100,7 @@ pub struct MemoryRecord {
     #[serde(default)]
     pub relation: Option<RelationKind>,
     #[serde(default)]
-    pub clearance: crate::memory::schema::ClearanceLevel,
+    pub clearance: crate::security::clearance::ClearanceLevel,
     #[serde(default)]
     pub revisions: Vec<MemoryRevision>,
     #[serde(default)]
@@ -107,6 +111,16 @@ pub struct MemoryRecord {
     pub metadata_iv: Option<Vec<u8>>,
     #[serde(default)]
     pub score: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<DateTime<Utc>>,
+    #[serde(default = "default_embedding_status")]
+    pub embedding_status: String,
+    #[serde(default)]
+    pub embedding_attempts: u32,
+}
+
+fn default_embedding_status() -> String {
+    "pending".to_string()
 }
 
 impl Default for MemoryRecord {
@@ -126,12 +140,15 @@ impl Default for MemoryRecord {
             cluster_id: None,
             level: MemoryLevel::Raw,
             relation: None,
-            clearance: crate::memory::schema::ClearanceLevel::Unclassified,
+            clearance: crate::security::clearance::ClearanceLevel::Unclassified,
             revisions: Vec::new(),
             encrypted_dek: None,
             content_iv: None,
             metadata_iv: None,
             score: 0.0,
+            deleted_at: None,
+            embedding_status: "pending".to_string(),
+            embedding_attempts: 0,
         }
     }
 }
@@ -220,6 +237,7 @@ pub(crate) struct DurableStoreFile {
 // ---------------------------------------------------------------------------
 
 impl MemoryRecord {
+    /// From document.
     pub fn from_document(
         workspace_id: &str,
         document: &MemoryDocument,
@@ -290,7 +308,10 @@ impl MemoryRecord {
                 v.as_str()
                     .and_then(|s| crate::utils::crypto::hex_decode(s).ok())
             }),
+            deleted_at: None,
             score: document.score,
+            embedding_status: "pending".to_string(),
+            embedding_attempts: 0,
             revisions: vec![MemoryRevision {
                 revision,
                 recorded_at: updated_at,
@@ -301,6 +322,7 @@ impl MemoryRecord {
         }
     }
 
+    /// To document.
     pub fn to_document(&self) -> MemoryDocument {
         let mut metadata = self.metadata.clone();
         if let Some(object) = metadata.as_object_mut() {
@@ -361,6 +383,7 @@ impl MemoryRecord {
         }
     }
 
+    /// Matches query.
     pub fn matches_query(&self, query: &str) -> bool {
         let lowered = query.trim().to_ascii_lowercase();
         lowered.is_empty()
@@ -382,7 +405,7 @@ impl MemoryRecord {
     pub fn is_authorized_for_embedding(
         &self,
         consent_given: bool,
-        max_clearance: crate::memory::schema::ClearanceLevel,
+        max_clearance: crate::security::clearance::ClearanceLevel,
     ) -> bool {
         if !consent_given {
             return false;
@@ -424,7 +447,11 @@ impl MemoryRecord {
 
     /// Returns the last accessed time, falling back to `updated_at`.
     pub fn last_accessed(&self) -> DateTime<Utc> {
-        if let Some(last_accessed_val) = self.metadata.get("last_accessed_at").and_then(|v| v.as_str()) {
+        if let Some(last_accessed_val) = self
+            .metadata
+            .get("last_accessed_at")
+            .and_then(|v| v.as_str())
+        {
             if let Ok(parsed) = DateTime::parse_from_rfc3339(last_accessed_val) {
                 return parsed.with_timezone(&Utc);
             }
@@ -435,10 +462,16 @@ impl MemoryRecord {
     /// Update/touch the last accessed time in metadata.
     pub fn touch(&mut self, now: DateTime<Utc>) {
         if let serde_json::Value::Object(ref mut map) = self.metadata {
-            map.insert("last_accessed_at".to_string(), serde_json::json!(now.to_rfc3339()));
+            map.insert(
+                "last_accessed_at".to_string(),
+                serde_json::json!(now.to_rfc3339()),
+            );
         } else {
             let mut map = serde_json::Map::new();
-            map.insert("last_accessed_at".to_string(), serde_json::json!(now.to_rfc3339()));
+            map.insert(
+                "last_accessed_at".to_string(),
+                serde_json::json!(now.to_rfc3339()),
+            );
             self.metadata = serde_json::Value::Object(map);
         }
     }
@@ -453,6 +486,13 @@ pub trait MemoryStore: Send + Sync {
     fn backend(&self) -> MemoryBackend;
     fn as_any(&self) -> &dyn StdAny;
     async fn health(&self) -> Result<String>;
+    async fn set_dedup_settings(&self, _settings: crate::settings::types::DedupSettings) {}
+    async fn compact(&self) -> Result<()> {
+        Ok(())
+    }
+    async fn db_size(&self) -> Result<Option<u64>> {
+        Ok(None)
+    }
     async fn put(&self, record: MemoryRecord) -> Result<()>;
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>>;
     async fn update(&self, record: MemoryRecord) -> Result<()>;
@@ -504,6 +544,15 @@ pub trait MemoryStore: Send + Sync {
         )
     }
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState>;
+    /// Load only workspace metadata (beliefs, session tokens) without memories.
+    /// This is used for lazy loading: avoids loading all memory records into RAM at startup.
+    async fn load_workspace_metadata(
+        &self,
+        workspace_id: &str,
+    ) -> Result<(Vec<crate::domain::memory::belief::BeliefEdge>, Vec<SessionTokenRecord>)> {
+        let state = self.load_workspace_state(workspace_id).await?;
+        Ok((state.beliefs, state.session_tokens))
+    }
     async fn save_beliefs(&self, workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()>;
     async fn save_session_token(&self, workspace_id: &str, token: SessionTokenRecord)
         -> Result<()>;
@@ -579,6 +628,12 @@ pub trait MemoryStore: Send + Sync {
     async fn save_entity_graph_snapshot(&self, _workspace_id: &str, _data: &str) -> Result<()> {
         Ok(())
     }
+
+    /// Return code symbols linked to a given memory_id.
+    async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
+        let _ = memory_id;
+        Ok(Vec::new())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +647,7 @@ pub struct FileMemoryStore {
 }
 
 impl FileMemoryStore {
+    /// New.
     pub async fn new(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
         if let Some(parent) = path.parent() {
@@ -611,6 +667,7 @@ impl FileMemoryStore {
         })
     }
 
+    /// Persist.
     pub async fn persist(&self) -> Result<()> {
         let payload = {
             let state = self.state.read().await;
@@ -872,6 +929,7 @@ pub struct InMemoryMemoryStore {
 }
 
 impl InMemoryMemoryStore {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
@@ -1078,6 +1136,7 @@ impl MemoryStore for InMemoryMemoryStore {
 // Shared helper functions
 // ---------------------------------------------------------------------------
 
+/// Revisioned record.
 pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) -> MemoryRecord {
     next.id = existing.id;
     next.created_at = existing.created_at;
@@ -1094,6 +1153,7 @@ pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) 
     next
 }
 
+/// Filter records.
 pub(crate) fn filter_records(
     records: Vec<MemoryRecord>,
     workspace_id: &str,
@@ -1142,6 +1202,7 @@ pub(crate) fn filter_records(
         .collect())
 }
 
+/// Stable key.
 pub(crate) fn stable_key(kind: &str, parts: &[&str]) -> String {
     let mut digest = Sha256::new();
     digest.update(kind.as_bytes());

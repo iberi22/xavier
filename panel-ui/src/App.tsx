@@ -16,6 +16,7 @@ import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import TopStatusBar from "./components/TopStatusBar";
 import { initialBookmarks } from "./data";
+import { MalocaView } from "./maloca";
 import type {
   BackendGraphData,
   Bookmark,
@@ -252,84 +253,91 @@ export default function App() {
     }
   }
 
-  async function sendMessage(draft: string) {
-    if (!draft.trim()) return;
+  const sendMessage = useCallback(
+    async (draft: string) => {
+      if (!draft.trim()) return;
 
-    const tempId = Date.now().toString();
-    const newUserMsg: PanelMessage = {
-      id: tempId,
-      role: "user",
-      plain_text: draft,
-      created_at: new Date().toISOString(),
-    };
+      const tempId = Date.now().toString();
+      const newUserMsg: PanelMessage = {
+        id: tempId,
+        role: "user",
+        plain_text: draft,
+        created_at: new Date().toISOString(),
+      };
 
-    if (!hasConfig) {
-      setMessages((prev) => [
-        ...prev,
-        newUserMsg,
-        {
-          id: `${tempId}_sys`,
-          role: "assistant",
-          plain_text:
-            "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
-          created_at: new Date().toISOString(),
-        },
-      ]);
-      return;
-    }
+      if (!hasConfig) {
+        setMessages((prev) => [
+          ...prev,
+          newUserMsg,
+          {
+            id: `${tempId}_sys`,
+            role: "assistant",
+            plain_text:
+              "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
+            created_at: new Date().toISOString(),
+          },
+        ]);
+        return;
+      }
 
-    // Optimistic UI updates
-    setMessages((prev) => [...prev, newUserMsg]);
+      // Optimistic UI updates
+      setMessages((prev) => [...prev, newUserMsg]);
 
-    try {
-      setIsLoading(true);
-      setError(null);
+      try {
+        setIsLoading(true);
+        setError(null);
 
-      // Create thread if none exists
-      let targetThreadId = selectedThreadId;
-      if (!targetThreadId) {
-        const thread = await api<ThreadSummary>("/panel/api/threads", {
+        // Create thread if none exists
+        let targetThreadId = selectedThreadId;
+        if (!targetThreadId) {
+          const thread = await api<ThreadSummary>("/panel/api/threads", {
+            method: "POST",
+            body: JSON.stringify({ title: draft.slice(0, 30) }),
+          });
+          setThreads((current) => [thread, ...current]);
+          targetThreadId = thread.id;
+          setSelectedThreadId(thread.id);
+        }
+
+        const payload = await api<PanelChatResponse>("/panel/api/chat", {
           method: "POST",
-          body: JSON.stringify({ title: draft.slice(0, 30) }),
+          body: JSON.stringify({
+            thread_id: targetThreadId,
+            message: draft,
+          }),
         });
-        setThreads((current) => [thread, ...current]);
-        targetThreadId = thread.id;
-        setSelectedThreadId(thread.id);
+
+        setSelectedThreadId(payload.thread.id);
+        setMessages(payload.messages);
+
+        const lastMessage = payload.messages[payload.messages.length - 1];
+        if (lastMessage?.role === "assistant") {
+          setStreamingMessageId(lastMessage.id);
+        }
+
+        setThreads((current) => {
+          const next = [
+            payload.thread,
+            ...current.filter((item) => item.id !== payload.thread.id),
+          ];
+          return next;
+        });
+      } catch (cause) {
+        setError(
+          cause instanceof Error ? cause.message : "Failed to send message",
+        );
+      } finally {
+        setIsLoading(false);
       }
+    },
+    [api, hasConfig, selectedThreadId],
+  );
 
-      const payload = await api<PanelChatResponse>("/panel/api/chat", {
-        method: "POST",
-        body: JSON.stringify({
-          thread_id: targetThreadId,
-          message: draft,
-        }),
-      });
+  const handleOpenConfig = useCallback(() => {
+    setIsConfigOpen(true);
+  }, []);
 
-      setSelectedThreadId(payload.thread.id);
-      setMessages(payload.messages);
-
-      const lastMessage = payload.messages[payload.messages.length - 1];
-      if (lastMessage?.role === "assistant") {
-        setStreamingMessageId(lastMessage.id);
-      }
-
-      setThreads((current) => {
-        const next = [
-          payload.thread,
-          ...current.filter((item) => item.id !== payload.thread.id),
-        ];
-        return next;
-      });
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Failed to send message",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  const handleSystemMessage = (text: string) => {
+  const handleSystemMessage = useCallback((text: string) => {
     setMessages((prev) => [
       ...prev,
       {
@@ -339,11 +347,23 @@ export default function App() {
         created_at: new Date().toISOString(),
       },
     ]);
-  };
+  }, []);
 
-  const handleUpdateBookmark = (_updated: BookmarkArtifact) => {
+  const handleCloseMaloca = useCallback(() => {
+    window.location.hash = "";
+  }, []);
+
+  const handleCompleteOnboarding = useCallback(() => {
+    setShowOnboarding(false);
+  }, []);
+
+  const handleCloseConfig = useCallback(() => {
+    setIsConfigOpen(false);
+  }, []);
+
+  const handleUpdateBookmark = useCallback((_updated: BookmarkArtifact) => {
     // For demo purposes, sync local state
-  };
+  }, []);
 
   const handleUpdateGraphData = useCallback(
     (data: GraphData) => {
@@ -374,25 +394,30 @@ export default function App() {
     [api],
   );
 
-  const handlePinArtifact = (artifact: BookmarkArtifact) => {
-    const newWidget: CanvasWidget = {
-      id: `w_${Date.now()}`,
-      artifact,
-      position: { x: 50 + widgets.length * 30, y: 50 + widgets.length * 30 },
-    };
-    setWidgets((prev) => [...prev, newWidget]);
+  const handlePinArtifact = useCallback((artifact: BookmarkArtifact) => {
+    setWidgets((prev) => {
+      const newWidget: CanvasWidget = {
+        id: `w_${Date.now()}`,
+        artifact,
+        position: { x: 50 + prev.length * 30, y: 50 + prev.length * 30 },
+      };
+      return [...prev, newWidget];
+    });
     setIsConfigOpen(false);
-  };
+  }, []);
 
-  const handleRemoveWidget = (id: string) => {
+  const handleRemoveWidget = useCallback((id: string) => {
     setWidgets((prev) => prev.filter((w) => w.id !== id));
-  };
+  }, []);
 
-  const handleUpdateWidgetPosition = (id: string, x: number, y: number) => {
-    setWidgets((prev) =>
-      prev.map((w) => (w.id === id ? { ...w, position: { x, y } } : w)),
-    );
-  };
+  const handleUpdateWidgetPosition = useCallback(
+    (id: string, x: number, y: number) => {
+      setWidgets((prev) =>
+        prev.map((w) => (w.id === id ? { ...w, position: { x, y } } : w)),
+      );
+    },
+    [],
+  );
 
   if (health === "offline") {
     return (
@@ -427,8 +452,12 @@ export default function App() {
   if (hash === "#/2fa/backup") return <BackupCodesPage />;
   if (hash === "#/master-key") return <MasterKeyPage />;
 
+  if (hash === "#/maloca" || hash.startsWith("#/maloca/")) {
+    return <MalocaView onClose={handleCloseMaloca} />;
+  }
+
   if (showOnboarding) {
-    return <OnboardingFlow onComplete={() => setShowOnboarding(false)} />;
+    return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
   }
 
   return (
@@ -462,7 +491,7 @@ export default function App() {
             >
               <ConfigModal
                 key="modal"
-                onClose={() => setIsConfigOpen(false)}
+                onClose={handleCloseConfig}
                 graphData={graphData}
                 onUpdateGraphData={handleUpdateGraphData}
                 bookmarks={
@@ -493,7 +522,7 @@ export default function App() {
           >
             <InputArea
               onSendMessage={sendMessage}
-              onOpenConfig={() => setIsConfigOpen(true)}
+              onOpenConfig={handleOpenConfig}
               onSystemMessage={handleSystemMessage}
             />
           </motion.div>

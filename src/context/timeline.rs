@@ -46,6 +46,7 @@ pub struct TimelineEngine {
 }
 
 impl TimelineEngine {
+    /// New.
     pub fn new(memory: Arc<QmdMemory>) -> Self {
         Self { memory }
     }

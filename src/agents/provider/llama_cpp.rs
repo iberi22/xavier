@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use parking_lot::Mutex;
-use std::sync::OnceLock;
-use parking_lot::RwLock;
 use crate::agents::provider::hardware;
+use parking_lot::Mutex;
+use parking_lot::RwLock;
+use std::sync::Arc;
+use std::sync::OnceLock;
 
 #[derive(Clone)]
 pub struct ManagedLlamaServer {
@@ -10,6 +10,7 @@ pub struct ManagedLlamaServer {
     port: u16,
 }
 
+/// Build args.
 pub fn build_args(model_path: &str, port: u16, gpu_info: &hardware::GpuInfo) -> Vec<String> {
     let mut args = vec![
         "--model".to_string(),
@@ -19,7 +20,8 @@ pub fn build_args(model_path: &str, port: u16, gpu_info: &hardware::GpuInfo) -> 
         "--ctx-size".to_string(),
         "4096".to_string(),
     ];
-    if gpu_info.vendor == hardware::GpuVendor::Nvidia || gpu_info.vendor == hardware::GpuVendor::Amd {
+    if gpu_info.vendor == hardware::GpuVendor::Nvidia || gpu_info.vendor == hardware::GpuVendor::Amd
+    {
         args.push("--n-gpu-layers".to_string());
         args.push("35".to_string());
     }
@@ -27,7 +29,11 @@ pub fn build_args(model_path: &str, port: u16, gpu_info: &hardware::GpuInfo) -> 
 }
 
 impl ManagedLlamaServer {
-    pub async fn start_server(model_path: &str, gpu_info: &hardware::GpuInfo) -> Result<Self, std::io::Error> {
+    /// Start server.
+    pub async fn start_server(
+        model_path: &str,
+        gpu_info: &hardware::GpuInfo,
+    ) -> Result<Self, std::io::Error> {
         let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
         drop(listener);
@@ -50,18 +56,20 @@ impl ManagedLlamaServer {
         })
     }
 
+    /// Stop server.
     pub async fn stop_server(&self) -> Result<(), std::io::Error> {
         let child_opt = {
             let mut guard = self.child.lock();
             guard.take()
         };
-        
+
         if let Some(mut child) = child_opt {
             child.kill().await?;
         }
         Ok(())
     }
 
+    /// Port.
     pub fn port(&self) -> u16 {
         self.port
     }
@@ -69,10 +77,12 @@ impl ManagedLlamaServer {
 
 static GLOBAL_LLAMA_SERVER: OnceLock<RwLock<Option<ManagedLlamaServer>>> = OnceLock::new();
 
+/// Get global llama server.
 pub fn get_global_llama_server() -> &'static RwLock<Option<ManagedLlamaServer>> {
     GLOBAL_LLAMA_SERVER.get_or_init(|| RwLock::new(None))
 }
 
+/// Get managed server port.
 pub fn get_managed_server_port() -> Option<u16> {
     get_global_llama_server().read().as_ref().map(|s| s.port())
 }
@@ -89,12 +99,19 @@ mod tests {
             vram_bytes: 8 * 1024 * 1024 * 1024,
         };
         let args = build_args("my_model.gguf", 8080, &gpu_info);
-        assert_eq!(args, vec![
-            "--model", "my_model.gguf",
-            "--port", "8080",
-            "--ctx-size", "4096",
-            "--n-gpu-layers", "35"
-        ]);
+        assert_eq!(
+            args,
+            vec![
+                "--model",
+                "my_model.gguf",
+                "--port",
+                "8080",
+                "--ctx-size",
+                "4096",
+                "--n-gpu-layers",
+                "35"
+            ]
+        );
     }
 
     #[test]
@@ -104,12 +121,19 @@ mod tests {
             vram_bytes: 8 * 1024 * 1024 * 1024,
         };
         let args = build_args("my_model.gguf", 8080, &gpu_info);
-        assert_eq!(args, vec![
-            "--model", "my_model.gguf",
-            "--port", "8080",
-            "--ctx-size", "4096",
-            "--n-gpu-layers", "35"
-        ]);
+        assert_eq!(
+            args,
+            vec![
+                "--model",
+                "my_model.gguf",
+                "--port",
+                "8080",
+                "--ctx-size",
+                "4096",
+                "--n-gpu-layers",
+                "35"
+            ]
+        );
     }
 
     #[test]
@@ -119,10 +143,16 @@ mod tests {
             vram_bytes: 0,
         };
         let args = build_args("my_model.gguf", 8080, &gpu_info);
-        assert_eq!(args, vec![
-            "--model", "my_model.gguf",
-            "--port", "8080",
-            "--ctx-size", "4096"
-        ]);
+        assert_eq!(
+            args,
+            vec![
+                "--model",
+                "my_model.gguf",
+                "--port",
+                "8080",
+                "--ctx-size",
+                "4096"
+            ]
+        );
     }
 }

@@ -52,6 +52,11 @@ pub async fn apply_changes_received(
                         // LWW: keep the newer one
                         if incoming.updated_at > local.updated_at {
                             *conflicts += 1;
+                            // Reuse the local row id so `put`'s INSERT OR REPLACE
+                            // updates in place instead of inserting a duplicate
+                            // (same pattern as SSP canonical paths).
+                            let mut incoming = incoming;
+                            incoming.id = local.id;
                             store.put(incoming).await?;
                         } else if incoming.updated_at == local.updated_at {
                             // Same timestamp → tie-break by node_id hash
@@ -59,6 +64,8 @@ pub async fn apply_changes_received(
                             let incoming_node = lww_node_id(&incoming);
                             if incoming_node > local_node {
                                 *conflicts += 1;
+                                let mut incoming = incoming;
+                                incoming.id = local.id;
                                 store.put(incoming).await?;
                             }
                         }
@@ -146,12 +153,14 @@ mod tests {
             cluster_id: None,
             level: crate::memory::schema::MemoryLevel::Raw,
             relation: None,
-            clearance: crate::memory::schema::ClearanceLevel::Unclassified,
+            clearance: crate::security::clearance::ClearanceLevel::Unclassified,
             revisions: Vec::new(),
             encrypted_dek: None,
             content_iv: None,
             metadata_iv: None,
             score: 0.0,
+            deleted_at: None,
+            ..Default::default()
         }
     }
 

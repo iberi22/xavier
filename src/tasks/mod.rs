@@ -45,6 +45,7 @@ pub struct Task {
 }
 
 impl Task {
+    /// New.
     pub fn new(name: String, description: String) -> Self {
         Self {
             name,
@@ -55,29 +56,35 @@ impl Task {
         }
     }
 
+    /// With priority.
     pub fn with_priority(mut self, priority: TaskPriority) -> Self {
         self.priority = priority;
         self
     }
 
+    /// Start.
     pub fn start(&mut self) {
         self.status = TaskStatus::InProgress;
     }
 
+    /// Complete.
     pub fn complete(&mut self) {
         self.status = TaskStatus::Completed;
         self.error_message = None;
     }
 
+    /// Fail.
     pub fn fail(&mut self, error: String) {
         self.status = TaskStatus::Failed;
         self.error_message = Some(error);
     }
 
+    /// Cancel.
     pub fn cancel(&mut self) {
         self.status = TaskStatus::Cancelled;
     }
 
+    /// Can execute.
     pub fn can_execute(&self) -> bool {
         matches!(self.status, TaskStatus::Pending | TaskStatus::Failed)
     }
@@ -89,10 +96,12 @@ pub struct TaskQueue {
 }
 
 impl TaskQueue {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Enqueue.
     pub async fn enqueue(&self, task: Task) {
         let mut tasks = self.tasks.lock().await;
         tasks.push_back(task);
@@ -101,10 +110,12 @@ impl TaskQueue {
         *tasks = ordered.into();
     }
 
+    /// Dequeue.
     pub async fn dequeue(&self) -> Option<Task> {
         self.tasks.lock().await.pop_front()
     }
 
+    /// Is empty.
     pub fn is_empty(&self) -> bool {
         self.tasks
             .try_lock()
@@ -112,6 +123,7 @@ impl TaskQueue {
             .unwrap_or(false)
     }
 
+    /// Len.
     pub fn len(&self) -> usize {
         self.tasks.try_lock().map(|tasks| tasks.len()).unwrap_or(0)
     }

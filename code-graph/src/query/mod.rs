@@ -5,7 +5,8 @@ pub mod tests;
 use crate::db::CodeGraphDB;
 use crate::error::Result;
 use crate::types::{
-    CodeEdge, ComplexityHotspot, EdgeType, HubNode, QueryResult, Symbol, SymbolKind,
+    CodeEdge, ComplexityHotspot, EdgeType, HubNode, MemorySymbolLink, QueryResult, Symbol,
+    SymbolEmbedder, SymbolKind,
 };
 use std::collections::HashMap;
 use std::collections::{HashSet, VecDeque};
@@ -118,6 +119,11 @@ impl QueryEngine {
         Ok(result)
     }
 
+    /// Find symbols by exact name match
+    pub fn find_by_name(&self, name: &str, limit: usize) -> Result<Vec<Symbol>> {
+        self.db.find_by_name(name, limit)
+    }
+
     /// Find all functions
     pub fn functions(&self, limit: usize) -> Result<Vec<Symbol>> {
         self.db.find_by_kind(SymbolKind::Function, limit)
@@ -142,6 +148,7 @@ impl QueryEngine {
             "struct_definition" | "struct" => SymbolKind::Struct,
             "class_definition" | "class" => SymbolKind::Class,
             "enum_definition" | "enum" => SymbolKind::Enum,
+            "route_definition" | "route" | "http_route" => SymbolKind::Route,
             "module_definition" | "module" => SymbolKind::Module,
             "import" | "use_statement" => SymbolKind::Module, // Treat imports as modules
             _ => return Ok(vec![]),
@@ -153,6 +160,11 @@ impl QueryEngine {
     /// Find all enums
     pub fn enums(&self, limit: usize) -> Result<Vec<Symbol>> {
         self.db.find_by_kind(SymbolKind::Enum, limit)
+    }
+
+    /// Find all HTTP routes
+    pub fn routes(&self, limit: usize) -> Result<Vec<Symbol>> {
+        self.db.find_by_kind(SymbolKind::Route, limit)
     }
 
     pub fn dependencies(
@@ -177,6 +189,75 @@ impl QueryEngine {
 
     pub fn call_chain(&self, query: &str, depth: usize, limit: usize) -> Result<Vec<CodeEdge>> {
         self.dependencies(query, Some(EdgeType::Calls), depth, limit)
+    }
+
+    /// Calculate blast radius of a symbol using BFS on incoming Calls edges.
+    ///
+    /// Returns a list of tuple `(Symbol, usize)` where `usize` is the depth
+    /// (1 for direct callers, 2 for callers of direct callers, etc.) up to `max_depth`.
+    pub fn blast_radius(
+        &self,
+        symbol_name: &str,
+        max_depth: usize,
+    ) -> Result<Vec<(Symbol, usize)>> {
+        let max_depth = max_depth.clamp(1, 8);
+
+        let mut start_ids = Vec::new();
+        if symbol_name.len() == 64 && symbol_name.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            if let Some(sym) = self.db.symbol_by_stable_id(symbol_name)? {
+                if let Some(id) = sym.stable_id {
+                    start_ids.push(id);
+                }
+            }
+        } else {
+            let matches = self.db.find_by_name(symbol_name, 10)?;
+            let matches = if matches.is_empty() {
+                self.db.find_symbols(symbol_name, 10)?.symbols
+            } else {
+                matches
+            };
+            for sym in matches {
+                if let Some(id) = sym.stable_id {
+                    if !start_ids.contains(&id) {
+                        start_ids.push(id);
+                    }
+                }
+            }
+        }
+
+        if start_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut visited: HashSet<String> = start_ids.iter().cloned().collect();
+        let mut queue: VecDeque<(String, usize)> =
+            start_ids.into_iter().map(|id| (id, 0)).collect();
+        let mut results = Vec::new();
+
+        while let Some((curr_id, curr_depth)) = queue.pop_front() {
+            if curr_depth >= max_depth {
+                continue;
+            }
+
+            let edges = self
+                .db
+                .find_edges_to(&curr_id, Some(EdgeType::Calls), 1000)?;
+            for edge in edges {
+                let caller_id = edge.from_symbol;
+                if caller_id.starts_with("file:") || caller_id.starts_with("module:") {
+                    continue;
+                }
+                if visited.insert(caller_id.clone()) {
+                    let next_depth = curr_depth + 1;
+                    if let Some(sym) = self.db.symbol_by_stable_id(&caller_id)? {
+                        results.push((sym, next_depth));
+                        queue.push_back((caller_id, next_depth));
+                    }
+                }
+            }
+        }
+
+        Ok(results)
     }
 
     pub fn hubs(&self, min_degree: u64, limit: usize) -> Result<Vec<HubNode>> {
@@ -269,5 +350,134 @@ impl QueryEngine {
     /// Get indexing statistics
     pub fn stats(&self) -> Result<crate::types::IndexStats> {
         self.db.stats()
+    }
+    pub fn memories_for_symbol(&self, symbol: &str) -> Result<Vec<MemorySymbolLink>> {
+        self.db.find_memories_for_symbol(symbol, 100)
+    }
+
+    /// Get memories that mention a given symbol with limit
+    pub fn memories_for_symbol_limit(
+        &self,
+        symbol: &str,
+        limit: usize,
+    ) -> Result<Vec<MemorySymbolLink>> {
+        self.db.find_memories_for_symbol(symbol, limit)
+    }
+
+    /// Get symbols mentioned by a memory_id
+    pub fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<Symbol>> {
+        self.db.find_symbols_for_memory(memory_id)
+    }
+
+    /// Semantic search for symbols using cosine similarity over symbol embeddings
+    pub async fn semantic_search(
+        &self,
+        query: &str,
+        embedder: &dyn SymbolEmbedder,
+        limit: usize,
+    ) -> Result<QueryResult> {
+        let start = Instant::now();
+        let query_vector = embedder.embed(query).await?;
+        if query_vector.is_empty() {
+            return Ok(QueryResult {
+                symbols: Vec::new(),
+                total: 0,
+                query_time_ms: start.elapsed().as_millis() as u64,
+            });
+        }
+
+        let all_embeddings = self.db.get_all_symbol_embeddings()?;
+        let mut scored_symbols: Vec<(f32, Symbol)> = Vec::new();
+
+        for (stable_id, emb) in all_embeddings {
+            if emb.len() != query_vector.len() {
+                continue;
+            }
+            let sim = cosine_similarity(&query_vector, &emb);
+            if let Ok(Some(symbol)) = self.db.symbol_by_stable_id(&stable_id) {
+                scored_symbols.push((sim, symbol));
+            }
+        }
+
+        scored_symbols.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored_symbols.truncate(limit);
+
+        let symbols: Vec<Symbol> = scored_symbols.into_iter().map(|(_, sym)| sym).collect();
+        let total = symbols.len();
+
+        Ok(QueryResult {
+            symbols,
+            total,
+            query_time_ms: start.elapsed().as_millis() as u64,
+        })
+    }
+
+    /// Hybrid search combining BM25 (FTS5) and Semantic search using Reciprocal Rank Fusion (RRF)
+    pub async fn hybrid_search(
+        &self,
+        query: &str,
+        embedder: &dyn SymbolEmbedder,
+        limit: usize,
+    ) -> Result<QueryResult> {
+        let start = Instant::now();
+        let rrf_k = 60.0f64;
+
+        // 1. BM25 results
+        let bm25_res = self.search(query, limit * 2).unwrap_or(QueryResult {
+            symbols: Vec::new(),
+            total: 0,
+            query_time_ms: 0,
+        });
+
+        // 2. Semantic search results
+        let sem_res = self
+            .semantic_search(query, embedder, limit * 2)
+            .await
+            .unwrap_or(QueryResult {
+                symbols: Vec::new(),
+                total: 0,
+                query_time_ms: 0,
+            });
+
+        let mut rrf_scores: HashMap<String, (f64, Symbol)> = HashMap::new();
+
+        for (rank, sym) in bm25_res.symbols.into_iter().enumerate() {
+            let key = sym.stable_id.clone().unwrap_or_else(|| sym.name.clone());
+            let score = 1.0 / (rrf_k + (rank as f64 + 1.0));
+            rrf_scores.insert(key, (score, sym));
+        }
+
+        for (rank, sym) in sem_res.symbols.into_iter().enumerate() {
+            let key = sym.stable_id.clone().unwrap_or_else(|| sym.name.clone());
+            let score = 1.0 / (rrf_k + (rank as f64 + 1.0));
+            rrf_scores
+                .entry(key)
+                .and_modify(|(s, _)| *s += score)
+                .or_insert((score, sym));
+        }
+
+        let mut scored_list: Vec<(f64, Symbol)> = rrf_scores.into_values().collect();
+        scored_list.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored_list.truncate(limit);
+
+        let symbols: Vec<Symbol> = scored_list.into_iter().map(|(_, sym)| sym).collect();
+        let total = symbols.len();
+
+        Ok(QueryResult {
+            symbols,
+            total,
+            query_time_ms: start.elapsed().as_millis() as u64,
+        })
+    }
+}
+
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|y| y * y).sum::<f32>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a * norm_b)
     }
 }

@@ -40,6 +40,7 @@ pub struct ExtractionService {
 }
 
 impl ExtractionService {
+    /// New.
     pub fn new(graph_store: Arc<SqliteGraphStore>) -> Self {
         Self { graph_store }
     }

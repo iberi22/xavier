@@ -17,6 +17,15 @@ pub static CLI_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("failed to build HTTP client")
 });
 
+/// Longer timeout for code-graph operations (scan/index/dump can exceed 30s).
+pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .user_agent(concat!("xavier-cli/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .expect("failed to build code HTTP client")
+});
+
 /// Top-level CLI commands for Xavier.
 ///
 /// Each variant maps to a distinct subcommand exposed to the user.
@@ -42,6 +51,9 @@ pub enum Command {
         cluster: Vec<String>,
         #[arg(long)]
         level: Vec<String>,
+        /// Allow offline local fallback even when the server returns 401/403
+        #[arg(long)]
+        offline_ok: bool,
     },
     /// Add a memory
     Add {
@@ -62,6 +74,9 @@ pub enum Command {
         query: String,
         #[arg(short, long, default_value_t = 10)]
         limit: usize,
+        /// Allow offline local fallback even when the server returns 401/403
+        #[arg(long)]
+        offline_ok: bool,
     },
     /// Export structured context pack (.xcp) for LLMs
     ExportPack {
@@ -73,7 +88,11 @@ pub enum Command {
         out: PathBuf,
     },
     /// Show statistics
-    Stats,
+    Stats {
+        /// Allow offline local fallback even when the server returns 401/403
+        #[arg(long)]
+        offline_ok: bool,
+    },
     /// Re-index all memories missing embeddings
     Reindex,
     /// Query Xavier code graph
@@ -211,6 +230,18 @@ pub enum Command {
         cmd: MeshCommand,
     },
 
+    /// SWAL node identity — create / recover / status / Polygon anchors (login F0–F2)
+    Node {
+        #[command(subcommand)]
+        cmd: NodeCommand,
+    },
+
+    /// SWAL node provisioning (BaaS and SSH/VPS nodes)
+    Nodes {
+        #[command(subcommand)]
+        cmd: NodesCommand,
+    },
+
     /// Export memories to JSON
     Export {
         /// Export only public memories (exclude is_private: true)
@@ -293,6 +324,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
+    /// Manage Xavier plugins
+    Plugin {
+        #[command(subcommand)]
+        cmd: PluginCommand,
+    },
     /// Show system health status
     Health {
         /// Show cloud backends status
@@ -302,14 +338,30 @@ pub enum Command {
 
     /// Run the auto-improvement loop (benchmark → gaps → experiments → validate)
     Improve {
+        /// Run in CI mode: autonomous, non-interactive, and fails if regression or critical gaps exist
+        #[arg(long)]
+        ci: bool,
         #[command(subcommand)]
-        cmd: ImproveCommand,
+        cmd: Option<ImproveCommand>,
     },
 
     /// Context regeneration: measure recall@k and tune RRF weights
     Regen {
         #[command(subcommand)]
         cmd: RegenCommand,
+    },
+
+    /// Cleanup empty conversation databases and legacy store
+    Cleanup {
+        /// Dry run mode (default: true if --apply is not set)
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the changes (actually delete files)
+        #[arg(long)]
+        apply: bool,
+        /// Only purge empty databases older than N days (default: 0)
+        #[arg(short, long, default_value_t = 0)]
+        days: u64,
     },
 }
 
@@ -326,6 +378,9 @@ pub enum ImproveCommand {
         /// Emit the cycle result as JSON (for scripting / scheduler capture)
         #[arg(long)]
         json: bool,
+        /// Run in CI mode: autonomous, non-interactive, and fails if regression or critical gaps exist
+        #[arg(long)]
+        ci: bool,
     },
     /// Show the last improvement cycle and benchmark history
     Status,
@@ -379,6 +434,12 @@ pub enum AgentCommand {
         /// Filter by agent/IDE name
         #[arg(short, long)]
         agent: Option<String>,
+        /// Index local Codex CLI sessions (~/.codex/sessions)
+        #[arg(long, default_value_t = false)]
+        codex: bool,
+        /// Index Jules sessions / issues
+        #[arg(long, default_value_t = false)]
+        jules: bool,
         /// Output in JSON format
         #[arg(long)]
         json: bool,
@@ -537,13 +598,28 @@ pub enum VerifyCommand {
         #[arg(short, long, default_value = "xavier verification test content")]
         content: String,
     },
+    /// Scan features.json and calculate real implementation %
+    Features {
+        /// Path to project root (default: current dir, walks up for .gitcore/features.json)
+        #[arg(short, long)]
+        path: Option<String>,
+        /// Output format: table, json
+        #[arg(short, long, default_value = "table")]
+        format: String,
+    },
 }
 
 /// Code graph query subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum CodeCommand {
     /// Scan and index a codebase path
-    Scan { path: String },
+    Scan {
+        path: String,
+        /// Re-prompt for Colby CodeGraph sidecar install (ignores prior consent).
+        /// Also: `XAVIER_CODEGRAPH_REPROMPT=1`.
+        #[arg(long)]
+        reprompt_codegraph: bool,
+    },
     /// Find symbols by name
     Find {
         query: String,
@@ -580,6 +656,12 @@ pub enum CodeCommand {
         #[arg(short, long, default_value_t = 50)]
         limit: usize,
     },
+    /// Calculate blast radius of a symbol (call graph BFS traversal)
+    BlastRadius {
+        query: String,
+        #[arg(short, long, default_value_t = 3)]
+        depth: usize,
+    },
     /// Show highly connected symbols
     Hubs,
     /// Show complexity hotspots
@@ -595,6 +677,21 @@ pub enum CodeCommand {
     Load {
         /// Optional path to the codebase (defaults to '.')
         path: Option<String>,
+    },
+    /// Sync CodeGraph from git deltas (incremental; no full tree walk)
+    Sync {
+        /// Use git diff against the last sync checkpoint (or --base)
+        #[arg(long)]
+        git: bool,
+        /// Base commit-ish (default: `.xavier/codegraph-sync-commit`, else HEAD~1)
+        #[arg(long)]
+        base: Option<String>,
+        /// Diff staged changes (`git diff --cached`) instead of commit range
+        #[arg(long)]
+        staged: bool,
+        /// Upsert short symbol summaries into Xavier memory (`code/{repo}/{stable_id}`)
+        #[arg(long, default_value_t = false)]
+        memory: bool,
     },
 }
 
@@ -651,6 +748,152 @@ pub enum VaultCommand {
     Delete { key: String },
 }
 
+/// SWAL decentralized login / node identity CLI (F0 vault + F2 anchors).
+#[derive(Subcommand, Debug, Clone)]
+pub enum NodeCommand {
+    /// Create BIP39-24 identity, Shamir 2-of-3 shares, sealed vault
+    Create {
+        #[arg(long)]
+        pin: Option<String>,
+        #[arg(long)]
+        passphrase: Option<String>,
+        /// 64-hex device key (WebAuthn PRF / OS keystore)
+        #[arg(long)]
+        device_key_hex: Option<String>,
+        #[arg(long, default_value_t = false)]
+        force: bool,
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// Write Shamir shares JSON to this path (0600)
+        #[arg(long)]
+        shares_out: Option<PathBuf>,
+    },
+    /// Recover from ≥2 Shamir shares + ordered check-code challenge
+    Recover {
+        #[arg(long)]
+        pin: Option<String>,
+        #[arg(long)]
+        passphrase: Option<String>,
+        #[arg(long)]
+        device_key_hex: Option<String>,
+        #[arg(long)]
+        shares_file: PathBuf,
+        #[arg(long, default_value = "asc")]
+        challenge_mode: String,
+        #[arg(long)]
+        response: String,
+        #[arg(long, default_value_t = false)]
+        force: bool,
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+    },
+    /// Show public identity / vault presence
+    Status {
+        #[arg(long)]
+        pin: Option<String>,
+        #[arg(long)]
+        device_key_hex: Option<String>,
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// Unlock vault with PIN to verify (never prints seed)
+        #[arg(long, default_value_t = false)]
+        unlock: bool,
+    },
+    /// Anchor public identity content_hash on Polygon (dry-run by default)
+    Anchor {
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+    /// Anchor sealed-pack content_hash only (ciphertext stays off-chain)
+    AnchorPack {
+        #[arg(long)]
+        ciphertext_hex: Option<String>,
+        #[arg(long)]
+        cipher_file: Option<PathBuf>,
+        #[arg(long, default_value = "{}")]
+        meta: String,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+    },
+}
+
+/// SWAL node provisioning (BaaS and SSH/VPS nodes) subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum NodesCommand {
+    /// Provision and register a new node (supabase, neon, or vps)
+    Add {
+        /// Node provider: supabase, neon, or vps
+        #[arg(short, long)]
+        provider: String,
+        /// Authentication token (permitted via flag ONLY if XAVIER_ALLOW_CLI_TOKEN=1)
+        #[arg(short, long)]
+        token: Option<String>,
+        /// SSH connection target in format user@host (for VPS provider)
+        #[arg(long)]
+        ssh: Option<String>,
+        /// Visibility in mesh directory: public or private (default: private)
+        #[arg(short, long, default_value = "private")]
+        visibility: String,
+        /// Expected SSH host key fingerprint (for VPS provider)
+        #[arg(long)]
+        host_key: Option<String>,
+        /// Personal SSH key path (strictly prohibited; will be rejected)
+        #[arg(short, long)]
+        key: Option<String>,
+        /// Certificate validity TTL in seconds (default: 30 days)
+        #[arg(long, default_value_t = 2592000)]
+        cert_ttl: u64,
+        /// Ephemeral secret lease TTL in seconds (default: 24h)
+        #[arg(long, default_value_t = 86400)]
+        lease_ttl: u64,
+    },
+    /// List all registered nodes in the local registry
+    List {
+        /// Filter by visibility: public or private
+        #[arg(short, long)]
+        visibility: Option<String>,
+        /// Filter by status: active, degraded, revoked, partial_revocation
+        #[arg(short, long)]
+        status: Option<String>,
+        /// Output as JSON instead of formatted table
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Show detailed metadata for a specific node
+    Show {
+        /// Target node ID
+        node_id: String,
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Rotate credentials/token for an existing node
+    Rotate {
+        /// Target node ID
+        node_id: String,
+        /// New token (permitted via flag ONLY if XAVIER_ALLOW_CLI_TOKEN=1; else env/stdin)
+        #[arg(short, long)]
+        token: Option<String>,
+        /// New secret lease TTL in seconds (default: 24h)
+        #[arg(long, default_value_t = 86400)]
+        lease_ttl: u64,
+    },
+    /// Remove/deprovision a node
+    Remove {
+        /// Target node ID
+        node_id: String,
+    },
+    /// Check lifecycle status and certificate health for a node
+    Status {
+        /// Target node ID
+        node_id: String,
+    },
+}
+
 /// Mesh network management subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum MeshCommand {
@@ -676,6 +919,13 @@ pub enum MeshCommand {
         node_id: String,
         #[arg(long, default_value = "bidirectional")]
         mode: String,
+    },
+    /// Initiate private mesh sync with a same-wallet peer node
+    PrivateSync {
+        #[arg(long)]
+        wallet_id: String,
+        #[arg(long)]
+        target_node: String,
     },
     /// Generate a temporary pairing code
     PairingCode {
@@ -924,4 +1174,13 @@ pub enum WalletCommand {
         #[arg(short, long, default_value_t = 10)]
         limit: usize,
     },
+}
+
+/// Xavier plugin subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum PluginCommand {
+    /// Install a plugin
+    Install { name: String },
+    /// List plugins
+    List,
 }

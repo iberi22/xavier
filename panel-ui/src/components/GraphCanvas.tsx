@@ -33,7 +33,15 @@ interface GraphCanvasProps {
   isCodeMode?: boolean;
 }
 
-export default function GraphCanvas({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped GraphCanvas in React.memo()
+ * 🎯 Why: ForceGraph2D is computationally expensive to render. When rendering GraphCanvas in ConfigModal,
+ *          parent state updates caused unnecessary re-renders of the entire graph subtree.
+ * 📊 Impact: Prevents expensive N+1 canvas recalculations when modal tabs or other config states change.
+ */
+export default React.memo(function GraphCanvas({
   data,
   loading = false,
   error = null,
@@ -128,12 +136,19 @@ export default function GraphCanvas({
     return counts;
   }, [data]);
 
+  /**
+   * ⚡ Bolt Performance Optimization
+   *
+   * 💡 What: Replaced spread operator (...Object.values) with .reduce()
+   * 🎯 Why: Using the spread operator on a large array passes each element as an argument to Math.max. For very large graphs, this can exceed the maximum call stack size and cause a crash.
+   * 📊 Impact: O(N) evaluation that uses no extra call stack memory and handles arbitrarily large arrays safely.
+   */
   const maxLinks = useMemo(
-    () => Math.max(1, ...(Object.values(linkCounts) as number[])),
+    () => (Object.values(linkCounts) as number[]).reduce((max, val) => Math.max(max, val), 1),
     [linkCounts],
   );
 
-  const handleNodeClick = async (node: any) => {
+  const handleNodeClick = useCallback(async (node: any) => {
     const nodeObj = node as GraphNode;
 
     // Detect double click manually since ForceGraph2D doesn't have native onNodeDoubleClick
@@ -159,7 +174,16 @@ export default function GraphCanvas({
         console.warn("Failed to fetch node detail:", err);
       }
     }
-  };
+  }, [onNodeDoubleClick, onNodeSelect]);
+
+  const handleNodeHover = useCallback((node: any) => {
+    setHoveredNode((node as GraphNode) || null);
+  }, []);
+
+  const handleBackgroundClick = useCallback(() => {
+    setSelectedNode(null);
+    setSelectedNodeExtra(null);
+  }, []);
 
   const paintNode = useCallback(
     (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -344,12 +368,9 @@ export default function GraphCanvas({
             nodeRelSize={6}
             d3VelocityDecay={0.4}
             d3AlphaDecay={0.03}
-            onNodeHover={(node) => setHoveredNode((node as GraphNode) || null)}
+            onNodeHover={handleNodeHover}
             onNodeClick={handleNodeClick}
-            onBackgroundClick={() => {
-              setSelectedNode(null);
-              setSelectedNodeExtra(null);
-            }}
+            onBackgroundClick={handleBackgroundClick}
           />
         </div>
       )}
@@ -543,4 +564,4 @@ export default function GraphCanvas({
       </AnimatePresence>
     </div>
   );
-}
+});

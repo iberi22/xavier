@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Xavier-Commercial
+// Copyright (C) 2026 SouthWest AI Labs (SWAL)
+//
 //! Xavier Dual License — AGPL v3 (core) + Commercial (enterprise)
 //!
 //! License architecture (inspired by MongoDB AGPL->SSPL / GitLab CE->EE):

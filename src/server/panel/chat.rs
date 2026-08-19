@@ -4,9 +4,10 @@ use crate::{
     agents::ui_render::UiRenderAgent, codebase::conversations_db::ConversationsDb,
     workspace::WorkspaceContext,
 };
-use axum::{http::StatusCode, response::IntoResponse, Extension, Json};
+use axum::{response::IntoResponse, Extension, Json};
 use serde_json::json;
 
+/// Process chat.
 pub async fn process_chat(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<PanelChatRequest>,
@@ -21,11 +22,7 @@ pub async fn process_chat(
 
     match response {
         Ok(response) => Json(response).into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
 

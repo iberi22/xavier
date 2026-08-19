@@ -8,6 +8,7 @@ use crate::domain::memory::belief::BeliefEdge;
 pub struct BeliefEvaluator;
 
 impl BeliefEvaluator {
+    /// New.
     pub fn new() -> Self {
         Self
     }

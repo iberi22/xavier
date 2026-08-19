@@ -44,6 +44,9 @@ pub enum ChronicleCommand {
         /// Archivo de salida
         #[arg(short, long)]
         output: Option<String>,
+        /// Ingest generated daily chronicle into RAG store
+        #[arg(long)]
+        ingest: bool,
     },
     /// Muestra el post generado en la terminal
     Preview {
@@ -67,9 +70,13 @@ pub enum ChronicleCommand {
         /// Output directory for generated markdown files
         #[arg(long, default_value = "docs/auto-docs")]
         output: String,
+        /// Ingest generated auto-docs into RAG store
+        #[arg(long)]
+        ingest: bool,
     },
 }
 
+/// Handle chronicle command.
 pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
     match cmd {
         ChronicleCommand::Harvest { since, workspace } => {
@@ -77,13 +84,24 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
             let since = parse_since_arg(since.as_deref())?;
             let memory = load_memory_from_env().await?;
             let code_db = Arc::new(code_graph::db::CodeGraphDB::new(
-                &resolve_code_graph_db_path(),
+                &resolve_code_graph_db_path(Some(&workspace_path)),
             )?);
             let harvester = Harvester::new(workspace_path, memory, code_db);
             let output_path = harvester.run(since).await?;
             println!("Chronicle harvest written to {}", output_path.display());
         }
-        ChronicleCommand::Generate { since, output } => {
+        ChronicleCommand::Generate {
+            since,
+            output,
+            ingest,
+        } => {
+            let memory = if ingest {
+                println!("Pre-initializing memory store for ingestion...");
+                Some(load_memory_from_env().await?)
+            } else {
+                None
+            };
+
             let workspace_path = resolve_workspace_path(None);
             let harvest_path = resolve_harvest_path(&workspace_path, since.as_deref())?;
             let harvest = read_harvest(&harvest_path)?;
@@ -99,15 +117,60 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
                 raw_data: redacted,
             };
             let markdown = ChronicleGenerator::new().generate(input).await?;
-            let output_path = output.map(PathBuf::from).unwrap_or_else(|| {
+            let output_path = output.clone().map(PathBuf::from).unwrap_or_else(|| {
                 chronicle_dir(&workspace_path).join(format!("daily-{}.md", harvest.date))
             });
             if let Some(parent) = output_path.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::write(&output_path, markdown)
+            fs::write(&output_path, &markdown)
                 .with_context(|| format!("failed to write {}", output_path.display()))?;
             println!("Chronicle post written to {}", output_path.display());
+
+            if let Some(memory) = memory {
+                println!("Ingesting Daily Chronicle into memory store...");
+                let path = format!("chronicle/daily-chronicles/{}", harvest.date);
+
+                let hash = {
+                    use sha2::{Digest, Sha256};
+                    let mut hasher = Sha256::new();
+                    hasher.update(markdown.as_bytes());
+                    format!("{:x}", hasher.finalize())
+                };
+
+                // Check if already exists in store and if hash matches
+                let mut skip = false;
+                if let Ok(Some(existing)) = memory.get(&path).await {
+                    if let Some(existing_hash) = existing
+                        .metadata
+                        .get("content_hash")
+                        .and_then(|v| v.as_str())
+                    {
+                        if existing_hash == hash {
+                            println!(
+                                "  - Daily Chronicle for {} is unchanged, skipping ingest",
+                                harvest.date
+                            );
+                            skip = true;
+                        }
+                    }
+                }
+
+                if !skip {
+                    let metadata = serde_json::json!({
+                        "type": "daily-chronicle",
+                        "date": harvest.date,
+                        "content_hash": hash,
+                        "generated_at": chrono::Utc::now().to_rfc3339(),
+                        "source": "chronicle_generate"
+                    });
+
+                    match memory.add_document(path.clone(), markdown, metadata).await {
+                        Ok(_) => println!("  ✓ Ingested {}", path),
+                        Err(e) => eprintln!("  ✗ Failed to ingest {}: {}", path, e),
+                    }
+                }
+            }
         }
         ChronicleCommand::Preview { file } => {
             let workspace_path = resolve_workspace_path(None);
@@ -143,8 +206,21 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
             DevLogSSG::new().build()?;
             println!("DevLog static blog built successfully in public/devlog/");
         }
-        ChronicleCommand::AutoDocs { module, output } => {
+        ChronicleCommand::AutoDocs {
+            module,
+            output,
+            ingest,
+        } => {
+            // Pre-initialize memory early if ingest is true before rusqlite starts
+            let memory = if ingest {
+                println!("Pre-initializing memory store for ingestion...");
+                Some(load_memory_from_env().await?)
+            } else {
+                None
+            };
+
             let config = AutoDocsConfig {
+                code_graph_db: resolve_code_graph_db_path(None),
                 output_dir: PathBuf::from(output),
                 module_filter: module,
                 ..Default::default()
@@ -154,6 +230,57 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
             println!("Auto-documentation generated for {} modules", docs.len());
             for doc in &docs {
                 println!("  ✓ {} → {}", doc.module, doc.output_path.display());
+            }
+
+            if let Some(memory) = memory {
+                println!("Ingesting auto-documentation into memory store...");
+                for doc in &docs {
+                    let path = format!("chronicle/auto-docs/{}", doc.module);
+
+                    // Let's add content hash check to skip unchanged docs
+                    let hash = {
+                        use sha2::{Digest, Sha256};
+                        let mut hasher = Sha256::new();
+                        hasher.update(doc.markdown.as_bytes());
+                        format!("{:x}", hasher.finalize())
+                    };
+
+                    // Check if already exists in store and if hash matches
+                    let mut skip = false;
+                    if let Ok(Some(existing)) = memory.get(&path).await {
+                        if let Some(existing_hash) = existing
+                            .metadata
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                        {
+                            if existing_hash == hash {
+                                println!("  - Module {} is unchanged, skipping ingest", doc.module);
+                                skip = true;
+                            }
+                        }
+                    }
+
+                    if !skip {
+                        let metadata = serde_json::json!({
+                            "type": "auto-doc",
+                            "module": doc.module,
+                            "content_hash": hash,
+                            "generated_at": chrono::Utc::now().to_rfc3339(),
+                            "total_symbols": doc.stats.total_symbols,
+                            "loc_estimate": doc.stats.loc_estimate,
+                            "complexity_hotspots": doc.stats.complexity_hotspots.len(),
+                            "source": "auto_docs"
+                        });
+
+                        match memory
+                            .add_document(path.clone(), doc.markdown.clone(), metadata)
+                            .await
+                        {
+                            Ok(_) => println!("  ✓ Ingested {}", path),
+                            Err(e) => eprintln!("  ✗ Failed to ingest {}: {}", path, e),
+                        }
+                    }
+                }
             }
         }
     }
@@ -194,11 +321,13 @@ fn chronicle_dir(workspace_path: &Path) -> PathBuf {
     workspace_path.join(".chronicle")
 }
 
-fn resolve_code_graph_db_path() -> PathBuf {
-    let settings = XavierSettings::current();
-    std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(settings.server.code_graph_db_path))
+fn resolve_code_graph_db_path(workspace: Option<&Path>) -> PathBuf {
+    if let Some(ws) = workspace {
+        crate::codebase::codegraph_paths::code_graph_db_path_for(ws)
+    } else {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        crate::codebase::codegraph_paths::code_graph_db_path_for(&cwd)
+    }
 }
 
 async fn load_memory_from_env() -> Result<Arc<QmdMemory>> {
@@ -357,9 +486,14 @@ mod tests {
         let cli = TestCli::parse_from(args);
 
         match cli.cmd {
-            ChronicleCommand::Generate { since, output } => {
+            ChronicleCommand::Generate {
+                since,
+                output,
+                ingest,
+            } => {
                 assert_eq!(since, Some("2026-05-01".to_string()));
                 assert_eq!(output, Some("post.md".to_string()));
+                assert!(!ingest);
             }
             _ => panic!("Expected Generate command"),
         }

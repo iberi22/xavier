@@ -42,8 +42,27 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
             return (StatusCode::FORBIDDEN, "Forbidden: Invalid Origin").into_response();
         }
     } else {
-        warn!("MCP access rejected: missing Origin header");
-        return (StatusCode::FORBIDDEN, "Forbidden: Missing Origin header").into_response();
+        // Relax: Allow missing Origin header for local connections (localhost / loopback)
+        let is_localhost = if let Some(axum::extract::ConnectInfo(addr)) =
+            req.extensions()
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        {
+            addr.ip().is_loopback()
+        } else if let Some(host) = req.headers().get("Host").and_then(|h| h.to_str().ok()) {
+            host.starts_with("localhost:")
+                || host.starts_with("127.0.0.1:")
+                || host == "localhost"
+                || host == "127.0.0.1"
+                || host.starts_with("[::1]:")
+                || host == "[::1]"
+        } else {
+            false
+        };
+
+        if !is_localhost {
+            warn!("MCP access rejected: missing Origin header from non-local connection");
+            return (StatusCode::FORBIDDEN, "Forbidden: Missing Origin header").into_response();
+        }
     }
 
     // Validate Token
@@ -56,7 +75,7 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
             .into_response();
     }
 
-    let provided_token = req
+    let provided_token_str = req
         .headers()
         .get("X-Xavier-Token")
         .and_then(|value| value.to_str().ok())
@@ -65,20 +84,38 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
                 .get("Authorization")
                 .and_then(|value| value.to_str().ok())
                 .and_then(|value| value.strip_prefix("Bearer "))
-        });
+        })
+        .unwrap_or("")
+        .to_string();
 
-    let provided_token_str = provided_token.unwrap_or("");
     let is_match: bool = provided_token_str
         .as_bytes()
         .ct_eq(expected_token.as_bytes())
         .into();
 
-    if !is_match {
-        warn!("Unauthorized MCP access attempt from {}", req.uri());
-        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    let mut req = req;
+    if is_match {
+        req.extensions_mut()
+            .insert(crate::security::auth::Claims::new(
+                "root".to_string(),
+                "admin@swal.dev".to_string(),
+                crate::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
+        return next.run(req).await;
     }
 
-    next.run(req).await
+    if let Ok(secret) = std::env::var("XAVIER_JWT_SECRET") {
+        if let Ok(claims) =
+            crate::security::auth::validate_jwt(&provided_token_str, secret.as_bytes())
+        {
+            req.extensions_mut().insert(claims);
+            return next.run(req).await;
+        }
+    }
+
+    warn!("Unauthorized MCP access attempt from {}", req.uri());
+    (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
 }
 
 /// Validates an incoming Stdio connection

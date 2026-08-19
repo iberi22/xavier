@@ -5,6 +5,7 @@
 use crate::cli::commands::enums::LicenseCommand;
 use anyhow::Result;
 
+/// Handle license command.
 pub async fn handle_license_command(cmd: LicenseCommand) -> Result<()> {
     match cmd {
         LicenseCommand::Status => handle_license_status().await,

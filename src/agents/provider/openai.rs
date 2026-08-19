@@ -6,6 +6,7 @@ use chrono::Utc;
 use reqwest::Client;
 use serde_json::json;
 
+/// Openai chat endpoint.
 pub(crate) fn openai_chat_endpoint(base_url: &str) -> String {
     let trimmed = base_url.trim_end_matches('/');
     if trimmed.ends_with("/chat/completions") {
@@ -17,6 +18,7 @@ pub(crate) fn openai_chat_endpoint(base_url: &str) -> String {
     }
 }
 
+/// Generate openai compatible.
 pub(crate) async fn generate_openai_compatible(
     client: &Client,
     config: &ModelProviderConfig,
@@ -35,7 +37,9 @@ pub(crate) async fn generate_openai_compatible(
         .header("Content-Type", "application/json");
 
     let api_key_to_use =
-        if config.provider_mode == ProviderMode::Local || config.provider_mode == ProviderMode::ManagedLocal {
+        if config.provider_mode == ProviderMode::Local
+            || config.provider_mode == ProviderMode::ManagedLocal
+        {
             std::env::var("OLLAMA_API_KEY")
                 .ok()
                 .or_else(|| std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok())

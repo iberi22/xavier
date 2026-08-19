@@ -12,6 +12,7 @@ use crate::workspace::WorkspaceContext;
 use axum::{extract::Json, response::IntoResponse, Extension};
 use std::sync::Arc;
 
+/// Memory retrieve.
 pub async fn memory_retrieve(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<MultiLayerRetrieveRequest>,
@@ -202,6 +203,7 @@ fn retrieved_path_for_result(
     }
 }
 
+/// Memory export pack.
 pub async fn memory_export_pack(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<ExportPackRequest>,
@@ -305,6 +307,7 @@ pub async fn memory_export_pack(
     })
 }
 
+/// Memory curate.
 pub async fn memory_curate(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<serde_json::Value>,
@@ -322,52 +325,57 @@ pub async fn memory_curate(
             Ok(_) => {
                 let _ = workspace.workspace.persist_beliefs().await;
                 Json(serde_json::json!({ "status": "ok", "message": "Curation completed" }))
+                    .into_response()
             }
-            Err(e) => Json(serde_json::json!({ "status": "error", "message": e.to_string() })),
+            Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
         }
     } else {
-        Json(serde_json::json!({ "status": "error", "message": "Missing 'id' in request body" }))
+        crate::error::ApiError::validation("Missing 'id' in request body").into_ok_response()
     }
 }
 
+/// Memory manage.
 pub async fn memory_manage(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     match workspace.workspace.memory_manager.auto_manage().await {
         Ok(count) => {
             let _ = workspace.workspace.persist_beliefs().await;
-            Json(serde_json::json!({ "status": "ok", "actions_executed": count }))
+            Json(serde_json::json!({ "status": "ok", "actions_executed": count })).into_response()
         }
-        Err(e) => Json(serde_json::json!({ "status": "error", "message": e.to_string() })),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
 }
 
+/// Memory decay.
 pub async fn memory_decay(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     match workspace.workspace.memory_manager.decay_memories().await {
         Ok(result) => {
             let _ = workspace.workspace.persist_beliefs().await;
             Json(
                 serde_json::json!({ "status": "ok", "documents_affected": result.documents_affected, "actions": result.actions.len(), "bytes_freed": result.bytes_freed }),
-            )
+            ).into_response()
         }
-        Err(e) => Json(serde_json::json!({"status": "error", "message": e.to_string() })),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
 }
 
+/// Memory consolidate.
 pub async fn memory_consolidate(
     Extension(workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {
     let task = ConsolidationTask::default();
     match task.consolidate(&workspace, None).await {
-        Ok(stats) => Json(serde_json::json!({ "status": "ok", "stats": stats })),
-        Err(e) => Json(serde_json::json!({"status": "error", "message": e.to_string() })),
+        Ok(stats) => Json(serde_json::json!({ "status": "ok", "stats": stats })).into_response(),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
 }
 
+/// Memory reflect.
 pub async fn memory_reflect(
     Extension(workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {
     let task = ConsolidationTask::default();
     match task.reflect(&workspace).await {
-        Ok(result) => Json(serde_json::json!({ "status": "ok", "data": result })),
-        Err(e) => Json(serde_json::json!({ "status": "error", "error": e.to_string() })),
+        Ok(result) => Json(serde_json::json!({ "status": "ok", "data": result })).into_response(),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
 }

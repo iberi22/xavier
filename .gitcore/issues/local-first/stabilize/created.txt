@@ -1,3 +1,0 @@
-  -> https://github.com/iberi22/xavier/issues/536
-  -> https://github.com/iberi22/xavier/issues/537
-  -> https://github.com/iberi22/xavier/issues/538

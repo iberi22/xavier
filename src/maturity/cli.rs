@@ -12,7 +12,9 @@ use chrono::Utc;
 pub enum MaturityCommand {
     /// Run a full maturity scan and update feature-maturity.json
     Scan {
-        /// Path to the codebase (defaults to self)
+        /// Optional path to the codebase/workspace (defaults to self)
+        workspace: Option<PathBuf>,
+        /// Path to the codebase (defaults to self, backward compatibility)
         #[arg(short, long)]
         codebase: Option<PathBuf>,
         /// Output report to stdout (JSON)
@@ -30,7 +32,9 @@ pub enum MaturityCommand {
     },
     /// Run deep scan (v2) — includes memory, session, and conversation evidence
     DeepScan {
-        /// Path to the codebase (defaults to self)
+        /// Optional path to the codebase/workspace (defaults to self)
+        workspace: Option<PathBuf>,
+        /// Path to the codebase (defaults to self, backward compatibility)
         #[arg(short, long)]
         codebase: Option<PathBuf>,
         /// Output report to stdout (JSON)
@@ -65,6 +69,7 @@ pub enum MaturityCommand {
 pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
     match cmd {
         MaturityCommand::Scan {
+            ref workspace,
             ref codebase,
             json,
             markdown,
@@ -72,19 +77,27 @@ pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
             write,
         }
         | MaturityCommand::DeepScan {
+            ref workspace,
             ref codebase,
             json,
             markdown,
             ref anchors,
             write,
         } => {
-            let root = codebase
+            let root = workspace
                 .as_ref()
+                .or(codebase.as_ref())
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| ".".to_string());
-            let anchor_path = anchors
-                .clone()
-                .unwrap_or_else(|| PathBuf::from(".xavier/maturity-anchors.json"));
+            let anchor_path = anchors.clone().unwrap_or_else(|| {
+                let relative_to_workspace =
+                    PathBuf::from(&root).join(".xavier/maturity-anchors.json");
+                if relative_to_workspace.exists() {
+                    relative_to_workspace
+                } else {
+                    PathBuf::from(".xavier/maturity-anchors.json")
+                }
+            });
 
             // DeepScan uses with_deep_scan()
             let is_deep = matches!(&cmd, MaturityCommand::DeepScan { .. });
@@ -92,7 +105,7 @@ pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
             let result = if is_deep {
                 // For --write, pass a progress callback that flushes partial results after each layer
                 if is_write {
-                    let report_path = PathBuf::from(".xavier/feature-maturity.json");
+                    let report_path = PathBuf::from(&root).join(".xavier/feature-maturity.json");
                     run_deep_maturity_scan_with_callback(
                         &root,
                         &anchor_path,
@@ -109,6 +122,9 @@ pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
                                             "timestamp": Utc::now().to_rfc3339(),
                                         }),
                                     ) {
+                                        if let Some(parent) = report_path.parent() {
+                                            let _ = std::fs::create_dir_all(parent);
+                                        }
                                         let _ = std::fs::write(&report_path, &partial_json);
                                         eprintln!(
                                             "  ✓ Layer '{}' complete ({}ms)",
@@ -155,7 +171,10 @@ pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
             }
 
             if write {
-                let report_path = PathBuf::from(".xavier/feature-maturity.json");
+                let report_path = PathBuf::from(&root).join(".xavier/feature-maturity.json");
+                if let Some(parent) = report_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
                 let report_json = serde_json::to_string_pretty(&result)?;
                 std::fs::write(&report_path, &report_json)?;
                 println!("\nWritten to {}", report_path.display());
@@ -190,10 +209,7 @@ pub fn run_maturity_scan(codebase_root: &str, anchors_path: &Path) -> Result<Mat
 }
 
 /// Run the deep maturity scan (v2) and return the result.
-pub fn run_deep_maturity_scan(
-    codebase_root: &str,
-    anchors_path: &Path,
-) -> Result<MaturityResult> {
+pub fn run_deep_maturity_scan(codebase_root: &str, anchors_path: &Path) -> Result<MaturityResult> {
     let scanner = MaturityScanner::new(anchors_path, codebase_root)?.with_deep_scan();
     Ok(scanner.scan())
 }

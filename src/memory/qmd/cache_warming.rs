@@ -22,7 +22,7 @@ pub struct PredictiveCacheWarmup {
     /// Access counters: doc_id → (count, last_accessed, first_accessed)
     access_stats: Arc<Mutex<HashMap<String, AccessStats>>>,
     /// How long to track before resetting counters (for recency weighting)
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Config para warming predictivo")]
     pub(crate) track_period: Duration,
     /// How many top documents to pre-warm
     top_k: usize,

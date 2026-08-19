@@ -20,10 +20,12 @@ pub enum ContextLevel {
 pub struct ContextClassifier;
 
 impl ContextClassifier {
+    /// New.
     pub fn new() -> Self {
         Self
     }
 
+    /// Classify.
     pub fn classify(&self, prompt: &str) -> ContextLevel {
         let token_count = tokenize(prompt).len();
         let lowered = prompt.to_lowercase();

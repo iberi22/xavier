@@ -18,13 +18,19 @@ use std::net::SocketAddr;
 use tracing::warn;
 use xavier::coordination::secrets::SecretLease;
 
+/// Auth middleware.
 pub async fn auth_middleware(
     State(state): State<CliState>,
     req: Request<Body>,
     next: Next,
 ) -> Response {
     let path = req.uri().path();
-    if path == "/health" || path == "/headless/health" || path == "/v1/mesh/workspaces/query" {
+    if path == "/health"
+        || path == "/headless/health"
+        || path == "/v1/mesh/workspaces/query"
+        || path == "/mesh/public/nodes"
+        || path == "/v1/mesh/public/nodes"
+    {
         return next.run(req).await;
     }
 
@@ -66,6 +72,13 @@ pub async fn auth_middleware(
             user_id: None,
             lease: None,
         });
+        req.extensions_mut()
+            .insert(xavier::security::auth::Claims::new(
+                "root".to_string(),
+                "admin@swal.dev".to_string(),
+                xavier::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
         return next.run(req).await;
     }
 
@@ -79,6 +92,13 @@ pub async fn auth_middleware(
                 user_id: None,
                 lease: Some(lease),
             });
+            req.extensions_mut()
+                .insert(xavier::security::auth::Claims::new(
+                    "agent_lease".to_string(),
+                    "agent@swal.dev".to_string(),
+                    xavier::security::auth::UserRole::User,
+                    chrono::Duration::hours(1),
+                ));
             return next.run(req).await;
         }
     }
@@ -92,6 +112,13 @@ pub async fn auth_middleware(
             user_id: None,
             lease: None,
         });
+        req.extensions_mut()
+            .insert(xavier::security::auth::Claims::new(
+                "ephemeral_session".to_string(),
+                "session@swal.dev".to_string(),
+                xavier::security::auth::UserRole::User,
+                chrono::Duration::hours(1),
+            ));
         return next.run(req).await;
     }
 
@@ -146,20 +173,30 @@ pub async fn auth_middleware(
                 user_id: None,
                 lease: None,
             });
+            req.extensions_mut()
+                .insert(xavier::security::auth::Claims::new(
+                    "api_token".to_string(),
+                    "api_token@swal.dev".to_string(),
+                    xavier::security::auth::UserRole::User,
+                    chrono::Duration::hours(1),
+                ));
             return next.run(req).await;
         }
     }
 
     // 5. Check JWT Tokens
     if let Ok(secret) = std::env::var("XAVIER_JWT_SECRET") {
-        if let Ok(claims) = xavier::security::auth::validate_jwt(provided_token_str, secret.as_bytes()) {
+        if let Ok(claims) =
+            xavier::security::auth::validate_jwt(provided_token_str, secret.as_bytes())
+        {
             let mut req = req;
             req.extensions_mut().insert(SessionInfo {
                 is_ephemeral: false,
                 api_token: None,
-                user_id: Some(claims.sub),
+                user_id: Some(claims.sub.clone()),
                 lease: None,
             });
+            req.extensions_mut().insert(claims);
             return next.run(req).await;
         }
     }
@@ -178,6 +215,7 @@ pub struct SessionInfo {
     pub lease: Option<SecretLease>,
 }
 
+/// Rate limit middleware.
 pub async fn rate_limit_middleware(
     State(state): State<CliState>,
     req: Request<Body>,

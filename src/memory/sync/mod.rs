@@ -94,11 +94,25 @@ pub struct PeerMemorySync {
     pub sync_interval: Duration,
     /// This node's unique identifier (used for LWW tie-breaking).
     pub node_id: String,
+    /// Shared mesh credential sent to peers as `X-Xavier-Token`.
+    /// Peers in the same SWAL mesh authenticate with the same token.
+    peer_token: Option<String>,
+    /// Last successful sync timestamp per peer URL.
+    last_sync_map: tokio::sync::RwLock<std::collections::HashMap<String, DateTime<Utc>>>,
 }
 
 impl PeerMemorySync {
     /// Create a new PeerMemorySync attached to the given store.
     pub fn new(store: Arc<dyn MemoryStore>, node_id: String) -> Self {
+        Self::with_peer_token(store, node_id, None)
+    }
+
+    /// Create a new PeerMemorySync with an optional shared mesh token.
+    pub fn with_peer_token(
+        store: Arc<dyn MemoryStore>,
+        node_id: String,
+        peer_token: Option<String>,
+    ) -> Self {
         Self {
             store,
             http_client: reqwest::Client::builder()
@@ -107,7 +121,15 @@ impl PeerMemorySync {
                 .expect("reqwest::Client::new()"),
             sync_interval: Duration::from_secs(300),
             node_id,
+            peer_token,
+            last_sync_map: tokio::sync::RwLock::new(std::collections::HashMap::new()),
         }
+    }
+
+    /// Retrieve the last successful sync timestamp for a given peer URL.
+    pub async fn last_sync_at(&self, peer_url: &str) -> Option<DateTime<Utc>> {
+        let map = self.last_sync_map.read().await;
+        map.get(peer_url).cloned()
     }
 
     /// Borrow the underlying memory store.
@@ -152,14 +174,19 @@ impl PeerMemorySync {
             .await?;
 
         let duration_ms = start.elapsed().as_millis() as u64;
-        Ok(SyncSession {
+        let session = SyncSession {
             peer_id: peer_url.to_string(),
             chunks_sent,
             chunks_received,
             conflicts,
             duration_ms,
             success: true,
-        })
+        };
+        self.last_sync_map
+            .write()
+            .await
+            .insert(peer_url.to_string(), Utc::now());
+        Ok(session)
     }
 
     /// One-shot push: send local chunks newer than `since` to peer.
@@ -276,12 +303,11 @@ impl PeerMemorySync {
     /// Pull the entire manifest from a peer.
     async fn pull_manifest(&self, peer_url: &str) -> Result<Manifest> {
         let url = format!("{}/v1/memory/manifest", peer_url.trim_end_matches('/'));
-        let resp = self
-            .http_client
-            .get(&url)
-            .timeout(Duration::from_secs(30))
-            .send()
-            .await?;
+        let mut req = self.http_client.get(&url).timeout(Duration::from_secs(30));
+        if let Some(token) = &self.peer_token {
+            req = req.header("X-Xavier-Token", token);
+        }
+        let resp = req.send().await?;
         if !resp.status().is_success() {
             anyhow::bail!("pull_manifest: HTTP {} from {}", resp.status(), url);
         }
@@ -295,13 +321,15 @@ impl PeerMemorySync {
             return Ok(0);
         }
         let url = format!("{}/v1/memory/push", peer_url.trim_end_matches('/'));
-        let resp = self
+        let mut req = self
             .http_client
             .post(&url)
             .json(diffs)
-            .timeout(Duration::from_secs(60))
-            .send()
-            .await?;
+            .timeout(Duration::from_secs(60));
+        if let Some(token) = &self.peer_token {
+            req = req.header("X-Xavier-Token", token);
+        }
+        let resp = req.send().await?;
         if !resp.status().is_success() {
             anyhow::bail!("push_diffs: HTTP {} from {}", resp.status(), url);
         }
@@ -314,13 +342,15 @@ impl PeerMemorySync {
             return Ok(Vec::new());
         }
         let url = format!("{}/v1/memory/pull", peer_url.trim_end_matches('/'));
-        let resp = self
+        let mut req = self
             .http_client
             .post(&url)
             .json(want)
-            .timeout(Duration::from_secs(60))
-            .send()
-            .await?;
+            .timeout(Duration::from_secs(60));
+        if let Some(token) = &self.peer_token {
+            req = req.header("X-Xavier-Token", token);
+        }
+        let resp = req.send().await?;
         if !resp.status().is_success() {
             anyhow::bail!("pull_diffs: HTTP {} from {}", resp.status(), url);
         }
@@ -345,12 +375,11 @@ impl PeerMemorySync {
             workspace_id,
             since_epoch
         );
-        let resp = self
-            .http_client
-            .get(&url)
-            .timeout(Duration::from_secs(60))
-            .send()
-            .await?;
+        let mut req = self.http_client.get(&url).timeout(Duration::from_secs(60));
+        if let Some(token) = &self.peer_token {
+            req = req.header("X-Xavier-Token", token);
+        }
+        let resp = req.send().await?;
         if !resp.status().is_success() {
             anyhow::bail!("pull_diffs_since: HTTP {} from {}", resp.status(), url);
         }

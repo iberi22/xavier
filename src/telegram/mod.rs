@@ -75,9 +75,9 @@ impl RateLimiter {
 /// Calls `f()` up to `max_retries` times. On failure, waits `2^attempt` seconds
 /// (capped at 16 s) before retrying. Returns the first successful value or the
 /// last error.
-async fn with_retry<F, Fut, T, E>(label: &str, max_retries: usize, f: F) -> Result<T, E>
+async fn with_retry<F, Fut, T, E>(label: &str, max_retries: usize, mut f: F) -> Result<T, E>
 where
-    F: Fn() -> Fut,
+    F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
     E: std::fmt::Display,
 {
@@ -102,6 +102,36 @@ where
 
 /// Vault key under which the Telegram bot token is stored in Clavis.
 pub const TELEGRAM_TOKEN_VAULT_KEY: &str = "telegram_bot_token";
+
+/// Standard Telegram Bot API header for webhook secret token verification.
+pub const X_TELEGRAM_BOT_API_SECRET_TOKEN: &str = "X-Telegram-Bot-Api-Secret-Token";
+
+/// Verify the webhook secret token header using constant-time comparison.
+///
+/// If `webhook_secret` is configured (`Some(secret)`):
+/// - Returns `Ok(())` if `provided_token` matches `secret` in constant time via `subtle::ConstantTimeEq`.
+/// - Returns `Err(StatusCode::UNAUTHORIZED)` (401) if `provided_token` is missing or mismatched.
+///
+/// If `webhook_secret` is `None`, verification is bypassed and returns `Ok(())`.
+pub fn verify_webhook_secret(
+    webhook_secret: Option<&str>,
+    provided_token: Option<&str>,
+) -> Result<(), axum::http::StatusCode> {
+    use subtle::ConstantTimeEq;
+    if let Some(expected) = webhook_secret {
+        match provided_token {
+            Some(token)
+                if expected.as_bytes().len() == token.as_bytes().len()
+                    && expected.as_bytes().ct_eq(token.as_bytes()).into() =>
+            {
+                Ok(())
+            }
+            _ => Err(axum::http::StatusCode::UNAUTHORIZED),
+        }
+    } else {
+        Ok(())
+    }
+}
 
 #[derive(BotCommands, Clone)]
 #[command(
@@ -182,14 +212,30 @@ impl MemoryCommand {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TelegramTransport {
+    Polling,
+    Webhook,
+}
+
+impl Default for TelegramTransport {
+    fn default() -> Self {
+        Self::Polling
+    }
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 pub struct TelegramConfig {
     pub bot_token: String,
     pub admin_ids: Vec<u64>,
     pub enabled: bool,
     pub webhook_url: Option<String>,
+    pub webhook_secret: Option<String>,
     pub webhook_port: u16,
     pub notification_chat_id: Option<String>,
+    #[serde(default)]
+    pub transport_mode: TelegramTransport,
 }
 
 impl fmt::Debug for TelegramConfig {
@@ -199,11 +245,16 @@ impl fmt::Debug for TelegramConfig {
             .field("admin_ids", &self.admin_ids)
             .field("enabled", &self.enabled)
             .field("webhook_url", &self.webhook_url)
+            .field(
+                "webhook_secret",
+                &self.webhook_secret.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("webhook_port", &self.webhook_port)
             .field(
                 "notification_chat_id",
                 &self.notification_chat_id.as_ref().map(|_| "[REDACTED]"),
             )
+            .field("transport_mode", &self.transport_mode)
             .finish()
     }
 }
@@ -211,13 +262,18 @@ impl fmt::Debug for TelegramConfig {
 impl Default for TelegramConfig {
     fn default() -> Self {
         let settings = crate::settings::XavierSettings::current();
+        let secret = std::env::var("TELEGRAM_WEBHOOK_SECRET")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
         Self {
             bot_token: settings.telegram.bot_token.clone().unwrap_or_default(),
             admin_ids: settings.telegram.admin_ids.clone(),
             enabled: settings.telegram.enabled,
             webhook_url: settings.telegram.webhook_url.clone(),
+            webhook_secret: secret,
             webhook_port: settings.telegram.webhook_port,
             notification_chat_id: settings.telegram.notification_chat_id.clone(),
+            transport_mode: TelegramTransport::Polling,
         }
     }
 }
@@ -312,6 +368,7 @@ pub struct XavierBot {
 }
 
 impl XavierBot {
+    /// New.
     pub fn new(
         config: TelegramConfig,
         memory: Arc<dyn MemoryQueryPort>,
@@ -332,10 +389,17 @@ impl XavierBot {
         }
     }
 
+    /// Start.
     pub async fn start(&self) {
-        if let Some(webhook_url) = &self.config.webhook_url {
-            info!("Starting Telegram bot (webhook: {})...", webhook_url);
-            self.start_webhook(webhook_url).await;
+        if self.config.transport_mode == TelegramTransport::Webhook {
+            if let Some(webhook_url) = &self.config.webhook_url {
+                info!("Starting Telegram bot (webhook: {})...", webhook_url);
+                self.start_webhook(webhook_url).await;
+            } else {
+                warn!("Telegram transport_mode is Webhook, but webhook_url is not set. Falling back to long-polling.");
+                info!("Starting Telegram bot (long-polling)...");
+                self.start_polling().await;
+            }
         } else {
             info!("Starting Telegram bot (long-polling)...");
             self.start_polling().await;
@@ -402,18 +466,19 @@ impl XavierBot {
             .filter_command::<Command>()
             .endpoint(Self::handle_command);
 
-        let listener = match teloxide::update_listeners::webhooks::axum(
-            self.bot.clone(),
-            teloxide::update_listeners::webhooks::Options::new(addr, url),
-        )
-        .await
-        {
-            Ok(l) => l,
-            Err(e) => {
-                error!("Failed to setup webhook listener: {e}");
-                return;
-            }
-        };
+        let mut options = teloxide::update_listeners::webhooks::Options::new(addr, url);
+        if let Some(secret) = &self.config.webhook_secret {
+            options = options.secret_token(secret.clone());
+        }
+
+        let listener =
+            match teloxide::update_listeners::webhooks::axum(self.bot.clone(), options).await {
+                Ok(l) => l,
+                Err(e) => {
+                    error!("Failed to setup webhook listener: {e}");
+                    return;
+                }
+            };
 
         Dispatcher::builder(self.bot.clone(), handler)
             .dependencies(dptree::deps![
@@ -431,6 +496,7 @@ impl XavierBot {
             .await;
     }
 
+    /// Handle command.
     pub async fn handle_command(
         bot: Bot,
         msg: Message,
@@ -794,6 +860,7 @@ pub async fn handle_memory_command(args: &str) -> String {
     }
 }
 
+/// Run bot.
 pub async fn run_bot(
     memory: Arc<dyn MemoryQueryPort>,
     agents: Arc<dyn AgentLifecyclePort>,
@@ -868,12 +935,14 @@ pub async fn start_webhook(
         .filter_command::<Command>()
         .endpoint(XavierBot::handle_command);
 
-    let listener = teloxide::update_listeners::webhooks::axum(
-        bot.bot.clone(),
-        teloxide::update_listeners::webhooks::Options::new(socket_addr, webhook_url),
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("failed to setup webhook listener: {}", e))?;
+    let mut options = teloxide::update_listeners::webhooks::Options::new(socket_addr, webhook_url);
+    if let Some(secret) = &bot.config.webhook_secret {
+        options = options.secret_token(secret.clone());
+    }
+
+    let listener = teloxide::update_listeners::webhooks::axum(bot.bot.clone(), options)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to setup webhook listener: {}", e))?;
 
     info!("Telegram webhook listener bound on {} ({})", addr, path);
 
@@ -1132,5 +1201,29 @@ mod tests {
         assert!(text.contains("Local sano"));
         assert!(text.contains("local"));
         assert!(text.contains("http://localhost:11434"));
+    }
+
+    #[test]
+    fn test_telegram_transport_default() {
+        let config = TelegramConfig::default();
+        assert_eq!(config.transport_mode, TelegramTransport::Polling);
+    }
+
+    #[test]
+    fn test_telegram_transport_webhook_config() {
+        let mut config = TelegramConfig::default();
+        config.transport_mode = TelegramTransport::Webhook;
+        assert_eq!(config.transport_mode, TelegramTransport::Webhook);
+    }
+
+    #[test]
+    fn test_telegram_transport_serde() {
+        let json_str = r#"{"bot_token":"tok","admin_ids":[],"enabled":true,"webhook_url":null,"webhook_port":8009,"notification_chat_id":null,"transport_mode":"webhook"}"#;
+        let config: TelegramConfig = serde_json::from_str(json_str).unwrap();
+        assert_eq!(config.transport_mode, TelegramTransport::Webhook);
+
+        let json_str_default = r#"{"bot_token":"tok","admin_ids":[],"enabled":true,"webhook_url":null,"webhook_port":8009,"notification_chat_id":null}"#;
+        let config_default: TelegramConfig = serde_json::from_str(json_str_default).unwrap();
+        assert_eq!(config_default.transport_mode, TelegramTransport::Polling);
     }
 }

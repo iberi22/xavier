@@ -471,6 +471,7 @@ pub struct WorkspaceBillingMetadata {
 
 // URL encoding helper
 mod urlencoding {
+    /// Encode.
     pub fn encode(s: &str) -> String {
         let mut encoded = String::new();
         for c in s.chars() {

@@ -48,6 +48,17 @@ pub struct BuildInfoResponse {
     pub memory_store: MemoryStoreBuildInfo,
 }
 
+#[derive(Debug, Serialize)]
+pub struct HealthEndpointResponse {
+    pub status: String,
+    pub service: &'static str,
+    pub version: &'static str,
+    pub lag_ms: u64,
+    pub hormer: serde_json::Value,
+    pub health: crate::health::HealthResponse,
+}
+
+/// Health.
 pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     let workspace = state.workspace_registry.default_context().await;
     let mut lag_ms = 0;
@@ -64,16 +75,17 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
 
     let xavier_health = crate::health::collect_health_sync();
 
-    Json(serde_json::json!({
-        "status": xavier_health.status,
-        "service": "xavier",
-        "version": env!("CARGO_PKG_VERSION"),
-        "lag_ms": lag_ms,
-        "hormer": hormer_metrics,
-        "health": xavier_health
-    }))
+    Json(HealthEndpointResponse {
+        status: xavier_health.status.clone(),
+        service: "xavier",
+        version: env!("CARGO_PKG_VERSION"),
+        lag_ms,
+        hormer: hormer_metrics,
+        health: xavier_health,
+    })
 }
 
+/// Readiness.
 pub async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
     let workspace_context = state.workspace_registry.default_context().await;
     let workspace_ready = workspace_context.is_some();
@@ -152,10 +164,26 @@ pub async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
             detail: "default workspace is not available".to_string(),
         },
     };
-    let code_graph = ReadinessComponent {
-        configured: false,
-        ready: true,
-        detail: "code graph not available in CLI mode".to_string(),
+    let code_graph = match state.code_db.stats() {
+        Ok(stats) if stats.total_symbols > 0 => ReadinessComponent {
+            configured: true,
+            ready: true,
+            detail: format!(
+                "{} symbols / {} files in CodeGraph",
+                stats.total_symbols, stats.total_files
+            ),
+        },
+        Ok(_) => ReadinessComponent {
+            configured: true,
+            ready: false,
+            detail: "CodeGraph empty — run `xavier code scan .` or `xavier code sync --git`"
+                .to_string(),
+        },
+        Err(error) => ReadinessComponent {
+            configured: true,
+            ready: false,
+            detail: format!("CodeGraph stats unavailable: {}", error),
+        },
     };
     let ready = workspace.ready
         && memory_store.ready
@@ -174,6 +202,7 @@ pub async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
+/// Build info.
 pub async fn build_info(State(state): State<AppState>) -> impl IntoResponse {
     let workspace = state.workspace_registry.default_context().await;
     Json(BuildInfoResponse {

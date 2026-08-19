@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+/// Estimate tokens.
 pub fn estimate_tokens(text: &str) -> usize {
     (text.len() / 4).max(1)
 }

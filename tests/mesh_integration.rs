@@ -19,6 +19,17 @@ use xavier::mesh::{MeshTransport, NodeIdentity, PeerInfo};
 use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
 
 async fn start_test_server() -> (String, String, Arc<WorkspaceState>) {
+    // Mesh license must be accepted or the handshake handler returns 403.
+    let config_dir = tempdir().unwrap();
+    let config_path = config_dir.path().join("xavier-config.json");
+    let config_json = serde_json::json!({
+        "license": { "mesh_accepted": true, "license_type": "AGPL-3.0" }
+    });
+    std::fs::write(&config_path, serde_json::to_string(&config_json).unwrap()).unwrap();
+    unsafe {
+        std::env::set_var("XAVIER_CONFIG_PATH", config_path.as_os_str());
+    }
+
     let port = {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         listener.local_addr().unwrap().port()
@@ -40,6 +51,7 @@ async fn start_test_server() -> (String, String, Arc<WorkspaceState>) {
         embedding_provider_mode: xavier::workspace::EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: xavier::workspace::SyncPolicy::CloudMirror,
+        dedup: Default::default(),
     };
 
     let workspace = Arc::new(
@@ -218,4 +230,150 @@ async fn test_mesh_handshake_and_sync() {
     // Verify B now has A's document
     let b_docs = ws_b.memory.all_documents().await;
     assert!(b_docs.iter().any(|d| d.content == "Hello from Node A"));
+}
+
+#[cfg(feature = "mesh")]
+mod iroh_tests {
+    use super::*;
+    use xavier::mesh::{HeartbeatStatus, NodeId, NodeIdentity, PeerInfo};
+    use xavier::sync::SyncTransport;
+
+    #[test]
+    fn test_iroh_transport_init_and_my_addr() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let identity = Arc::new(NodeIdentity::generate());
+            let transport = xavier::mesh::init_active_transport(identity);
+            let addr = transport.my_addr_string().await;
+            assert!(addr.is_ok());
+            let addr_str = addr.unwrap();
+            assert!(!addr_str.is_empty());
+        });
+    }
+
+    #[test]
+    fn test_iroh_transport_addr_from_peer() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            // Peer with iroh_addr
+            let peer_with_iroh = PeerInfo {
+                node_id: NodeId("peer-1".to_string()),
+                alias: None,
+                endpoint_url: "".to_string(),
+                public_key_hex: "aabb".to_string(),
+                added_at: 0,
+                last_seen_at: None,
+                sync_enabled: true,
+                is_cloud: false,
+                iroh_addr: Some(
+                    "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234".to_string(),
+                ),
+                shared_workspace_ids: Vec::new(),
+                shared_workspace_tokens: std::collections::HashMap::new(),
+            };
+
+            // Peer without iroh_addr
+            let peer_no_iroh = PeerInfo {
+                node_id: NodeId("peer-2".to_string()),
+                alias: None,
+                endpoint_url: "".to_string(),
+                public_key_hex: "aabb".to_string(),
+                added_at: 0,
+                last_seen_at: None,
+                sync_enabled: true,
+                is_cloud: false,
+                iroh_addr: None,
+                shared_workspace_ids: Vec::new(),
+                shared_workspace_tokens: std::collections::HashMap::new(),
+            };
+
+            let res_ok =
+                SyncTransport::for_peer(&peer_with_iroh, Arc::new(NodeIdentity::generate()));
+            assert!(res_ok.is_ok());
+
+            let res_err =
+                SyncTransport::for_peer(&peer_no_iroh, Arc::new(NodeIdentity::generate()));
+            assert!(res_err.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_iroh_transport_signed_sync_request() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let identity = Arc::new(NodeIdentity::generate());
+            let transport = xavier::mesh::init_active_transport(identity.clone());
+            let request =
+                transport.signed_sync_request(vec!["hash-1".to_string(), "hash-2".to_string()]);
+
+            assert_eq!(request.requesting_node_id, identity.node_id);
+            assert_eq!(
+                request.wanted_hashes,
+                vec!["hash-1".to_string(), "hash-2".to_string()]
+            );
+            assert!(!request.nonce.is_empty());
+            assert!(!request.signature_hex.is_empty());
+        });
+    }
+
+    #[test]
+    fn test_iroh_transport_idempotency() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let identity = Arc::new(NodeIdentity::generate());
+            let transport = xavier::mesh::init_active_transport(identity);
+            let addr1 = transport.my_addr_string().await.unwrap();
+            let addr2 = transport.my_addr_string().await.unwrap();
+            assert_eq!(addr1, addr2);
+        });
+    }
+
+    #[test]
+    fn test_iroh_transport_mesh_request_serialization() {
+        use xavier::mesh::iroh_transport::MeshRequest;
+        use xavier::mesh::protocol::MeshSyncRequest;
+
+        let sync_req = MeshSyncRequest {
+            requesting_node_id: NodeId("test-node".to_string()),
+            wanted_hashes: vec!["hash1".to_string()],
+            timestamp: 1234567890,
+            nonce: "test-nonce".to_string(),
+            signature_hex: "abcde".to_string(),
+        };
+        let req = MeshRequest::FetchChunks { request: sync_req };
+        let serialized = serde_json::to_string(&req).unwrap();
+        assert!(serialized.contains("\"op\":\"fetch_chunks\""));
+
+        let deserialized: MeshRequest = serde_json::from_str(&serialized).unwrap();
+        match deserialized {
+            MeshRequest::FetchChunks { request } => {
+                assert_eq!(request.timestamp, 1234567890);
+                assert_eq!(request.nonce, "test-nonce");
+            }
+            _ => panic!("Expected FetchChunks variant"),
+        }
+    }
+
+    #[test]
+    fn test_iroh_transport_connect_fail() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let identity = Arc::new(NodeIdentity::generate());
+            let transport = xavier::mesh::init_active_transport(identity);
+
+            let invalid_key_res =
+                xavier::mesh::connect_active_transport(&transport, "not-a-valid-key").await;
+            assert!(invalid_key_res.is_err());
+            let err_msg = invalid_key_res.unwrap_err().to_string();
+            assert!(err_msg.contains("invalid iroh peer addr"));
+        });
+    }
+
+    #[test]
+    fn test_heartbeat_service_with_peer_count() {
+        let svc = HeartbeatStatus::new(NodeId("test-node-hb".to_string())).with_peer_count(42);
+        let payload = svc.payload();
+        assert_eq!(payload.peer_count, 42);
+        assert_eq!(payload.node_id.as_str(), "test-node-hb");
+    }
 }

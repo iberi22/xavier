@@ -225,17 +225,15 @@ mod tests {
     #[test]
     fn test_rrf_precise_mathematical_weights() {
         // We'll perform explicit RRF weighted calculation and assert the scores match precisely.
-        let set_1 = vec![
-            ScoredResult {
-                id: "doc_a".into(),
-                content: "A content".into(),
-                score: 1.0,
-                source: "keyword".into(),
-                path: "path/a".into(),
-                updated_at: Some(100),
-                zone: None,
-            },
-        ];
+        let set_1 = vec![ScoredResult {
+            id: "doc_a".into(),
+            content: "A content".into(),
+            score: 1.0,
+            source: "keyword".into(),
+            path: "path/a".into(),
+            updated_at: Some(100),
+            zone: None,
+        }];
         let set_2 = vec![
             ScoredResult {
                 id: "doc_b".into(),
@@ -261,10 +259,7 @@ mod tests {
         let weight_1 = 0.6;
         let weight_2 = 0.4;
 
-        let results = vec![
-            (set_1, weight_1),
-            (set_2, weight_2),
-        ];
+        let results = vec![(set_1, weight_1), (set_2, weight_2)];
 
         let fused = reciprocal_rank_fusion_weighted(results, rrf_k);
 
@@ -321,17 +316,15 @@ mod tests {
                 zone: None,
             },
         ];
-        let set_2 = vec![
-            ScoredResult {
-                id: "a_id".into(),
-                content: "A".into(),
-                score: 1.0,
-                source: "vector".into(),
-                path: "path/a".into(),
-                updated_at: Some(100),
-                zone: None,
-            },
-        ];
+        let set_2 = vec![ScoredResult {
+            id: "a_id".into(),
+            content: "A".into(),
+            score: 1.0,
+            source: "vector".into(),
+            path: "path/a".into(),
+            updated_at: Some(100),
+            zone: None,
+        }];
 
         // Let's run reciprocal_rank_fusion with k=60.
         // z_id at rank 1 in set_1: 1.0 / 61
@@ -349,39 +342,33 @@ mod tests {
     fn test_rrf_deduplication_by_path_most_recent_timestamp() {
         // Construct multiple ScoredResults with the exact same path.
         // Ensure that the one with the maximum timestamp is kept.
-        let set_1 = vec![
-            ScoredResult {
-                id: "doc_old".into(),
-                content: "Old Version".into(),
-                score: 1.0,
-                source: "keyword".into(),
-                path: "shared_path".into(),
-                updated_at: Some(100),
-                zone: None,
-            },
-        ];
-        let set_2 = vec![
-            ScoredResult {
-                id: "doc_new".into(),
-                content: "New Version".into(),
-                score: 1.0,
-                source: "vector".into(),
-                path: "shared_path".into(),
-                updated_at: Some(300),
-                zone: None,
-            },
-        ];
-        let set_3 = vec![
-            ScoredResult {
-                id: "doc_mid".into(),
-                content: "Mid Version".into(),
-                score: 1.0,
-                source: "hybrid".into(),
-                path: "shared_path".into(),
-                updated_at: Some(200),
-                zone: None,
-            },
-        ];
+        let set_1 = vec![ScoredResult {
+            id: "doc_old".into(),
+            content: "Old Version".into(),
+            score: 1.0,
+            source: "keyword".into(),
+            path: "shared_path".into(),
+            updated_at: Some(100),
+            zone: None,
+        }];
+        let set_2 = vec![ScoredResult {
+            id: "doc_new".into(),
+            content: "New Version".into(),
+            score: 1.0,
+            source: "vector".into(),
+            path: "shared_path".into(),
+            updated_at: Some(300),
+            zone: None,
+        }];
+        let set_3 = vec![ScoredResult {
+            id: "doc_mid".into(),
+            content: "Mid Version".into(),
+            score: 1.0,
+            source: "hybrid".into(),
+            path: "shared_path".into(),
+            updated_at: Some(200),
+            zone: None,
+        }];
 
         let fused = reciprocal_rank_fusion(vec![set_1, set_2, set_3], 60);
         assert_eq!(fused.len(), 1);

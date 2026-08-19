@@ -10,6 +10,7 @@ use tokio::fs;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
 
+/// Resolve config path.
 pub fn resolve_config_path() -> PathBuf {
     if let Ok(env_path) = std::env::var("XAVIER_CONFIG_PATH") {
         return PathBuf::from(env_path);
@@ -32,6 +33,7 @@ pub fn resolve_config_path() -> PathBuf {
     PathBuf::from(DEFAULT_CONFIG_PATH)
 }
 
+/// Resolve data dir.
 pub fn resolve_data_dir() -> PathBuf {
     if let Ok(env_path) = std::env::var("XAVIER_DATA_DIR") {
         return PathBuf::from(env_path);
@@ -44,6 +46,7 @@ pub fn resolve_data_dir() -> PathBuf {
     PathBuf::from("data")
 }
 
+/// Load.
 pub fn load() -> Result<Option<XavierSettings>> {
     let path = resolve_config_path();
 
@@ -72,6 +75,7 @@ pub fn load() -> Result<Option<XavierSettings>> {
     Ok(Some(parsed))
 }
 
+/// Current.
 pub fn current() -> XavierSettings {
     let mut settings = load().ok().flatten().unwrap_or_default();
     settings.auth_token = std::env::var("XAVIER_TOKEN")
@@ -189,6 +193,7 @@ pub fn current() -> XavierSettings {
     settings
 }
 
+/// Save.
 pub async fn save(settings: &XavierSettings) -> Result<()> {
     let path = resolve_config_path();
     if let Some(parent) = path.parent() {

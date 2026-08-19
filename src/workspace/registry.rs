@@ -44,10 +44,12 @@ pub struct WorkspaceRegistry {
 }
 
 impl WorkspaceRegistry {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Insert.
     pub async fn insert(&self, workspace: WorkspaceState) -> Result<()> {
         let workspace = Arc::new(workspace);
         let workspace_id = workspace.config().id.clone();
@@ -63,6 +65,22 @@ impl WorkspaceRegistry {
         Ok(())
     }
 
+    /// Insert an already Arc-wrapped workspace.
+    pub async fn insert_arc(&self, workspace: Arc<WorkspaceState>) -> Result<()> {
+        let workspace_id = workspace.config().id.clone();
+        let token = workspace.config().token.clone();
+        self.token_map
+            .write()
+            .await
+            .insert(token, workspace_id.clone());
+        self.workspaces
+            .write()
+            .await
+            .insert(workspace_id, workspace);
+        Ok(())
+    }
+
+    /// Authenticate.
     pub async fn authenticate(&self, token: &str) -> Option<WorkspaceContext> {
         if let Some(workspace_id) = self.token_map.read().await.get(token).cloned() {
             if let Some(workspace) = self.workspaces.read().await.get(&workspace_id).cloned() {
@@ -84,6 +102,7 @@ impl WorkspaceRegistry {
         None
     }
 
+    /// Default context.
     pub async fn default_context(&self) -> Option<WorkspaceContext> {
         let settings = XavierSettings::current();
         let preferred_id = settings.workspace.default_workspace_id.clone();
@@ -103,6 +122,7 @@ impl WorkspaceRegistry {
             })
     }
 
+    /// Default context sync.
     pub fn default_context_sync(&self) -> Option<WorkspaceContext> {
         let settings = XavierSettings::current();
         let preferred_id = settings.workspace.default_workspace_id.clone();
@@ -122,6 +142,7 @@ impl WorkspaceRegistry {
             })
     }
 
+    /// Default from env.
     pub async fn default_from_env(runtime_config: RuntimeConfig) -> Result<Self> {
         let registry = Self::new();
         let config = WorkspaceConfig::from_env();

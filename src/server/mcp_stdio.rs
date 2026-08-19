@@ -8,6 +8,7 @@ use crate::{workspace::WorkspaceContext, AppState};
 use anyhow::Result;
 use std::io::{self, BufRead, Write};
 
+/// Run stdio loop.
 pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Result<()> {
     validate_stdio_connection()?;
 
@@ -28,7 +29,7 @@ pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Res
             Err(_) => continue,
         };
 
-        let Some(response) = dispatch_mcp_value(state.clone(), workspace.clone(), payload)
+        let Some(response) = dispatch_mcp_value(state.clone(), workspace.clone(), None, payload)
             .await
             .ok()
             .flatten()

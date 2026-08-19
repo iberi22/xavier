@@ -26,12 +26,14 @@ impl Default for TokenAccountingTracker {
 }
 
 impl TokenAccountingTracker {
+    /// New.
     pub fn new() -> Self {
         Self {
             entries: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
+    /// Track.
     pub async fn track(
         &self,
         session_id: String,
@@ -58,6 +60,7 @@ impl TokenAccountingTracker {
         entries.push(entry);
     }
 
+    /// Get stats.
     pub async fn get_stats(&self) -> TokenStats {
         let entries = self.entries.read().await;
         let total_original: usize = entries.iter().map(|e| e.original_tokens).sum();

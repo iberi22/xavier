@@ -33,6 +33,7 @@ impl MemoryQuality {
     const FRESHNESS_WEIGHT: f32 = 0.20;
     const COMPLETENESS_WEIGHT: f32 = 0.15;
 
+    /// Calculate.
     pub fn calculate(
         doc: &MemoryDocument,
         priority: MemoryPriority,

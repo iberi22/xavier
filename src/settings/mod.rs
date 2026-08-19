@@ -5,9 +5,9 @@
 use anyhow::Result;
 use parking_lot::RwLock;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
 #[cfg(not(test))]
 use std::sync::Once;
+use std::sync::{Arc, LazyLock};
 
 pub mod defaults;
 pub mod env;
@@ -40,11 +40,20 @@ fn ensure_watcher_started() {
 
 #[cfg(not(test))]
 async fn watch_config_changes() -> Result<()> {
+    let path = serialization::resolve_config_path();
+    watch_config_changes_impl(path).await
+}
+
+async fn watch_config_changes_impl(path: std::path::PathBuf) -> Result<()> {
     use notify::{RecursiveMode, Watcher};
     use std::time::Duration;
 
-    let path = serialization::resolve_config_path();
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    if !parent.exists() {
+        tracing::debug!("config dir absent, watcher skipped: {:?}", parent);
+        return Ok(());
+    }
+
     let config_file_name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -80,9 +89,10 @@ async fn watch_config_changes() -> Result<()> {
                 );
 
                 if is_write_event {
-                    let matches_path = event.paths.iter().any(|p| {
-                        p.file_name().and_then(|n| n.to_str()) == Some(&config_file_name)
-                    });
+                    let matches_path = event
+                        .paths
+                        .iter()
+                        .any(|p| p.file_name().and_then(|n| n.to_str()) == Some(&config_file_name));
 
                     if matches_path {
                         tracing::info!("xavier.config.json changed. Reloading settings...");
@@ -103,23 +113,28 @@ async fn watch_config_changes() -> Result<()> {
 }
 
 impl XavierSettings {
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
+    /// Resolve config path.
     pub fn resolve_config_path() -> PathBuf {
         serialization::resolve_config_path()
     }
 
+    /// Resolve data dir.
     pub fn resolve_data_dir() -> PathBuf {
         serialization::resolve_data_dir()
     }
 
+    /// Load.
     pub fn load() -> Result<Option<Self>> {
         serialization::load()
     }
 
+    /// Apply to env.
     pub fn apply_to_env(&self) {
         env::apply_to_env_impl(self);
     }
 
+    /// Current.
     pub fn current() -> Self {
         #[cfg(test)]
         {
@@ -132,6 +147,7 @@ impl XavierSettings {
         }
     }
 
+    /// Reload.
     pub fn reload() -> Result<()> {
         let settings = serialization::current();
         settings.apply_to_env();
@@ -140,10 +156,12 @@ impl XavierSettings {
         Ok(())
     }
 
+    /// Save.
     pub async fn save(&self) -> Result<()> {
         serialization::save(self).await
     }
 
+    /// Client base url.
     pub fn client_base_url(&self) -> String {
         let host = match self.server.host.as_str() {
             "0.0.0.0" | "::" => "127.0.0.1",
@@ -160,6 +178,51 @@ pub mod tests {
     use std::sync::{LazyLock, Mutex};
 
     pub static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    pub struct TempEnv {
+        saved_vars: std::collections::HashMap<String, String>,
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TempEnv {
+        pub fn new() -> Self {
+            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let mut saved_vars = std::collections::HashMap::new();
+            for (key, val) in std::env::vars() {
+                let lower = key.to_ascii_uppercase();
+                if lower.starts_with("XAVIER_")
+                    || lower.starts_with("PGHEART_")
+                    || lower == "STRIPE_SECRET_KEY"
+                {
+                    saved_vars.insert(key, val);
+                }
+            }
+            Self {
+                saved_vars,
+                _guard: guard,
+            }
+        }
+    }
+
+    impl Drop for TempEnv {
+        fn drop(&mut self) {
+            // Remove any current XAVIER_ or PGHEART_ variables that are set but weren't originally saved
+            for (key, _) in std::env::vars() {
+                let lower = key.to_ascii_uppercase();
+                if (lower.starts_with("XAVIER_")
+                    || lower.starts_with("PGHEART_")
+                    || lower == "STRIPE_SECRET_KEY")
+                    && !self.saved_vars.contains_key(&key)
+                {
+                    std::env::remove_var(&key);
+                }
+            }
+            // Restore saved ones
+            for (key, val) in &self.saved_vars {
+                std::env::set_var(key, val);
+            }
+        }
+    }
 
     #[test]
     fn test_default_settings() {
@@ -182,7 +245,7 @@ pub mod tests {
 
     #[test]
     fn test_load_config_json() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Ensure we load from the actual config/xavier.config.json
         std::env::remove_var("XAVIER_CONFIG_PATH");
@@ -214,7 +277,7 @@ pub mod tests {
 
     #[test]
     fn test_apply_to_env_sets_vars() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Clean env
         for (key, _) in std::env::vars() {
@@ -238,18 +301,11 @@ pub mod tests {
             std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
             "data/enterprise.db"
         );
-
-        // Clean up
-        for (key, _) in std::env::vars() {
-            if key.starts_with("XAVIER_") {
-                std::env::remove_var(&key);
-            }
-        }
     }
 
     #[test]
     fn test_apply_to_env_respects_existing_vars() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Set an override
         std::env::set_var("XAVIER_PORT", "9999");
@@ -264,31 +320,25 @@ pub mod tests {
         assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "100");
         // Missing vars should be set
         assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "0.0.0.0");
-
-        // Clean up
-        std::env::remove_var("XAVIER_HOST");
-        std::env::remove_var("XAVIER_PORT");
-        std::env::remove_var("XAVIER_RRF_K");
     }
 
     #[test]
     fn test_config_file_missing_returns_none() {
+        let _env = TempEnv::new();
+
         let path = std::env::temp_dir().join("nonexistent_xavier_config.json");
         // Ensure it doesn't exist
         let _ = std::fs::remove_file(&path);
-
-        let _old_path = XavierSettings::resolve_config_path();
 
         // Temporarily redirect config path
         std::env::set_var("XAVIER_CONFIG_PATH", path.to_str().unwrap());
         let result = XavierSettings::load().unwrap();
         assert!(result.is_none());
-        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[test]
     fn test_current_falls_back_to_defaults() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Remove XAVIER_TOKEN if present
         std::env::remove_var("XAVIER_TOKEN");
@@ -300,7 +350,6 @@ pub mod tests {
         assert_eq!(settings.server.host, "0.0.0.0");
         assert_eq!(settings.server.port, 8006);
         assert!(settings.auth_token.is_none());
-        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[test]
@@ -329,7 +378,7 @@ pub mod tests {
 
     #[test]
     fn test_apply_to_env_all_new_sections() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Clean all XAVIER_ vars
         for (key, _) in std::env::vars() {
@@ -382,18 +431,24 @@ pub mod tests {
             std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
             "data/enterprise.db"
         );
-
-        // Clean up
-        for (key, _) in std::env::vars() {
-            if key.starts_with("XAVIER_") {
-                std::env::remove_var(&key);
-            }
-        }
     }
 
     #[test]
     fn test_reload_updates_global_settings() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
+
+        // Save initial GLOBAL_SETTINGS
+        let original_global = GLOBAL_SETTINGS.read().clone();
+
+        // Ensure we restore it on drop
+        struct GlobalSettingsRestore(XavierSettings);
+        impl Drop for GlobalSettingsRestore {
+            fn drop(&mut self) {
+                let mut lock = GLOBAL_SETTINGS.write();
+                *lock = self.0.clone();
+            }
+        }
+        let _restore = GlobalSettingsRestore(original_global);
 
         // Temporarily point to a test config file
         let temp_dir = std::env::temp_dir();
@@ -422,7 +477,38 @@ pub mod tests {
         assert_eq!(GLOBAL_SETTINGS.read().server.port, 9999);
 
         // Clean up
-        std::env::remove_var("XAVIER_CONFIG_PATH");
         let _ = std::fs::remove_file(&test_config_path);
+    }
+
+    #[tokio::test]
+    async fn test_watcher_skipped_when_dir_absent() {
+        let nonexistent_path = std::path::PathBuf::from("/nonexistent/path/xavier.config.json");
+        let result = super::watch_config_changes_impl(nonexistent_path).await;
+        assert!(
+            result.is_ok(),
+            "Watcher should gracefully succeed and return Ok when parent dir is absent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_watcher_starts_when_dir_present() {
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join("xavier_watcher_test.json");
+
+        // Create the dummy config file so that the parent and file exist
+        std::fs::write(&test_path, "{}").unwrap();
+
+        // Since the watcher loops forever awaiting RX, let's run it with a short timeout
+        let run_watcher = super::watch_config_changes_impl(test_path.clone());
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), run_watcher).await;
+
+        // Clean up
+        let _ = std::fs::remove_file(&test_path);
+
+        // It should time out (since it waits for changes in a loop), which proves it started up properly and didn't fail immediately
+        assert!(
+            result.is_err(),
+            "Watcher should run indefinitely when parent dir exists, thus timing out here"
+        );
     }
 }

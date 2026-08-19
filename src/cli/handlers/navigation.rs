@@ -38,6 +38,7 @@ pub struct TelemetryParams {
     pub top: Option<usize>,
 }
 
+/// Ls handler.
 pub async fn ls_handler(
     State(state): State<CliState>,
     Query(params): Query<LsParams>,
@@ -61,6 +62,7 @@ pub async fn ls_handler(
     }
 }
 
+/// Cd handler.
 pub async fn cd_handler(
     State(state): State<CliState>,
     Json(params): Json<CdParams>,
@@ -108,6 +110,7 @@ pub async fn cd_handler(
     }
 }
 
+/// Pwd handler.
 pub async fn pwd_handler() -> impl IntoResponse {
     Json(json!({
         "status": "ok",
@@ -115,6 +118,7 @@ pub async fn pwd_handler() -> impl IntoResponse {
     }))
 }
 
+/// Affected handler.
 pub async fn affected_handler(
     Extension(ctx): Extension<WorkspaceContext>,
     Query(params): Query<AffectedParams>,
@@ -146,12 +150,9 @@ pub async fn affected_handler(
 
     if start_nodes.is_empty() {
         // Try searching for the document to see if we can find more context
-        match ctx.workspace.memory.get(&params.path).await {
-            Ok(Some(doc)) => {
-                // If we found a document, use its path as a potential seed
-                start_nodes.insert(doc.path.clone());
-            }
-            _ => {}
+        if let Ok(Some(doc)) = ctx.workspace.memory.get(&params.path).await {
+            // If we found a document, use its path as a potential seed
+            start_nodes.insert(doc.path.clone());
         }
     }
 
@@ -188,6 +189,7 @@ pub async fn affected_handler(
     }))
 }
 
+/// Visualize handler.
 pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> impl IntoResponse {
     let graph_guard = ctx.workspace.belief_graph.read().await;
     let edges = graph_guard.get_edges();
@@ -243,6 +245,7 @@ pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> i
     }))
 }
 
+/// Telemetry handler.
 pub async fn telemetry_handler(
     Extension(ctx): Extension<WorkspaceContext>,
     Query(params): Query<TelemetryParams>,
@@ -372,6 +375,9 @@ mod tests {
             ),
             multi_db: xavier::storage::multi_db::MultiDbManager::new(),
             system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
+            maloca: xavier::maloca::MalocaStore::open(
+                &std::env::temp_dir().join("xavier-maloca-test-nav"),
+            ),
         }
     }
 
@@ -457,6 +463,7 @@ mod tests {
             embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: SyncPolicy::LocalOnly,
+            dedup: xavier::settings::types::DedupSettings::default(),
         };
 
         let workspace_state = Arc::new(

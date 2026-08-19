@@ -1,6 +1,7 @@
 use xavier::crypto::{
-    decrypt_data, derive_kek_from_password, encrypt_data, generate_dek,
+    decrypt_data, derive_kek_from_password, encrypt_data,
     encryption::{decrypt_with_session_key, encrypt_with_session_key, NonceBytes},
+    generate_dek,
 };
 
 #[test]
@@ -9,8 +10,8 @@ fn test_client_side_envelope_encryption() {
     let salt = [0u8; 16]; // 16-byte salt for derivation
 
     // 1. Derive KEK (Key Encryption Key) from user password
-    let kek = derive_kek_from_password(password, &salt)
-        .expect("Failed to derive KEK from password");
+    let kek =
+        derive_kek_from_password(password, &salt).expect("Failed to derive KEK from password");
 
     // 2. Generate per-document DEK (Data Encryption Key)
     let dek = generate_dek();
@@ -18,13 +19,13 @@ fn test_client_side_envelope_encryption() {
     // 3. Encrypt the sensitive user content with the DEK
     let plaintext = b"Plaintext memory containing sensitive PII and keys.";
     let data_nonce = NonceBytes::generate();
-    let encrypted_data_blob = encrypt_data(plaintext, &dek, &data_nonce)
-        .expect("Failed to encrypt data with DEK");
+    let encrypted_data_blob =
+        encrypt_data(plaintext, &dek, &data_nonce).expect("Failed to encrypt data with DEK");
 
     // 4. Encrypt the DEK with the KEK (Key wrapping)
     let dek_nonce = NonceBytes::generate();
-    let encrypted_dek_blob = encrypt_data(&dek, &kek.0, &dek_nonce)
-        .expect("Failed to encrypt DEK with KEK");
+    let encrypted_dek_blob =
+        encrypt_data(&dek, &kek.0, &dek_nonce).expect("Failed to encrypt DEK with KEK");
 
     // --- Decryption Flow ---
 
@@ -54,12 +55,11 @@ fn test_node_session_key_encryption() {
     let original_message = b"Ephemeral node-to-node telemetry message";
 
     // 1. Encrypt with node session key
-    let encrypted = encrypt_with_session_key(original_message)
-        .expect("Session key encryption failed");
+    let encrypted =
+        encrypt_with_session_key(original_message).expect("Session key encryption failed");
 
     // 2. Decrypt with node session key
-    let decrypted = decrypt_with_session_key(&encrypted)
-        .expect("Session key decryption failed");
+    let decrypted = decrypt_with_session_key(&encrypted).expect("Session key decryption failed");
 
     assert_eq!(original_message.to_vec(), decrypted);
 }
@@ -70,8 +70,7 @@ fn test_corrupted_ciphertext_verification() {
     let plaintext = b"Top secret agent instruction payload";
     let nonce = NonceBytes::generate();
 
-    let mut blob = encrypt_data(plaintext, &dek, &nonce)
-        .expect("Encryption failed");
+    let mut blob = encrypt_data(plaintext, &dek, &nonce).expect("Encryption failed");
 
     // Attempt decryption with wrong key should fail
     let wrong_dek = generate_dek();

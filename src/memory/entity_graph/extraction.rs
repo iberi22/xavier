@@ -61,6 +61,7 @@ pub(super) static COMMON_WORDS: &[&str] = &[
     "onto", "your", "our", "their", "his", "her", "its", "in", "on", "at", "by", "to", "of",
 ];
 
+/// Extract entities.
 pub(super) fn extract_entities(text: &str) -> Vec<ExtractedEntity> {
     let mut seen = HashSet::new();
     let mut entities = Vec::new();
@@ -125,6 +126,7 @@ pub(super) fn extract_entities(text: &str) -> Vec<ExtractedEntity> {
     entities
 }
 
+/// Guess entity type.
 pub(super) fn guess_entity_type(
     name: &str,
     normalized: &str,
@@ -159,6 +161,7 @@ pub(super) fn guess_entity_type(
     EntityType::Concept
 }
 
+/// Extract relation candidates.
 pub(super) fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
     let entities = extract_entities_without_relations(text);
     let mut normalized_entities = std::collections::HashMap::with_capacity(entities.len());
@@ -177,8 +180,10 @@ pub(super) fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
             let Some(target) = cap.name("target").map(|m| m.as_str().trim()) else {
                 continue;
             };
-            let source = best_match(source, &normalized_entities).unwrap_or_else(|| source.to_string());
-            let target = best_match(target, &normalized_entities).unwrap_or_else(|| target.to_string());
+            let source =
+                best_match(source, &normalized_entities).unwrap_or_else(|| source.to_string());
+            let target =
+                best_match(target, &normalized_entities).unwrap_or_else(|| target.to_string());
             relations.push(RawRelation {
                 source,
                 target,
@@ -190,6 +195,7 @@ pub(super) fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
     relations
 }
 
+/// Extract entities without relations.
 pub(super) fn extract_entities_without_relations(text: &str) -> Vec<String> {
     CANDIDATE_ENTITY_RE
         .find_iter(text)
@@ -208,11 +214,16 @@ pub(super) fn extract_entities_without_relations(text: &str) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn best_match(candidate: &str, normalized_entities: &std::collections::HashMap<String, String>) -> Option<String> {
+/// Best match.
+pub(super) fn best_match(
+    candidate: &str,
+    normalized_entities: &std::collections::HashMap<String, String>,
+) -> Option<String> {
     let normalized = normalize_name(candidate);
     normalized_entities.get(&normalized).cloned()
 }
 
+/// Co occurrence score.
 pub(super) fn co_occurrence_score(entity_count: usize) -> f32 {
     match entity_count {
         0 | 1 => 0.0,
@@ -223,6 +234,7 @@ pub(super) fn co_occurrence_score(entity_count: usize) -> f32 {
     }
 }
 
+/// Normalize name.
 pub(super) fn normalize_name(name: &str) -> String {
     name.split_whitespace()
         .map(|part| {
@@ -239,20 +251,24 @@ pub(super) fn normalize_name(name: &str) -> String {
         .join(" ")
 }
 
+/// Entity lookup key.
 pub(super) fn entity_lookup_key(normalized_name: &str, entity_type: EntityType) -> String {
     format!("{}|{}", normalized_name, entity_type.as_str())
 }
 
+/// Relation lookup key.
 pub(super) fn relation_lookup_key(source: &str, target: &str, relation_type: &str) -> String {
     format!("{}|{}|{}", source, target, relation_type)
 }
 
+/// Is common word.
 pub(super) fn is_common_word(value: &str) -> bool {
     COMMON_WORDS
         .iter()
         .any(|word| word.eq_ignore_ascii_case(value))
 }
 
+/// Looks like organization.
 pub(super) fn looks_like_organization(name: &str) -> bool {
     let lowered = name.to_ascii_lowercase();
     let org_markers = [
@@ -280,6 +296,7 @@ pub(super) fn looks_like_organization(name: &str) -> bool {
             .any(|marker| lowered.ends_with(marker) || lowered.contains(marker))
 }
 
+/// Looks like location.
 pub(super) fn looks_like_location(lowered: &str) -> bool {
     let location_markers = [
         " city",
@@ -303,6 +320,7 @@ pub(super) fn looks_like_location(lowered: &str) -> bool {
         .any(|marker| lowered.ends_with(marker) || lowered.contains(marker))
 }
 
+/// Looks like product.
 pub(super) fn looks_like_product(name: &str) -> bool {
     let lowered = name.to_ascii_lowercase();
     lowered.chars().any(|c| c.is_ascii_digit())
@@ -313,6 +331,7 @@ pub(super) fn looks_like_product(name: &str) -> bool {
         || lowered.contains("api")
 }
 
+/// Looks like person.
 pub(super) fn looks_like_person(name: &str) -> bool {
     let tokens: Vec<_> = name.split_whitespace().collect();
     (tokens.len() <= 3

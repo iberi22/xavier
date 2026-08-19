@@ -2,6 +2,7 @@
 //!
 //! This module provides lightweight utilities that replace external dependencies.
 
+pub mod compression;
 pub mod crypto;
 pub mod file_traversal;
 pub mod http;

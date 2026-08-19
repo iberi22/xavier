@@ -10,8 +10,11 @@ use tracing::info;
 
 pub mod cache;
 pub mod gllm;
+pub mod ollama;
 pub mod openai;
 pub mod pipeline;
+
+pub const DIMENSION_768: usize = 768;
 
 const DEFAULT_LOCAL_EMBEDDING_ENDPOINT: &str = "http://localhost:11434/v1/embeddings";
 const DEFAULT_LOCAL_EMBEDDING_MODEL: &str = "embeddinggemma";
@@ -32,6 +35,9 @@ pub enum EmbeddingError {
 pub trait Embedder: Send + Sync {
     async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
     fn dimension(&self) -> usize;
+    fn cache_metrics(&self) -> Option<cache::EmbeddingCacheMetrics> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,9 +93,17 @@ pub(crate) struct GllmConfig {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct OllamaConfig {
+    endpoint: String,
+    model: String,
+    dimension: usize,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum EmbedderBackendConfig {
     Gllm(GllmConfig),
     OpenAICompatible(OpenAICompatibleConfig),
+    Ollama(OllamaConfig),
 }
 
 #[derive(Clone, Debug)]
@@ -100,6 +114,7 @@ pub(crate) enum EmbedderConfig {
 }
 
 impl EmbedderConfig {
+    /// From env.
     pub fn from_env() -> Self {
         let provider_mode = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .ok()
@@ -110,6 +125,10 @@ impl EmbedderConfig {
             .unwrap_or(ApiFlavor::OpenAICompatible);
 
         let explicit_embedder = std::env::var("XAVIER_EMBEDDER")
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase());
+
+        let embed_provider = std::env::var("XAVIER_EMBED_PROVIDER")
             .ok()
             .map(|value| value.trim().to_ascii_lowercase());
 
@@ -127,20 +146,42 @@ impl EmbedderConfig {
             return Self::Noop;
         }
 
+        if let Some(ref provider) = embed_provider {
+            if provider == "openrouter" {
+                let mut backends = vec![EmbedderBackendConfig::OpenAICompatible(cloud_config())];
+                backends.push(EmbedderBackendConfig::Ollama(ollama_config()));
+                return Self::Fallback(backends);
+            } else if provider == "ollama" {
+                let mut backends = vec![EmbedderBackendConfig::Ollama(ollama_config())];
+                if cloud_embedding_signal_present() {
+                    backends.push(EmbedderBackendConfig::OpenAICompatible(cloud_config()));
+                }
+                return Self::Fallback(backends);
+            }
+        }
+
         match provider_mode {
             Some(ProviderMode::Local) => Self::local_only(api_flavor),
             Some(ProviderMode::LocalGllm) => Self::gllm_only(),
             Some(ProviderMode::Cloud) => Self::cloud_only(api_flavor),
             Some(ProviderMode::Auto) => Self::auto_explicit(api_flavor),
             Some(ProviderMode::Disabled) => Self::Noop,
-            None => Self::auto(api_flavor),
+            None => {
+                let mut backends = vec![EmbedderBackendConfig::Ollama(ollama_config())];
+                if cloud_embedding_signal_present() {
+                    backends.push(EmbedderBackendConfig::OpenAICompatible(cloud_config()));
+                }
+                Self::Fallback(backends)
+            }
         }
     }
 
+    /// Is configured.
     pub fn is_configured(&self) -> bool {
         !matches!(self, Self::Noop)
     }
 
+    /// Active model name.
     pub fn active_model_name(&self) -> Option<String> {
         match self {
             Self::Fallback(backends) => {
@@ -150,6 +191,7 @@ impl EmbedderConfig {
                         EmbedderBackendConfig::OpenAICompatible(cfg) => {
                             return Some(cfg.model.clone())
                         }
+                        EmbedderBackendConfig::Ollama(cfg) => return Some(cfg.model.clone()),
                     }
                 }
                 None
@@ -159,6 +201,7 @@ impl EmbedderConfig {
         }
     }
 
+    /// Build sync.
     pub fn build_sync(self) -> Result<Arc<dyn Embedder>, EmbeddingError> {
         match self {
             Self::Invalid(msg) => Err(EmbeddingError::Config(msg)),
@@ -198,6 +241,7 @@ impl EmbedderConfig {
         }
     }
 
+    /// Build.
     pub async fn build(self) -> Result<Arc<dyn Embedder>, EmbeddingError> {
         self.build_sync()
     }
@@ -240,18 +284,26 @@ impl EmbedderConfig {
 
             let handle = tokio::runtime::Handle::try_current();
             let models_opt = match handle {
-                Ok(h) => tokio::task::block_in_place(|| {
-                    h.block_on(async { probe_ollama_async(&probe_url).await })
-                }),
-                Err(_) => {
-                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        rt.block_on(async { probe_ollama_async(&probe_url).await })
-                    } else {
-                        None
-                    }
+                Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+                    tokio::task::block_in_place(|| {
+                        h.block_on(async { probe_ollama_async(&probe_url).await })
+                    })
+                }
+                _ => {
+                    let probe_url_clone = probe_url.clone();
+                    std::thread::spawn(move || {
+                        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                        {
+                            rt.block_on(async { probe_ollama_async(&probe_url_clone).await })
+                        } else {
+                            None
+                        }
+                    })
+                    .join()
+                    .ok()
+                    .flatten()
                 }
             };
 
@@ -297,6 +349,7 @@ impl EmbedderConfig {
 
     fn local_only(_api_flavor: ApiFlavor) -> Self {
         Self::Fallback(vec![
+            EmbedderBackendConfig::Ollama(ollama_config()),
             EmbedderBackendConfig::Gllm(gllm_config()),
             EmbedderBackendConfig::OpenAICompatible(local_config()),
         ])
@@ -355,25 +408,47 @@ impl EmbedderConfig {
     }
 }
 
+/// Build embedder from env.
 pub async fn build_embedder_from_env() -> Result<Arc<dyn Embedder>, EmbeddingError> {
     let embedder = EmbedderConfig::from_env().build().await?;
 
     // Wrap in the persistent cache if enabled.
     let cache_config = cache::EmbeddingCacheConfig::from_env();
-    if cache_config.enabled && embedder.dimension() > 0 {
+    let embedder: Arc<dyn Embedder> = if cache_config.enabled && embedder.dimension() > 0 {
         info!(
             capacity = cache_config.max_capacity,
             ttl_hours = cache_config.ttl_hours,
             db = %cache_config.db_path.display(),
             "embedding cache enabled"
         );
-        Ok(Arc::new(cache::CachedEmbedder::new(
+        Arc::new(cache::CachedEmbedder::new(
             embedder,
             Arc::new(cache::EmbeddingCache::new(cache_config)),
-        )))
+        ))
     } else if cache_config.enabled && embedder.dimension() == 0 {
         info!("embedding cache skipped: noop embedder (dimension=0)");
-        Ok(embedder)
+        embedder
+    } else {
+        embedder
+    };
+
+    // Wrap in circuit breaker: trips after N consecutive failures, cools down for 60s.
+    let threshold: u32 = std::env::var("XAVIER_EMBEDDER_CB_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    let cooldown_secs: u64 = std::env::var("XAVIER_EMBEDDER_CB_COOLDOWN_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+    if !matches!(embedder.dimension(), 0) {
+        let cb = Arc::new(CircuitBreakerEmbedder::new(
+            embedder,
+            threshold,
+            std::time::Duration::from_secs(cooldown_secs),
+        ));
+        info!(threshold, cooldown_secs, "embedder circuit breaker enabled");
+        Ok(cb)
     } else {
         Ok(embedder)
     }
@@ -393,8 +468,8 @@ impl Embedder for NoopEmbedder {
     }
 }
 
-struct FallbackEmbedder {
-    embedders: Vec<Arc<dyn Embedder>>,
+pub(crate) struct FallbackEmbedder {
+    pub(crate) embedders: Vec<Arc<dyn Embedder>>,
 }
 
 #[async_trait]
@@ -424,6 +499,129 @@ impl Embedder for FallbackEmbedder {
             .map(|embedder| embedder.dimension())
             .find(|dimension| *dimension > 0)
             .unwrap_or(0)
+    }
+}
+
+/// Circuit breaker states for the embedder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CircuitState {
+    /// Normal operation — requests pass through.
+    Closed,
+    /// Too many consecutive failures — requests are rejected.
+    Open,
+    /// Cooldown elapsed — allow a single probe request.
+    HalfOpen,
+}
+
+/// Embedder wrapper that trips open after `threshold` consecutive failures,
+/// then enters a cooldown period before allowing a probe request.
+pub struct CircuitBreakerEmbedder {
+    inner: Arc<dyn Embedder>,
+    failure_count: std::sync::atomic::AtomicU32,
+    threshold: u32,
+    cooldown: std::time::Duration,
+    last_failure: std::sync::atomic::AtomicU64,
+}
+
+impl CircuitBreakerEmbedder {
+    /// Wrap an embedder with a circuit breaker.
+    pub fn new(inner: Arc<dyn Embedder>, threshold: u32, cooldown: std::time::Duration) -> Self {
+        Self {
+            inner,
+            failure_count: std::sync::atomic::AtomicU32::new(0),
+            threshold,
+            cooldown,
+            last_failure: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    /// Current state of the circuit breaker.
+    pub fn state(&self) -> CircuitState {
+        let failures = self
+            .failure_count
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if failures < self.threshold {
+            return CircuitState::Closed;
+        }
+        let last = self.last_failure.load(std::sync::atomic::Ordering::Relaxed);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if now.saturating_sub(last) >= self.cooldown.as_secs() {
+            CircuitState::HalfOpen
+        } else {
+            CircuitState::Open
+        }
+    }
+
+    /// Consecutive failure count.
+    pub fn consecutive_failures(&self) -> u32 {
+        self.failure_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+#[async_trait]
+impl Embedder for CircuitBreakerEmbedder {
+    async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        match self.state() {
+            CircuitState::Open => {
+                return Err(EmbeddingError::Network(
+                    "circuit breaker open: too many consecutive failures".to_string(),
+                ));
+            }
+            CircuitState::HalfOpen => {
+                // Allow one probe — if it fails, trip again.
+            }
+            CircuitState::Closed => {
+                // Normal path.
+            }
+        }
+
+        match self.inner.encode(text).await {
+            Ok(vector) => {
+                self.failure_count
+                    .store(0, std::sync::atomic::Ordering::Relaxed);
+                Ok(vector)
+            }
+            Err(error) => {
+                let prev = self
+                    .failure_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                self.last_failure
+                    .store(now, std::sync::atomic::Ordering::Relaxed);
+                if prev + 1 >= self.threshold {
+                    tracing::warn!(
+                        threshold = self.threshold,
+                        cooldown_secs = self.cooldown.as_secs(),
+                        "circuit breaker TRIPPED — embedder entering cooldown"
+                    );
+                    crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                        "WARN",
+                        &format!(
+                            "Embedder circuit breaker tripped after {} consecutive failures; cooldown {}s",
+                            self.threshold,
+                            self.cooldown.as_secs()
+                        ),
+                        "embedding",
+                    );
+                }
+                Err(error)
+            }
+        }
+    }
+
+    fn dimension(&self) -> usize {
+        self.inner.dimension()
+    }
+
+    fn cache_metrics(&self) -> Option<cache::EmbeddingCacheMetrics> {
+        self.inner.cache_metrics()
     }
 }
 
@@ -494,6 +692,34 @@ fn build_backend(config: EmbedderBackendConfig) -> Result<Arc<dyn Embedder>, Emb
                 std::time::Duration::from_secs(timeout_secs),
             )?))
         }
+        EmbedderBackendConfig::Ollama(config) => {
+            let timeout_secs = crate::settings::XavierSettings::current()
+                .embedding
+                .timeout_secs;
+            Ok(Arc::new(ollama::OllamaEmbedder::new(
+                config.model,
+                config.endpoint,
+                config.dimension,
+                std::time::Duration::from_secs(timeout_secs),
+            )?))
+        }
+    }
+}
+
+fn ollama_config() -> OllamaConfig {
+    let endpoint = std::env::var("XAVIER_OLLAMA_URL")
+        .unwrap_or_else(|_| "http://localhost:11434/api/embed".to_string());
+    let model =
+        std::env::var("XAVIER_OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
+    let dimension = std::env::var("XAVIER_OLLAMA_DIMS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(768);
+
+    OllamaConfig {
+        endpoint,
+        model,
+        dimension,
     }
 }
 
@@ -588,7 +814,10 @@ fn normalize_openai_embeddings_endpoint(raw: &str) -> String {
 fn embedding_dimension_for_model(model: &str) -> usize {
     match model.trim().to_ascii_lowercase().as_str() {
         "embeddinggemma" => 768,
-        "nomic-embed-text" | "nomic-embed-text-v1.5" => 768,
+        "nomic-embed-text"
+        | "nomic-embed-text:latest"
+        | "nomic-embed-text-v1"
+        | "nomic-embed-text-v1.5" => 768,
         "all-minilm" => 384,
         "qwen3-embedding" | "qwen3-embedding-0.6b" => 1024,
         "text-embedding-3-large" => 3072,
@@ -622,6 +851,20 @@ mod tests {
         );
         assert_eq!(gllm::dimension_for_model("all-MiniLM-L6-v2"), 384);
         assert_eq!(gllm::dimension_for_model("qwen3-embedding-0.6b"), 1024);
+    }
+
+    #[test]
+    fn embedding_dimension_for_model_returns_768_for_nomic() {
+        assert_eq!(embedding_dimension_for_model("nomic-embed-text"), 768);
+        assert_eq!(
+            embedding_dimension_for_model("nomic-embed-text:latest"),
+            768
+        );
+        assert_eq!(embedding_dimension_for_model("nomic-embed-text-v1.5"), 768);
+        assert_eq!(
+            embedding_dimension_for_model("text-embedding-3-small"),
+            1536
+        );
     }
 
     #[test]
@@ -725,7 +968,13 @@ mod tests {
     async fn test_auto_triggers_probe_ollama_reachable_with_embeddinggemma() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "nonexistent_config_file_for_test.json",
+        );
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("OPENAI_API_KEY");
 
         // Start a mockito server
@@ -759,6 +1008,7 @@ mod tests {
         assert!(matches!(config, EmbedderConfig::Fallback(_)));
 
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[tokio::test]
@@ -766,7 +1016,13 @@ mod tests {
     async fn test_auto_triggers_probe_ollama_reachable_without_embeddinggemma() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "nonexistent_config_file_for_test.json",
+        );
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("OPENAI_API_KEY");
 
         // Start a mockito server
@@ -800,13 +1056,20 @@ mod tests {
         assert!(matches!(config, EmbedderConfig::Fallback(_)));
 
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[tokio::test]
     async fn test_auto_triggers_probe_ollama_unreachable() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "nonexistent_config_file_for_test.json",
+        );
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("OPENAI_API_KEY");
 
         // Use an invalid/unreachable URL
@@ -820,5 +1083,6 @@ mod tests {
         assert!(matches!(config, EmbedderConfig::Noop));
 
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 }

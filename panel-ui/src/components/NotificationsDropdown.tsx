@@ -139,9 +139,10 @@ function NotificationItem({
       {!notif.read && (
         <button
           onClick={() => onRead(notif.id)}
+          aria-label="Mark as read"
           className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-white/20 hover:text-white/50"
         >
-          <X className="w-3 h-3" />
+          <X className="w-3 h-3" aria-hidden="true" />
         </button>
       )}
     </motion.div>
@@ -271,15 +272,16 @@ export default function NotificationsDropdown({
                 onClick={markAllRead}
                 className="flex items-center gap-1 px-2 py-1 text-[9px] text-white/30 hover:text-white/60 hover:bg-white/5 rounded-lg transition-all"
               >
-                <CheckCheck className="w-3 h-3" />
+                <CheckCheck className="w-3 h-3" aria-hidden="true" />
                 All read
               </button>
             )}
             <button
               onClick={onClose}
+              aria-label="Close notifications"
               className="p-1 text-white/20 hover:text-white/50 hover:bg-white/5 rounded-lg transition-all"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>

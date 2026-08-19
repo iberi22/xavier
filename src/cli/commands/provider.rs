@@ -4,6 +4,7 @@ use crate::cli::commands::enums::{ProviderCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
 use anyhow::Result;
 
+/// Handle provider command.
 pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;

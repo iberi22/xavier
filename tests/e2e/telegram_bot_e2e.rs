@@ -1,10 +1,10 @@
 #[cfg(feature = "telegram")]
 mod telegram_tests {
-    use xavier::telegram::{
-        handle_memory_command, load_bot_token, MemoryCommand, TelegramConfig,
-        RATE_LIMIT_COMMANDS, RATE_LIMIT_WINDOW_SECS, TELEGRAM_TOKEN_VAULT_KEY,
-    };
     use std::env;
+    use xavier::telegram::{
+        handle_memory_command, load_bot_token, MemoryCommand, TelegramConfig, RATE_LIMIT_COMMANDS,
+        RATE_LIMIT_WINDOW_SECS, TELEGRAM_TOKEN_VAULT_KEY,
+    };
 
     #[test]
     fn test_telegram_config_defaults() {
@@ -25,14 +25,18 @@ mod telegram_tests {
         // 2. Search command
         let cmd = MemoryCommand::parse("search rust memory database")
             .expect("Failed to parse search command");
-        assert_eq!(cmd, MemoryCommand::Search("rust memory database".to_string()));
+        assert_eq!(
+            cmd,
+            MemoryCommand::Search("rust memory database".to_string())
+        );
 
         // 3. List command
         let cmd = MemoryCommand::parse("list").expect("Failed to parse list command");
         assert_eq!(cmd, MemoryCommand::List);
 
         // 4. Delete command
-        let cmd = MemoryCommand::parse("delete doc_id_123").expect("Failed to parse delete command");
+        let cmd =
+            MemoryCommand::parse("delete doc_id_123").expect("Failed to parse delete command");
         assert_eq!(cmd, MemoryCommand::Delete("doc_id_123".to_string()));
 
         // 5. Invalid command
@@ -81,5 +85,36 @@ mod telegram_tests {
         } else {
             env::remove_var("TELEGRAM_BOT_TOKEN");
         }
+    }
+
+    #[test]
+    fn test_webhook_secret_token_verification() {
+        use xavier::telegram::{verify_webhook_secret, X_TELEGRAM_BOT_API_SECRET_TOKEN};
+
+        assert_eq!(
+            X_TELEGRAM_BOT_API_SECRET_TOKEN,
+            "X-Telegram-Bot-Api-Secret-Token"
+        );
+
+        let secret = "super_secret_telegram_token_123";
+
+        // 1. Secret is set, missing header -> 401 Unauthorized
+        let res_missing = verify_webhook_secret(Some(secret), None);
+        assert_eq!(res_missing, Err(axum::http::StatusCode::UNAUTHORIZED));
+
+        // 2. Secret is set, wrong token -> 401 Unauthorized
+        let res_wrong = verify_webhook_secret(Some(secret), Some("wrong_secret_token"));
+        assert_eq!(res_wrong, Err(axum::http::StatusCode::UNAUTHORIZED));
+
+        // 3. Secret is set, correct token -> Ok(())
+        let res_correct = verify_webhook_secret(Some(secret), Some(secret));
+        assert_eq!(res_correct, Ok(()));
+
+        // 4. Secret is NOT set (None) -> Ok(()) regardless of provided header
+        let res_no_secret = verify_webhook_secret(None, None);
+        assert_eq!(res_no_secret, Ok(()));
+
+        let res_no_secret_with_token = verify_webhook_secret(None, Some("any_token"));
+        assert_eq!(res_no_secret_with_token, Ok(()));
     }
 }

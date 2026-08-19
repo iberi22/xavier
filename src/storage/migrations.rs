@@ -72,7 +72,9 @@ CREATE TABLE IF NOT EXISTS memory_records (
     cluster_id TEXT,
     level TEXT DEFAULT 'atom',
     relation TEXT,
-    revisions TEXT
+    revisions TEXT,
+    embedding_status TEXT DEFAULT 'pending',
+    embedding_attempts INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_memories_workspace ON memory_records (workspace_id);
 CREATE INDEX IF NOT EXISTS idx_memories_path ON memory_records (workspace_id, path);
@@ -271,6 +273,16 @@ CREATE TABLE IF NOT EXISTS notifications (
     read INTEGER NOT NULL DEFAULT 0,
     severity TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS memory_symbol_links (
+    memory_id TEXT NOT NULL,
+    symbol_id TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (memory_id, symbol_id)
+);
+CREATE INDEX IF NOT EXISTS idx_msl_symbol ON memory_symbol_links(symbol_id);
+CREATE INDEX IF NOT EXISTS idx_msl_memory ON memory_symbol_links(memory_id);
 "#;
 
 // ===========================================================================
@@ -405,6 +417,8 @@ impl LegacyMigration for MigrationV1InitialSchema {
             ("encrypted_dek", "BLOB"),
             ("content_iv", "BLOB"),
             ("metadata_iv", "BLOB"),
+            ("embedding_status", "TEXT DEFAULT 'pending'"),
+            ("embedding_attempts", "INTEGER DEFAULT 0"),
         ];
         for (col, def) in memory_columns {
             if !table_has_column(conn, "memory_records", col)? {
@@ -454,6 +468,57 @@ impl LegacyMigration for MigrationV1InitialSchema {
             conn.execute("ALTER TABLE memory_chain ADD COLUMN workspace_id TEXT", [])?;
         }
 
+        Ok(())
+    }
+}
+
+const V10_UP: &str = r#"
+CREATE TABLE IF NOT EXISTS memory_embeddings_768 (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    embedding BLOB NOT NULL
+);
+"#;
+
+pub struct MigrationV10Embeddings768;
+
+impl LegacyMigration for MigrationV10Embeddings768 {
+    fn version(&self) -> u32 {
+        10
+    }
+    fn description(&self) -> &str {
+        "Add memory_embeddings_768 table for 768-dimensional vectors"
+    }
+    fn run(&self, conn: &Connection) -> Result<()> {
+        conn.execute_batch(V10_UP)?;
+        Ok(())
+    }
+}
+
+pub struct MigrationV9EmbeddingStatus;
+
+impl LegacyMigration for MigrationV9EmbeddingStatus {
+    fn version(&self) -> u32 {
+        9
+    }
+    fn description(&self) -> &str {
+        "Add embedding_status and embedding_attempts columns to memory_records"
+    }
+    fn run(&self, conn: &Connection) -> Result<()> {
+        if table_exists(conn, "memory_records")? {
+            if !table_has_column(conn, "memory_records", "embedding_status")? {
+                conn.execute(
+                    "ALTER TABLE memory_records ADD COLUMN embedding_status TEXT DEFAULT 'pending'",
+                    [],
+                )?;
+            }
+            if !table_has_column(conn, "memory_records", "embedding_attempts")? {
+                conn.execute(
+                    "ALTER TABLE memory_records ADD COLUMN embedding_attempts INTEGER DEFAULT 0",
+                    [],
+                )?;
+            }
+        }
         Ok(())
     }
 }

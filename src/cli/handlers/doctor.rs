@@ -26,22 +26,78 @@ pub struct DoctorReport {
     pub overall: CheckStatus,
 }
 
+/// Handle doctor.
 pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
     let settings = XavierSettings::current();
     let scan = scan_system(false).await;
 
     let mut checks = Vec::new();
 
-    // 1. Ollama Reachability
+    // 0. XAVIER_DATA_DIR path sanity (Unix must not use Windows drive letters)
+    let data_dir_raw = std::env::var("XAVIER_DATA_DIR")
+        .unwrap_or_else(|_| XavierSettings::resolve_data_dir().display().to_string());
+    let data_dir_check = match crate::cli::config::validate_data_dir_path(&data_dir_raw) {
+        Ok(()) => DoctorCheck {
+            name: "XAVIER_DATA_DIR Path".to_string(),
+            status: CheckStatus::Ok,
+            detail: format!("Data directory path is valid: {data_dir_raw}"),
+            hint: None,
+        },
+        Err(msg) => DoctorCheck {
+            name: "XAVIER_DATA_DIR Path".to_string(),
+            status: CheckStatus::Fail,
+            detail: msg.clone(),
+            hint: Some(
+                "Unset or rewrite XAVIER_DATA_DIR to a POSIX path (e.g. /home/.../xavier/data)"
+                    .to_string(),
+            ),
+        },
+    };
+    checks.push(data_dir_check);
+
+    // Resolve embedding backend early so local-LLM checks stay separate from cloud embeds.
+    let expected_embed = std::env::var("XAVIER_EMBEDDING_MODEL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            if !settings.models.embedding_model.trim().is_empty() {
+                settings.models.embedding_model.clone()
+            } else {
+                "embeddinggemma".to_string()
+            }
+        });
+    let embedding_url = std::env::var("XAVIER_EMBEDDING_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| settings.models.embedding_url.clone());
+    let embedding_mode = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| settings.workspace.embedding_provider_mode.clone());
+    let embeddings_are_local =
+        embeddings_use_local_ollama(&embedding_mode, &embedding_url, &expected_embed);
+
+    // 1. Ollama Reachability (local LLM / local embeddings only — warn if unused)
     let ollama_reachable = scan.ollama.running;
+    let provider = std::env::var("XAVIER_MODEL_PROVIDER")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| settings.models.provider.clone());
+    let provider_is_local =
+        provider.eq_ignore_ascii_case("local") || provider.eq_ignore_ascii_case("ollama");
+
     checks.push(DoctorCheck {
         name: "Ollama Reachability".to_string(),
-        status: if ollama_reachable {
+        status: if (!provider_is_local && !embeddings_are_local) || ollama_reachable {
             CheckStatus::Ok
-        } else {
+        } else if provider_is_local || embeddings_are_local {
             CheckStatus::Fail
+        } else {
+            CheckStatus::Warn
         },
-        detail: if ollama_reachable {
+        detail: if !provider_is_local && !embeddings_are_local {
+            format!("Ollama not required (LLM provider='{provider}', embeddings via cloud/BYO)")
+        } else if ollama_reachable {
             format!(
                 "Ollama is running at {} (version: {})",
                 scan.ollama.url,
@@ -53,7 +109,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
                 scan.ollama.url
             )
         },
-        hint: if ollama_reachable {
+        hint: if ollama_reachable || (!provider_is_local && !embeddings_are_local) {
             None
         } else {
             Some(
@@ -63,7 +119,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         },
     });
 
-    // 2. LLM Model Installed
+    // 2. LLM Model Installed (local provider only)
     let expected_llm = std::env::var("XAVIER_LOCAL_LLM_MODEL")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -80,79 +136,124 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
             || expected_llm.to_lowercase().contains(&m.to_lowercase())
     });
 
-    checks.push(DoctorCheck {
-        name: "LLM Model Installed".to_string(),
-        status: if llm_installed {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Fail
-        },
-        detail: if llm_installed {
-            format!("Model '{}' is installed in Ollama", expected_llm)
-        } else {
-            format!("Model '{}' is not installed in Ollama", expected_llm)
-        },
-        hint: if llm_installed {
-            None
-        } else {
-            Some(format!(
-                "Run 'ollama pull {}' to install the model",
-                expected_llm
-            ))
-        },
-    });
-
-    // 3. Embedding Model Installed
-    let expected_embed = std::env::var("XAVIER_EMBEDDING_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            if !settings.models.embedding_model.trim().is_empty() {
-                settings.models.embedding_model.clone()
+    if provider_is_local {
+        checks.push(DoctorCheck {
+            name: "LLM Model Installed".to_string(),
+            status: if llm_installed {
+                CheckStatus::Ok
             } else {
-                "embeddinggemma".to_string()
-            }
+                CheckStatus::Fail
+            },
+            detail: if llm_installed {
+                format!("Model '{}' is installed in Ollama", expected_llm)
+            } else {
+                format!("Model '{}' is not installed in Ollama", expected_llm)
+            },
+            hint: if llm_installed {
+                None
+            } else {
+                Some(format!(
+                    "Run 'ollama pull {}' to install the model",
+                    expected_llm
+                ))
+            },
+        });
+    } else {
+        checks.push(DoctorCheck {
+            name: "LLM Model Installed".to_string(),
+            status: CheckStatus::Ok,
+            detail: format!("Skipped Ollama LLM model check (provider='{provider}' is not local)"),
+            hint: None,
+        });
+    }
+
+    // 3. Embedding checks — local Ollama vs cloud/OpenRouter
+    if embeddings_are_local {
+        let embed_installed = scan.ollama.models.iter().any(|m| {
+            m.to_lowercase().contains(&expected_embed.to_lowercase())
+                || expected_embed.to_lowercase().contains(&m.to_lowercase())
         });
 
-    let embed_installed = scan.ollama.models.iter().any(|m| {
-        m.to_lowercase().contains(&expected_embed.to_lowercase())
-            || expected_embed.to_lowercase().contains(&m.to_lowercase())
-    });
+        checks.push(DoctorCheck {
+            name: "Embedding Model Installed".to_string(),
+            status: if embed_installed {
+                CheckStatus::Ok
+            } else {
+                CheckStatus::Fail
+            },
+            detail: if embed_installed {
+                format!(
+                    "Embedding model '{}' is installed in Ollama",
+                    expected_embed
+                )
+            } else {
+                format!(
+                    "Embedding model '{}' is not installed in Ollama",
+                    expected_embed
+                )
+            },
+            hint: if embed_installed {
+                None
+            } else {
+                Some(format!(
+                    "Run 'ollama pull {}' to install the embedding model",
+                    expected_embed
+                ))
+            },
+        });
+    } else {
+        let url_ok = !embedding_url.trim().is_empty()
+            && (embedding_url.starts_with("http://") || embedding_url.starts_with("https://"));
+        let has_key = std::env::var("XAVIER_EMBEDDING_API_KEY")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                std::env::var("OPENAI_API_KEY")
+                    .ok()
+                    .filter(|s| !s.trim().is_empty())
+            })
+            .or_else(|| {
+                settings
+                    .embedding
+                    .api_key
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
+            })
+            .is_some();
 
-    checks.push(DoctorCheck {
-        name: "Embedding Model Installed".to_string(),
-        status: if embed_installed {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Fail
-        },
-        detail: if embed_installed {
-            format!(
-                "Embedding model '{}' is installed in Ollama",
-                expected_embed
-            )
-        } else {
-            format!(
-                "Embedding model '{}' is not installed in Ollama",
-                expected_embed
-            )
-        },
-        hint: if embed_installed {
-            None
-        } else {
-            Some(format!(
-                "Run 'ollama pull {}' to install the embedding model",
-                expected_embed
-            ))
-        },
-    });
+        checks.push(DoctorCheck {
+            name: "Cloud Embedding Config".to_string(),
+            status: if url_ok && !expected_embed.trim().is_empty() {
+                if has_key {
+                    CheckStatus::Ok
+                } else {
+                    CheckStatus::Warn
+                }
+            } else {
+                CheckStatus::Fail
+            },
+            detail: format!(
+                "Cloud/BYO embeddings: model='{expected_embed}', url='{embedding_url}', mode='{embedding_mode}' (not checked via Ollama)"
+            ),
+            hint: if url_ok && !expected_embed.trim().is_empty() {
+                if has_key {
+                    None
+                } else {
+                    Some(
+                        "Set XAVIER_EMBEDDING_API_KEY (or OPENAI_API_KEY) for cloud embeddings"
+                            .to_string(),
+                    )
+                }
+            } else {
+                Some(
+                    "Set XAVIER_EMBEDDING_URL and XAVIER_EMBEDDING_MODEL for your cloud provider (OpenRouter/OpenAI)"
+                        .to_string(),
+                )
+            },
+        });
+    }
 
     // 4. Config Válida para Local
-    let provider = std::env::var("XAVIER_MODEL_PROVIDER")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| settings.models.provider.clone());
-
     let local_llm_url = std::env::var("XAVIER_LOCAL_LLM_URL")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -163,96 +264,123 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| settings.models.local_llm_model.clone());
 
-    let provider_is_local = provider == "local";
     let url_is_valid = !local_llm_url.trim().is_empty()
         && (local_llm_url.starts_with("http://") || local_llm_url.starts_with("https://"));
     let model_is_valid = !local_llm_model.trim().is_empty();
-    let config_valid = provider_is_local && url_is_valid && model_is_valid;
+    let config_valid = if provider_is_local {
+        url_is_valid && model_is_valid
+    } else {
+        true
+    };
 
     checks.push(DoctorCheck {
         name: "Local Configuration".to_string(),
-        status: if config_valid { CheckStatus::Ok } else { CheckStatus::Fail },
-        detail: if config_valid {
-            format!("Local provider is configured with model '{}' at '{}'", local_llm_model, local_llm_url)
-        } else {
-            format!("Local configuration is invalid: provider='{}' (expected 'local'), url='{}', model='{}'", provider, local_llm_url, local_llm_model)
-        },
-        hint: if config_valid {
-            None
-        } else {
-            Some("Run 'xavier setup --local' to configure local-first settings automatically".to_string())
-        },
-    });
-
-    // 5. URL Reachable
-    let client = reqwest::Client::new();
-    let mut url_reachable = false;
-    let mut url_error = String::new();
-
-    if url_is_valid {
-        let url1 = if local_llm_url.ends_with("/v1") {
-            format!("{}/api/version", &local_llm_url[..local_llm_url.len() - 3])
-        } else if local_llm_url.ends_with("/v1/") {
-            format!("{}/api/version", &local_llm_url[..local_llm_url.len() - 4])
-        } else {
-            format!("{}/api/version", local_llm_url)
-        };
-
-        match client
-            .get(&url1)
-            .timeout(std::time::Duration::from_secs(2))
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => {
-                url_reachable = true;
-            }
-            Err(e) => {
-                url_error = e.to_string();
-            }
-            Ok(resp) => {
-                url_error = format!("HTTP {}", resp.status());
-            }
-        }
-
-        if !url_reachable {
-            let url2 = format!("{}/api/version", local_llm_url);
-            if let Ok(resp) = client
-                .get(&url2)
-                .timeout(std::time::Duration::from_secs(2))
-                .send()
-                .await
-            {
-                if resp.status().is_success() {
-                    url_reachable = true;
-                }
-            }
-        }
-    } else {
-        url_error = "LLM URL is invalid or empty".to_string();
-    }
-
-    checks.push(DoctorCheck {
-        name: "Local LLM URL Reachability".to_string(),
-        status: if url_reachable {
+        status: if config_valid {
             CheckStatus::Ok
         } else {
             CheckStatus::Fail
         },
-        detail: if url_reachable {
-            "Local LLM URL is reachable and responded successfully".to_string()
+        detail: if !provider_is_local {
+            format!("LLM provider='{provider}' (non-local); local Ollama config not required")
+        } else if config_valid {
+            format!(
+                "Local provider is configured with model '{}' at '{}'",
+                local_llm_model, local_llm_url
+            )
         } else {
-            format!("Failed to reach LLM URL '{}': {}", local_llm_url, url_error)
+            format!(
+                "Local configuration is invalid: provider='{}' (expected 'local'), url='{}', model='{}'",
+                provider, local_llm_url, local_llm_model
+            )
         },
-        hint: if url_reachable {
+        hint: if config_valid {
             None
         } else {
             Some(
-                "Check if Ollama is running and the URL is correct in your configuration"
+                "Run 'xavier setup --local' to configure local-first settings automatically"
                     .to_string(),
             )
         },
     });
+
+    // 5. URL Reachable (local LLM only)
+    let client = reqwest::Client::new();
+    let mut url_reachable = false;
+    let mut url_error = String::new();
+
+    if provider_is_local {
+        if url_is_valid {
+            let url1 = if local_llm_url.ends_with("/v1") {
+                format!("{}/api/version", &local_llm_url[..local_llm_url.len() - 3])
+            } else if local_llm_url.ends_with("/v1/") {
+                format!("{}/api/version", &local_llm_url[..local_llm_url.len() - 4])
+            } else {
+                format!("{}/api/version", local_llm_url)
+            };
+
+            match client
+                .get(&url1)
+                .timeout(std::time::Duration::from_secs(2))
+                .send()
+                .await
+            {
+                Ok(resp) if resp.status().is_success() => {
+                    url_reachable = true;
+                }
+                Err(e) => {
+                    url_error = e.to_string();
+                }
+                Ok(resp) => {
+                    url_error = format!("HTTP {}", resp.status());
+                }
+            }
+
+            if !url_reachable {
+                let url2 = format!("{}/api/version", local_llm_url);
+                if let Ok(resp) = client
+                    .get(&url2)
+                    .timeout(std::time::Duration::from_secs(2))
+                    .send()
+                    .await
+                {
+                    if resp.status().is_success() {
+                        url_reachable = true;
+                    }
+                }
+            }
+        } else {
+            url_error = "LLM URL is invalid or empty".to_string();
+        }
+
+        checks.push(DoctorCheck {
+            name: "Local LLM URL Reachability".to_string(),
+            status: if url_reachable {
+                CheckStatus::Ok
+            } else {
+                CheckStatus::Fail
+            },
+            detail: if url_reachable {
+                "Local LLM URL is reachable and responded successfully".to_string()
+            } else {
+                format!("Failed to reach LLM URL '{}': {}", local_llm_url, url_error)
+            },
+            hint: if url_reachable {
+                None
+            } else {
+                Some(
+                    "Check if Ollama is running and the URL is correct in your configuration"
+                        .to_string(),
+                )
+            },
+        });
+    } else {
+        checks.push(DoctorCheck {
+            name: "Local LLM URL Reachability".to_string(),
+            status: CheckStatus::Ok,
+            detail: format!("Skipped local LLM URL probe (provider='{provider}' is not local)"),
+            hint: None,
+        });
+    }
 
     // 6. DB Access
     let db_path = std::env::var("XAVIER_MEMORY_VEC_PATH")
@@ -307,8 +435,58 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         hint: db_hint,
     });
 
-    // Keep a copy of critical checks (1-6) to decide the final exit status
+    // Keep a copy of critical checks to decide the final exit status
     let critical_checks = checks.clone();
+
+    // Soft: CodeGraph empty (Warn only — does not fail doctor exit)
+    {
+        let cg_path = crate::cli::config::code_graph_db_path();
+        let (status, detail, hint) = match ::code_graph::db::CodeGraphDB::new(&cg_path) {
+            Ok(db) => match db.stats() {
+                Ok(stats) if stats.total_symbols == 0 => (
+                    CheckStatus::Warn,
+                    format!(
+                        "CodeGraph vacío en '{}' (total_symbols=0)",
+                        cg_path.display()
+                    ),
+                    Some(
+                        "Ejecuta `xavier code scan .` o `xavier code sync --git` para indexar"
+                            .to_string(),
+                    ),
+                ),
+                Ok(stats) => (
+                    CheckStatus::Ok,
+                    format!(
+                        "CodeGraph OK: {} símbolos, {} archivos ({})",
+                        stats.total_symbols,
+                        stats.total_files,
+                        cg_path.display()
+                    ),
+                    None,
+                ),
+                Err(e) => (
+                    CheckStatus::Warn,
+                    format!("No se pudo leer stats de CodeGraph: {}", e),
+                    Some("Revisa permisos de data/code_graph.db".to_string()),
+                ),
+            },
+            Err(e) => (
+                CheckStatus::Warn,
+                format!(
+                    "CodeGraph DB no accesible en '{}': {}",
+                    cg_path.display(),
+                    e
+                ),
+                Some("Ejecuta `xavier code scan .` para crear el índice".to_string()),
+            ),
+        };
+        checks.push(DoctorCheck {
+            name: "CodeGraph Index".to_string(),
+            status,
+            detail,
+            hint,
+        });
+    }
 
     // 7. Embedding Model Consistency (Soft/Warn)
     let mut check_7_status = CheckStatus::Ok;
@@ -414,7 +592,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         }
     }
 
-    // Código salida 0 si todos los críticos (1-6) son Ok, 1 si alguno falla.
+    // Código salida 0 si todos los críticos son Ok, 1 si alguno falla.
     let any_critical_failed = critical_checks
         .iter()
         .any(|c| matches!(c.status, CheckStatus::Fail));
@@ -423,6 +601,36 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
     } else {
         std::process::exit(0);
     }
+}
+
+/// True when embeddings should be validated against a local Ollama install.
+fn embeddings_use_local_ollama(mode: &str, embedding_url: &str, model: &str) -> bool {
+    let mode_l = mode.trim().to_ascii_lowercase();
+    if mode_l == "cloud" {
+        return false;
+    }
+    if mode_l == "local" {
+        return true;
+    }
+
+    let url_l = embedding_url.to_ascii_lowercase();
+    if url_l.contains("openrouter.ai")
+        || url_l.contains("api.openai.com")
+        || url_l.contains("openai.com")
+        || url_l.contains("api.anthropic.com")
+    {
+        return false;
+    }
+
+    let model_l = model.to_ascii_lowercase();
+    if model_l.starts_with("text-embedding-") || model_l.starts_with("openai/") {
+        return false;
+    }
+
+    url_l.contains("localhost")
+        || url_l.contains("127.0.0.1")
+        || url_l.contains(":11434")
+        || url_l.is_empty()
 }
 
 fn format_as_markdown(checks: &[DoctorCheck]) -> String {

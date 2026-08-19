@@ -63,6 +63,8 @@ pub struct EmbeddingHealth {
     pub latency_ms: u64,
     pub error_rate: f32,
     pub status: HealthLevel,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache: Option<crate::embedding::cache::EmbeddingCacheMetrics>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,6 +124,7 @@ impl Default for HealthStatus {
                 latency_ms: 0,
                 error_rate: 0.0,
                 status: HealthLevel::Healthy,
+                cache: None,
             },
             llm: LlmHealth {
                 provider: "unknown".into(),
@@ -157,6 +160,7 @@ pub struct HealthMonitor {
 }
 
 impl HealthMonitor {
+    /// New.
     pub fn new(cm: &'static ConnectionManager) -> Self {
         Self {
             current_status: Arc::new(RwLock::new(HealthStatus::default())),
@@ -172,6 +176,7 @@ impl HealthMonitor {
         }
     }
 
+    /// Set tgd progress.
     pub async fn set_tgd_progress(
         &self,
         progress: Arc<RwLock<crate::tgd::consolidation::ProgressReport>>,
@@ -180,20 +185,24 @@ impl HealthMonitor {
         *prg = Some(progress);
     }
 
+    /// Set peer registry.
     pub async fn set_peer_registry(&self, peer_registry: Arc<PeerRegistry>) {
         let mut reg = self.peer_registry.write().await;
         *reg = Some(peer_registry);
     }
 
+    /// Set embedder.
     pub async fn set_embedder(&self, embedder: Arc<dyn Embedder>) {
         let mut emb = self.embedder.write().await;
         *emb = Some(embedder);
     }
 
+    /// Get status.
     pub async fn get_status(&self) -> HealthStatus {
         self.current_status.read().await.clone()
     }
 
+    /// Run checks.
     pub async fn run_checks(&self) -> HealthStatus {
         let mut sys_info = sysinfo::System::new_all();
 
@@ -413,12 +422,15 @@ impl HealthMonitor {
             }
         }
 
+        let cache = embedder_opt.as_ref().and_then(|e| e.cache_metrics());
+
         EmbeddingHealth {
             provider,
             model,
             latency_ms,
             error_rate: 0.0,
             status,
+            cache,
         }
     }
 
@@ -433,7 +445,9 @@ impl HealthMonitor {
         let mut reachable = false;
         let mut status = HealthLevel::Healthy;
 
-        if config.provider_mode == crate::agents::provider::types::ProviderMode::Local || config.provider_mode == crate::agents::provider::types::ProviderMode::ManagedLocal {
+        if config.provider_mode == crate::agents::provider::types::ProviderMode::Local
+            || config.provider_mode == crate::agents::provider::types::ProviderMode::ManagedLocal
+        {
             if let Some(url) = &config.get_resolved_base_url() {
                 // Ollama version endpoint or just the base
                 let check_url = if url.contains("11434") {
@@ -501,26 +515,37 @@ impl HealthMonitor {
     }
 
     async fn check_mesh(&self) -> MeshHealth {
-        let mut active_peers = 0;
         let mut peer_healths = vec![];
 
+        // First try the in-memory peer registry set on health monitor
         let reg_opt = self.peer_registry.read().await;
-        if let Some(ref registry) = *reg_opt {
-            let peers = registry.list_peers();
-            active_peers = peers.len();
+        let loaded_registry = if reg_opt.is_none() {
+            PeerRegistry::load().ok()
+        } else {
+            None
+        };
 
-            for peer in peers {
-                let last_seen = peer.last_seen_at.unwrap_or(0);
-                let now = chrono::Utc::now().timestamp();
-                let lag = (now - last_seen).max(0) as u64;
+        let peers: Vec<&crate::mesh::PeerInfo> = if let Some(ref registry) = *reg_opt {
+            registry.list_peers()
+        } else if let Some(ref registry) = loaded_registry {
+            registry.list_peers()
+        } else {
+            vec![]
+        };
 
-                peer_healths.push(PeerHealth {
-                    node_id: peer.node_id.to_string(),
-                    connectivity_ok: lag < 60, // 1 minute threshold for mesh connectivity alert
-                    sync_lag_secs: lag,
-                    trust_score: 1.0,
-                });
-            }
+        let active_peers = peers.len();
+
+        for peer in peers {
+            let last_seen = peer.last_seen_at.unwrap_or(0);
+            let now = chrono::Utc::now().timestamp();
+            let lag = (now - last_seen).max(0) as u64;
+
+            peer_healths.push(PeerHealth {
+                node_id: peer.node_id.to_string(),
+                connectivity_ok: lag < 60, // 1 minute threshold for mesh connectivity alert
+                sync_lag_secs: lag,
+                trust_score: 1.0,
+            });
         }
 
         let mut status = HealthLevel::Healthy;
@@ -536,6 +561,7 @@ impl HealthMonitor {
         }
     }
 
+    /// Spawn.
     pub fn spawn(self: Arc<Self>) {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));

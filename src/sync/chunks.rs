@@ -29,6 +29,7 @@ pub struct ChunkMetadata {
     pub created_at: i64,
 }
 
+/// Export to chunk.
 pub fn export_to_chunk(
     sync_dir: &Path,
     documents: &[MemoryDocument],
@@ -77,6 +78,7 @@ pub fn export_to_chunk(
     Ok(hash)
 }
 
+/// Import from chunk.
 pub fn import_from_chunk(sync_dir: &Path, hash: &str) -> Result<Vec<MemoryDocument>> {
     let chunk_path = sync_dir.join("chunks").join(format!("{}.jsonl.gz", hash));
     let file = File::open(chunk_path)?;
@@ -95,6 +97,7 @@ pub fn import_from_chunk(sync_dir: &Path, hash: &str) -> Result<Vec<MemoryDocume
     Ok(documents)
 }
 
+/// Load manifest.
 pub fn load_manifest(sync_dir: &Path) -> Result<ChunkManifest> {
     let manifest_path = sync_dir.join("manifest.json");
     if !manifest_path.exists() {

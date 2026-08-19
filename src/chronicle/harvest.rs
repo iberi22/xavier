@@ -1,12 +1,8 @@
-//! Chronicle data harvesting
-//!
-//! Provides the implementation and data structures for this module's
-//! responsibilities within the Xavier cognitive memory system.
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use git2::{Repository, Sort};
+use git2::{Delta, Repository, Sort};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -22,7 +18,6 @@ pub struct HarvestOutput {
     pub bugs: Vec<MemoryEntry>,
     pub sessions: Vec<SessionInfo>,
     pub code_changes: Vec<CodeChangeInfo>,
-    pub tgd_reports: Vec<MemoryEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -47,10 +42,45 @@ pub struct SessionInfo {
     pub tokens: usize,
 }
 
+/// Classification of how a file was changed in a commit.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeType {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+}
+
+impl ChangeType {
+    fn from_delta(delta: Delta) -> Self {
+        match delta {
+            Delta::Added | Delta::Untracked => Self::Added,
+            Delta::Deleted => Self::Deleted,
+            Delta::Renamed | Delta::Copied => Self::Renamed,
+            _ => Self::Modified,
+        }
+    }
+}
+
+/// Per-file diff stats collected during commit harvesting.
+#[derive(Debug, Clone)]
+pub(crate) struct FileChange {
+    pub change_type: ChangeType,
+    pub insertions: usize,
+    pub deletions: usize,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CodeChangeInfo {
     pub file: String,
     pub symbols: Vec<String>,
+    /// Lines added in this file across harvested commits.
+    pub insertions: usize,
+    /// Lines removed in this file across harvested commits.
+    pub deletions: usize,
+    /// How the file was changed (added, modified, deleted, renamed).
+    pub change_type: ChangeType,
 }
 
 pub struct Harvester {
@@ -60,6 +90,7 @@ pub struct Harvester {
 }
 
 impl Harvester {
+    /// New.
     pub fn new(workspace_path: PathBuf, memory: Arc<QmdMemory>, code_db: Arc<CodeGraphDB>) -> Self {
         Self {
             workspace_path,
@@ -68,19 +99,16 @@ impl Harvester {
         }
     }
 
+    /// Run.
     pub async fn run(&self, since: DateTime<Utc>) -> Result<PathBuf> {
         let date = Utc::now().format("%Y-%m-%d").to_string();
 
-        let commits = self.harvest_commits(since)?;
+        let (commits, file_changes) = self.harvest_commits(since)?;
         let decisions = self.harvest_memories("decisions/*").await?;
         let bugs = self.harvest_memories("bugs/*").await?;
         let sessions = self.harvest_sessions().await?;
-        let tgd_reports = self.harvest_memories("logs/tgd/*").await?;
 
-        let modified_files: HashSet<String> =
-            commits.iter().flat_map(|c| c.files.clone()).collect();
-
-        let code_changes = self.harvest_code_changes(modified_files)?;
+        let code_changes = self.harvest_code_changes(file_changes)?;
 
         let output = HarvestOutput {
             date: date.clone(),
@@ -89,7 +117,6 @@ impl Harvester {
             bugs,
             sessions,
             code_changes,
-            tgd_reports,
         };
 
         let chronicle_dir = self.workspace_path.join(".chronicle");
@@ -104,15 +131,23 @@ impl Harvester {
         Ok(file_path)
     }
 
-    fn harvest_commits(&self, since: DateTime<Utc>) -> Result<Vec<CommitInfo>> {
+    /// Harvest commits since the given time and collect per-file diff statistics.
+    /// Returns both the commit list and an aggregated map of file-level changes.
+    fn harvest_commits(
+        &self,
+        since: DateTime<Utc>,
+    ) -> Result<(Vec<CommitInfo>, HashMap<String, FileChange>)> {
         let repo = Repository::open(&self.workspace_path)
             .map_err(|e| anyhow!("Failed to open repo at {:?}: {}", self.workspace_path, e))?;
 
         let mut revwalk = repo.revwalk()?;
         revwalk.set_sorting(Sort::TIME | Sort::REVERSE)?;
-        revwalk.push_head()?;
+        if revwalk.push_ref("refs/heads/main").is_err() {
+            revwalk.push_head()?;
+        }
 
         let mut commit_infos = Vec::new();
+        let mut aggregated_changes: HashMap<String, FileChange> = HashMap::new();
 
         for id in revwalk {
             let id = id?;
@@ -123,15 +158,22 @@ impl Harvester {
             if commit_time >= since {
                 let mut files = Vec::new();
 
-                // Get diff to find modified files
+                // Get diff to find modified files and their stats
                 if let Ok(parent) = commit.parent(0) {
                     let diff =
                         repo.diff_tree_to_tree(Some(&parent.tree()?), Some(&commit.tree()?), None)?;
+
+                    // Collect per-file change types
+                    let mut commit_file_types: HashMap<String, ChangeType> = HashMap::new();
                     diff.foreach(
                         &mut |delta, _| {
                             if let Some(new_file) = delta.new_file().path() {
                                 if let Some(path_str) = new_file.to_str() {
                                     files.push(path_str.to_string());
+                                    commit_file_types.insert(
+                                        path_str.to_string(),
+                                        ChangeType::from_delta(delta.status()),
+                                    );
                                 }
                             }
                             true
@@ -140,12 +182,55 @@ impl Harvester {
                         None,
                         None,
                     )?;
+
+                    // Collect per-file insertion/deletion stats via diff stats
+                    if let Ok(stats) = diff.stats() {
+                        // Use the formatted stat output to parse per-file stats
+                        // (git2 DiffStats only exposes aggregate; we use per-delta patches)
+                        let num_deltas = diff.deltas().len();
+                        for idx in 0..num_deltas {
+                            if let Some(patch) = git2::Patch::from_diff(&diff, idx).ok().flatten() {
+                                let (_, ins, del) = patch.line_stats().unwrap_or((0, 0, 0));
+                                if let Some(delta) = diff.get_delta(idx) {
+                                    if let Some(path) =
+                                        delta.new_file().path().and_then(|p| p.to_str())
+                                    {
+                                        let entry = aggregated_changes
+                                            .entry(path.to_string())
+                                            .or_insert_with(|| FileChange {
+                                                change_type: commit_file_types
+                                                    .get(path)
+                                                    .cloned()
+                                                    .unwrap_or(ChangeType::Modified),
+                                                insertions: 0,
+                                                deletions: 0,
+                                            });
+                                        entry.insertions += ins;
+                                        entry.deletions += del;
+                                        // Upgrade change_type if this commit shows a different one
+                                        if let Some(ct) = commit_file_types.get(path) {
+                                            entry.change_type = ct.clone();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        let _ = stats; // suppress unused warning
+                    }
                 } else {
-                    // Initial commit
+                    // Initial commit — all files are "Added"
                     let tree = commit.tree()?;
                     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
                         if let Ok(name) = entry.name() {
-                            files.push(format!("{}{}", root, name));
+                            let path = format!("{}{}", root, name);
+                            files.push(path.clone());
+                            aggregated_changes
+                                .entry(path.clone())
+                                .or_insert(FileChange {
+                                    change_type: ChangeType::Added,
+                                    insertions: 0,
+                                    deletions: 0,
+                                });
                         }
                         git2::TreeWalkResult::Ok
                     })?;
@@ -159,7 +244,7 @@ impl Harvester {
             }
         }
 
-        Ok(commit_infos)
+        Ok((commit_infos, aggregated_changes))
     }
 
     async fn harvest_memories(&self, pattern: &str) -> Result<Vec<MemoryEntry>> {
@@ -217,16 +302,22 @@ impl Harvester {
         Ok(sessions)
     }
 
-    fn harvest_code_changes(&self, modified_files: HashSet<String>) -> Result<Vec<CodeChangeInfo>> {
+    fn harvest_code_changes(
+        &self,
+        file_changes: HashMap<String, FileChange>,
+    ) -> Result<Vec<CodeChangeInfo>> {
         let mut code_changes = Vec::new();
 
-        for file in modified_files {
+        for (file, change) in file_changes {
             // Find symbols in this file using CodeGraphDB
             let symbols = self.find_symbols_in_file(&file)?;
             if !symbols.is_empty() {
                 code_changes.push(CodeChangeInfo {
                     file,
                     symbols: symbols.into_iter().map(|s| s.name).collect(),
+                    insertions: change.insertions,
+                    deletions: change.deletions,
+                    change_type: change.change_type,
                 });
             }
         }
@@ -264,7 +355,6 @@ mod tests {
             bugs: vec![],
             sessions: vec![],
             code_changes: vec![],
-            tgd_reports: vec![],
         };
 
         let json = serde_json::to_string(&output).expect("test assertion");

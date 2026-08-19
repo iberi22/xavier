@@ -39,10 +39,8 @@ pub struct CliState {
     pub auth_db: Option<Arc<Mutex<xavier::auth2::db::AuthDb>>>,
     pub code_graph: Arc<tokio::sync::RwLock<CodeGraphState>>,
     pub security: Arc<dyn InputSecurityPort>,
-    #[expect(
-        dead_code,
-        reason = "Reserved for future security scanning pipeline; wired via SecurityScanPort"
-    )]
+    #[allow(dead_code)]
+    // Reserved for future security scanning pipeline; wired via SecurityScanPort
     pub security_scan: Arc<dyn SecurityScanPort>,
     pub _time_store: Option<Arc<TimeMetricsStore>>,
     pub agent_registry: Arc<dyn AgentLifecyclePort>,
@@ -51,10 +49,8 @@ pub struct CliState {
     pub event_bus: XavierEventBus,
     pub tasks: Arc<TaskService<InMemoryTaskStore>>,
     pub rate_manager: Arc<RateLimitManager>,
-    #[expect(
-        dead_code,
-        reason = "Implement structured prompt caching (keyed by session+model, auto-expire TTL)"
-    )]
+    #[allow(dead_code)]
+    // Implement structured prompt caching (keyed by session+model, auto-expire TTL)
     pub prompt_cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
     pub http_client: reqwest::Client,
     pub proxy_use_case: Arc<ProxyUseCase>,
@@ -70,13 +66,16 @@ pub struct CliState {
     pub system_scan_cache:
         Arc<tokio::sync::RwLock<Option<crate::cli::handlers::system_scan::SystemScanResult>>>,
     pub multi_db: xavier::storage::multi_db::MultiDbManager,
+    pub maloca: Arc<xavier::maloca::MalocaStore>,
 }
 
 impl CliState {
+    /// Auth store.
     pub fn auth_store(&self) -> Option<Arc<AuthStore>> {
         self.auth_store.clone()
     }
 
+    /// Tgd engine.
     pub async fn tgd_engine(&self) -> Option<xavier::tgd::TgdEngine> {
         let router = self.provider_router.read().await;
         let p_kind = router.active_mode();

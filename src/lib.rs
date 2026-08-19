@@ -1,7 +1,17 @@
 //! Xavier - Cognitive Memory System
 #![cfg_attr(feature = "telegram", allow(dead_code))]
+#![allow(unused_imports)]
+#![allow(dead_code)]
+#![allow(clippy::vec_init_then_push)]
+#![allow(clippy::useless_format)]
+#![allow(clippy::needless_borrow)]
+#![allow(clippy::manual_clamp)]
+#![allow(clippy::new_without_default)]
 //!
 //! A cognitive memory system with agent runtime, task management, and native UI.
+
+extern crate self as xavier;
+extern crate self as xavier_lib;
 
 pub mod a2a;
 pub mod agents;
@@ -10,28 +20,40 @@ pub mod auth2;
 pub mod auto_improvement;
 pub mod checkpoint;
 pub mod chronicle;
+pub mod clavis;
+pub mod cli;
 pub mod codebase;
 pub mod consistency;
 pub mod consolidation;
 pub mod context;
 pub mod coordination;
 pub mod crypto;
+pub mod curation;
 pub mod data_commons;
 pub mod embedding;
 pub mod enterprise;
+pub mod error;
+pub mod governance;
 pub mod health;
+pub mod humanchallenge;
+pub mod maloca;
 pub mod maturity;
 pub mod memory;
 pub mod mesh;
 pub mod messaging;
 pub mod middleware;
+pub mod node_identity;
+pub mod nodes;
 pub mod notifications;
 pub mod observability;
+pub mod plugins;
+pub mod polygon_anchor;
 pub mod retrieval;
 pub mod scheduler;
 pub mod search;
 pub mod secrets;
 pub mod security;
+pub mod self_manage;
 pub mod server;
 pub mod session;
 pub mod settings;

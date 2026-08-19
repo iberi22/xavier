@@ -1,17 +1,17 @@
 //! Persistent Auth Storage for Xavier
 //! Manages users, sessions, and audit logs in a dedicated auth.db
 
-use std::path::Path;
-use anyhow::{Result, anyhow};
-use std::sync::Mutex;
-use rusqlite::{Connection, params};
-use serde::{Deserialize, Serialize};
-use chrono::Utc;
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
-use rand::{RngCore, thread_rng};
+use anyhow::{anyhow, Result};
+use chrono::Utc;
+use rand::{thread_rng, RngCore};
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::sync::Mutex;
 
 use crate::security::auth::User;
 
@@ -22,10 +22,17 @@ pub struct AuthStore {
 }
 
 impl AuthStore {
+    fn get_conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
+        self.conn
+            .lock()
+            .map_err(|e| anyhow!("Database lock poisoned: {}", e))
+    }
+
+    /// Get user by id.
     pub fn get_user_by_id(&self, user_id: &str) -> Result<Option<User>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.get_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, email, name, role, created_at, updated_at FROM users WHERE id = ?"
+            "SELECT id, email, name, role, created_at, updated_at FROM users WHERE id = ?",
         )?;
 
         let mut rows = stmt.query(params![user_id])?;
@@ -45,23 +52,27 @@ impl AuthStore {
         }
     }
 
+    /// Update password.
     pub fn update_password(&self, user_id: &str, new_hash: &str) -> Result<()> {
-        self.conn.lock().unwrap().execute(
+        self.get_conn()?.execute(
             "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-            params![new_hash, Utc::now().timestamp(), user_id]
+            params![new_hash, Utc::now().timestamp(), user_id],
         )?;
         Ok(())
     }
 
     pub fn open<P: AsRef<Path>>(path: P, encryption_key: [u8; 32]) -> Result<Self> {
         let conn = Connection::open(path)?;
-        let mut store = Self { conn: Mutex::new(conn), encryption_key };
+        let mut store = Self {
+            conn: Mutex::new(conn),
+            encryption_key,
+        };
         store.init_schema()?;
         Ok(store)
     }
 
     fn init_schema(&mut self) -> Result<()> {
-        self.conn.lock().unwrap().execute_batch(
+        self.get_conn()?.execute_batch(
             "CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
@@ -90,13 +101,14 @@ impl AuthStore {
                 metadata TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
-            CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);"
+            CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);",
         )?;
         Ok(())
     }
 
+    /// Create user.
     pub fn create_user(&self, user: &User, password_hash: &str) -> Result<()> {
-        self.conn.lock().unwrap().execute(
+        self.get_conn()?.execute(
             "INSERT INTO users (id, email, name, role, password_hash, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
@@ -112,8 +124,9 @@ impl AuthStore {
         Ok(())
     }
 
+    /// Get user by email.
     pub fn get_user_by_email(&self, email: &str) -> Result<Option<(User, String)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.get_conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, email, name, role, password_hash, created_at, updated_at FROM users WHERE email = ?"
         )?;
@@ -138,17 +151,19 @@ impl AuthStore {
         }
     }
 
+    /// Set totp secret.
     pub fn set_totp_secret(&self, user_id: &str, secret: &str) -> Result<()> {
         let encrypted = self.encrypt(secret.as_bytes())?;
-        self.conn.lock().unwrap().execute(
+        self.get_conn()?.execute(
             "UPDATE users SET totp_secret = ? WHERE id = ?",
             params![encrypted, user_id],
         )?;
         Ok(())
     }
 
+    /// Get totp secret.
     pub fn get_totp_secret(&self, user_id: &str) -> Result<Option<String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.get_conn()?;
         let mut stmt = conn.prepare("SELECT totp_secret FROM users WHERE id = ?")?;
         let secret_bytes: Option<Vec<u8>> = stmt.query_row(params![user_id], |r| r.get(0))?;
 
@@ -157,21 +172,23 @@ impl AuthStore {
                 let decrypted = self.decrypt(&bytes)?;
                 Ok(Some(String::from_utf8(decrypted)?))
             }
-            None => Ok(None)
+            None => Ok(None),
         }
     }
 
+    /// Set recovery phrase.
     pub fn set_recovery_phrase(&self, user_id: &str, phrase: &str) -> Result<()> {
         let encrypted = self.encrypt(phrase.as_bytes())?;
-        self.conn.lock().unwrap().execute(
+        self.get_conn()?.execute(
             "UPDATE users SET recovery_phrase = ? WHERE id = ?",
             params![encrypted, user_id],
         )?;
         Ok(())
     }
 
+    /// Get recovery phrase.
     pub fn get_recovery_phrase(&self, user_id: &str) -> Result<Option<String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.get_conn()?;
         let mut stmt = conn.prepare("SELECT recovery_phrase FROM users WHERE id = ?")?;
         let phrase_bytes: Option<Vec<u8>> = stmt.query_row(params![user_id], |r| r.get(0))?;
 
@@ -180,22 +197,24 @@ impl AuthStore {
                 let decrypted = self.decrypt(&bytes)?;
                 Ok(Some(String::from_utf8(decrypted)?))
             }
-            None => Ok(None)
+            None => Ok(None),
         }
     }
 
+    /// Save refresh token.
     pub fn save_refresh_token(&self, token: &str, user_id: &str, expires_at: i64) -> Result<()> {
-        self.conn.lock().unwrap().execute(
+        self.get_conn()?.execute(
             "INSERT INTO refresh_tokens (token, user_id, expires_at) VALUES (?, ?, ?)",
             params![token, user_id, expires_at],
         )?;
         Ok(())
     }
 
+    /// Verify refresh token.
     pub fn verify_refresh_token(&self, token: &str) -> Result<Option<String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.get_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT user_id FROM refresh_tokens WHERE token = ? AND revoked = 0 AND expires_at > ?"
+            "SELECT user_id FROM refresh_tokens WHERE token = ? AND revoked = 0 AND expires_at > ?",
         )?;
         let now = Utc::now().timestamp();
         let mut rows = stmt.query(params![token, now])?;
@@ -207,24 +226,27 @@ impl AuthStore {
         }
     }
 
+    /// Revoke refresh token.
     pub fn revoke_refresh_token(&self, token: &str) -> Result<()> {
-        self.conn.lock().unwrap().execute(
+        self.get_conn()?.execute(
             "UPDATE refresh_tokens SET revoked = 1 WHERE token = ?",
             params![token],
         )?;
         Ok(())
     }
 
+    /// Revoke user session.
     pub fn revoke_user_session(&self, user_id: &str, token: &str) -> Result<()> {
-        self.conn.lock().unwrap().execute(
+        self.get_conn()?.execute(
             "UPDATE refresh_tokens SET revoked = 1 WHERE token = ? AND user_id = ?",
             params![token, user_id],
         )?;
         Ok(())
     }
 
+    /// Get active sessions.
     pub fn get_active_sessions(&self, user_id: &str) -> Result<Vec<ActiveSession>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.get_conn()?;
         let mut stmt = conn.prepare(
             "SELECT token, user_id, expires_at, revoked FROM refresh_tokens WHERE revoked = 0 AND expires_at > ? AND user_id = ?"
         )?;
@@ -242,8 +264,9 @@ impl AuthStore {
         Ok(sessions)
     }
 
+    /// Count failed logins.
     pub fn count_failed_logins(&self, ip_address: &str, since_timestamp: i64) -> Result<i32> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.get_conn()?;
         let mut stmt = conn.prepare(
             "SELECT COUNT(1) FROM audit_logs WHERE ip_address = ? AND event_type = 'login_failed' AND timestamp > ?"
         )?;
@@ -251,10 +274,18 @@ impl AuthStore {
         Ok(count)
     }
 
-    pub fn log_event(&self, user_id: Option<&str>, event_type: &str, ip: Option<&str>, ua: Option<&str>, metadata: Option<&str>) -> Result<()> {
+    /// Log event.
+    pub fn log_event(
+        &self,
+        user_id: Option<&str>,
+        event_type: &str,
+        ip: Option<&str>,
+        ua: Option<&str>,
+        metadata: Option<&str>,
+    ) -> Result<()> {
         let id = ulid::Ulid::new().to_string();
         let timestamp = Utc::now().timestamp();
-        self.conn.lock().unwrap().execute(
+        self.get_conn()?.execute(
             "INSERT INTO audit_logs (id, timestamp, user_id, event_type, ip_address, user_agent, metadata)
              VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![id, timestamp, user_id, event_type, ip, ua, metadata],
@@ -270,7 +301,8 @@ impl AuthStore {
         thread_rng().fill_bytes(&mut nonce);
         let nonce = Nonce::from_slice(&nonce);
 
-        let ciphertext = cipher.encrypt(nonce, data)
+        let ciphertext = cipher
+            .encrypt(nonce, data)
             .map_err(|e| anyhow!("encryption failed: {}", e))?;
 
         let mut result = nonce.to_vec();
@@ -289,7 +321,8 @@ impl AuthStore {
         let (nonce_bytes, ciphertext) = data.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        let plaintext = cipher.decrypt(nonce, ciphertext)
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| anyhow!("decryption failed: {}", e))?;
 
         Ok(plaintext)

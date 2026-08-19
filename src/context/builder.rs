@@ -33,10 +33,12 @@ pub struct ContextBuilder {
 }
 
 impl ContextBuilder {
+    /// New.
     pub fn new(config: ContextBuilderConfig) -> Self {
         Self { config }
     }
 
+    /// Build.
     pub fn build(
         &self,
         level: ContextLevel,

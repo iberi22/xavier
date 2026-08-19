@@ -20,6 +20,7 @@ pub struct AnomalyScannerAgent {
 }
 
 impl AnomalyScannerAgent {
+    /// New.
     pub fn new() -> Self {
         Self {
             name: "Xavier-Auto-Healer".to_string(),
@@ -27,6 +28,7 @@ impl AnomalyScannerAgent {
         }
     }
 
+    /// With leak detector.
     pub fn with_leak_detector(
         mut self,
         leak_detector: std::sync::Arc<crate::coordination::secrets::LeakDetector>,

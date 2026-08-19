@@ -19,6 +19,7 @@ impl Default for QmdAuditLogger {
 }
 
 impl QmdAuditLogger {
+    /// New.
     pub fn new() -> Self {
         let project_id = "metrics";
         if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
@@ -32,6 +33,7 @@ impl QmdAuditLogger {
         }
     }
 
+    /// Init schema async.
     pub async fn init_schema_async(&self) -> anyhow::Result<()> {
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {

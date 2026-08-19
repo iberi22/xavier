@@ -157,6 +157,14 @@ pub struct ServerSettings {
     pub config_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct MiniExpertConfig {
+    pub name: String,
+    pub provider: String,
+    pub endpoint: String,
+    pub api_key: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorkspaceSettings {
@@ -168,6 +176,25 @@ pub struct WorkspaceSettings {
     pub embedding_provider_mode: String,
     pub managed_google_embeddings: bool,
     pub sync_policy: String,
+    #[serde(default)]
+    pub mini_experts: Vec<MiniExpertConfig>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DedupScope {
+    #[default]
+    PathExact,
+    Namespace,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DedupSettings {
+    pub enabled: bool,
+    pub threshold: f32,
+    pub scope: DedupScope,
+    pub max_revisions: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +210,7 @@ pub struct MemorySettings {
     pub supabase_url: Option<String>,
     pub supabase_key: Option<String>,
     pub postgres_url: Option<String>,
+    pub dedup: DedupSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -591,15 +619,19 @@ pub struct NotificationSettings {
 }
 
 impl XavierSettings {
+    /// Default host.
     pub fn default_host() -> String {
         "0.0.0.0".into()
     }
+    /// Default port.
     pub fn default_port() -> u16 {
         8006
     }
+    /// Default log level.
     pub fn default_log_level() -> String {
         "info".into()
     }
+    /// Default code graph db path.
     pub fn default_code_graph_db_path() -> String {
         "data/code_graph.db".into()
     }

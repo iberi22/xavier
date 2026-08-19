@@ -45,6 +45,7 @@ pub struct PlankaSyncService<S: TaskStore> {
 }
 
 impl<S: TaskStore> PlankaSyncService<S> {
+    /// New.
     pub fn new(task_store: Arc<S>, planka_client: Option<PlankaClient>) -> Self {
         let task_service = TaskService::new(task_store);
         Self {

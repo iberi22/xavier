@@ -183,6 +183,19 @@ impl DynamicQuorum {
             base
         }
     }
+
+    /// Evaluate an IVN verification verdict using this DynamicQuorum configuration.
+    pub fn evaluate_ivn_verdict(
+        &self,
+        votes: &[crate::data_commons::ivn::Vote],
+        recent_participation_rate: f64,
+    ) -> crate::data_commons::ivn::Verdict {
+        crate::data_commons::ivn::VerdictEngine::evaluate_votes_with_dynamic_quorum(
+            votes,
+            self.base_user_quorum_pct,
+            Some((self, recent_participation_rate)),
+        )
+    }
 }
 
 /// Motor de gobernanza bicameral
@@ -201,6 +214,7 @@ pub struct GovernanceEngine {
 }
 
 impl GovernanceEngine {
+    /// New.
     pub fn new(config: GovernanceConfig) -> Self {
         Self {
             config,
@@ -212,10 +226,46 @@ impl GovernanceEngine {
         }
     }
 
+    /// Sets the governance config.
+    pub fn set_config(&mut self, config: GovernanceConfig) {
+        self.config = config;
+    }
+
     /// Attach an EigenTrust reputation engine for weighted voting.
     pub fn with_reputation_engine(mut self, engine: Arc<RwLock<EigenTrustEngine>>) -> Self {
         self.reputation_engine = Some(engine);
         self
+    }
+
+    /// Export the internal state of the engine.
+    pub fn get_state(
+        &self,
+    ) -> (
+        Vec<XipProposal>,
+        Vec<CouncilMember>,
+        HashMap<WalletAddress, u64>,
+        Vec<WalletAddress>,
+    ) {
+        (
+            self.proposals.clone(),
+            self.council.clone(),
+            self.active_wallets.clone(),
+            self.blocked_wallets.clone(),
+        )
+    }
+
+    /// Import and set the internal state of the engine.
+    pub fn set_state(
+        &mut self,
+        proposals: Vec<XipProposal>,
+        council: Vec<CouncilMember>,
+        active_wallets: HashMap<WalletAddress, u64>,
+        blocked_wallets: Vec<WalletAddress>,
+    ) {
+        self.proposals = proposals;
+        self.council = council;
+        self.active_wallets = active_wallets;
+        self.blocked_wallets = blocked_wallets;
     }
 
     // ── Helpers de tiempo ─────────────────────────────────
@@ -905,6 +955,7 @@ impl GovernanceEngine {
 
     // ── Getters ──────────────────────────────────────────
 
+    /// Active proposals.
     pub fn active_proposals(&self) -> Vec<&XipProposal> {
         self.proposals
             .iter()
@@ -917,14 +968,17 @@ impl GovernanceEngine {
             .collect()
     }
 
+    /// Get proposal.
     pub fn get_proposal(&self, id: &str) -> Option<&XipProposal> {
         self.proposals.iter().find(|p| p.id == id)
     }
 
+    /// Council size.
     pub fn council_size(&self) -> usize {
         self.active_council_members().len()
     }
 
+    /// Active voter count.
     pub fn active_voter_count(&self) -> usize {
         self.active_voter_wallets().len()
     }

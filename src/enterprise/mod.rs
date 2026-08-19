@@ -16,6 +16,7 @@ pub mod rbac;
 pub mod tenant;
 #[cfg(not(feature = "enterprise"))]
 pub mod http {
+    /// Enterprise router.
     pub fn enterprise_router() -> axum::Router {
         axum::Router::new()
     }

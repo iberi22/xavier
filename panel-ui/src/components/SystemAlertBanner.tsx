@@ -33,13 +33,15 @@ export default function SystemAlertBanner({
           return (
             <motion.div
               key={alert.id}
+              role="alert"
+              aria-live="assertive"
               initial={{ opacity: 0, y: -20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
               className="bg-red-950/80 border border-red-500/50 backdrop-blur-md rounded-lg p-4 shadow-lg flex items-start max-w-2xl w-full pointer-events-auto"
             >
               <div className="flex-shrink-0 mt-0.5">
-                <AlertTriangle className="w-5 h-5 text-red-500" />
+                <AlertTriangle className="w-5 h-5 text-red-500" aria-hidden="true" />
               </div>
               <div className="ml-3 flex-1">
                 <h3 className="text-sm font-medium text-red-400 font-mono">
@@ -57,8 +59,9 @@ export default function SystemAlertBanner({
                       soportar el modelo local.
                     </p>
                     <button
+                      type="button"
                       onClick={onOpenConfig}
-                      className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded transition-colors text-red-100 font-medium"
+                      className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded transition-colors text-red-100 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
                     >
                       Abrir Ajustes de API
                     </button>
@@ -66,10 +69,13 @@ export default function SystemAlertBanner({
                 )}
               </div>
               <button
+                type="button"
+                aria-label="Dismiss alert"
+                title="Dismiss alert"
                 onClick={() => onDismiss(alert.id)}
-                className="ml-4 flex-shrink-0 text-red-400 hover:text-white transition-colors"
+                className="ml-4 flex-shrink-0 text-red-400 hover:text-white transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
               >
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </motion.div>
           );

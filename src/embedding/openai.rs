@@ -30,6 +30,7 @@ impl fmt::Debug for OpenAICompatibleEmbedder {
 }
 
 impl OpenAICompatibleEmbedder {
+    /// New.
     pub fn new(
         api_key: Option<String>,
         model: String,

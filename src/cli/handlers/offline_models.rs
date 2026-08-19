@@ -7,9 +7,9 @@ use tracing::{error, info};
 
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
-use xavier::settings::XavierSettings;
 use xavier::agents::provider::hardware::{detect_gpu, GpuVendor};
 use xavier::agents::provider::model_manager::{scan_local_models, LocalModel};
+use xavier::settings::XavierSettings;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OfflineConfigPayload {
@@ -43,9 +43,7 @@ pub async fn get_offline_config_handler() -> Response {
 }
 
 /// POST /v1/offline/config
-pub async fn update_offline_config_handler(
-    Json(payload): Json<OfflineConfigPayload>,
-) -> Response {
+pub async fn update_offline_config_handler(Json(payload): Json<OfflineConfigPayload>) -> Response {
     let mut settings = XavierSettings::current();
     settings.models.local_model_dirs = payload.local_model_dirs;
     settings.models.auto_start_last_model = payload.auto_start_last_model;
@@ -125,8 +123,10 @@ pub async fn get_offline_status_handler() -> Response {
                 for addr in addrs.by_ref() {
                     if let Ok(Ok(_)) = tokio::time::timeout(
                         std::time::Duration::from_millis(500),
-                        tokio::net::TcpStream::connect(addr)
-                    ).await {
+                        tokio::net::TcpStream::connect(addr),
+                    )
+                    .await
+                    {
                         is_reachable = true;
                         break;
                     }
@@ -154,9 +154,7 @@ pub async fn get_offline_status_handler() -> Response {
 }
 
 /// POST /v1/offline/download
-pub async fn download_offline_model_handler(
-    Json(payload): Json<DownloadModelPayload>,
-) -> Response {
+pub async fn download_offline_model_handler(Json(payload): Json<DownloadModelPayload>) -> Response {
     let url = payload.url.trim();
     if url.is_empty() {
         return json_response(
@@ -197,22 +195,24 @@ pub async fn download_offline_model_handler(
 
     let target_file_path = target_dir.join(&filename);
 
-    info!("Simulating GGUF model download from {} to {}", url, target_file_path.display());
+    info!(
+        "Simulating GGUF model download from {} to {}",
+        url,
+        target_file_path.display()
+    );
 
     // Write a mock .gguf dummy file so that scan_local_models picks it up!
     let dummy_data = b"GGUF dummy header and content";
     match std::fs::write(&target_file_path, dummy_data) {
-        Ok(_) => {
-            json_response(
-                StatusCode::OK,
-                serde_json::json!({
-                    "status": "ok",
-                    "message": format!("Successfully downloaded {} to {}", filename, target_dir.display()),
-                    "filename": filename,
-                    "path": target_file_path.to_string_lossy().to_string()
-                }),
-            )
-        }
+        Ok(_) => json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "status": "ok",
+                "message": format!("Successfully downloaded {} to {}", filename, target_dir.display()),
+                "filename": filename,
+                "path": target_file_path.to_string_lossy().to_string()
+            }),
+        ),
         Err(e) => {
             error!("Failed to write downloaded model: {}", e);
             json_response(
@@ -230,8 +230,8 @@ pub async fn download_offline_model_handler(
 mod tests {
     use super::*;
     use axum::body::to_bytes;
-    use tempfile::tempdir;
     use std::sync::Mutex;
+    use tempfile::tempdir;
 
     static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -338,7 +338,8 @@ mod tests {
 
         // Download GGUF model (mock)
         let download_payload = DownloadModelPayload {
-            url: "https://huggingface.co/TheBloke/Llama-3-8B-GGUF/resolve/main/llama-3.Q4_K_M.gguf".to_string(),
+            url: "https://huggingface.co/TheBloke/Llama-3-8B-GGUF/resolve/main/llama-3.Q4_K_M.gguf"
+                .to_string(),
         };
         let resp = download_offline_model_handler(Json(download_payload)).await;
         let status = resp.status();
@@ -365,13 +366,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_offline_status() {
+        let _guard = TEST_LOCK.lock().await;
+
+        // Hermetic: do not assume a global engine is running on the host.
+        let port = 64322;
+        std::env::set_var("XAVIER_LOCAL_LLM_URL", format!("http://127.0.0.1:{}", port));
+
         let resp = get_offline_status_handler().await;
         assert_eq!(resp.status(), StatusCode::OK);
         let body_bytes = axum::body::to_bytes(resp.into_body(), 2048).await.unwrap();
         let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
-        
-        // Assert that the fields exist and have correct types by virtue of deserializing successfully
-        assert_eq!(status.engine_status, "running");
-        assert!(status.port > 0);
+
+        assert_eq!(status.port, port);
+        assert!(
+            status.engine_status == "stopped" || status.engine_status == "running",
+            "unexpected engine_status={}",
+            status.engine_status
+        );
+        assert_eq!(status.engine_status, "stopped");
+
+        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
     }
 }

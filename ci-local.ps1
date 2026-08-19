@@ -52,13 +52,13 @@ pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true 2>&1
 if ($LASTEXITCODE -ne 0) { LogFail "pnpm install failed"; Pop-Location; exit 1 }
 
 Log "pnpm panel-ui check"
-pnpm --filter panel-ui check 2>&1
+pnpm --filter xavier-panel-ui check 2>&1
 if ($LASTEXITCODE -ne 0) { LogFail "panel-ui check failed"; Pop-Location; exit 1 }
 LogOk "panel-ui check OK"
 
 if (-not $fast) {
     Log "pnpm panel-ui test"
-    pnpm --filter panel-ui test 2>&1
+    pnpm --filter xavier-panel-ui test 2>&1
     if ($LASTEXITCODE -ne 0) { LogFail "panel-ui tests failed"; Pop-Location; exit 1 }
     LogOk "panel-ui tests OK"
 }

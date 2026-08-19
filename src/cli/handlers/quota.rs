@@ -5,6 +5,7 @@ use axum::{extract::State, http::StatusCode, response::Response};
 use chrono::Utc;
 use xavier::domain::proxy::types::ProviderQuota;
 
+/// Handle quota command.
 pub async fn handle_quota_command() -> Result<()> {
     let base_url = crate::cli::config::resolve_base_url();
     let token = crate::cli::config::require_xavier_token()?;
@@ -60,6 +61,7 @@ pub async fn handle_quota_command() -> Result<()> {
     Ok(())
 }
 
+/// V1 providers quota.
 pub async fn v1_providers_quota(State(state): State<CliState>) -> Response {
     match state.rate_manager.get_all_quotas().await {
         Ok(quotas) => json_response(

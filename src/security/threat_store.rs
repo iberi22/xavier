@@ -34,6 +34,7 @@ impl SecurityThreatStore {
         }
     }
 
+    /// Save threat.
     pub async fn save_threat(&self, threat: &Threat, component: &str) -> Result<()> {
         let severity = threat.severity.as_str().to_string();
         let layer = threat.layer.to_string();
@@ -94,6 +95,7 @@ impl SecurityThreatStore {
         }).await
     }
 
+    /// Init schema async.
     pub async fn init_schema_async(&self) -> Result<()> {
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             conn.execute_batch(

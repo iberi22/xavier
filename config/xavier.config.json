@@ -20,7 +20,7 @@
   "memory": {
     "backend": "vec",
     "data_dir": "data",
-    "embedding_dimensions": 384,
+    "embedding_dimensions": 768,
     "workspace_dir": "data/workspaces",
     "file_path": "data/workspaces/default/memory-store.json",
     "sqlite_path": "data/memory-store.sqlite3",
@@ -39,16 +39,17 @@
     "episodic": {
       "summary_window": 10,
       "max_sessions": 50,
-      "min_event_importance": 0.5
+      "min_event_importance": 0.5,
+      "llm_summary_enabled": false
     }
   },
   "models": {
-    "provider": "local",
-    "api_flavor": "openai-compatible",
-    "local_llm_url": "http://localhost:11434/v1",
-    "local_llm_model": "qwen3-coder",
-    "embedding_url": "http://localhost:11434/api/embeddings",
-    "embedding_model": "embeddinggemma",
+   "provider": "openrouter",
+   "api_flavor": "openai-compatible",
+   "local_llm_url": "http://localhost:11434/v1",
+   "local_llm_model": "nomic-embed-text",
+    "embedding_url": "http://localhost:11434/v1",
+    "embedding_model": "nomic-embed-text",
     "router_retrieved_model": "",
     "router_complex_model": "",
     "router_fast_model": "",
@@ -59,7 +60,12 @@
     "cloud_llm_url": null,
     "local_llm_api_key": null,
     "local_anthropic_url": null,
-    "compaction_model": null
+    "compaction_model": null,
+    "zai_api_key": null,
+    "zai_model": null,
+    "opencode_model": null,
+    "local_model_dirs": [],
+    "auto_start_last_model": false
   },
   "retrieval": {
     "disable_hyde": true,
@@ -70,10 +76,11 @@
     "zone_penalty_multiplier": null,
     "cache_warming_enabled": false,
     "cache_warming_threshold": null,
+    "cache_ttl_secs": null,
     "learned_policy": {
-      "working_weight": 0.3,
-      "episodic_weight": 0.3,
-      "semantic_weight": 0.4,
+      "working_weight": 0.41777354,
+      "episodic_weight": 0.29111326,
+      "semantic_weight": 0.29111326,
       "semantic_similarity_weight": 0.49999994,
       "confidence_weight": 0.09999999,
       "edge_weight": 0.09999999,
@@ -97,9 +104,9 @@
   "embedding": {
     "endpoint": "http://localhost:11434/api/embeddings",
     "embedder": "local",
-    "gllm_model": "embeddinggemma",
+    "gllm_model": "",
     "api_flavor": "openai-compatible",
-    "api_key": "sk-0VU4aRkJ0mEpBDk6H87fv23ilgvhadJwHuHM9EZB7fxwAWPm4nrpWwtg2X8uPKKI",
+    "api_key": null,
     "gllm_dimension": null,
     "cache_enabled": true,
     "cache_size": 10000,
@@ -172,6 +179,7 @@
   },
   "license": {
     "mesh_accepted": false,
-    "license_type": "MIT"
+    "license_type": "MIT",
+    "commercial_key": null
   }
 }

@@ -21,6 +21,7 @@ async fn personal_plan_defaults_to_500mb() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        dedup: crate::settings::types::DedupSettings::default(),
     };
 
     let workspace = WorkspaceState::new(
@@ -65,6 +66,7 @@ async fn usage_state_persists_between_workspace_reloads() {
             embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: SyncPolicy::CloudMirror,
+            dedup: crate::settings::types::DedupSettings::default(),
         },
         RuntimeConfig::default(),
         &root,
@@ -93,6 +95,7 @@ async fn usage_state_persists_between_workspace_reloads() {
             embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: SyncPolicy::CloudMirror,
+            dedup: crate::settings::types::DedupSettings::default(),
         },
         RuntimeConfig::default(),
         &root,
@@ -120,6 +123,7 @@ async fn durable_memory_rehydrates_between_workspace_reloads() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        dedup: crate::settings::types::DedupSettings::default(),
     };
 
     let workspace = WorkspaceState::new(config.clone(), RuntimeConfig::default(), &root)
@@ -173,6 +177,7 @@ async fn session_tokens_beliefs_and_checkpoints_persist_between_reloads() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        dedup: crate::settings::types::DedupSettings::default(),
     };
 
     let workspace = WorkspaceState::new(config.clone(), RuntimeConfig::default(), &root)
@@ -240,6 +245,7 @@ async fn test_workspace_working_memory_is_bounded_and_contains_recent_docs() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        dedup: crate::settings::types::DedupSettings::default(),
     };
 
     let workspace = WorkspaceState::new(config.clone(), RuntimeConfig::default(), &root)
@@ -295,6 +301,7 @@ async fn test_entity_graph_persists_and_restores_on_reload() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        dedup: crate::settings::types::DedupSettings::default(),
     };
 
     let workspace = WorkspaceState::new(config.clone(), RuntimeConfig::default(), &root)

@@ -1,10 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
   Bell,
   Bot,
   Database,
   Hash,
+  Home,
   Key,
   MessageCircle,
   MessageSquare,
@@ -16,7 +18,8 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { getApiUrl } from "../api/client";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
@@ -35,11 +38,29 @@ interface TopStatusBarProps {
 // Declare the vite define constant
 declare const __APP_VERSION__: string;
 
-export default function TopStatusBar({
+async function getAuthToken(): Promise<string> {
+  try {
+    return await invoke<string>("get_xavier_token");
+  } catch {
+    return localStorage.getItem("XAVIER_TOKEN") || "";
+  }
+}
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped TopStatusBar in React.memo()
+ * 🎯 Why: TopStatusBar is a complex component containing multiple intervals, fetches,
+ *         and animated layout calculations. Updates to chat messages or other parent state in App.tsx shouldn't
+ *         re-render this bar unnecessarily.
+ * 📊 Impact: Prevents unnecessary heavy tree renders and layout recalculations.
+ */
+export default React.memo(function TopStatusBar({
   isModalOpen = false,
 }: TopStatusBarProps) {
   const [time, setTime] = useState(new Date());
   const [memoryCount, setMemoryCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [metrics, setMetrics] = useState({
     cpu_percent: 0,
     ram_used_gb: 0,
@@ -76,13 +97,19 @@ export default function TopStatusBar({
       .catch(console.error);
 
     const fetchMetrics = async () => {
+      // 1. Fetch realtime metrics from Tauri
       try {
         const met = await invoke("get_realtime_metrics");
         setMetrics(met as any);
+      } catch (err) {
+        console.debug("Error fetching realtime metrics:", err);
+      }
 
-        const token = await invoke("get_xavier_token");
-        const res = await fetch("http://127.0.0.1:8006/v1/memories?limit=1", {
-          headers: { "X-Xavier-Token": token as string },
+      // 2. Fetch memory count from REST API
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(getApiUrl("/v1/memories?limit=1"), {
+          headers: { "X-Xavier-Token": token },
         });
         if (res.ok) {
           const data = await res.json();
@@ -91,7 +118,29 @@ export default function TopStatusBar({
           }
         }
       } catch (err) {
-        console.error("Error fetching metrics:", err);
+        console.debug("Error fetching memories count:", err);
+      }
+
+      // 3. Fetch notifications unread count from REST API
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(getApiUrl("/notifications"), {
+          headers: { "X-Xavier-Token": token },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            const unread = data.filter((n: any) => !n.read).length;
+            setUnreadCount(unread);
+          } else {
+            setUnreadCount(0);
+          }
+        } else {
+          setUnreadCount(0);
+        }
+      } catch (err) {
+        console.debug("Error fetching notifications unread count:", err);
+        setUnreadCount(0);
       }
     };
 
@@ -99,9 +148,15 @@ export default function TopStatusBar({
     const metricsInterval = setInterval(fetchMetrics, 3000);
     const timeInterval = setInterval(() => setTime(new Date()), 1000);
 
+    // Listen for real-time notifications via Tauri
+    const unlistenPromise = listen<any>("new-notification", () => {
+      fetchMetrics();
+    });
+
     return () => {
       clearInterval(metricsInterval);
       clearInterval(timeInterval);
+      unlistenPromise.then((unlisten) => unlisten());
     };
   }, []);
 
@@ -112,9 +167,6 @@ export default function TopStatusBar({
     setMessagingTab(platform);
     setShowMessaging(true);
   };
-
-  // Unread notification count (mock — 3 unread from dropdown mock data)
-  const MOCK_UNREAD = 3;
 
   return (
     <>
@@ -193,56 +245,86 @@ export default function TopStatusBar({
             >
               {/* Discord */}
               <button
+                type="button"
                 onClick={() => openMessaging("discord")}
                 title="Discord — Click to configure"
+                aria-label="Configure Discord"
                 className="relative group p-0.5 rounded-full hover:bg-indigo-500/10 transition-colors"
               >
-                <MessageCircle className="w-3 h-3 text-indigo-400/40 group-hover:text-indigo-400 transition-colors" />
+                <MessageCircle
+                  className="w-3 h-3 text-indigo-400/40 group-hover:text-indigo-400 transition-colors"
+                  aria-hidden="true"
+                />
               </button>
 
               {/* Slack */}
               <button
+                type="button"
                 onClick={() => openMessaging("slack")}
                 title="Slack — Click to configure"
+                aria-label="Configure Slack"
                 className="relative group p-0.5 rounded-full hover:bg-amber-500/10 transition-colors"
               >
-                <Hash className="w-3 h-3 text-amber-400/40 group-hover:text-amber-400 transition-colors" />
+                <Hash
+                  className="w-3 h-3 text-amber-400/40 group-hover:text-amber-400 transition-colors"
+                  aria-hidden="true"
+                />
               </button>
 
               {/* Teams */}
               <button
+                type="button"
                 onClick={() => openMessaging("teams")}
                 title="MS Teams — Click to configure"
+                aria-label="Configure MS Teams"
                 className="relative group p-0.5 rounded-full hover:bg-purple-500/10 transition-colors"
               >
-                <Users className="w-3 h-3 text-purple-400/40 group-hover:text-purple-400 transition-colors" />
+                <Users
+                  className="w-3 h-3 text-purple-400/40 group-hover:text-purple-400 transition-colors"
+                  aria-hidden="true"
+                />
               </button>
 
               {/* Telegram — may be configured */}
               <button
+                type="button"
                 onClick={() => openMessaging("telegram")}
                 title={
                   config.has_telegram
                     ? "Telegram (Active)"
                     : "Telegram — Click to configure"
                 }
+                aria-label={
+                  config.has_telegram
+                    ? "Telegram (Active)"
+                    : "Configure Telegram"
+                }
                 className="relative group p-0.5 rounded-full hover:bg-blue-500/10 transition-colors"
               >
                 <Send
                   className={`w-3 h-3 transition-colors ${config.has_telegram ? "text-blue-400" : "text-blue-400/40 group-hover:text-blue-400"}`}
+                  aria-hidden="true"
                 />
                 {config.has_telegram && (
-                  <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400 msg-active-dot shadow-[0_0_4px_rgba(96,165,250,0.6)]" />
+                  <div
+                    className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400 msg-active-dot shadow-[0_0_4px_rgba(96,165,250,0.6)]"
+                    aria-hidden="true"
+                  />
                 )}
               </button>
 
               {/* WhatsApp */}
               <button
+                type="button"
                 onClick={() => openMessaging("whatsapp")}
                 title="WhatsApp — Click to configure"
+                aria-label="Configure WhatsApp"
                 className="relative group p-0.5 rounded-full hover:bg-green-500/10 transition-colors"
               >
-                <MessageSquare className="w-3 h-3 text-green-400/40 group-hover:text-green-400 transition-colors" />
+                <MessageSquare
+                  className="w-3 h-3 text-green-400/40 group-hover:text-green-400 transition-colors"
+                  aria-hidden="true"
+                />
               </button>
             </motion.div>
           )}
@@ -267,11 +349,16 @@ export default function TopStatusBar({
 
             {/* Gear Button */}
             <button
+              type="button"
               onClick={() => setShowConfig(!showConfig)}
               className="absolute -right-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-[#39ff14] p-1.5 outline-none"
               title="Configure Status Bar"
+              aria-label="Configure Status Bar"
             >
-              <Settings className="w-3.5 h-3.5 hover:animate-[spin_4s_linear_infinite]" />
+              <Settings
+                className="w-3.5 h-3.5 hover:animate-[spin_4s_linear_infinite]"
+                aria-hidden="true"
+              />
             </button>
 
             {/* Config Popover */}
@@ -296,6 +383,7 @@ export default function TopStatusBar({
                     notifications: "Notifications",
                   }).map(([key, label]) => (
                     <button
+                      type="button"
                       key={key}
                       onClick={() => toggleModule(key as keyof typeof modules)}
                       className="flex items-center justify-between px-2 py-1.5 hover:bg-white/5 rounded-lg transition-colors group/btn outline-none"
@@ -324,6 +412,23 @@ export default function TopStatusBar({
           transition={spring}
           className={`flex gap-2 pointer-events-auto ${isModalOpen ? "absolute right-2 lg:right-4 top-1/2 -translate-y-1/2 flex-col items-end z-[60]" : "absolute right-4 md:right-6 top-6 flex-row items-start"}`}
         >
+          {/* Maloca ops workspace */}
+          <motion.button
+            layout
+            transition={spring}
+            type="button"
+            onClick={() => {
+              window.location.hash = "#/maloca";
+            }}
+            className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 hover:border-emerald-400/30 hover:bg-emerald-500/5 transition-colors"
+            title="Abrir Maloca (ops workspace)"
+          >
+            <Home className="w-3 h-3 text-emerald-300/80" />
+            <span className="font-mono text-[9px] text-emerald-200/80 uppercase tracking-wide hidden sm:inline-block">
+              Maloca
+            </span>
+          </motion.button>
+
           {/* Security & Proxy */}
           {modules.security && (
             <motion.div
@@ -396,13 +501,13 @@ export default function TopStatusBar({
                 transition={spring}
                 onClick={() => setShowNotifications((prev) => !prev)}
                 className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2 hover:bg-white/5 hover:border-white/20 transition-all flex items-center justify-center h-7 w-7 shrink-0"
-                title={`${memoryCount} Memories | ${MOCK_UNREAD} Unread`}
+                title={`${memoryCount} Memories | ${unreadCount} Unread`}
               >
                 <div className="relative flex items-center justify-center">
                   <Bell className="w-3.5 h-3.5 text-white/60" />
-                  {MOCK_UNREAD > 0 && (
+                  {unreadCount > 0 && (
                     <div className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[7px] font-bold px-1 rounded-full border border-[#0a0a0a] min-w-[13px] text-center shadow-[0_0_5px_rgba(239,68,68,0.4)]">
-                      {MOCK_UNREAD > 9 ? "9+" : MOCK_UNREAD}
+                      {unreadCount > 9 ? "9+" : unreadCount}
                     </div>
                   )}
                 </div>
@@ -432,4 +537,4 @@ export default function TopStatusBar({
       </AnimatePresence>
     </>
   );
-}
+});

@@ -5,6 +5,7 @@
 use super::state::WorkspaceState;
 use anyhow::Result;
 
+/// Seed workspace.
 pub async fn seed_workspace(workspace: &WorkspaceState) -> Result<()> {
     let seed_docs = [
         ( "system/xavier", "Xavier is the central memory system for SWAL agents. Use /memory/add to store, /memory/search to find, /memory/query for AI responses.", serde_json::json!({"type": "system", "tags": ["xavier", "memory"]}) ),

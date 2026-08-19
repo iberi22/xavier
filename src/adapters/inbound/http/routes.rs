@@ -4,7 +4,8 @@
 //! responsibilities within the Xavier cognitive memory system.
 use axum::{
     extract::Json,
-    routing::{get, post},
+    response::IntoResponse,
+    routing::{delete, get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,7 @@ use crate::adapters::outbound::http_health_adapter::HttpHealthAdapter;
 use crate::agents::unregister_agent_handler;
 use crate::coordination::SimpleAgentRegistry;
 use crate::ports::inbound::{AgentLifecyclePort, TimeMetricsPort};
+use crate::security::auth::Permission;
 use crate::security::SecurityService;
 use crate::session::event_mapper::PanelThreadEntry;
 use crate::session::types::SessionEvent;
@@ -55,13 +57,16 @@ pub fn init_health_port(port: Arc<HttpHealthAdapter>) {
 
 // ─── Router ─────────────────────────────────────────────────────────────────
 
+/// Create router.
 pub fn create_router() -> Router {
     create_router_with_agent_registry(SimpleAgentRegistry::new(None))
 }
 
+/// Create router with agent registry.
 pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecyclePort>) -> Router {
     let router = Router::new()
         .route("/health", get(health_handler))
+        .route("/health/history", get(health_history_handler))
         .route("/health/cloud", get(cloud_health_handler))
         .route("/readiness", get(readiness_handler))
         .route("/build", get(build_handler))
@@ -89,6 +94,74 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route(
             "/api/v1/memory/sync/resolve/{conflict_id}",
             post(crate::adapters::inbound::http::handlers::sync::sync_resolve_handler),
+        )
+        // ── Public Node Directory (SWAL Node Discovery) ──────────────────
+        .route(
+            "/mesh/public/nodes",
+            get(crate::adapters::inbound::http::handlers::nodes::list_public_nodes_handler),
+        )
+        .route(
+            "/v1/mesh/public/nodes",
+            get(crate::adapters::inbound::http::handlers::nodes::list_public_nodes_handler),
+        )
+        // ── Maintenance API ──────────────────────────────────────────────
+        .route(
+            "/v1/maintenance/reindex-embeddings",
+            post(maintenance_reindex_handler).layer(axum::middleware::from_fn(
+                crate::middleware::require_permission(|r| r.can_edit_config()),
+            )),
+        )
+        // ── Training Datasets API ─────────────────────────────────────────
+        .route("/v1/training/export", post(training_export_handler))
+        // ── Content Redaction API ─────────────────────────────────────────
+        .route("/v1/memories/redact", post(memories_redact_handler))
+        // ── Mini-Experts API ──────────────────────────────────────────────
+        .route("/v1/agents/mini-experts", get(mini_experts_list_handler))
+        .route(
+            "/v1/agents/mini-experts/invoke",
+            post(mini_expert_invoke_handler),
+        )
+        // ── Data Marketplace API ──────────────────────────────────────────
+        .route(
+            "/v1/marketplace/datasets",
+            post(crate::adapters::inbound::http::handlers::list_dataset_handler),
+        )
+        .route(
+            "/v1/marketplace/datasets",
+            get(crate::adapters::inbound::http::handlers::list_active_datasets_handler),
+        )
+        .route(
+            "/v1/marketplace/datasets/{id}/query",
+            post(crate::adapters::inbound::http::handlers::query_dataset_handler),
+        )
+        .route(
+            "/v1/marketplace/datasets/{id}",
+            delete(crate::adapters::inbound::http::handlers::revoke_dataset_handler),
+        )
+        .route(
+            "/v1/marketplace/pricing",
+            get(crate::adapters::inbound::http::handlers::get_pricing_preview_handler),
+        )
+        // ── Identity Verification Network (IVN) API ─────────────────────────
+        .route(
+            "/v1/identity/request",
+            post(crate::adapters::inbound::http::handlers::create_identity_request_handler),
+        )
+        .route(
+            "/v1/identity/request/{id}",
+            get(crate::adapters::inbound::http::handlers::get_identity_request_handler),
+        )
+        .route(
+            "/v1/identity/{id}/vote",
+            post(crate::adapters::inbound::http::handlers::vote_identity_request_handler),
+        )
+        .route(
+            "/v1/identity/requests",
+            get(crate::adapters::inbound::http::handlers::list_identity_requests_handler),
+        )
+        .route(
+            "/v1/identity/verified",
+            get(crate::adapters::inbound::http::handlers::list_verified_nodes_handler),
         );
 
     // Add enterprise plugin routes if feature is enabled
@@ -100,85 +173,185 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
     router.with_state(agent_registry)
 }
 
-async fn cloud_health_handler() -> Json<serde_json::Value> {
+#[derive(Debug, Serialize)]
+pub struct RouteHealthSystem {
+    pub cpu_usage_pct: f64,
+    pub memory_used_mb: u64,
+    pub memory_total_mb: u64,
+    pub disk_usage_pct: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteHealthDatabase {
+    pub size_mb: f64,
+    pub needs_vacuum: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteHealthCheck {
+    pub name: String,
+    pub status: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteHealthResponse {
+    pub status: String,
+    pub service: &'static str,
+    pub version: String,
+    pub uptime_secs: u64,
+    pub system: RouteHealthSystem,
+    pub database: RouteHealthDatabase,
+    pub mesh: String,
+    pub telegram: crate::health::TelegramHealth,
+    pub dependency_graph: crate::health::ComponentDependencyGraph,
+    pub checks: Vec<RouteHealthCheck>,
+    pub embedding_coverage: crate::health::EmbeddingCoverage,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteReadinessResponse {
+    pub status: &'static str,
+    pub service: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteBuildResponse {
+    pub service: &'static str,
+    pub version: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionEventDetection {
+    pub is_injection: bool,
+    pub confidence: f32,
+    pub attack_type: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionEventResponse {
+    pub status: &'static str,
+    pub session_id: String,
+    pub mapped: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detection: Option<SessionEventDetection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_sanitized: Option<bool>,
+}
+
+async fn cloud_health_handler() -> impl axum::response::IntoResponse {
     let settings = XavierSettings::current();
     let health = crate::health::check_cloud_health(&settings).await;
-    Json(serde_json::to_value(health).unwrap_or_default())
+    Json(health)
 }
 
-async fn health_handler() -> Json<serde_json::Value> {
+async fn health_history_handler() -> impl axum::response::IntoResponse {
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let history = crate::health::history::fetch_health_history(now_secs);
+    Json(history)
+}
+
+async fn health_handler() -> impl axum::response::IntoResponse {
     let health = crate::health::collect_health_sync();
-    Json(serde_json::json!({
-        "status": health.status,
-        "service": "xavier",
-        "version": health.version,
-        "uptime_secs": health.uptime_secs,
-        "system": {
-            "cpu_usage_pct": health.system.cpu_usage_pct,
-            "memory_used_mb": health.system.memory_used_mb,
-            "memory_total_mb": health.system.memory_total_mb,
-            "disk_usage_pct": health.system.disk_usage_pct,
+    Json(RouteHealthResponse {
+        status: health.status,
+        service: "xavier",
+        version: health.version,
+        uptime_secs: health.uptime_secs,
+        system: RouteHealthSystem {
+            cpu_usage_pct: health.system.cpu_usage_pct,
+            memory_used_mb: health.system.memory_used_mb,
+            memory_total_mb: health.system.memory_total_mb,
+            disk_usage_pct: health.system.disk_usage_pct,
         },
-        "database": {
-            "size_mb": health.database.size_mb,
-            "needs_vacuum": health.database.needs_vacuum,
+        database: RouteHealthDatabase {
+            size_mb: health.database.size_mb,
+            needs_vacuum: health.database.needs_vacuum,
         },
-        "mesh": health.mesh.connectivity,
-        "checks": health.checks.iter().map(|c| serde_json::json!({
-            "name": c.name,
-            "status": format!("{:?}", c.status),
-            "detail": c.detail,
-        })).collect::<Vec<_>>()
-    }))
+        mesh: health.mesh.connectivity,
+        telegram: health.telegram,
+        dependency_graph: health.dependency_graph,
+        checks: health
+            .checks
+            .iter()
+            .map(|c| RouteHealthCheck {
+                name: c.name.clone(),
+                status: format!("{:?}", c.status),
+                detail: c.detail.clone(),
+            })
+            .collect(),
+        embedding_coverage: health.embedding_coverage,
+    })
 }
 
-async fn readiness_handler() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "status": "ok",
-        "service": "xavier",
-    }))
+async fn readiness_handler() -> impl axum::response::IntoResponse {
+    Json(RouteReadinessResponse {
+        status: "ok",
+        service: "xavier",
+    })
 }
 
-async fn build_handler() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "service": "xavier",
-        "version": env!("CARGO_PKG_VERSION"),
-    }))
+async fn build_handler() -> impl axum::response::IntoResponse {
+    Json(RouteBuildResponse {
+        service: "xavier",
+        version: env!("CARGO_PKG_VERSION"),
+    })
 }
 
-pub async fn session_event_handler(Json(event): Json<SessionEvent>) -> Json<serde_json::Value> {
+/// Session event handler.
+pub async fn session_event_handler(
+    Json(event): Json<SessionEvent>,
+) -> impl axum::response::IntoResponse {
     let Some(entry) = PanelThreadEntry::from_session_event(&event) else {
-        return Json(serde_json::json!({
-            "status": "ok",
-            "session_id": event.session_id,
-            "mapped": false,
-        }));
+        return Json(SessionEventResponse {
+            status: "ok",
+            session_id: event.session_id,
+            mapped: false,
+            blocked: None,
+            reason: None,
+            detection: None,
+            content_sanitized: None,
+        })
+        .into_response();
     };
 
     let security = SecurityService::new();
     let result = security.process_input(&entry.content);
 
     if !result.allowed {
-        return Json(serde_json::json!({
-            "status": "blocked",
-            "blocked": true,
-            "reason": "security_policy_violation",
-            "session_id": event.session_id,
-            "mapped": false,
-            "detection": {
-                "is_injection": result.detection.is_injection,
-                "confidence": result.detection.confidence,
-                "attack_type": format!("{:?}", result.detection.attack_type),
-            },
-        }));
+        return Json(SessionEventResponse {
+            status: "blocked",
+            session_id: event.session_id,
+            mapped: false,
+            blocked: Some(true),
+            reason: Some("security_policy_violation"),
+            detection: Some(SessionEventDetection {
+                is_injection: result.detection.is_injection,
+                confidence: result.detection.confidence,
+                attack_type: format!("{:?}", result.detection.attack_type),
+            }),
+            content_sanitized: None,
+        })
+        .into_response();
     }
 
-    Json(serde_json::json!({
-        "status": "ok",
-        "session_id": event.session_id,
-        "mapped": true,
-        "content_sanitized": result.sanitized_input.is_some(),
-    }))
+    Json(SessionEventResponse {
+        status: "ok",
+        session_id: event.session_id,
+        mapped: true,
+        blocked: None,
+        reason: None,
+        detection: None,
+        content_sanitized: Some(result.sanitized_input.is_some()),
+    })
+    .into_response()
 }
 
 // ─── Verification Endpoints ─────────────────────────────────────────────────
@@ -196,6 +369,7 @@ pub struct VerifySaveResponse {
     pub match_score: f32,
 }
 
+/// Verify save handler.
 pub async fn verify_save_handler(
     Json(payload): Json<VerifySaveRequest>,
 ) -> Json<VerifySaveResponse> {
@@ -262,6 +436,7 @@ pub struct TimeMetricResponse {
     pub agent_id: String,
 }
 
+/// Time metric handler.
 pub async fn time_metric_handler(Json(payload): Json<TimeMetricDto>) -> Json<TimeMetricResponse> {
     let workspace_id =
         std::env::var("XAVIER_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
@@ -307,6 +482,7 @@ pub struct SyncCheckResponse {
     pub alerts: Vec<String>,
 }
 
+/// Sync check handler.
 pub async fn sync_check_handler() -> Json<SyncCheckResponse> {
     // Return cached sync check results from the SessionSyncTask cron.
     let result = get_last_sync_result();
@@ -386,6 +562,247 @@ pub fn init_plugin_registry() {
     }
 }
 
+// ─── Maintenance API ──────────────────────────────────────────────────────
+
+use crate::codebase::connection_manager::ConnectionManager;
+use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ReindexMaintenanceRequest {
+    #[serde(default = "default_dry_run")]
+    pub dry_run: bool,
+    pub limit: Option<usize>,
+}
+
+fn default_dry_run() -> bool {
+    true
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReindexMaintenanceResponse {
+    pub status: String,
+    pub dry_run: bool,
+    pub null_embeddings_count: usize,
+    pub processed_count: usize,
+}
+
+/// POST /v1/maintenance/reindex-embeddings — trigger reindexing of memories lacking embeddings.
+pub async fn maintenance_reindex_handler(
+    Json(payload): Json<ReindexMaintenanceRequest>,
+) -> impl axum::response::IntoResponse {
+    let store_config = VecSqliteStoreConfig::from_env();
+
+    match VecSqliteMemoryStore::new(store_config).await {
+        Ok(store) => {
+            let project_id_c = store.connection_project_id().to_string();
+            let count_res: anyhow::Result<usize> = ConnectionManager::global()
+                .with_conn(&project_id_c, move |conn| {
+                    let count: usize = conn.query_row(
+                        "SELECT COUNT(*) FROM memory_records WHERE embedding IS NULL",
+                        [],
+                        |row| row.get(0),
+                    )?;
+                    Ok(count)
+                })
+                .await;
+
+            let null_count = count_res.unwrap_or(0);
+
+            if payload.dry_run {
+                Json(ReindexMaintenanceResponse {
+                    status: "ok".to_string(),
+                    dry_run: true,
+                    null_embeddings_count: null_count,
+                    processed_count: 0,
+                })
+                .into_response()
+            } else {
+                let limit = payload.limit;
+                // Spawn the background reindexing task!
+                tokio::spawn(async move {
+                    tracing::info!(
+                        "Starting triggered background reindexing (limit: {:?})...",
+                        limit
+                    );
+                    match store
+                        .reindex_null_embeddings_background_with_limit(limit)
+                        .await
+                    {
+                        Ok(success_count) => {
+                            tracing::info!(
+                                "Triggered background reindexing completed. Success count: {}",
+                                success_count
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!("Triggered background reindexing failed: {}", e);
+                        }
+                    }
+                });
+
+                Json(ReindexMaintenanceResponse {
+                    status: "reindexing_started".to_string(),
+                    dry_run: false,
+                    null_embeddings_count: null_count,
+                    processed_count: limit.unwrap_or(null_count).min(null_count),
+                })
+                .into_response()
+            }
+        }
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to initialize memory store for reindexing: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+// ─── Training Datasets API ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct TrainingExportRequest {
+    /// Deterministic seed for reproducible splits.
+    #[serde(default)]
+    pub seed: u64,
+    /// Fraction of records for the eval split (0.0..1.0).
+    #[serde(default)]
+    pub eval_ratio: f32,
+    #[serde(default)]
+    pub curated_only: Option<bool>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TrainingExportResponse {
+    pub manifest: serde_json::Value,
+    pub train_count: usize,
+    pub eval_count: usize,
+    pub audit: TrainingAuditDto,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TrainingAuditDto {
+    pub total_records_found: usize,
+    pub included_records: usize,
+    pub excluded_no_consent: usize,
+    pub excluded_revoked: usize,
+}
+
+/// POST /v1/training/export — generate a training bundle from telemetry data or curated items.
+pub async fn training_export_handler(
+    Json(payload): Json<TrainingExportRequest>,
+) -> impl axum::response::IntoResponse {
+    if payload.curated_only.unwrap_or(false) {
+        let queue = crate::curation::CurationQueue::load().unwrap_or_default();
+        let mut approved_items = queue.curated_dataset();
+
+        if payload.seed > 0 || payload.eval_ratio > 0.0 {
+            use rand::seq::SliceRandom;
+            use rand::SeedableRng;
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(payload.seed);
+            approved_items.shuffle(&mut rng);
+        }
+
+        if let Some(limit) = payload.limit {
+            approved_items.truncate(limit);
+        }
+
+        let redactor = crate::security::redaction::RedactionEngine::default();
+        let mut lines = Vec::new();
+
+        for item in approved_items {
+            let redacted = redactor.redact(&item.content_ref);
+            let obj = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&redacted) {
+                parsed
+            } else {
+                serde_json::json!({
+                    "text": redacted,
+                    "id": item.id,
+                    "clearance": item.proposed_clearance
+                })
+            };
+            if let Ok(line_str) = serde_json::to_string(&obj) {
+                lines.push(line_str);
+            }
+        }
+
+        let body_str = if lines.is_empty() {
+            String::new()
+        } else {
+            lines.join("\n") + "\n"
+        };
+
+        return axum::response::Response::builder()
+            .header("content-type", "application/x-ndjson")
+            .body(axum::body::Body::from(body_str))
+            .unwrap_or_else(|e| {
+                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+            });
+    }
+
+    let db_path = std::path::PathBuf::from(
+        std::env::var("XAVIER_TELEMETRY_DB_PATH")
+            .unwrap_or_else(|_| ".xavier/telemetry.db".to_string()),
+    );
+
+    if !db_path.exists() {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            format!("Telemetry DB not found at {}", db_path.display()),
+        )
+            .into_response();
+    }
+
+    let exporter = crate::data_commons::training::TrainingExporter::new(&db_path);
+    let bundle = match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
+        Ok(b) => b,
+        Err(e) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
+
+    let manifest = match serde_json::to_value(&bundle.manifest) {
+        Ok(m) => m,
+        Err(e) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        }
+    };
+
+    Json(TrainingExportResponse {
+        manifest,
+        train_count: bundle.train_split.len(),
+        eval_count: bundle.eval_split.len(),
+        audit: TrainingAuditDto {
+            total_records_found: bundle.audit_summary.total_records_found,
+            included_records: bundle.audit_summary.included_records,
+            excluded_no_consent: bundle.audit_summary.excluded_records_no_consent,
+            excluded_revoked: bundle.audit_summary.excluded_records_revoked,
+        },
+    })
+    .into_response()
+}
+
+// ─── Content Redaction API ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RedactRequest {
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RedactResponse {
+    pub redacted_text: String,
+}
+
+/// POST /v1/memories/redact - Redact PII / sensitive data from a text payload.
+pub async fn memories_redact_handler(
+    Json(payload): Json<RedactRequest>,
+) -> impl axum::response::IntoResponse {
+    let engine = crate::security::redaction::RedactionEngine::default();
+    let redacted = engine.redact(&payload.text);
+    Json(RedactResponse {
+        redacted_text: redacted,
+    })
+}
+
 /// Get the plugin registry (panics if not initialized)
 #[cfg(feature = "enterprise")]
 pub fn get_plugin_registry(
@@ -397,6 +814,7 @@ pub fn get_plugin_registry(
 }
 
 #[cfg(feature = "enterprise")]
+/// Plugins health handler.
 pub async fn plugins_health_handler() -> Json<PluginsHealthResponse> {
     #[allow(unused_imports)]
     use crate::adapters::inbound::http::plugins::Plugin;
@@ -440,6 +858,7 @@ pub async fn plugins_health_handler() -> Json<PluginsHealthResponse> {
 }
 
 #[cfg(feature = "enterprise")]
+/// Plugins sync handler.
 pub async fn plugins_sync_handler(
     Json(payload): Json<PluginSyncRequest>,
 ) -> Json<PluginSyncResponse> {
@@ -509,6 +928,108 @@ pub async fn plugins_sync_handler(
     })
 }
 
+// ─── Mini-Experts Endpoints ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct MiniExpertInvokeRequest {
+    pub name: String,
+    pub prompt: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MiniExpertInvokeResponse {
+    pub status: String,
+    pub provider: String,
+    pub endpoint: String,
+    pub response: String,
+}
+
+/// GET /v1/agents/mini-experts — list configured mini-experts.
+pub async fn mini_experts_list_handler() -> impl axum::response::IntoResponse {
+    let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
+    let reg_entries = registry.list();
+
+    let settings = XavierSettings::current();
+    let mut mini_experts = settings.workspace.mini_experts;
+    if mini_experts.is_empty() {
+        mini_experts = XavierSettings::default().workspace.mini_experts;
+    }
+
+    for entry in reg_entries {
+        if !mini_experts.iter().any(|e| e.name == entry.name) {
+            mini_experts.push(entry.to_config());
+        }
+    }
+
+    Json(mini_experts)
+}
+
+/// POST /v1/agents/mini-experts/invoke — invoke a mini-expert by name.
+pub async fn mini_expert_invoke_handler(
+    Json(payload): Json<MiniExpertInvokeRequest>,
+) -> Result<Json<MiniExpertInvokeResponse>, (axum::http::StatusCode, String)> {
+    let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
+    let settings = XavierSettings::current();
+    let mut mini_experts = settings.workspace.mini_experts;
+    if mini_experts.is_empty() {
+        mini_experts = XavierSettings::default().workspace.mini_experts;
+    }
+
+    let router = crate::agents::provider_router::ProviderRouter::from_registry_and_configs(
+        &registry,
+        mini_experts,
+    );
+
+    let expert_config = router.route(&payload.name).ok_or_else(|| {
+        (
+            axum::http::StatusCode::NOT_FOUND,
+            format!("Mini-expert '{}' not found", payload.name),
+        )
+    })?;
+
+    let provider = expert_config.provider.clone();
+    let endpoint = expert_config.endpoint.clone();
+
+    let response = router
+        .invoke(&payload.name, &payload.prompt)
+        .await
+        .map_err(|e| match e {
+            crate::agents::provider_router::MiniExpertInvokeError::NotFound(name) => (
+                axum::http::StatusCode::NOT_FOUND,
+                format!("Mini-expert '{}' not found", name),
+            ),
+            crate::agents::provider_router::MiniExpertInvokeError::ModelNotInstalled { model } => (
+                axum::http::StatusCode::NOT_FOUND,
+                format!(
+                    "Model '{}' not found in local provider. Please run: ollama pull {}",
+                    model, model
+                ),
+            ),
+            crate::agents::provider_router::MiniExpertInvokeError::ProviderError {
+                name,
+                status,
+                details,
+            } => (
+                axum::http::StatusCode::BAD_GATEWAY,
+                format!(
+                    "Failed to invoke mini-expert '{}' (HTTP {}): {}",
+                    name, status, details
+                ),
+            ),
+            crate::agents::provider_router::MiniExpertInvokeError::NetworkError(err) => (
+                axum::http::StatusCode::BAD_GATEWAY,
+                format!("Network error invoking mini-expert: {}", err),
+            ),
+        })?;
+
+    Ok(Json(MiniExpertInvokeResponse {
+        status: "success".to_string(),
+        provider,
+        endpoint,
+        response,
+    }))
+}
+
 #[cfg(test)]
 mod route_tests {
     use axum::{
@@ -527,6 +1048,84 @@ mod route_tests {
             .method(Method::POST)
             .body(Body::empty())
             .expect("build POST request")
+    }
+
+    #[tokio::test]
+    async fn test_route_mini_expert_invoke_missing_expert_404() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let req_body = serde_json::json!({
+            "name": "nonexistent-expert",
+            "prompt": "hello"
+        });
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/agents/mini-experts/invoke")
+                    .method(Method::POST)
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let err_msg = String::from_utf8_lossy(&body);
+        assert!(err_msg.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_route_mini_expert_invoke_missing_model_404() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("POST", "/v1/chat/completions")
+            .with_status(404)
+            .with_body(r#"{"error":"model 'qwen3-4b' not found"}"#)
+            .create_async()
+            .await;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("xavier_test_route_mexp_{}", ulid::Ulid::new()));
+        let db_file = temp_dir.join("mini_experts.json");
+        let registry = crate::agents::mini_experts::MiniExpertRegistry::new(&db_file);
+        registry
+            .register(crate::agents::mini_experts::MiniExpertEntry {
+                name: "test-qwen3-4b".to_string(),
+                segment: "codebase/test".to_string(),
+                language: "es".to_string(),
+                clearance: 1,
+                source_dataset: "ds1".to_string(),
+                model_gguf_path: "/models/qwen3.gguf".to_string(),
+                provider: "local".to_string(),
+                endpoint: format!("{}/v1", server.url()),
+                api_key: None,
+            })
+            .unwrap();
+
+        let router = crate::agents::provider_router::ProviderRouter::from_registry_and_configs(
+            &registry,
+            vec![],
+        );
+        let err = router
+            .invoke("test-qwen3-4b", "write rust code")
+            .await
+            .unwrap_err();
+        match err {
+            crate::agents::provider_router::MiniExpertInvokeError::ModelNotInstalled { model } => {
+                assert_eq!(model, "test-qwen3-4b");
+            }
+            other => panic!("expected ModelNotInstalled, got {:?}", other),
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[tokio::test]
@@ -609,11 +1208,14 @@ mod route_tests {
         let parsed: serde_json::Value =
             serde_json::from_slice(&body).expect("parse health response");
 
-        // Status can be "healthy", "warn", or "degraded" in test environments
+        // Status can be "healthy", "warn", "degraded", or "unhealthy" in test environments
         let status = parsed["status"].as_str().unwrap_or("");
         assert!(
-            status == "healthy" || status == "warn" || status == "degraded",
-            "expected status to be one of healthy/warn/degraded, got: {}",
+            status == "healthy"
+                || status == "warn"
+                || status == "degraded"
+                || status == "unhealthy",
+            "expected status to be one of healthy/warn/degraded/unhealthy, got: {}",
             status
         );
         assert_eq!(parsed["service"], "xavier");
@@ -678,6 +1280,119 @@ mod route_tests {
 
         assert_eq!(parsed["service"], "xavier");
         assert!(parsed.get("version").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_route_mini_experts_list() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/agents/mini-experts")
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse list response");
+
+        assert!(parsed.is_array());
+        let arr = parsed.as_array().unwrap();
+        assert!(!arr.is_empty());
+        assert_eq!(arr[0]["provider"], "agy");
+    }
+
+    #[tokio::test]
+    async fn test_route_mini_expert_invoke_mock() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let req_body = serde_json::json!({
+            "name": "agy-expert",
+            "prompt": "test prompt"
+        });
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/agents/mini-experts/invoke")
+                    .method(Method::POST)
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse invoke response");
+
+        assert_eq!(parsed["status"], "success");
+        assert_eq!(parsed["provider"], "agy");
+        assert!(parsed["response"]
+            .as_str()
+            .unwrap()
+            .contains("Mock response"));
+    }
+
+    #[tokio::test]
+    async fn test_route_maintenance_reindex_dry_run() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let req_body = serde_json::json!({
+            "dry_run": true,
+            "limit": 5
+        });
+        let mut req = Request::builder()
+            .uri("/v1/maintenance/reindex-embeddings")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+            .unwrap();
+        req.extensions_mut()
+            .insert(crate::security::auth::Claims::new(
+                "admin".to_string(),
+                "admin@example.com".to_string(),
+                crate::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
+        let response: Response = create_router()
+            .oneshot(req)
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse reindex response");
+
+        assert_eq!(parsed["status"], "ok");
+        assert_eq!(parsed["dry_run"], true);
+        assert!(parsed.get("null_embeddings_count").is_some());
+        assert_eq!(parsed["processed_count"], 0);
     }
 }
 

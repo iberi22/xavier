@@ -1,12 +1,13 @@
-﻿[patch.crates-io]
+[patch.crates-io]
 burn-candle = { path = "patches/burn-candle" }
 
 [package]
 name = "xavier"
-version = "0.12.0"
+version = "0.13.0"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
+default-run = "xavier"
 description = "Xavier - Cognitive Memory Runtime for AI Agents (AGPL v3 + Commercial)"
 license = "AGPL-3.0"
 repository = "https://github.com/iberi22/xavier"
@@ -19,7 +20,6 @@ brand = "Xavier"
 compatibility_alias = "xavier"
 open_source_license = "AGPL-3.0"
 commercial_license = "Xavier-Commercial-1.0"
-mesh_license = "Xavier-Mesh-1.0"
 
 enterprise_contact = "iberi22"
 support_model = "dual-license-open-core"
@@ -35,7 +35,17 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
-members = ["code-graph", "panel-ui/src-tauri"]
+members = [
+    "code-graph",
+    "panel-ui/src-tauri",
+    "code-graph/parsers/parser-rust",
+    "code-graph/parsers/parser-ts",
+    "code-graph/parsers/parser-python",
+    "code-graph/parsers/parser-go",
+    "code-graph/parsers/parser-java",
+    "code-graph/parsers/parser-c",
+    "code-graph/parsers/parser-cpp",
+]
 # NOTE: "xavier-core" is excluded from the workspace. It is an incomplete
 # WIP refactor (duplicates src/memory/sqlite_vec_store/) that does not compile
 # and is NOT consumed by any crate (xavier, code-graph, panel-ui). Re-add it
@@ -43,12 +53,16 @@ members = ["code-graph", "panel-ui/src-tauri"]
 # the directory and its files remain in the repo.
 
 [features]
-default = ["cli-interactive"]
+default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage", "dao-evm"]
+notification-in-app = []
+notification-webhook = []
+notification-email = []
 data-commons = ["post-quantum"]
 post-quantum = ["oqs"]
 cli-interactive = ["ratatui", "crossterm"]
 # All features that are safe to run on host CI (no GUI/Winit issues)
-ci-safe = []
+ci-safe = ["self-manage"]
+self-manage = []
 gpu-search = ["dep:candle-core", "dep:candle-nn"]
 gpu-search-cuda = ["gpu-search", "candle-core/cuda", "candle-nn/cuda"]
 gpu-search-metal = ["gpu-search", "candle-core/metal", "candle-nn/metal"]
@@ -61,12 +75,7 @@ local-gllm-cuda = ["dep:gllm", "gllm/cuda", "dep:candle-core"]
 dev-mode = []
 # Enterprise features: Cortex Enterprise Cloud integration
 enterprise = []
-mesh = ["dep:libp2p", "dep:iroh"]
-# Legacy libp2p transport ÔÇö kept for reference but disabled by default. The
-# libp2p_transport.rs and discovery.rs code is broken (doesn't compile against
-# current libp2p 0.56) and is superseded by the Iroh transport. Enable only to
-# inspect the old code path; it will not build without fixes.
-mesh-legacy = ["dep:libp2p"]
+mesh = ["dep:iroh"]
 dao-evm = ["dep:alloy"]
 
 [[test]]
@@ -76,6 +85,41 @@ path = "tests/integration/auth_register_test.rs"
 [[bench]]
 name = "embedding_benchmark"
 path = "benches/embedding_benchmark.rs"
+harness = false
+
+[[bench]]
+name = "hybrid_search"
+path = "benches/hybrid_search.rs"
+harness = false
+
+[[bench]]
+name = "retrieval_hormer"
+path = "benches/retrieval_hormer.rs"
+harness = false
+
+[[bench]]
+name = "entity_graph_benchmark"
+path = "benches/entity_graph_benchmark.rs"
+harness = false
+
+[[bench]]
+name = "api_v1"
+path = "benches/api_v1.rs"
+harness = false
+
+[[bench]]
+name = "minhash_bench"
+path = "benches/minhash_bench.rs"
+harness = false
+
+[[bench]]
+name = "cortex"
+path = "benches/cortex.rs"
+harness = false
+
+[[bench]]
+name = "mcp_benchmark"
+path = "benches/mcp_benchmark.rs"
 harness = false
 
 [[test]]
@@ -93,6 +137,42 @@ path = "tests/e2e/crypto_e2e.rs"
 [[test]]
 name = "telegram_bot_e2e"
 path = "tests/e2e/telegram_bot_e2e.rs"
+
+[[test]]
+name = "mcp_e2e"
+path = "tests/e2e/mcp_e2e.rs"
+
+[[test]]
+name = "notification_e2e"
+path = "tests/e2e/notification_e2e.rs"
+
+[[test]]
+name = "hormer_navigation_e2e"
+path = "tests/e2e/hormer_navigation_e2e.rs"
+
+[[test]]
+name = "governance_e2e"
+path = "tests/e2e/governance_e2e.rs"
+
+[[test]]
+name = "decentralized_login_e2e"
+path = "tests/e2e/decentralized_login_e2e.rs"
+
+[[test]]
+name = "context_regen_e2e"
+path = "tests/e2e/context_regen_e2e.rs"
+
+[[test]]
+name = "multi_node_sync"
+path = "tests/e2e/multi_node_sync.rs"
+
+[[test]]
+name = "clearance_access_audit"
+path = "tests/e2e/clearance_access_audit.rs"
+
+[[test]]
+name = "xtsp"
+path = "tests/xtsp/mod.rs"
 
 [dependencies]
 code-graph = { path = "./code-graph" }
@@ -216,12 +296,13 @@ bech32 = "0.9.1"
 bincode = "1.3.3"
 x25519-dalek = { version = "2.0.1", features = ["static_secrets", "reusable_secrets"] }
 sqlite-vec = "0.1.0"
-libp2p = { version = "0.56", optional = true, default-features = false, features = ["noise", "kad", "gossipsub", "mdns", "tcp", "tokio", "serde", "identify", "yamux"] }
 # Iroh provides QUIC-based P2P transport with automatic NAT traversal (the mesh
-# roadmap's "Phase 2"). Feature-gated under `mesh` alongside libp2p so the default
+# roadmap's "Phase 2"). Feature-gated under `mesh` so the default
 # build stays lean; the IrohTransport is the preferred P2P backend going forward.
 iroh = { version = "1.0", optional = true }
-alloy = { version = "2.1", optional = true, default-features = true, features = ["providers", "consensus", "signers", "signer-local", "contract", "rpc-types-eth", "reqwest", "network"] }
+alloy = { version = "=2.1.1", optional = true, default-features = true, features = ["providers", "consensus", "signers", "signer-local", "contract", "rpc-types-eth", "reqwest", "network"] }
+ciborium = "0.2.2"
+zstd = "0.13.3"
 
 [dev-dependencies]
 mockito = "1.6"
@@ -244,7 +325,13 @@ name = "xavier-tui"
 path = "src/main_tui.rs"
 required-features = ["cli-interactive"]
 
+[[bin]]
+name = "backfill_embeddings"
+path = "src/bin/backfill_embeddings.rs"
+
 [profile.release]
 opt-level = 3
-lto = false
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
 

@@ -3,6 +3,7 @@
 use anyhow::{anyhow, Result};
 use axum::{
     extract::DefaultBodyLimit,
+    handler::Handler,
     middleware::{self},
     routing::{delete, get, post, put},
     Router,
@@ -27,6 +28,8 @@ use crate::cli::state::CliState;
 use xavier::api::graph::{
     memory_graph_entity, memory_graph_list_entities, memory_graph_relations, memory_graph_view,
 };
+use xavier::middleware::require_permission;
+use xavier::security::auth::{Permission, UserRole};
 use xavier::security::auth_store::AuthStore;
 
 use crate::settings::XavierSettings;
@@ -80,6 +83,7 @@ pub async fn metrics_handler() -> axum::response::Response {
     }
 }
 
+/// Start http server.
 pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     // Initialize Prometheus exporter
     let _ = autometrics::global_metrics_exporter();
@@ -94,7 +98,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     settings.apply_to_env();
 
     // Validate opencode CLI if active
-    if settings.models.provider.trim().eq_ignore_ascii_case("opencode") {
+    if settings
+        .models
+        .provider
+        .trim()
+        .eq_ignore_ascii_case("opencode")
+    {
         use std::process::Command;
         let opencode_exists = if cfg!(windows) {
             Command::new("where")
@@ -126,6 +135,53 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let cm = ConnectionManager::global();
 
     let config = VecSqliteStoreConfig::from_env();
+    // ── Startup guard: detect store fragmentation ────────────────────────────
+    // Warn if multiple vec-store*.sqlite3 files exist outside the canonical data/
+    // directory. This prevents silent data split across locations.
+    {
+        let mut fragment_count: u32 = 0;
+        let mut fragment_paths: Vec<String> = Vec::new();
+        // Scan workspace root for vec-store*.sqlite3 outside data/
+        if let Ok(entries) = std::fs::read_dir(".") {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if name.starts_with("vec-store") && name.ends_with(".sqlite3") {
+                        // Skip the canonical store
+                        if let Ok(canonical) = std::fs::canonicalize(&p)
+                            .and_then(|c| std::fs::canonicalize(&config.path).map(|k| (c, k)))
+                        {
+                            if canonical.0 == canonical.1 {
+                                continue;
+                            }
+                        }
+                        fragment_count += 1;
+                        fragment_paths.push(p.display().to_string());
+                    }
+                }
+            }
+        }
+        if fragment_count > 0 {
+            tracing::warn!(
+                fragment_count,
+                canonical = %config.path.display(),
+                ?fragment_paths,
+                "Store fragmentation detected — multiple vec-store files found outside canonical data/ dir. \
+                 Run scripts/consolidate-stores.py to merge."
+            );
+            xavier::server::alerts::SYSTEM_ALERTS.push_alert(
+                "WARN",
+                &format!(
+                    "Store fragmentation: {} legacy vec-store files detected outside data/. \
+                     Run scripts/consolidate-stores.py to merge.",
+                    fragment_count
+                ),
+                "storage",
+            );
+        }
+    }
+
     if let Some(parent) = config.path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
@@ -163,7 +219,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     let auth_db_file_path = xavier_dir.join("auth.db");
 
-    let auth2_db = Arc::new(parking_lot::Mutex::new(xavier::auth2::db::AuthDb::new(&auth_db_file_path)?));
+    let auth2_db = Arc::new(parking_lot::Mutex::new(xavier::auth2::db::AuthDb::new(
+        &auth_db_file_path,
+    )?));
 
     time_store.init_schema_async().await?;
     audit_logger.init_schema_async().await?;
@@ -186,15 +244,30 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     });
 
     let workspace_id = XavierSettings::current().workspace.default_workspace_id;
-    let durable_state = store.load_workspace_state(&workspace_id).await?;
-    let docs = Arc::new(RwLock::new(
-        durable_state
-            .memories
-            .iter()
-            .map(MemoryRecord::to_document)
-            .collect::<Vec<MemoryDocument>>(),
-    ));
-    let memory = Arc::new(QmdMemory::new_with_workspace(docs, workspace_id.clone()));
+
+    // LAZY LOADING: Skip loading all 30K+ documents into RAM at startup.
+    // The pool is loaded on first access (search, get, ls, etc.) instead.
+    // Env var XAVIER_MEMORY_EAGER_LOAD=1 restores the old behavior.
+    let eager_load = std::env::var("XAVIER_MEMORY_EAGER_LOAD")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+
+    let memory = if eager_load {
+        tracing::info!("Memory pool: EAGER mode (XAVIER_MEMORY_EAGER_LOAD=1)");
+        let durable_state = store.load_workspace_state(&workspace_id).await?;
+        let docs = Arc::new(RwLock::new(
+            durable_state
+                .memories
+                .iter()
+                .map(MemoryRecord::to_document)
+                .collect::<Vec<MemoryDocument>>(),
+        ));
+        Arc::new(QmdMemory::new_with_workspace(docs, workspace_id.clone()))
+    } else {
+        tracing::info!("Memory pool: LAZY mode (docs load on first access)");
+        Arc::new(QmdMemory::new_lazy(workspace_id.clone()))
+    };
+
     let dyn_store: Arc<dyn MemoryStore> = store.clone();
     memory.set_store(dyn_store.clone()).await;
     memory.init().await?;
@@ -237,7 +310,22 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let code_db = Arc::new(::code_graph::db::CodeGraphDB::new(&code_db_path)?);
-    let code_indexer = Arc::new(::code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
+    // Skip symbol embeddings for bulk indexing when XAVIER_CODE_GRAPH_SKIP_EMBED=1
+    // (embeddings per symbol at ~1.5/s CPU make bulk index of 1k+ files take hours;
+    //  populate later via maintenance reindex or GPU-enabled embedding)
+    let skip_symbol_embed = std::env::var("XAVIER_CODE_GRAPH_SKIP_EMBED")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+    let mut code_indexer_obj = ::code_graph::indexer::Indexer::new(Arc::clone(&code_db));
+    if !skip_symbol_embed {
+        let symbol_embedder = Arc::new(crate::cli::handlers::code::XavierSymbolEmbedder::new(
+            embedder.clone(),
+        ));
+        code_indexer_obj.set_embedder(symbol_embedder);
+    } else {
+        tracing::info!("code-graph: symbol embeddings SKIPPED (XAVIER_CODE_GRAPH_SKIP_EMBED=1) — bulk index mode");
+    }
+    let code_indexer = Arc::new(code_indexer_obj);
     let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
     let code_graph_state = Arc::new(tokio::sync::RwLock::new(
         crate::cli::state::CodeGraphState {
@@ -252,6 +340,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         "Workspace root for path security: {}",
         workspace_dir.display()
     );
+
+    // Consent-first Colby sidecar (usually non-TTY on boot → skip/honour env). Soft-fail.
+    let sidecar =
+        xavier::codebase::codegraph_sidecar::ensure_codegraph_sidecar_soft(&workspace_dir);
+    info!("codegraph sidecar: {}", sidecar.message);
 
     let panel_root = state_panel_root(&workspace_dir, &workspace_id);
     let panel_store = Arc::new(ConversationsDb::open("default").await?);
@@ -363,7 +456,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let configured_providers =
         xavier::agents::provider::config::ModelProviderConfig::get_all_configured()
             .iter()
-            .filter_map(|c| xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label))
+            .filter_map(|c| {
+                xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label)
+            })
             .collect::<Vec<_>>();
 
     let fallback_chain = xavier::agents::provider::router::ProviderRouter::build_default_chain(
@@ -398,6 +493,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     );
 
     let multi_db = xavier::storage::multi_db::MultiDbManager::new();
+
+    // Clone the bus for the WebSocket layer before it moves into CliState.
+    let event_bus_for_ws = event_bus.clone();
 
     let state = CliState {
         memory: memory_port,
@@ -439,6 +537,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )),
         system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
         multi_db,
+        maloca: xavier::maloca::MalocaStore::open(&state_dir),
     };
 
     info!(
@@ -446,32 +545,187 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         state.workspace_id
     );
 
+    // Initialize and wire up the Memory Sync singleton
+    let node_id = if let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() {
+        identity.node_id.0
+    } else {
+        "local".to_string()
+    };
+    // Shared mesh token: peers in the same SWAL mesh authenticate with the
+    // same XAVIER_TOKEN (fallback: XAVIER_MESH_TOKEN, then none).
+    let mesh_token = std::env::var("XAVIER_TOKEN")
+        .ok()
+        .or_else(|| std::env::var("XAVIER_MESH_TOKEN").ok());
+    let sync_service = Arc::new(xavier::memory::sync::PeerMemorySync::with_peer_token(
+        state.store.clone(),
+        node_id,
+        mesh_token,
+    ));
+    xavier::adapters::inbound::http::handlers::sync::init_memory_sync(sync_service);
+
     let protected_routes = Router::new()
+        .merge(
+            xavier::server::training_routes::router(
+                xavier::server::training_routes::TrainingState {
+                    db_path: state.workspace_dir.clone().join("data/vec-store.sqlite3"),
+                    data_dir: state.workspace_dir.clone().join("data/datasets"),
+                },
+            )
+            .with_state(()),
+        )
+        .merge(
+            xavier::server::f12_routes::router(xavier::server::f12_routes::F12State::new(
+                state.workspace_dir.clone().join("data"),
+            ))
+            .with_state(()),
+        )
+        // ── Memory Sync endpoints ──────────────────────────────────────────
+        .route(
+            "/v1/memory/manifest",
+            get(crate::cli::handlers::memory::memory_manifest_handler),
+        )
+        .route(
+            "/v1/memory/push",
+            post(crate::cli::handlers::memory::memory_push_handler),
+        )
+        .route(
+            "/v1/memory/pull",
+            post(crate::cli::handlers::memory::memory_pull_handler),
+        )
+        .route(
+            "/v1/memory/pull-since/{workspace_id}/{since}",
+            get(crate::cli::handlers::memory::memory_pull_since_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/push",
+            post(xavier::adapters::inbound::http::handlers::sync::sync_push_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/pull",
+            post(xavier::adapters::inbound::http::handlers::sync::sync_pull_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/status",
+            get(xavier::adapters::inbound::http::handlers::sync::sync_status_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/resolve/{conflict_id}",
+            post(xavier::adapters::inbound::http::handlers::sync::sync_resolve_handler),
+        )
         .route("/memory/search", post(search_handler))
-        .route("/memory/update", post(update_handler))
-        .route("/memory/delete", post(delete_handler))
-        .route("/memory/reindex", post(reindex_handler))
+        .route(
+            "/memory/update",
+            post(update_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_add_memory()
+            }))),
+        )
+        .route(
+            "/memory/delete",
+            post(delete_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route(
+            "/memory/reindex",
+            post(reindex_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_add_memory()
+            }))),
+        )
+        .route(
+            "/v1/maintenance/reindex-embeddings",
+            post(xavier::adapters::inbound::http::routes::maintenance_reindex_handler).layer(
+                middleware::from_fn(xavier::middleware::require_permission(|r| {
+                    r.can_edit_config()
+                })),
+            ),
+        )
         .route("/memory/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
-        .route("/memory/decay", post(decay_handler))
-        .route("/memory/consolidate", post(consolidate_handler))
+        .route(
+            "/memory/decay",
+            post(decay_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route(
+            "/memory/consolidate",
+            post(consolidate_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
         .route("/memory/index-self", post(memory_index_self_handler))
-        .route("/memory/evict", axum::routing::delete(evict_handler))
+        .route(
+            "/memory/evict",
+            axum::routing::delete(evict_handler).layer(middleware::from_fn(require_permission(
+                |r| r.can_delete_memory(),
+            ))),
+        )
         .route("/memory/manage", post(manage_handler))
         .route("/memory/timeline/query", post(timeline_query_handler))
-        .route("/v1/memories", post(add_handler).get(stats_handler))
-        .route("/v1/memories/search", post(search_handler))
+        .route(
+            "/v1/memories",
+            post(
+                add_handler.layer(middleware::from_fn(require_permission(|r| {
+                    r.can_add_memory()
+                }))),
+            )
+            .get(stats_handler),
+        )
+        .route(
+            "/v1/memories/search",
+            post(xavier::server::v1_api::v1_memories_search),
+        )
+        .route(
+            "/v1/memories/prune",
+            post(xavier::server::v1_api::v1_memories_prune).layer(middleware::from_fn(
+                require_permission(|r| r.can_delete_memory()),
+            )),
+        )
+        .route(
+            "/v1/context/assemble",
+            post(xavier::server::v1_api::v1_context_assemble),
+        )
+        .route(
+            "/v1/memory/recall-eval",
+            post(xavier::server::v1_api::v1_memory_recall_eval),
+        )
+        .route(
+            "/v1/memory/recall/stats",
+            get(xavier::server::v1_api::v1_memory_recall_stats),
+        )
+        .route(
+            "/v1/memories/{id}",
+            get(xavier::server::v1_api::v1_memories_get),
+        )
+        .route(
+            "/v1/memories/{id}/outline",
+            get(xavier::server::v1_api::v1_memories_outline),
+        )
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
-        .route("/v1/workspaces/db", post(create_workspace_db_handler).get(list_workspace_dbs_handler))
-        .route("/v1/workspaces/db/{id}", delete(delete_workspace_db_handler))
+        .route(
+            "/v1/workspaces/db",
+            post(create_workspace_db_handler).get(list_workspace_dbs_handler),
+        )
+        .route(
+            "/v1/workspaces/db/{id}",
+            delete(delete_workspace_db_handler).layer(middleware::from_fn(require_permission(
+                |r| r.can_manage_users(),
+            ))),
+        )
         .route(
             "/v1/onboarding/suggestions",
             get(onboarding_suggestions_handler),
         )
         .route("/v1/auth/sessions", get(list_sessions_handler))
-        .route("/v1/auth/sessions/{id}", delete(revoke_session_handler))
+        .route(
+            "/v1/auth/sessions/{id}",
+            delete(revoke_session_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_manage_users()
+            }))),
+        )
         .route("/mcp/tools", get(mcp_tools_handler))
+        .route("/mcp/tools/call", post(mcp_tools_call_handler))
         // Memory Knowledge Graph (EntityGraph)
         .route("/memory/graph/entities", get(memory_graph_list_entities))
         .route(
@@ -482,22 +736,27 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/memory/graph/view", get(memory_graph_view))
         .route("/code/index", post(code_index_handler))
         .route("/code/find", post(code_find_handler))
+        .route("/code/search", post(code_search_handler))
+        .route("/code/memories", post(code_memories_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
         .route("/code/dump", post(code_dump_handler))
         .route("/code/load", post(code_load_handler))
+        .route("/code/sync", post(code_sync_handler))
         .route("/code/dependencies", post(code_dependencies_handler))
         .route(
             "/code/reverse-dependencies",
             post(code_reverse_dependencies_handler),
         )
         .route("/code/call-chain", post(code_call_chain_handler))
+        .route("/code/blast-radius", post(code_blast_radius_handler))
         // Code graph canvas projection
         .route("/code/graph/view", get(code_graph_view_handler))
         .route("/code/hubs", get(code_hubs_handler))
         .route("/code/hotspots", get(code_hotspots_handler))
         .route("/v1/account/usage", get(account_usage_handler))
         .route("/v1/embeddings", post(embed_handler))
+        .route("/v1/embeddings/stats", get(embedding_stats_handler))
         .route("/v1/auth/session", post(session_create_handler))
         .nest(
             "/v1/auth",
@@ -529,28 +788,76 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             post(xavier::api::timeline::get_time_slice),
         )
         .route("/timeline", get(xavier::api::timeline::timeline_summary))
+        // ── Maloca Timeline Export API (MS-002) ──────────────────────────
+        .route(
+            "/maloca/timeline",
+            get(xavier::maloca::timeline::timeline_export),
+        )
+        .route(
+            "/maloca/timeline/sessions",
+            get(xavier::maloca::timeline::timeline_sessions),
+        )
+        .route(
+            "/maloca/timeline/{id}/context",
+            get(xavier::maloca::timeline::timeline_event_context),
+        )
+        // ── Maloca Commit Chronicle API (MS-003) ─────────────────────────
+        .route(
+            "/maloca/commits/graph",
+            get(xavier::maloca::commits::commits_graph),
+        )
+        // ── Maloca WebSocket Live Feed (MS-004) ──────────────────────────
+        .route("/maloca/ws/feed", get(xavier::maloca::ws::ws_live_feed))
+        // NOTE: GET /maloca/feed/status se registra en maloca::nested_router (src/maloca/mod.rs:53)
+        // y se mergea abajo — NO duplicar aquí (panic axum "Overlapping method route").
+        // ── Maloca Belief Graph Confidence (MS-005) ──────────────────────
+        .route(
+            "/maloca/beliefs",
+            get(xavier::maloca::beliefs::beliefs_snapshot),
+        )
+        .route(
+            "/maloca/beliefs/path",
+            get(xavier::maloca::beliefs::belief_path),
+        )
         .route(
             "/api/settings/cloud-node",
-            get(xavier::api::settings::get_cloud_node)
-                .post(xavier::api::settings::update_cloud_node),
+            get(xavier::api::settings::get_cloud_node).post(
+                xavier::api::settings::update_cloud_node.layer(middleware::from_fn(
+                    require_permission(|r| r.can_edit_config()),
+                )),
+            ),
         )
         .route(
             "/api/settings/discord",
-            get(xavier::api::settings::get_discord_settings)
-                .post(xavier::api::settings::update_discord_settings),
+            get(xavier::api::settings::get_discord_settings).post(
+                xavier::api::settings::update_discord_settings.layer(middleware::from_fn(
+                    require_permission(|r| r.can_edit_config()),
+                )),
+            ),
         )
         .route(
             "/api/settings/discord/test",
-            post(xavier::api::settings::test_discord_connection),
+            post(
+                xavier::api::settings::test_discord_connection.layer(middleware::from_fn(
+                    require_permission(|r| r.can_edit_config()),
+                )),
+            ),
         )
         .route(
             "/api/settings/telegram",
-            get(xavier::api::settings::get_telegram_settings)
-                .post(xavier::api::settings::update_telegram_settings),
+            get(xavier::api::settings::get_telegram_settings).post(
+                xavier::api::settings::update_telegram_settings.layer(middleware::from_fn(
+                    require_permission(|r| r.can_edit_config()),
+                )),
+            ),
         )
         .route(
             "/api/settings/telegram/test",
-            post(xavier::api::settings::test_telegram_connection),
+            post(
+                xavier::api::settings::test_telegram_connection.layer(middleware::from_fn(
+                    require_permission(|r| r.can_edit_config()),
+                )),
+            ),
         )
         .route("/xavier/events/session", post(session_event_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
@@ -560,6 +867,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/xavier/agents/index", post(agent_index_handler))
         .route("/xavier/openclaw/scan", get(openclaw_scan_handler))
         .route("/xavier/openclaw/index", post(openclaw_index_handler))
+        .route(
+            "/xavier/codex/index",
+            post(crate::cli::handlers::agent::codex_index_handler),
+        )
+        .route(
+            "/xavier/jules/index",
+            post(crate::cli::handlers::agent::jules_index_handler),
+        )
         .route("/xavier/agents/sync", post(agent_sync_handler))
         .route(
             "/xavier/agents/{id}/heartbeat",
@@ -628,9 +943,16 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/v1/security/approve", post(security_approve_handler))
         .route(
             "/security/tokens",
-            get(list_tokens_handler).post(create_token_handler),
+            get(list_tokens_handler).post(create_token_handler.layer(middleware::from_fn(
+                require_permission(|r| r.can_manage_users()),
+            ))),
         )
-        .route("/security/tokens/{id}", delete(revoke_token_handler))
+        .route(
+            "/security/tokens/{id}",
+            delete(revoke_token_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_manage_users()
+            }))),
+        )
         .route("/security/tokens/{id}/rotate", post(rotate_token_handler))
         .route("/auth/recovery/seed/show", post(seed_show_handler))
         .route("/auth/recovery/seed/verify", post(seed_verify_handler))
@@ -686,8 +1008,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         // ── Offline Models API ──────────────────────────────────────────
         .route(
             "/v1/offline/config",
-            get(crate::cli::handlers::offline_models::get_offline_config_handler)
-                .post(crate::cli::handlers::offline_models::update_offline_config_handler),
+            get(crate::cli::handlers::offline_models::get_offline_config_handler).post(
+                crate::cli::handlers::offline_models::update_offline_config_handler.layer(
+                    middleware::from_fn(require_permission(|r| r.can_edit_config())),
+                ),
+            ),
         )
         .route(
             "/v1/offline/models",
@@ -747,6 +1072,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             get(xavier::server::v1_api::v1_mesh_identity),
         )
         .route(
+            "/v1/mesh/health",
+            get(xavier::server::v1_api::v1_mesh_health),
+        )
+        .route(
             "/v1/mesh/handshake",
             post(xavier::server::v1_api::v1_mesh_handshake),
         )
@@ -788,7 +1117,18 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             "/v1/mesh/status",
             get(crate::cli::handlers::mesh::v1_mesh_status_handler),
         )
-        .route("/v1/mesh/peers", get(list_peers_handler))
+        .route(
+            "/mesh/public/nodes",
+            get(crate::cli::handlers::nodes::list_public_nodes_handler),
+        )
+        .route(
+            "/v1/mesh/public/nodes",
+            get(crate::cli::handlers::nodes::list_public_nodes_handler),
+        )
+        .route(
+            "/v1/mesh/peers",
+            get(list_peers_handler).post(crate::cli::handlers::mesh::add_peer_handler),
+        )
         .route("/v1/mesh/peers/pair", post(pair_peer_handler))
         .route("/v1/mesh/peers/decode", post(decode_pairing_code_handler))
         .route(
@@ -819,7 +1159,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route(
             "/v1/mesh/bridges",
-            post(crate::cli::handlers::mesh::create_bridge_handler).get(crate::cli::handlers::mesh::list_bridges_handler),
+            post(crate::cli::handlers::mesh::create_bridge_handler)
+                .get(crate::cli::handlers::mesh::list_bridges_handler),
         )
         .route(
             "/v1/mesh/bridges/{id}",
@@ -897,6 +1238,15 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                 crate::cli::handlers::notifications::delete_all_notifications_handler,
             ),
         )
+        .route(
+            "/notifications/subscriptions",
+            get(crate::cli::handlers::notifications::list_subscriptions_handler)
+                .post(crate::cli::handlers::notifications::create_subscription_handler),
+        )
+        .route(
+            "/notifications/subscriptions/{id}",
+            axum::routing::delete(crate::cli::handlers::notifications::delete_subscription_handler),
+        )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -908,7 +1258,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         ));
 
     let large_body_routes = Router::new()
-        .route("/memory/add", post(add_handler))
+        .route(
+            "/memory/add",
+            post(add_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_add_memory()
+            }))),
+        )
         .route("/memory/export-pack", post(export_pack_handler))
         .route("/panel/api/chat", post(panel_process_chat))
         .route("/code/scan", post(code_scan_handler))
@@ -948,12 +1303,23 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     );
     let workspace_ctx = WorkspaceContext {
         workspace_id: state.workspace_id.clone(),
-        workspace: workspace_state,
+        workspace: workspace_state.clone(),
     };
 
+    // Maloca ops API — public local dogfood (matches @swal/maloca-client; no token).
+    let maloca_store = state.maloca.clone();
+
     let app = Router::new()
-        .nest("/auth", auth_routes::<CliState>(&state.state_dir.to_string_lossy()))
+        .nest(
+            "/auth",
+            auth_routes::<CliState>(&state.state_dir.to_string_lossy()),
+        )
         .route("/health", get(health_handler))
+        .route(
+            "/healthz",
+            get(crate::cli::handlers::system::healthz_handler),
+        )
+        .route("/health/history", get(health_history_handler))
         .route("/metrics", get(metrics_handler))
         .route("/health/cloud", get(cloud_health_handler))
         .route(
@@ -965,7 +1331,6 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/ready", get(readiness_handler))
         .route("/readiness", get(readiness_handler))
         .route("/v1/health/ready", get(readiness_handler))
-        // Panel UI: Vite production build uses absolute `/assets/*` paths.
         // Serve index + assets at both `/` and `/panel` so portable installs and
         // bookmarked `/panel` URLs both work.
         .route("/", get(panel_index))
@@ -975,11 +1340,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .merge(protected_routes)
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
+        .layer(Extension(event_bus_for_ws))
         .layer(CorsLayer::permissive());
 
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
-    let app = app.with_state(state.clone());
+    let app = app
+        .with_state(state.clone())
+        .merge(xavier::maloca::nested_router(maloca_store));
 
     #[cfg(feature = "enterprise")]
     let app = {
@@ -1125,11 +1493,49 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     // identical JSON-RPC tool surface for remote agents. Non-fatal: a bind
     // failure (e.g. port in use) is logged without taking down the main server.
     let mcp_port = crate::cli::config::resolve_mcp_port(mcp_port);
-    if mcp_port > 0 {
-        info!("Starting MCP HTTP+SSE server on port {}", mcp_port);
+    let expected_token = xavier::security::auth::resolve_xavier_token();
+    if expected_token.is_empty() {
+        tracing::warn!(
+            "MCP HTTP+SSE server startup skipped: resolve_xavier_token() returned empty"
+        );
+    } else if mcp_port > 0 {
+        let workspace_registry = Arc::new(xavier::workspace::WorkspaceRegistry::new());
+        let _ = workspace_registry.insert_arc(workspace_state.clone()).await;
+
+        let mcp_app_state = xavier::AppState {
+            workspace_registry,
+            code_indexer: Arc::clone(&code_indexer),
+            code_query: Arc::clone(&code_query),
+            code_db: Arc::clone(&code_db),
+            indexer: xavier::memory::file_indexer::FileIndexer::new(
+                xavier::memory::file_indexer::FileIndexerConfig::default(),
+                Some(code_indexer.clone()),
+            ),
+            agent_indexer: xavier::memory::agent_indexer::AgentIndexer::new(
+                xavier::memory::file_indexer::FileIndexer::new(
+                    xavier::memory::file_indexer::FileIndexerConfig::default(),
+                    Some(code_indexer.clone()),
+                ),
+            ),
+            security_service: Arc::clone(&security_service),
+            code_graph_dump_path: Some(xavier::codebase::codegraph_paths::codegraph_dump_path_for(
+                &state.workspace_dir,
+            )),
+        };
+
+        let bind_host = resolve_http_bind_host();
+        let mcp_bind_addr = format!("{}:{}", bind_host, mcp_port);
+        info!("Starting MCP HTTP+SSE server on {}", mcp_bind_addr);
+        let mcp_workspace_ctx = workspace_ctx.clone();
         tokio::spawn(async move {
-            if let Err(error) = crate::cli::mcp::start_mcp_http(mcp_port).await {
-                tracing::error!("MCP HTTP+SSE server on port {} failed: {}", mcp_port, error);
+            if let Err(error) = xavier::server::mcp::transport::start_mcp_http_server(
+                mcp_app_state,
+                mcp_workspace_ctx,
+                mcp_bind_addr.clone(),
+            )
+            .await
+            {
+                tracing::error!("MCP HTTP+SSE server on {} failed: {}", mcp_bind_addr, error);
             }
         });
     } else {
@@ -1262,6 +1668,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         revision: 1,
                         primary: true,
                         score: 0.0,
+                        deleted_at: None,
                         parent_id: None,
                         cluster_id: None,
                         level: Default::default(),
@@ -1271,6 +1678,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         encrypted_dek: None,
                         content_iv: None,
                         metadata_iv: None,
+                        ..Default::default()
                     };
                     let _ = memory_port_cron.add(record).await;
                 }

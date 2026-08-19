@@ -384,8 +384,6 @@ impl Default for ContextUsefulnessInput {
     }
 }
 
-
-
 // ═══════════════════════════════════════════════
 // Tests — Regression fixtures
 // ═══════════════════════════════════════════════

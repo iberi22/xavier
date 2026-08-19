@@ -10,6 +10,7 @@ pub mod indexer;
 pub mod manager;
 pub mod monitoring;
 pub mod orchestrator;
+pub mod pipeline;
 pub mod query_processor;
 pub mod regen_loop;
 pub mod skill_dispatcher;
@@ -28,6 +29,7 @@ pub use indexer::ContextIndexer;
 pub use manager::ContextManager;
 pub use monitoring::ContextMetrics;
 pub use orchestrator::{ContextBudgetConfig, ExecutionPlan, HookKind, Orchestrator};
+pub use pipeline::{ContextRegenerationPipeline, RecallMetrics};
 pub use query_processor::QueryProcessor;
 pub use regen_loop::{RegenDecision, RegenerationConfig, RegenerationLoop, SessionRegenStats};
 pub use skill_dispatcher::{
@@ -54,6 +56,7 @@ pub struct ContextDocument {
 }
 
 impl ContextDocument {
+    /// New.
     pub fn new(
         id: impl Into<String>,
         session_id: impl Into<String>,
@@ -74,21 +77,25 @@ impl ContextDocument {
         }
     }
 
+    /// With tool calls.
     pub fn with_tool_calls(mut self, tool_calls: Vec<String>) -> Self {
         self.tool_calls = tool_calls;
         self
     }
 
+    /// With metadata.
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = metadata;
         self
     }
 
+    /// With created at.
     pub fn with_created_at(mut self, created_at: DateTime<Utc>) -> Self {
         self.created_at = created_at;
         self
     }
 
+    /// With token count.
     pub fn with_token_count(mut self, token_count: usize) -> Self {
         self.token_count = token_count;
         self

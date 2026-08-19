@@ -108,6 +108,8 @@ Controls advanced embedding configuration and caching.
 | `endpoint` | `string` | `""` | _default_ | `XAVIER_EMBEDDING_URL` | Embedding API endpoint |
 | `api_key` | `string?` | `null` | _default_ | `XAVIER_EMBEDDING_API_KEY`, `XAVIER_OPENROUTER_API_KEY` | API key for embeddings (OpenRouter compatible) |
 | `cache_enabled` | `bool` | `true` | `true` | `XAVIER_EMBEDDING_CACHE_ENABLED` | Enable persistent embedding cache |
+| `cache_capacity` | `u64` | `10000` | `10000` | `XAVIER_EMBEDDING_CACHE_CAPACITY` | In-memory LRU cache capacity |
+| `cache_ttl` | `u64` | `24` | `24` | `XAVIER_EMBEDDING_CACHE_TTL` | Cache TTL in hours |
 
 ### Configuring OpenRouter for Embeddings
 

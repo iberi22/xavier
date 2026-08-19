@@ -33,6 +33,7 @@ pub struct BackupCodesGenerateRequest {
     pub seed_phrase: String,
 }
 
+/// Seed show handler.
 pub async fn seed_show_handler(
     State(_state): State<CliState>,
     Json(payload): Json<SeedShowRequest>,
@@ -79,6 +80,7 @@ pub async fn seed_show_handler(
     )
 }
 
+/// Seed verify handler.
 pub async fn seed_verify_handler(
     State(_state): State<CliState>,
     Json(payload): Json<SeedVerifyRequest>,
@@ -105,6 +107,7 @@ pub async fn seed_verify_handler(
     json_response(StatusCode::OK, serde_json::json!({"status": "verified"}))
 }
 
+/// Password reset handler.
 pub async fn password_reset_handler(
     State(state): State<CliState>,
     Json(payload): Json<PasswordResetRequest>,
@@ -180,6 +183,7 @@ pub async fn password_reset_handler(
     )
 }
 
+/// Backup codes generate handler.
 pub async fn backup_codes_generate_handler(
     State(_state): State<CliState>,
     Json(payload): Json<BackupCodesGenerateRequest>,
@@ -228,6 +232,7 @@ pub async fn backup_codes_generate_handler(
     )
 }
 
+/// Master key handler.
 pub async fn master_key_handler() -> Response {
     json_response(
         StatusCode::NOT_IMPLEMENTED,

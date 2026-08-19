@@ -35,18 +35,21 @@ impl Default for UserStore {
 }
 
 impl UserStore {
+    /// New.
     pub fn new() -> Self {
         Self {
             project_id: "default".to_string(),
         }
     }
 
+    /// With project id.
     pub fn with_project_id(project_id: impl Into<String>) -> Self {
         Self {
             project_id: project_id.into(),
         }
     }
 
+    /// Add user.
     pub async fn add_user(&self, user: User) -> Result<()> {
         let created_at = user.created_at.to_rfc3339();
         let updated_at = user.updated_at.to_rfc3339();
@@ -70,6 +73,7 @@ impl UserStore {
         }).await
     }
 
+    /// Get user by email.
     pub async fn get_user_by_email(&self, email: &str) -> Result<Option<User>> {
         let email = email.to_string();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
@@ -95,6 +99,7 @@ impl UserStore {
         }).await
     }
 
+    /// Update password and recovery.
     pub async fn update_password_and_recovery(
         &self,
         user_id: &str,
@@ -115,6 +120,7 @@ impl UserStore {
         }).await
     }
 
+    /// Save backup codes.
     pub async fn save_backup_codes(&self, codes: Vec<BackupCode>) -> Result<()> {
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
@@ -138,6 +144,7 @@ impl UserStore {
             .await
     }
 
+    /// Delete backup codes for user.
     pub async fn delete_backup_codes_for_user(&self, user_id: &str) -> Result<()> {
         let user_id = user_id.to_string();
         ConnectionManager::global()
@@ -151,6 +158,7 @@ impl UserStore {
             .await
     }
 
+    /// Count remaining backup codes.
     pub async fn count_remaining_backup_codes(&self, user_id: &str) -> Result<usize> {
         let user_id = user_id.to_string();
         ConnectionManager::global()
@@ -165,6 +173,7 @@ impl UserStore {
             .await
     }
 
+    /// Verify and consume backup code.
     pub async fn verify_and_consume_backup_code(
         &self,
         user_id: &str,

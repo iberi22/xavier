@@ -5,10 +5,10 @@
 
 use serde::Deserialize;
 use std::collections::HashMap;
-use xavier::memory::schema::{ContextZone, MemoryQueryFilters, FederatedSearchRequest};
+use xavier::memory::schema::{ContextZone, FederatedSearchRequest, MemoryQueryFilters};
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SearchPayload {
+pub struct SearchPayload {
     pub query: String,
     #[serde(default = "default_limit")]
     pub limit: usize,
@@ -19,14 +19,17 @@ pub(crate) struct SearchPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodeScanPayload {
+pub struct CodeScanPayload {
     #[serde(default)]
     pub path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodeFindPayload {
+pub struct CodeFindPayload {
+    #[serde(default)]
     pub query: String,
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default = "default_limit")]
     pub limit: usize,
     #[serde(default)]
@@ -36,7 +39,20 @@ pub(crate) struct CodeFindPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodeContextPayload {
+pub struct CodeSearchPayload {
+    pub query: String,
+    #[serde(default = "default_search_mode")]
+    pub mode: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+pub fn default_search_mode() -> String {
+    "hybrid".to_string()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CodeContextPayload {
     #[serde(default)]
     pub query: String,
     #[serde(default = "default_limit")]
@@ -48,7 +64,14 @@ pub(crate) struct CodeContextPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodeGraphQueryPayload {
+pub struct CodeMemoriesPayload {
+    pub symbol: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CodeGraphQueryPayload {
     pub query: String,
     #[serde(default = "default_graph_depth")]
     pub depth: usize,
@@ -61,7 +84,19 @@ pub(crate) struct CodeGraphQueryPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct AddPayload {
+pub struct CodeBlastRadiusPayload {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub query: Option<String>,
+    #[serde(default = "default_graph_depth")]
+    pub depth: usize,
+    #[serde(default = "default_graph_limit")]
+    pub limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddPayload {
     pub content: String,
     #[serde(default)]
     pub path: Option<String>,
@@ -78,13 +113,13 @@ pub(crate) struct AddPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct DeleteMemoryRequest {
+pub struct DeleteMemoryRequest {
     pub id: Option<String>,
     pub path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct UpdateMemoryRequest {
+pub struct UpdateMemoryRequest {
     pub id: String,
     pub content: String,
     #[serde(default)]
@@ -94,13 +129,13 @@ pub(crate) struct UpdateMemoryRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SecurityScanPayload {
-    #[allow(dead_code)]
+pub struct SecurityScanPayload {
+    #[allow(dead_code)] // Usado solo via serde deserialization
     pub input: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub(crate) struct MemoryQueryPayload {
+pub struct MemoryQueryPayload {
     pub query: String,
     pub limit: Option<usize>,
     #[serde(default, rename = "filters")]
@@ -110,7 +145,7 @@ pub(crate) struct MemoryQueryPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct EvictPayload {
+pub struct EvictPayload {
     #[serde(default)]
     pub priority: Option<String>,
     #[serde(default)]
@@ -118,7 +153,7 @@ pub(crate) struct EvictPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct TimelineQueryPayload {
+pub struct TimelineQueryPayload {
     pub query: String,
     #[serde(default)]
     pub start_date: Option<chrono::DateTime<chrono::Utc>>,
@@ -131,7 +166,7 @@ pub(crate) struct TimelineQueryPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SessionCompactPayload {
+pub struct SessionCompactPayload {
     pub session_id: String,
     #[serde(default)]
     pub current_tokens: Option<usize>,
@@ -140,7 +175,7 @@ pub(crate) struct SessionCompactPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct AgentRegisterPayload {
+pub struct AgentRegisterPayload {
     pub agent_id: String,
     pub session_id: Option<String>,
     pub name: Option<String>,
@@ -150,18 +185,18 @@ pub(crate) struct AgentRegisterPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct AgentPushContextPayload {
+pub struct AgentPushContextPayload {
     pub context: String,
     pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ExportPayload {
+pub struct ExportPayload {
     pub public: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ConsolidatePayload {
+pub struct ConsolidatePayload {
     #[serde(default)]
     pub nightly: bool,
 }
@@ -181,34 +216,42 @@ pub struct SwarmAgentConfig {
     pub task: String,
 }
 
+/// Default limit.
 pub fn default_limit() -> usize {
     10
 }
 
+/// Default token budget.
 pub fn default_token_budget() -> usize {
     800
 }
 
+/// Default graph depth.
 pub fn default_graph_depth() -> usize {
     3
 }
 
+/// Default graph limit.
 pub fn default_graph_limit() -> usize {
     50
 }
 
+/// Default graph budget.
 pub fn default_graph_budget() -> usize {
     1200
 }
 
+/// Default min degree.
 pub fn default_min_degree() -> u64 {
     3
 }
 
+/// Default min complexity.
 pub fn default_min_complexity() -> f32 {
     5.0
 }
 
+/// Default compaction threshold.
 pub fn default_compaction_threshold() -> f64 {
     80.0
 }
@@ -257,6 +300,7 @@ pub struct ExportPackPayload {
     pub max_level: usize,
 }
 
+/// Default max level val.
 pub fn default_max_level_val() -> usize {
     3
 }
@@ -288,22 +332,27 @@ pub struct CodeGraphViewParams {
     pub min_degree: u64,
 }
 
+/// Default graph view mode.
 pub fn default_graph_view_mode() -> String {
     "overview".to_string()
 }
 
+/// Default graph view depth.
 pub fn default_graph_view_depth() -> usize {
     3
 }
 
+/// Default graph view limit.
 pub fn default_graph_view_limit() -> usize {
     150
 }
 
+/// Default graph view include file nodes.
 pub fn default_graph_view_include_file_nodes() -> bool {
     false
 }
 
+/// Default graph view min degree.
 pub fn default_graph_view_min_degree() -> u64 {
     3
 }

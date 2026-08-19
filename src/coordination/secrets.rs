@@ -18,12 +18,14 @@ pub struct LeakDetector {
 }
 
 impl LeakDetector {
+    /// New.
     pub fn new() -> Self {
         Self {
             hashes: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
+    /// Register key.
     pub async fn register_key(&self, secret_value: &str, agent_id: &str) {
         let mut hasher = Sha256::new();
         hasher.update(secret_value.as_bytes());
@@ -99,6 +101,7 @@ impl fmt::Debug for SecretLease {
 }
 
 impl SecretLease {
+    /// Is expired.
     pub fn is_expired(&self) -> bool {
         Utc::now() > self.expires_at
     }
@@ -114,6 +117,7 @@ pub struct KeyLendingEngine {
 }
 
 impl KeyLendingEngine {
+    /// New.
     pub fn new(
         audit_logger: Box<dyn AuditLogger + Send + Sync>,
         event_bus: Option<crate::coordination::events::XavierEventBus>,
@@ -443,7 +447,8 @@ mod tests {
         let engine_clone = engine.clone();
         let mut receiver = event_bus.subscribe();
         let handle = tokio::spawn(async move {
-            if let Ok(XavierEvent::AgentTaskCompleted { agent_id: id, .. }) = receiver.recv().await {
+            if let Ok(XavierEvent::AgentTaskCompleted { agent_id: id, .. }) = receiver.recv().await
+            {
                 if id == agent_id {
                     engine_clone.revoke_for_agent(&id, "Task Completed").await;
                 }

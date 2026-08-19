@@ -21,7 +21,7 @@ Upon completing any substantial task or discovery, you MUST perform **Post-Task 
 - **MCP Tool**: `search_memory`
 - **Headers**:
   - `Content-Type: application/json`
-  - `X-Xavier-Token: 016d5454d90d1dc1711abc7ce008fc0d67622b569c3059e01b86f3228b3ce34a`
+  - `X-Xavier-Token: <value from $XAVIER_TOKEN / .env>` (do not hardcode the secret)
 
 ### 2. Post-Task Retention (Add)
 - **Action**: Record deep architectural findings, bug resolutions, or new domain learnings to the memory store.
