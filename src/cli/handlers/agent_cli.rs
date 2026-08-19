@@ -19,6 +19,22 @@ pub async fn handle_agent_command(cmd: AgentCommand) -> Result<()> {
         } => handle_agent_index(agent, codex, jules, json).await,
         AgentCommand::Push { agent, json } => handle_agent_sync(agent, false, json).await,
         AgentCommand::Pull { agent, json } => handle_agent_sync(agent, true, json).await,
+        AgentCommand::Chat {
+            prompt,
+            agent,
+            interactive,
+            json,
+            limit,
+            model,
+        } => crate::cli::handlers::chat::handle_chat_command(prompt, agent, interactive, json, limit, model).await,
+        AgentCommand::Converse {
+            prompt,
+            agent,
+            interactive,
+            json,
+            limit,
+            model,
+        } => crate::cli::handlers::chat::handle_chat_command(prompt, agent, interactive, json, limit, model).await,
     }
 }
 

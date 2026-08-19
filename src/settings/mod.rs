@@ -248,7 +248,7 @@ pub mod tests {
         let _env = TempEnv::new();
 
         // Ensure we load from the actual config/xavier.config.json
-        std::env::remove_var("XAVIER_CONFIG_PATH");
+        std::env::set_var("XAVIER_CONFIG_PATH", "config/xavier.config.json");
 
         let settings = XavierSettings::load().expect("Should parse config/xavier.config.json");
         assert!(

@@ -35,8 +35,8 @@ impl ModelProviderClient {
     pub fn new(config: ModelProviderConfig) -> Self {
         Self {
             client: Client::builder()
-                .connect_timeout(Duration::from_secs(2))
-                .timeout(Duration::from_secs(30))
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(60))
                 .build()
                 .expect("model provider HTTP client"),
             config,

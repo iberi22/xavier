@@ -55,6 +55,43 @@ pub enum Command {
         #[arg(long)]
         offline_ok: bool,
     },
+    /// Interactive or direct conversational chat with Xavier memory synthesis
+    Chat {
+        /// Optional prompt or question. If omitted or with -i, starts interactive REPL mode.
+        prompt: Option<String>,
+        /// Agent or caller identifier (e.g. jules, hermes, antigravity, user)
+        #[arg(short, long)]
+        agent: Option<String>,
+        /// Force interactive REPL mode
+        #[arg(short, long)]
+        interactive: bool,
+        /// Output in JSON format for automated agent consumption
+        #[arg(long)]
+        json: bool,
+        /// Maximum number of contextual memory fragments to retrieve
+        #[arg(short, long, default_value_t = 5)]
+        limit: usize,
+        /// Override LLM model (e.g. qwen3-coder, openrouter/auto, etc.)
+        #[arg(short, long)]
+        model: Option<String>,
+    },
+    /// Ask a question to Xavier with memory retrieval (alias for chat)
+    Ask {
+        /// Question to ask
+        prompt: String,
+        /// Agent or caller identifier
+        #[arg(short, long)]
+        agent: Option<String>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+        /// Maximum number of contextual memory fragments to retrieve
+        #[arg(short, long, default_value_t = 5)]
+        limit: usize,
+        /// Override LLM model
+        #[arg(short, long)]
+        model: Option<String>,
+    },
     /// Add a memory
     Add {
         content: String,
@@ -461,6 +498,46 @@ pub enum AgentCommand {
         /// Output in JSON format
         #[arg(long)]
         json: bool,
+    },
+    /// Direct conversational chat or question to Xavier with memory retrieval
+    Chat {
+        /// Prompt or question
+        prompt: Option<String>,
+        /// Filter or declare agent name
+        #[arg(short, long)]
+        agent: Option<String>,
+        /// Force interactive REPL mode
+        #[arg(short, long)]
+        interactive: bool,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+        /// Memory limit
+        #[arg(short, long, default_value_t = 5)]
+        limit: usize,
+        /// Model override
+        #[arg(short, long)]
+        model: Option<String>,
+    },
+    /// Conversational alias for chat
+    Converse {
+        /// Prompt or question
+        prompt: Option<String>,
+        /// Filter or declare agent name
+        #[arg(short, long)]
+        agent: Option<String>,
+        /// Force interactive REPL mode
+        #[arg(short, long)]
+        interactive: bool,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+        /// Memory limit
+        #[arg(short, long, default_value_t = 5)]
+        limit: usize,
+        /// Model override
+        #[arg(short, long)]
+        model: Option<String>,
     },
 }
 

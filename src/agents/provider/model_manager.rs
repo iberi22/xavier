@@ -117,6 +117,10 @@ mod tests {
         let mut f3 = File::create(&file_path_3).unwrap();
         f3.write_all(b"not gguf").unwrap();
 
+        drop(f1);
+        drop(f2);
+        drop(f3);
+
         // Scan directories
         let scanned = scan_local_models(&[
             sub_dir1.to_string_lossy().to_string(),

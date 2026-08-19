@@ -86,6 +86,41 @@ impl Cli {
                 search_memories_filtered(query, lim, cluster.clone(), level.clone(), *offline_ok)
                     .await
             }
+            Command::Chat {
+                prompt,
+                agent,
+                interactive,
+                json,
+                limit,
+                model,
+            } => {
+                crate::cli::handlers::chat::handle_chat_command(
+                    prompt.clone(),
+                    agent.clone(),
+                    *interactive,
+                    *json,
+                    *limit,
+                    model.clone(),
+                )
+                .await
+            }
+            Command::Ask {
+                prompt,
+                agent,
+                json,
+                limit,
+                model,
+            } => {
+                crate::cli::handlers::chat::handle_chat_command(
+                    Some(prompt.clone()),
+                    agent.clone(),
+                    false,
+                    *json,
+                    *limit,
+                    model.clone(),
+                )
+                .await
+            }
             Command::Usage { cmd } => usage::handle_usage_command(cmd.clone()).await,
             Command::Add {
                 content,

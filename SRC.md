@@ -20,7 +20,6 @@ xavier — [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-
 
 ```
 xavier/
-<<<<<<< HEAD
 ├── AGENTS.md
 ├── CLA.md
 ├── CONTRIBUTING.md
@@ -29,36 +28,12 @@ xavier/
 ├── SECURITY.md
 ├── SRC.md
 ├── Cargo.toml
-=======
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 ├── .git-core-protocol-version
 ├── .gitcore/
 │   ├── AGENT_INDEX.md
 │   ├── MANIFEST.json
 │   ├── docs/
 │   │   └── SWAL_GOAL.md
-<<<<<<< HEAD
-│   ├── features.json
-│   └── features-detailed.json
-├── docs/
-│   ├── ARCHITECTURE/
-│   ├── CLI.md
-│   ├── OPERATIONS.md
-│   ├── ROADMAP.md
-│   ├── SECURITY.md
-│   └── SRS/
-│       ├── index.md
-│       ├── REQUIREMENTS.md
-│       └── ARCHITECTURE.md
-├── src/
-│   ├── a2a
-│   │   └── mod.rs
-│   ├── adapters
-│   │   ├── inbound
-│   │   │   ├── http
-│   │   │   │   ├── dto.rs
-│   │   │   │   ├── handlers
-=======
 │   ├── features-detailed.json
 │   └── features.json
 ├── AGENTS.md
@@ -717,7 +692,6 @@ xavier/
 │   │   │   ├── http/
 │   │   │   │   ├── dto.rs
 │   │   │   │   ├── handlers/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   │   │   ├── agent.rs
 │   │   │   │   │   ├── ivn.rs
 │   │   │   │   │   ├── marketplace.rs
@@ -727,11 +701,7 @@ xavier/
 │   │   │   │   │   ├── security.rs
 │   │   │   │   │   └── sync.rs
 │   │   │   │   ├── mod.rs
-<<<<<<< HEAD
-│   │   │   │   ├── plugins
-=======
 │   │   │   │   ├── plugins/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   │   │   ├── mod.rs
 │   │   │   │   │   └── pgheart.rs
 │   │   │   │   ├── routes.rs
@@ -739,26 +709,15 @@ xavier/
 │   │   │   │   └── time_metrics_adapter.rs
 │   │   │   └── mod.rs
 │   │   ├── mod.rs
-<<<<<<< HEAD
-│   │   └── outbound
-│   │       ├── http_health_adapter.rs
-│   │       └── mod.rs
-│   ├── agents
-=======
 │   │   └── outbound/
 │   │       ├── http_health_adapter.rs
 │   │       └── mod.rs
 │   ├── agents/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── anomaly_scanner.rs
 │   │   ├── belief_evaluator.rs
 │   │   ├── curation.rs
 │   │   ├── cve_learner.rs
-<<<<<<< HEAD
-│   │   ├── evolve
-=======
 │   │   ├── evolve/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── config.rs
 │   │   │   ├── evaluator.rs
 │   │   │   ├── experiment.rs
@@ -771,22 +730,14 @@ xavier/
 │   │   │   ├── results.rs
 │   │   │   └── tests.rs
 │   │   ├── extraction.rs
-<<<<<<< HEAD
-│   │   ├── hormer
-=======
 │   │   ├── hormer/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── mod.rs
 │   │   │   ├── persistence_test.rs
 │   │   │   ├── reward.rs
 │   │   │   └── tests.rs
 │   │   ├── mini_experts.rs
 │   │   ├── mod.rs
-<<<<<<< HEAD
-│   │   ├── provider
-=======
 │   │   ├── provider/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── anthropic.rs
 │   │   │   ├── client.rs
 │   │   │   ├── config.rs
@@ -814,17 +765,10 @@ xavier/
 │   │   ├── supervisor.rs
 │   │   ├── system1.rs
 │   │   ├── system2.rs
-<<<<<<< HEAD
-│   │   ├── system3
-│   │   │   ├── client.rs
-│   │   │   ├── engine.rs
-│   │   │   ├── helpers
-=======
 │   │   ├── system3/
 │   │   │   ├── client.rs
 │   │   │   ├── engine.rs
 │   │   │   ├── helpers/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   │   ├── date.rs
 │   │   │   │   ├── mod.rs
 │   │   │   │   ├── nlp.rs
@@ -834,22 +778,14 @@ xavier/
 │   │   │   └── types.rs
 │   │   ├── ui_render.rs
 │   │   └── unregister_agent_handler.rs
-<<<<<<< HEAD
-│   ├── api
-=======
 │   ├── api/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── graph.rs
 │   │   ├── mod.rs
 │   │   ├── search.rs
 │   │   ├── settings.rs
 │   │   ├── skills.rs
 │   │   └── timeline.rs
-<<<<<<< HEAD
-│   ├── app
-=======
 │   ├── app/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── health_service.rs
 │   │   ├── memory_usecase.rs
 │   │   ├── mod.rs
@@ -858,46 +794,24 @@ xavier/
 │   │   ├── qmd_memory_adapter.rs
 │   │   ├── security_service.rs
 │   │   └── verification_service.rs
-<<<<<<< HEAD
-│   ├── auth2
-=======
 │   ├── auth2/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── db.rs
 │   │   ├── jwt.rs
 │   │   ├── middleware.rs
 │   │   ├── mod.rs
 │   │   ├── password.rs
 │   │   └── refresh.rs
-<<<<<<< HEAD
-│   ├── auto_improvement
-=======
 │   ├── auto_improvement/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── benchmark.rs
 │   │   ├── cycle.rs
 │   │   ├── experiments.rs
 │   │   ├── gaps.rs
 │   │   └── mod.rs
-<<<<<<< HEAD
-│   ├── billing
-=======
 │   ├── billing/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── mod.rs
 │   │   ├── plans.rs
 │   │   ├── stripe_client.rs
 │   │   └── webhook.rs
-<<<<<<< HEAD
-│   ├── bin
-│   │   ├── backfill_embeddings.rs
-│   │   └── cortex.rs
-│   ├── checkpoint
-│   │   ├── mod.rs
-│   │   ├── session.rs
-│   │   └── state.rs
-│   ├── chronicle
-=======
 │   ├── bin/
 │   │   ├── backfill_embeddings.rs
 │   │   └── cortex.rs
@@ -906,7 +820,6 @@ xavier/
 │   │   ├── session.rs
 │   │   └── state.rs
 │   ├── chronicle/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── auto_docs.rs
 │   │   ├── cli.rs
 │   │   ├── generate.rs
@@ -917,21 +830,12 @@ xavier/
 │   │   ├── publish.rs
 │   │   ├── redact.rs
 │   │   └── ssg.rs
-<<<<<<< HEAD
-│   ├── clavis
-│   │   └── mod.rs
-│   ├── cli
-│   │   ├── code_dump.rs
-│   │   ├── codegraph_sync.rs
-│   │   ├── commands
-=======
 │   ├── clavis/
 │   │   └── mod.rs
 │   ├── cli/
 │   │   ├── code_dump.rs
 │   │   ├── codegraph_sync.rs
 │   │   ├── commands/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── billing.rs
 │   │   │   ├── cleanup.rs
 │   │   │   ├── code.rs
@@ -958,11 +862,7 @@ xavier/
 │   │   │   ├── verify.rs
 │   │   │   └── wallet.rs
 │   │   ├── config.rs
-<<<<<<< HEAD
-│   │   ├── handlers
-=======
 │   │   ├── handlers/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── agent.rs
 │   │   │   ├── agent_cli.rs
 │   │   │   ├── auth.rs
@@ -1013,11 +913,7 @@ xavier/
 │   │   ├── types.rs
 │   │   ├── utils.rs
 │   │   └── websocket.rs
-<<<<<<< HEAD
-│   ├── codebase
-=======
 │   ├── codebase/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── codegraph_paths.rs
 │   │   ├── codegraph_sidecar.rs
 │   │   ├── connection_manager.rs
@@ -1026,16 +922,6 @@ xavier/
 │   │   ├── issue_context.rs
 │   │   ├── mod.rs
 │   │   └── snapshot.rs
-<<<<<<< HEAD
-│   ├── consistency
-│   │   ├── mod.rs
-│   │   └── regularization.rs
-│   ├── consolidation
-│   │   ├── merger.rs
-│   │   ├── mod.rs
-│   │   └── reflection.rs
-│   ├── context
-=======
 │   ├── consistency/
 │   │   ├── mod.rs
 │   │   └── regularization.rs
@@ -1044,7 +930,6 @@ xavier/
 │   │   ├── mod.rs
 │   │   └── reflection.rs
 │   ├── context/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── bm25.rs
 │   │   ├── builder.rs
 │   │   ├── classifier.rs
@@ -1064,20 +949,12 @@ xavier/
 │   │   ├── skills.rs
 │   │   ├── timeline.rs
 │   │   └── token_estimate.rs
-<<<<<<< HEAD
-│   ├── coordination
-=======
 │   ├── coordination/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── agent_registry.rs
 │   │   ├── agents.rs
 │   │   ├── core.rs
 │   │   ├── events.rs
-<<<<<<< HEAD
-│   │   ├── message_bus
-=======
 │   │   ├── message_bus/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── agents.rs
 │   │   │   ├── core.rs
 │   │   │   ├── dlq.rs
@@ -1089,25 +966,15 @@ xavier/
 │   │   │   └── tests.rs
 │   │   ├── mod.rs
 │   │   └── secrets.rs
-<<<<<<< HEAD
-│   ├── crypto
-=======
 │   ├── crypto/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── encryption.rs
 │   │   ├── hmac.rs
 │   │   ├── keys.rs
 │   │   ├── mod.rs
 │   │   └── password.rs
-<<<<<<< HEAD
-│   ├── curation
-│   │   └── mod.rs
-│   ├── data_commons
-=======
 │   ├── curation/
 │   │   └── mod.rs
 │   ├── data_commons/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── funnel.rs
 │   │   ├── governance.rs
 │   │   ├── ivn.rs
@@ -1122,20 +989,6 @@ xavier/
 │   │   ├── training.rs
 │   │   ├── types.rs
 │   │   └── wallet.rs
-<<<<<<< HEAD
-│   ├── devlog
-│   │   ├── generator.rs
-│   │   ├── mod.rs
-│   │   └── models.rs
-│   ├── domain
-│   │   ├── agent.rs
-│   │   ├── audit.rs
-│   │   ├── belief
-│   │   │   ├── mod.rs
-│   │   │   └── types.rs
-│   │   ├── error.rs
-│   │   ├── memory
-=======
 │   ├── devlog/
 │   │   ├── generator.rs
 │   │   ├── mod.rs
@@ -1148,23 +1001,10 @@ xavier/
 │   │   │   └── types.rs
 │   │   ├── error.rs
 │   │   ├── memory/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── belief.rs
 │   │   │   ├── graph.rs
 │   │   │   └── mod.rs
 │   │   ├── mod.rs
-<<<<<<< HEAD
-│   │   ├── pattern
-│   │   │   ├── mod.rs
-│   │   │   └── types.rs
-│   │   ├── proxy
-│   │   │   ├── mod.rs
-│   │   │   └── types.rs
-│   │   └── security
-│   │       ├── mod.rs
-│   │       └── types.rs
-│   ├── embedding
-=======
 │   │   ├── pattern/
 │   │   │   ├── mod.rs
 │   │   │   └── types.rs
@@ -1175,18 +1015,13 @@ xavier/
 │   │       ├── mod.rs
 │   │       └── types.rs
 │   ├── embedding/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── cache.rs
 │   │   ├── gllm.rs
 │   │   ├── mod.rs
 │   │   ├── ollama.rs
 │   │   ├── openai.rs
 │   │   └── pipeline.rs
-<<<<<<< HEAD
-│   ├── enterprise
-=======
 │   ├── enterprise/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── audit.rs
 │   │   ├── http.rs
 │   │   ├── keys.rs
@@ -1196,42 +1031,20 @@ xavier/
 │   │   ├── rbac.rs
 │   │   ├── tenant.rs
 │   │   └── tests.rs
-<<<<<<< HEAD
-│   ├── error
-│   │   └── mod.rs
-│   ├── governance
-│   │   ├── dao.rs
-│   │   └── mod.rs
-│   ├── health
-=======
 │   ├── error/
 │   │   └── mod.rs
 │   ├── governance/
 │   │   ├── dao.rs
 │   │   └── mod.rs
 │   ├── health/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── history.rs
 │   │   ├── mesh_telemetry.rs
 │   │   ├── mod.rs
 │   │   └── repair.rs
-<<<<<<< HEAD
-│   ├── humanchallenge
-│   │   ├── cron.rs
-│   │   ├── mod.rs
-│   │   ├── scanner.rs
-│   │   ├── store.rs
-│   │   └── types.rs
-│   ├── lib.rs
-│   ├── main.rs
-│   ├── main_tui.rs
-│   ├── maloca
-=======
 │   ├── lib.rs
 │   ├── main.rs
 │   ├── main_tui.rs
 │   ├── maloca/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── beliefs.rs
 │   │   ├── commits.rs
 │   │   ├── handlers.rs
@@ -1242,20 +1055,12 @@ xavier/
 │   │   ├── types.rs
 │   │   ├── universal.rs
 │   │   └── ws.rs
-<<<<<<< HEAD
-│   ├── maturity
-=======
 │   ├── maturity/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── anchor.rs
 │   │   ├── cli.rs
 │   │   ├── mod.rs
 │   │   ├── reporter.rs
-<<<<<<< HEAD
-│   │   ├── scanner
-=======
 │   │   ├── scanner/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── code_graph.rs
 │   │   │   ├── conversations_scanner.rs
 │   │   │   ├── memory_scanner.rs
@@ -1264,11 +1069,7 @@ xavier/
 │   │   │   └── test_scanner.rs
 │   │   ├── scorer.rs
 │   │   └── tests.rs
-<<<<<<< HEAD
-│   ├── memory
-=======
 │   ├── memory/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── README.md
 │   │   ├── agent_indexer.rs
 │   │   ├── agent_scanner.rs
@@ -1280,11 +1081,7 @@ xavier/
 │   │   ├── decay.rs
 │   │   ├── embedder.rs
 │   │   ├── entities.rs
-<<<<<<< HEAD
-│   │   ├── entity_graph
-=======
 │   │   ├── entity_graph/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── extraction.rs
 │   │   │   ├── inference.rs
 │   │   │   ├── mod.rs
@@ -1299,11 +1096,7 @@ xavier/
 │   │   ├── jules_importer.rs
 │   │   ├── languages.rs
 │   │   ├── layers_config.rs
-<<<<<<< HEAD
-│   │   ├── manager
-=======
 │   │   ├── manager/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── actions.rs
 │   │   │   ├── compression.rs
 │   │   │   ├── config.rs
@@ -1324,22 +1117,14 @@ xavier/
 │   │   ├── openclaw_scanner.rs
 │   │   ├── pack.rs
 │   │   ├── postgres_store.rs
-<<<<<<< HEAD
-│   │   ├── qmd
-=======
 │   │   ├── qmd/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── cache_warming.rs
 │   │   │   ├── config.rs
 │   │   │   ├── hash.rs
 │   │   │   ├── mod.rs
 │   │   │   ├── query_builder.rs
 │   │   │   ├── reader.rs
-<<<<<<< HEAD
-│   │   │   ├── search
-=======
 │   │   │   ├── search/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   │   ├── embedding.rs
 │   │   │   │   ├── hybrid.rs
 │   │   │   │   ├── mod.rs
@@ -1357,11 +1142,7 @@ xavier/
 │   │   ├── simple_index.rs
 │   │   ├── snippet.rs
 │   │   ├── sqlite_store.rs
-<<<<<<< HEAD
-│   │   ├── sqlite_vec_store
-=======
 │   │   ├── sqlite_vec_store/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── audit.rs
 │   │   │   ├── backend_impl.rs
 │   │   │   ├── config.rs
@@ -1377,11 +1158,7 @@ xavier/
 │   │   │   └── vector.rs
 │   │   ├── store.rs
 │   │   ├── supabase_store.rs
-<<<<<<< HEAD
-│   │   ├── sync
-=======
 │   │   ├── sync/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── diff.rs
 │   │   │   ├── manifest.rs
 │   │   │   ├── merge.rs
@@ -1391,11 +1168,7 @@ xavier/
 │   │   ├── tests.rs
 │   │   ├── virtual_memory.rs
 │   │   └── working.rs
-<<<<<<< HEAD
-│   ├── mesh
-=======
 │   ├── mesh/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── acl.rs
 │   │   ├── auth.rs
 │   │   ├── auto_update.rs
@@ -1406,11 +1179,7 @@ xavier/
 │   │   ├── dashboard.rs
 │   │   ├── data_consent.rs
 │   │   ├── data_sanitizer.rs
-<<<<<<< HEAD
-│   │   ├── governance
-=======
 │   │   ├── governance/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── mod.rs
 │   │   │   └── onchain.rs
 │   │   ├── heartbeat.rs
@@ -1431,11 +1200,7 @@ xavier/
 │   │   ├── service_network.rs
 │   │   ├── telemetry.rs
 │   │   ├── telemetry_collector.rs
-<<<<<<< HEAD
-│   │   ├── tokenomics
-=======
 │   │   ├── tokenomics/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── accounting.rs
 │   │   │   ├── contracts.rs
 │   │   │   ├── economy.rs
@@ -1444,21 +1209,6 @@ xavier/
 │   │   │   ├── tests.rs
 │   │   │   ├── vesting.rs
 │   │   │   └── wallet.rs
-<<<<<<< HEAD
-│   │   └── transport
-│   │       └── mod.rs
-│   ├── messaging
-│   │   ├── discord.rs
-│   │   └── mod.rs
-│   ├── middleware
-│   │   ├── auth.rs
-│   │   ├── mod.rs
-│   │   └── token_bucket.rs
-│   ├── models
-│   │   ├── mini_expert.rs
-│   │   └── mod.rs
-│   ├── node_identity
-=======
 │   │   └── transport/
 │   │       └── mod.rs
 │   ├── messaging/
@@ -1472,7 +1222,6 @@ xavier/
 │   │   ├── mini_expert.rs
 │   │   └── mod.rs
 │   ├── node_identity/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── bip39_seed.rs
 │   │   ├── check_codes.rs
 │   │   ├── derive.rs
@@ -1481,28 +1230,17 @@ xavier/
 │   │   ├── persist.rs
 │   │   ├── shamir.rs
 │   │   └── vault.rs
-<<<<<<< HEAD
-│   ├── nodes
-=======
 │   ├── nodes/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── audit.rs
 │   │   ├── cert.rs
 │   │   ├── mod.rs
 │   │   ├── provision.rs
 │   │   ├── registry.rs
 │   │   └── secrets.rs
-<<<<<<< HEAD
-│   ├── notifications
-│   │   ├── dispatcher.rs
-│   │   └── mod.rs
-│   ├── observability
-=======
 │   ├── notifications/
 │   │   ├── dispatcher.rs
 │   │   └── mod.rs
 │   ├── observability/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── README.md
 │   │   ├── analyzer.rs
 │   │   ├── detector.rs
@@ -1514,17 +1252,6 @@ xavier/
 │   │   ├── service_log.rs
 │   │   ├── token_accounting.rs
 │   │   └── usage_counters.rs
-<<<<<<< HEAD
-│   ├── plugins
-│   │   ├── mod.rs
-│   │   └── runtime.rs
-│   ├── polygon_anchor
-│   │   ├── abi.rs
-│   │   ├── broadcast.rs
-│   │   └── mod.rs
-│   ├── ports
-│   │   ├── inbound
-=======
 │   ├── plugins/
 │   │   ├── mod.rs
 │   │   └── runtime.rs
@@ -1534,7 +1261,6 @@ xavier/
 │   │   └── mod.rs
 │   ├── ports/
 │   │   ├── inbound/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── agent_lifecycle_port.rs
 │   │   │   ├── health_port.rs
 │   │   │   ├── input_security_port.rs
@@ -1546,21 +1272,13 @@ xavier/
 │   │   │   ├── time_metrics_port.rs
 │   │   │   └── verification_port.rs
 │   │   ├── mod.rs
-<<<<<<< HEAD
-│   │   └── outbound
-=======
 │   │   └── outbound/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │       ├── embedding_port.rs
 │   │       ├── health_check_port.rs
 │   │       ├── mod.rs
 │   │       ├── schema_init.rs
 │   │       └── threat_detection_port.rs
-<<<<<<< HEAD
-│   ├── retrieval
-=======
 │   ├── retrieval/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── config.rs
 │   │   ├── eval.rs
 │   │   ├── gating.rs
@@ -1570,32 +1288,20 @@ xavier/
 │   │   ├── policy.rs
 │   │   ├── scoring.rs
 │   │   └── tuner.rs
-<<<<<<< HEAD
-│   ├── scheduler
-=======
 │   ├── scheduler/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── daemon.rs
 │   │   ├── job.rs
 │   │   ├── mod.rs
 │   │   ├── retry.rs
 │   │   └── retry_tests.rs
-<<<<<<< HEAD
-│   ├── search
-=======
 │   ├── search/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── bm25.rs
 │   │   ├── hooks.rs
 │   │   ├── hybrid.rs
 │   │   ├── mod.rs
 │   │   ├── rerank.rs
 │   │   └── rrf.rs
-<<<<<<< HEAD
-│   ├── secrets
-=======
 │   ├── secrets/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── audit.rs
 │   │   ├── lending.rs
 │   │   ├── local.rs
@@ -1605,13 +1311,8 @@ xavier/
 │   │   ├── store.rs
 │   │   ├── tests.rs
 │   │   └── vault.rs
-<<<<<<< HEAD
-│   ├── security
-│   │   ├── acl
-=======
 │   ├── security/
 │   │   ├── acl/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── hierarchy.rs
 │   │   │   └── mod.rs
 │   │   ├── anticipator.rs
@@ -1623,11 +1324,7 @@ xavier/
 │   │   ├── encryption_keys.rs
 │   │   ├── groups.rs
 │   │   ├── initializer.rs
-<<<<<<< HEAD
-│   │   ├── layers
-=======
 │   │   ├── layers/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── canary.rs
 │   │   │   ├── config_drift.rs
 │   │   │   ├── encoding.rs
@@ -1646,11 +1343,7 @@ xavier/
 │   │   ├── recovery.rs
 │   │   ├── redaction.rs
 │   │   ├── rsa_keys.rs
-<<<<<<< HEAD
-│   │   ├── scanner
-=======
 │   │   ├── scanner/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── entropy.rs
 │   │   │   ├── mod.rs
 │   │   │   ├── phrase_matcher.rs
@@ -1660,19 +1353,6 @@ xavier/
 │   │   ├── tokens.rs
 │   │   ├── url_validator.rs
 │   │   └── user_store.rs
-<<<<<<< HEAD
-│   ├── self_manage
-│   │   └── mod.rs
-│   ├── server
-│   │   ├── alerts.rs
-│   │   ├── events.rs
-│   │   ├── f12_routes.rs
-│   │   ├── headless
-│   │   │   ├── auth.rs
-│   │   │   ├── mod.rs
-│   │   │   └── routes.rs
-│   │   ├── http
-=======
 │   ├── self_manage/
 │   │   └── mod.rs
 │   ├── server/
@@ -1684,7 +1364,6 @@ xavier/
 │   │   │   ├── mod.rs
 │   │   │   └── routes.rs
 │   │   ├── http/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── api.rs
 │   │   │   ├── context.rs
 │   │   │   ├── health.rs
@@ -1692,11 +1371,7 @@ xavier/
 │   │   │   ├── types.rs
 │   │   │   ├── v1.rs
 │   │   │   └── websocket.rs
-<<<<<<< HEAD
-│   │   ├── mcp
-=======
 │   │   ├── mcp/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── auth.rs
 │   │   │   ├── mod.rs
 │   │   │   ├── progressive.rs
@@ -1711,11 +1386,7 @@ xavier/
 │   │   │   └── types.rs
 │   │   ├── mcp_stdio.rs
 │   │   ├── mod.rs
-<<<<<<< HEAD
-│   │   ├── panel
-=======
 │   │   ├── panel/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   │   ├── assets.rs
 │   │   │   ├── chat.rs
 │   │   │   ├── mod.rs
@@ -1724,11 +1395,7 @@ xavier/
 │   │   │   └── types.rs
 │   │   ├── training_routes.rs
 │   │   └── v1_api.rs
-<<<<<<< HEAD
-│   ├── session
-=======
 │   ├── session/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── auto_save.rs
 │   │   ├── event_mapper.rs
 │   │   ├── indexer.rs
@@ -1736,56 +1403,29 @@ xavier/
 │   │   ├── mod.rs
 │   │   ├── sharing.rs
 │   │   └── types.rs
-<<<<<<< HEAD
-│   ├── settings
-=======
 │   ├── settings/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── defaults.rs
 │   │   ├── env.rs
 │   │   ├── mod.rs
 │   │   ├── serialization.rs
 │   │   ├── types.rs
 │   │   └── validation.rs
-<<<<<<< HEAD
-│   ├── storage
-│   │   ├── migrations.rs
-│   │   ├── mod.rs
-│   │   └── multi_db.rs
-│   ├── sync
-=======
 │   ├── storage/
 │   │   ├── migrations.rs
 │   │   ├── mod.rs
 │   │   └── multi_db.rs
 │   ├── sync/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── chunks.rs
 │   │   ├── manifest.rs
 │   │   ├── mod.rs
 │   │   └── transport.rs
-<<<<<<< HEAD
-│   ├── tasks
-=======
 │   ├── tasks/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── mod.rs
 │   │   ├── models.rs
 │   │   ├── scoring.rs
 │   │   ├── session_sync_task.rs
 │   │   ├── store.rs
 │   │   └── sync.rs
-<<<<<<< HEAD
-│   ├── telegram
-│   │   └── mod.rs
-│   ├── tgd
-│   │   ├── cache.rs
-│   │   ├── consolidation.rs
-│   │   └── mod.rs
-│   ├── time
-│   │   └── mod.rs
-│   ├── tools
-=======
 │   ├── telegram/
 │   │   └── mod.rs
 │   ├── tgd/
@@ -1795,46 +1435,29 @@ xavier/
 │   ├── time/
 │   │   └── mod.rs
 │   ├── tools/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── gitcore_tools.rs
 │   │   ├── kanban.rs
 │   │   ├── mod.rs
 │   │   ├── search_tools.rs
 │   │   └── validation_tools.rs
-<<<<<<< HEAD
-│   ├── ui
-=======
 │   ├── ui/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── dashboard.rs
 │   │   ├── log_stream.rs
 │   │   ├── memory_view.rs
 │   │   └── mod.rs
-<<<<<<< HEAD
-│   ├── utils
-=======
 │   ├── utils/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── compression.rs
 │   │   ├── crypto.rs
 │   │   ├── file_traversal.rs
 │   │   ├── http.rs
 │   │   ├── mod.rs
 │   │   └── tauri_utils.rs
-<<<<<<< HEAD
-│   ├── verification
-=======
 │   ├── verification/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │   │   ├── auto_verifier.rs
 │   │   ├── cycle.rs
 │   │   ├── feature_scanner.rs
 │   │   └── mod.rs
-<<<<<<< HEAD
-│   └── workspace
-=======
 │   └── workspace/
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 │       ├── config.rs
 │       ├── mod.rs
 │       ├── ops.rs
@@ -1843,19 +1466,6 @@ xavier/
 │       ├── templates.rs
 │       ├── tests.rs
 │       └── usage.rs
-<<<<<<< HEAD
-├── xavier-core/
-├── code-graph/
-├── panel-ui/
-├── parsers/
-├── public/
-├── scripts/
-└── tests/
-```
-
-## 3. Core components
-
-=======
 ├── tests/
 │   ├── agent_lease_hooks_tests.rs
 │   ├── agent_task_lifecycle_tests.rs
@@ -2030,7 +1640,6 @@ xavier/
 
 ```
 
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 | Component | Path | Purpose |
 |-----------|------|---------|
 | Protocol meta | `.gitcore/` | Architecture, features, planning, SWAL GOAL |

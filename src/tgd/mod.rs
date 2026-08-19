@@ -297,13 +297,19 @@ mod tests {
             _q: &str,
             _c: &[RetrievedDocument],
         ) -> Result<LlmResponse> {
-            unimplemented!()
+            Ok(LlmResponse {
+                text: "Mock response".to_string(),
+                quota: None,
+            })
         }
         async fn generate_hypothetical_document(&self, _q: &str) -> Result<LlmResponse> {
-            unimplemented!()
+            Ok(LlmResponse {
+                text: "Mock hypothetical document".to_string(),
+                quota: None,
+            })
         }
         async fn evaluate_context(&self, _q: &str, _c: &[RetrievedDocument]) -> Result<f32> {
-            unimplemented!()
+            Ok(1.0)
         }
     }
 

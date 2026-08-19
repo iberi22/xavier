@@ -78,6 +78,12 @@ pub(crate) async fn generate_openai_compatible(
         }
     }
 
+    if config.provider_label == "openrouter" {
+        request = request
+            .header("HTTP-Referer", "https://xavier.swal.dev")
+            .header("X-Title", "Xavier Cognitive Memory");
+    }
+
     let mut messages = vec![
         json!({"role": "system", "content": system_prompt}),
         json!({"role": "user", "content": user_prompt}),
