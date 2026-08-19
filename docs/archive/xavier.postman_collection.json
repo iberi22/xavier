@@ -1,0 +1,650 @@
+{
+  "info": {
+    "_postman_id": "c6a287a4-37a1-4ca5-98db-4ff94d4d291b",
+    "name": "Xavier Context Engine API",
+    "description": "Postman Collection for interacting with the Xavier REST API, managing semantic memories, codebase indexing, authentication, and P2P mesh network operations.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "System & Health",
+      "description": "Endpoints for checking Xavier's runtime status, operational mode, system alerts, and build metadata.",
+      "item": [
+        {
+          "name": "Get System Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Retrieve runtime health status, model provider availability, and storage backends."
+          },
+          "response": []
+        },
+        {
+          "name": "Get System Alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/system/alerts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "system",
+                "alerts"
+              ]
+            },
+            "description": "Fetch active system warnings, error states, or pending vector database reindex status."
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            },
+            "description": "Simple live check showing if Xavier is fully booted and accepting incoming requests."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Version Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/version",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "version"
+              ]
+            },
+            "description": "Fetch v1 version metadata information."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Build Metadata",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/build",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "build"
+              ]
+            },
+            "description": "Retrieve the backend compile build profile and git revision commit hash."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "description": "Endpoints handling user registration, standard JWT authentication, Multi-Factor verification (TOTP), and session revocation.",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Register a new local user into the `auth.db` database."
+          },
+          "response": []
+        },
+        {
+          "name": "User Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Perform credentials check. Tracked by brute force monitor (max 5 failed logins within 15 minutes)."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify 2FA TOTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/totp/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "totp",
+                "verify"
+              ]
+            },
+            "description": "Complete authentication via Time-based One-Time Password validation. Double-divided epoch timestamps apply on the server."
+          },
+          "response": []
+        },
+        {
+          "name": "List Active Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "sessions"
+              ]
+            },
+            "description": "Retrieve active, valid user sessions associated with the user's account."
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke Session",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/sessions/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "sessions",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "session_uuid"
+                }
+              ]
+            },
+            "description": "Log out or revoke an active session token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Memories API",
+      "description": "CRUD and semantic operations for Xavier memories.",
+      "item": [
+        {
+          "name": "Add Memory (Standard)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Decision: use signed mesh manifests\",\n  \"user_id\": \"belal\",\n  \"metadata\": {\n    \"project\": \"xavier\"\n  },\n  \"kind\": \"decision\",\n  \"evidence_kind\": \"direct\",\n  \"namespace\": {\n    \"project\": \"xavier\",\n    \"session_id\": \"session-001\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories"
+              ]
+            },
+            "description": "Index a new semantic memory with precise metadata and namespaces."
+          },
+          "response": []
+        },
+        {
+          "name": "List Memories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories?limit=100&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "List indexed memories in the active database workspace with pagination."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Memories",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mesh manifests\",\n  \"limit\": 5,\n  \"filters\": {\n    \"kinds\": [\"decision\"],\n    \"project\": \"xavier\",\n    \"user_id\": \"belal\"\n  },\n  \"active_zones\": [\"working\", \"semantic\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                "search"
+              ]
+            },
+            "description": "Perform hybrid text and semantic keyword/vector search across context memories."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Memory by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "memory_id"
+                }
+              ]
+            },
+            "description": "Retrieve full details of an indexed memory by its ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Memory",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Updated memory content here\",\n  \"user_id\": \"belal\",\n  \"metadata\": {\n    \"revision_note\": \"docs update\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "memory_id"
+                }
+              ]
+            },
+            "description": "Modify the text or key-value metadata attributes of an indexed memory."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Memory",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/memories/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "memories",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "memory_id"
+                }
+              ]
+            },
+            "description": "Remove a memory record by ID."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Headless & AI Proxy",
+      "description": "Endpoints proxying AI execution, embeddings generation, and local-first completions fallbacks.",
+      "item": [
+        {
+          "name": "Headless Chat Completions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"qwen3-coder\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"How do I sync signed mesh manifests?\"\n    }\n  ],\n  \"stream\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/chat/completions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "chat",
+                "completions"
+              ]
+            },
+            "description": "Request AI chat completion. Gracefully falls back to search local memories if the LLM backend is offline."
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Embeddings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"input\": \"Hello Xavier context engine\",\n  \"model\": \"text-embedding-3-small\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/embeddings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "embeddings"
+              ]
+            },
+            "description": "Convert input text into a high-dimensional dense vector representing semantic meaning."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Code Graph",
+      "description": "Endpoints used to scan, analyze, and query structural symbols and relationships in code bases.",
+      "item": [
+        {
+          "name": "Scan Codebase",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"path\": \"/app/src\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/code/scan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "code",
+                "scan"
+              ]
+            },
+            "description": "Run a comprehensive parser sweep on the given codebase directory to populate the symbols graph."
+          },
+          "response": []
+        },
+        {
+          "name": "Find Symbols",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Xavier-Token",
+                "value": "{{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"MemoryManager\",\n  \"limit\": 10,\n  \"kind\": \"struct\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/code/find",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "code",
+                "find"
+              ]
+            },
+            "description": "Locate specific code symbols (structs, classes, functions) inside the indexed workspace."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8006",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "change-me",
+      "type": "string"
+    },
+    {
+      "key": "jwtToken",
+      "value": "acquired_jwt_token_here",
+      "type": "string"
+    }
+  ]
+}

@@ -15,7 +15,8 @@
     "request_unit_limit": null,
     "embedding_provider_mode": "local",
     "managed_google_embeddings": false,
-    "sync_policy": "local_only"
+    "sync_policy": "local_only",
+    "mini_experts": []
   },
   "memory": {
     "backend": "vec",
@@ -27,7 +28,13 @@
     "vec_path": "data/vec-store.sqlite3",
     "supabase_url": null,
     "supabase_key": null,
-    "postgres_url": null
+    "postgres_url": null,
+    "dedup": {
+      "enabled": false,
+      "threshold": 0.92,
+      "scope": "path_exact",
+      "max_revisions": 5
+    }
   },
   "memory_layers": {
     "working": {
@@ -44,12 +51,21 @@
     }
   },
   "models": {
+<<<<<<< HEAD
    "provider": "openrouter",
    "api_flavor": "openai-compatible",
    "local_llm_url": "http://localhost:11434/v1",
    "local_llm_model": "nomic-embed-text",
     "embedding_url": "http://localhost:11434/v1",
     "embedding_model": "nomic-embed-text",
+=======
+   "provider": "local",
+    "api_flavor": "openai-compatible",
+    "local_llm_url": "http://localhost:11434/v1",
+   "local_llm_model": "qwen3-coder",
+    "embedding_url": "http://localhost:11434/v1",
+    "embedding_model": "embeddinggemma",
+>>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
     "router_retrieved_model": "",
     "router_complex_model": "",
     "router_fast_model": "",
@@ -78,6 +94,7 @@
     "cache_warming_threshold": null,
     "cache_ttl_secs": null,
     "learned_policy": {
+<<<<<<< HEAD
       "working_weight": 0.41777354,
       "episodic_weight": 0.29111326,
       "semantic_weight": 0.29111326,
@@ -88,8 +105,20 @@
       "cross_layer_weight": 0.049999993,
       "cross_dir_weight": 0.09999999,
       "peripheral_hub_weight": 0.049999993,
+=======
+      "working_weight": 0.3000005,
+      "episodic_weight": 0.3000005,
+      "semantic_weight": 0.399999,
+      "semantic_similarity_weight": 0.5,
+      "confidence_weight": 0.1,
+      "edge_weight": 0.1,
+      "recency_weight": 0.1,
+      "cross_layer_weight": 0.05,
+      "cross_dir_weight": 0.1,
+      "peripheral_hub_weight": 0.05,
+>>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
       "learning_rate": 0.01,
-      "update_count": 1
+      "update_count": 50
     }
   },
   "sync": {
