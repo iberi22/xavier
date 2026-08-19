@@ -30,6 +30,8 @@ use super::session::mcp_post_handler;
 pub fn build_mcp_http_router(state: AppState, workspace: WorkspaceContext) -> Router {
     Router::new()
         .route("/mcp", post(mcp_post_handler))
+        // 🛡️ Sentinel: Prevent DoS via unbounded payload allocations by the Bytes extractor
+        .layer(axum::extract::DefaultBodyLimit::max(4 * 1024 * 1024))
         .layer(axum::middleware::from_fn(mcp_auth_middleware))
         .layer(axum::Extension(workspace))
         .with_state(state)
