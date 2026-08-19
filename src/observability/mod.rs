@@ -35,6 +35,7 @@
 
 pub mod analyzer;
 pub mod detector;
+pub mod distributed_tracer;
 pub mod fixer;
 pub mod health;
 pub mod middleware;
@@ -44,6 +45,10 @@ pub mod token_accounting;
 pub mod usage_counters;
 
 pub use analyzer::ErrorAnalyzer;
+pub use distributed_tracer::{
+    DistributedTracer, OtelExportPayload, Span, SpanGuard, SpanKind, SpanStatus, Traceparent,
+    TraceparentError,
+};
 pub use detector::LogDetector;
 pub use fixer::Fixer;
 pub use health::{HealthMonitor, HealthStatus, HEALTH};
