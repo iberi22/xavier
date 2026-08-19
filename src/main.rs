@@ -41,8 +41,23 @@ use clap::Parser;
 use cli::config::validate_xavier_data_dir_env;
 use cli::Cli;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    std::thread::Builder::new()
+        .name("xavier-main".to_string())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+                .expect("failed to build Tokio runtime")
+                .block_on(async_main())
+        })?
+        .join()
+        .unwrap_or_else(|e| std::panic::resume_unwind(e))
+}
+
+async fn async_main() -> Result<()> {
     let loaded_settings = XavierSettings::load()?;
     if let Some(ref settings) = loaded_settings {
         if let Err(problems) = crate::settings::validation::validate_local_config(settings) {
@@ -74,6 +89,6 @@ async fn main() -> Result<()> {
 
     // Parse and run CLI
     validate_xavier_data_dir_env()?;
-    let cli = Cli::parse();
+    let cli = Box::new(Cli::parse());
     cli.run().await
 }

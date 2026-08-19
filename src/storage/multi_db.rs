@@ -108,6 +108,9 @@ impl MultiDbManager {
 
         if let Some(workspace_db) = removed {
             let path = Path::new(&workspace_db.db_path);
+            let project_id = crate::memory::sqlite_vec_store::project_id_for_path(path);
+            crate::codebase::connection_manager::ConnectionManager::global().disconnect(&project_id);
+
             if path.exists() {
                 // Delete main SQLite file
                 tokio::fs::remove_file(path).await?;
@@ -180,6 +183,7 @@ mod tests {
         // 4. Get Store and perform basic checks
         let store = manager.get_store(&db_id).await;
         assert!(store.is_ok());
+        drop(store);
 
         // 5. Delete DB
         let deleted = manager.delete_database(&db_id).await.unwrap();

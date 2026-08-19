@@ -68,7 +68,15 @@ impl ModelProviderConfig {
         let settings = crate::settings::XavierSettings::current();
         let provider = std::env::var("XAVIER_MODEL_PROVIDER")
             .ok()
-            .or_else(|| Some(settings.models.provider.clone()))
+            .or_else(|| {
+                if std::env::var("XAVIER_OPENROUTER_API_KEY").is_ok()
+                    || std::env::var("OPENROUTER_API_KEY").is_ok()
+                {
+                    Some("openrouter".to_string())
+                } else {
+                    Some(settings.models.provider.clone())
+                }
+            })
             .map(|value| value.trim().to_ascii_lowercase());
 
         Self::from_label(provider.as_deref().unwrap_or("local"))
@@ -89,6 +97,7 @@ impl ModelProviderConfig {
             "groq" => Self::groq_cloud_from_env(),
             "z.ai" | "zai" => Self::zai_cloud_from_env(),
             "opencode" => Self::opencode_from_env(),
+            "openrouter" => Self::openrouter_cloud_from_env(),
             _ => Self::local_from_env(),
         }
     }
@@ -283,6 +292,43 @@ impl ModelProviderConfig {
                     .ok()
                     .or_else(|| settings.models.cloud_llm_url.clone())
                     .unwrap_or_else(|| DEFAULT_OPENAI_BASE_URL.to_string()),
+            ),
+            target: ProviderTarget::GenericOpenAICompatible,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
+        }
+    }
+
+    /// OpenRouter cloud from env.
+    pub(crate) fn openrouter_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        Self {
+            provider_mode: ProviderMode::Cloud,
+            api_flavor: ApiFlavor::OpenAICompatible,
+            provider_label: "openrouter".to_string(),
+            model: std::env::var("XAVIER_OPENROUTER_MODEL")
+                .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
+                .or_else(|_| std::env::var("OPENROUTER_MODEL"))
+                .ok()
+                .or_else(|| settings.models.cloud_llm_model.clone())
+                .or_else(|| settings.models.llm_model.clone())
+                .unwrap_or_else(|| "openai/gpt-4o-mini".to_string()),
+            api_key: std::env::var("XAVIER_OPENROUTER_API_KEY")
+                .or_else(|_| std::env::var("OPENROUTER_API_KEY"))
+                .ok()
+                .or_else(|| {
+                    HardwareVault::new("xavier")
+                        .get_secret("OPENROUTER_API_KEY")
+                        .ok()
+                })
+                .or_else(|| settings.models.llm_api_key.clone()),
+            base_url: Some(
+                std::env::var("XAVIER_OPENROUTER_URL")
+                    .or_else(|_| std::env::var("OPENROUTER_BASE_URL"))
+                    .ok()
+                    .or_else(|| settings.models.cloud_llm_url.clone())
+                    .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
             lease_config: None,

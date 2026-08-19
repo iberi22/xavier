@@ -182,25 +182,6 @@ fn config_resolve_url_uses_host_and_port_when_url_not_set() {
     std::env::set_var("XAVIER_HOST", "192.168.1.100");
     std::env::set_var("XAVIER_PORT", "8016");
     assert_eq!(resolve_base_url_for_port(8016), "http://192.168.1.100:8016");
-<<<<<<< HEAD
-    // Restore
-    if let Some(v) = orig_url {
-        std::env::set_var("XAVIER_URL", v);
-    } else {
-        std::env::remove_var("XAVIER_URL");
-    }
-    if let Some(v) = orig_host {
-        std::env::set_var("XAVIER_HOST", v);
-    } else {
-        std::env::remove_var("XAVIER_HOST");
-    }
-    if let Some(v) = orig_port {
-        std::env::set_var("XAVIER_PORT", v);
-    } else {
-        std::env::remove_var("XAVIER_PORT");
-    }
-=======
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 }
 
 #[test]

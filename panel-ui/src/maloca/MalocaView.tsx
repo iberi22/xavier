@@ -1,11 +1,6 @@
-<<<<<<< HEAD
-import { X } from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
-=======
 import { KeyRound, X } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { obtainDeviceKeyViaWebAuthn } from "./webauthn";
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
 import "./maloca.css";
 
 type Props = {
@@ -17,10 +12,6 @@ type Props = {
 export default function MalocaView({ onClose, isManager = true }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [_isReady, setIsReady] = useState(false);
-<<<<<<< HEAD
-  const panelRef = useRef<HTMLElement | null>(null);
-
-=======
   const [deviceKey, setDeviceKey] = useState<string | null>(null);
   const [isWebAuthnLoading, setIsWebAuthnLoading] = useState(false);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -37,11 +28,10 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
       setIsWebAuthnLoading(false);
     }
   };
-
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
   useEffect(() => {
     // Fallback dynamic import of the Custom Element if the sandbox lacks direct access
-    import(/* @vite-ignore */ "@swal/maloca-embed")
+    const embedPkg = "@swal/maloca-embed";
+    import(/* @vite-ignore */ embedPkg)
       .then(() => {
         console.log("@swal/maloca-embed loaded successfully");
       })
@@ -103,10 +93,6 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
             <h1 className="maloca-brand">Maloca</h1>
             <p className="maloca-subtitle">Ops workspace · host primario Xavier</p>
           </div>
-<<<<<<< HEAD
-        </header>
-
-=======
           <div className="flex items-center gap-2 mt-2 sm:mt-0">
             <button
               type="button"
@@ -129,8 +115,6 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
             </code>
           </div>
         )}
-
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
         {error && (
           <div
             className="maloca-card"
