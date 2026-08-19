@@ -8,6 +8,7 @@ pub mod belief_graph;
 pub mod bridge;
 pub mod checkpoint_summary;
 pub mod cloud_sync;
+pub mod compression;
 pub mod codex_importer;
 pub mod decay;
 pub mod embedder;
