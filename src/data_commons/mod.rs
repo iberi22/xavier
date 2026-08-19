@@ -39,5 +39,6 @@ pub mod reputation;
 pub mod telemetry_db;
 pub mod training;
 pub mod types;
+pub mod verifiable_credential;
 #[cfg(feature = "post-quantum")]
 pub mod wallet;
