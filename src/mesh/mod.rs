@@ -52,6 +52,7 @@ pub mod iroh_transport;
 pub mod maturity;
 pub mod namespace;
 pub mod node;
+pub mod p2p;
 pub mod pairing;
 pub mod pairing_registry;
 pub mod peer;
@@ -78,6 +79,11 @@ pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
 pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService, HeartbeatStatus};
 pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
+pub use p2p::{
+    CandidatePair, CandidatePairState, HolePunchState, IceCandidate, IceCandidateType, NatType,
+    NatTraversalEngine, NatTraversalError, StunAttribute, StunMessage, StunMessageType,
+    TransportProtocol, TurnServerConfig,
+};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use private_mesh::{derive_wallet_id, is_same_wallet, PrivateMeshRegistry, WalletNode};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
