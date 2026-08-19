@@ -5,6 +5,7 @@ pub mod events;
 pub mod f12_routes;
 pub mod headless;
 pub mod http;
+pub mod maloca;
 pub mod mcp;
 pub mod mcp_stdio;
 pub mod panel;
