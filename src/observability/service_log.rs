@@ -229,6 +229,7 @@ impl ServiceLogStore {
         let conn = ConnectionManager::global();
         let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig::from_env();
         let project_id = crate::memory::sqlite_vec_store::project_id_for_path(&config.path);
+        conn.connect_with_path(&project_id, config.path.clone())?;
         let store = Self { conn, project_id };
         store.initialize_schema().await?;
         Ok(store)

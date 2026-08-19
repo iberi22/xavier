@@ -111,7 +111,8 @@ export default function GraphView({
     const getDepth = (nodeId: string, currentDepth: number): number => {
       const children = childrenMap[nodeId] || [];
       if (children.length === 0) return currentDepth;
-      return Math.max(...children.map((c) => getDepth(c, currentDepth + 1)));
+      // ⚡ Bolt Performance Optimization: Replace spread with reduce to prevent call stack overflow
+      return children.reduce((max, c) => Math.max(max, getDepth(c, currentDepth + 1)), currentDepth);
     };
 
     let maxDepth = 0;

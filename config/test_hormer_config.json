@@ -10,22 +10,59 @@
   "workspace": {
     "default_workspace_id": "default",
     "default_plan": "community",
-    "storage_limit_bytes": 1073741824,
+    "storage_limit_bytes": null,
     "request_limit": null,
     "request_unit_limit": null,
     "embedding_provider_mode": "local",
     "managed_google_embeddings": false,
     "sync_policy": "local_only",
-    "mini_experts": []
+    "mini_experts": [
+      {
+        "name": "agy-expert",
+        "provider": "agy",
+        "endpoint": "https://api.agy.ai/v1/experts/google",
+        "api_key": "mock-agy-key"
+      },
+      {
+        "name": "local-expert",
+        "provider": "local",
+        "endpoint": "http://localhost:11434/v1",
+        "api_key": null
+      },
+      {
+        "name": "custom-expert",
+        "provider": "custom",
+        "endpoint": "https://custom.expert/api",
+        "api_key": "mock-custom-key"
+      },
+      {
+        "name": "qwen3-4b",
+        "provider": "local",
+        "endpoint": "http://localhost:11434/v1",
+        "api_key": null
+      },
+      {
+        "name": "gemma-3-4b",
+        "provider": "local",
+        "endpoint": "http://localhost:11434/v1",
+        "api_key": null
+      },
+      {
+        "name": "llama-3.2-3b",
+        "provider": "local",
+        "endpoint": "http://localhost:11434/v1",
+        "api_key": null
+      }
+    ]
   },
   "memory": {
     "backend": "vec",
-    "data_dir": "data",
+    "data_dir": "/home/jules/.local/share/xavier",
     "embedding_dimensions": 768,
-    "workspace_dir": "data/workspaces",
-    "file_path": "data/workspaces/default/memory-store.json",
-    "sqlite_path": "data/memory-store.sqlite3",
-    "vec_path": "data/vec-store.sqlite3",
+    "workspace_dir": "/home/jules/.local/share/xavier/workspaces",
+    "file_path": "/home/jules/.local/share/xavier/workspaces/default/memory-store.json",
+    "sqlite_path": "/home/jules/.local/share/xavier/memory-store.sqlite3",
+    "vec_path": "/home/jules/.local/share/xavier/vec-store.sqlite3",
     "supabase_url": null,
     "supabase_key": null,
     "postgres_url": null,
@@ -51,25 +88,16 @@
     }
   },
   "models": {
-<<<<<<< HEAD
-   "provider": "openrouter",
-   "api_flavor": "openai-compatible",
-   "local_llm_url": "http://localhost:11434/v1",
-   "local_llm_model": "nomic-embed-text",
-    "embedding_url": "http://localhost:11434/v1",
-    "embedding_model": "nomic-embed-text",
-=======
-   "provider": "local",
+    "provider": "local",
     "api_flavor": "openai-compatible",
     "local_llm_url": "http://localhost:11434/v1",
-   "local_llm_model": "qwen3-coder",
+    "local_llm_model": "qwen3-coder",
     "embedding_url": "http://localhost:11434/v1",
     "embedding_model": "embeddinggemma",
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
     "router_retrieved_model": "",
     "router_complex_model": "",
-    "router_fast_model": "",
-    "router_quality_model": "",
+    "router_fast_model": "opencode/minimax-m2.7",
+    "router_quality_model": "opencode/deepseek-v4-pro",
     "llm_model": null,
     "llm_api_key": null,
     "cloud_llm_model": null,
@@ -78,8 +106,8 @@
     "local_anthropic_url": null,
     "compaction_model": null,
     "zai_api_key": null,
-    "zai_model": null,
-    "opencode_model": null,
+    "zai_model": "glm-5.1",
+    "opencode_model": "opencode/deepseek-v4-flash",
     "local_model_dirs": [],
     "auto_start_last_model": false
   },
@@ -94,10 +122,9 @@
     "cache_warming_threshold": null,
     "cache_ttl_secs": null,
     "learned_policy": {
-<<<<<<< HEAD
-      "working_weight": 0.41777354,
-      "episodic_weight": 0.29111326,
-      "semantic_weight": 0.29111326,
+      "working_weight": 0.3,
+      "episodic_weight": 0.3,
+      "semantic_weight": 0.4,
       "semantic_similarity_weight": 0.49999994,
       "confidence_weight": 0.09999999,
       "edge_weight": 0.09999999,
@@ -105,20 +132,8 @@
       "cross_layer_weight": 0.049999993,
       "cross_dir_weight": 0.09999999,
       "peripheral_hub_weight": 0.049999993,
-=======
-      "working_weight": 0.3000005,
-      "episodic_weight": 0.3000005,
-      "semantic_weight": 0.399999,
-      "semantic_similarity_weight": 0.5,
-      "confidence_weight": 0.1,
-      "edge_weight": 0.1,
-      "recency_weight": 0.1,
-      "cross_layer_weight": 0.05,
-      "cross_dir_weight": 0.1,
-      "peripheral_hub_weight": 0.05,
->>>>>>> c45a227bf5809b51d4cc58b35ff603f21e6f2230
       "learning_rate": 0.01,
-      "update_count": 50
+      "update_count": 1
     }
   },
   "sync": {
@@ -131,8 +146,8 @@
     "timeout_ms": 5000
   },
   "embedding": {
-    "endpoint": "http://localhost:11434/api/embeddings",
-    "embedder": "local",
+    "endpoint": "",
+    "embedder": "",
     "gllm_model": "",
     "api_flavor": "openai-compatible",
     "api_key": null,
@@ -147,13 +162,13 @@
     "allowed_domains": "",
     "token_secret": null,
     "encryption_at_rest_enabled": false,
-    "master_key_name": "xavier_master_key"
+    "master_key_name": ""
   },
   "telegram": {
     "enabled": false,
     "bot_token": null,
     "webhook_url": null,
-    "webhook_port": 8009,
+    "webhook_port": 0,
     "admin_ids": [],
     "notification_chat_id": null
   },
@@ -208,7 +223,7 @@
   },
   "license": {
     "mesh_accepted": false,
-    "license_type": "MIT",
+    "license_type": "AGPL-3.0",
     "commercial_key": null
   }
 }
