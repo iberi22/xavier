@@ -1,0 +1,26 @@
+{
+  "project": "xavier",
+  "path": "/home/belal/proyectosSWAL/apps/xavier",
+  "generated_at": "2026-08-15T16:45:14.957596",
+  "protocol_version": "3.8.0",
+  "overall_pct": 99.2,
+  "breakdown": {
+    "protocol_pct": 92,
+    "src_pct": 95,
+    "srs_pct": 90,
+    "features_pct": 99.2,
+    "features_count": 38,
+    "features_source": "wave-tests: 5 PRs merged (#1388-#1393), 146+ tests nuevos, 38/38 features con tests",
+    "swal_compliance": 95
+  },
+  "weights": {
+    "protocol": 0.2,
+    "src": 0.15,
+    "srs": 0.2,
+    "features": 0.35,
+    "swal": 0.1
+  },
+  "gaps": [],
+  "grade": "A",
+  "notes": "Wave-tests cerrada 2026-08-15: feat-maloca 32 tests, agent-cli 10, session 39, notifications 6+, health 56. 38/38 features con tests reales."
+}

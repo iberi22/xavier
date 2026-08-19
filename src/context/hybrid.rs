@@ -31,10 +31,12 @@ impl Default for HybridContextSearch {
 }
 
 impl HybridContextSearch {
+    /// New.
     pub fn new(rrf_k: u32) -> Self {
         Self { rrf_k }
     }
 
+    /// Search.
     pub fn search(
         &self,
         documents: &[ContextDocument],

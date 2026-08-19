@@ -6,14 +6,69 @@ use crate::cli::state::CliState;
 use axum::{extract::State, http::StatusCode, response::Response};
 use xavier::server::alerts::SYSTEM_ALERTS;
 
+/// Health handler.
 pub async fn health_handler() -> Response {
-    let status = xavier::observability::health::HEALTH.get_status().await;
+    let status = xavier::observability::health::HEALTH.run_checks().await;
     json_response(
         StatusCode::OK,
         serde_json::to_value(status).unwrap_or_default(),
     )
 }
 
+/// /healthz — lightweight liveness probe with embedder reachability.
+///
+/// Reports `"ok"`, `"degraded"`, or `"down"` for the embedding subsystem
+/// so orchestrators can route traffic away from degraded instances.
+pub async fn healthz_handler() -> Response {
+    use xavier::observability::health::HEALTH;
+
+    let status = HEALTH.run_checks().await;
+    let embedder_status = match status.embedding.status {
+        xavier::observability::health::HealthLevel::Healthy => "ok",
+        xavier::observability::health::HealthLevel::Degraded => "degraded",
+        xavier::observability::health::HealthLevel::Unhealthy => "down",
+    };
+
+    let overall = if embedder_status == "down" {
+        "degraded"
+    } else {
+        "ok"
+    };
+
+    let http_status = if embedder_status == "down" {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+
+    json_response(
+        http_status,
+        serde_json::json!({
+            "status": overall,
+            "embedder": {
+                "status": embedder_status,
+                "provider": status.embedding.provider,
+                "model": status.embedding.model,
+                "latency_ms": status.embedding.latency_ms,
+            },
+        }),
+    )
+}
+
+/// Health history handler.
+pub async fn health_history_handler() -> Response {
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let history = xavier_lib::health::history::fetch_health_history(now_secs);
+    json_response(
+        StatusCode::OK,
+        serde_json::to_value(history).unwrap_or_default(),
+    )
+}
+
+/// System alerts handler.
 pub async fn system_alerts_handler() -> Response {
     json_response(
         StatusCode::OK,
@@ -23,6 +78,7 @@ pub async fn system_alerts_handler() -> Response {
     )
 }
 
+/// Handle health command.
 pub async fn handle_health_command(cloud: bool) -> anyhow::Result<()> {
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
@@ -86,34 +142,6 @@ fn format_status(status: &xavier::health::BackendStatus) -> String {
     }
 }
 
-#[allow(dead_code)]
-pub async fn system_scan_handler(State(state): State<CliState>) -> Response {
-    let mut providers = Vec::new();
-    let detected_providers = vec!["openai", "anthropic", "gemini", "minimax", "local"];
-
-    for p in detected_providers {
-        let client = xavier::agents::provider::ModelProviderClient::for_provider(p, None);
-        let status = client.status();
-        providers.push(serde_json::json!({
-            "name": p,
-            "configured": status.configured,
-            "model": status.model,
-        }));
-    }
-
-    json_response(
-        StatusCode::OK,
-        serde_json::json!({
-            "version": env!("CARGO_PKG_VERSION"),
-            "os": std::env::consts::OS,
-            "arch": std::env::consts::ARCH,
-            "providers": providers,
-            "workspace_id": state.workspace_id,
-            "memory_backend": crate::settings::XavierSettings::current().memory.backend,
-        }),
-    )
-}
-
 fn calculate_data_dir_size() -> Option<u64> {
     let data_dir = std::path::Path::new("data");
     if !data_dir.is_dir() {
@@ -139,6 +167,7 @@ fn calculate_data_dir_size() -> Option<u64> {
     Some(total_size)
 }
 
+/// Cloud health handler.
 pub async fn cloud_health_handler() -> Response {
     // Use library settings to avoid type mismatch with health check function
     let settings = xavier::settings::XavierSettings::current();
@@ -149,6 +178,7 @@ pub async fn cloud_health_handler() -> Response {
     )
 }
 
+/// Version handler.
 pub async fn version_handler() -> Response {
     let features = if cfg!(feature = "enterprise") {
         vec!["gllm-embeddings", "enterprise"]
@@ -167,6 +197,7 @@ pub async fn version_handler() -> Response {
     )
 }
 
+/// Readiness handler.
 pub async fn readiness_handler(State(state): State<CliState>) -> Response {
     let memory_store = match state.store.health().await {
         Ok(detail) => serde_json::json!({
@@ -216,6 +247,7 @@ pub async fn readiness_handler(State(state): State<CliState>) -> Response {
     )
 }
 
+/// Build handler.
 pub async fn build_handler(State(state): State<CliState>) -> Response {
     json_response(
         StatusCode::OK,

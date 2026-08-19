@@ -24,6 +24,7 @@ pub struct TaskListQuery {
     pub search: Option<String>,
 }
 
+/// Tasks list handler.
 pub async fn tasks_list_handler(
     State(state): State<CliState>,
     Query(query): Query<TaskListQuery>,
@@ -58,6 +59,7 @@ pub async fn tasks_list_handler(
     }
 }
 
+/// Tasks run handler.
 pub async fn tasks_run_handler(
     State(state): State<CliState>,
     axum::extract::Path(id): axum::extract::Path<String>,
@@ -142,6 +144,7 @@ pub async fn tasks_run_handler(
     )
 }
 
+/// Tasks sync handler.
 pub async fn tasks_sync_handler(State(state): State<CliState>) -> Response {
     match state.tasks.store.list_projects().await {
         Ok(projects) => {
@@ -177,6 +180,7 @@ pub async fn tasks_sync_handler(State(state): State<CliState>) -> Response {
     }
 }
 
+/// Handle task command.
 pub async fn handle_task_command(cmd: TaskCommand) -> Result<()> {
     match cmd {
         TaskCommand::List {

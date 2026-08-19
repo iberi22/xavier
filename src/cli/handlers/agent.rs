@@ -12,6 +12,7 @@ use crate::cli::types::*;
 use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
 
+/// Agent register handler.
 pub async fn agent_register_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<AgentRegisterPayload>,
@@ -39,6 +40,7 @@ pub async fn agent_register_handler(
     }))
 }
 
+/// Agent heartbeat handler.
 pub async fn agent_heartbeat_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -52,6 +54,7 @@ pub async fn agent_heartbeat_handler(
     }))
 }
 
+/// Agent active handler.
 pub async fn agent_active_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -72,6 +75,7 @@ pub async fn agent_active_handler(
     }))
 }
 
+/// Agent push context handler.
 pub async fn agent_push_context_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -119,11 +123,13 @@ pub async fn agent_push_context_handler(
         level: MemoryLevel::Raw,
         relation: None,
         score: 0.0,
+        deleted_at: None,
         clearance: Default::default(),
         revisions: vec![],
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        ..Default::default()
     };
     match state.memory.add(record).await {
         Ok(doc_id) => axum::Json(serde_json::json!({
@@ -139,6 +145,41 @@ pub async fn agent_push_context_handler(
     }
 }
 
+/// Codex index handler.
+pub async fn codex_index_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let importer = crate::memory::codex_importer::CodexImporter::new();
+    match importer.import_all(state.store.as_ref()).await {
+        Ok(records) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "indexed_count": records.len(),
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to index Codex sessions: {}", e),
+        })),
+    }
+}
+
+/// Jules index handler.
+pub async fn jules_index_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let importer = crate::memory::jules_importer::JulesImporter::new();
+    match importer.import_all(state.store.as_ref()).await {
+        Ok(records) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "indexed_count": records.len(),
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to index Jules sessions: {}", e),
+        })),
+    }
+}
+
+/// Agent unregister handler.
 pub async fn agent_unregister_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -159,6 +200,7 @@ pub async fn agent_unregister_handler(
     }))
 }
 
+/// Agent task complete handler.
 pub async fn agent_task_complete_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -190,6 +232,7 @@ pub async fn agent_task_complete_handler(
     }))
 }
 
+/// Agent task failed handler.
 pub async fn agent_task_failed_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -211,6 +254,7 @@ pub async fn agent_task_failed_handler(
     }))
 }
 
+/// Agent list handler.
 pub async fn agent_list_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -225,6 +269,7 @@ pub async fn agent_list_handler(
     }))
 }
 
+/// Agent scan handler.
 pub async fn agent_scan_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -241,6 +286,7 @@ pub async fn agent_scan_handler(
     }
 }
 
+/// Agent index handler.
 pub async fn agent_index_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -264,6 +310,7 @@ pub async fn agent_index_handler(
                     revision: 1,
                     primary: true,
                     score: 0.0,
+                    deleted_at: None,
                     parent_id: None,
                     cluster_id: None,
                     level: MemoryLevel::Raw,
@@ -273,6 +320,7 @@ pub async fn agent_index_handler(
                     encrypted_dek: None,
                     content_iv: None,
                     metadata_iv: None,
+                    ..Default::default()
                 };
                 if state.memory.add(record).await.is_ok() {
                     count += 1;
@@ -290,6 +338,7 @@ pub async fn agent_index_handler(
     }
 }
 
+/// Openclaw scan handler.
 pub async fn openclaw_scan_handler() -> impl axum::response::IntoResponse {
     let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
     match scanner.scan_all_agents().await {
@@ -305,32 +354,46 @@ pub async fn openclaw_scan_handler() -> impl axum::response::IntoResponse {
     }
 }
 
+/// Openclaw index handler.
 pub async fn openclaw_index_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
     let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
-    match state
+    let mut openclaw_records = match state
         .openclaw_indexer
         .index_all_agents(&scanner, state.store.as_ref())
         .await
     {
-        Ok(records) => axum::Json(serde_json::json!({
-            "status": "ok",
-            "indexed_count": records.len(),
-        })),
-        Err(e) => axum::Json(serde_json::json!({
-            "status": "error",
-            "message": format!("Failed to index OpenClaw agents: {}", e),
-        })),
-    }
+        Ok(r) => r,
+        Err(e) => {
+            return axum::Json(serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to index OpenClaw agents: {}", e),
+            }));
+        }
+    };
+
+    let hermes_importer = crate::memory::hermes_importer::HermesImporter::new();
+    let hermes_records = hermes_importer
+        .import_all(state.store.as_ref())
+        .await
+        .unwrap_or_default();
+
+    openclaw_records.extend(hermes_records);
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "indexed_count": openclaw_records.len(),
+    }))
 }
 
+/// Agent sync handler.
 pub async fn agent_sync_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
 ) -> impl axum::response::IntoResponse {
     // Reuse tasks sync logic for now or implement direct cloud sync trigger
-    let mode = payload["mode"].as_str().unwrap_or("bidirectional");
+    let _mode = payload["mode"].as_str().unwrap_or("bidirectional");
 
     match state.store.sync_all(&state.workspace_id).await {
         Ok(stats) => axum::Json(serde_json::json!({

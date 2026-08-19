@@ -15,6 +15,7 @@ use xavier::memory::store::MemoryRecord;
 use xavier::session::event_mapper::PanelThreadEntry;
 use xavier::session::types::SessionEvent;
 
+/// Session event handler.
 pub async fn session_event_handler(
     State(state): State<CliState>,
     axum::Json(event): axum::Json<SessionEvent>,
@@ -89,6 +90,7 @@ pub async fn session_event_handler(
         revision: 1,
         primary: true,
         score: 0.0,
+        deleted_at: None,
         parent_id: None,
         cluster_id: None,
         level: MemoryLevel::Raw,
@@ -98,6 +100,7 @@ pub async fn session_event_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        ..Default::default()
     };
     match state.memory.add(record).await {
         Ok(id) => {
@@ -119,6 +122,7 @@ pub async fn session_event_handler(
     }
 }
 
+/// Session compact handler.
 pub async fn session_compact_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<SessionCompactPayload>,
@@ -189,14 +193,17 @@ pub async fn session_compact_handler(
     if let Some(oldest) = all_docs.first() {
         compacted_content.push_str(&format!(
             "[EARLIEST] {}\n",
-            &oldest.content[..oldest.content.len().min(200)]
+            crate::memory::snippet::clip_chars(&oldest.content, 200)
         ));
     }
 
     compacted_content.push_str("\n=== KEPT RECENT ENTRIES ===\n");
     for doc in &compact_docs {
         let truncate_content = if doc.content.len() > 500 {
-            format!("{}... [truncated]", &doc.content[..500])
+            format!(
+                "{}... [truncated]",
+                crate::memory::snippet::clip_chars(&doc.content, 500)
+            )
         } else {
             doc.content.clone()
         };
@@ -215,6 +222,7 @@ pub async fn session_compact_handler(
         updated_at: chrono::Utc::now(),
         revision: 1,
         primary: true,
+        deleted_at: None,
         score: 0.0,
         parent_id: None,
         cluster_id: None,
@@ -225,6 +233,7 @@ pub async fn session_compact_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        ..Default::default()
     };
     match state.memory.add(record).await {
         Ok(id) => {

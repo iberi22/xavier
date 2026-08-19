@@ -21,6 +21,32 @@ use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 
+/// Embedding stats handler.
+pub async fn embedding_stats_handler(
+    State(state): State<CliState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if let Some(metrics) = state.embedder.cache_metrics() {
+        Ok(Json(serde_json::json!({
+            "status": "ok",
+            "cache": metrics
+        })))
+    } else {
+        Ok(Json(serde_json::json!({
+            "status": "ok",
+            "cache": {
+                "enabled": false,
+                "hits": 0,
+                "misses": 0,
+                "hit_rate": 0.0,
+                "entries": 0,
+                "capacity": 0,
+                "ttl_hours": 0
+            }
+        })))
+    }
+}
+
+/// Embed handler.
 pub async fn embed_handler(
     State(state): State<CliState>,
     Json(body): Json<serde_json::Value>,
@@ -58,6 +84,7 @@ pub async fn embed_handler(
     }
 }
 
+/// Export pack handler.
 pub async fn export_pack_handler(
     State(state): State<CliState>,
     Json(payload): Json<ExportPackPayload>,
@@ -148,6 +175,7 @@ pub async fn export_pack_handler(
     )
 }
 
+/// Search handler.
 pub async fn search_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<SearchPayload>,
@@ -196,34 +224,74 @@ pub async fn search_handler(
         .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
     filters.zones = Some(zones);
 
-    let results: Vec<MemoryRecord> = match state
-        .memory
-        .search(effective_query, 10, Some(filters))
+    // WAVEX-13-02 fix: use hybrid search (vector + lexical + KG, RRF-scored)
+    // so results carry real similarity scores, path, and metadata. The CLI
+    // recall display reads `score` and `metadata.kind` — previously the
+    // handler only serialized id/content/embedding, which is why recall
+    // always showed σ=0.000 and [unknown]. Falls back to the plain
+    // lexical search when hybrid search is unsupported by the backend.
+    let search_results: Vec<serde_json::Value> = match state
+        .store
+        .hybrid_search(
+            &state.workspace_id,
+            effective_query,
+            xavier::memory::store::HybridSearchMode::Both,
+            Some(&filters),
+            10,
+        )
         .await
     {
-        Ok(results) => results,
+        Ok(hybrid) => hybrid
+            .into_iter()
+            .map(|hr| {
+                serde_json::json!({
+                    "id": hr.record.id,
+                    "path": hr.record.path,
+                    "content": hr.record.content,
+                    "metadata": hr.record.metadata,
+                    "score": hr.score,
+                    "vector_score": hr.vector_score,
+                    "lexical_score": hr.lexical_score,
+                    "embedding": hr.record.embedding,
+                })
+            })
+            .collect(),
         Err(e) => {
-            info!("Search error: {}", e);
-            return axum::Json(serde_json::json!({
-                "results": [],
-                "query": payload.query,
-                "count": 0,
-                "error": e.to_string(),
-                "workspace_id": state.workspace_id,
-            }));
+            info!(
+                "Hybrid search unavailable ({}), falling back to lexical search",
+                e
+            );
+            match state
+                .memory
+                .search(effective_query, 10, Some(filters))
+                .await
+            {
+                Ok(results) => results
+                    .into_iter()
+                    .map(|document| {
+                        serde_json::json!({
+                            "id": document.id,
+                            "path": document.path,
+                            "content": document.content,
+                            "metadata": document.metadata,
+                            "score": document.score,
+                            "embedding": document.embedding,
+                        })
+                    })
+                    .collect(),
+                Err(e2) => {
+                    info!("Search error: {}", e2);
+                    return axum::Json(serde_json::json!({
+                        "results": [],
+                        "query": payload.query,
+                        "count": 0,
+                        "error": e2.to_string(),
+                        "workspace_id": state.workspace_id,
+                    }));
+                }
+            }
         }
     };
-
-    let search_results: Vec<serde_json::Value> = results
-        .into_iter()
-        .map(|document| {
-            serde_json::json!({
-                "id": document.id,
-                "content": document.content,
-                "embedding": document.embedding,
-            })
-        })
-        .collect();
 
     axum::Json(serde_json::json!({
         "results": search_results,
@@ -233,6 +301,7 @@ pub async fn search_handler(
     }))
 }
 
+/// Add handler.
 pub async fn add_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<AddPayload>,
@@ -272,9 +341,27 @@ pub async fn add_handler(
         .as_deref()
         .unwrap_or(&sec_result.original_input);
 
-    let path = payload
+    let mut path = payload
         .path
         .unwrap_or_else(|| format!("memory/{}", ulid::Ulid::new()));
+    // Normalizar separadores y bloquear traversal SIN destruir la jerarquía.
+    // El path es el identificador canónico (hermes/2026-08-17/...): los slashes
+    // se PRESERVAN. Solo se rechazan segmentos "..", NUL y control chars.
+    path = path.replace('\\', "/");
+    if path.split('/').any(|seg| seg == "..") || path.contains('\0') {
+        path = format!("memory/{}", ulid::Ulid::new());
+    } else {
+        path = path.chars().filter(|c| !c.is_control()).collect::<String>();
+        path = path
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("/");
+    }
+    if path.is_empty() {
+        path = format!("memory/{}", ulid::Ulid::new());
+    }
+
     let mut metadata = payload.metadata.unwrap_or(serde_json::json!({}));
 
     let cluster_id = payload.cluster_id.clone();
@@ -365,6 +452,7 @@ pub async fn add_handler(
         revision: 1,
         primary: true,
         score: 0.0,
+        deleted_at: None,
         parent_id: None,
         cluster_id,
         level,
@@ -374,6 +462,7 @@ pub async fn add_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        ..Default::default()
     };
     match state.memory.add(record).await {
         Ok(id) => {
@@ -405,6 +494,7 @@ pub async fn add_handler(
     }
 }
 
+/// Update handler.
 pub async fn update_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -468,9 +558,25 @@ pub async fn update_handler(
         .as_deref()
         .unwrap_or(&sec_result.original_input);
 
-    let path = payload
+    let mut path = payload
         .path
         .unwrap_or_else(|| format!("memory/{}", payload.id));
+    // Normalizar separadores y bloquear traversal SIN destruir la jerarquía.
+    path = path.replace('\\', "/");
+    if path.split('/').any(|seg| seg == "..") || path.contains('\0') {
+        path = format!("memory/{}", payload.id);
+    } else {
+        path = path.chars().filter(|c| !c.is_control()).collect::<String>();
+        path = path
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("/");
+    }
+    if path.is_empty() {
+        path = format!("memory/{}", payload.id);
+    }
+
     let metadata = payload.metadata.unwrap_or(serde_json::json!({}));
 
     let record = MemoryRecord {
@@ -484,6 +590,7 @@ pub async fn update_handler(
         updated_at: chrono::Utc::now(),
         revision: 1,
         primary: true,
+        deleted_at: None,
         score: 0.0,
         parent_id: None,
         cluster_id: None,
@@ -494,6 +601,7 @@ pub async fn update_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        ..Default::default()
     };
 
     match state.memory.update(&payload.id, record).await {
@@ -521,6 +629,96 @@ pub async fn update_handler(
     }
 }
 
+/// GET /v1/memory/manifest
+pub async fn memory_manifest_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    match xavier::memory::sync::manifest::build_manifest(&*state.store).await {
+        Ok(manifest) => (StatusCode::OK, Json(manifest)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to build manifest: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// POST /v1/memory/push
+pub async fn memory_push_handler(
+    State(state): State<CliState>,
+    Json(diffs): Json<Vec<xavier::memory::sync::ChunkDiff>>,
+) -> impl axum::response::IntoResponse {
+    let mut conflicts = 0u64;
+    match xavier::memory::sync::merge::apply_changes_received(&*state.store, &diffs, &mut conflicts)
+        .await
+    {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "ok",
+                "conflicts": conflicts,
+                "received": diffs.len()
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to apply changes: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// POST /v1/memory/pull
+pub async fn memory_pull_handler(
+    State(state): State<CliState>,
+    Json(want): Json<Vec<xavier::memory::sync::ManifestEntry>>,
+) -> impl axum::response::IntoResponse {
+    match xavier::memory::sync::push_pull::entries_as_push_diffs(&*state.store, &want).await {
+        Ok(diffs) => (StatusCode::OK, Json(diffs)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to build push diffs: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// GET /v1/memory/pull-since/{workspace_id}/{since}
+pub async fn memory_pull_since_handler(
+    State(state): State<CliState>,
+    axum::extract::Path((workspace_id, since_secs)): axum::extract::Path<(String, u64)>,
+) -> impl axum::response::IntoResponse {
+    let since = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(since_secs);
+    match xavier::memory::sync::push_pull::collect_changes_since(
+        &*state.store,
+        &workspace_id,
+        since,
+    )
+    .await
+    {
+        Ok(diffs) => (StatusCode::OK, Json(diffs)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to collect changes: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Delete handler.
 pub async fn delete_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -676,6 +874,7 @@ pub async fn reindex_handler(State(state): State<CliState>, headers: HeaderMap) 
     }
 }
 
+/// Stats handler.
 pub async fn stats_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
     axum::Json(serde_json::json!({
         "status": "ok",
@@ -684,6 +883,7 @@ pub async fn stats_handler(State(state): State<CliState>) -> impl axum::response
     }))
 }
 
+/// Memory query handler.
 pub async fn memory_query_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<MemoryQueryPayload>,
@@ -767,7 +967,8 @@ pub async fn memory_query_handler(
             }
         }
         results_list
-    }.await;
+    }
+    .await;
     // 2. Parallel fan-out to remote workspaces via the Mesh P2P API
     let mut remote_futures = Vec::new();
     if max_hops > 0 {
@@ -798,7 +999,8 @@ pub async fn memory_query_handler(
                         let ws_id = ws_id.clone();
                         let peer_node_id = peer.node_id.0.clone();
                         remote_futures.push(async move {
-                            let res = client.post(&url)
+                            let res = client
+                                .post(&url)
                                 .json(&query_payload)
                                 .timeout(std::time::Duration::from_secs(5))
                                 .send()
@@ -808,17 +1010,33 @@ pub async fn memory_query_handler(
                                 Ok(resp) => {
                                     if resp.status().is_success() {
                                         if let Ok(body) = resp.json::<serde_json::Value>().await {
-                                            if let Some(results_arr) = body.get("results").and_then(|v| v.as_array()) {
+                                            if let Some(results_arr) =
+                                                body.get("results").and_then(|v| v.as_array())
+                                            {
                                                 let mut remote_docs = Vec::new();
                                                 for r in results_arr {
                                                     let mut r_clone = r.clone();
                                                     if let Some(obj) = r_clone.as_object_mut() {
-                                                        obj.insert("source".to_string(), serde_json::json!(format!("remote:{}::{}", peer_node_id, ws_id)));
+                                                        obj.insert(
+                                                            "source".to_string(),
+                                                            serde_json::json!(format!(
+                                                                "remote:{}::{}",
+                                                                peer_node_id, ws_id
+                                                            )),
+                                                        );
                                                         if obj.get("source_node_id").is_none() {
-                                                            obj.insert("source_node_id".to_string(), serde_json::json!(peer_node_id.clone()));
+                                                            obj.insert(
+                                                                "source_node_id".to_string(),
+                                                                serde_json::json!(
+                                                                    peer_node_id.clone()
+                                                                ),
+                                                            );
                                                         }
                                                         if obj.get("source_db_id").is_none() {
-                                                            obj.insert("source_db_id".to_string(), serde_json::json!(ws_id.clone()));
+                                                            obj.insert(
+                                                                "source_db_id".to_string(),
+                                                                serde_json::json!(ws_id.clone()),
+                                                            );
                                                         }
                                                     }
                                                     remote_docs.push(r_clone);
@@ -829,7 +1047,12 @@ pub async fn memory_query_handler(
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::warn!("Failed to query remote workspace {} on peer {}: {}", ws_id, peer_node_id, e);
+                                    tracing::warn!(
+                                        "Failed to query remote workspace {} on peer {}: {}",
+                                        ws_id,
+                                        peer_node_id,
+                                        e
+                                    );
                                 }
                             }
                             None
@@ -854,12 +1077,19 @@ pub async fn memory_query_handler(
     }))
 }
 
+/// Search memories filtered.
 pub async fn search_memories_filtered(
     query: &str,
     limit: usize,
     clusters: Vec<String>,
     levels: Vec<String>,
+    offline_ok: bool,
 ) -> anyhow::Result<()> {
+    use crate::cli::config::{
+        auth_failed_error, auth_failed_message, classify_error_response, classify_transport_error,
+        CliHttpOutcome,
+    };
+
     let query = secure_cli_input("search query", query, 4_096)?;
     let limit = limit.clamp(1, 100);
     let token = xavier_token();
@@ -898,48 +1128,98 @@ pub async fn search_memories_filtered(
         .send()
         .await;
 
+    async fn offline_search(
+        query: &str,
+        limit: usize,
+        filters: &xavier::memory::schema::MemoryQueryFilters,
+    ) -> anyhow::Result<()> {
+        match load_spawn_memory().await {
+            Ok(memory) => match memory.search_filtered(query, limit, Some(filters)).await {
+                Ok(docs) => {
+                    println!("\n[OFFLINE] Search results for: {}", query);
+                    let json_results = serde_json::json!({
+                        "results": docs.iter().map(|doc: &MemoryDocument| {
+                            serde_json::json!({
+                                "id": doc.id,
+                                "path": doc.path,
+                                "content": doc.content,
+                                "metadata": doc.metadata,
+                                "score": doc.metadata.get("score").and_then(|v: &serde_json::Value| v.as_f64()).unwrap_or(1.0),
+                            })
+                        }).collect::<Vec<_>>()
+                    });
+                    println!("{}", serde_json::to_string_pretty(&json_results)?);
+                    Ok(())
+                }
+                Err(e) => {
+                    println!("❌ Local search failed: {}", e);
+                    Err(anyhow::anyhow!("local offline search failed: {e}"))
+                }
+            },
+            Err(e) => {
+                println!(
+                    "❌ Failed to initialize local offline database store: {}",
+                    e
+                );
+                Err(anyhow::anyhow!("offline store init failed: {e}"))
+            }
+        }
+    }
+
     match response {
         Ok(resp) if resp.status().is_success() => {
             let body: serde_json::Value = resp.json().await.unwrap_or_default();
             println!("\nSearch results for: {}", query);
             println!("{}", serde_json::to_string_pretty(&body)?);
+            Ok(())
         }
-        _ => {
-            println!("⚠️ Server offline or request failed. Falling back to local offline database index...");
-            match load_spawn_memory().await {
-                Ok(memory) => match memory.search_filtered(&query, limit, Some(&filters)).await {
-                    Ok(docs) => {
-                        println!("\n[OFFLINE] Search results for: {}", query);
-                        let json_results = serde_json::json!({
-                            "results": docs.iter().map(|doc: &MemoryDocument| {
-                                serde_json::json!({
-                                    "id": doc.id,
-                                    "path": doc.path,
-                                    "content": doc.content,
-                                    "metadata": doc.metadata,
-                                    "score": doc.metadata.get("score").and_then(|v: &serde_json::Value| v.as_f64()).unwrap_or(1.0),
-                                })
-                            }).collect::<Vec<_>>()
-                        });
-                        println!("{}", serde_json::to_string_pretty(&json_results)?);
+        Ok(resp) => {
+            let status = resp.status();
+            let body_text = resp.text().await.unwrap_or_default();
+            match classify_error_response(status, body_text) {
+                CliHttpOutcome::AuthFailed { status } => {
+                    if offline_ok {
+                        eprintln!("{}", auth_failed_message(status));
+                        println!(
+                            "⚠️ AUTH_FAILED but --offline-ok set. Falling back to local offline database index..."
+                        );
+                        offline_search(&query, limit, &filters).await
+                    } else {
+                        eprintln!("{}", auth_failed_message(status));
+                        Err(auth_failed_error(status))
                     }
-                    Err(e) => {
-                        println!("❌ Local search failed: {}", e);
-                    }
-                },
-                Err(e) => {
+                }
+                CliHttpOutcome::HttpError { status, body } => {
                     println!(
-                        "❌ Failed to initialize local offline database store: {}",
-                        e
+                        "⚠️ Server HTTP {status} ({body}). Falling back to local offline database index..."
                     );
+                    offline_search(&query, limit, &filters).await
+                }
+                CliHttpOutcome::ConnectionRefused { detail } => {
+                    println!(
+                        "⚠️ CONNECTION_REFUSED ({detail}). Falling back to local offline database index..."
+                    );
+                    offline_search(&query, limit, &filters).await
                 }
             }
         }
+        Err(e) => {
+            let outcome = classify_transport_error(&e);
+            if let CliHttpOutcome::ConnectionRefused { detail } = &outcome {
+                println!(
+                    "⚠️ CONNECTION_REFUSED ({detail}). Falling back to local offline database index..."
+                );
+            } else {
+                println!(
+                    "⚠️ Server offline or request failed. Falling back to local offline database index..."
+                );
+            }
+            offline_search(&query, limit, &filters).await
+        }
     }
-
-    Ok(())
 }
 
+/// Add memory hierarchical.
 pub async fn add_memory_hierarchical(
     content: &str,
     title: Option<&str>,
@@ -989,58 +1269,103 @@ pub async fn add_memory_hierarchical(
     match response {
         Ok(resp) if resp.status().is_success() => {
             println!("Memory added successfully via HTTP API!");
+            Ok(())
         }
-        _ => {
-            println!("⚠️ Server offline or request failed. Falling back to local offline database write...");
-            match load_spawn_memory().await {
-                Ok(memory) => {
-                    let path = format!("cli/add/{}", chrono::Utc::now().timestamp());
-                    let mut metadata = serde_json::json!({});
-                    if let Some(t) = title {
-                        metadata["title"] = serde_json::json!(t);
-                    }
-                    if let Some(k) = kind {
-                        metadata["kind"] = serde_json::json!(k);
-                    }
+        Ok(resp) => {
+            let status = resp.status();
+            let body_text = resp.text().await.unwrap_or_default();
+            if crate::cli::config::is_auth_failure(status) {
+                eprintln!(
+                    "{}",
+                    crate::cli::config::auth_failed_message(status.as_u16())
+                );
+                return Err(crate::cli::config::auth_failed_error(status.as_u16()));
+            }
+            println!(
+                "⚠️ Server HTTP {} ({}). Falling back to local offline database write...",
+                status.as_u16(),
+                body_text
+            );
+            offline_add_memory(
+                &content,
+                title.as_deref(),
+                kind,
+                cluster_id,
+                level,
+                relation,
+            )
+            .await
+        }
+        Err(e) => {
+            println!(
+                "⚠️ CONNECTION_REFUSED ({}). Falling back to local offline database write...",
+                e
+            );
+            offline_add_memory(
+                &content,
+                title.as_deref(),
+                kind,
+                cluster_id,
+                level,
+                relation,
+            )
+            .await
+        }
+    }
+}
 
-                    let typed_payload = xavier::memory::schema::TypedMemoryPayload {
-                        cluster_id: cluster_id.map(|s| s.to_string()),
-                        level: level.map(xavier::memory::schema::MemoryLevel::parse),
-                        relation: relation.map(xavier::memory::schema::RelationKind::new),
-                        ..Default::default()
-                    };
+async fn offline_add_memory(
+    content: &str,
+    title: Option<&str>,
+    kind: Option<&str>,
+    cluster_id: Option<&str>,
+    level: Option<&str>,
+    relation: Option<&str>,
+) -> anyhow::Result<()> {
+    match load_spawn_memory().await {
+        Ok(memory) => {
+            let path = format!("cli/add/{}", chrono::Utc::now().timestamp());
+            let mut metadata = serde_json::json!({});
+            if let Some(t) = title {
+                metadata["title"] = serde_json::json!(t);
+            }
+            if let Some(k) = kind {
+                metadata["kind"] = serde_json::json!(k);
+            }
 
-                    match memory
-                        .add_document_typed(
-                            path,
-                            content.to_string(),
-                            metadata,
-                            Some(typed_payload),
-                        )
-                        .await
-                    {
-                        Ok(id) => {
-                            println!("✅ Memory added successfully offline to local SQLite-Vec database!");
-                            println!("Document ID: {id}");
-                        }
-                        Err(err) => {
-                            println!("❌ Local write failed: {}", err);
-                        }
-                    }
+            let typed_payload = xavier::memory::schema::TypedMemoryPayload {
+                cluster_id: cluster_id.map(|s| s.to_string()),
+                level: level.map(xavier::memory::schema::MemoryLevel::parse),
+                relation: relation.map(xavier::memory::schema::RelationKind::new),
+                ..Default::default()
+            };
+
+            match memory
+                .add_document_typed(path, content.to_string(), metadata, Some(typed_payload))
+                .await
+            {
+                Ok(id) => {
+                    println!("✅ Memory added successfully offline to local SQLite-Vec database!");
+                    println!("Document ID: {id}");
+                    Ok(())
                 }
-                Err(e) => {
-                    println!(
-                        "❌ Failed to initialize local offline database store: {}",
-                        e
-                    );
+                Err(err) => {
+                    println!("❌ Local write failed: {}", err);
+                    Err(anyhow::anyhow!("local offline write failed: {err}"))
                 }
             }
         }
+        Err(e) => {
+            println!(
+                "❌ Failed to initialize local offline database store: {}",
+                e
+            );
+            Err(anyhow::anyhow!("offline store init failed: {e}"))
+        }
     }
-
-    Ok(())
 }
 
+/// Export handler.
 pub async fn export_handler(
     State(state): State<CliState>,
     Query(params): Query<ExportPayload>,
@@ -1060,6 +1385,7 @@ pub async fn export_handler(
 }
 
 #[allow(clippy::result_large_err)]
+/// Check cli token.
 pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
     let expected_token = match resolve_http_token() {
         Ok(token) => token,
@@ -1083,6 +1409,7 @@ pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
     }
 }
 
+/// Decay handler.
 pub async fn decay_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     if let Err(r) = check_cli_token(&headers) {
         return r;
@@ -1101,6 +1428,7 @@ pub async fn decay_handler(State(state): State<CliState>, headers: HeaderMap) ->
     }
 }
 
+/// Consolidate handler.
 pub async fn consolidate_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -1132,6 +1460,7 @@ pub async fn consolidate_handler(
     }
 }
 
+/// Evict handler.
 pub async fn evict_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -1174,6 +1503,7 @@ pub async fn evict_handler(
     }
 }
 
+/// Manage handler.
 pub async fn manage_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     if let Err(r) = check_cli_token(&headers) {
         return r;
@@ -1207,6 +1537,7 @@ pub async fn manage_handler(State(state): State<CliState>, headers: HeaderMap) -
     )
 }
 
+/// Memory index self handler.
 pub async fn memory_index_self_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -1302,6 +1633,7 @@ async fn index_file_by_sections(
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             revision: 1,
+            deleted_at: None,
             primary: true,
             score: 0.0,
             level: MemoryLevel::Raw,
@@ -1346,6 +1678,7 @@ fn split_markdown_by_sections(content: &str) -> Vec<(String, String)> {
     sections
 }
 
+/// Timeline query handler.
 pub async fn timeline_query_handler(
     State(state): State<CliState>,
     headers: HeaderMap,

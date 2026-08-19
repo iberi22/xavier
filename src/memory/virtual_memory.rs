@@ -35,6 +35,7 @@ pub struct VirtualMemory {
 }
 
 impl VirtualMemory {
+    /// New.
     pub fn new(memory: Arc<QmdMemory>, belief_graph: Option<SharedBeliefGraph>) -> Self {
         Self {
             memory,
@@ -209,6 +210,7 @@ impl Default for Checkpoint {
 }
 
 impl Checkpoint {
+    /// New.
     pub fn new() -> Self {
         Self {
             id: ulid::Ulid::new().to_string(),
@@ -265,6 +267,7 @@ pub struct VirtualMemoryEntry {
 }
 
 impl VirtualMemoryEntry {
+    /// New.
     pub fn new(path: String, content: String, metadata: serde_json::Value) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
@@ -351,6 +354,7 @@ pub struct TokenSavings {
 }
 
 impl TokenSavings {
+    /// Calculate.
     pub fn calculate(original: &str, virtual_entry: &VirtualMemoryEntry) -> Self {
         let original_size = original.len();
         let virtual_size = virtual_entry.summary.len() + virtual_entry.keywords.join(" ").len();

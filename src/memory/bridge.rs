@@ -37,6 +37,7 @@ pub struct BridgeImportStats {
     pub skipped: usize,
 }
 
+/// Import from path.
 pub async fn import_from_path(
     memory: &QmdMemory,
     source: BridgeSource,
@@ -53,6 +54,7 @@ pub async fn import_from_path(
     }
 }
 
+/// Import openclaw markdown dir.
 pub async fn import_openclaw_markdown_dir(
     memory: &QmdMemory,
     root: &Path,
@@ -160,6 +162,7 @@ pub async fn import_openclaw_markdown_dir(
     })
 }
 
+/// Import engram export file.
 pub async fn import_engram_export_file(
     memory: &QmdMemory,
     path: &Path,
@@ -170,6 +173,7 @@ pub async fn import_engram_export_file(
     import_engram_export(memory, &export, options).await
 }
 
+/// Import engram export.
 pub async fn import_engram_export(
     memory: &QmdMemory,
     export: &Value,
@@ -524,12 +528,23 @@ Use token auth for local workflows.
             .expect("test assertion");
         assert_eq!(docs[0].metadata["kind"], "decision");
         assert_eq!(docs[0].metadata["provenance"]["source_app"], "openclaw");
+
+        // Verify export output structure (as requested by Wave 2 criteria)
+        let exported = memory.export(false).await.expect("test assertion");
+        assert_eq!(exported.len(), 1);
+        let doc = &exported[0];
+        assert_eq!(doc.path, "bridge/openclaw/memory/decision.md");
+        assert_eq!(doc.content, "Use token auth for local workflows.");
+        assert_eq!(doc.metadata["title"], "Auth decision");
+        assert_eq!(doc.metadata["memory_type"], "decision");
     }
 
     #[tokio::test]
     async fn imports_engram_export_records() {
-        let memory = QmdMemory::new_with_workspace(Arc::new(RwLock::new(Vec::new())), "ws-1");
-        let export = json!({
+        let temp = tempdir().expect("test assertion");
+        let file_path = temp.path().join("engram_export.json");
+
+        let export_json = json!({
             "sessions": [{
                 "id": "session-1",
                 "project": "xavier",
@@ -555,9 +570,23 @@ Use token auth for local workflows.
             }]
         });
 
-        let stats = import_engram_export(&memory, &export, BridgeImportOptions::default())
-            .await
-            .expect("test assertion");
+        std::fs::write(
+            &file_path,
+            serde_json::to_string(&export_json).expect("test assertion"),
+        )
+        .expect("test assertion");
+
+        let memory = QmdMemory::new_with_workspace(Arc::new(RwLock::new(Vec::new())), "ws-1");
+
+        // Use tempdir and import_from_path to test the full import path (as requested by Wave 2 criteria)
+        let stats = import_from_path(
+            &memory,
+            BridgeSource::EngramExport,
+            &file_path,
+            BridgeImportOptions::default(),
+        )
+        .await
+        .expect("test assertion");
 
         assert_eq!(stats.imported, 3);
         let docs = memory
@@ -573,5 +602,32 @@ Use token auth for local workflows.
             .await
             .expect("test assertion");
         assert!(!docs.is_empty());
+
+        // Verify export output structure (as requested by Wave 2 criteria)
+        let exported = memory.export(false).await.expect("test assertion");
+        assert_eq!(exported.len(), 3);
+
+        let session_doc = exported
+            .iter()
+            .find(|d| d.path == "bridge/engram/sessions/session-1")
+            .expect("test assertion");
+        assert!(session_doc.content.contains("Engram session session-1"));
+        assert!(session_doc.content.contains("Implemented typed memory"));
+
+        let obs_doc = exported
+            .iter()
+            .find(|d| d.path == "bridge/engram/observations/7")
+            .expect("test assertion");
+        assert_eq!(obs_doc.metadata["engram_type"], "decision");
+        assert!(obs_doc.content.contains("Typed memory schema"));
+        assert!(obs_doc
+            .content
+            .contains("Use canonical kinds and provenance."));
+
+        let prompt_doc = exported
+            .iter()
+            .find(|d| d.path == "bridge/engram/prompts/3")
+            .expect("test assertion");
+        assert_eq!(prompt_doc.content, "Implement typed memory");
     }
 }

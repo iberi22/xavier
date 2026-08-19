@@ -25,9 +25,58 @@ impl Default for WorkspaceSettings {
             storage_limit_bytes: None,
             request_limit: None,
             request_unit_limit: None,
-            embedding_provider_mode: "bring_your_own".to_string(),
+            embedding_provider_mode: "local".to_string(),
             managed_google_embeddings: false,
             sync_policy: "local_only".to_string(),
+            mini_experts: vec![
+                MiniExpertConfig {
+                    name: "agy-expert".to_string(),
+                    provider: "agy".to_string(),
+                    endpoint: "https://api.agy.ai/v1/experts/google".to_string(),
+                    api_key: Some("mock-agy-key".to_string()),
+                },
+                MiniExpertConfig {
+                    name: "local-expert".to_string(),
+                    provider: "local".to_string(),
+                    endpoint: "http://localhost:11434/v1".to_string(),
+                    api_key: None,
+                },
+                MiniExpertConfig {
+                    name: "custom-expert".to_string(),
+                    provider: "custom".to_string(),
+                    endpoint: "https://custom.expert/api".to_string(),
+                    api_key: Some("mock-custom-key".to_string()),
+                },
+                MiniExpertConfig {
+                    name: "qwen3-4b".to_string(),
+                    provider: "local".to_string(),
+                    endpoint: "http://localhost:11434/v1".to_string(),
+                    api_key: None,
+                },
+                MiniExpertConfig {
+                    name: "gemma-3-4b".to_string(),
+                    provider: "local".to_string(),
+                    endpoint: "http://localhost:11434/v1".to_string(),
+                    api_key: None,
+                },
+                MiniExpertConfig {
+                    name: "llama-3.2-3b".to_string(),
+                    provider: "local".to_string(),
+                    endpoint: "http://localhost:11434/v1".to_string(),
+                    api_key: None,
+                },
+            ],
+        }
+    }
+}
+
+impl Default for DedupSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold: 0.92,
+            scope: DedupScope::PathExact,
+            max_revisions: 5,
         }
     }
 }
@@ -57,6 +106,7 @@ impl Default for MemorySettings {
             supabase_url: None,
             supabase_key: None,
             postgres_url: None,
+            dedup: DedupSettings::default(),
         }
     }
 }

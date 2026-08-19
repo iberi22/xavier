@@ -15,6 +15,7 @@ pub struct OpenClawAgentIndexer {
 }
 
 impl OpenClawAgentIndexer {
+    /// New.
     pub fn new(embedder: Arc<dyn Embedder>) -> Self {
         Self { embedder }
     }
@@ -153,7 +154,7 @@ impl OpenClawAgentIndexer {
                 .filter(|c| c.is_alphanumeric() || *c == '-')
                 .collect::<String>();
 
-            record.path = format!("{}/MEMORY.md#{}", agent_id, title_slug);
+            record.path = format!("openclaw://{}/MEMORY.md#{}", agent_id, title_slug);
             record.content = content;
             record.metadata = json!({
                 "agent_id": agent_id,
@@ -181,7 +182,7 @@ impl OpenClawAgentIndexer {
                 workspace_id: format!("agent:{}", agent_id),
                 ..Default::default()
             };
-            record.path = format!("{}/logs/{}", agent_id, log.date);
+            record.path = format!("openclaw://{}/logs/{}", agent_id, log.date);
             record.content = log.content.clone();
             record.metadata = json!({
                 "agent_id": agent_id,
@@ -215,7 +216,7 @@ impl OpenClawAgentIndexer {
                     workspace_id: format!("agent:{}", agent_id),
                     ..Default::default()
                 };
-                record.path = format!("{}/logs/{}#section-{}", agent_id, log.date, i);
+                record.path = format!("openclaw://{}/logs/{}#section-{}", agent_id, log.date, i);
                 record.content = content;
                 record.metadata = json!({
                     "agent_id": agent_id,
@@ -241,7 +242,7 @@ impl OpenClawAgentIndexer {
             workspace_id: format!("agent:{}", agent_id),
             ..Default::default()
         };
-        record.path = format!("{}/{}", agent_id, file_name);
+        record.path = format!("openclaw://{}/{}", agent_id, file_name);
         record.content = content.to_string();
         record.metadata = json!({
             "agent_id": agent_id,
@@ -314,7 +315,7 @@ mod tests {
         let records = indexer.chunk_daily_log("test_agent", &log);
 
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].path, "test_agent/logs/2024-01-01");
+        assert_eq!(records[0].path, "openclaw://test_agent/logs/2024-01-01");
     }
 
     #[test]

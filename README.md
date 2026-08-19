@@ -1,235 +1,155 @@
-# Xavier - Fast Vector Memory for AI Agents
+# Xavier — Fast Vector Memory & Communal Context Runtime for AI Agents
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.12.0-blue.svg)](https://github.com/iberi22/xavier)
-[![Maturity](https://img.shields.io/badge/maturity-99.9%25%20reconciled-green.svg)](architecture.md)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
+[![Version](https://img.shields.io/badge/version-0.13.0-brightgreen.svg)](https://github.com/iberi22/xavier)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
-[![CI](https://github.com/iberi22/xavier/actions/workflows/ci.yml/badge.svg)](https://github.com/iberi22/xavier/actions/workflows/ci.yml)
 
-Xavier is a **Rust-based context engine and memory runtime for AI agents** with HTTP, CLI, MCP, mesh sync, and data-sharing entry points. It stores, retrieves, curates, and exports vector-backed memory over SQLite/SQLite-Vec, while giving agents a common substrate for context recall, code graph queries, session sharing, and local-first coordination.
+Xavier is a **high-performance, Rust-based vector memory runtime for AI agents** with native HTTP, CLI, and MCP entry points. It manages vector embeddings, hierarchical context graphs, and semantic relationships using a robust SQLite-backed store (`sqlite-vec`), granting agents sub-millisecond contextual recall without external service dependencies.
 
-Current release: **0.12.0**.
+---
 
-## Quick Start
+## 🤖 Dual-Layer Documentation System
 
-Para una guía de instalación paso a paso enfocada en el funcionamiento 100% privado y offline, consulte la [Guía de Usuario Final 100% Local (USER_GUIDE_LOCAL.md)](docs/USER_GUIDE_LOCAL.md).
+Xavier separates system documentation into two dedicated layers optimized for their respective audiences:
 
-### Windows (RAG Optimized)
-```powershell
-./start-xavier-rag.ps1
+### 1. Codebase Memory (`README.md` & `.md` Files)
+This `README.md` and associated markdown assets are structured **strictly as context-injection memory for AI Agents**. They provide exact schema specs, system parameters, architectural constraints, and bootstrapping instructions that agents ingest to operate optimally inside this repository.
+
+### 2. Maloca (Human-in-the-loop Presentation Portal)
+For humans, Xavier features **Maloca** (named after the Amazonian indigenous communal house where shared architecture, decisions, stories, and communal knowledge are kept). 
+* **Maloca** is the central presentation layer of Xavier's architectural logic, system diagrams, daily release chronicles (ADRs), module breakdowns, and code diff statistics.
+* It is compiled into a high-density, static HTML/CSS/JS experience under `public/maloca/` (symlinked to `public/devlog/`).
+* It includes a **Premium Interactive Code Diff & Human Curation Dashboard** (`review.html`) where developers can review chronological changes, write curation notes saved in `localStorage`, and inspect exactly which vector RAG memory nodes are linked to each change.
+
+---
+
+## 🛖 The Maloca RAG & Conversation Sync Loop
+
+**Maloca** is not a static log; it is a **circular context database**. 
+
+```
+┌────────────────────────┐       ┌────────────────────────┐
+│  Git Commit History    │ ────> │  Cosecha de Chronicle  │
+└────────────────────────┘       └───────────┬────────────┘
+            ▲                                │
+            │                                ▼
+┌───────────┴────────────┐       ┌────────────────────────┐
+│   Despliegue Humano    │ <──── │  Auto-Docs & RAG (BERT)│
+│  (public/maloca/)      │       └────────────────────────┘
+└────────────────────────┘
 ```
 
+1. **Automation Hook**: In every git commit, a Husky pre-commit hook runs `scripts/pre-commit-chronicle.sh`.
+2. **Context Harvesting**: It harvests commits, code symbols, and git diff statistics, and uses a local BERT embedder to automatically index module understandings into the **Xavier Memory Store**.
+3. **Conversational Sync**: The portal integrates development conversation histories. Whenever developers discuss features or decisions with their coding agents, the logs are synchronized directly with Xavier's memory adapters.
+4. **Unified Search**: Both human developers and autonomous agents query the same RAG system to instantly retrieve deep historical context about *why* a line of code was changed, what decisions were made, and how components interact.
 
-## SWAL ecosystem
+---
 
-Xavier is the **L3 agentic memory** for all SWAL apps (not a product business DB).
+## 🚀 Quick Start (Agent Setup)
 
-- Goal: monorepo `docs/SWAL/GOAL.md` · map: `docs/SWAL/PROJECT_MAP.md`
-- Local: `.gitcore/docs/SWAL_GOAL.md`
-- Consumers: shelf, hosteler, worldexams, maloca, veedur, backoffice, …
-- Pro unlock in apps: **SWAL node** (not Stripe). Mesh for PWAs: **edge-mesh**.
-- Platform shell: `maloca/apps/swal-backoffice`
-### Manual / Linux
-```bash
-# Install from source
-cargo install --path .
-
-# Generate and export an API token
-export XAVIER_TOKEN="$(xavier token new | tail -n 1)"
-
-# Start the HTTP server on the default port
-xavier http 8006
-
-# In another shell, add and search memory
-xavier add "AI agents should verify sources" "agent-guidelines"
-xavier search "agent guidelines" --max-results 5
-
-# Check health
-curl http://localhost:8006/health
-```
-
-Docker:
-
-```bash
-docker run --rm -p 8006:8006 \
-  -e XAVIER_TOKEN="$XAVIER_TOKEN" \
-  -e XAVIER_HOST=0.0.0.0 \
-  -v xavier_data:/data \
-  ghcr.io/iberi22/xavier:latest
-```
-
-MCP stdio:
+Ensure your environment contains the required settings:
 
 ```bash
-xavier mcp
+# Set up secure token and workspace path
+export XAVIER_TOKEN=your-secure-token
+export XAVIER_WORKSPACE_DIR=.
+
+# Launch the memory runtime server (HTTP REST on default port 8006)
+xavier serve
+
+# Index the local workspace (creates SQLite database and context-tree.json)
+xavier index
 ```
 
-## Installer
+---
 
-Xavier ships with an interactive setup wizard for local configuration.
+## 🛠️ Installer & Service Support
 
-**Windows (PowerShell):**
+Xavier includes an interactive **TUI setup wizard** (built with `ratatui` and `crossterm`) that guides you through a 6-step initialization.
 
+### Install Commands
+
+**From source (recommended):**
+```bash
+cargo install --path . --locked
+# or: ./install.sh   # prints the same steps and checks for cargo
+```
+
+**Windows (PowerShell as Administrator):**
 ```powershell
 irm https://raw.githubusercontent.com/iberi22/xavier/main/install.ps1 | iex
 ```
 
-**Linux/macOS:**
+**Linux/macOS helper:** `install.sh` in this repo documents `cargo install` and points at the MCP/HTTP docs. Prefer cloning the repo and installing from source rather than piping remote scripts blindly.
+
+### Start HTTP + optional remote MCP
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iberi22/xavier/main/install.sh | bash
+xavier http                 # REST :8006; MCP JSON-RPC :8100 by default
+xavier http --mcp-port 0    # REST only
+xavier mcp                  # MCP stdio for Cursor/Claude (see docs/guides/MCP_INTEGRATION.md)
 ```
 
-## Key Features
+### Background Execution
+* **Linux**: Sets up a persistent `systemd` daemon.
+* **Windows**: Configures a robust Scheduled Task that launches `xavier serve` / `xavier http` on user logon with automatic retries.
 
-- **Memory Runtime** - Add, search, update, delete, retrieve, curate, decay, consolidate, reflect, and export agent memory.
-- **Mesh Network** - Peer-to-peer sync with node identity, signed handshakes, pairing codes, ACL-aware manifests, chunk transfer, session sharing, cloud settings, and Data Commons opt-in.
-- **Data Commons** - Post-quantum encrypted, consent-gated data marketplace and training-bundle workflow for anonymized telemetry and fine-tuning readiness.
-- **MCP Server** - stdio-based Model Context Protocol entry point for memory tools and agent integrations.
-- **CLI Surface** - Commands for `billing`, `code`, `data-commons`, `mesh`, `navigation`, `provider`, `secrets`, `session`, `spawn`, `tasks`, `token`, `usage`, `verify`, plus core `add`, `search`, `stats`, `http`, `mcp`, and `export`.
-- **HTTP API** - Token-protected REST endpoints for memory, mesh, session, code graph, headless automation, panel, secrets, usage, tasks, provider routing, and system health.
-- **Code Graph** - Scan codebases, find symbols, inspect dependencies, reverse dependencies, call chains, hubs, hotspots, and stats.
-- **Panel UI Backend** - Thread, bookmark, widget, graph, notification, and chat endpoints for the local panel experience.
-- **Security & Secrets** - `X-Xavier-Token` auth, security scanning, HMAC token generation, hardware vault commands, and ephemeral secret leases.
-- **CI/CD Pipeline** - Multi-OS format/check/clippy/test/build matrix, panel validation and E2E, release smoke tests, multi-architecture Docker images, GitHub release packaging, documentation deployment, and Data Commons E2E checks.
+---
 
-```
-┌─────────────┐  ┌──────────┐  ┌──────────┐
-│   CLI       │  │  HTTP    │  │   MCP    │
-│  (add/search)│ │  Server  │  │  (stdio) │
-└──────┬──────┘  └────┬─────┘  └────┬─────┘
-       │              │              │
-       └──────────────┼──────────────┘
-                      │
-              ┌───────▼────────┐
-              │  Core Engine   │
-              │  (add, search, │
-              │   stats,       │
-              │   export)      │
-              └───────┬────────┘
-                      │
-              ┌───────▼────────┐
-              │  SQLite Store  │
-              │  + Vector      │
-              │  Embeddings    │
-              └────────────────┘
-```
+## 🔑 Key Architectural Features
 
-The CLI, HTTP API, MCP server, mesh transport, and panel backend share the same memory engine. You can run Xavier as a local CLI, an HTTP daemon, a desktop/panel backend, an MCP tool server, or a peer in a mesh network.
+- **Belief Graph & GraphRAG** — Dynamic hierarchical clustering (HCE engine) and context-weighted zone boost (1.5x weights for active zones) for intelligent query routing.
+- **Embedded BERT & SQLite-vec** — Zero-touch, high-speed local embedding generation (` MiniLM-L6-v2`) writing directly to a vector-enabled SQLite backend.
+- **Multi-layered Security Shield** — Proactive scanner analyzing direct, indirect, and semantic threats (prompt injection, path traversal, API key leaks).
+- **Interactive Human Curation Dashboard** — Beautiful HTML review dashboard (`review.html`) featuring file diff views, status management, and RAG node links.
+- **Model Context Protocol (MCP)** — Stdio (`xavier mcp`) and optional HTTP JSON-RPC (`xavier http --mcp-port`, default `:8100`) for Cursor/Claude.
 
-## CLI Examples
+---
+
+## 📊 Public Dataset Export Schema
+
+Xavier lets you export read-optimized datasets for agent indexing:
 
 ```bash
-xavier stats
-xavier export --public --output memories.json
-xavier code scan .
-xavier code find "MemoryManager" --kind function
-xavier mesh id
-xavier mesh pairing-code --endpoint http://localhost:8006
-xavier data-commons export-training-bundle --output ./training-bundle
-xavier verify scan --format markdown --detailed
+xavier export --public --format tree
 ```
 
-Full CLI reference: [docs/CLI.md](docs/CLI.md).
+Outputs lightweight NDJSON streams in `xavier-dataset/` representing:
+* `memories.ndjson` — All vector memory records.
+* `code_symbols.ndjson` — Structural elements (structs, functions) mapped to files.
+* `context-tree.json` — Hierarchical cluster trees representing module architecture.
 
-## HTTP API
+---
 
-All protected endpoints require:
+## 📐 System Configuration
 
-```http
-X-Xavier-Token: <your-token>
-```
+Runtime configurations live in `config/xavier.config.json`. Sensitive credentials reside in `.env`.
 
-Examples:
-
-```bash
-curl http://localhost:8006/health
-
-curl -X POST http://localhost:8006/memory/add \
-  -H "X-Xavier-Token: $XAVIER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"content":"Design decision: use RRF","path":"decisions/001"}'
-
-curl -X POST http://localhost:8006/v1/memories/search \
-  -H "X-Xavier-Token: $XAVIER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"design decision","limit":5}'
-```
-
-Full API reference: [docs/API.md](docs/API.md).
-
-## Mesh Network
-
-```bash
-xavier mesh id
-xavier mesh pairing-code --endpoint http://node-a:8006
-xavier mesh join "<PAIRING_CODE>"
-xavier mesh list
-xavier mesh sync <node_id> --mode bidirectional
-```
-
-Mesh sync uses signed node identities, pairing secrets, peer registries, ACL-aware manifests, and chunk-based transfer. Session bundles can be exported, imported, and shared with trusted peers.
-
-## Data Commons
-
-Data Commons provides consent-gated telemetry export for training and future marketplace workflows:
-
-```bash
-xavier data-commons export-training-bundle --output ./bundle --seed 42 --eval-ratio 0.2
-xavier data-commons validate ./bundle
-```
-
-The v0.10.0 line includes post-quantum encryption design for protected data exchange and token-gated Data Commons automation.
-
-## Public Dataset Export
-
-```bash
-xavier export --public --output public-memories.json
-```
-
-Context pack export:
-
-```bash
-xavier export-pack --topic "mesh sync roadmap" --max-level 3 --out mesh-sync.xcp
-```
-
-## Deployment
-
-Xavier can run as a foreground CLI server, Docker container, Docker Compose service, Linux systemd unit, or Windows Scheduled Task. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-
-## Configuration
-
-Runtime configuration is read from environment variables and Xavier config files. Secrets should live in environment variables or the vault, not committed files.
-
-| Variable | Default | Description |
+| Variable | Type | Description |
 |---|---|---|
-| `XAVIER_TOKEN` | required for protected HTTP | API token accepted by `X-Xavier-Token` |
-| `XAVIER_HOST` | `127.0.0.1` or configured host | HTTP bind host |
-| `XAVIER_PORT` | `8006` | HTTP bind port |
-| `XAVIER_WORKSPACE_DIR` | platform config dir | Workspace and runtime state directory |
-| `XAVIER_MEMORY_BACKEND` | `vec` | Memory backend selector |
-| `XAVIER_MEMORY_SQLITE_PATH` | runtime default | SQLite memory path |
-| `XAVIER_CODE_GRAPH_DB_PATH` | runtime default | Code graph database path |
-| `XAVIER_EMBEDDING_URL` | provider dependent | Embedding API endpoint |
-| `XAVIER_MODEL_PROVIDER` | `local` | LLM provider routing default |
+| `XAVIER_TOKEN` | String | Master authentication token for HTTP REST routes |
+| `XAVIER_WORKSPACE_DIR` | Path | Root repository path for active indexing operations |
+| `XAVIER_EMBEDDING_CACHE_ENABLED` | Boolean | Activates persistent SQLite LRU cache for vector mappings |
+| `XAVIER_EMBEDDING_CACHE_CAPACITY` | Integer | Maximum in-memory LRU cache capacity (default: `10000`) |
+| `XAVIER_EMBEDDING_CACHE_TTL` | Integer | Cache TTL in hours (default: `24`) |
+| `XAVIER_DEV_MODE` | Boolean | Bypasses HTTP middleware authentication for rapid testing |
 
-## Documentation
+---
 
-- [API Reference](docs/API.md)
-- [CLI Reference](docs/CLI.md)
-- [RAG Usage Guide](docs/guides/RAG_USAGE_GUIDE.md)
-- [Practical RAG Guide (Xavier v0.11)](docs/XAVIER_RAG_GUIDE.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Feature Status](docs/FEATURE_STATUS.md)
-- [Public Release Roadmap](docs/PUBLIC_RELEASE_ROADMAP.md)
-- [DevLog](docs/devlog/)
+## 📂 Documentation Manifest
 
-## License
+For agents indexing the repository, use these entry paths:
+* [Agent Rules (AGENTS.md)](AGENTS.md) — Mandatory guidelines for memory formatting.
+* [Xavier Memory Protocol](.agents/skills/xavier-memory-protocol/SKILL.md) — Canonical Fat Search → Page-In → Persist.
+* [Feature Status (FEATURE_STATUS.md)](docs/FEATURE_STATUS.md) — Checked-off verified surface.
+* [CLI Reference (docs/guides/CLI_REFERENCE.md)](docs/guides/CLI_REFERENCE.md) — Comprehensive command arguments.
+* [MCP Integration (docs/guides/MCP_INTEGRATION.md)](docs/guides/MCP_INTEGRATION.md) — Cursor/Claude MCP setup.
+* [API Reference (docs/site/.../api.md)](docs/site/src/content/docs/reference/api.md) — HTTP payload specifications.
+* [Architecture Guide (docs/ARCHITECTURE.md)](docs/ARCHITECTURE.md) — Hexagonal domain layout.
 
-Xavier is dual-licensed:
-- **MIT License**: For standalone, local-first use of the core memory engine.
-- **Xavier Mesh License**: For network participation (Mesh), Governance, Data Commons, and Enterprise features. Free for individuals/OSS; paid for commercial entities above certain thresholds.
+---
 
-See [LICENSE](LICENSE) and [LICENSE-MESH](LICENSE-MESH) for details. Commercial terms are documented in [docs/PRICING.md](docs/PRICING.md).
+## 🛡️ License
 
+AGPL-3.0-only — see [LICENSE](LICENSE) for details. Cognitive memory runtime for autonomous agents within SouthWest AI Labs (SWAL).

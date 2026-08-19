@@ -47,5 +47,9 @@ async fn test_proxy_use_case_rate_limited() {
     let result = use_case
         .execute_secured(cmd, false, secrets_engine, event_bus)
         .await;
-    assert!(matches!(result, Err(ProxyError::RateLimited)), "Expected RateLimited, got {:?}", result);
+    assert!(
+        matches!(result, Err(ProxyError::RateLimited)),
+        "Expected RateLimited, got {:?}",
+        result
+    );
 }

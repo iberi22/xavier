@@ -11,6 +11,7 @@ use xavier::mesh::{
 };
 use xavier::sync::SyncTransport;
 
+/// Handle mesh command.
 pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
     // License check for Mesh features
     let settings = xavier::settings::XavierSettings::current();
@@ -258,6 +259,39 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                         pushed.len()
                     );
                 }
+            }
+        }
+        MeshCommand::PrivateSync {
+            wallet_id,
+            target_node,
+        } => {
+            println!(
+                "Initiating private mesh sync for wallet '{}' targeting node '{}'...",
+                wallet_id, target_node
+            );
+
+            let client = &crate::cli::commands::enums::CLI_HTTP_CLIENT;
+            let port = settings.server.port;
+            let url = format!("http://127.0.0.1:{}/v1/f12/private-mesh/sync", port);
+
+            let body = serde_json::json!({
+                "wallet_id": wallet_id,
+                "target_node": target_node,
+            });
+
+            let resp = client.post(&url).json(&body).send().await?;
+
+            if resp.status().is_success() {
+                let json_resp: serde_json::Value = resp.json().await?;
+                println!(
+                    "✅ Private sync complete! Synced {} memories, {} snapshots with node {}",
+                    json_resp["synced_memories"],
+                    json_resp["synced_snapshots"],
+                    json_resp["target_node"]
+                );
+            } else {
+                let err_text = resp.text().await?;
+                println!("❌ Private sync failed: {}", err_text);
             }
         }
         MeshCommand::PairingCode { endpoint } => {

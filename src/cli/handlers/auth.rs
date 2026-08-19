@@ -1,15 +1,15 @@
 //! Authentication API Handlers for Xavier
 
+use crate::cli::handlers::json_response;
+use crate::cli::state::CliState;
 use axum::{
     extract::{ConnectInfo, Path, State},
     http::{HeaderMap, StatusCode},
     response::Response,
     Json,
 };
-use serde::{Deserialize, Serialize};
-use crate::cli::handlers::json_response;
-use crate::cli::state::CliState;
 use chrono::{Duration, Utc};
+use serde::{Deserialize, Serialize};
 use xavier::crypto::password;
 use xavier::security::auth::{generate_jwt, validate_jwt, TotpProvider, User, UserRole};
 use xavier::security::recovery::RecoverySystem;
@@ -38,6 +38,7 @@ pub struct RecoverRequest {
     pub new_password: String,
 }
 
+/// Login handler.
 pub async fn login_handler(
     State(state): State<CliState>,
     connect_info: ConnectInfo<std::net::SocketAddr>,
@@ -58,11 +59,12 @@ pub async fn login_handler(
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.split(',').next().unwrap_or(s).trim().to_string())
-        .unwrap_or_else(|| {
-            connect_info.ip().to_string()
-        });
+        .unwrap_or_else(|| connect_info.ip().to_string());
 
-    let ua = headers.get("user-agent").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+    let ua = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     // Rate Limit Check: max 5 failed attempts per 15 minutes (900 seconds) per IP
     let fifteen_mins_ago = Utc::now().timestamp() - 900;
@@ -70,7 +72,7 @@ pub async fn login_handler(
         if failed_count >= 5 {
             return json_response(
                 StatusCode::TOO_MANY_REQUESTS,
-                serde_json::json!({"error": "Too many failed login attempts"})
+                serde_json::json!({"error": "Too many failed login attempts"}),
             );
         }
     }
@@ -79,13 +81,25 @@ pub async fn login_handler(
         Some(u) => u,
         None => {
             let _ = auth_store.log_event(None, "login_failed", Some(&ip), ua.as_deref(), None);
-            return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({"error": "Invalid credentials"}));
+            return json_response(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({"error": "Invalid credentials"}),
+            );
         }
     };
 
     if !password::verify(&payload.password, &hash).unwrap_or(false) {
-        let _ = auth_store.log_event(Some(&user.id), "login_failed", Some(&ip), ua.as_deref(), None);
-        return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({"error": "Invalid credentials"}));
+        let _ = auth_store.log_event(
+            Some(&user.id),
+            "login_failed",
+            Some(&ip),
+            ua.as_deref(),
+            None,
+        );
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({"error": "Invalid credentials"}),
+        );
     }
 
     // Check if TOTP is enabled
@@ -103,6 +117,7 @@ pub async fn login_handler(
     issue_tokens(&state, &user, Some(&ip), ua.as_deref()).await
 }
 
+/// Totp verify handler.
 pub async fn totp_verify_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -165,6 +180,7 @@ pub async fn totp_verify_handler(
     issue_tokens(&state, &user, ip.as_deref(), ua.as_deref()).await
 }
 
+/// Refresh handler.
 pub async fn refresh_handler(
     State(state): State<CliState>,
     Json(payload): Json<RefreshRequest>,
@@ -205,6 +221,7 @@ pub async fn refresh_handler(
     }
 }
 
+/// Recover handler.
 pub async fn recover_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -277,7 +294,8 @@ pub async fn recover_handler(
     json_response(StatusCode::OK, serde_json::json!({"status": "ok"}))
 }
 
-pub async fn totp_setup_handler(State(state): State<CliState>) -> Response {
+/// Totp setup handler.
+pub async fn totp_setup_handler(State(_state): State<CliState>) -> Response {
     // This should be protected by JWT middleware
     // For now we'll assume we get the user from the state or a placeholder
     // In a real impl, we'd extract it from the token
@@ -337,29 +355,47 @@ async fn issue_tokens(
     )
 }
 
+/// List sessions handler.
 pub async fn list_sessions_handler(
     State(state): State<CliState>,
     axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
 ) -> Response {
     let user_id = match &session.user_id {
         Some(uid) => uid,
-        None => return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({"error": "User not authenticated"})),
+        None => {
+            return json_response(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({"error": "User not authenticated"}),
+            )
+        }
     };
 
     let auth_store = match state.auth_store() {
         Some(s) => s,
-        None => return json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": "Auth store not initialized"})),
+        None => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"error": "Auth store not initialized"}),
+            )
+        }
     };
 
     match auth_store.get_active_sessions(user_id) {
-        Ok(sessions) => json_response(StatusCode::OK, serde_json::json!({
-            "status": "ok",
-            "sessions": sessions
-        })),
-        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": e.to_string()})),
+        Ok(sessions) => json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "status": "ok",
+                "sessions": sessions
+            }),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"error": e.to_string()}),
+        ),
     }
 }
 
+/// Revoke session handler.
 pub async fn revoke_session_handler(
     State(state): State<CliState>,
     Path(token_id): Path<String>,
@@ -367,49 +403,65 @@ pub async fn revoke_session_handler(
 ) -> Response {
     let user_id = match &session.user_id {
         Some(uid) => uid,
-        None => return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({"error": "User not authenticated"})),
+        None => {
+            return json_response(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({"error": "User not authenticated"}),
+            )
+        }
     };
 
     let auth_store = match state.auth_store() {
         Some(s) => s,
-        None => return json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": "Auth store not initialized"})),
+        None => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"error": "Auth store not initialized"}),
+            )
+        }
     };
 
     match auth_store.revoke_user_session(user_id, &token_id) {
-        Ok(_) => json_response(StatusCode::OK, serde_json::json!({
-            "status": "ok",
-            "message": "Session revoked"
-        })),
-        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": e.to_string()})),
+        Ok(_) => json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "status": "ok",
+                "message": "Session revoked"
+            }),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"error": e.to_string()}),
+        ),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::state::CodeGraphState;
     use axum::extract::State;
     use axum::Json;
-    use std::sync::Arc;
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::Arc;
     use tokio::sync::RwLock as AsyncRwLock;
-    use crate::cli::state::CodeGraphState;
-    use xavier::ports::inbound::AgentLifecyclePort;
-    use xavier::coordination::SimpleAgentRegistry;
-    use xavier::memory::qmd_memory::QmdMemory;
-    use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
-    use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
-    use xavier::codebase::conversations_db::ConversationsDb;
-    use xavier::coordination::KeyLendingEngine;
-    use xavier::secrets::audit::QmdAuditLogger;
-    use xavier::tasks::store::{TaskService, InMemoryTaskStore};
+    use xavier::agents::provider::router::{ProviderKind, ProviderRouter};
     use xavier::agents::rate_limit::RateLimitManager;
     use xavier::app::proxy_use_case::ProxyUseCase;
-    use xavier::agents::provider::router::{ProviderRouter, ProviderKind};
+    use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
+    use xavier::codebase::conversations_db::ConversationsDb;
+    use xavier::coordination::KeyLendingEngine;
+    use xavier::coordination::SimpleAgentRegistry;
     use xavier::embedding::NoopEmbedder;
     use xavier::memory::agent_indexer::AgentIndexer;
     use xavier::memory::file_indexer::{FileIndexer, FileIndexerConfig};
+    use xavier::memory::qmd_memory::QmdMemory;
+    use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+    use xavier::ports::inbound::AgentLifecyclePort;
+    use xavier::secrets::audit::QmdAuditLogger;
     use xavier::security::auth_store::AuthStore;
+    use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 
     async fn create_test_state() -> CliState {
         let auth_store = Arc::new(AuthStore::open(":memory:", [0u8; 32]).unwrap());
@@ -444,7 +496,11 @@ mod tests {
             security_scan: Arc::new(xavier::app::security_service::SecurityService::new()),
             _time_store: None,
             agent_registry: SimpleAgentRegistry::new(None) as Arc<dyn AgentLifecyclePort>,
-            panel_store: Arc::new(ConversationsDb::open_in_memory("test-project").await.unwrap()),
+            panel_store: Arc::new(
+                ConversationsDb::open_in_memory("test-project")
+                    .await
+                    .unwrap(),
+            ),
             secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None)),
             event_bus: xavier::coordination::XavierEventBus::new(10),
             tasks: Arc::new(TaskService::new(Arc::new(InMemoryTaskStore::new()))),
@@ -457,19 +513,23 @@ mod tests {
             )),
             usage_counters: Arc::new(xavier::observability::UsageCounters::new()),
             session_manager: Arc::new(xavier::security::sessions::SessionManager::new(60)),
-            provider_router: Arc::new(tokio::sync::RwLock::new(
-                ProviderRouter::new(ProviderKind::Local)
-            )),
+            provider_router: Arc::new(tokio::sync::RwLock::new(ProviderRouter::new(
+                ProviderKind::Local,
+            ))),
             embedder: Arc::new(NoopEmbedder),
-            agent_indexer: Arc::new(AgentIndexer::new(
-                FileIndexer::new(FileIndexerConfig::default(), None)
-            )),
+            agent_indexer: Arc::new(AgentIndexer::new(FileIndexer::new(
+                FileIndexerConfig::default(),
+                None,
+            ))),
             auth_store: Some(auth_store),
             openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
-                Arc::new(NoopEmbedder)
+                Arc::new(NoopEmbedder),
             )),
             multi_db: xavier::storage::multi_db::MultiDbManager::new(),
             system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
+            maloca: xavier::maloca::MalocaStore::open(
+                &std::env::temp_dir().join("xavier-maloca-test-auth"),
+            ),
         }
     }
 
@@ -486,12 +546,24 @@ mod tests {
 
         // First 5 attempts should return 401 Unauthorized because user does not exist
         for _ in 0..5 {
-            let res = login_handler(State(state.clone()), connect_info.clone(), headers.clone(), Json(payload.clone())).await;
+            let res = login_handler(
+                State(state.clone()),
+                connect_info,
+                headers.clone(),
+                Json(payload.clone()),
+            )
+            .await;
             assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
         }
 
         // 6th attempt should return 429 Too Many Requests
-        let res = login_handler(State(state.clone()), connect_info.clone(), headers.clone(), Json(payload.clone())).await;
+        let res = login_handler(
+            State(state.clone()),
+            connect_info,
+            headers.clone(),
+            Json(payload.clone()),
+        )
+        .await;
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 }

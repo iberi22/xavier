@@ -35,6 +35,7 @@
 
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
+use crate::mesh::private_mesh::EncryptedSessionPayload;
 use crate::mesh::protocol::{
     MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSessionShare, MeshSyncRequest,
 };
@@ -76,6 +77,10 @@ pub enum MeshRequest {
     ShareSession {
         share: MeshSessionShare,
     },
+    PrivateSync {
+        wallet_id: String,
+        encrypted: EncryptedSessionPayload,
+    },
 }
 
 /// Iroh-backed P2P transport. Holds the local node identity used to sign
@@ -113,7 +118,7 @@ impl IrohTransport {
     /// mechanism; callers persist that in `PeerInfo.iroh_addr`.
     pub async fn my_addr_string(&self) -> Result<String> {
         let endpoint = self.endpoint().await?;
-        Ok(format!("{:?}", endpoint.id()))
+        Ok(endpoint.id().to_string())
     }
 
     /// Lazily bind and return the Iroh [`Endpoint`].
@@ -126,6 +131,7 @@ impl IrohTransport {
         self.endpoint
             .get_or_try_init(|| async {
                 Endpoint::builder(N0)
+                    .alpns(vec![XMESH_ALPN.to_vec()])
                     .bind()
                     .await
                     .context("Failed to bind Iroh endpoint")
@@ -152,7 +158,7 @@ impl IrohTransport {
     /// `PeerInfo.iroh_addr`). It is parsed into a [`iroh::PublicKey`] and
     /// wrapped in an `EndpointAddr`; the endpoint's address-lookup service
     /// resolves the relay/direct addresses needed to reach it.
-    async fn connect(&self, peer_addr: &str) -> Result<Connection> {
+    pub async fn connect(&self, peer_addr: &str) -> Result<Connection> {
         let endpoint = self.endpoint().await?;
         let trimmed = peer_addr.trim();
         let public_key = trimmed
@@ -190,7 +196,7 @@ impl IrohTransport {
     }
 
     /// Build a signed sync request (shared by fetch/push).
-    fn signed_sync_request(&self, wanted_hashes: Vec<String>) -> MeshSyncRequest {
+    pub fn signed_sync_request(&self, wanted_hashes: Vec<String>) -> MeshSyncRequest {
         let nonce = uuid::Uuid::new_v4().to_string();
         let timestamp = chrono::Utc::now().timestamp();
         let message = format!("{}:{}", timestamp, nonce);
@@ -313,6 +319,150 @@ impl IrohTransport {
             .await?;
         Ok(())
     }
+
+    /// Perform a private sync payload transfer over Iroh QUIC with session encryption.
+    pub async fn private_sync(
+        &self,
+        peer: &PeerInfo,
+        wallet_id: &str,
+        encrypted: EncryptedSessionPayload,
+    ) -> Result<EncryptedSessionPayload> {
+        let addr = Self::addr_from_peer(peer)?;
+        let conn = self.connect(&addr).await?;
+        let resp = self
+            .round_trip(
+                &conn,
+                &MeshRequest::PrivateSync {
+                    wallet_id: wallet_id.to_string(),
+                    encrypted,
+                },
+            )
+            .await?;
+        serde_json::from_value(resp).context("parse private sync response")
+    }
+
+    /// Spawn the server-side accept loop in a background Tokio task.
+    pub async fn spawn_accept_loop(&self) -> tokio::task::JoinHandle<()> {
+        let endpoint = match self.endpoint().await {
+            Ok(ep) => ep.clone(),
+            Err(e) => {
+                tracing::error!("Failed to initialize endpoint for accept loop: {e:#}");
+                return tokio::spawn(async {});
+            }
+        };
+        let local_identity = self.local_identity.clone();
+        tokio::spawn(async move {
+            if let Err(err) = Self::run_accept_loop(endpoint, local_identity).await {
+                tracing::warn!("Iroh accept loop ended: {err:#}");
+            }
+        })
+    }
+
+    /// Run the server-side accept loop on the Iroh endpoint.
+    pub async fn accept_loop(&self) -> Result<()> {
+        let endpoint = self.endpoint().await?.clone();
+        Self::run_accept_loop(endpoint, self.local_identity.clone()).await
+    }
+
+    /// Internal worker loop for processing incoming QUIC connections and bi-streams.
+    async fn run_accept_loop(endpoint: Endpoint, local_identity: Arc<NodeIdentity>) -> Result<()> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        while let Some(incoming) = endpoint.accept().await {
+            let Ok(connecting) = incoming.accept() else {
+                continue;
+            };
+            let Ok(conn) = connecting.await else {
+                continue;
+            };
+
+            if conn.alpn() != XMESH_ALPN {
+                tracing::debug!("Rejected connection with mismatched ALPN");
+                continue;
+            }
+
+            let local_identity = local_identity.clone();
+            tokio::spawn(async move {
+                while let Ok((mut send, mut recv)) = conn.accept_bi().await {
+                    let mut len_buf = [0u8; 4];
+                    if recv.read_exact(&mut len_buf).await.is_err() {
+                        break;
+                    }
+                    let len = u32::from_be_bytes(len_buf) as usize;
+                    let mut buf = vec![0u8; len];
+                    if recv.read_exact(&mut buf).await.is_err() {
+                        break;
+                    }
+
+                    let req: MeshRequest = match serde_json::from_slice(&buf) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            tracing::warn!("Failed to deserialize MeshRequest: {e:#}");
+                            break;
+                        }
+                    };
+
+                    let response_value = match req {
+                        MeshRequest::Handshake { body: _ } => {
+                            let resp = MeshHandshakeResponse {
+                                accepted: true,
+                                node_id: local_identity.node_id.clone(),
+                                public_key_hex: crate::crypto::hex_encode(
+                                    &local_identity.public_key,
+                                ),
+                                reason: None,
+                            };
+                            serde_json::to_value(resp)
+                        }
+                        MeshRequest::FetchManifest { .. } => {
+                            let resp = MeshManifest {
+                                node_id: local_identity.node_id.clone(),
+                                chunks: vec![],
+                                generated_at: chrono::Utc::now().timestamp(),
+                            };
+                            serde_json::to_value(resp)
+                        }
+                        MeshRequest::FetchChunks { .. } => {
+                            let resp: HashMap<String, Vec<u8>> = HashMap::new();
+                            serde_json::to_value(resp)
+                        }
+                        MeshRequest::PushChunks { .. } => {
+                            let resp: Vec<String> = vec![];
+                            serde_json::to_value(resp)
+                        }
+                        MeshRequest::ShareSession { .. } => {
+                            serde_json::to_value(serde_json::json!({"status": "ok"}))
+                        }
+                        MeshRequest::PrivateSync {
+                            wallet_id: _,
+                            encrypted,
+                        } => serde_json::to_value(encrypted),
+                    };
+
+                    let resp_bytes = match response_value.and_then(|v| serde_json::to_vec(&v)) {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            tracing::warn!("Failed to serialize response: {e:#}");
+                            break;
+                        }
+                    };
+
+                    if send
+                        .write_all(&(resp_bytes.len() as u32).to_be_bytes())
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                    if send.write_all(&resp_bytes).await.is_err() {
+                        break;
+                    }
+                    let _ = send.finish();
+                }
+            });
+        }
+        Ok(())
+    }
 }
 
 // NOTE: The full Iroh server-side accept loop (which reads a `MeshRequest` off an
@@ -330,6 +480,20 @@ mod tests {
         // ALPN identifiers must be non-empty and reasonably short.
         assert!(!XMESH_ALPN.is_empty());
         assert!(XMESH_ALPN.len() <= 255);
+    }
+
+    #[test]
+    fn test_private_sync_request_serializes_with_op_tag() {
+        let req = MeshRequest::PrivateSync {
+            wallet_id: "w1".into(),
+            encrypted: EncryptedSessionPayload {
+                ciphertext_hex: "aabb".into(),
+                nonce_hex: "1122".into(),
+            },
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"op\":\"private_sync\""));
+        assert!(json.contains("\"wallet_id\":\"w1\""));
     }
 
     #[test]

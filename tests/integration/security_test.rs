@@ -44,6 +44,23 @@ mod security_tests {
     fn test_generate_token() {
         // Token generation requires XAVIER_TOKEN_SECRET to be set
         std::env::set_var("XAVIER_TOKEN_SECRET", "test-secret-key-for-testing");
+
+        struct TokenSecretRestore(Option<String>);
+        impl Drop for TokenSecretRestore {
+            fn drop(&mut self) {
+                let mut settings = xavier::settings::GLOBAL_SETTINGS.write();
+                settings.security.token_secret = self.0.take();
+                std::env::remove_var("XAVIER_TOKEN_SECRET");
+            }
+        }
+
+        let _restore = {
+            let mut settings = xavier::settings::GLOBAL_SETTINGS.write();
+            let old_secret = settings.security.token_secret.clone();
+            settings.security.token_secret = Some("test-secret-key-for-testing".to_string());
+            TokenSecretRestore(old_secret)
+        };
+
         let security = SecurityManager::new();
 
         let token = security.generate_token("user123").expect("test assertion");

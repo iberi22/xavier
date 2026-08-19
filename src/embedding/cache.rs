@@ -13,6 +13,7 @@
 //!    write-through to both SQLite and the in-memory cache.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,6 +21,7 @@ use async_trait::async_trait;
 use moka::future::Cache;
 use parking_lot::Mutex;
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::warn;
 
@@ -67,12 +69,14 @@ impl EmbeddingCacheConfig {
             .map(|v| !matches!(v.as_str(), "0" | "false" | "no" | "off"))
             .unwrap_or(true);
 
-        let max_capacity = std::env::var("XAVIER_EMBEDDING_CACHE_SIZE")
+        let max_capacity = std::env::var("XAVIER_EMBEDDING_CACHE_CAPACITY")
+            .or_else(|_| std::env::var("XAVIER_EMBEDDING_CACHE_SIZE"))
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(10_000);
 
-        let ttl_hours = std::env::var("XAVIER_EMBEDDING_CACHE_TTL_HOURS")
+        let ttl_hours = std::env::var("XAVIER_EMBEDDING_CACHE_TTL")
+            .or_else(|_| std::env::var("XAVIER_EMBEDDING_CACHE_TTL_HOURS"))
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(24);
@@ -105,12 +109,25 @@ impl EmbeddingCacheConfig {
 // Cache key helpers
 // ---------------------------------------------------------------------------
 
-/// Compute a SHA-256 hex digest of `model_name` and `text` to use as the cache key.
+/// Struct containing metrics for the embedding cache.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EmbeddingCacheMetrics {
+    pub hits: u64,
+    pub misses: u64,
+    pub hit_rate: f64,
+    pub entries: u64,
+    pub capacity: u64,
+    pub ttl_hours: u64,
+    pub enabled: bool,
+}
+
+/// Compute a SHA-256 hex digest of `model_name` and normalized `text` (trimmed) to use as the cache key.
 pub fn content_hash(model_name: &str, text: &str) -> String {
+    let normalized = text.trim();
     let mut hasher = Sha256::new();
     hasher.update(model_name.as_bytes());
     hasher.update(b":");
-    hasher.update(text.as_bytes());
+    hasher.update(normalized.as_bytes());
     crate::crypto::hex_encode(hasher.finalize())
 }
 
@@ -129,6 +146,10 @@ pub struct EmbeddingCache {
     db: Mutex<Option<Connection>>,
     /// Configuration.
     config: EmbeddingCacheConfig,
+    /// Hit counter.
+    hits: AtomicU64,
+    /// Miss counter.
+    misses: AtomicU64,
 }
 
 impl EmbeddingCache {
@@ -145,6 +166,8 @@ impl EmbeddingCache {
             inner,
             db: Mutex::new(None),
             config,
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
         }
     }
 
@@ -178,6 +201,7 @@ impl EmbeddingCache {
 
         // 1. Check in-memory cache.
         if let Some(embedding) = self.inner.get(&key).await {
+            self.hits.fetch_add(1, Ordering::Relaxed);
             tracing::debug!(
                 "Cache hit (memory) for embedding model: {}",
                 self.config.model_name
@@ -187,6 +211,7 @@ impl EmbeddingCache {
 
         // 2. Check SQLite backing store.
         if let Some(embedding) = self.try_lookup_sqlite(&key) {
+            self.hits.fetch_add(1, Ordering::Relaxed);
             tracing::debug!(
                 "Cache hit (sqlite) for embedding model: {}",
                 self.config.model_name
@@ -197,6 +222,7 @@ impl EmbeddingCache {
         }
 
         // 3. Miss — call the real embedder.
+        self.misses.fetch_add(1, Ordering::Relaxed);
         tracing::debug!("Cache miss for embedding model: {}", self.config.model_name);
         let embedding = embedder.encode(text).await?;
 
@@ -224,6 +250,28 @@ impl EmbeddingCache {
     /// Return the number of entries currently in the in-memory cache.
     pub fn entry_count(&self) -> u64 {
         self.inner.entry_count()
+    }
+
+    /// Return metrics for the cache.
+    pub fn metrics(&self) -> EmbeddingCacheMetrics {
+        let hits = self.hits.load(Ordering::Relaxed);
+        let misses = self.misses.load(Ordering::Relaxed);
+        let total = hits + misses;
+        let hit_rate = if total > 0 {
+            hits as f64 / total as f64
+        } else {
+            0.0
+        };
+
+        EmbeddingCacheMetrics {
+            hits,
+            misses,
+            hit_rate,
+            entries: self.inner.entry_count(),
+            capacity: self.config.max_capacity,
+            ttl_hours: self.config.ttl_hours,
+            enabled: self.config.enabled,
+        }
     }
 
     // ------------------------------------------------------------------
@@ -393,6 +441,10 @@ impl Embedder for CachedEmbedder {
     fn dimension(&self) -> usize {
         self.inner.dimension()
     }
+
+    fn cache_metrics(&self) -> Option<EmbeddingCacheMetrics> {
+        Some(self.cache.metrics())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -468,6 +520,67 @@ mod tests {
         assert_eq!(config.ttl_hours, 24);
     }
 
+    #[test]
+    fn test_content_hash_normalizes_whitespace() {
+        let h1 = content_hash("default", "  hello world  ");
+        let h2 = content_hash("default", "hello world");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_config_from_env_capacity_and_ttl() {
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        std::env::set_var("XAVIER_EMBEDDING_CACHE_CAPACITY", "5000");
+        std::env::set_var("XAVIER_EMBEDDING_CACHE_TTL", "48");
+
+        let config = EmbeddingCacheConfig::from_env();
+        assert_eq!(config.max_capacity, 5000);
+        assert_eq!(config.ttl_hours, 48);
+
+        std::env::remove_var("XAVIER_EMBEDDING_CACHE_CAPACITY");
+        std::env::remove_var("XAVIER_EMBEDDING_CACHE_TTL");
+    }
+
+    #[tokio::test]
+    async fn test_cache_metrics_tracking() {
+        let config = EmbeddingCacheConfig {
+            enabled: true,
+            max_capacity: 100,
+            ttl_hours: 24,
+            db_path: PathBuf::from(":memory:"),
+            persist: false,
+            model_name: "default".to_string(),
+        };
+        let cache = Arc::new(EmbeddingCache::new(config));
+        let embedder = Arc::new(NoopEmbedder);
+
+        let initial_metrics = cache.metrics();
+        assert_eq!(initial_metrics.hits, 0);
+        assert_eq!(initial_metrics.misses, 0);
+        assert_eq!(initial_metrics.hit_rate, 0.0);
+
+        // 1st request -> Miss
+        let _ = cache.get_or_embed(&*embedder, "hello").await.unwrap();
+        let metrics1 = cache.metrics();
+        assert_eq!(metrics1.hits, 0);
+        assert_eq!(metrics1.misses, 1);
+        assert_eq!(metrics1.hit_rate, 0.0);
+
+        // 2nd request with same input -> Hit
+        let _ = cache.get_or_embed(&*embedder, "hello").await.unwrap();
+        let metrics2 = cache.metrics();
+        assert_eq!(metrics2.hits, 1);
+        assert_eq!(metrics2.misses, 1);
+        assert_eq!(metrics2.hit_rate, 0.5);
+
+        // 3rd request with trimmed same input -> Hit (due to normalization)
+        let _ = cache.get_or_embed(&*embedder, "  hello  ").await.unwrap();
+        let metrics3 = cache.metrics();
+        assert_eq!(metrics3.hits, 2);
+        assert_eq!(metrics3.misses, 1);
+        assert!((metrics3.hit_rate - 0.6666666666666666).abs() < 1e-5);
+    }
+
     #[tokio::test]
     async fn test_cache_hit_and_miss() {
         let config = EmbeddingCacheConfig {
@@ -513,13 +626,16 @@ mod tests {
 
         // Insert into first cache
         let _ = cache1.get_or_embed(&*embedder, "test").await.unwrap();
+        cache1.inner.run_pending_tasks().await;
         assert_eq!(cache1.entry_count(), 1);
 
         // Second cache has different model name, should miss and not share memory
         // Note: they don't share the sqlite DB either as :memory: is unique per connection
         // but the content_hash ensures different keys anyway.
+        cache2.inner.run_pending_tasks().await;
         assert_eq!(cache2.entry_count(), 0);
         let _ = cache2.get_or_embed(&*embedder, "test").await.unwrap();
+        cache2.inner.run_pending_tasks().await;
         assert_eq!(cache2.entry_count(), 1);
     }
 

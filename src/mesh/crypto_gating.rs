@@ -23,6 +23,7 @@ pub struct CryptoGatingService {
 }
 
 impl CryptoGatingService {
+    /// New.
     pub fn new() -> Self {
         Self {
             mock_symmetric_key: "0xXAVIER_SECRET_SYMMETRIC_KEY".to_string(),

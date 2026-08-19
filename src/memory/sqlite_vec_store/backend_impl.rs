@@ -15,7 +15,8 @@ use std::collections::{HashMap, HashSet};
 use super::{fts, graph, search, utils, FusionSource, VecSqliteMemoryStore};
 
 impl VecSqliteMemoryStore {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Metodo de backend usado via Backend trait")]
+    /// Upsert vector.
     pub(crate) async fn upsert_vector(
         &self,
         memory_id: &str,
@@ -26,17 +27,26 @@ impl VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let embedding_json =
             serde_json::to_string(embedding).context("failed to serialize embedding")?;
+        let table_name = if embedding.len() == 768 {
+            "memory_embeddings_768"
+        } else {
+            "memory_embeddings"
+        };
+        let sql = format!(
+            "INSERT OR REPLACE INTO {}(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+            table_name
+        );
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute(
-                "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
-                params![memory_id, workspace_id, embedding_json],
-            )
-            .context("failed to upsert memory_embeddings row")?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute(&sql, params![memory_id, workspace_id, embedding_json])
+                    .context("failed to upsert vector row")?;
+                Ok(())
+            })
+            .await
     }
 
+    /// Perform hybrid search.
     pub(crate) async fn perform_hybrid_search(
         &self,
         workspace_id: &str,
@@ -73,19 +83,27 @@ impl VecSqliteMemoryStore {
             if include_vector {
                 if let Some(emb) = &embedding {
                     let embedding_json = serde_json::to_string(emb).unwrap_or_default();
-                    let vector_sql = r#"
+                    let table_name = if emb.len() == 768 {
+                        "memory_embeddings_768"
+                    } else {
+                        "memory_embeddings"
+                    };
+                    let vector_sql = format!(
+                        r#"
                         SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
                                m.created_at, m.updated_at, m.revision, m.primary_flag,
                                m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
                                CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
-                        FROM memory_embeddings e
+                        FROM {} e
                         JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
                         WHERE e.workspace_id = ?2
                         ORDER BY distance ASC
                         LIMIT ?3
-                    "#;
+                    "#,
+                        table_name
+                    );
 
-                    let mut stmt = conn.prepare(vector_sql)?;
+                    let mut stmt = conn.prepare(&vector_sql)?;
                     let mut rows = stmt
                         .query(params![
                             embedding_json,
@@ -232,6 +250,7 @@ impl VecSqliteMemoryStore {
         Ok(results)
     }
 
+    /// Perform graph hops.
     pub(crate) async fn perform_graph_hops(
         &self,
         workspace_id: &str,

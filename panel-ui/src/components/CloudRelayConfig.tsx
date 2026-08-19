@@ -1,10 +1,14 @@
 import { Cloud } from "lucide-react";
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useId } from "react";
 import { ApiClient, type CloudNodeConfig } from "../api/client";
 
 export function CloudRelayConfig({ token }: { token: string }) {
   const [client] = useState(() => new ApiClient(token));
+  const urlId = useId();
+  const tokenId = useId();
+  const instanceId = useId();
+  const syncId = useId();
   const [cloudSettings, setCloudSettings] = useState<CloudNodeConfig>({
     url: "",
     token: "",
@@ -70,10 +74,11 @@ export function CloudRelayConfig({ token }: { token: string }) {
       <form onSubmit={handleSaveCloud} className="space-y-4">
         <div className="space-y-4">
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] uppercase text-white/50 tracking-widest">
+            <label htmlFor={urlId} className="text-[10px] uppercase text-white/50 tracking-widest">
               Supabase URL
             </label>
             <input
+              id={urlId}
               type="text"
               value={cloudSettings.url}
               onChange={(e) =>
@@ -84,10 +89,11 @@ export function CloudRelayConfig({ token }: { token: string }) {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] uppercase text-white/50 tracking-widest">
+            <label htmlFor={tokenId} className="text-[10px] uppercase text-white/50 tracking-widest">
               Service Token (API Key)
             </label>
             <input
+              id={tokenId}
               type="password"
               value={cloudSettings.token}
               onChange={(e) =>
@@ -98,10 +104,11 @@ export function CloudRelayConfig({ token }: { token: string }) {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] uppercase text-white/50 tracking-widest">
+            <label htmlFor={instanceId} className="text-[10px] uppercase text-white/50 tracking-widest">
               Namespace / Node ID
             </label>
             <input
+              id={instanceId}
               type="text"
               value={cloudSettings.instance_id}
               onChange={(e) =>
@@ -115,10 +122,11 @@ export function CloudRelayConfig({ token }: { token: string }) {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] uppercase text-white/50 tracking-widest">
+            <label htmlFor={syncId} className="text-[10px] uppercase text-white/50 tracking-widest">
               Sync Interval (ms)
             </label>
             <input
+              id={syncId}
               type="number"
               value={cloudSettings.sync_interval_ms}
               onChange={(e) =>
@@ -141,13 +149,16 @@ export function CloudRelayConfig({ token }: { token: string }) {
             </div>
             <button
               type="button"
+              role="switch"
+              aria-checked={cloudSettings.auto_heartbeat}
+              aria-label="Toggle Auto Heartbeat"
               onClick={() =>
                 setCloudSettings({
                   ...cloudSettings,
                   auto_heartbeat: !cloudSettings.auto_heartbeat,
                 })
               }
-              className={`relative w-10 h-5 rounded-full transition-all duration-300 ${
+              className={`relative w-10 h-5 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                 cloudSettings.auto_heartbeat
                   ? "bg-[#39ff14] shadow-[0_0_10px_rgba(57,255,20,0.3)]"
                   : "bg-white/10"

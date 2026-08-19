@@ -19,6 +19,7 @@ pub struct ShutdownState {
     shutdown_tx: Arc<broadcast::Sender<()>>,
 }
 impl ShutdownState {
+    /// New.
     pub fn new() -> Self {
         let (shutdown_tx, _) = broadcast::channel(1);
         Self {
@@ -26,6 +27,7 @@ impl ShutdownState {
             shutdown_tx: Arc::new(shutdown_tx),
         }
     }
+    /// Request shutdown.
     pub fn request_shutdown(&self, reason: &'static str) {
         let prev = self.shutdown_signalled.fetch_add(1, Ordering::SeqCst);
         if prev == 0 {
@@ -33,12 +35,15 @@ impl ShutdownState {
             let _ = self.shutdown_tx.send(());
         }
     }
+    /// Is shutdown requested.
     pub fn is_shutdown_requested(&self) -> bool {
         self.shutdown_signalled.load(Ordering::SeqCst) > 0
     }
+    /// Subscribe.
     pub fn subscribe(&self) -> broadcast::Receiver<()> {
         self.shutdown_tx.subscribe()
     }
+    /// Seconds since shutdown.
     pub fn seconds_since_shutdown(&self) -> u64 {
         let val = self.shutdown_signalled.load(Ordering::SeqCst);
         if val == 0 {
@@ -76,6 +81,7 @@ impl WsSubscriptions {
     }
 }
 
+/// Ws events handler.
 pub async fn ws_events_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,

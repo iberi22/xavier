@@ -74,13 +74,47 @@ pub struct MaturityScanner {
 impl MaturityScanner {
     /// Create a new scanner with the given anchor manifest file and codebase root.
     pub fn new(anchor_path: &Path, codebase_root: &str) -> Result<Self> {
-        let content = std::fs::read_to_string(anchor_path).map_err(|e| {
-            anyhow::anyhow!(
-                "Cannot read anchor manifest '{}': {}",
-                anchor_path.display(),
-                e
-            )
-        })?;
+        let content = if !anchor_path.is_file() {
+            let default_anchors = include_str!("../../.xavier/maturity-anchors.json");
+            if let Some(parent) = anchor_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match std::fs::write(anchor_path, default_anchors) {
+                Ok(_) => default_anchors.to_string(),
+                Err(e) => {
+                    return Err(anyhow::anyhow!(
+                        "Maturity scanner anchors manifest not found at '{}' and auto-generation failed: {}.\n\n\
+                        Action Required:\n\
+                        Please create a valid anchors manifest file at '{}' with the following base structure:\n\n\
+                        {{\n  \
+                          \"version\": \"2.0.0\",\n  \
+                          \"generated\": \"2026-06-19T02:00:00Z\",\n  \
+                          \"features\": [\n    \
+                            {{\n      \
+                              \"id\": \"memory-rag\",\n      \
+                              \"name\": \"Memory RAG\",\n      \
+                              \"priority\": \"high\",\n      \
+                              \"subcomponents\": []\n    \
+                            }}\n  \
+                          ]\n\
+                        }}\n\n\
+                        Ensure that the directory is writable, or specify a different anchors path using the '--anchors' option.",
+                        anchor_path.display(),
+                        e,
+                        anchor_path.display()
+                    ));
+                }
+            }
+        } else {
+            std::fs::read_to_string(anchor_path).map_err(|e| {
+                anyhow::anyhow!(
+                    "Cannot read anchor manifest '{}': {}",
+                    anchor_path.display(),
+                    e
+                )
+            })?
+        };
+
         let manifest: AnchorManifest = serde_json::from_str(&content)
             .map_err(|e| anyhow::anyhow!("Invalid anchor manifest JSON: {}", e))?;
         Ok(Self {

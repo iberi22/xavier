@@ -187,6 +187,7 @@ pub enum WebhookEventType {
 }
 
 impl WebhookEventType {
+    /// From str.
     pub fn from_str(s: &str) -> Self {
         match s {
             "checkout.session.completed" => Self::CheckoutCompleted,

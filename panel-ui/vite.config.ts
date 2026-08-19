@@ -16,6 +16,7 @@ export default defineConfig(({ command }) => {
       ),
     },
     base: "/",
+    assetsInclude: ["**/*.wasm"],
     plugins: [tailwindcss(), react()],
     resolve: {
       alias: {
@@ -28,6 +29,14 @@ export default defineConfig(({ command }) => {
           __dirname,
           "./node_modules/zustand/react/shallow.js",
         ),
+        "@swal/maloca-wasm/main": path.resolve(
+          __dirname,
+          "../../maloca/packages/maloca-wasm/main.js",
+        ),
+        "@swal/maloca-wasm": path.resolve(
+          __dirname,
+          "../../maloca/packages/maloca-wasm",
+        ),
       },
     },
     server: {
@@ -35,6 +44,10 @@ export default defineConfig(({ command }) => {
       port: 4174,
       proxy: {
         "/health": {
+          target: xavierTarget,
+          changeOrigin: true,
+        },
+        "/maloca": {
           target: xavierTarget,
           changeOrigin: true,
         },
@@ -58,6 +71,10 @@ export default defineConfig(({ command }) => {
           target: xavierTarget,
           changeOrigin: true,
         },
+        "/maloca": {
+          target: xavierTarget,
+          changeOrigin: true,
+        },
       },
     },
     build: {
@@ -65,6 +82,7 @@ export default defineConfig(({ command }) => {
       emptyOutDir: true,
       assetsDir: "assets",
       rollupOptions: {
+        external: ["@swal/maloca-wasm", "@swal/maloca-wasm/main"],
         output: {
           entryFileNames: "assets/index.js",
           chunkFileNames: "assets/[name].js",

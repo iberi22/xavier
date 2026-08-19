@@ -3,16 +3,21 @@
 //! Este módulo proporciona una capa de seguridad unificada para el sistema Xavier,
 //! incluyendo detección de prompt injection, sanitización de inputs y filtrado de outputs.
 
+pub mod acl;
 pub mod anticipator;
+pub mod audit;
 pub mod auth;
 pub mod auth_store;
+pub mod clearance;
 pub mod detections;
 pub mod encryption_keys;
+pub mod groups;
 pub mod initializer;
 pub mod layers;
 pub mod license;
 pub mod prompt_guard;
 pub mod recovery;
+pub mod redaction;
 pub mod rsa_keys;
 pub mod scanner;
 pub mod sessions;
@@ -24,6 +29,7 @@ pub mod user_store;
 pub use anticipator::{Anticipator, AnticipatorConfig};
 pub use detections::{ScanResult as AnticipatorScanResult, Severity, Threat, ThreatCategory};
 pub use prompt_guard::{AttackType, DetectionResult, PromptInjectionDetector};
+pub use redaction::{parse_segmented, DocSection, RedactionEngine, RedactionRule, SegmentedDoc};
 pub use scanner::entropy::{
     EntropyCalculator, EntropyRegion, EntropyScanner, EntropyThreshold, SecretDetector, SecretMatch,
 };
@@ -97,6 +103,7 @@ impl Default for SecurityConfig {
 }
 
 impl SecurityConfig {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
@@ -111,14 +118,17 @@ impl Default for SecurityManager {
 }
 
 impl SecurityManager {
+    /// New.
     pub fn new() -> Self {
         Self
     }
 
+    /// Encode.
     pub fn encode(&self, input: &str) -> Result<String> {
         Ok(format!("hex:{}", hex_encode(input.as_bytes())))
     }
 
+    /// Decode.
     pub fn decode(&self, input: &str) -> Result<String> {
         let encoded = input
             .strip_prefix("hex:")
@@ -127,14 +137,17 @@ impl SecurityManager {
         Ok(String::from_utf8(bytes)?)
     }
 
+    /// Hash password.
     pub fn hash_password(&self, password: &str) -> Result<String> {
         password::hash(password, password::DEFAULT_COST)
     }
 
+    /// Verify password.
     pub fn verify_password(&self, password: &str, hash: &str) -> Result<bool> {
         password::verify(password, hash)
     }
 
+    /// Generate token.
     pub fn generate_token(&self, user_id: &str) -> Result<String> {
         let secret = crate::settings::XavierSettings::current()
             .security
@@ -159,6 +172,7 @@ impl SecurityManager {
         ))
     }
 
+    /// Validate token.
     pub fn validate_token(&self, token: &str) -> Result<()> {
         let parts: Vec<&str> = token.split(':').collect();
         if parts.len() != 5 || parts[0] != "xavier.hmac.v1" {
@@ -339,11 +353,19 @@ impl SecurityService {
 
     /// Get or initialize the KeyManager using hardware-backed master key
     pub fn get_key_manager(&self) -> Result<Arc<crate::crypto::KeyManager>> {
-        if let Some(mgr) = self.key_manager.read().unwrap().as_ref() {
+        if let Some(mgr) = self
+            .key_manager
+            .read()
+            .map_err(|e| anyhow!("KeyManager read lock poisoned: {}", e))?
+            .as_ref()
+        {
             return Ok(mgr.clone());
         }
 
-        let mut mgr_write = self.key_manager.write().unwrap();
+        let mut mgr_write = self
+            .key_manager
+            .write()
+            .map_err(|e| anyhow!("KeyManager write lock poisoned: {}", e))?;
         if let Some(mgr) = mgr_write.as_ref() {
             return Ok(mgr.clone());
         }
@@ -419,30 +441,33 @@ impl Default for ApprovalStore {
 }
 
 impl ApprovalStore {
+    /// New.
     pub fn new() -> Self {
         Self {
             approvals: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
+    /// Approve.
     pub fn approve(&self, action: &str, target: &str) {
         let key = format!("{}:{}", action, target);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or(std::time::Duration::ZERO)
             .as_secs();
         if let Ok(mut approvals) = self.approvals.write() {
             approvals.insert(key, now);
         }
     }
 
+    /// Is approved.
     pub fn is_approved(&self, action: &str, target: &str) -> bool {
         let key = format!("{}:{}", action, target);
         if let Ok(approvals) = self.approvals.read() {
             if let Some(timestamp) = approvals.get(&key) {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
+                    .unwrap_or(std::time::Duration::ZERO)
                     .as_secs();
                 // Approval is valid for 5 minutes
                 if now - *timestamp < 300 {
@@ -456,6 +481,7 @@ impl ApprovalStore {
         false
     }
 
+    /// Revoke.
     pub fn revoke(&self, action: &str, target: &str) {
         let key = format!("{}:{}", action, target);
         if let Ok(mut approvals) = self.approvals.write() {

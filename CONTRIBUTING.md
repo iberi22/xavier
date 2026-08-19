@@ -1,6 +1,19 @@
 # Contributing to Xavier
 
-Thank you for your interest in contributing to Xavier! This document provides guidelines and instructions for contributing to the cognitive memory runtime for AI agents.
+Thank you for your interest in contributing to Xavier! This document provides guidelines and instructions for contributing to the cognitive memory runtime for AI agents within the **SWAL Network**.
+
+## SWAL Network Collaboration Guidelines
+
+Xavier is an open-source core application of the SWAL ecosystem.
+
+- **SWAL Goal & Vision**: Before contributing, please review our canonical vision in [SWAL Goal Document](.gitcore/docs/SWAL_GOAL.md).
+- **Issue → PR → Merge Workflow (GitCore Protocol)**:
+  1. Pick or create an issue describing the work item.
+  2. Fork/branch from `main` using standard branch naming conventions.
+  3. Submit a Pull Request targeting `main`. All PRs must pass CI checks (formatting, lints, and test suites).
+  4. Once reviewed and approved, PRs are merged via standard GitCore workflow.
+- **Global Backlog (Maloca)**: Roadmap, tasks, and cross-repo project management are tracked centrally via the **Maloca** governance domain (`/maloca` API & feed).
+- **Contributor License Agreement (CLA)**: All contributors must agree to the [SWAL Contributor License Agreement](CLA.md).
 
 ## Development Setup
 
@@ -206,6 +219,6 @@ Xavier uses a **hexagonal architecture** (ports & adapters):
 - **Enterprise support** — contact iberi22
 - **Sponsors** — for dedicated support, reach out via GitHub Sponsors
 
-## License
+## License & Legal
 
-By contributing to Xavier, you agree that your contributions will be licensed under the MIT License. Enterprise features are subject to a separate Enterprise License.
+By contributing to Xavier, you agree that your contributions will be licensed under the AGPL-3.0-only License (or applicable SWAL dual licensing model) as specified in [LICENSE](LICENSE) and [CLA.md](CLA.md). Enterprise features are subject to a separate Enterprise License.

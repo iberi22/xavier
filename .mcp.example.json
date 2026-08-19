@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "xavier-memory": {
+      "command": "./scripts/mcp/xavier-mcp-cursor.sh",
+      "args": [],
+      "env": {
+        "XAVIER_DATA_DIR_OVERRIDE": "./data"
+      },
+      "disabled": false
+    }
+  }
+}

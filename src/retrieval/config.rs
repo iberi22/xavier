@@ -8,6 +8,7 @@ pub const DEFAULT_RECENCY_WEIGHT: f32 = 0.3;
 pub const DEFAULT_HALF_LIFE_HOURS: f32 = 168.0;
 pub const DEFAULT_RRF_K: u32 = 60;
 
+/// Configured rrf k.
 pub fn configured_rrf_k() -> u32 {
     crate::settings::XavierSettings::current()
         .retrieval
@@ -15,6 +16,7 @@ pub fn configured_rrf_k() -> u32 {
         .unwrap_or(DEFAULT_RRF_K)
 }
 
+/// Configured keyword weight.
 pub fn configured_keyword_weight() -> f32 {
     crate::settings::XavierSettings::current()
         .retrieval
@@ -22,6 +24,7 @@ pub fn configured_keyword_weight() -> f32 {
         .unwrap_or(DEFAULT_KEYWORD_WEIGHT)
 }
 
+/// Configured vector weight.
 pub fn configured_vector_weight() -> f32 {
     crate::settings::XavierSettings::current()
         .retrieval
@@ -57,6 +60,7 @@ pub const DEFAULT_ZONE_BOOST_MULTIPLIER: f32 = 1.5;
 pub const DEFAULT_ZONE_PENALTY_MULTIPLIER: f32 = 0.5;
 pub const DEFAULT_CACHE_WARMING_THRESHOLD: f32 = 0.5;
 
+/// Configured zone boost.
 pub fn configured_zone_boost() -> f32 {
     std::env::var("XAVIER_ZONE_BOOST")
         .ok()
@@ -64,6 +68,7 @@ pub fn configured_zone_boost() -> f32 {
         .unwrap_or(DEFAULT_ZONE_BOOST_MULTIPLIER)
 }
 
+/// Configured zone penalty.
 pub fn configured_zone_penalty() -> f32 {
     std::env::var("XAVIER_ZONE_PENALTY")
         .ok()

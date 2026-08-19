@@ -94,6 +94,8 @@ pub struct NodeIdentity {
     pub public_key: Vec<u8>,
     /// Ed25519 private key (32 bytes) — sensitive, not serialized
     private_key: Vec<u8>,
+    /// Optional ML-DSA commitment (32 bytes) from SWAL vault derive (login F0/F1).
+    ml_dsa_commitment: Option<[u8; 32]>,
 }
 
 impl fmt::Debug for NodeIdentity {
@@ -102,6 +104,13 @@ impl fmt::Debug for NodeIdentity {
             .field("node_id", &self.node_id)
             .field("public_key", &crate::crypto::hex_encode(&self.public_key))
             .field("private_key", &"[REDACTED]")
+            .field(
+                "ml_dsa_commitment",
+                &self
+                    .ml_dsa_commitment
+                    .as_ref()
+                    .map(crate::crypto::hex_encode),
+            )
             .finish()
     }
 }
@@ -119,7 +128,37 @@ impl NodeIdentity {
             node_id,
             public_key: pk_bytes.to_vec(),
             private_key: signing_key.to_bytes().to_vec(),
+            ml_dsa_commitment: None,
         }
+    }
+
+    /// Build mesh identity from SWAL vault-derived keys (login F0 → F1 bridge).
+    pub fn from_derived(keys: &crate::node_identity::DerivedNodeKeys) -> Self {
+        Self {
+            node_id: keys.node_id.clone(),
+            public_key: keys.ed25519_public.to_vec(),
+            private_key: keys.ed25519_secret.to_vec(),
+            ml_dsa_commitment: Some(keys.ml_dsa_commitment),
+        }
+    }
+
+    /// Prefer SWAL vault under `XAVIER_DATA_DIR/node/` when PIN unlocks it.
+    pub fn load_preferring_swal_vault(pin: &str, device_key: Option<&[u8; 32]>) -> Result<Self> {
+        let store = crate::node_identity::NodeStore::default_from_env();
+        if store.paths.vault.exists() {
+            let (_opened, keys, _codes) = store
+                .unlock(pin, device_key)
+                .map_err(|e| anyhow::anyhow!("swal vault unlock failed: {e}"))?;
+            return Ok(Self::from_derived(&keys));
+        }
+        Self::load_or_create()
+    }
+
+    /// Hex ML-DSA commitment for hybrid / edge-mesh bridge (if present).
+    pub fn ml_dsa_commitment_hex(&self) -> Option<String> {
+        self.ml_dsa_commitment
+            .as_ref()
+            .map(crate::crypto::hex_encode)
     }
 
     /// Sign a message using the node's private key.
@@ -210,6 +249,7 @@ impl NodeIdentity {
             node_id,
             public_key,
             private_key,
+            ml_dsa_commitment: None,
         })
     }
 

@@ -11,6 +11,7 @@ rust-version = "1.75"
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
@@ -54,17 +55,20 @@ hyper-util = "0.1"
 # Async mutex for shared state
 parking_lot = "0.12"
 
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "blocking"] }
+
 # Plugin types
 codegraph-types = { path = "../codegraph-types" }
 dirs = "6"
+which = "6"
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
 
 # Database
 rusqlite = { version = "0.32.0", features = ["bundled"] }
 notify = "6.1.1"
+tempfile = "3"
 
 [dev-dependencies]
-tempfile = "3"
 
 [[bin]]
 name = "code-graph"

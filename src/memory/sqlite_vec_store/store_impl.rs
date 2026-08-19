@@ -20,6 +20,35 @@ use crate::memory::store::{
 
 use super::{graph, vector, VecSqliteMemoryStore};
 
+/// Compute cosine similarity between two f32 vectors.
+/// Used for semantic deduplication.
+pub fn cosine_similarity(v1: &[f32], v2: &[f32]) -> f32 {
+    if v1.is_empty() || v2.is_empty() || v1.len() != v2.len() {
+        return 0.0;
+    }
+    let mut dot_product = 0.0;
+    let mut norm_a = 0.0;
+    let mut norm_b = 0.0;
+    for i in 0..v1.len() {
+        dot_product += v1[i] * v2[i];
+        norm_a += v1[i] * v1[i];
+        norm_b += v2[i] * v2[i];
+    }
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return 0.0;
+    }
+    dot_product / (norm_a.sqrt() * norm_b.sqrt())
+}
+
+/// Check if the new string contains the old string.
+/// Returns true if `new` is a superset of `old` (including if they are identical, or if `old` is empty).
+pub fn is_superset(new: &str, old: &str) -> bool {
+    if old.is_empty() {
+        return true;
+    }
+    new.contains(old)
+}
+
 #[async_trait]
 impl MemoryStore for VecSqliteMemoryStore {
     fn backend(&self) -> MemoryBackend {
@@ -28,6 +57,30 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    async fn set_dedup_settings(&self, settings: crate::settings::types::DedupSettings) {
+        let mut lock = self.dedup_config.write().await;
+        *lock = settings;
+    }
+
+    async fn compact(&self) -> Result<()> {
+        let project_id = self.project_id.clone();
+        ConnectionManager::global()
+            .with_conn(&project_id, move |conn| {
+                conn.execute_batch("VACUUM;")?;
+                Ok(())
+            })
+            .await
+    }
+
+    async fn db_size(&self) -> Result<Option<u64>> {
+        if self.config.path.exists() {
+            if let Ok(metadata) = std::fs::metadata(&self.config.path) {
+                return Ok(Some(metadata.len()));
+            }
+        }
+        Ok(None)
     }
 
     async fn health(&self) -> Result<String> {
@@ -44,12 +97,340 @@ impl MemoryStore for VecSqliteMemoryStore {
         let mut record = record;
 
         // Auto-generate missing embeddings if a provider is configured
-        if record.embedding.is_empty()
-            && crate::memory::embedder::EmbeddingClient::is_configured_from_env()
-        {
-            if let Ok(client) = crate::memory::embedder::EmbeddingClient::from_env_async().await {
-                if let Ok(vector) = client.embed(&record.content).await {
-                    record.embedding = vector;
+        if record.embedding.is_empty() {
+            if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
+                match crate::memory::embedder::EmbeddingClient::from_env_async().await {
+                    Ok(client) => match client.embed(&record.content).await {
+                        Ok(vector) => {
+                            record.embedding = vector;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                    "Memory record {} saved WITHOUT embedding: client embedding generation failed: {}",
+                                    record.id,
+                                    e
+                                );
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!(
+                            "Memory record {} saved WITHOUT embedding: failed to initialize embedding client: {}",
+                            record.id,
+                            e
+                        );
+                    }
+                }
+            } else {
+                tracing::warn!(
+                    "Memory record {} saved WITHOUT embedding: embedding provider is not configured",
+                    record.id
+                );
+            }
+        }
+
+        // Extract and check "dedup" flag from metadata. Remove it so it doesn't persist.
+        let mut is_dedup = false;
+        if let serde_json::Value::Object(ref mut map) = record.metadata {
+            if let Some(val) = map.remove("dedup") {
+                is_dedup = val.as_bool().unwrap_or(false);
+            }
+        }
+
+        // SSP canonical paths (stability/{repo}/... and features/{repo}/{feature_id})
+        // always UPSERT by exact path: reuse the existing row id so INSERT OR REPLACE
+        // updates in place instead of creating duplicates on every stabilize/index run.
+        // (SSP-OlaB #1234). The kind string is normalized by resolve_metadata, so the
+        // canonical-path prefix is the reliable contract.
+        let canonical_path =
+            record.path.starts_with("stability/") || record.path.starts_with("features/");
+        if canonical_path && !record.path.is_empty() {
+            let project_id = self.project_id.clone();
+            let path_c = record.path.clone();
+            let ws_c = record.workspace_id.clone();
+            let existing: Option<String> = ConnectionManager::global()
+                .with_conn(&project_id, move |conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT id FROM memory_records WHERE workspace_id = ?1 AND path = ?2 LIMIT 1",
+                    )?;
+                    match stmt.query_row(params![ws_c, path_c], |row| row.get::<_, String>(0)) {
+                        Ok(id) => Ok(Some(id)),
+                        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                        Err(e) => Err(anyhow::anyhow!("SSP upsert lookup failed: {e}")),
+                    }
+                })
+                .await
+                .unwrap_or(None);
+            if let Some(existing_id) = existing {
+                record.id = existing_id;
+                record.revision += 1;
+            }
+        }
+
+        let mut dedup_settings = {
+            let lock = self.dedup_config.read().await;
+            lock.clone()
+        };
+
+        let is_ssp_path =
+            record.path.starts_with("stability/") || record.path.starts_with("features/");
+        if is_ssp_path {
+            dedup_settings.enabled = true;
+            dedup_settings.scope = crate::settings::types::DedupScope::PathExact;
+        }
+
+        if dedup_settings.enabled && (is_dedup || is_ssp_path) && !record.embedding.is_empty() {
+            let record_c = record.clone();
+            let project_id_c = self.project_id.clone();
+            let dedup_settings_c = dedup_settings.clone();
+
+            let record_ns = match crate::memory::schema::resolve_metadata(
+                &record_c.path,
+                &record_c.metadata,
+                &record_c.workspace_id,
+                None,
+            ) {
+                Ok(res) => res.namespace,
+                Err(_) => crate::memory::schema::MemoryNamespace::default(),
+            };
+
+            let namespaces_match = |ns1: &crate::memory::schema::MemoryNamespace,
+                                    ns2: &crate::memory::schema::MemoryNamespace|
+             -> bool {
+                ns1.org_id == ns2.org_id
+                    && ns1.user_id == ns2.user_id
+                    && ns1.agent_id == ns2.agent_id
+                    && ns1.session_id == ns2.session_id
+                    && ns1.project == ns2.project
+                    && ns1.scope == ns2.scope
+            };
+
+            let query_res = ConnectionManager::global().with_conn(&project_id_c, move |conn| {
+                let mut best_cand: Option<(MemoryRecord, f32)> = None;
+
+                // 1. Try sqlite-vec cosine distance query (vector_distance equivalent)
+                if let Ok(emb_json) = serde_json::to_string(&record_c.embedding) {
+                    let table_name = if record_c.embedding.len() == 768 {
+                        "memory_embeddings_768"
+                    } else {
+                        "memory_embeddings"
+                    };
+                    let (sql, query_params) = match dedup_settings_c.scope {
+                        crate::settings::types::DedupScope::PathExact => {
+                            (
+                                format!(
+                                    r#"
+                                 SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                        m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                        m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                        m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                        CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                                 FROM {} e
+                                 JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                                 WHERE e.workspace_id = ?2 AND m.path = ?3
+                                 ORDER BY distance ASC
+                                 LIMIT 1
+                                 "#,
+                                    table_name
+                                ),
+                                vec![
+                                    rusqlite::types::Value::Text(emb_json),
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    rusqlite::types::Value::Text(record_c.path.clone()),
+                                ]
+                            )
+                        }
+                        crate::settings::types::DedupScope::Namespace => {
+                            (
+                                format!(
+                                    r#"
+                                 SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                        m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                        m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                        m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                        CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                                 FROM {} e
+                                 JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                                 WHERE e.workspace_id = ?2
+                                   AND json_extract(m.metadata, '$.namespace.org_id') IS ?3
+                                   AND json_extract(m.metadata, '$.namespace.user_id') IS ?4
+                                   AND json_extract(m.metadata, '$.namespace.agent_id') IS ?5
+                                   AND json_extract(m.metadata, '$.namespace.session_id') IS ?6
+                                   AND json_extract(m.metadata, '$.namespace.project') IS ?7
+                                   AND json_extract(m.metadata, '$.namespace.scope') IS ?8
+                                 ORDER BY distance ASC
+                                 LIMIT 1
+                                 "#,
+                                    table_name
+                                ),
+                                vec![
+                                    rusqlite::types::Value::Text(emb_json),
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    record_ns.org_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.user_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.agent_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.session_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.project.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.scope.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                ]
+                            )
+                        }
+                    };
+
+                    match conn.prepare(&sql) {
+                        Ok(mut stmt) => {
+                            match stmt.query(rusqlite::params_from_iter(&query_params)) {
+                                Ok(mut rows) => {
+                                    if let Ok(Some(row)) = rows.next() {
+                                        let distance = match row.get::<_, rusqlite::types::Value>(18) {
+                                            Ok(rusqlite::types::Value::Real(v)) => v as f32,
+                                            Ok(rusqlite::types::Value::Integer(v)) => v as f32,
+                                            _ => 1.0,
+                                        };
+                                        let similarity = 1.0 - distance;
+                                        if let Ok(rec) = Self::deserialize_record(row) {
+                                            best_cand = Some((rec, similarity));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("v1_api: stmt.query 1 error: {:?}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("v1_api: conn.prepare 1 error: {:?}", e);
+                        }
+                    }
+                }
+
+                // 2. Fallback to manual Rust cosine similarity search
+                if best_cand.is_none() {
+                    let (sql, query_params) = match dedup_settings_c.scope {
+                        crate::settings::types::DedupScope::PathExact => {
+                            (
+                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND path = ?".to_string(),
+                                vec![
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    rusqlite::types::Value::Text(record_c.path.clone()),
+                                ]
+                            )
+                        }
+                        crate::settings::types::DedupScope::Namespace => {
+                            (
+                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND json_extract(metadata, '$.namespace.org_id') IS ? AND json_extract(metadata, '$.namespace.user_id') IS ? AND json_extract(metadata, '$.namespace.agent_id') IS ? AND json_extract(metadata, '$.namespace.session_id') IS ? AND json_extract(metadata, '$.namespace.project') IS ? AND json_extract(metadata, '$.namespace.scope') IS ?".to_string(),
+                                vec![
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    record_ns.org_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.user_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.agent_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.session_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.project.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.scope.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                ]
+                            )
+                        }
+                    };
+
+                    match conn.prepare(&sql) {
+                        Ok(mut stmt) => {
+                            match stmt.query(rusqlite::params_from_iter(&query_params)) {
+                                Ok(mut rows) => {
+                                    let mut best_sim = -1.0f32;
+                                    let mut best_rec = None;
+                                    while let Ok(Some(row)) = rows.next() {
+                                        match Self::deserialize_record(row) {
+                                            Ok(rec) => {
+                                                let is_match = match dedup_settings_c.scope {
+                                                    crate::settings::types::DedupScope::PathExact => rec.path == record_c.path,
+                                                    crate::settings::types::DedupScope::Namespace => {
+                                                        let rec_meta = match crate::memory::schema::resolve_metadata(&rec.path, &rec.metadata, &rec.workspace_id, None) {
+                                                            Ok(m) => m,
+                                                            Err(_) => continue,
+                                                        };
+                                                        namespaces_match(&record_ns, &rec_meta.namespace)
+                                                    }
+                                                };
+                                                if is_match {
+                                                    let sim = cosine_similarity(&record_c.embedding, &rec.embedding);
+                                                    if sim > best_sim {
+                                                        best_sim = sim;
+                                                        best_rec = Some(rec);
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("v1_api: deserialize 2 error: {:?}", e);
+                                            }
+                                        }
+                                    }
+                                    if let Some(rec) = best_rec {
+                                        best_cand = Some((rec, best_sim));
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("v1_api: stmt.query 2 error: {:?}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("v1_api: conn.prepare 2 error: {:?}", e);
+                        }
+                    }
+                }
+
+                Ok(best_cand)
+            }).await;
+
+            if let Ok(Some((mut existing_record, mut similarity))) = query_res {
+                // Prefer true cosine when both embeddings are present. The vec_distance
+                // column can fail to deserialize (fallback distance=1.0 → similarity 0),
+                // which skipped legitimate PathExact/Namespace merges.
+                if !existing_record.embedding.is_empty() && !record.embedding.is_empty() {
+                    similarity = cosine_similarity(&record.embedding, &existing_record.embedding);
+                }
+                if similarity >= dedup_settings.threshold {
+                    tracing::info!(
+                        "Semantic dedup (similarity {} >= {}): Updating existing memory {} with new content",
+                        similarity,
+                        dedup_settings.threshold,
+                        existing_record.id
+                    );
+                    // Decrypt existing record first if it's encrypted so revisioned_record merges correctly
+                    let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(
+                        &mut existing_record,
+                    );
+
+                    if is_superset(&record.content, &existing_record.content) {
+                        // REPLACE in place, no revision
+                        let existing_revisions = existing_record.revisions.clone();
+                        let existing_revision_num = existing_record.revision;
+
+                        record.id = existing_record.id.clone();
+                        record.created_at = existing_record.created_at;
+                        record.updated_at = chrono::Utc::now();
+                        record.revision = existing_revision_num + 1;
+                        record.revisions = existing_revisions; // No new revision pushed!
+                    } else {
+                        // Push 1 revision, enforce max_revisions (default 5)
+                        record = crate::memory::store::revisioned_record(existing_record, record);
+
+                        let max_revs = if dedup_settings.max_revisions > 0 {
+                            dedup_settings.max_revisions
+                        } else {
+                            5
+                        };
+                        if record.revisions.len() > max_revs {
+                            let excess = record.revisions.len() - max_revs;
+                            record.revisions.drain(0..excess);
+                        }
+                    }
+                } else {
+                    tracing::info!(
+                        "Semantic dedup (similarity {} <= {}): Similarity is below threshold, inserting as new memory {}",
+                        similarity,
+                        dedup_settings.threshold,
+                        record.id
+                    );
                 }
             }
         }
@@ -205,6 +586,36 @@ impl MemoryStore for VecSqliteMemoryStore {
                     params![chain_id, prev_hash, content_hash],
                 )?;
 
+                // Auto-link code symbols mentioned in content
+                let candidate_words: std::collections::HashSet<&str> = record_c
+                    .content
+                    .split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .filter(|w| w.len() >= 4)
+                    .collect();
+
+                let code_db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(
+                    std::path::Path::new("."),
+                );
+                if code_db_path.exists() {
+                    if let Ok(code_db) = code_graph::db::CodeGraphDB::new(&code_db_path) {
+                        if let Ok(links) = code_db.link_memory_to_symbols(&record_c.id, &record_c.content) {
+                            for link in links {
+                                let _ = conn.execute(
+                                    "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, ?3)",
+                                    params![link.memory_id, link.symbol_id, link.confidence],
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    for word in candidate_words {
+                        let _ = conn.execute(
+                            "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, 1.0)",
+                            params![record_c.id, word],
+                        );
+                    }
+                }
+
                 // Call refined append_timeline_event (now sync inside with_conn)
                 // Need a reference to Self, but we're inside closure.
                 // Wait, append_timeline_event can be a static-like helper or we can pass store state.
@@ -214,8 +625,17 @@ impl MemoryStore for VecSqliteMemoryStore {
             // Store vector in native vector search table
             if !record_c.embedding.is_empty() {
                 let embedding_json = serde_json::to_string(&record_c.embedding).unwrap_or_default();
+                let table_name = if record_c.embedding.len() == 768 {
+                    "memory_embeddings_768"
+                } else {
+                    "memory_embeddings"
+                };
+                let sql = format!(
+                    "INSERT OR REPLACE INTO {}(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                    table_name
+                );
                 conn.execute(
-                    "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                    &sql,
                     params![record_c.id, record_c.workspace_id, embedding_json],
                 )?;
             }
@@ -244,9 +664,19 @@ impl MemoryStore for VecSqliteMemoryStore {
                 TABLE_MEMORIES
             ))?;
 
-            let mut rows = stmt.query([&key])?;
-            if let Some(row) = rows.next()? {
-                return Ok(Some(VecSqliteMemoryStore::deserialize_record(row)?));
+            {
+                let mut rows = stmt.query([&key])?;
+                if let Some(row) = rows.next()? {
+                    return Ok(Some(VecSqliteMemoryStore::deserialize_record(row)?));
+                }
+            }
+
+            // Fallback: try by raw id_or_path directly (e.g. ULIDs)
+            {
+                let mut rows = stmt.query([&id_or_path])?;
+                if let Some(row) = rows.next()? {
+                    return Ok(Some(VecSqliteMemoryStore::deserialize_record(row)?));
+                }
             }
 
             // Fallback: try by path
@@ -305,14 +735,24 @@ impl MemoryStore for VecSqliteMemoryStore {
                         params![workspace_id, workspace_id, record_id],
                     )?;
 
-                    // Delete from vector table
+                    // Delete from vector tables
                     tx.execute(
                         "DELETE FROM memory_embeddings WHERE id = ? AND workspace_id = ?",
+                        params![record_id, workspace_id],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM memory_embeddings_768 WHERE id = ? AND workspace_id = ?",
                         params![record_id, workspace_id],
                     )?;
 
                     tx.execute(
                         "DELETE FROM memory_embeddings WHERE workspace_id = ? AND id IN (
+                        SELECT id FROM memory_records WHERE workspace_id = ? AND parent_id = ?
+                    )",
+                        params![workspace_id, workspace_id, record_id],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM memory_embeddings_768 WHERE workspace_id = ? AND id IN (
                         SELECT id FROM memory_records WHERE workspace_id = ? AND parent_id = ?
                     )",
                         params![workspace_id, workspace_id, record_id],
@@ -772,6 +1212,23 @@ impl MemoryStore for VecSqliteMemoryStore {
                     params![workspace_id, data, now],
                 )?;
                 Ok(())
+            })
+            .await
+    }
+
+    async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
+        let memory_id = memory_id.to_string();
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT symbol_id FROM memory_symbol_links WHERE memory_id = ? ORDER BY confidence DESC",
+                )?;
+                let rows = stmt.query_map([&memory_id], |row| row.get::<_, String>(0))?;
+                let mut symbols = Vec::new();
+                for symbol in rows.flatten() {
+                    symbols.push(symbol);
+                }
+                Ok(symbols)
             })
             .await
     }

@@ -26,6 +26,7 @@ pub enum MemoryPriority {
 }
 
 impl MemoryPriority {
+    /// From metadata.
     pub fn from_metadata(metadata: &serde_json::Value) -> Self {
         metadata
             .get("memory_priority")
@@ -41,6 +42,7 @@ impl MemoryPriority {
             .unwrap_or(Self::Medium)
     }
 
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Critical => "critical",
@@ -107,6 +109,7 @@ impl MemoryQuality {
     const FRESHNESS_WEIGHT: f32 = 0.20;
     const COMPLETENESS_WEIGHT: f32 = 0.15;
 
+    /// Calculate.
     pub fn calculate(
         doc: &MemoryDocument,
         priority: MemoryPriority,

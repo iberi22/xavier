@@ -3,6 +3,7 @@
 use crate::cli::commands::enums::WalletCommand;
 use anyhow::Result;
 
+/// Handle wallet command.
 pub async fn handle_wallet_command(cmd: WalletCommand) -> Result<()> {
     match cmd {
         WalletCommand::Balance => {

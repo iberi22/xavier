@@ -91,8 +91,11 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
               </p>
             </div>
             <button
+              aria-label="Enable Data Telemetry"
+              role="switch"
+              aria-checked={config.enabled}
               onClick={() => setConfig({ ...config, enabled: !config.enabled })}
-              className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
+              className={`relative w-12 h-7 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                 config.enabled
                   ? "bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
                   : "bg-white/10"
@@ -116,10 +119,13 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
               </p>
             </div>
             <button
+              aria-label="GDPR / Legal Consent"
+              role="switch"
+              aria-checked={config.consent_given}
               onClick={() =>
                 setConfig({ ...config, consent_given: !config.consent_given })
               }
-              className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
+              className={`relative w-12 h-7 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                 config.consent_given
                   ? "bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
                   : "bg-white/10"
@@ -139,10 +145,11 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
             <h4 className="text-sm font-medium text-white/90 mb-1">
               Solana Wallet Address (Optional)
             </h4>
-            <p className="text-xs text-white/40 mb-3">
+            <label htmlFor="wallet-address" className="text-xs text-white/40 mb-3 block">
               Link your wallet to receive airdrops for your data contribution.
-            </p>
+            </label>
             <input
+              id="wallet-address"
               type="text"
               value={config.wallet_address || ""}
               onChange={(e) =>

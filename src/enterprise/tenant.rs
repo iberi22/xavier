@@ -19,6 +19,7 @@ pub enum Plan {
 }
 
 impl Plan {
+    /// Memory limit.
     pub fn memory_limit(&self) -> usize {
         match self {
             Plan::Free => 100,
@@ -27,6 +28,7 @@ impl Plan {
         }
     }
 
+    /// Rate limit rpm.
     pub fn rate_limit_rpm(&self) -> u32 {
         match self {
             Plan::Free => 30,
@@ -35,6 +37,7 @@ impl Plan {
         }
     }
 
+    /// Max api keys.
     pub fn max_api_keys(&self) -> usize {
         match self {
             Plan::Free => 2,
@@ -43,6 +46,7 @@ impl Plan {
         }
     }
 
+    /// Audit retention days.
     pub fn audit_retention_days(&self) -> u32 {
         match self {
             Plan::Free => 7,
@@ -63,6 +67,7 @@ pub struct Tenant {
 }
 
 impl Tenant {
+    /// New.
     pub fn new(name: impl Into<String>, plan: Plan) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -73,6 +78,7 @@ impl Tenant {
         }
     }
 
+    /// With setting.
     pub fn with_setting(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.settings.insert(key.into(), value.into());
         self
@@ -88,6 +94,7 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    /// New.
     pub fn new(tenant_id: TenantId, name: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -114,6 +121,7 @@ pub struct TenantStore {
 }
 
 impl TenantStore {
+    /// New.
     pub fn new() -> Self {
         Self {
             tenants: HashMap::new(),

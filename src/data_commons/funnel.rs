@@ -94,6 +94,7 @@ pub struct Minter {
 }
 
 impl Minter {
+    /// New.
     pub fn new(config: FunnelConfig) -> Self {
         Self {
             config,
@@ -229,8 +230,9 @@ impl Minter {
             crate::data_commons::maintainer::encrypt_for_maintainer(payload_json)
                 .map_err(|_| MinterError::InvalidContext)?;
 
-        let maintainer_pubkey =
-            crate::data_commons::maintainer::get_maintainer_public_key().to_bytes();
+        let maintainer_pubkey = crate::data_commons::maintainer::get_maintainer_public_key()
+            .map_err(|_| MinterError::InvalidContext)?
+            .to_bytes();
 
         // Instanciar DB y guardar
         let db = crate::data_commons::telemetry_db::TelemetryDb::new(db_path)

@@ -20,6 +20,7 @@ const MEMORYFRAGMENT_MAX_PROVENANCE_CHARS: usize = 2048;
 const CONTEXT_DEFAULT_MAX_CHARS: usize = 4000;
 const CONTEXT_ABSOLUTE_MAX_CHARS: usize = 16000;
 
+/// Get xavier memory tools.
 pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
     vec![
         MCPTool {
@@ -100,7 +101,20 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         MCPTool {
             name: "memoryfragment_save".to_string(),
             description: "Alias for save_fragment".to_string(),
-            input_schema: json!({ "type": "object" }),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "agent_id": { "type": "string" },
+                    "content": { "type": "string" },
+                    "context": { "type": "string" },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "importance": { "type": "number" },
+                    "repo_url": { "type": "string" },
+                    "file_path": { "type": "string" },
+                    "chunk_id": { "type": "string" }
+                },
+                "required": ["agent_id", "content", "context"]
+            }),
         },
         MCPTool {
             name: "search_fragments".to_string(),
@@ -120,7 +134,17 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         MCPTool {
             name: "memoryfragment_search".to_string(),
             description: "Alias for search_fragments".to_string(),
-            input_schema: json!({ "type": "object" }),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "agent_id": { "type": "string" },
+                    "context": { "type": "string" },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "limit": { "type": "number", "default": 10 }
+                },
+                "required": ["query"]
+            }),
         },
         MCPTool {
             name: "get_recent_fragments".to_string(),
@@ -138,7 +162,15 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         MCPTool {
             name: "memoryfragment_recent".to_string(),
             description: "Alias for get_recent_fragments".to_string(),
-            input_schema: json!({ "type": "object" }),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "agent_id": { "type": "string" },
+                    "context": { "type": "string" },
+                    "limit": { "type": "number", "default": 10 }
+                },
+                "required": ["agent_id"]
+            }),
         },
         MCPTool {
             name: "memoryfragment_get".to_string(),
@@ -191,13 +223,15 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "memory_search".to_string(),
-            description: "Hybrid search over memory documents, optionally scoped to a namespace".to_string(),
+            description: "[DEPRECATED — use mem_search instead] Fat index search (same structured candidates as mem_search). Prefer mem_search → memory_context/get_memory → create_memory.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
-                    "limit": { "type": "number", "description": "Maximum results", "default": 10 },
+                    "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
+                    "include_content": { "type": "boolean", "description": "Include full document body in each candidate (default false — prefer memory_context page-in by ids)", "default": false },
                     "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
+                    "filters": { "type": "object", "description": "Optional filters" },
                     "namespace": {
                         "description": "Optional namespace filter: a project string or an object {project, agent_id, scope, session_id}",
                         "oneOf": [
@@ -225,9 +259,39 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 }
             }),
         },
+        MCPTool {
+            name: "mem_context".to_string(),
+            description: "Alias of memory_context (progressive-disclosure step 2 page-in)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Query describing the desired context (used when ids omitted)" },
+                    "ids": { "type": "array", "items": { "type": "string" }, "description": "Preferred: memory IDs from mem_search candidates to page-in specifically" },
+                    "limit": { "type": "number", "description": "Maximum memories to include (if using query)", "default": 5 },
+                    "max_chars": { "type": "number", "description": "Maximum total characters in the aggregated context output", "default": 4000 },
+                    "max_chars_per_doc": { "type": "number", "description": "Maximum characters per individual memory document (default: min(800, max_chars)); response reports per-source truncation honesty" },
+                    "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid pipeline.", "default": "hybrid" }
+                }
+            }),
+        },
+        MCPTool {
+            name: "memory_prune".to_string(),
+            description: "Prune stale or duplicate memories by kind, age, or path prefix".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "kind": { "type": "string", "description": "Delete all memories of a specific kind" },
+                    "older_than_days": { "type": "integer", "description": "Delete memories not accessed in N days (0 to disable)", "default": 0 },
+                    "path_prefix": { "type": "string", "description": "Delete memories with path starting with prefix" },
+                    "dry_run": { "type": "boolean", "description": "Preview count without deleting (MANDATORY: default true)", "default": true }
+                }
+            }),
+        },
     ]
 }
 
+/// Handle memory tool.
 pub async fn handle_memory_tool(
     state: AppState,
     workspace: WorkspaceContext,
@@ -235,7 +299,7 @@ pub async fn handle_memory_tool(
     arguments: Value,
 ) -> anyhow::Result<Value> {
     match name {
-        "mem_search" | "search_memory" => {
+        "mem_search" | "search_memory" | "memory_search" => {
             let query = arguments
                 .get("query")
                 .and_then(|v| v.as_str())
@@ -243,29 +307,74 @@ pub async fn handle_memory_tool(
             let limit = arguments
                 .get("limit")
                 .and_then(|v| v.as_u64())
-                .unwrap_or(10) as usize;
+                .unwrap_or(10)
+                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
             let include_content = arguments
                 .get("include_content")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let filters = arguments
+            let depth = arguments
+                .get("depth")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .clamp(0, 2) as usize;
+            let mut filters = arguments
                 .get("filters")
                 .cloned()
                 .map(serde_json::from_value::<MemoryQueryFilters>)
-                .transpose()?;
+                .transpose()?
+                .unwrap_or_default();
+
+            // memory_search compat: merge namespace into filters when provided
+            if let Some(ns) = parse_namespace_arg(&arguments)? {
+                if filters.project.is_none() {
+                    filters.project = ns.project;
+                }
+                if filters.agent_id.is_none() {
+                    filters.agent_id = ns.agent_id;
+                }
+                if filters.scope.is_none() {
+                    filters.scope = ns.scope;
+                }
+                if filters.session_id.is_none() {
+                    filters.session_id = ns.session_id;
+                }
+                if filters.user_id.is_none() {
+                    filters.user_id = ns.user_id;
+                }
+            }
+
+            let has_filters = filters.project.is_some()
+                || filters.agent_id.is_some()
+                || filters.scope.is_some()
+                || filters.session_id.is_some()
+                || filters.user_id.is_some()
+                || filters.kinds.is_some()
+                || filters.path_prefix.is_some();
+            let filter_ref = if has_filters { Some(&filters) } else { None };
 
             let results = workspace
                 .workspace
                 .memory
-                .search_filtered(query, limit, filters.as_ref())
+                .search_filtered(query, limit, filter_ref)
                 .await?;
 
-            // Progressive disclosure (Ola 5 · 01 / #497): fat index by default.
-            // Structured candidates avoid Debug-dumping full Metadata (token bloat).
+            let results = if depth > 0 {
+                workspace
+                    .workspace
+                    .memory
+                    .expand_depth(&results, depth, filter_ref)
+                    .await?
+            } else {
+                results
+            };
+
+            // Progressive disclosure: fat index by default (structured candidates).
             let candidates: Vec<Value> = results
                 .into_iter()
                 .map(|doc| {
-                    let snippet: String = doc.content.chars().take(100).collect();
+                    let snippet: String =
+                        crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
                     let kind = doc
                         .metadata
                         .get("kind")
@@ -654,66 +763,6 @@ pub async fn handle_memory_tool(
                 .await?;
             super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
         }
-        "memory_search" => {
-            let query = arguments
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let limit = arguments
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(10)
-                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
-            let depth = arguments
-                .get("depth")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0)
-                .clamp(0, 2) as usize;
-            let namespace = parse_namespace_arg(&arguments)?;
-
-            let mut filters = MemoryQueryFilters::default();
-            if let Some(ns) = &namespace {
-                filters.project = ns.project.clone();
-                filters.agent_id = ns.agent_id.clone();
-                filters.scope = ns.scope.clone();
-                filters.session_id = ns.session_id.clone();
-                filters.user_id = ns.user_id.clone();
-            }
-
-            let results = workspace
-                .workspace
-                .memory
-                .search_filtered(query, limit, Some(&filters))
-                .await?;
-
-            let results = if depth > 0 {
-                workspace
-                    .workspace
-                    .memory
-                    .expand_depth(&results, depth, Some(&filters))
-                    .await?
-            } else {
-                results
-            };
-
-            let content = results
-                .into_iter()
-                .map(|doc| {
-                    MCPContent::Text(MCPTextContent {
-                        content_type: "text".to_string(),
-                        text: format!(
-                            "Path: {}\nContent: {}\nMetadata: {:?}",
-                            doc.path, doc.content, doc.metadata
-                        ),
-                    })
-                })
-                .collect();
-
-            Ok(serde_json::to_value(MCPToolResult {
-                content,
-                is_error: Some(false),
-            })?)
-        }
         "memory_context" | "mem_context" => {
             let query = arguments.get("query").and_then(|v| v.as_str());
             let ids = arguments.get("ids").and_then(|v| v.as_array());
@@ -802,7 +851,8 @@ pub async fn handle_memory_tool(
 
                     let doc_content = if is_this_doc_truncated {
                         let mut truncated: String =
-                            record.content.chars().take(max_chars_per_doc).collect();
+                            crate::memory::snippet::clip_chars(&record.content, max_chars_per_doc)
+                                .to_string();
                         truncated.push_str("\n[... doc truncated ...]");
                         truncated
                     } else {
@@ -826,7 +876,8 @@ pub async fn handle_memory_tool(
                         id: record.id.clone().unwrap_or_default(),
                         path: record.path.clone(),
                         score: 0.0,
-                        snippet: record.content.chars().take(200).collect(),
+                        snippet: crate::memory::snippet::clip_chars(&record.content, 200)
+                            .to_string(),
                         provenance: MCPProvenance {
                             source: "search_filtered".to_string(),
                             retrieved_at: chrono::Utc::now().to_rfc3339(),
@@ -849,7 +900,8 @@ pub async fn handle_memory_tool(
                         total_chars, max_chars
                     ));
                     // Truncate at character boundary
-                    let mut truncated_text: String = context.chars().take(max_chars).collect();
+                    let mut truncated_text: String =
+                        crate::memory::snippet::clip_chars(&context, max_chars).to_string();
                     truncated_text.push_str("\n[... truncated ...]");
                     context = truncated_text;
                 } else if any_doc_truncated {
@@ -875,6 +927,89 @@ pub async fn handle_memory_tool(
                     is_error: Some(false),
                 })?)
             }
+        }
+        "memory_prune" => {
+            let kind = arguments
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.to_string());
+            let path_prefix = arguments
+                .get("path_prefix")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.to_string());
+            let older_than_days = arguments
+                .get("older_than_days")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let dry_run = arguments
+                .get("dry_run")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+
+            if kind.is_none() && path_prefix.is_none() && older_than_days <= 0 {
+                return Err(anyhow::anyhow!("At least one filter required"));
+            }
+
+            // Retrieve all documents
+            let docs = workspace.workspace.memory.all_documents().await;
+            let mut matched_docs = Vec::new();
+
+            let now = chrono::Utc::now();
+            for doc in docs {
+                // 1. Filter by kind
+                if let Some(ref k) = kind {
+                    let doc_kind = doc
+                        .metadata
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if !doc_kind.eq_ignore_ascii_case(k) {
+                        continue;
+                    }
+                }
+
+                // 2. Filter by path_prefix
+                if let Some(ref prefix) = path_prefix {
+                    if !doc.path.starts_with(prefix) {
+                        continue;
+                    }
+                }
+
+                // 3. Filter by older_than_days
+                if older_than_days > 0 {
+                    let last_accessed = get_doc_last_accessed(&doc);
+                    let threshold = now - chrono::Duration::days(older_than_days);
+                    if last_accessed >= threshold {
+                        continue;
+                    }
+                }
+
+                matched_docs.push(doc);
+            }
+
+            let matched = matched_docs.len();
+            let mut deleted = 0;
+
+            if !dry_run {
+                for doc in matched_docs {
+                    let id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+                    if let Ok(Some(_)) = workspace.workspace.memory.delete(&id).await {
+                        deleted += 1;
+                    }
+                }
+            }
+
+            let payload = json!({
+                "matched": matched,
+                "deleted": deleted,
+                "dry_run": dry_run,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                payload, false,
+            ))?)
         }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
     }
@@ -1000,4 +1135,30 @@ async fn secure_mcp_external_input(
         return Ok(Err(super::server::mcp_text_result(serde_json::json!({ "status": "blocked", "blocked": true, "reason": "security_policy_violation", "message": format!("{label} blocked by security policy"), "detection": { "is_injection": result.is_injection, "confidence": result.detection_confidence, "attack_type": result.attack_type } }).to_string(), true)?));
     }
     Ok(Ok(result.sanitized_input.unwrap_or(result.original_input)))
+}
+
+/// Helper to extract the last accessed time for a `MemoryDocument`.
+fn get_doc_last_accessed(
+    doc: &crate::memory::qmd_memory::MemoryDocument,
+) -> chrono::DateTime<chrono::Utc> {
+    if let Some(last_accessed_val) = doc
+        .metadata
+        .get("last_accessed_at")
+        .and_then(|v| v.as_str())
+    {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(last_accessed_val) {
+            return parsed.with_timezone(&chrono::Utc);
+        }
+    }
+    if let Some(updated_at_val) = doc.metadata.get("updated_at").and_then(|v| v.as_str()) {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(updated_at_val) {
+            return parsed.with_timezone(&chrono::Utc);
+        }
+    }
+    if let Some(created_at_val) = doc.metadata.get("created_at").and_then(|v| v.as_str()) {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(created_at_val) {
+            return parsed.with_timezone(&chrono::Utc);
+        }
+    }
+    chrono::Utc::now()
 }

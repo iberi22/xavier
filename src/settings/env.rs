@@ -5,18 +5,21 @@
 use super::types::XavierSettings;
 use super::validation::non_empty;
 
+/// Set if absent.
 pub fn set_if_absent(key: &str, value: &str) {
     if std::env::var_os(key).is_none() {
         std::env::set_var(key, value);
     }
 }
 
+/// Set optional if absent.
 pub fn set_optional_if_absent(key: &str, value: Option<String>) {
     if let Some(value) = value {
         set_if_absent(key, &value);
     }
 }
 
+/// Apply to env impl.
 pub fn apply_to_env_impl(settings: &XavierSettings) {
     set_if_absent("XAVIER_HOST", &settings.server.host);
     set_if_absent("XAVIER_PORT", &settings.server.port.to_string());

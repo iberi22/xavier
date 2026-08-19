@@ -32,6 +32,7 @@ pub struct ScheduledJob {
 }
 
 impl ScheduledJob {
+    /// New.
     pub fn new(
         id: impl Into<String>,
         name: impl Into<String>,
@@ -48,6 +49,7 @@ impl ScheduledJob {
         }
     }
 
+    /// From schedule.
     pub fn from_schedule(
         id: impl Into<String>,
         name: impl Into<String>,
@@ -76,6 +78,7 @@ impl Default for RecoveryConfig {
     }
 }
 
+/// Compute next run.
 pub fn compute_next_run(schedule: &str, after: DateTime<Utc>) -> Result<DateTime<Utc>> {
     let parsed = Schedule::from_str(schedule)
         .with_context(|| format!("invalid cron expression: {schedule}"))?;
@@ -86,6 +89,7 @@ pub fn compute_next_run(schedule: &str, after: DateTime<Utc>) -> Result<DateTime
         .ok_or_else(|| anyhow::anyhow!("no future run found for cron expression"))
 }
 
+/// Detect missed jobs.
 pub fn detect_missed_jobs(
     jobs: &mut [ScheduledJob],
     now: DateTime<Utc>,

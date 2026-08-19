@@ -22,6 +22,7 @@ pub struct ReflectionResult {
     pub llm_used: bool,
 }
 
+/// Reflect memories.
 pub async fn reflect_memories(memories: &[MemoryDocument]) -> Result<ReflectionResult> {
     if memories.is_empty() {
         return Ok(ReflectionResult::default());

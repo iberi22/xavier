@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::json;
 
+/// Generate minimax legacy.
 pub(crate) async fn generate_minimax_legacy(
     client: &Client,
     config: &ModelProviderConfig,

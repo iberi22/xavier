@@ -10,6 +10,7 @@ use super::nlp::*;
 use super::text::*;
 use crate::agents::system1::RetrievedDocument;
 
+/// Clean date.
 pub(crate) fn clean_date(text: &str) -> String {
     let trimmed = text.trim();
 
@@ -47,6 +48,7 @@ pub(crate) fn clean_date(text: &str) -> String {
     trimmed.to_string()
 }
 
+/// Date patterns.
 pub(crate) fn date_patterns() -> &'static [Regex] {
     static DATE_PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
     DATE_PATTERNS
@@ -60,6 +62,7 @@ pub(crate) fn date_patterns() -> &'static [Regex] {
         .as_slice()
 }
 
+/// Extract date answer.
 pub(crate) fn extract_date_answer(text: &str) -> Option<String> {
     static EXPANDED_DATE_PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
     let expanded_patterns = EXPANDED_DATE_PATTERNS
@@ -96,6 +99,7 @@ pub(crate) fn extract_date_answer(text: &str) -> Option<String> {
     None
 }
 
+/// Date granularity rank.
 pub(crate) fn date_granularity_rank(text: &str) -> usize {
     static DAY_MONTH_YEAR: OnceLock<Regex> = OnceLock::new();
     static MONTH_DAY_YEAR: OnceLock<Regex> = OnceLock::new();
@@ -142,6 +146,7 @@ pub(crate) fn date_granularity_rank(text: &str) -> usize {
     0
 }
 
+/// Parse session date.
 pub(crate) fn parse_session_date(session_time: &str) -> Option<NaiveDate> {
     let date_text = session_time
         .rsplit_once(" on ")
@@ -157,10 +162,12 @@ pub(crate) fn parse_session_date(session_time: &str) -> Option<NaiveDate> {
     None
 }
 
+/// Format date.
 pub(crate) fn format_date(date: NaiveDate) -> String {
     date.format("%-d %B %Y").to_string()
 }
 
+/// Extract relative date answer.
 pub(crate) fn extract_relative_date_answer(text: &str, session_time: &str) -> Option<String> {
     let lowered = text.to_lowercase();
     let session_date = parse_session_date(session_time)?;
@@ -233,6 +240,7 @@ pub(crate) fn has_temporal_signal(text: &str) -> bool {
         || lowered.contains("last week")
 }
 
+/// Term overlap in content.
 pub(crate) fn term_overlap_in_content(doc: &RetrievedDocument, terms: &[String]) -> usize {
     let content_lower = doc.content.to_lowercase();
     terms
@@ -241,6 +249,7 @@ pub(crate) fn term_overlap_in_content(doc: &RetrievedDocument, terms: &[String])
         .count()
 }
 
+/// Best date answer.
 pub(crate) fn best_date_answer(query: &str, docs: &[RetrievedDocument]) -> Option<String> {
     let terms = query_terms(query);
     let phrases = query_phrases(&terms);

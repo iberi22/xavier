@@ -3,15 +3,15 @@
 //! Handles initialization, listing, querying, and connecting
 //! to multiple independent SQLite databases in `{XAVIER_DATA_DIR}/db/{db_id}.sqlite`.
 
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use anyhow::{anyhow, Result};
 use tokio::sync::RwLock;
 
-use crate::workspace::{WorkspaceDb, WorkspaceDbKind};
-use crate::settings::XavierSettings;
 use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+use crate::settings::XavierSettings;
+use crate::workspace::{WorkspaceDb, WorkspaceDbKind};
 
 #[derive(Debug, Clone, Default)]
 pub struct MultiDbManager {
@@ -19,6 +19,7 @@ pub struct MultiDbManager {
 }
 
 impl MultiDbManager {
+    /// New.
     pub fn new() -> Self {
         Self {
             databases: Arc::new(RwLock::new(HashMap::new())),
@@ -49,8 +50,13 @@ impl MultiDbManager {
         }
 
         // Validate alphanumeric/underscore database ID to prevent directory traversal
-        if !db_id.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
-            return Err(anyhow!("Database ID must contain only alphanumeric characters, dashes, or underscores"));
+        if !db_id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(anyhow!(
+                "Database ID must contain only alphanumeric characters, dashes, or underscores"
+            ));
         }
 
         let db_path = Self::resolve_db_path(&db_id);
@@ -149,7 +155,11 @@ mod tests {
 
         // 1. Create DB
         let db = manager
-            .create_database(db_id.clone(), display_name.clone(), WorkspaceDbKind::Personal)
+            .create_database(
+                db_id.clone(),
+                display_name.clone(),
+                WorkspaceDbKind::Personal,
+            )
             .await
             .unwrap();
 
@@ -187,7 +197,11 @@ mod tests {
     async fn test_invalid_db_id() {
         let manager = MultiDbManager::new();
         let result = manager
-            .create_database("../invalid".to_string(), "Invalid".to_string(), WorkspaceDbKind::Personal)
+            .create_database(
+                "../invalid".to_string(),
+                "Invalid".to_string(),
+                WorkspaceDbKind::Personal,
+            )
             .await;
         assert!(result.is_err());
     }

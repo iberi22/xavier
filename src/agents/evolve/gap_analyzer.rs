@@ -24,6 +24,7 @@ pub struct GapAnalyzer {
 }
 
 impl GapAnalyzer {
+    /// New.
     pub async fn new() -> Result<Self> {
         let log_store = ServiceLogStore::new().await?;
         let telemetry_db_path = std::env::var("XAVIER_TELEMETRY_DB_PATH")
@@ -42,6 +43,7 @@ impl GapAnalyzer {
         })
     }
 
+    /// Analyze gaps.
     pub async fn analyze_gaps(&self) -> Result<GapReport> {
         let stats = self.log_store.get_stats().await?;
 

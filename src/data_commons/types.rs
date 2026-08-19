@@ -19,6 +19,7 @@ use std::collections::HashMap;
 pub struct WalletAddress(pub String);
 
 impl WalletAddress {
+    /// Is valid.
     pub fn is_valid(&self) -> bool {
         self.0.starts_with("xv1_") && self.0.len() == 65
     }
@@ -265,6 +266,7 @@ impl XipState {
         )
     }
 
+    /// Label.
     pub fn label(&self) -> &str {
         match self {
             XipState::Draft { .. } => "Draft",

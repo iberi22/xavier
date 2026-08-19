@@ -370,4 +370,69 @@ mod tests {
             SessionEventType::Message | SessionEventType::ToolResult
         ));
     }
+
+    #[test]
+    fn auto_save_config_from_env() {
+        std::env::set_var("XAVIER_URL", "http://custom-url:9000");
+        std::env::set_var("XAVIER_TOKEN", "custom-token-123");
+        std::env::set_var("XAVIER_AUTO_SAVE_TIMEOUT_MS", "5000");
+        std::env::set_var("XAVIER_AUTO_VERIFY", "false");
+        std::env::set_var("XAVIER_FAILED_SYNCS_DIR", "/tmp/failed-syncs-test");
+        std::env::set_var("XAVIER_MIN_MATCH_SCORE", "0.95");
+
+        let config = AutoSaveConfig::from_env();
+
+        assert_eq!(config.xavier_url, "http://custom-url:9000");
+        assert_eq!(config.auth_token, "custom-token-123");
+        assert_eq!(config.timeout_ms, 5000);
+        assert!(!config.auto_verify);
+        assert_eq!(config.failed_syncs_dir, PathBuf::from("/tmp/failed-syncs-test"));
+        assert_eq!(config.min_match_score, 0.95);
+
+        std::env::remove_var("XAVIER_URL");
+        std::env::remove_var("XAVIER_TOKEN");
+        std::env::remove_var("XAVIER_AUTO_SAVE_TIMEOUT_MS");
+        std::env::remove_var("XAVIER_AUTO_VERIFY");
+        std::env::remove_var("XAVIER_FAILED_SYNCS_DIR");
+        std::env::remove_var("XAVIER_MIN_MATCH_SCORE");
+    }
+
+    #[test]
+    fn resolve_xavier_url_env_override() {
+        std::env::set_var("XAVIER_URL", "http://override-host:1234");
+        assert_eq!(resolve_xavier_url(), "http://override-host:1234");
+
+        std::env::remove_var("XAVIER_URL");
+        std::env::set_var("XAVIER_HOST", "192.168.1.50");
+        std::env::set_var("XAVIER_PORT", "9999");
+        assert_eq!(resolve_xavier_url(), "http://192.168.1.50:9999");
+
+        std::env::remove_var("XAVIER_HOST");
+        std::env::remove_var("XAVIER_PORT");
+    }
+
+    #[tokio::test]
+    async fn test_record_failed_sync() {
+        let temp_dir = std::env::temp_dir().join(format!("failed_syncs_test_{}", ulid::Ulid::new()));
+        let event = SessionEvent {
+            session_id: "test-failed-session".to_string(),
+            event_type: SessionEventType::Message,
+            timestamp: Utc::now(),
+            content: Some("Test failed message payload".to_string()),
+            metadata: None,
+        };
+
+        let result = record_failed_sync(&temp_dir, &event, "connection refused", 250).await;
+        assert!(result.is_ok());
+
+        let mut dir_entries = tokio::fs::read_dir(&temp_dir).await.expect("read dir ok");
+        let entry = dir_entries.next_entry().await.expect("entry ok").expect("some entry");
+        let file_content = tokio::fs::read_to_string(entry.path()).await.expect("read file ok");
+
+        assert!(file_content.contains("test-failed-session"));
+        assert!(file_content.contains("connection refused"));
+        assert!(file_content.contains("250"));
+
+        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+    }
 }

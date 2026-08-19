@@ -36,16 +36,19 @@ pub struct UsageCounters {
 }
 
 impl UsageCounters {
+    /// New.
     pub fn new() -> Self {
         Self {
             inner: RwLock::new(UsageSnapshot::default()),
         }
     }
 
+    /// Shared.
     pub fn shared() -> Arc<Self> {
         Arc::new(Self::new())
     }
 
+    /// Record success.
     pub fn record_success(&self, provider: &str, tokens: u64, cost_usd: f64) {
         let mut snap = self.inner.write();
         {
@@ -59,6 +62,7 @@ impl UsageCounters {
         snap.total_cost_usd += cost_usd;
     }
 
+    /// Record error.
     pub fn record_error(&self, provider: &str) {
         let mut snap = self.inner.write();
         {
@@ -71,16 +75,19 @@ impl UsageCounters {
         snap.total_requests = snap.total_requests.saturating_add(1);
     }
 
+    /// Record fallback hop.
     pub fn record_fallback_hop(&self) {
         let mut snap = self.inner.write();
         snap.fallback_chain_hops = snap.fallback_chain_hops.saturating_add(1);
     }
 
+    /// Record memory fallback.
     pub fn record_memory_fallback(&self) {
         let mut snap = self.inner.write();
         snap.memory_fallback_hits = snap.memory_fallback_hits.saturating_add(1);
     }
 
+    /// Snapshot.
     pub fn snapshot(&self) -> UsageSnapshot {
         self.inner.read().clone()
     }

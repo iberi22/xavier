@@ -157,9 +157,62 @@ xavier billing
 
 Scan and index a codebase path.
 
+> **Note:** The native AST-backed tree-sitter parser/indexer is the canonical code graph engine. Although previous designs referenced an external "Colby" sidecar, this sidecar is currently **mock-disabled / stubbed out** and is not active in this release (the runtime sidecar loader is a stub). All Colby configuration parameters and prompts are stubbed out to bypass the installer and always use the native indexer directly.
+
+On first scan of a workspace, Xavier does not ask to install the optional Colby CodeGraph sidecar since it is currently disabled. It always executes the native tree-sitter graph indexer directly.
+
+Every successful index or scan operation automatically triggers an asynchronous, soft-fail dump of the full code graph to `.xavier/codegraph.json` (unless the graph contains more than 25,000 symbols). This portable JSON dump is used for lightweight offline parsing, while downstream assessors (such as Layer 1 Maturity Scanning) and document harvesters prioritize direct, fast querying against the live SQLite index (`.xavier/code_graph.db`).
+
+Flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--reprompt-codegraph` | off | *(Stub/Ignored)* Ask again even if previously declined/skipped. |
+
+Env:
+
+| Variable | Values | Description |
+|---|---|---|
+| `XAVIER_CODEGRAPH_INSTALL` | `ask` · `yes` · `no` · `auto` | *(Stub/Ignored)* Consent policy. |
+| `XAVIER_CODEGRAPH_REPROMPT` | `1` | *(Stub/Ignored)* Same as `--reprompt-codegraph`. |
+| `XAVIER_CODE_GRAPH_NATIVE_ONLY` | `1` | *(Stub/Always Active)* Always runs native-only code-graph parsing. |
+| `XAVIER_CODEGRAPH_BIN` | path | *(Stub/Ignored)* Path to Colby launcher. |
+
 ```bash
 xavier code scan .
 ```
+
+See `docs/adr/007-codegraph-native-vs-colby.md`.
+
+### `xavier code sync --git`
+
+Incremental CodeGraph update from git deltas (no full tree walk):
+
+```
+git diff → affected paths → AST reparse → symbols/edges patch → dump JSON
+```
+
+Flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--git` | required | Enable git-driven sync. |
+| `--base <commit>` | checkpoint / `HEAD~1` | Diff base commit-ish. |
+| `--staged` | off | Diff staged changes (`git diff --cached`). |
+
+Checkpoint: `.xavier/codegraph-sync-commit` (updated to `HEAD` after sync).
+If the CodeGraph DB is empty, performs one full scan of the repo root first.
+
+Runs **locally** against `data/code_graph.db` (no HTTP server required). Soft-dumps `.xavier/codegraph.json`.
+
+```bash
+xavier code sync --git
+xavier code sync --git --base HEAD~5
+xavier code sync --git --staged
+```
+
+Optional post-commit hook (not installed by default):
+`scripts/hooks/post-commit-codegraph.sh` — see `docs/guides/CODEGRAPH_GIT_SYNC.md`.
 
 ### `xavier code find <query>`
 

@@ -40,10 +40,12 @@ pub struct EntityGraph {
 pub type SharedEntityGraph = std::sync::Arc<EntityGraph>;
 
 impl EntityGraph {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Upsert memory.
     pub async fn upsert_memory(
         &self,
         memory_id: &str,
@@ -55,6 +57,7 @@ impl EntityGraph {
             .await
     }
 
+    /// Remove memory.
     pub async fn remove_memory(&self, memory_id: &str) -> Result<()> {
         let mut data = self.inner.write().await;
         if let Some(entities) = data.memory_entities.remove(memory_id) {
@@ -76,16 +79,19 @@ impl EntityGraph {
         Ok(())
     }
 
+    /// Entity.
     pub async fn entity(&self, entity_id_or_name: &str) -> Option<EntityRecord> {
         let data = self.inner.read().await;
         data.resolve_entity_id(entity_id_or_name)
             .and_then(|id| data.entities.get(&id).cloned())
     }
 
+    /// All entities.
     pub async fn all_entities(&self) -> Vec<EntityRecord> {
         self.inner.read().await.entities.values().cloned().collect()
     }
 
+    /// All relations.
     pub async fn all_relations(&self) -> Vec<EntityRelationRecord> {
         self.inner
             .read()
@@ -96,6 +102,7 @@ impl EntityGraph {
             .collect()
     }
 
+    /// Relations for entity.
     pub async fn relations_for_entity(
         &self,
         entity_id_or_name: &str,
@@ -121,6 +128,7 @@ impl EntityGraph {
         })
     }
 
+    /// Entity neighbors.
     pub async fn entity_neighbors(
         &self,
         entity_id_or_name: &str,
@@ -150,11 +158,13 @@ impl EntityGraph {
         })
     }
 
+    /// Export json.
     pub async fn export_json(&self) -> Result<String> {
         let data = self.inner.read().await;
         serde_json::to_string(&*data).map_err(|e| anyhow!("failed to export json: {e}"))
     }
 
+    /// Import json.
     pub async fn import_json(&self, json: &str) -> Result<()> {
         let mut data = self.inner.write().await;
         let imported: GraphData =
@@ -164,11 +174,13 @@ impl EntityGraph {
         Ok(())
     }
 
+    /// Export bincode.
     pub async fn export_bincode(&self) -> Result<Vec<u8>> {
         let data = self.inner.read().await;
         bincode::serialize(&*data).map_err(|e| anyhow!("failed to export bincode: {e}"))
     }
 
+    /// Import bincode.
     pub async fn import_bincode(&self, bytes: &[u8]) -> Result<()> {
         let mut data = self.inner.write().await;
         let imported: GraphData =
@@ -178,12 +190,14 @@ impl EntityGraph {
         Ok(())
     }
 
+    /// Apply decay.
     pub async fn apply_decay(&self, factor: f32) -> Result<()> {
         let mut data = self.inner.write().await;
         data.apply_decay(factor, Utc::now());
         Ok(())
     }
 
+    /// Run inference.
     pub async fn run_inference(&self) -> Result<Vec<EntityRelationRecord>> {
         let mut data = self.inner.write().await;
         let inferred = inference::InferenceEngine::run(&mut data);
@@ -193,6 +207,7 @@ impl EntityGraph {
         Ok(inferred)
     }
 
+    /// Merge entities.
     pub async fn merge_entities(
         &self,
         primary_id: &str,
@@ -260,6 +275,7 @@ impl EntityGraph {
         extraction::extract_entities(text)
     }
 
+    /// Extract relation candidates.
     pub fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
         extraction::extract_relation_candidates(text)
     }
@@ -661,7 +677,10 @@ mod tests {
             }
         }
         graph.apply_decay(-0.2).await.unwrap();
-        assert_eq!(graph.all_relations().await[0].weight, before_negative_weight);
+        assert_eq!(
+            graph.all_relations().await[0].weight,
+            before_negative_weight
+        );
     }
 
     #[test]
@@ -687,7 +706,11 @@ mod tests {
             }
         }
 
-        assert!(large_text.len() >= 60 * 1024, "Text should be at least 60KB, got {} bytes", large_text.len());
+        assert!(
+            large_text.len() >= 60 * 1024,
+            "Text should be at least 60KB, got {} bytes",
+            large_text.len()
+        );
 
         let start = Instant::now();
         let entities = EntityGraph::extract_entities(&large_text);
@@ -707,8 +730,16 @@ mod tests {
         );
 
         // Verify that extraction completes very quickly (under 2000ms in debug mode, typically <20ms in release) and doesn't saturate or hang
-        assert!(duration_entities.as_millis() < 2000, "Entity extraction took too long: {:?}", duration_entities);
-        assert!(duration_relations.as_millis() < 2000, "Relation extraction took too long: {:?}", duration_relations);
+        assert!(
+            duration_entities.as_millis() < 2000,
+            "Entity extraction took too long: {:?}",
+            duration_entities
+        );
+        assert!(
+            duration_relations.as_millis() < 2000,
+            "Relation extraction took too long: {:?}",
+            duration_relations
+        );
 
         // Ensure we successfully parsed the expected entities
         assert!(entities.iter().any(|e| e.name == "BELA"));
@@ -754,7 +785,13 @@ mod tests {
                 let memory_id = format!("mem-{}", i);
 
                 // Concurrent Upsert
-                let content = format!("User{} works at Company{} and knows User{} who lives in City{}.", i, i, i + 1, i);
+                let content = format!(
+                    "User{} works at Company{} and knows User{} who lives in City{}.",
+                    i,
+                    i,
+                    i + 1,
+                    i
+                );
                 g.upsert_memory(&memory_id, &content, None).await.unwrap();
 
                 // Concurrent Export
@@ -781,13 +818,22 @@ mod tests {
         // Wait for all concurrent tasks to finish to ensure no deadlocks or lock poisoning
         for task in tasks {
             let res = task.await;
-            assert!(res.is_ok(), "Concurrent graph operation task failed/panicked");
+            assert!(
+                res.is_ok(),
+                "Concurrent graph operation task failed/panicked"
+            );
         }
 
         // Verify the final graph can be exported and imported perfectly
-        let final_json = graph.export_json().await.expect("Can export after concurrent access");
+        let final_json = graph
+            .export_json()
+            .await
+            .expect("Can export after concurrent access");
         let new_graph = EntityGraph::new();
-        new_graph.import_json(&final_json).await.expect("Can import the exported concurrent graph state");
+        new_graph
+            .import_json(&final_json)
+            .await
+            .expect("Can import the exported concurrent graph state");
 
         println!(
             "Concurrent stress test complete. Entities in graph: {}, Relations: {}",
@@ -811,7 +857,12 @@ mod tests {
                 let memory_id = format!("heavy-mem-{}", i);
 
                 // Perform writes
-                let content = format!("Node{} links to Node{} and relates to Node{}.", i, i + 1, i + 2);
+                let content = format!(
+                    "Node{} links to Node{} and relates to Node{}.",
+                    i,
+                    i + 1,
+                    i + 2
+                );
                 let _ = g.upsert_memory(&memory_id, &content, None).await.unwrap();
 
                 // Perform reads & queries
@@ -820,7 +871,9 @@ mod tests {
 
                 if i % 3 == 0 {
                     let _ = g.entity(&format!("Node{}", i)).await;
-                    let _ = g.entity_neighbors(&format!("Node{}", i), 2, None, GraphDirection::Both).await;
+                    let _ = g
+                        .entity_neighbors(&format!("Node{}", i), 2, None, GraphDirection::Both)
+                        .await;
                 }
 
                 // Apply decay and inference under load

@@ -19,6 +19,10 @@ export type InitialConfig = {
   use_gpu_model: boolean;
 };
 
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(0);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -33,11 +37,27 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const handleComplete = async () => {
     try {
       setIsSaving(true);
-      await invoke("save_initial_config", { config });
+      if (isTauriRuntime()) {
+        await invoke("save_initial_config", { config });
+      } else {
+        // Browser /panel: persist locally; auth already handled via HTTP in AuthStep.
+        localStorage.setItem(
+          "xavier_initial_config",
+          JSON.stringify({
+            telegram_token: config.telegram_token,
+            use_gpu_model: config.use_gpu_model,
+          }),
+        );
+      }
       localStorage.setItem("xavier_onboarding_completed", "true");
       onComplete();
     } catch (e) {
       console.error("Error saving config", e);
+      // Web path: still allow completion if invoke is unavailable.
+      if (!isTauriRuntime()) {
+        localStorage.setItem("xavier_onboarding_completed", "true");
+        onComplete();
+      }
     } finally {
       setIsSaving(false);
     }

@@ -9,7 +9,9 @@ pub mod cve_learner;
 pub mod evolve;
 pub mod extraction;
 pub mod hormer;
+pub mod mini_experts;
 pub mod provider;
+pub mod provider_router;
 pub mod rate_limit;
 pub mod router;
 pub mod runtime;
@@ -48,6 +50,7 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
+    /// New.
     pub fn new(name: String) -> Self {
         Self {
             name,
@@ -61,36 +64,43 @@ impl AgentConfig {
         }
     }
 
+    /// With provider.
     pub fn with_provider(mut self, provider: String) -> Self {
         self.provider = Some(provider);
         self
     }
 
+    /// With model.
     pub fn with_model(mut self, model: String) -> Self {
         self.model = Some(model);
         self
     }
 
+    /// With tools.
     pub fn with_tools(mut self, tools: Vec<String>) -> Self {
         self.tools = tools;
         self
     }
 
+    /// With context.
     pub fn with_context(mut self, context: HashMap<String, String>) -> Self {
         self.context = context;
         self
     }
 
+    /// With skills.
     pub fn with_skills(mut self, skills: Vec<String>) -> Self {
         self.skills = skills;
         self
     }
 
+    /// With task.
     pub fn with_task(mut self, task: String) -> Self {
         self.task = Some(task);
         self
     }
 
+    /// With provider config.
     pub fn with_provider_config(
         mut self,
         config: crate::agents::provider::ModelProviderConfig,
@@ -114,6 +124,7 @@ pub struct Agent {
 }
 
 impl Agent {
+    /// New.
     pub fn new(config: AgentConfig) -> Self {
         Self {
             name: config.name,
@@ -128,18 +139,22 @@ impl Agent {
         }
     }
 
+    /// Start.
     pub fn start(&mut self) {
         self.status = AgentStatus::Running;
     }
 
+    /// Stop.
     pub fn stop(&mut self) {
         self.status = AgentStatus::Idle;
     }
 
+    /// Execute.
     pub async fn execute(&self, prompt: String) -> anyhow::Result<String> {
         Ok(format!("{}:{}", self.name, prompt))
     }
 
+    /// Run.
     pub async fn run(
         &mut self,
         memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
@@ -148,6 +163,7 @@ impl Agent {
         self.run_with_lifecycle(memory, lifecycle).await
     }
 
+    /// Run with lifecycle.
     pub async fn run_with_lifecycle(
         &mut self,
         memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
@@ -216,6 +232,7 @@ pub struct AgentState {
 }
 
 impl AgentState {
+    /// New.
     pub fn new(agent_id: String) -> Self {
         Self {
             agent_id,
@@ -223,18 +240,22 @@ impl AgentState {
         }
     }
 
+    /// Add context.
     pub fn add_context(&mut self, key: String, value: String) {
         self.context.insert(key, value);
     }
 
+    /// Update context.
     pub fn update_context(&mut self, key: String, value: String) {
         self.context.insert(key, value);
     }
 
+    /// Get context.
     pub fn get_context(&self, key: &str) -> Option<&String> {
         self.context.get(key)
     }
 
+    /// Remove context.
     pub fn remove_context(&mut self, key: String) {
         self.context.remove(&key);
     }
@@ -259,6 +280,7 @@ pub mod coordination {
     }
 
     impl AgentMessage {
+        /// New.
         pub fn new(from: String, to: String, message_type: MessageType, payload: String) -> Self {
             Self {
                 from,
@@ -275,10 +297,12 @@ pub mod coordination {
     }
 
     impl AgentCoordinator {
+        /// New.
         pub fn new() -> Self {
             Self::default()
         }
 
+        /// Agents.
         pub fn agents(&self) -> Vec<String> {
             self.queues
                 .read()
@@ -286,6 +310,7 @@ pub mod coordination {
                 .unwrap_or_default()
         }
 
+        /// Register agent.
         pub fn register_agent(&mut self, agent: String) {
             self.queues
                 .write()
@@ -294,6 +319,7 @@ pub mod coordination {
                 .or_default();
         }
 
+        /// Send message.
         pub async fn send_message(&self, message: AgentMessage) {
             self.queues
                 .write()
@@ -312,6 +338,7 @@ pub mod coordination {
                 .unwrap_or_default()
         }
 
+        /// Broadcast.
         pub async fn broadcast(&self, from: String, message_type: MessageType, payload: String) {
             let agents: Vec<String> = self
                 .queues

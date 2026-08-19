@@ -93,12 +93,54 @@ pub struct SyncResolveRequest {
     pub chunk: Option<ChunkDiff>,
 }
 
+use axum::response::IntoResponse;
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+pub struct SyncStatusResponse {
+    pub status: &'static str,
+    pub initialized: bool,
+    pub node_id: String,
+    pub sync_interval_secs: u64,
+    pub last_session: Option<SyncSession>,
+    pub resolved_conflicts: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncSuccessResponse {
+    pub status: &'static str,
+    pub session: SyncSession,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncErrorResponse {
+    pub status: &'static str,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncResolveResponse {
+    pub status: &'static str,
+    pub conflict_id: String,
+    pub resolution: String,
+    pub applied: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncResolveErrorResponse {
+    pub status: &'static str,
+    pub message: &'static str,
+    pub conflict_id: String,
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
 /// `GET /api/v1/memory/sync/status` — report sync status.
-pub async fn sync_status_handler() -> Json<serde_json::Value> {
+pub async fn sync_status_handler() -> impl IntoResponse {
     let sync = current_sync();
 
     let (node_id, sync_interval_secs) = sync
@@ -114,23 +156,25 @@ pub async fn sync_status_handler() -> Json<serde_json::Value> {
         .map(|guard| guard.clone())
         .unwrap_or_default();
 
-    Json(json!({
-        "status": "ok",
-        "initialized": sync.is_some(),
-        "node_id": node_id,
-        "sync_interval_secs": sync_interval_secs,
-        "last_session": last_session,
-        "resolved_conflicts": resolved_conflicts,
-    }))
+    Json(SyncStatusResponse {
+        status: "ok",
+        initialized: sync.is_some(),
+        node_id,
+        sync_interval_secs,
+        last_session,
+        resolved_conflicts,
+    })
 }
 
 /// `POST /api/v1/memory/sync/push` — push local changes to a remote peer.
-pub async fn sync_push_handler(Json(req): Json<SyncPeerRequest>) -> Json<serde_json::Value> {
+pub async fn sync_push_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return Json(json!({
-            "status": "error",
-            "message": "memory sync not initialized",
-        }));
+        return Json(SyncErrorResponse {
+            status: "error",
+            message: "memory sync not initialized".to_string(),
+            peer_url: None,
+        })
+        .into_response();
     };
 
     let workspace_id = req
@@ -141,23 +185,30 @@ pub async fn sync_push_handler(Json(req): Json<SyncPeerRequest>) -> Json<serde_j
     match sync.push_to(&req.peer_url, &workspace_id, since).await {
         Ok(session) => {
             set_last_session(session.clone());
-            Json(json!({ "status": "ok", "session": session }))
+            Json(SyncSuccessResponse {
+                status: "ok",
+                session,
+            })
+            .into_response()
         }
-        Err(e) => Json(json!({
-            "status": "error",
-            "message": e.to_string(),
-            "peer_url": req.peer_url,
-        })),
+        Err(e) => Json(SyncErrorResponse {
+            status: "error",
+            message: e.to_string(),
+            peer_url: Some(req.peer_url),
+        })
+        .into_response(),
     }
 }
 
 /// `POST /api/v1/memory/sync/pull` — pull changes from a remote peer.
-pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> Json<serde_json::Value> {
+pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return Json(json!({
-            "status": "error",
-            "message": "memory sync not initialized",
-        }));
+        return Json(SyncErrorResponse {
+            status: "error",
+            message: "memory sync not initialized".to_string(),
+            peer_url: None,
+        })
+        .into_response();
     };
 
     let workspace_id = req
@@ -168,13 +219,18 @@ pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> Json<serde_j
     match sync.pull_from(&req.peer_url, &workspace_id, since).await {
         Ok(session) => {
             set_last_session(session.clone());
-            Json(json!({ "status": "ok", "session": session }))
+            Json(SyncSuccessResponse {
+                status: "ok",
+                session,
+            })
+            .into_response()
         }
-        Err(e) => Json(json!({
-            "status": "error",
-            "message": e.to_string(),
-            "peer_url": req.peer_url,
-        })),
+        Err(e) => Json(SyncErrorResponse {
+            status: "error",
+            message: e.to_string(),
+            peer_url: Some(req.peer_url),
+        })
+        .into_response(),
     }
 }
 
@@ -189,14 +245,15 @@ pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> Json<serde_j
 pub async fn sync_resolve_handler(
     Path(conflict_id): Path<String>,
     Json(req): Json<SyncResolveRequest>,
-) -> Json<serde_json::Value> {
+) -> impl IntoResponse {
     let resolution = req.resolution.trim().to_lowercase();
     if resolution != "local" && resolution != "remote" {
-        return Json(json!({
-            "status": "error",
-            "message": "resolution must be 'local' or 'remote'",
-            "conflict_id": conflict_id,
-        }));
+        return Json(SyncResolveErrorResponse {
+            status: "error",
+            message: "resolution must be 'local' or 'remote'",
+            conflict_id,
+        })
+        .into_response();
     }
 
     let mut applied = false;
@@ -233,12 +290,13 @@ pub async fn sync_resolve_handler(
         }
     }
 
-    Json(json!({
-        "status": "resolved",
-        "conflict_id": conflict_id,
-        "resolution": resolution,
-        "applied": applied,
-    }))
+    Json(SyncResolveResponse {
+        status: "resolved",
+        conflict_id,
+        resolution,
+        applied,
+    })
+    .into_response()
 }
 
 // ---------------------------------------------------------------------------

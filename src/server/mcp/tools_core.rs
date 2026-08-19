@@ -6,16 +6,47 @@
 //! Note: All tools define their input schema using `input_schema` internally,
 //! which is serialized to the MCP-compliant `inputSchema` camelCase field via Serde.
 use super::types::*;
+use crate::coordination::KeyLendingEngine;
 use crate::memory::schema::{
     EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, MemoryQueryFilters,
     TypedMemoryPayload,
 };
+use crate::secrets::audit::QmdAuditLogger;
 use crate::utils::crypto::hex_encode;
 use crate::workspace::WorkspaceContext;
 use crate::AppState;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+/// Helper function to resolve secrets via KeyLendingEngine lease system for MCP tool operations.
+/// Lends a short-lived secret lease, passes the secret value (if available) to the callback,
+/// and automatically revokes the lease after the operation completes.
+pub async fn resolve_tool_secret<F, Fut, T>(
+    secret_name: &str,
+    agent_id: &str,
+    f: F,
+) -> anyhow::Result<T>
+where
+    F: FnOnce(Option<String>) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let engine = KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None);
+    let raw_val = std::env::var(secret_name).ok();
+    let lease = engine
+        .lend(secret_name, raw_val.as_deref(), agent_id, 60)
+        .await?;
+
+    let val = lease.secret_value.clone();
+    let res = f(val).await;
+
+    let _ = engine
+        .revoke(&lease.token, "mcp_tool_execution_complete")
+        .await;
+
+    res
+}
+
+/// Get xavier core tools.
 pub fn get_xavier_core_tools() -> Vec<MCPTool> {
     vec![
         MCPTool {
@@ -24,6 +55,51 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
             input_schema: json!({
                 "type": "object",
                 "properties": {}
+            }),
+        },
+        MCPTool {
+            name: "log_scan".to_string(),
+            description: "Scan logs under ~/.xavier/logs or fallback. Supports incremental cursor, regex secret redaction, pattern filtering, and Telegram Polling Dead detection.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "since": { "type": "string", "description": "Filter logs since RFC3339 timestamp" },
+                    "level_min": { "type": "string", "description": "Minimum log level to show" },
+                    "pattern": { "type": "string", "description": "Regex pattern to match" },
+                    "source": { "type": "string", "description": "xavier | hermes | journalctl" },
+                    "max_entries": { "type": "number", "default": 500 }
+                }
+            }),
+        },
+        MCPTool {
+            name: "ticket_create".to_string(),
+            description: "Create GitHub issue or Maloca backlog entry safely with fingerprint-based deduplication and rate-limiting.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Title of the issue / ticket (max 120 chars)" },
+                    "body": { "type": "string", "description": "Detailed body/evidence of the issue / ticket (max 8KB)" },
+                    "labels": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional list of labels"
+                    },
+                    "severity": { "type": "string", "description": "critical | warn" },
+                    "fingerprint": { "type": "string", "description": "Optional unique fingerprint override to prevent duplicates" },
+                    "backend": { "type": "string", "description": "github | maloca" }
+                },
+                "required": ["title", "body", "severity"]
+            }),
+        },
+        MCPTool {
+            name: "env_status".to_string(),
+            description: "Check systemd services, TCP network connectivity, PSI metrics, and swap memory snapshot on the host node.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "include_processes": { "type": "boolean", "description": "Whether to include running processes RSS" },
+                    "top_n": { "type": "number", "description": "Limit top N processes (max 20)" }
+                }
             }),
         },
         MCPTool {
@@ -78,6 +154,14 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
             }),
         },
         MCPTool {
+            name: "sys_health".to_string(),
+            description: "Snapshot del HOST (guardian del nodo): PSI (cpu/memory/io avg10/60/300), swap usado, load average, top 10 procesos por RSS, conteo D-state y alertas con umbrales (psi.io.full.avg10>50% critical, swap>80% critical, VmSwap>4GB warn). Read-only, sin efectos".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
+        MCPTool {
             name: "get_code_graph".to_string(),
             description: "Get the portable code graph dump (.xavier/codegraph.json)".to_string(),
             input_schema: json!({
@@ -94,9 +178,62 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                 .to_string(),
             input_schema: json!({"type": "object", "properties": {}}),
         },
+        MCPTool {
+            name: "codegraph_explore".to_string(),
+            description: "Search the code graph for symbols matching a query".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query (e.g. part of symbol name)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum symbols to return (default: 20, max: 100)",
+                        "default": 20
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+        MCPTool {
+            name: "trace_path".to_string(),
+            description: "Trace the dependency path or call chain of a given symbol".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Symbol stable ID or symbol name to trace from"
+                    },
+                    "max_depth": {
+                        "type": "number",
+                        "description": "Maximum trace depth (default: 3, max: 8)",
+                        "default": 3
+                    },
+                    "reverse": {
+                        "type": "boolean",
+                        "description": "If true, trace callers / reverse dependencies; if false, trace callees / forward dependencies",
+                        "default": false
+                    },
+                    "edge_type": {
+                        "type": "string",
+                        "description": "Filter by edge type (e.g., 'Calls', 'References', 'Imports', etc)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum edges to return (default: 100, max: 1000)",
+                        "default": 100
+                    }
+                },
+                "required": ["symbol"]
+            }),
+        },
     ]
 }
 
+/// Is core tool.
 pub fn is_core_tool(name: &str) -> bool {
     matches!(
         name,
@@ -104,11 +241,18 @@ pub fn is_core_tool(name: &str) -> bool {
             | "get_project_context"
             | "sync_gitcore"
             | "health_check"
+            | "sys_health"
+            | "log_scan"
+            | "env_status"
+            | "ticket_create"
             | "get_code_graph"
             | "xavier_local_status"
+            | "codegraph_explore"
+            | "trace_path"
     )
 }
 
+/// Handle core tool.
 pub async fn handle_core_tool(
     _state: AppState,
     workspace: WorkspaceContext,
@@ -206,7 +350,7 @@ pub async fn handle_core_tool(
                     id: record.id.clone(),
                     path: record.path.clone(),
                     score: 0.0, // context retrieval doesn't have a score
-                    snippet: record.content.chars().take(200).collect(),
+                    snippet: crate::memory::snippet::clip_chars(&record.content, 200).to_string(),
                     provenance: MCPProvenance {
                         source: "memory_store".to_string(),
                         retrieved_at: chrono::Utc::now().to_rfc3339(),
@@ -335,7 +479,8 @@ pub async fn handle_core_tool(
         "health_check" => {
             let health = crate::health::collect_health_sync();
             let tools_count = get_xavier_core_tools().len()
-                + super::tools_memory::get_xavier_memory_tools().len();
+                + super::tools_memory::get_xavier_memory_tools().len()
+                + super::tools_context::get_xavier_context_tools().len();
 
             let result = MCPHealthResult {
                 status: health.status.clone(),
@@ -350,6 +495,157 @@ pub async fn handle_core_tool(
                 serde_json::to_value(&result)?,
                 health.status != "healthy",
             ))?)
+        }
+        "sys_health" => {
+            // Guardian del nodo (P0, 2026-08-08): snapshot read-only del HOST —
+            // PSI, swap, load average, top procesos por RSS, D-state y alertas
+            // con umbrales (docs/research/SELF-MANAGEMENT-RUNTIME.md §5).
+            let snapshot = crate::self_manage::collect_system_snapshot();
+            let in_process_health = crate::health::collect_health_sync();
+
+            let db_integrity = in_process_health.checks.iter().any(|c| {
+                c.name == "sqlite_integrity" && matches!(c.status, crate::health::CheckStatus::Pass)
+            });
+
+            let benchmark = crate::auto_improvement::benchmark::BenchmarkSnapshot {
+                timestamp_secs: chrono::Utc::now().timestamp() as u64,
+                recall_at_k: 0.0,
+                precision: 0.0,
+                avg_latency_ms: 0.0,
+                p99_latency_ms: 0.0,
+                memory_hit_rate: in_process_health.database.size_mb / 1024.0,
+                cache_hit_rate: 0.0,
+                mesh_peers_reachable: in_process_health.mesh.connected_peers,
+                health_status: in_process_health.status.clone(),
+                db_integrity_ok: db_integrity,
+                total_documents: 0,
+                test_iterations: 0,
+            };
+            let active_gaps = crate::auto_improvement::gaps::analyze_gaps(&benchmark, None);
+
+            let history_path = std::path::Path::new(".xavier/improvement-history.json");
+            let last_experiment = crate::auto_improvement::cycle::load_history(history_path)
+                .ok()
+                .and_then(|entries| entries.into_iter().next())
+                .and_then(|entry| entry.experiments.into_iter().next());
+
+            let overall_alert = snapshot.overall.clone();
+
+            let output = serde_json::json!({
+                "overall": overall_alert,
+                "components": in_process_health,
+                "active_gaps": active_gaps,
+                "last_experiment": last_experiment,
+                "system_snapshot": snapshot,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                output,
+                overall_alert != "healthy",
+            ))?)
+        }
+        "log_scan" => {
+            let since = arguments
+                .get("since")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let level_min = arguments
+                .get("level_min")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let pattern = arguments
+                .get("pattern")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let source = arguments
+                .get("source")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let max_entries = arguments
+                .get("max_entries")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(500) as usize;
+
+            let args = crate::self_manage::LogScanArgs {
+                since,
+                level_min,
+                pattern,
+                source,
+                max_entries,
+            };
+
+            let result = crate::self_manage::log_scan(args);
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                serde_json::to_value(&result)?,
+                result.telegram_polling_dead,
+            ))?)
+        }
+        "env_status" => {
+            let include_processes = arguments.get("include_processes").and_then(|v| v.as_bool());
+            let top_n = arguments
+                .get("top_n")
+                .and_then(|v| v.as_u64().map(|n| n as usize));
+
+            let args = crate::self_manage::EnvStatusArgs {
+                include_processes,
+                top_n,
+            };
+
+            let result = crate::self_manage::env_status(args);
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                serde_json::to_value(&result)?,
+                result.overall != "healthy",
+            ))?)
+        }
+        "ticket_create" => {
+            let title = arguments
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = arguments
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let labels = arguments.get("labels").and_then(|v| {
+                v.as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<String>>()
+                })
+            });
+            let severity = arguments
+                .get("severity")
+                .and_then(|v| v.as_str())
+                .unwrap_or("warn")
+                .to_string();
+            let fingerprint = arguments
+                .get("fingerprint")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let backend = arguments
+                .get("backend")
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+
+            let args = crate::self_manage::TicketCreateArgs {
+                title,
+                body,
+                labels,
+                severity,
+                fingerprint,
+                backend,
+            };
+
+            resolve_tool_secret(
+                "GITHUB_TOKEN",
+                "mcp_ticket_create",
+                |_secret_val| async move {
+                    match crate::self_manage::ticket_create(args) {
+                        Ok(result) => Ok(serde_json::to_value(MCPToolResult::structured(
+                            serde_json::to_value(&result)?,
+                            result.deduplicated,
+                        ))?),
+                        Err(error) => Err(error),
+                    }
+                },
+            )
+            .await
         }
         "xavier_local_status" => {
             let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();
@@ -380,28 +676,140 @@ pub async fn handle_core_tool(
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         "get_code_graph" => {
-            let dump_path = _state
-                .code_graph_dump_path
-                .clone()
-                .unwrap_or_else(|| std::path::PathBuf::from(".xavier/codegraph.json"));
+            let dump_path = _state.code_graph_dump_path.clone().unwrap_or_else(|| {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                crate::codebase::codegraph_paths::codegraph_dump_path_for(&cwd)
+            });
 
-            if !tokio::fs::try_exists(&dump_path).await.unwrap_or(false) {
-                return Err(anyhow::anyhow!(
-                    "Code graph dump not found at {}. Run 'xavier code scan' to generate it.",
-                    dump_path.display()
-                ));
+            if tokio::fs::try_exists(&dump_path).await.unwrap_or(false) {
+                let json_content = tokio::fs::read_to_string(&dump_path).await?;
+                let dump: Value = serde_json::from_str(&json_content)?;
+                return Ok(serde_json::to_value(MCPToolResult {
+                    content: vec![MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: serde_json::to_string(&dump)?,
+                    })],
+                    is_error: Some(false),
+                })?);
             }
 
-            let json_content = tokio::fs::read_to_string(&dump_path).await?;
-            let dump: Value = serde_json::from_str(&json_content)?;
+            // Live fallback when dump is missing/stale — avoid false "not found".
+            let stats = _state
+                .code_db
+                .stats()
+                .unwrap_or(code_graph::types::IndexStats {
+                    total_files: 0,
+                    total_symbols: 0,
+                    total_imports: 0,
+                    languages: vec![],
+                    duration_ms: 0,
+                });
+            let hubs = _state.code_query.hubs(0, 20).unwrap_or_default();
+            let summary = json!({
+                "source": "live_db",
+                "dump_path": dump_path.display().to_string(),
+                "dump_present": false,
+                "hint": "Run `xavier code dump .` or `xavier code scan .` to refresh the portable dump",
+                "stats": {
+                    "total_files": stats.total_files,
+                    "total_symbols": stats.total_symbols,
+                    "total_imports": stats.total_imports,
+                },
+                "hubs": hubs.iter().take(10).map(|h| json!({
+                    "name": h.symbol.name,
+                    "file": h.symbol.file_path,
+                    "incoming": h.incoming,
+                    "outgoing": h.outgoing,
+                })).collect::<Vec<_>>(),
+            });
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                summary, false,
+            ))?)
+        }
+        "codegraph_explore" => {
+            let query = arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing query"))?;
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(20)
+                .clamp(1, 100) as usize;
 
-            Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: serde_json::to_string(&dump)?,
-                })],
-                is_error: Some(false),
-            })?)
+            let result = _state.code_query.search(query, limit)?;
+            let returned = result.symbols.len();
+            let val = json!({
+                "returned": returned,
+                "symbols": result.symbols,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
+        }
+        "trace_path" => {
+            let symbol = arguments
+                .get("symbol")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing symbol"))?;
+            let max_depth = arguments
+                .get("max_depth")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(3)
+                .clamp(1, 8) as usize;
+            let reverse = arguments
+                .get("reverse")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(100)
+                .clamp(1, 1000) as usize;
+
+            let edge_type_str = arguments.get("edge_type").and_then(|v| v.as_str());
+
+            let edge_type_filter = match edge_type_str {
+                Some(s) => match s.to_lowercase().as_str() {
+                    "calls" => Some(code_graph::types::EdgeType::Calls),
+                    "defines" => Some(code_graph::types::EdgeType::Defines),
+                    "uses" => Some(code_graph::types::EdgeType::Uses),
+                    "imports" => Some(code_graph::types::EdgeType::Imports),
+                    "exports" => Some(code_graph::types::EdgeType::Exports),
+                    "contains" => Some(code_graph::types::EdgeType::Contains),
+                    "references" => Some(code_graph::types::EdgeType::References),
+                    "extends" => Some(code_graph::types::EdgeType::Extends),
+                    "implements" => Some(code_graph::types::EdgeType::Implements),
+                    "typeof" => Some(code_graph::types::EdgeType::TypeOf),
+                    "returns" => Some(code_graph::types::EdgeType::Returns),
+                    "instantiates" => Some(code_graph::types::EdgeType::Instantiates),
+                    "overrides" => Some(code_graph::types::EdgeType::Overrides),
+                    "decorates" => Some(code_graph::types::EdgeType::Decorates),
+                    _ => None,
+                },
+                None => None,
+            };
+
+            let edges = if reverse {
+                _state.code_query.reverse_dependencies(
+                    symbol,
+                    edge_type_filter,
+                    max_depth,
+                    limit,
+                )?
+            } else {
+                _state
+                    .code_query
+                    .dependencies(symbol, edge_type_filter, max_depth, limit)?
+            };
+
+            let direction = if reverse { "callers" } else { "dependencies" };
+            let val = json!({
+                "symbol": symbol,
+                "direction": direction,
+                "edges": edges,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         _ => Err(anyhow::anyhow!("Unknown core tool: {}", name)),
     }

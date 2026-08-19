@@ -35,7 +35,7 @@ pub async fn export_session(memory: &QmdMemory, session_id: &str) -> Result<Sess
         ..Default::default()
     };
 
-    let documents = memory
+    let mut documents: Vec<MemoryDocument> = memory
         .all_documents()
         .await
         .into_iter()
@@ -49,6 +49,12 @@ pub async fn export_session(memory: &QmdMemory, session_id: &str) -> Result<Sess
         })
         .take(1000)
         .collect();
+
+    // Auto-redact sensitive PII data before exporting/sharing
+    let redaction_engine = crate::security::redaction::RedactionEngine::default();
+    for doc in &mut documents {
+        doc.content = redaction_engine.redact(&doc.content);
+    }
 
     Ok(SessionBundle {
         session_id: session_id.to_string(),
@@ -77,15 +83,18 @@ mod tests {
     use super::*;
     use crate::memory::qmd_memory::QmdMemory;
     use crate::memory::schema::{MemoryKind, MemoryNamespace, TypedMemoryPayload};
+    use crate::memory::store::InMemoryMemoryStore;
     use tokio::sync::RwLock;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_session_export_import() {
         let docs = Arc::new(RwLock::new(vec![]));
         let memory = Arc::new(QmdMemory::new_with_workspace(
             docs,
             "test-workspace".to_string(),
         ));
+        let store = Arc::new(InMemoryMemoryStore::new());
+        memory.set_store(store).await;
 
         // Add some session documents
         let session_id = "test-session-123";
@@ -129,6 +138,8 @@ mod tests {
             docs2,
             "other-workspace".to_string(),
         ));
+        let store2 = Arc::new(InMemoryMemoryStore::new());
+        memory2.set_store(store2).await;
 
         import_session(&memory2, bundle).await.unwrap();
 
@@ -136,5 +147,60 @@ mod tests {
         assert_eq!(imported_docs.len(), 2);
         assert!(imported_docs.iter().any(|d| d.content == "message 1"));
         assert!(imported_docs.iter().any(|d| d.content == "message 2"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_export_session_redacts_pii() {
+        let docs = Arc::new(RwLock::new(vec![]));
+        let memory = Arc::new(QmdMemory::new_with_workspace(
+            docs,
+            "test-workspace".to_string(),
+        ));
+        let store = Arc::new(InMemoryMemoryStore::new());
+        memory.set_store(store).await;
+
+        let session_id = "test-session-pii";
+        let typed = Some(TypedMemoryPayload {
+            kind: Some(MemoryKind::Session),
+            namespace: Some(MemoryNamespace {
+                session_id: Some(session_id.to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        memory
+            .add_document_typed(
+                format!("sessions/{}/1", session_id),
+                "Contact john.doe@example.com for secret details".to_string(),
+                serde_json::json!({}),
+                typed,
+            )
+            .await
+            .unwrap();
+
+        let bundle = export_session(&memory, session_id).await.unwrap();
+        assert_eq!(bundle.documents.len(), 1);
+        let content = &bundle.documents[0].content;
+        assert!(!content.contains("john.doe@example.com"));
+        assert!(content.contains("[EMAIL]"));
+    }
+
+    #[test]
+    fn test_context_bundle_serialization() {
+        let bundle = ContextBundle {
+            session_id: "ctx-sess-1".to_string(),
+            optimized_context: "High density summary context".to_string(),
+            depth: "deep".to_string(),
+            created_at: 1700000000,
+        };
+
+        let json = serde_json::to_string(&bundle).unwrap();
+        assert!(json.contains("ctx-sess-1"));
+        assert!(json.contains("High density summary context"));
+
+        let deserialized: ContextBundle = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.session_id, "ctx-sess-1");
+        assert_eq!(deserialized.depth, "deep");
     }
 }

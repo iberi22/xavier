@@ -16,6 +16,9 @@ pub struct HeartbeatService {
     peer_count: usize,
 }
 
+/// Type alias for HeartbeatService.
+pub type HeartbeatStatus = HeartbeatService;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HeartbeatPayload {
     pub node_id: NodeId,
@@ -34,28 +37,33 @@ pub struct HeartbeatReceipt {
 }
 
 impl HeartbeatService {
+    /// New.
     pub fn new(node_id: NodeId) -> Self {
         Self {
             node_id,
             interval: DEFAULT_HEARTBEAT_INTERVAL,
-            peer_count: 0,
+            peer_count: Default::default(),
         }
     }
 
+    /// With interval.
     pub fn with_interval(mut self, interval: Duration) -> Self {
         self.interval = interval;
         self
     }
 
+    /// With peer count.
     pub fn with_peer_count(mut self, peer_count: usize) -> Self {
         self.peer_count = peer_count;
         self
     }
 
+    /// Interval.
     pub fn interval(&self) -> Duration {
         self.interval
     }
 
+    /// Payload.
     pub fn payload(&self) -> HeartbeatPayload {
         HeartbeatPayload {
             node_id: self.node_id.clone(),
@@ -66,6 +74,7 @@ impl HeartbeatService {
         }
     }
 
+    /// Start.
     pub fn start(self, tx: broadcast::Sender<HeartbeatPayload>) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(self.interval);
@@ -76,6 +85,7 @@ impl HeartbeatService {
         })
     }
 
+    /// Handle heartbeat.
     pub fn handle_heartbeat(&self, payload: HeartbeatPayload) -> Result<HeartbeatReceipt> {
         ensure!(
             !payload.node_id.as_str().is_empty(),

@@ -11,6 +11,7 @@ use axum::{
 
 use crate::ports::inbound::AgentLifecyclePort;
 
+/// Unregister agent handler.
 pub async fn unregister_agent_handler(
     State(registry): State<Arc<dyn AgentLifecyclePort>>,
     Path(agent_id): Path<String>,

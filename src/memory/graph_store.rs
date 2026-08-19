@@ -30,6 +30,7 @@ pub struct SqliteGraphStore {
 }
 
 impl SqliteGraphStore {
+    /// New.
     pub fn new(conn: Arc<Mutex<Connection>>) -> Result<Self> {
         let store = Self { conn };
         store.init_schema()?;
@@ -87,6 +88,7 @@ impl SqliteGraphStore {
         Ok(())
     }
 
+    /// Upsert entity.
     pub fn upsert_entity(&self, entity: GraphEntity) -> Result<String> {
         let conn = self.conn.lock();
 
@@ -138,6 +140,7 @@ impl SqliteGraphStore {
         }
     }
 
+    /// Upsert relationship.
     pub fn upsert_relationship(&self, rel: GraphRelationship) -> Result<String> {
         let conn = self.conn.lock();
 
@@ -187,6 +190,7 @@ impl SqliteGraphStore {
         }
     }
 
+    /// Get entity.
     pub fn get_entity(&self, id: &str) -> Result<Option<GraphEntity>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(&format!(
@@ -224,6 +228,7 @@ impl SqliteGraphStore {
         Ok(entity)
     }
 
+    /// List entities.
     pub fn list_entities(&self) -> Result<Vec<GraphEntity>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(&format!(

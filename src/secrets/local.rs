@@ -20,6 +20,7 @@ impl Default for LocalSecretStore {
 }
 
 impl LocalSecretStore {
+    /// New.
     pub fn new() -> Self {
         Self {
             storage: Mutex::new(HashMap::new()),

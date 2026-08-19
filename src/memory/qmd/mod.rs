@@ -36,6 +36,7 @@ pub use writer::*;
 use crate::memory::hierarchy::MemoryHierarchyNode;
 use crate::memory::schema::{matches_filters, MemoryQueryFilters, TypedMemoryPayload};
 use crate::memory::store::MemoryStore;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
 #[derive(Clone)]
 pub struct QmdMemory {
@@ -46,6 +47,10 @@ pub struct QmdMemory {
     pub(crate) store: Arc<AsyncRwLock<Option<Arc<dyn MemoryStore>>>>,
     pub(crate) cache_warmup: Option<Arc<PredictiveCacheWarmup>>,
     pub(crate) belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
+    /// When true, documents are loaded lazily on first access instead of at init().
+    pub(crate) lazy_loaded: Arc<AtomicBool>,
+    /// Whether the lazy load has been triggered at least once.
+    pub(crate) loaded: Arc<AtomicBool>,
 }
 
 impl fmt::Debug for QmdMemory {
@@ -87,6 +92,7 @@ impl fmt::Display for NormalizedId {
 }
 
 impl NormalizedId {
+    /// As str.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -99,10 +105,12 @@ impl NormalizedId {
 }
 
 impl QmdMemory {
+    /// New.
     pub fn new(docs: Arc<AsyncRwLock<Vec<MemoryDocument>>>) -> Self {
         Self::new_with_workspace(docs, "default")
     }
 
+    /// New with workspace.
     pub fn new_with_workspace(
         docs: Arc<AsyncRwLock<Vec<MemoryDocument>>>,
         workspace_id: impl Into<String>,
@@ -115,21 +123,44 @@ impl QmdMemory {
             store: Arc::new(AsyncRwLock::new(None)),
             cache_warmup: Some(Arc::new(PredictiveCacheWarmup::new())),
             belief_graph: None,
+            lazy_loaded: Arc::new(AtomicBool::new(false)),
+            loaded: Arc::new(AtomicBool::new(false)),
         }
     }
 
+    /// New with workspace and lazy loading flag.
+    pub fn new_lazy(
+        workspace_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            workspace_id: workspace_id.into(),
+            docs: Arc::new(AsyncRwLock::new(Vec::new())),
+            search_cache: Arc::new(AsyncRwLock::new(HashMap::new())),
+            cache_counters: Arc::new(CacheCounters::default()),
+            store: Arc::new(AsyncRwLock::new(None)),
+            cache_warmup: Some(Arc::new(PredictiveCacheWarmup::new())),
+            belief_graph: None,
+            lazy_loaded: Arc::new(AtomicBool::new(true)),
+            loaded: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Workspace id.
     pub fn workspace_id(&self) -> &str {
         &self.workspace_id
     }
 
+    /// Set store.
     pub async fn set_store(&self, store: Arc<dyn MemoryStore>) {
         *self.store.write().await = Some(store);
     }
 
+    /// Set belief graph.
     pub fn set_belief_graph(&mut self, graph: crate::memory::belief_graph::SharedBeliefGraph) {
         self.belief_graph = Some(graph);
     }
 
+    /// Store.
     pub(crate) async fn store(&self) -> Option<Arc<dyn MemoryStore>> {
         self.store.read().await.clone()
     }
@@ -138,7 +169,43 @@ impl QmdMemory {
     /// This is CRITICAL for persistence - without this, data written to the configured store
     /// before a restart would be lost on restart.
     pub async fn init(&self) -> Result<()> {
+        if self.lazy_loaded.load(AtomicOrdering::Relaxed) {
+            // Lazy mode: skip loading docs at init, they'll be loaded on first access.
+            tracing::info!(
+                workspace_id = %self.workspace_id,
+                "QmdMemory initialized in lazy mode (docs will load on first access)"
+            );
+            return Ok(());
+        }
         reader::init(self).await
+    }
+
+    /// Ensure documents are loaded from persistent store.
+    /// In lazy mode, this is a no-op on subsequent calls.
+    /// In eager mode (default), this is also a no-op since init() already loaded.
+    pub async fn ensure_loaded(&self) -> Result<()> {
+        if !self.lazy_loaded.load(AtomicOrdering::Relaxed) {
+            // Eager mode: already loaded by init(), nothing to do.
+            return Ok(());
+        }
+        if self.loaded.load(AtomicOrdering::Acquire) {
+            // Already loaded in a previous call.
+            return Ok(());
+        }
+        // Load from persistent store now.
+        reader::init(self).await?;
+        self.loaded.store(true, AtomicOrdering::Release);
+        Ok(())
+    }
+
+    /// Returns true if this instance uses lazy loading.
+    pub fn is_lazy(&self) -> bool {
+        self.lazy_loaded.load(AtomicOrdering::Relaxed)
+    }
+
+    /// Returns true if the lazy pool has been loaded at least once.
+    pub fn is_loaded(&self) -> bool {
+        self.loaded.load(AtomicOrdering::Relaxed)
     }
 
     /// Activate or deactivate cache warming.
@@ -152,10 +219,12 @@ impl QmdMemory {
     }
 
     #[autometrics]
+    /// Search.
     pub async fn search(&self, query_text: &str, limit: usize) -> Result<Vec<MemoryDocument>> {
         self.search_filtered(query_text, limit, None).await
     }
 
+    /// Bm25 search.
     pub async fn bm25_search(
         &self,
         query: &str,
@@ -193,6 +262,7 @@ impl QmdMemory {
         Ok(results)
     }
 
+    /// Search filtered.
     pub async fn search_filtered(
         &self,
         query_text: &str,
@@ -223,8 +293,8 @@ impl QmdMemory {
             if let Ok(results) =
                 query_with_embedding_filtered(self, query_text, limit, filters).await
             {
-                if !results.is_empty() {
-                    return Ok(results);
+                if !results.documents.is_empty() {
+                    return Ok(results.documents);
                 }
             }
         }
@@ -247,6 +317,7 @@ impl QmdMemory {
         Ok(Vec::new())
     }
 
+    /// Search hybrid optimized.
     pub async fn search_hybrid_optimized(
         &self,
         query_text: &str,
@@ -256,10 +327,13 @@ impl QmdMemory {
         search::search_hybrid_optimized(self, query_text, limit, filters).await
     }
 
+    /// Export.
     pub async fn export(&self, public_only: bool) -> Result<Vec<MemoryDocument>> {
+        self.ensure_loaded().await?;
         reader::export(self, public_only).await
     }
 
+    /// Search with cache.
     pub async fn search_with_cache(
         &self,
         query_text: &str,
@@ -269,6 +343,7 @@ impl QmdMemory {
             .await
     }
 
+    /// Search with cache filtered.
     pub async fn search_with_cache_filtered(
         &self,
         query_text: &str,
@@ -278,6 +353,7 @@ impl QmdMemory {
         reader::search_with_cache_filtered(self, query_text, limit, filters).await
     }
 
+    /// Vsearch.
     pub async fn vsearch(
         &self,
         query_vector: Vec<f32>,
@@ -286,6 +362,7 @@ impl QmdMemory {
         search::vsearch(self, query_vector, limit).await
     }
 
+    /// Query with hybrid search.
     pub async fn query_with_hybrid_search(
         &self,
         query_text: &str,
@@ -295,6 +372,7 @@ impl QmdMemory {
         search::query_with_hybrid_search(self, query_text, query_vector, limit).await
     }
 
+    /// Query.
     pub async fn query(
         &self,
         query_text: &str,
@@ -305,6 +383,7 @@ impl QmdMemory {
             .await
     }
 
+    /// Query filtered.
     pub async fn query_filtered(
         &self,
         query_text: &str,
@@ -315,19 +394,24 @@ impl QmdMemory {
         search::query_filtered(self, query_text, query_vector, limit, filters).await
     }
 
+    /// Get.
     pub async fn get(&self, path_or_id: &str) -> Result<Option<MemoryDocument>> {
+        self.ensure_loaded().await?;
         reader::get(self, path_or_id).await
     }
 
+    /// Add.
     pub async fn add(&self, doc: MemoryDocument) -> Result<()> {
         writer::add(self, doc).await
     }
 
+    /// Update.
     pub async fn update(&self, doc: MemoryDocument) -> Result<()> {
         writer::update(self, doc).await
     }
 
     #[autometrics]
+    /// Add document.
     pub async fn add_document(
         &self,
         path: String,
@@ -337,6 +421,7 @@ impl QmdMemory {
         writer::add_document(self, path, content, metadata).await
     }
 
+    /// Add document typed.
     pub async fn add_document_typed(
         &self,
         path: String,
@@ -347,6 +432,7 @@ impl QmdMemory {
         writer::add_document_typed(self, path, content, metadata, typed).await
     }
 
+    /// Add document typed with embedding.
     pub async fn add_document_typed_with_embedding(
         &self,
         path: String,
@@ -359,23 +445,31 @@ impl QmdMemory {
             .await
     }
 
+    /// Delete.
     pub async fn delete(&self, path_or_id: &str) -> Result<Option<MemoryDocument>> {
         writer::delete(self, path_or_id).await
     }
 
+    /// Clear.
     pub async fn clear(&self) -> Result<usize> {
         writer::clear(self).await
     }
 
+    /// Count.
     pub async fn count(&self) -> Result<usize> {
+        self.ensure_loaded().await?;
         Ok(self.docs.read().await.len())
     }
 
+    /// All documents.
     pub async fn all_documents(&self) -> Vec<MemoryDocument> {
+        let _ = self.ensure_loaded().await;
         self.docs.read().await.clone()
     }
 
+    /// Ls.
     pub async fn ls(&self, path_prefix: &str) -> Result<Vec<NavEntry>> {
+        self.ensure_loaded().await?;
         // [B1] Predictive cache warming based on navigation patterns
         if let Some(warmup) = &self.cache_warmup {
             let _ = warmup
@@ -446,14 +540,18 @@ impl QmdMemory {
         Ok(result)
     }
 
+    /// Usage.
     pub async fn usage(&self) -> MemoryUsage {
+        let _ = self.ensure_loaded().await;
         reader::usage(self).await
     }
 
+    /// Cache metrics.
     pub async fn cache_metrics(&self) -> CacheMetrics {
         reader::cache_metrics(self).await
     }
 
+    /// Multi hop context.
     pub async fn multi_hop_context(
         &self,
         query: &str,
@@ -463,10 +561,12 @@ impl QmdMemory {
         search::multi_hop_context(self, query, seed_docs, filters).await
     }
 
+    /// Invalidate cache.
     pub async fn invalidate_cache(&self) {
         reader::invalidate_cache(self).await
     }
 
+    /// List directory.
     pub async fn list_directory(&self, path: &str) -> Result<Vec<MemoryHierarchyNode>> {
         if let Some(store) = self.store().await {
             store.ls(&self.workspace_id, path).await
@@ -554,12 +654,15 @@ impl QmdMemory {
                         {
                             for child in children {
                                 if let Some(ref cid) = child.id {
-                                    if cid != doc_id && !seen_ids.contains(cid) && matches_filters(
-                                        &child.path,
-                                        &child.metadata,
-                                        &self.workspace_id,
-                                        filters,
-                                    ) {
+                                    if cid != doc_id
+                                        && !seen_ids.contains(cid)
+                                        && matches_filters(
+                                            &child.path,
+                                            &child.metadata,
+                                            &self.workspace_id,
+                                            filters,
+                                        )
+                                    {
                                         seen_ids.insert(cid.clone());
                                         next_ids.push(cid.clone());
                                         all_docs.push(child);
@@ -582,6 +685,7 @@ impl QmdMemory {
 
 // ── Free functions ──────────────────────────────────────────────────
 
+/// Query with embedding.
 pub async fn query_with_embedding(
     memory: &QmdMemory,
     query_text: &str,
@@ -590,12 +694,13 @@ pub async fn query_with_embedding(
     search::query_with_embedding(memory, query_text, limit).await
 }
 
+/// Query with embedding filtered.
 pub async fn query_with_embedding_filtered(
     memory: &QmdMemory,
     query_text: &str,
     limit: usize,
     filters: Option<&MemoryQueryFilters>,
-) -> Result<Vec<MemoryDocument>> {
+) -> Result<search::EmbeddingSearchResult> {
     search::query_with_embedding_filtered(memory, query_text, limit, filters).await
 }
 
@@ -697,6 +802,15 @@ mod tests {
             .expect("test assertion")
             .expect("test assertion");
         assert!(stored.embedding.is_empty());
+
+        // Cleanup: restore env vars so other tests (e.g. reindex_null_embeddings) are not affected
+        unsafe {
+            env::set_var(
+                "XAVIER_EMBEDDING_URL",
+                "http://localhost:11434/v1/embeddings",
+            );
+            env::remove_var("XAVIER_EMBEDDER");
+        }
     }
 
     #[tokio::test]

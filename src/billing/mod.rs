@@ -28,6 +28,7 @@ pub struct BillingConfig {
 }
 
 impl BillingConfig {
+    /// From env.
     pub fn from_env() -> Self {
         Self {
             enabled: stripe_client::StripeClient::is_configured(),

@@ -16,6 +16,7 @@ use anyhow::Result;
 
 // ── CRUD write operations ────────────────────────────────────────────
 
+/// Memory record from document.
 pub(crate) fn memory_record_from_document(
     workspace_id: &str,
     document: &MemoryDocument,
@@ -75,9 +76,25 @@ async fn emit_operation_event(memory: &QmdMemory, operation: &str, path: &str, m
     tracing::info!("Auto-captured memory event: {:?}", event);
 }
 
+/// Add.
 pub async fn add(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
     emit_operation_event(memory, "add", &doc.path, &doc.metadata).await;
-    memory.docs.write().await.push(doc.clone());
+
+    let canonical_path = doc.path.starts_with("stability/") || doc.path.starts_with("features/");
+    let mut updated_in_memory = false;
+
+    if canonical_path {
+        let mut docs = memory.docs.write().await;
+        if let Some(existing) = docs.iter_mut().find(|d| d.path == doc.path) {
+            *existing = doc.clone();
+            updated_in_memory = true;
+        }
+    }
+
+    if !updated_in_memory {
+        memory.docs.write().await.push(doc.clone());
+    }
+
     memory.invalidate_cache().await;
     if let Some(store) = memory.store().await {
         store
@@ -87,6 +104,7 @@ pub async fn add(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
     Ok(())
 }
 
+/// Update.
 pub async fn update(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
     emit_operation_event(memory, "update", &doc.path, &doc.metadata).await;
     let persisted = doc.clone();
@@ -112,6 +130,7 @@ pub async fn update(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
     Ok(())
 }
 
+/// Delete.
 pub async fn delete(memory: &QmdMemory, path_or_id: &str) -> Result<Option<MemoryDocument>> {
     let mut docs = memory.docs.write().await;
     let removed = docs
@@ -131,6 +150,7 @@ pub async fn delete(memory: &QmdMemory, path_or_id: &str) -> Result<Option<Memor
     Ok(removed)
 }
 
+/// Clear.
 pub async fn clear(memory: &QmdMemory) -> Result<usize> {
     let ids = memory
         .docs
@@ -154,6 +174,7 @@ pub async fn clear(memory: &QmdMemory) -> Result<usize> {
 
 // ── Document indexing ─────────────────────────────────────────────────
 
+/// Add document.
 pub async fn add_document(
     memory: &QmdMemory,
     path: String,
@@ -163,6 +184,7 @@ pub async fn add_document(
     add_document_typed_with_embedding(memory, path, content, metadata, None, None).await
 }
 
+/// Add document typed.
 pub async fn add_document_typed(
     memory: &QmdMemory,
     path: String,
@@ -173,6 +195,7 @@ pub async fn add_document_typed(
     add_document_typed_with_embedding(memory, path, content, metadata, typed, None).await
 }
 
+/// Add document typed with embedding.
 pub async fn add_document_typed_with_embedding(
     memory: &QmdMemory,
     path: String,
@@ -181,7 +204,24 @@ pub async fn add_document_typed_with_embedding(
     typed: Option<TypedMemoryPayload>,
     embedding: Option<Vec<f32>>,
 ) -> Result<String> {
-    let id = ulid::Ulid::new().to_string();
+    let canonical_path = path.starts_with("stability/") || path.starts_with("features/");
+    let mut existing_id = None;
+    if canonical_path {
+        {
+            let docs = memory.docs.read().await;
+            if let Some(existing) = docs.iter().find(|d| d.path == path) {
+                existing_id = existing.id.clone();
+            }
+        }
+        if existing_id.is_none() {
+            if let Some(store) = memory.store().await {
+                if let Ok(Some(existing_rec)) = store.get(&memory.workspace_id, &path).await {
+                    existing_id = Some(existing_rec.id);
+                }
+            }
+        }
+    }
+    let id = existing_id.unwrap_or_else(|| ulid::Ulid::new().to_string());
     let metadata = crate::memory::schema::normalize_metadata(
         &path,
         metadata,

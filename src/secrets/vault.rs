@@ -15,7 +15,7 @@ use keyring::Entry;
 
 /// Global fallback vault storage, lazily initialized
 struct VaultBackend {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Identificador del servicio para keyring")]
     service_name: String,
     storage_dir: std::path::PathBuf,
     vault_key: [u8; 32],
@@ -67,12 +67,14 @@ pub struct HardwareVault {
 }
 
 impl HardwareVault {
+    /// New.
     pub fn new(service_name: &str) -> Self {
         Self {
             service_name: service_name.to_string(),
         }
     }
 
+    /// Store secret.
     pub fn store_secret(&self, key: &str, value: &str) -> SecretResult<()> {
         // Try keyring first
         if let Err(e) = self.try_keyring_store(key, value) {
@@ -84,6 +86,7 @@ impl HardwareVault {
         Ok(())
     }
 
+    /// Get secret.
     pub fn get_secret(&self, key: &str) -> SecretResult<String> {
         // Try keyring first
         match self.try_keyring_get(key) {
@@ -96,6 +99,7 @@ impl HardwareVault {
         self.try_fallback_get(key)
     }
 
+    /// Delete secret.
     pub fn delete_secret(&self, key: &str) -> SecretResult<()> {
         let keyring_ok = self.try_keyring_delete(key).is_ok();
         let fallback_ok = self.try_fallback_delete(key).is_ok();

@@ -26,8 +26,7 @@ pub struct ProgressReport {
     pub status: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SchedulerState {
     pub last_run_at: Option<DateTime<Utc>>,
     pub last_duration_ms: u64,
@@ -43,6 +42,7 @@ pub struct TgdConsolidationScheduler {
 }
 
 impl TgdConsolidationScheduler {
+    /// New.
     pub fn new(
         workspace: WorkspaceContext,
         tgd_engine: Option<TgdEngine>,
@@ -57,14 +57,17 @@ impl TgdConsolidationScheduler {
         }
     }
 
+    /// Progress.
     pub fn progress(&self) -> Arc<RwLock<ProgressReport>> {
         Arc::clone(&self.progress)
     }
 
+    /// Cancel.
     pub fn cancel(&self) {
         self.cancellation_token.cancel();
     }
 
+    /// Spawn.
     pub async fn spawn(self: Arc<Self>, cron_expr: String) {
         let scheduler = Arc::clone(&self);
         tokio::spawn(async move {
@@ -82,7 +85,6 @@ impl TgdConsolidationScheduler {
             };
 
             while let Some(next) = schedule.upcoming(Utc).next() {
-
                 let now = Utc::now();
                 if next > now {
                     let sleep_duration = next
@@ -112,6 +114,7 @@ impl TgdConsolidationScheduler {
         });
     }
 
+    /// Run once.
     pub async fn run_once(&self) -> anyhow::Result<()> {
         let start = std::time::Instant::now();
         {
@@ -211,6 +214,7 @@ impl TgdConsolidationScheduler {
         Ok(())
     }
 
+    /// Load state.
     pub async fn load_state(&self) -> anyhow::Result<SchedulerState> {
         if !self.state_path.exists() {
             return Ok(SchedulerState::default());
@@ -247,6 +251,7 @@ pub async fn run_nightly_tgd() -> anyhow::Result<()> {
             embedding_provider_mode: crate::workspace::EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: crate::workspace::SyncPolicy::CloudMirror,
+            dedup: crate::settings::types::DedupSettings::default(),
         },
         crate::agents::RuntimeConfig::default(),
         root.join(".xavier"),

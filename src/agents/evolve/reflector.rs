@@ -8,6 +8,7 @@ use tracing::info;
 pub struct Reflector {}
 
 impl Reflector {
+    /// New.
     pub fn new() -> Self {
         Self {}
     }

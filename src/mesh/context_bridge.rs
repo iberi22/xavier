@@ -55,8 +55,8 @@ impl BridgeRegistry {
         let raw = std::fs::read_to_string(&storage_path)
             .context("Failed to read context bridges file")?;
 
-        let bridges: Vec<ContextBridge> = serde_json::from_str(&raw)
-            .context("Failed to parse context bridges JSON")?;
+        let bridges: Vec<ContextBridge> =
+            serde_json::from_str(&raw).context("Failed to parse context bridges JSON")?;
 
         let bridges_map = bridges.into_iter().map(|b| (b.id.clone(), b)).collect();
 
@@ -70,8 +70,7 @@ impl BridgeRegistry {
     pub fn save(&self) -> Result<()> {
         let bridges_vec: Vec<&ContextBridge> = self.bridges.values().collect();
         let json = serde_json::to_string_pretty(&bridges_vec)?;
-        std::fs::write(&self.storage_path, json)
-            .context("Failed to write context bridges file")?;
+        std::fs::write(&self.storage_path, json).context("Failed to write context bridges file")?;
         Ok(())
     }
 
@@ -131,7 +130,10 @@ mod tests {
         // Test persistence reload
         let reloaded = BridgeRegistry::load_from(storage_path).unwrap();
         assert_eq!(reloaded.list_bridges().len(), 1);
-        assert_eq!(reloaded.get_bridge("test-bridge-1").unwrap().source_db, "Personal");
+        assert_eq!(
+            reloaded.get_bridge("test-bridge-1").unwrap().source_db,
+            "Personal"
+        );
 
         registry.remove_bridge("test-bridge-1").unwrap();
         assert_eq!(registry.list_bridges().len(), 0);

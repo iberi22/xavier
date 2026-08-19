@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 SouthWest AI Labs (SWAL)
+//
 //! Binary entry point for the Xavier cognitive memory system
 //!
 //! Provides the implementation and data structures for this module's
@@ -35,6 +38,7 @@ pub use xavier_lib::workspace;
 use crate::settings::XavierSettings;
 use anyhow::Result;
 use clap::Parser;
+use cli::config::validate_xavier_data_dir_env;
 use cli::Cli;
 
 #[tokio::main]
@@ -69,6 +73,7 @@ async fn main() -> Result<()> {
     observability::init_logger(&log_dir, &log_filter);
 
     // Parse and run CLI
+    validate_xavier_data_dir_env()?;
     let cli = Cli::parse();
     cli.run().await
 }

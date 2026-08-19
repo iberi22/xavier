@@ -117,6 +117,7 @@ impl Default for RuntimeConfig {
 }
 
 impl RuntimeConfig {
+    /// From env.
     pub fn from_env() -> Self {
         Self::from_env_with(|name| std::env::var(name).ok())
     }
@@ -203,6 +204,7 @@ pub struct AgentRuntime {
 }
 
 impl AgentRuntime {
+    /// New.
     pub fn new(
         memory: Arc<QmdMemory>,
         belief_graph: Option<SharedBeliefGraph>,
@@ -231,40 +233,48 @@ impl AgentRuntime {
         })
     }
 
+    /// With checkpoint manager.
     pub fn with_checkpoint_manager(mut self, manager: Arc<CheckpointManager>) -> Self {
         self.checkpoint_manager = Some(manager);
         self
     }
 
+    /// With scheduler.
     pub fn with_scheduler(mut self, scheduler: JobScheduler) -> Self {
         self.scheduler = Some(Arc::new(tokio::sync::Mutex::new(scheduler)));
         self
     }
 
+    /// With orchestrator.
     pub fn with_orchestrator(mut self, orchestrator: Orchestrator) -> Self {
         self.orchestrator = Some(orchestrator);
         self
     }
 
+    /// With rate manager.
     pub fn with_rate_manager(mut self, manager: Arc<RateLimitManager>) -> Self {
         self.rate_manager = Some(manager);
         self
     }
 
+    /// With tgd engine.
     pub fn with_tgd_engine(mut self, engine: crate::tgd::TgdEngine) -> Self {
         self.tgd_engine = Some(engine);
         self
     }
 
+    /// With event bus.
     pub fn with_event_bus(mut self, bus: Arc<crate::coordination::events::XavierEventBus>) -> Self {
         self.event_bus = Some(bus);
         self
     }
 
+    /// Checkpoint manager.
     pub fn checkpoint_manager(&self) -> Option<&Arc<CheckpointManager>> {
         self.checkpoint_manager.as_ref()
     }
 
+    /// Scheduler.
     pub async fn scheduler(&self) -> Option<tokio::sync::MutexGuard<'_, JobScheduler>> {
         if let Some(scheduler) = &self.scheduler {
             Some(scheduler.lock().await)
@@ -273,14 +283,17 @@ impl AgentRuntime {
         }
     }
 
+    /// Memory.
     pub fn memory(&self) -> Arc<QmdMemory> {
         Arc::clone(&self.memory)
     }
 
+    /// Config.
     pub fn config(&self) -> &RuntimeConfig {
         &self.config
     }
 
+    /// With provider config.
     pub fn with_provider_config(
         mut self,
         provider_config: crate::agents::provider::ModelProviderConfig,
@@ -304,6 +317,7 @@ impl AgentRuntime {
             .agent)
     }
 
+    /// Run with trace.
     pub async fn run_with_trace(
         &self,
         query: &str,
@@ -314,6 +328,7 @@ impl AgentRuntime {
             .await
     }
 
+    /// Run with trace filtered.
     pub async fn run_with_trace_filtered(
         &self,
         query: &str,
@@ -919,6 +934,7 @@ fn should_answer_from_evidence(
 }
 
 impl AgentRuntime {
+    /// Save checkpoint.
     pub async fn save_checkpoint(
         &self,
         task_id: &str,
@@ -932,6 +948,7 @@ impl AgentRuntime {
         Ok(())
     }
 
+    /// Load checkpoint.
     pub async fn load_checkpoint(
         &self,
         task_id: &str,
@@ -944,6 +961,7 @@ impl AgentRuntime {
         Ok(None)
     }
 
+    /// List checkpoints.
     pub async fn list_checkpoints(&self, task_id: &str) -> Result<Vec<String>> {
         if let Some(manager) = &self.checkpoint_manager {
             let checkpoints = manager.list(task_id.to_string()).await?;
@@ -973,6 +991,7 @@ pub struct RuntimeBuilder {
 }
 
 impl RuntimeBuilder {
+    /// New.
     pub fn new() -> Self {
         Self {
             config: RuntimeConfig::default(),
@@ -985,41 +1004,49 @@ impl RuntimeBuilder {
         }
     }
 
+    /// With timeout.
     pub fn with_timeout(mut self, seconds: u64) -> Self {
         self.config.timeout_seconds = seconds;
         self
     }
 
+    /// With memory.
     pub fn with_memory(mut self, memory: Arc<QmdMemory>) -> Self {
         self.memory = Some(memory);
         self
     }
 
+    /// With belief graph.
     pub fn with_belief_graph(mut self, belief_graph: SharedBeliefGraph) -> Self {
         self.belief_graph = Some(belief_graph);
         self
     }
 
+    /// With checkpoint manager.
     pub fn with_checkpoint_manager(mut self, manager: Arc<CheckpointManager>) -> Self {
         self.checkpoint_manager = Some(manager);
         self
     }
 
+    /// With scheduler.
     pub fn with_scheduler(mut self, scheduler: JobScheduler) -> Self {
         self.scheduler = Some(scheduler);
         self
     }
 
+    /// With rate manager.
     pub fn with_rate_manager(mut self, manager: Arc<RateLimitManager>) -> Self {
         self.rate_manager = Some(manager);
         self
     }
 
+    /// With event bus.
     pub fn with_event_bus(mut self, bus: Arc<crate::coordination::events::XavierEventBus>) -> Self {
         self.event_bus = Some(bus);
         self
     }
 
+    /// Build.
     pub fn build(self) -> Result<AgentRuntime> {
         let memory = self
             .memory

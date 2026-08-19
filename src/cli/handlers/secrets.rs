@@ -11,6 +11,7 @@ use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
 
+/// Lend handler.
 pub async fn lend_handler(
     State(state): State<CliState>,
     axum::Extension(_session): axum::Extension<crate::cli::http_setup::SessionInfo>,
@@ -54,6 +55,7 @@ pub async fn lend_handler(
     }
 }
 
+/// History handler.
 pub async fn history_handler() -> Response {
     use xavier::codebase::connection_manager::ConnectionManager;
     let result = ConnectionManager::global()
@@ -96,6 +98,7 @@ pub async fn history_handler() -> Response {
     }
 }
 
+/// Leases handler.
 pub async fn leases_handler(State(state): State<CliState>) -> Response {
     let mut leases = state.secrets_engine.list_leases().await;
     // Always redact secret_value for security
@@ -108,6 +111,7 @@ pub async fn leases_handler(State(state): State<CliState>) -> Response {
     )
 }
 
+/// Revoke handler.
 pub async fn revoke_handler(
     State(state): State<CliState>,
     Json(payload): Json<RevokeLeasePayload>,
@@ -125,6 +129,7 @@ pub async fn revoke_handler(
     }
 }
 
+/// Status handler.
 pub async fn status_handler(
     State(state): State<CliState>,
     AxumPath(token): AxumPath<String>,

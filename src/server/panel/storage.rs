@@ -18,7 +18,11 @@ pub fn resolve_panel_project_id(workspace: &WorkspaceContext) -> String {
     let backend = workspace.workspace.durable_store_backend();
 
     if cfg!(test) {
-        let base_id = if backend == "vec" { "vec_store" } else { "memory" };
+        let base_id = if backend == "vec" {
+            "vec_store"
+        } else {
+            "memory"
+        };
         return format!("{}_test_{}", base_id, workspace.workspace_id);
     }
 
@@ -40,6 +44,7 @@ pub fn resolve_panel_project_id(workspace: &WorkspaceContext) -> String {
     "memory".to_string()
 }
 
+/// List bookmarks.
 pub async fn list_bookmarks(
     Extension(workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {
@@ -70,14 +75,11 @@ pub async fn list_bookmarks(
         .await
     {
         Ok(bookmarks) => Json(bookmarks).into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
 
+/// Save bookmark.
 pub async fn save_bookmark(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<Bookmark>,
@@ -106,14 +108,11 @@ pub async fn save_bookmark(
         .await
     {
         Ok(_) => StatusCode::OK.into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
 
+/// List widgets.
 pub async fn list_widgets(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let project_id = resolve_panel_project_id(&workspace);
@@ -145,14 +144,11 @@ pub async fn list_widgets(Extension(workspace): Extension<WorkspaceContext>) -> 
         .await
     {
         Ok(widgets) => Json(widgets).into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
 
+/// Save widget.
 pub async fn save_widget(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<Widget>,
@@ -184,11 +180,7 @@ pub async fn save_widget(
         .await
     {
         Ok(_) => StatusCode::OK.into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
 
@@ -222,6 +214,7 @@ fn validate_panel_graph_payload(data: &serde_json::Value) -> Result<(), String> 
     Ok(())
 }
 
+/// Get graph.
 pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let project_id = resolve_panel_project_id(&workspace);
@@ -252,20 +245,17 @@ pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> imp
         // Empty workspace: 200 + empty nodes/links so the UI never falls back to demo data.
         Ok(Some(graph)) => Json(graph).into_response(),
         Ok(None) => Json(default_empty_panel_graph()).into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
 
+/// Save graph.
 pub async fn save_graph(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<GraphData>,
 ) -> impl IntoResponse {
     if let Err(message) = validate_panel_graph_payload(&payload.data) {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": message }))).into_response();
+        return crate::error::ApiError::validation(message).into_response();
     }
 
     let workspace_id = workspace.workspace.config().id.clone();
@@ -291,10 +281,6 @@ pub async fn save_graph(
         .await
     {
         Ok(_) => StatusCode::OK.into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }

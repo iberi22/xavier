@@ -42,14 +42,86 @@ impl PluginManager {
 
         let installed: HashMap<Language, PluginDescriptor> = HashMap::new();
         let fallback = FallbackChain::load_or_default();
-        Self {
+        let manager = Self {
             installed: RwLock::new(installed),
             by_name: RwLock::new(HashMap::new()),
             fallback: RwLock::new(fallback),
             engine,
             registry,
             health: RwLock::new(Some(health)),
+        };
+
+        if which::which("codegraph").is_ok() {
+            let descriptor = PluginDescriptor {
+                name: "codegraph".to_string(),
+                version: "1.4.1".to_string(),
+                command: "codegraph".to_string(),
+                languages: vec![
+                    Language::Rust,
+                    Language::TypeScript,
+                    Language::Python,
+                    Language::Go,
+                    Language::Java,
+                    Language::C,
+                    Language::Cpp,
+                ],
+                extensions: vec![
+                    "rs".to_string(),
+                    "ts".to_string(),
+                    "tsx".to_string(),
+                    "py".to_string(),
+                    "go".to_string(),
+                    "java".to_string(),
+                    "c".to_string(),
+                    "h".to_string(),
+                    "cpp".to_string(),
+                    "cc".to_string(),
+                    "cxx".to_string(),
+                    "hpp".to_string(),
+                ],
+                capabilities: vec![
+                    "parse".to_string(),
+                    "index".to_string(),
+                    "query".to_string(),
+                ],
+            };
+            manager.register(descriptor);
         }
+
+        // Auto-detect and register separate language parsers if found in PATH
+        let parsers_info = [
+            ("parser-rust", vec![Language::Rust], vec!["rs"]),
+            (
+                "parser-ts",
+                vec![Language::TypeScript, Language::JavaScript],
+                vec!["ts", "tsx", "js", "jsx"],
+            ),
+            ("parser-python", vec![Language::Python], vec!["py"]),
+            ("parser-go", vec![Language::Go], vec!["go"]),
+            ("parser-java", vec![Language::Java], vec!["java"]),
+            ("parser-c", vec![Language::C], vec!["c", "h"]),
+            (
+                "parser-cpp",
+                vec![Language::Cpp],
+                vec!["cpp", "cc", "cxx", "hpp"],
+            ),
+        ];
+
+        for (name, langs, exts) in parsers_info {
+            if which::which(name).is_ok() {
+                let descriptor = PluginDescriptor {
+                    name: name.to_string(),
+                    version: "0.1.0".to_string(),
+                    command: name.to_string(),
+                    languages: langs,
+                    extensions: exts.into_iter().map(|s| s.to_string()).collect(),
+                    capabilities: vec!["parse".to_string()],
+                };
+                manager.register(descriptor);
+            }
+        }
+
+        manager
     }
 
     /// Build a manager with a custom engine and registry.
@@ -264,6 +336,56 @@ impl Default for PluginManager {
 // ============================================================================
 // Default Registry (fixture / env-backed index)
 // ============================================================================
+
+#[allow(dead_code)]
+const LIVE_INDEX_URL: &str =
+    "https://raw.githubusercontent.com/swal/xavier-plugins/main/plugins.json";
+
+#[allow(dead_code)]
+fn fetch_live_registry() -> Result<Vec<PluginDescriptor>> {
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct LivePlugin {
+        name: String,
+        description: String,
+        version: String,
+        languages: Vec<String>,
+        url: String,
+        checksum: String,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct PluginRegistry {
+        version: u32,
+        plugins: Vec<LivePlugin>,
+    }
+
+    impl PluginRegistry {
+        fn to_descriptors(&self) -> Vec<PluginDescriptor> {
+            self.plugins
+                .iter()
+                .map(|p| PluginDescriptor {
+                    name: p.name.clone(),
+                    version: p.version.clone(),
+                    command: p.name.clone(),
+                    languages: p
+                        .languages
+                        .iter()
+                        .map(|l| crate::types::Language::from_db_str(l))
+                        .collect(),
+                    extensions: vec![],
+                    capabilities: vec!["parse".to_string()],
+                })
+                .collect()
+        }
+    }
+
+    let resp = reqwest::blocking::get(LIVE_INDEX_URL)
+        .map_err(|e: reqwest::Error| GraphError::Parser(e.to_string()))?;
+    let registry: PluginRegistry = resp
+        .json()
+        .map_err(|e: reqwest::Error| GraphError::Parser(e.to_string()))?;
+    Ok(registry.to_descriptors())
+}
 
 /// Loads a registry index from disk.
 ///

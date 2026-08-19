@@ -97,42 +97,51 @@ pub struct HealthAutoRepair {
     pub running: Arc<AtomicBool>,
     pub stop_flag: Arc<AtomicBool>,
     embedding_failure_count: Arc<AtomicU64>,
+    last_reconnect_attempt: Arc<Mutex<Option<Instant>>>,
     last_report: Arc<Mutex<Option<RepairReport>>>,
 }
 
 impl HealthAutoRepair {
+    /// New.
     pub fn new() -> Self {
         Self {
             config: RepairConfig::default(),
             running: Arc::new(AtomicBool::new(false)),
             stop_flag: Arc::new(AtomicBool::new(false)),
             embedding_failure_count: Arc::new(AtomicU64::new(0)),
+            last_reconnect_attempt: Arc::new(Mutex::new(None)),
             last_report: Arc::new(Mutex::new(None)),
         }
     }
 
+    /// With config.
     pub fn with_config(config: RepairConfig) -> Self {
         Self {
             config,
             running: Arc::new(AtomicBool::new(false)),
             stop_flag: Arc::new(AtomicBool::new(false)),
             embedding_failure_count: Arc::new(AtomicU64::new(0)),
+            last_reconnect_attempt: Arc::new(Mutex::new(None)),
             last_report: Arc::new(Mutex::new(None)),
         }
     }
 
+    /// Record embedding failure.
     pub fn record_embedding_failure(&self) {
         self.embedding_failure_count.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// Reset embedding failures.
     pub fn reset_embedding_failures(&self) {
         self.embedding_failure_count.store(0, Ordering::SeqCst);
     }
 
+    /// Embedding failure count.
     pub fn embedding_failure_count(&self) -> u32 {
         self.embedding_failure_count.load(Ordering::SeqCst) as u32
     }
 
+    /// Last report.
     pub async fn last_report(&self) -> Option<RepairReport> {
         self.last_report.lock().unwrap().clone()
     }
@@ -336,6 +345,37 @@ impl HealthAutoRepair {
             return;
         }
 
+        // Calculate exponential backoff with full jitter
+        // Base delay: 5s. Double each failure beyond threshold, capped at 300s (5m)
+        let excess_failures = failures.saturating_sub(self.config.embedding_failure_threshold);
+        let base_delay_secs = 5u64;
+        let exponential_delay_secs = base_delay_secs
+            .saturating_mul(1u64 << excess_failures.min(6))
+            .min(300);
+
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let jittered_delay_secs = rng.gen_range(base_delay_secs..=exponential_delay_secs);
+        let backoff_duration = Duration::from_secs(jittered_delay_secs);
+
+        {
+            let mut last_attempt = self.last_reconnect_attempt.lock().unwrap();
+            if let Some(prev) = *last_attempt {
+                if prev.elapsed() < backoff_duration {
+                    repairs.push((
+                        RepairAction::ReconnectEmbedding,
+                        RepairOutcome::Skipped(format!(
+                            "In exponential backoff ({:?} elapsed < {:?} delay)",
+                            prev.elapsed(),
+                            backoff_duration
+                        )),
+                    ));
+                    return;
+                }
+            }
+            *last_attempt = Some(Instant::now());
+        }
+
         let provider_url = &settings.embedding.embedder;
         if provider_url.is_empty() {
             repairs.push((
@@ -346,9 +386,7 @@ impl HealthAutoRepair {
         }
 
         let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(
-                self.config.reconnect_timeout_secs,
-            ))
+            .timeout(Duration::from_secs(self.config.reconnect_timeout_secs))
             .build()
         {
             Ok(c) => c,
@@ -510,18 +548,22 @@ impl HealthAutoRepair {
         });
     }
 
+    /// Stop monitoring.
     pub fn stop_monitoring(&self) {
         self.stop_flag.store(true, Ordering::SeqCst);
     }
 
+    /// Is running.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
 
+    /// Last repair duration ms.
     pub fn last_repair_duration_ms() -> u64 {
         LAST_REPAIR_DURATION_MS.load(Ordering::SeqCst)
     }
 
+    /// Is initialized.
     pub fn is_initialized() -> bool {
         REPAIR_ENGINE_INITIALIZED.load(Ordering::SeqCst)
     }
@@ -638,5 +680,34 @@ mod tests {
         // Wait for thread to process stop signal
         tokio::time::sleep(Duration::from_millis(1200)).await;
         assert!(!engine.is_running());
+    }
+
+    #[tokio::test]
+    async fn test_reconnect_embedding_exponential_backoff() {
+        let engine = HealthAutoRepair::new();
+        let mut settings = XavierSettings::default();
+        settings.embedding.embedder = "http://localhost:9999/v1/embeddings".to_string();
+
+        // Trigger failures above threshold (threshold: 3)
+        for _ in 0..3 {
+            engine.record_embedding_failure();
+        }
+
+        let mut repairs = Vec::new();
+        // First reconnection call: runs attempt and records failure because localhost:9999 is down
+        engine.reconnect_embedding(&settings, &mut repairs).await;
+        assert_eq!(repairs.len(), 1);
+        assert!(matches!(repairs[0].1, RepairOutcome::Failed(_)));
+
+        // Immediate second reconnection call: should be skipped due to exponential backoff
+        repairs.clear();
+        engine.reconnect_embedding(&settings, &mut repairs).await;
+        assert_eq!(repairs.len(), 1);
+        match &repairs[0].1 {
+            RepairOutcome::Skipped(msg) => {
+                assert!(msg.contains("In exponential backoff"));
+            }
+            other => panic!("Expected Skipped with backoff msg, got {:?}", other),
+        }
     }
 }

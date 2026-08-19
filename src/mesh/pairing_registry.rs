@@ -21,6 +21,7 @@ pub struct PairingSecretRegistry {
 }
 
 impl PairingSecretRegistry {
+    /// Load.
     pub fn load() -> Result<Self> {
         let config_dir = if let Ok(val) = std::env::var("XAVIER_CONFIG_DIR") {
             PathBuf::from(val)
@@ -32,6 +33,7 @@ impl PairingSecretRegistry {
         Self::load_from(config_dir.join("mesh_pairing_secrets.json"))
     }
 
+    /// Load from.
     pub fn load_from(storage_path: PathBuf) -> Result<Self> {
         if let Some(parent) = storage_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -55,6 +57,7 @@ impl PairingSecretRegistry {
         })
     }
 
+    /// Save.
     pub fn save(&self) -> Result<()> {
         let json = serde_json::to_string_pretty(&self.secrets)?;
         std::fs::write(&self.storage_path, json)
@@ -62,6 +65,7 @@ impl PairingSecretRegistry {
         Ok(())
     }
 
+    /// Register secret.
     pub fn register_secret(&mut self, secret: String, expires_at: u64) -> Result<()> {
         self.secrets.insert(
             secret,
@@ -73,6 +77,7 @@ impl PairingSecretRegistry {
         self.save()
     }
 
+    /// Verify and remove.
     pub fn verify_and_remove(&mut self, secret: &str) -> Result<bool> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -93,6 +98,7 @@ impl PairingSecretRegistry {
         Ok(false)
     }
 
+    /// Cleanup expired.
     pub fn cleanup_expired(&mut self) -> Result<()> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)

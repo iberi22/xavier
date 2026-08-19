@@ -5,12 +5,15 @@
 
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;
 use crate::cli::commands::spawn::load_spawn_memory;
-use crate::cli::config::{require_xavier_token, resolve_base_url, xavier_token};
+use crate::cli::config::{
+    auth_failed_error, auth_failed_message, classify_error_response, classify_transport_error,
+    require_xavier_token, resolve_base_url, xavier_token, CliHttpOutcome,
+};
 
 use anyhow::Result;
 
 /// Search memories and display results with scores.
-pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
+pub async fn recall_memories(query: &str, limit: usize, offline_ok: bool) -> Result<()> {
     let token = xavier_token();
     let base_url = resolve_base_url();
     let url = format!("{}/memory/search", base_url);
@@ -41,59 +44,118 @@ pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
                     let kind = item["metadata"]["kind"].as_str().unwrap_or("unknown");
                     let score = item["score"].as_f64().unwrap_or(0.0);
                     let preview = if content.len() > 120 {
-                        format!("{}...", &content[..120])
+                        format!("{}...", crate::memory::snippet::clip_chars(content, 120))
                     } else {
                         content.to_string()
                     };
                     println!("{:>3}. [{:>12}] σ={:.3}  {}", i + 1, kind, score, preview);
                 }
             }
+            Ok(())
         }
-        _ => {
-            println!("⚠️ Server offline or request failed. Falling back to local offline database index...");
-            match load_spawn_memory().await {
-                Ok(memory) => match memory.search(query, limit).await {
-                    Ok(docs) => {
-                        println!("Found {} results offline for \"{}\":", docs.len(), query);
-                        for (i, doc) in docs.iter().enumerate() {
-                            let content = &doc.content;
-                            let kind = doc
-                                .metadata
-                                .get("kind")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown");
-                            let score = doc
-                                .metadata
-                                .get("score")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(1.0);
-                            let preview = if content.len() > 120 {
-                                format!("{}...", &content[..120])
-                            } else {
-                                content.to_string()
-                            };
-                            println!("{:>3}. [{:>12}] σ={:.3}  {}", i + 1, kind, score, preview);
+        Ok(resp) => {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            handle_offline_or_fail(
+                classify_error_response(status, body),
+                offline_ok,
+                "recall",
+                |memory| async move {
+                    match memory.search(query, limit).await {
+                        Ok(docs) => {
+                            println!("Found {} results offline for \"{}\":", docs.len(), query);
+                            for (i, doc) in docs.iter().enumerate() {
+                                let content = &doc.content;
+                                let kind = doc
+                                    .metadata
+                                    .get("kind")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                let score = doc
+                                    .metadata
+                                    .get("score")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(1.0);
+                                let preview = if content.len() > 120 {
+                                    format!(
+                                        "{}...",
+                                        crate::memory::snippet::clip_chars(content, 120)
+                                    )
+                                } else {
+                                    content.to_string()
+                                };
+                                println!(
+                                    "{:>3}. [{:>12}] σ={:.3}  {}",
+                                    i + 1,
+                                    kind,
+                                    score,
+                                    preview
+                                );
+                            }
+                            Ok(())
+                        }
+                        Err(e) => {
+                            println!("❌ Local search failed: {}", e);
+                            Err(anyhow::anyhow!("local offline search failed: {e}"))
                         }
                     }
-                    Err(e) => {
-                        println!("❌ Local search failed: {}", e);
+                },
+            )
+            .await
+        }
+        Err(e) => {
+            handle_offline_or_fail(
+                classify_transport_error(&e),
+                offline_ok,
+                "recall",
+                |memory| async move {
+                    match memory.search(query, limit).await {
+                        Ok(docs) => {
+                            println!("Found {} results offline for \"{}\":", docs.len(), query);
+                            for (i, doc) in docs.iter().enumerate() {
+                                let content = &doc.content;
+                                let kind = doc
+                                    .metadata
+                                    .get("kind")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                let score = doc
+                                    .metadata
+                                    .get("score")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(1.0);
+                                let preview = if content.len() > 120 {
+                                    format!(
+                                        "{}...",
+                                        crate::memory::snippet::clip_chars(content, 120)
+                                    )
+                                } else {
+                                    content.to_string()
+                                };
+                                println!(
+                                    "{:>3}. [{:>12}] σ={:.3}  {}",
+                                    i + 1,
+                                    kind,
+                                    score,
+                                    preview
+                                );
+                            }
+                            Ok(())
+                        }
+                        Err(e) => {
+                            println!("❌ Local search failed: {}", e);
+                            Err(anyhow::anyhow!("local offline search failed: {e}"))
+                        }
                     }
                 },
-                Err(e) => {
-                    println!(
-                        "❌ Failed to initialize local offline database store: {}",
-                        e
-                    );
-                }
-            }
+            )
+            .await
         }
     }
-
-    Ok(())
 }
 
 /// Fetch and display server statistics.
-pub async fn show_stats() -> Result<()> {
+pub async fn show_stats(offline_ok: bool) -> Result<()> {
     println!("Xavier CLI version: {}", env!("CARGO_PKG_VERSION"));
 
     let token = xavier_token();
@@ -113,28 +175,117 @@ pub async fn show_stats() -> Result<()> {
             let body: serde_json::Value = resp.json().await.unwrap_or_default();
             println!("\nXavier Server Statistics:");
             println!("{}", serde_json::to_string_pretty(&body)?);
+            Ok(())
         }
-        _ => {
-            println!("⚠️ Server unreachable. Falling back to local offline database statistics...");
-            match load_spawn_memory().await {
-                Ok(memory) => {
+        Ok(resp) => {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            handle_offline_or_fail(
+                classify_error_response(status, body),
+                offline_ok,
+                "stats",
+                |memory| async move {
                     let usage = memory.usage().await;
                     println!("\nXavier Offline Statistics:");
                     println!("  Workspace: {}", memory.workspace_id());
                     println!("  Document Count: {}", usage.document_count);
                     println!("  Storage (Estimated Bytes): {}", usage.storage_bytes);
+                    Ok(())
+                },
+            )
+            .await
+        }
+        Err(e) => {
+            handle_offline_or_fail(
+                classify_transport_error(&e),
+                offline_ok,
+                "stats",
+                |memory| async move {
+                    let usage = memory.usage().await;
+                    println!("\nXavier Offline Statistics:");
+                    println!("  Workspace: {}", memory.workspace_id());
+                    println!("  Document Count: {}", usage.document_count);
+                    println!("  Storage (Estimated Bytes): {}", usage.storage_bytes);
+                    Ok(())
+                },
+            )
+            .await
+        }
+    }
+}
+
+async fn handle_offline_or_fail<F, Fut>(
+    outcome: CliHttpOutcome,
+    offline_ok: bool,
+    op: &str,
+    offline_fn: F,
+) -> Result<()>
+where
+    F: FnOnce(std::sync::Arc<xavier::memory::qmd_memory::QmdMemory>) -> Fut,
+    Fut: std::future::Future<Output = Result<()>>,
+{
+    match outcome {
+        CliHttpOutcome::AuthFailed { status } => {
+            if offline_ok {
+                eprintln!("{}", auth_failed_message(status));
+                println!(
+                    "⚠️ AUTH_FAILED but --offline-ok set. Falling back to local offline {}...",
+                    op
+                );
+                match load_spawn_memory().await {
+                    Ok(memory) => offline_fn(memory).await,
+                    Err(e) => {
+                        println!(
+                            "❌ Failed to initialize local offline database store: {}",
+                            e
+                        );
+                        Err(anyhow::anyhow!(
+                            "offline fallback failed after AUTH_FAILED: {e}"
+                        ))
+                    }
                 }
+            } else {
+                eprintln!("{}", auth_failed_message(status));
+                Err(auth_failed_error(status))
+            }
+        }
+        CliHttpOutcome::ConnectionRefused { detail } => {
+            println!(
+                "⚠️ CONNECTION_REFUSED ({detail}). Falling back to local offline {}...",
+                op
+            );
+            match load_spawn_memory().await {
+                Ok(memory) => offline_fn(memory).await,
                 Err(e) => {
                     println!(
                         "❌ Failed to initialize local offline database store: {}",
                         e
                     );
+                    Err(anyhow::anyhow!(
+                        "offline fallback failed after CONNECTION_REFUSED: {e}"
+                    ))
+                }
+            }
+        }
+        CliHttpOutcome::HttpError { status, body } => {
+            println!(
+                "⚠️ Server HTTP {status} ({body}). Falling back to local offline {}...",
+                op
+            );
+            match load_spawn_memory().await {
+                Ok(memory) => offline_fn(memory).await,
+                Err(e) => {
+                    println!(
+                        "❌ Failed to initialize local offline database store: {}",
+                        e
+                    );
+                    Err(anyhow::anyhow!(
+                        "offline fallback failed after HTTP {status}: {e}"
+                    ))
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 /// Re-index memories missing embeddings via the HTTP server.
@@ -171,20 +322,24 @@ pub async fn reindex_memories() -> Result<()> {
                 }
             }
             println!("  Status: {}", body["status"].as_str().unwrap_or("unknown"));
+            Ok(())
         }
         Ok(resp) => {
-            println!(
-                "❌ Server error: {} {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            );
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            if crate::cli::config::is_auth_failure(status) {
+                eprintln!("{}", auth_failed_message(status.as_u16()));
+                Err(auth_failed_error(status.as_u16()))
+            } else {
+                println!("❌ Server error: {} {}", status, text);
+                Err(anyhow::anyhow!("reindex failed with HTTP {status}"))
+            }
         }
         Err(e) => {
             println!("❌ Failed to reach Xavier server: {}", e);
+            Err(anyhow::anyhow!("reindex connection failed: {e}"))
         }
     }
-
-    Ok(())
 }
 
 /// Export a context pack (.xcp) for a given topic.
@@ -218,18 +373,24 @@ pub async fn export_context_pack(
                 let xml = json["xml"].as_str().unwrap_or_default();
                 std::fs::write(out, xml)?;
                 println!("✅ Context Pack exported to: {}", out.display());
+                Ok(())
             } else {
                 let status = resp.status();
                 let text = resp.text().await.unwrap_or_default();
-                println!("❌ Export failed ({}): {}", status, text);
+                if crate::cli::config::is_auth_failure(status) {
+                    eprintln!("{}", auth_failed_message(status.as_u16()));
+                    Err(auth_failed_error(status.as_u16()))
+                } else {
+                    println!("❌ Export failed ({}): {}", status, text);
+                    Err(anyhow::anyhow!("export-pack failed with HTTP {status}"))
+                }
             }
         }
         Err(e) => {
             println!("❌ Error connecting to Xavier server: {}", e);
+            Err(anyhow::anyhow!("export-pack connection failed: {e}"))
         }
     }
-
-    Ok(())
 }
 
 /// Save session context to Xavier memory.
@@ -264,16 +425,23 @@ pub async fn session_save(session_id: &str, content: &str) -> Result<()> {
             if resp.status().is_success() {
                 println!("Session context saved successfully!");
                 println!("Path: context/{}/save", session_id);
+                Ok(())
             } else {
-                println!("Failed to save session context: {}", resp.status());
+                let status = resp.status();
+                if crate::cli::config::is_auth_failure(status) {
+                    eprintln!("{}", auth_failed_message(status.as_u16()));
+                    Err(auth_failed_error(status.as_u16()))
+                } else {
+                    println!("Failed to save session context: {}", status);
+                    Err(anyhow::anyhow!("session-save failed with HTTP {status}"))
+                }
             }
         }
         Err(e) => {
             println!("Error connecting to Xavier server: {}", e);
             println!("Configured endpoint: {}", base_url);
             println!("Is the server running? (xavier http)");
+            Err(anyhow::anyhow!("session-save connection failed: {e}"))
         }
     }
-
-    Ok(())
 }

@@ -43,6 +43,7 @@ pub struct CoordinationMessage {
 }
 
 impl CoordinationMessage {
+    /// New.
     pub fn new(from: String, to: String, event: Event) -> Self {
         Self { from, to, event }
     }
@@ -54,10 +55,12 @@ pub struct Coordinator {
 }
 
 impl Coordinator {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Is idle.
     pub fn is_idle(&self) -> bool {
         self.subscribers
             .try_read()
@@ -65,14 +68,17 @@ impl Coordinator {
             .unwrap_or(true)
     }
 
+    /// Subscribe.
     pub async fn subscribe(&mut self, agent: String) {
         self.subscribers.write().await.entry(agent).or_default();
     }
 
+    /// Unsubscribe.
     pub async fn unsubscribe(&mut self, agent: &str) {
         self.subscribers.write().await.remove(agent);
     }
 
+    /// Broadcast.
     pub async fn broadcast(&self, event: Event) {
         let agents: Vec<String> = self.subscribers.read().await.keys().cloned().collect();
         for agent in agents {
@@ -81,6 +87,7 @@ impl Coordinator {
         }
     }
 
+    /// Send to.
     pub async fn send_to(&self, from: String, to: String, event: Event) {
         self.subscribers
             .write()
@@ -90,6 +97,7 @@ impl Coordinator {
             .push(CoordinationMessage::new(from, to, event));
     }
 
+    /// Get events.
     pub async fn get_events(&self, agent: &str) -> Vec<CoordinationMessage> {
         self.subscribers
             .read()
@@ -106,6 +114,7 @@ pub struct DistributedLock {
 }
 
 impl DistributedLock {
+    /// New.
     pub fn new(resource_id: String) -> Self {
         Self {
             resource_id,
@@ -118,6 +127,7 @@ impl DistributedLock {
         &self.resource_id
     }
 
+    /// Try acquire.
     pub async fn try_acquire(&self, owner: &str) -> bool {
         let mut current = self.owner.write().await;
         if current.is_none() {
@@ -128,6 +138,7 @@ impl DistributedLock {
         }
     }
 
+    /// Release.
     pub async fn release(&self, owner: &str) {
         let mut current = self.owner.write().await;
         if current.as_deref() == Some(owner) {

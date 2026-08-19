@@ -59,6 +59,8 @@ pub struct AddPayload {
     #[serde(default)]
     pub metadata: serde_json::Value,
     pub project: Option<String>,
+    #[serde(default)]
+    pub dedup: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,6 +71,8 @@ pub struct UpdatePayload {
     #[serde(default)]
     pub metadata: serde_json::Value,
     pub project: Option<String>,
+    #[serde(default)]
+    pub dedup: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,6 +91,7 @@ fn default_limit() -> usize {
     10
 }
 
+/// Search get handler.
 pub async fn search_get_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -107,6 +112,7 @@ pub async fn search_get_handler(
     search_handler(headers, State(state), Json(payload)).await
 }
 
+/// Search handler.
 pub async fn search_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -201,6 +207,7 @@ pub async fn search_handler(
     }
 }
 
+/// Add handler.
 pub async fn add_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -213,6 +220,12 @@ pub async fn add_handler(
     let sanitized_path = sanitize_unicode(&payload.path);
 
     let mut metadata = payload.metadata.clone();
+    // Inject dedup mode and project into metadata
+    if let Some(ref mut obj) = metadata.as_object_mut() {
+        if let Some(dedup) = &payload.dedup {
+            obj.insert("_dedup_mode".to_string(), serde_json::json!(dedup));
+        }
+    }
     if let Some(project) = payload.project {
         if let Some(obj) = metadata.as_object_mut() {
             obj.insert("project".to_string(), serde_json::json!(project));
@@ -259,6 +272,7 @@ pub async fn add_handler(
     }
 }
 
+/// Update handler.
 pub async fn update_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -270,6 +284,12 @@ pub async fn update_handler(
     let sanitized_path = sanitize_unicode(&payload.path);
 
     let mut metadata = payload.metadata.clone();
+    // Inject dedup mode and project into metadata
+    if let Some(ref mut obj) = metadata.as_object_mut() {
+        if let Some(dedup) = &payload.dedup {
+            obj.insert("_dedup_mode".to_string(), serde_json::json!(dedup));
+        }
+    }
     if let Some(project) = payload.project {
         if let Some(obj) = metadata.as_object_mut() {
             obj.insert("project".to_string(), serde_json::json!(project));
@@ -310,6 +330,7 @@ pub async fn update_handler(
     }
 }
 
+/// Delete handler.
 pub async fn delete_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -336,6 +357,7 @@ pub async fn delete_handler(
     }
 }
 
+/// Stats handler.
 pub async fn stats_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
     // Note: MemoryQueryPort doesn't have stats() yet, might need to add it or use storage directly
     // For now returning placeholder or calling list
@@ -346,6 +368,7 @@ pub async fn stats_handler(State(state): State<AppState>) -> Json<serde_json::Va
     }))
 }
 
+/// Memory query handler.
 pub async fn memory_query_handler(
     State(state): State<AppState>,
     Json(payload): Json<MemoryQueryPayload>,

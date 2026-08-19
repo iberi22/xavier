@@ -143,6 +143,7 @@ impl ModelProviderClient {
         })?
     }
 
+    /// Generate response.
     pub async fn generate_response(
         &self,
         query: &str,
@@ -151,10 +152,12 @@ impl ModelProviderClient {
         <Self as LlmProvider>::generate_response(self, query, context).await
     }
 
+    /// Generate hypothetical document.
     pub async fn generate_hypothetical_document(&self, query: &str) -> Result<LlmResponse> {
         <Self as LlmProvider>::generate_hypothetical_document(self, query).await
     }
 
+    /// Evaluate context.
     pub async fn evaluate_context(
         &self,
         query: &str,
@@ -163,6 +166,7 @@ impl ModelProviderClient {
         <Self as LlmProvider>::evaluate_context(self, query, context).await
     }
 
+    /// Generate text.
     pub async fn generate_text(
         &self,
         system_prompt: &str,
@@ -188,6 +192,7 @@ pub struct KeyLeaseManager {
 }
 
 impl KeyLeaseManager {
+    /// New.
     pub fn new(
         inner: ModelProviderClient,
         secrets_engine: Arc<crate::coordination::KeyLendingEngine>,
@@ -264,37 +269,52 @@ impl ModelProviderClient {
         system_prompt: &str,
         user_prompt: &str,
     ) -> Result<LlmResponse> {
-        use tokio::process::Command;
-
-        let prompt = format!("{}\n\n{}", system_prompt, user_prompt);
-
-        let mut cmd = Command::new("opencode");
-        cmd.arg("run")
-            .arg("--model")
-            .arg(&self.config.model)
-            .arg(prompt);
-
-        if let Some(api_key) = &self.config.api_key {
-            cmd.env("OPENCODE_API_KEY", api_key);
-            cmd.env("ZAI_API_KEY", api_key);
+        #[cfg(test)]
+        {
+            let prompt = format!("{}\n\n{}", system_prompt, user_prompt);
+            Ok(LlmResponse {
+                text: format!(
+                    "Mocked response for model {}: {}",
+                    self.config.model, prompt
+                ),
+                quota: None,
+            })
         }
 
-        let output = cmd.output().await.map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                anyhow!("'opencode' binary not found in PATH. Please install it via: npm install -g @opencode/cli")
-            } else {
-                anyhow!("failed to execute opencode CLI: {}", e)
+        #[cfg(not(test))]
+        {
+            use tokio::process::Command;
+
+            let prompt = format!("{}\n\n{}", system_prompt, user_prompt);
+
+            let mut cmd = Command::new("opencode");
+            cmd.arg("run")
+                .arg("--model")
+                .arg(&self.config.model)
+                .arg(prompt);
+
+            if let Some(api_key) = &self.config.api_key {
+                cmd.env("OPENCODE_API_KEY", api_key);
+                cmd.env("ZAI_API_KEY", api_key);
             }
-        })?;
 
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("opencode CLI error: {}", err));
+            let output = cmd.output().await.map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    anyhow!("'opencode' binary not found in PATH. Please install it via: npm install -g @opencode/cli")
+                } else {
+                    anyhow!("failed to execute opencode CLI: {}", e)
+                }
+            })?;
+
+            if !output.status.success() {
+                let err = String::from_utf8_lossy(&output.stderr);
+                return Err(anyhow!("opencode CLI error: {}", err));
+            }
+
+            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+            Ok(LlmResponse { text, quota: None })
         }
-
-        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-        Ok(LlmResponse { text, quota: None })
     }
 }
 

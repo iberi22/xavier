@@ -15,6 +15,7 @@ pub struct VerificationResult {
 }
 
 impl VerificationResult {
+    /// Is healthy.
     pub fn is_healthy(&self) -> bool {
         self.save_ok && self.retrieve_ok && self.match_score >= 0.8
     }

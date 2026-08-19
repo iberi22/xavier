@@ -34,6 +34,7 @@ pub struct Hypothesis {
 }
 
 impl Hypothesis {
+    /// New.
     pub fn new(description: String, hypothesis_type: HypothesisType) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string()[..8].to_string(),

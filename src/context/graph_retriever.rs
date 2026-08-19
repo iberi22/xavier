@@ -10,6 +10,7 @@ pub struct GraphRetriever {
 }
 
 impl GraphRetriever {
+    /// New.
     pub fn new(graph: SharedBeliefGraph) -> Self {
         Self { graph }
     }

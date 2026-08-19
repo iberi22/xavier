@@ -15,6 +15,7 @@ pub struct CloudNodeConfig {
     pub auto_heartbeat: Option<bool>,
 }
 
+/// Get cloud node.
 pub async fn get_cloud_node() -> impl IntoResponse {
     let settings = XavierSettings::current();
     let config = CloudNodeConfig {
@@ -31,6 +32,7 @@ pub async fn get_cloud_node() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok", "data": config }))
 }
 
+/// Update cloud node.
 pub async fn update_cloud_node(Json(payload): Json<CloudNodeConfig>) -> impl IntoResponse {
     let mut settings = XavierSettings::current();
 
@@ -78,6 +80,7 @@ pub struct DiscordConfigPayload {
     pub rate_limit_per_min: Option<u32>,
 }
 
+/// Get discord settings.
 pub async fn get_discord_settings() -> impl IntoResponse {
     let settings = XavierSettings::current();
     let config = DiscordConfigPayload {
@@ -97,6 +100,7 @@ pub async fn get_discord_settings() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok", "data": config }))
 }
 
+/// Update discord settings.
 pub async fn update_discord_settings(
     Json(payload): Json<DiscordConfigPayload>,
 ) -> impl IntoResponse {
@@ -133,6 +137,7 @@ pub async fn update_discord_settings(
     }
 }
 
+/// Test discord connection.
 pub async fn test_discord_connection() -> impl IntoResponse {
     let settings = XavierSettings::current();
 
@@ -160,6 +165,7 @@ pub struct TelegramConfigPayload {
     pub notification_chat_id: Option<String>,
 }
 
+/// Get telegram settings.
 pub async fn get_telegram_settings() -> impl IntoResponse {
     let settings = XavierSettings::current();
     let config = TelegramConfigPayload {
@@ -185,6 +191,7 @@ pub async fn get_telegram_settings() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok", "data": config }))
 }
 
+/// Update telegram settings.
 pub async fn update_telegram_settings(
     Json(payload): Json<TelegramConfigPayload>,
 ) -> impl IntoResponse {
@@ -234,6 +241,7 @@ pub async fn update_telegram_settings(
     }
 }
 
+/// Test telegram connection.
 pub async fn test_telegram_connection() -> impl IntoResponse {
     #[cfg(feature = "telegram")]
     {

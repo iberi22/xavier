@@ -1,3 +1,18 @@
+/**
+ * @file AuthProvider.tsx
+ * @description Canonical client-side authentication provider and state manager for the application.
+ *
+ * This file contains the primary authentication store (`useAuthStore`) using Zustand
+ * and the corresponding React context provider (`AuthProvider`). It manages authentication state
+ * (tokens, user profile, 2FA status) and core authentication flows (login, register, logout, session refresh).
+ *
+ * It communicates with the backend's authentication module (prefixed under `/auth/*`) via the `authClient` API client.
+ *
+ * Canonical for:
+ * - App.tsx routes (default root, login, register, 2FA setup/backup, recovery, master-key)
+ * - Shared state access via `useAuthStore` across the React component tree
+ */
+
 import type React from "react";
 import { createContext, useContext, useEffect } from "react";
 import { create } from "zustand";

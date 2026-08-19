@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use super::VecSqliteMemoryStore;
 
 impl VecSqliteMemoryStore {
+    /// Append timeline event.
     pub(crate) fn append_timeline_event(
         &self,
         conn: &Connection,
@@ -111,6 +112,7 @@ impl VecSqliteMemoryStore {
         Ok(())
     }
 
+    /// Perform list timeline events.
     pub(crate) async fn perform_list_timeline_events(
         &self,
         workspace_id: &str,

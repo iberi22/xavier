@@ -38,6 +38,7 @@ impl Default for AgentScanner {
 }
 
 impl AgentScanner {
+    /// New.
     pub fn new() -> Self {
         let mut paths = Vec::new();
 
@@ -66,6 +67,7 @@ impl AgentScanner {
         }
     }
 
+    /// Scan all.
     pub async fn scan_all(&self) -> Result<Vec<AgentSession>> {
         let mut all_sessions = Vec::new();
         info!("🔍 Starting system-wide Agent IDE scan...");

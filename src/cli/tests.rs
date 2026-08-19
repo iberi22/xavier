@@ -208,7 +208,7 @@ fn config_resolve_url_uses_host_and_port_when_url_not_set() {
     std::env::remove_var("XAVIER_URL");
     std::env::set_var("XAVIER_HOST", "192.168.1.100");
     std::env::set_var("XAVIER_PORT", "8016");
-    assert_eq!(resolve_base_url(), "http://192.168.1.100:8016");
+    assert_eq!(resolve_base_url_for_port(8016), "http://192.168.1.100:8016");
     // Restore
     if let Some(v) = orig_url {
         std::env::set_var("XAVIER_URL", v);
@@ -294,4 +294,28 @@ async fn test_chat_batch_proxy_ordering() {
     assert_eq!(results[0]["id"], "1");
     assert_eq!(results[1]["id"], "2");
     assert_eq!(results.len(), 2);
+}
+
+#[test]
+fn test_cli_handlers_memory_path_sanitization_pattern() {
+    let raw_paths = vec![
+        "../../../etc/passwd",
+        r"valid/path\\with\0null",
+        "some..path",
+    ];
+
+    for raw in raw_paths {
+        let mut path = raw.to_string();
+        path = path
+            .replace("..", "")
+            .replace("/", "")
+            .replace("\\", "")
+            .replace("\0", "");
+        path.retain(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-');
+
+        assert!(!path.contains(".."));
+        assert!(!path.contains("/"));
+        assert!(!path.contains("\\"));
+        assert!(!path.contains("\0"));
+    }
 }

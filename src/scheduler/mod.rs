@@ -4,9 +4,14 @@
 //! providing the public API surface for module consumers.
 pub mod daemon;
 pub mod job;
+pub mod retry;
+
+#[cfg(test)]
+mod retry_tests;
 
 pub use daemon::MemoryDaemon;
 pub use job::{RecoveryConfig, ScheduledJob};
+pub use retry::{CircuitBreaker, RetryPolicy};
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -33,14 +38,17 @@ pub struct CronSchedule {
 }
 
 impl CronSchedule {
+    /// Parse.
     pub fn parse(expression: &str) -> std::result::Result<Self, cron::error::Error> {
         <Self as FromStr>::from_str(expression)
     }
 
+    /// Is valid.
     pub fn is_valid(&self) -> bool {
         cron::Schedule::from_str(&self.expression).is_ok()
     }
 
+    /// Next run.
     pub fn next_run(&self) -> Option<chrono::DateTime<Utc>> {
         cron::Schedule::from_str(&self.expression)
             .ok()?
@@ -80,6 +88,7 @@ pub struct Job {
 }
 
 impl Job {
+    /// New.
     pub fn new(name: String, command: String, schedule: CronSchedule) -> Self {
         Self {
             id: ulid::Ulid::new().to_string(),
@@ -90,14 +99,17 @@ impl Job {
         }
     }
 
+    /// Run.
     pub fn run(&mut self) {
         self.status = JobStatus::Running;
     }
 
+    /// Complete.
     pub fn complete(&mut self) {
         self.status = JobStatus::Completed;
     }
 
+    /// Cancel.
     pub fn cancel(&mut self) {
         self.status = JobStatus::Cancelled;
     }
@@ -109,10 +121,12 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Is empty.
     pub fn is_empty(&self) -> bool {
         self.jobs
             .try_lock()
@@ -120,18 +134,22 @@ impl Scheduler {
             .unwrap_or(false)
     }
 
+    /// Len.
     pub fn len(&self) -> usize {
         self.jobs.try_lock().map(|jobs| jobs.len()).unwrap_or(0)
     }
 
+    /// Add job.
     pub async fn add_job(&self, job: Job) {
         self.jobs.lock().await.push(job);
     }
 
+    /// Remove job.
     pub async fn remove_job(&self, job_id: &str) {
         self.jobs.lock().await.retain(|job| job.id != job_id);
     }
 
+    /// Get next jobs.
     pub async fn get_next_jobs(&self, limit: usize) -> Vec<Job> {
         self.jobs.lock().await.iter().take(limit).cloned().collect()
     }
@@ -164,6 +182,7 @@ pub struct JobScheduler {
 }
 
 impl JobScheduler {
+    /// New.
     pub fn new(config: SchedulerConfig) -> Self {
         Self {
             jobs: Vec::new(),
@@ -171,6 +190,7 @@ impl JobScheduler {
         }
     }
 
+    /// Load.
     pub async fn load(config: SchedulerConfig) -> Result<Self> {
         let state = load_state(&config.storage_path).await?;
         Ok(Self {
@@ -179,6 +199,7 @@ impl JobScheduler {
         })
     }
 
+    /// Load or default.
     pub async fn load_or_default(config: SchedulerConfig) -> Result<Self> {
         if fs::try_exists(&config.storage_path)
             .await
@@ -195,19 +216,23 @@ impl JobScheduler {
         }
     }
 
+    /// Jobs.
     pub fn jobs(&self) -> &[ScheduledJob] {
         &self.jobs
     }
 
+    /// Jobs mut.
     pub fn jobs_mut(&mut self) -> &mut [ScheduledJob] {
         &mut self.jobs
     }
 
+    /// Add job.
     pub async fn add_job(&mut self, job: ScheduledJob) -> Result<()> {
         self.jobs.push(job);
         self.persist().await
     }
 
+    /// Upsert job.
     pub async fn upsert_job(&mut self, job: ScheduledJob) -> Result<()> {
         match self.jobs.iter_mut().find(|existing| existing.id == job.id) {
             Some(existing) => *existing = job,
@@ -217,10 +242,12 @@ impl JobScheduler {
         self.persist().await
     }
 
+    /// Persist.
     pub async fn persist(&self) -> Result<()> {
         persist_state(&self.config.storage_path, &self.jobs).await
     }
 
+    /// Detect missed jobs.
     pub async fn detect_missed_jobs(&mut self) -> Result<usize> {
         let missed = job::detect_missed_jobs(
             &mut self.jobs,

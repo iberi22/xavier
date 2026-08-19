@@ -35,6 +35,7 @@ impl From<ProxyChatRequest> for ProxyChatCommand {
     }
 }
 
+/// Chat proxy.
 pub async fn chat_proxy(
     State(state): State<CliState>,
     axum::Extension(session): axum::Extension<SessionInfo>,
@@ -55,6 +56,7 @@ pub async fn chat_proxy(
     }
 }
 
+/// Chat batch proxy.
 pub async fn chat_batch_proxy(
     State(state): State<CliState>,
     axum::Extension(session): axum::Extension<SessionInfo>,
@@ -98,6 +100,7 @@ pub async fn chat_batch_proxy(
     (StatusCode::OK, Json(results)).into_response()
 }
 
+/// Revoke lease by path.
 pub async fn revoke_lease_by_path(
     State(state): State<CliState>,
     axum::Extension(_session): axum::Extension<SessionInfo>,
@@ -121,9 +124,10 @@ pub async fn revoke_lease_by_path(
     }
 }
 
+/// Generic proxy.
 pub async fn generic_proxy(
     State(state): State<CliState>,
-    axum::Extension(session): axum::Extension<SessionInfo>,
+    axum::Extension(_session): axum::Extension<SessionInfo>,
     Json(req): Json<GenericProxyRequest>,
 ) -> Response {
     match state

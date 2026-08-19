@@ -33,6 +33,7 @@ pub struct InMemoryTaskStore {
 }
 
 impl InMemoryTaskStore {
+    /// New.
     pub fn new() -> Self {
         Self {
             tasks: RwLock::new(Vec::new()),
@@ -142,6 +143,7 @@ pub struct TaskService<S: TaskStore> {
 }
 
 impl<S: TaskStore> TaskService<S> {
+    /// New.
     pub fn new(store: Arc<S>) -> Self {
         Self {
             store,
@@ -149,6 +151,7 @@ impl<S: TaskStore> TaskService<S> {
         }
     }
 
+    /// With event bus.
     pub fn with_event_bus(
         mut self,
         event_bus: crate::coordination::events::XavierEventBus,

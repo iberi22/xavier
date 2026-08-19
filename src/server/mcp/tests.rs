@@ -36,6 +36,7 @@ fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("{prefix}-{unique:016x}-{tid:?}-{suffix}"))
 }
 
+/// Test state.
 pub async fn test_state() -> (AppState, WorkspaceContext) {
     std::env::set_var("XAVIER_TOKEN", "test-token");
     let db_path = unique_test_path("xavier-code-mcp", "code_graph.db");
@@ -57,6 +58,7 @@ pub async fn test_state() -> (AppState, WorkspaceContext) {
             embedding_provider_mode: crate::workspace::EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: crate::workspace::SyncPolicy::CloudMirror,
+            dedup: crate::settings::types::DedupSettings::default(),
         },
         RuntimeConfig::default(),
         unique_test_path("xavier-mcp-store", "threads"),
@@ -90,6 +92,7 @@ pub async fn test_state() -> (AppState, WorkspaceContext) {
     )
 }
 
+/// Test router.
 pub fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
     Router::new()
         .route("/mcp", post(mcp_post_handler))
@@ -98,6 +101,7 @@ pub fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
         .with_state(state)
 }
 
+/// Post json.
 pub async fn post_json(app: Router, body: Value) -> axum::response::Response {
     post_json_with_token(app, body, None).await
 }
@@ -156,6 +160,7 @@ async fn post_json_with_token(
     .expect("POST request to MCP endpoint failed")
 }
 
+/// Get json body.
 pub async fn get_json_body(response: axum::response::Response) -> Value {
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -861,7 +866,8 @@ async fn get_project_context_size_limits() {
     let content = &body["result"]["content"][0];
     if content["type"] == "structuredContent" {
         let sc = &content["structuredContent"];
-        let total_chars = sc.get("totalChars")
+        let total_chars = sc
+            .get("totalChars")
             .or_else(|| sc.get("total_chars"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
@@ -871,11 +877,15 @@ async fn get_project_context_size_limits() {
             "chars exceeded 100 without truncation"
         );
         if is_truncated {
-            let truncated_reason_ok = sc.get("truncatedReason")
+            let truncated_reason_ok = sc
+                .get("truncatedReason")
                 .or_else(|| sc.get("truncated_reason"))
                 .map(|v| v.is_string())
                 .unwrap_or(false);
-            assert!(truncated_reason_ok, "expected a string for truncatedReason/truncated_reason");
+            assert!(
+                truncated_reason_ok,
+                "expected a string for truncatedReason/truncated_reason"
+            );
         }
     }
 }
@@ -899,6 +909,8 @@ async fn list_tools_includes_new_memory_and_health_tools() {
         "memory_save",
         "memory_search",
         "memory_context",
+        "mem_context",
+        "mem_search",
         "health_check",
     ] {
         assert!(
@@ -929,7 +941,7 @@ async fn memory_save_and_search_roundtrip() {
     let text = body["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("Memory saved. id="), "got: {text}");
 
-    // memory_search scoped to the same namespace
+    // memory_search scoped to the same namespace (structured fat-index like mem_search)
     let response = post_json(
         router.clone(),
         json!({
@@ -941,8 +953,16 @@ async fn memory_save_and_search_roundtrip() {
     )
     .await;
     let body = get_json_body(response).await;
-    let search_text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(search_text.contains("cortical stack persists"));
+    let content0 = &body["result"]["content"][0];
+    let blob = if content0["type"] == "structuredContent" {
+        content0["structuredContent"].to_string()
+    } else {
+        content0["text"].as_str().unwrap_or("").to_string()
+    };
+    assert!(
+        blob.contains("cortical stack persists"),
+        "expected snippet in structured candidates, got: {blob}"
+    );
 }
 
 #[tokio::test]
@@ -978,17 +998,17 @@ async fn memory_context_returns_context_block() {
             ctx_text.contains("ownership") || ctx_text.contains("No relevant context"),
             "got: {ctx_text}"
         );
-        let total_chars = sc.get("totalChars")
+        let total_chars = sc
+            .get("totalChars")
             .or_else(|| sc.get("total_chars"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        let total_records = sc.get("totalRecords")
+        let total_records = sc
+            .get("totalRecords")
             .or_else(|| sc.get("total_records"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        assert!(
-            total_chars > 0 || total_records == 0
-        );
+        assert!(total_chars > 0 || total_records == 0);
     } else {
         let text = content["text"].as_str().unwrap();
         assert!(
@@ -1028,21 +1048,22 @@ async fn memory_context_depth_flat() {
     )
     .await;
     let body = get_json_body(response).await;
-    println!("DEBUG BODY DEPTH ONE: {}", serde_json::to_string_pretty(&body).unwrap());
+    println!(
+        "DEBUG BODY DEPTH ONE: {}",
+        serde_json::to_string_pretty(&body).unwrap()
+    );
     let content = &body["result"]["content"][0];
     assert_eq!(
         content["type"], "structuredContent",
         "depth/0 should return structured"
     );
     let sc = &content["structuredContent"];
-    let total_records = sc.get("totalRecords")
+    let total_records = sc
+        .get("totalRecords")
         .or_else(|| sc.get("total_records"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    assert!(
-        sc["content"].as_str().unwrap().contains("memory safety")
-            || total_records == 0
-    );
+    assert!(sc["content"].as_str().unwrap().contains("memory safety") || total_records == 0);
 }
 
 #[tokio::test]
@@ -1070,10 +1091,15 @@ async fn memory_context_depth_one() {
         "depth/1 should return structured"
     );
     let sc = &content["structuredContent"];
-    let total_records = sc.get("totalRecords")
+    let total_records = sc
+        .get("totalRecords")
         .or_else(|| sc.get("total_records"))
         .and_then(|v| v.as_u64());
-    assert!(total_records.is_some(), "expected totalRecords to be a numeric value, but got: {:?}", sc);
+    assert!(
+        total_records.is_some(),
+        "expected totalRecords to be a numeric value, but got: {:?}",
+        sc
+    );
 }
 
 #[tokio::test]
@@ -1111,7 +1137,8 @@ async fn memory_context_max_chars() {
         "max_chars should return structured"
     );
     let sc = &content["structuredContent"];
-    let total_chars = sc.get("totalChars")
+    let total_chars = sc
+        .get("totalChars")
         .or_else(|| sc.get("total_chars"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
@@ -1292,7 +1319,6 @@ async fn test_get_code_graph_success() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn code_graph_explore_returns_real_data_not_mock() {
     let (state, workspace) = test_state().await;
 
@@ -1357,7 +1383,6 @@ async fn code_graph_explore_returns_real_data_not_mock() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn code_graph_trace_path_returns_real_callers() {
     let (state, workspace) = test_state().await;
 
@@ -1654,7 +1679,8 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
     assert!(ctx_text.contains("[... doc truncated ...]"));
 
     // Check honest total_chars reporting (the characters in final aggregated context string)
-    let reported_total = sc.get("totalChars")
+    let reported_total = sc
+        .get("totalChars")
         .or_else(|| sc.get("total_chars"))
         .and_then(|v| v.as_u64())
         .unwrap() as usize;
@@ -1662,14 +1688,12 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
 
     // Check honest truncated flags reporting in overall payload
     assert!(sc["truncated"].as_bool().unwrap());
-    let truncated_reason = sc.get("truncatedReason")
+    let truncated_reason = sc
+        .get("truncatedReason")
         .or_else(|| sc.get("truncated_reason"))
         .and_then(|v| v.as_str())
         .unwrap();
-    assert_eq!(
-        truncated_reason,
-        "One or more documents were truncated"
-    );
+    assert_eq!(truncated_reason, "One or more documents were truncated");
 
     // Check honest reporting in sources metadata
     let sources = sc["sources"].as_array().unwrap();
@@ -1680,7 +1704,8 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
         .find(|s| s["id"].as_str().unwrap() == id1)
         .unwrap();
     assert!(!src1["metadata"]["truncated"].as_bool().unwrap());
-    let src1_total_chars = src1["metadata"].get("totalChars")
+    let src1_total_chars = src1["metadata"]
+        .get("totalChars")
         .or_else(|| src1["metadata"].get("total_chars"))
         .and_then(|v| v.as_u64())
         .unwrap();
@@ -1691,9 +1716,131 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
         .find(|s| s["id"].as_str().unwrap() == id2)
         .unwrap();
     assert!(src2["metadata"]["truncated"].as_bool().unwrap());
-    let src2_total_chars = src2["metadata"].get("totalChars")
+    let src2_total_chars = src2["metadata"]
+        .get("totalChars")
         .or_else(|| src2["metadata"].get("total_chars"))
         .and_then(|v| v.as_u64())
         .unwrap();
     assert_eq!(src2_total_chars, 103);
+}
+
+#[tokio::test]
+async fn initialize_protocol_version_negotiation() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // Standard client requests "2024-11-05" (the official release version)
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": { "tools": {} },
+                "clientInfo": { "name": "standard-client", "version": "1.0" }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert_eq!(body["result"]["protocolVersion"], "2024-11-05");
+
+    // Standard client requests "2024-10-22" (pre-release version)
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-10-22",
+                "capabilities": { "tools": {} },
+                "clientInfo": { "name": "standard-client", "version": "1.0" }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert_eq!(body["result"]["protocolVersion"], "2024-10-22");
+
+    // Default fallback version
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "initialize",
+            "params": {}
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert_eq!(body["result"]["protocolVersion"], "2024-11-05");
+}
+
+#[tokio::test]
+async fn alias_tools_have_aligned_schemas() {
+    let (state, workspace) = test_state().await;
+    let response = post_json(
+        test_router(state, workspace),
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let tools = body["result"]["tools"].as_array().expect("tools array");
+
+    let alias_save = tools
+        .iter()
+        .find(|t| t["name"] == "memoryfragment_save")
+        .unwrap();
+    assert_eq!(alias_save["inputSchema"]["type"], "object");
+    assert!(alias_save["inputSchema"]["properties"].is_object());
+    assert!(alias_save["inputSchema"]["required"].is_array());
+
+    let alias_search = tools
+        .iter()
+        .find(|t| t["name"] == "memoryfragment_search")
+        .unwrap();
+    assert_eq!(alias_search["inputSchema"]["type"], "object");
+    assert!(alias_search["inputSchema"]["properties"].is_object());
+    assert!(alias_search["inputSchema"]["required"].is_array());
+
+    let alias_recent = tools
+        .iter()
+        .find(|t| t["name"] == "memoryfragment_recent")
+        .unwrap();
+    assert_eq!(alias_recent["inputSchema"]["type"], "object");
+    assert!(alias_recent["inputSchema"]["properties"].is_object());
+    assert!(alias_recent["inputSchema"]["required"].is_array());
+}
+
+#[tokio::test]
+async fn tool_call_non_object_arguments_fails() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    let response = post_json(
+        router,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "create_memory",
+                "arguments": "not-an-object"
+            }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_VALIDATION);
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("arguments must be a JSON object"));
 }

@@ -2,6 +2,14 @@
 
 Xavier provides a powerful Retrieval-Augmented Generation (RAG) backend through its Model Context Protocol (MCP) server. This allows AI agents to seamlessly store, search, and retrieve knowledge using hybrid search strategies.
 
+## Canonical agent loop
+
+1. **`mem_search`** — Fat index (candidates with snippets; no full body by default)
+2. **`memory_context`** or **`get_memory`** — Page-in selected ids
+3. **`create_memory`** — Persist new knowledge
+
+Prefer these names. Aliases `search_memory` / `memory_search` still work but are deprecated; `mem_context` aliases `memory_context`.
+
 ## Connection Methods
 
 ### 1. Stdio Transport (Local)
@@ -22,33 +30,44 @@ Ideal for local AI clients like Claude Desktop, Cursor, or Windsurf. The client 
 }
 ```
 
-### 2. HTTP+SSE Transport (Remote)
-Used for remote agents or distributed architectures.
-- **POST `/mcp`**: JSON-RPC requests.
-- **GET `/mcp`**: SSE notification stream.
+### 2. HTTP+SSE Transport (JSON-RPC MCP — canonical)
+Used for remote agents or distributed architectures. Default MCP port is **8100** (not the main REST API on :8006).
+
+- **POST `/mcp`**: JSON-RPC requests
+- **GET `/mcp`**: SSE notification stream
 
 Start the MCP HTTP server:
 ```bash
 xavier mcp --port 8100
+# or alongside the main HTTP API:
+xavier http --mcp-port 8100
 ```
+
+**Do not confuse** with legacy REST `GET http://localhost:8006/mcp/tools` (deprecated listing).
 
 ## Available RAG Tools
 
-### `memory_search`
-The primary tool for retrieving relevant context. It performs a **Hybrid Search** combining BM25 lexical scoring and Vector semantic similarity.
+### `mem_search` (canonical)
+Primary fat-index search. Hybrid BM25 + vector + RRF. Returns structured candidates `{id,path,score,snippet,kind}`. Set `include_content=true` only when necessary; prefer paging in via `memory_context` with ids.
 
 **Parameters:**
-- `query` (string, required): The search terms or question.
-- `limit` (number, optional): Max results to return (default: 10).
-- `namespace` (string | object, optional): Filter by project, agent_id, or session.
+- `query` (string, required): The search terms or question
+- `limit` (number, optional): Max results (default: 10)
+- `include_content` (boolean, optional): Full body per candidate (default: false)
+- `filters` (object, optional): Namespace / kind filters
+
+Deprecated aliases with the same structured handler: `search_memory`, `memory_search` (also accepts legacy `namespace`).
 
 ### `memory_save`
 Stores new documents or knowledge atoms.
 - **Automatic Embedding**: Xavier automatically generates vectors for saved text if an embedding provider is configured.
 - **Metadata**: Attach free-form JSON for later filtering.
 
-### `memory_context`
-A specialized tool that returns a formatted Markdown block of the most relevant memories, ready to be injected directly into an LLM prompt.
+### `memory_context` / `mem_context`
+Returns a formatted context block (or structured page-in) for selected memory ids or a query — ready for LLM injection. Prefer ids from `mem_search`.
+
+### `create_memory` / `get_memory`
+Write and read durable documents by path/id.
 
 ### `save_fragment` / `search_fragments`
 Optimized for "Episodic Memory." Agents can save small observations, thoughts, or interaction fragments.
@@ -92,12 +111,12 @@ You can fine-tune retrieval behavior in `config/xavier.config.json`:
 - `SEMANTIC_WEIGHT`: Increase for conversational or "fuzzy" knowledge bases.
 
 ## Namespacing & Isolation
-To prevent context contamination between different agents or projects, use the `namespace` field:
+To prevent context contamination between different agents or projects, use `filters` on `mem_search` (or legacy `namespace` on `memory_search`):
 
 ```json
 {
   "query": "deployment steps",
-  "namespace": {
+  "filters": {
     "project": "frontend-v2",
     "agent_id": "deploy-bot"
   }

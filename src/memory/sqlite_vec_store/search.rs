@@ -6,6 +6,7 @@ use crate::memory::sqlite_vec_store::types::FusionSource;
 use crate::memory::store::{HybridSearchResult, MemoryRecord};
 use std::collections::HashMap;
 
+/// Merge rrf result.
 pub fn merge_rrf_result(
     scored: &mut HashMap<String, HybridSearchResult>,
     source: FusionSource,

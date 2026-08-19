@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
 
@@ -8,6 +9,7 @@ use crate::memory::qmd::QmdMemory;
 use crate::retrieval::eval::{is_hit, CaseResult, EvalDataset, RetrievalMetrics};
 use crate::retrieval::history::{self, HistoryEntry};
 use crate::retrieval::tuner::{detect_recall_drift, tune, RetrievalConfig};
+use crate::scheduler::retry::{CircuitBreaker, RetryPolicy};
 
 /// Interval between auto-tune passes. Mirrors the decay loop's 6h cadence: the
 /// tuner is cheap (a handful of synchronous searches) but recall only shifts
@@ -22,11 +24,31 @@ const AUTO_TUNE_DATASET: &str = "scripts/benchmarks/datasets/internal_swal_openc
 /// Background Daemon to run scheduled memory maintenance tasks autonomously.
 pub struct MemoryDaemon {
     manager: Arc<MemoryManager>,
+    retry_policy: RetryPolicy,
+    circuit_breaker: Arc<Mutex<CircuitBreaker>>,
 }
 
 impl MemoryDaemon {
+    /// New.
     pub fn new(manager: Arc<MemoryManager>) -> Self {
-        Self { manager }
+        Self {
+            manager,
+            retry_policy: RetryPolicy::default(),
+            circuit_breaker: Arc::new(Mutex::new(CircuitBreaker::default())),
+        }
+    }
+
+    /// Create with custom retry policy and circuit breaker settings.
+    pub fn with_retry_and_circuit(
+        manager: Arc<MemoryManager>,
+        retry_policy: RetryPolicy,
+        circuit_breaker: CircuitBreaker,
+    ) -> Self {
+        Self {
+            manager,
+            retry_policy,
+            circuit_breaker: Arc::new(Mutex::new(circuit_breaker)),
+        }
     }
 
     /// Spawns the autonomous Tokio loops.
@@ -78,13 +100,15 @@ impl MemoryDaemon {
             }
         });
 
-        // Periodic retrieval auto-tune + drift detection.
+        // Periodic retrieval auto-tune + drift detection with exponential backoff & circuit breaker.
         //
         // Runs every 6h (see AUTO_TUNE_INTERVAL_SECS), gated on memory being
         // available and the benchmark dataset being present. Spawned the same
         // way as the maintenance loops above so it never blocks the daemon and
         // stays isolated from them.
         let manager_tune = self.manager.clone();
+        let retry_policy = self.retry_policy.clone();
+        let circuit = self.circuit_breaker.clone();
         tokio::spawn(async move {
             info!(
                 "MemoryDaemon: Scheduled retrieval auto-tune loop started ({}s interval)",
@@ -92,12 +116,159 @@ impl MemoryDaemon {
             );
             loop {
                 sleep(Duration::from_secs(AUTO_TUNE_INTERVAL_SECS)).await;
-                if let Err(e) = run_auto_tune(&manager_tune.memory()).await {
-                    warn!("MemoryDaemon: Auto-tune pass failed: {e}");
+
+                // Check circuit breaker status before proceeding
+                let can_exec = {
+                    let cb = circuit.lock().await;
+                    cb.can_execute()
+                };
+
+                if !can_exec {
+                    warn!("MemoryDaemon: Auto-tune circuit breaker is OPEN (cooldown active); skipping pass");
+                    continue;
+                }
+
+                let mut attempt = 1;
+                let max_retries = 3;
+                let mut success = false;
+
+                while attempt <= max_retries {
+                    match run_auto_tune(&manager_tune.memory()).await {
+                        Ok(()) => {
+                            let mut cb = circuit.lock().await;
+                            cb.record_success();
+                            success = true;
+                            break;
+                        }
+                        Err(e) => {
+                            let tripped = {
+                                let mut cb = circuit.lock().await;
+                                cb.record_failure()
+                            };
+
+                            if tripped {
+                                warn!("MemoryDaemon: Circuit breaker TRIPPED OPEN after consecutive auto-tune failures");
+                                break;
+                            }
+
+                            let delay = retry_policy.calculate_delay(attempt);
+                            warn!(
+                                "MemoryDaemon: Auto-tune pass attempt {}/{} failed: {e}. Applying exponential backoff with jitter, retrying in {:?}",
+                                attempt, max_retries, delay
+                            );
+                            sleep(delay).await;
+                            attempt += 1;
+                        }
+                    }
+                }
+
+                if !success {
+                    error!("MemoryDaemon: Auto-tune pass failed after retries/circuit open; backing off until next interval");
+                }
+            }
+        });
+
+        // Autonomous Self-Management Cron loop (Fase P3 & P4)
+        tokio::spawn(async move {
+            let sleep_minutes = std::env::var("XAVIER_CRON_SLEEP_MINUTES")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(5);
+            info!(
+                "MemoryDaemon: Scheduled self-manage loop started ({}m interval)",
+                sleep_minutes
+            );
+            loop {
+                sleep(Duration::from_secs(sleep_minutes * 60)).await;
+                info!("MemoryDaemon: Running scheduled self-management checks...");
+                if let Err(e) = run_self_manage_checks().await {
+                    error!(
+                        "MemoryDaemon: Scheduled self-management check failed: {}",
+                        e
+                    );
                 }
             }
         });
     }
+}
+
+/// Run-once autonomous SRE monitoring check: monitors environment alerts,
+/// scans logs for Telegram failures, maps environment gaps and creates support tickets.
+async fn run_self_manage_checks() -> anyhow::Result<()> {
+    let args = crate::self_manage::EnvStatusArgs {
+        include_processes: Some(true),
+        top_n: Some(10),
+    };
+    let env_res = crate::self_manage::env_status(args);
+
+    let log_args = crate::self_manage::LogScanArgs {
+        since: None,
+        level_min: Some("warn".to_string()),
+        pattern: None,
+        source: None,
+        max_entries: 50,
+    };
+    let log_res = crate::self_manage::log_scan(log_args);
+
+    // If there are critical/major alerts or Telegram polling is dead, file support tickets!
+    let mut alerts = env_res.alerts.clone();
+    if log_res.telegram_polling_dead {
+        alerts.push(crate::self_manage::Alert {
+            severity: "critical".to_string(),
+            metric: "telegram_polling".to_string(),
+            value: "dead/CLOSE-WAIT".to_string(),
+            threshold: "get_me fails or CLOSE-WAIT threads".to_string(),
+        });
+    }
+
+    for alert in alerts {
+        if alert.severity == "critical" || alert.severity == "warn" {
+            let title = format!(
+                "[Incident] {} alert on host: {}",
+                alert.severity.to_uppercase(),
+                alert.metric
+            );
+            let body = format!(
+                "### Self-Management Guardian Alert\n\n\
+                **Metric:** {}\n\
+                **Value:** {}\n\
+                **Threshold:** {}\n\
+                **Severity:** {}\n\n\
+                Please review and execute the appropriate runbook actions.",
+                alert.metric, alert.value, alert.threshold, alert.severity
+            );
+
+            let ticket_args = crate::self_manage::TicketCreateArgs {
+                title,
+                body,
+                labels: Some(vec!["runtime".to_string(), "incident".to_string()]),
+                severity: alert.severity,
+                fingerprint: None,
+                backend: Some("maloca".to_string()), // default to Maloca backlog
+            };
+
+            match crate::self_manage::ticket_create(ticket_args) {
+                Ok(res) => {
+                    if res.deduplicated {
+                        tracing::info!(
+                            "Alert ticket already exists, skipping creation to prevent duplicates."
+                        );
+                    } else {
+                        tracing::warn!(
+                            "Created auto-incident ticket: id={} ({})",
+                            res.id,
+                            res.backend
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to auto-create incident ticket: {}", e);
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// One scheduled auto-tune pass: measure current recall, compare it against the

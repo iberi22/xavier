@@ -454,6 +454,7 @@ async fn detect_env_vars(detailed: bool) -> HashMap<String, EnvVarStatus> {
     vars
 }
 
+/// Gather system info.
 pub fn gather_system_info() -> SystemInfo {
     SystemInfo {
         os: std::env::consts::OS.to_string(),
@@ -465,9 +466,7 @@ pub fn gather_system_info() -> SystemInfo {
         xavier_version: env!("CARGO_PKG_VERSION").to_string(),
     }
 }
-
 /// Format scan result as table
-#[allow(dead_code)]
 pub fn format_as_table(result: &SystemScanResult) -> String {
     let mut lines = vec![
         "╔═══════════════════════════════════════════════════════════════╗".to_string(),
@@ -550,7 +549,6 @@ pub fn format_as_json(result: &SystemScanResult) -> String {
 }
 
 /// Format scan result as Markdown
-#[allow(dead_code)]
 pub fn format_as_markdown(result: &SystemScanResult) -> String {
     let mut md = vec!["# System Scan Results\n".to_string()];
 
