@@ -81,8 +81,8 @@ pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
 pub use p2p::{
     CandidatePair, CandidatePairState, HolePunchState, IceCandidate, IceCandidateType, NatType,
-    NatTraversalEngine, NatTraversalError, StunAttribute, StunMessage, StunMessageType,
-    TransportProtocol, TurnServerConfig,
+    NatTraversalEngine, NatTraversalError, OfflineBuffer, ReplayResult, StunAttribute,
+    StunMessage, StunMessageType, SyncEvent, SyncStatus, TransportProtocol, TurnServerConfig,
 };
 pub use peer::{PeerInfo, PeerRegistry};
 pub use private_mesh::{derive_wallet_id, is_same_wallet, PrivateMeshRegistry, WalletNode};
