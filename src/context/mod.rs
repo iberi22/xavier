@@ -13,6 +13,7 @@ pub mod orchestrator;
 pub mod pipeline;
 pub mod query_processor;
 pub mod regen_loop;
+pub mod reranker;
 pub mod skill_dispatcher;
 pub mod skill_registry;
 pub mod skills;
