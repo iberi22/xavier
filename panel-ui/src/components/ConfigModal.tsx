@@ -90,9 +90,20 @@ export default function ConfigModal({
   const [endDate, setEndDate] = useState<string>("");
   const [selectedMilestone, setSelectedMilestone] = useState<string>("all");
 
-  const milestones = Array.from(
-    new Set(graphData.nodes.map((n) => n.milestone).filter(Boolean)),
-  ) as string[];
+  /**
+   * ⚡ Bolt Performance Optimization
+   *
+   * 💡 What: Wrapped milestones computation in useMemo()
+   * 🎯 Why: milestones array was being re-calculated on every render, doing an O(N) map and filter operation across all nodes.
+   * 📊 Impact: O(1) evaluation on non-graphData state changes (like switching tabs or changing date filters). Prevents unnecessary expensive array allocations.
+   */
+  const milestones = useMemo(
+    () =>
+      Array.from(
+        new Set(graphData.nodes.map((n) => n.milestone).filter(Boolean)),
+      ) as string[],
+    [graphData.nodes],
+  );
 
   const filteredGraphData = useMemo(() => {
     let nodes = graphData.nodes;
