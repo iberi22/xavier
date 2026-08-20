@@ -82,6 +82,7 @@ pub use node::{NodeId, NodeIdentity};
 pub use p2p::{
     CandidatePair, CandidatePairState, HolePunchState, IceCandidate, IceCandidateType, NatType,
     NatTraversalEngine, NatTraversalError, StunAttribute, StunMessage, StunMessageType,
+    SyncFilter, SyncFilterConfig, SyncFilterDecision, SyncFilterError, SyncFilterStats,
     TransportProtocol, TurnServerConfig,
 };
 pub use peer::{PeerInfo, PeerRegistry};
