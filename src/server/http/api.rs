@@ -9,8 +9,139 @@ use crate::context::ContextClassifier;
 use crate::retrieval::gating::{AdaptiveGating, LayerWeights, SessionSummary};
 use crate::server::http::types::*;
 use crate::workspace::WorkspaceContext;
-use axum::{extract::Json, response::IntoResponse, Extension};
+use axum::{
+    body::Body,
+    extract::Json,
+    http::{HeaderMap, Request},
+    middleware::Next,
+    response::{IntoResponse, Response},
+    Extension,
+};
 use std::sync::Arc;
+use subtle::ConstantTimeEq;
+
+use crate::error::ApiError;
+use crate::security::auth::{resolve_xavier_token, Claims, UserRole};
+
+/// Constant-time string comparison resistant to timing side-channel attacks.
+pub fn constant_time_compare(provided: &str, expected: &str) -> bool {
+    let prov_bytes = provided.as_bytes();
+    let exp_bytes = expected.as_bytes();
+
+    if prov_bytes.len() != exp_bytes.len() {
+        // Perform dummy check against expected to maintain constant timing profile
+        let _ = exp_bytes.ct_eq(exp_bytes);
+        return false;
+    }
+
+    prov_bytes.ct_eq(exp_bytes).into()
+}
+
+/// Extracts the authentication token from incoming HTTP headers.
+/// Supports:
+/// - `X-Xavier-Token: <token>`
+/// - `Authorization: Bearer <token>`
+/// - `Authorization: token <token>` (legacy format)
+/// - `Authorization: <token>` (raw legacy token)
+pub fn extract_auth_token(headers: &HeaderMap) -> Result<String, ApiError> {
+    // 1. Try X-Xavier-Token header
+    if let Some(val) = headers.get("X-Xavier-Token") {
+        let token_str = val
+            .to_str()
+            .map_err(|_| ApiError::bad_request("Malformed X-Xavier-Token header"))?;
+        let trimmed = token_str.trim();
+        if trimmed.is_empty() {
+            return Err(ApiError::unauthorized("Empty authentication token"));
+        }
+        return Ok(trimmed.to_string());
+    }
+
+    // 2. Try Authorization header
+    if let Some(val) = headers.get("Authorization") {
+        let auth_str = val
+            .to_str()
+            .map_err(|_| ApiError::bad_request("Malformed Authorization header"))?;
+        let trimmed_full = auth_str.trim();
+        if trimmed_full.is_empty() {
+            return Err(ApiError::unauthorized("Empty authentication token"));
+        }
+
+        if trimmed_full == "Bearer" || trimmed_full.starts_with("Bearer ") || trimmed_full.starts_with("Bearer\t") {
+            let token = trimmed_full.trim_start_matches("Bearer").trim();
+            if token.is_empty() {
+                return Err(ApiError::unauthorized("Empty authentication token"));
+            }
+            return Ok(token.to_string());
+        }
+
+        if trimmed_full == "token" || trimmed_full.starts_with("token ") || trimmed_full.starts_with("token\t") {
+            let token = trimmed_full.trim_start_matches("token").trim();
+            if token.is_empty() {
+                return Err(ApiError::unauthorized("Empty authentication token"));
+            }
+            return Ok(token.to_string());
+        }
+
+        if trimmed_full.starts_with("Basic ") || trimmed_full == "Basic" {
+            return Err(ApiError::bad_request("Unsupported authentication scheme"));
+        }
+
+        // Handle raw token without scheme prefix
+        return Ok(trimmed_full.to_string());
+    }
+
+    Err(ApiError::unauthorized("Missing Authorization header"))
+}
+
+/// Validates an API token against expected token using constant-time comparison.
+pub fn validate_api_token(provided_token: &str, expected_token: &str) -> Result<bool, ApiError> {
+    if expected_token.is_empty() {
+        return Err(ApiError::internal("Security token not configured"));
+    }
+    let trimmed = provided_token.trim();
+    if trimmed.is_empty() {
+        return Ok(false);
+    }
+    Ok(constant_time_compare(trimmed, expected_token))
+}
+
+/// Axum middleware for REST API Authentication with timing attack protection and legacy token support.
+pub async fn api_auth_middleware(req: Request<Body>, next: Next) -> Response {
+    let expected_token = resolve_xavier_token();
+    if expected_token.is_empty() {
+        return ApiError::internal("Security token not configured").into_response();
+    }
+
+    let token = match extract_auth_token(req.headers()) {
+        Ok(t) => t,
+        Err(err) => return err.into_response(),
+    };
+
+    match validate_api_token(&token, &expected_token) {
+        Ok(true) => {
+            let mut req = req;
+            req.extensions_mut().insert(Claims::new(
+                "root".to_string(),
+                "admin@swal.dev".to_string(),
+                UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
+            next.run(req).await
+        }
+        Ok(false) => {
+            // Optional JWT secret fallback for legacy JWT tokens
+            if let Ok(jwt_secret) = std::env::var("XAVIER_JWT_SECRET") {
+                if let Ok(claims) = crate::security::auth::validate_jwt(&token, jwt_secret.as_bytes()) {
+                    let mut req = req;
+                    req.extensions_mut().insert(claims);
+                    return next.run(req).await;
+                }
+            }
+            ApiError::unauthorized("Invalid API token").into_response()
+        }
+        Err(err) => err.into_response(),
+    }
+}
 
 /// Memory retrieve.
 pub async fn memory_retrieve(
