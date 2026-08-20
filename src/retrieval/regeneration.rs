@@ -130,12 +130,27 @@ impl ContextRegenerator {
         let kw_ratio = keyword_hits as f32 / total_hits;
         let vw_ratio = vector_hits as f32 / total_hits;
 
-        let alpha = self.config.learning_rate.clamp(0.01, 1.0);
-        let new_kw = current_kw * (1.0 - alpha) + kw_ratio * alpha;
-        let new_vw = current_vw * (1.0 - alpha) + vw_ratio * alpha;
+        let alpha = if self.config.learning_rate.is_nan() {
+            0.1
+        } else {
+            self.config.learning_rate.clamp(0.01, 1.0)
+        };
+        let cur_kw_safe = if current_kw.is_nan() || current_kw < 0.0 {
+            0.5
+        } else {
+            current_kw
+        };
+        let cur_vw_safe = if current_vw.is_nan() || current_vw < 0.0 {
+            0.5
+        } else {
+            current_vw
+        };
+
+        let new_kw = cur_kw_safe * (1.0 - alpha) + kw_ratio * alpha;
+        let new_vw = cur_vw_safe * (1.0 - alpha) + vw_ratio * alpha;
 
         let sum = new_kw + new_vw;
-        if sum > 0.0 {
+        if sum.is_finite() && sum > 0.0 {
             (new_kw / sum, new_vw / sum)
         } else {
             (0.5, 0.5)
@@ -151,25 +166,44 @@ impl ContextRegenerator {
         keyword_weight: f32,
         vector_weight: f32,
     ) -> f64 {
-        if results.is_empty() {
+        if results.is_empty() || self.config.target_top_k == 0 {
             return 0.0;
         }
 
         let target_len = results.len().min(self.config.target_top_k);
+        if target_len == 0 {
+            return 0.0;
+        }
+
+        let kw = if keyword_weight.is_nan() || keyword_weight < 0.0 {
+            0.5
+        } else {
+            keyword_weight
+        };
+        let vw = if vector_weight.is_nan() || vector_weight < 0.0 {
+            0.5
+        } else {
+            vector_weight
+        };
+
         let mut total_shift = 0.0f64;
 
         for item in results.iter_mut().take(target_len) {
             let old_score = item.score;
             // Scale score according to source channel or balanced weight multiplier
             let multiplier = if item.source.contains("working") || item.source.contains("keyword") {
-                keyword_weight * 2.0
+                kw * 2.0
             } else if item.source.contains("semantic") || item.source.contains("vector") {
-                vector_weight * 2.0
+                vw * 2.0
             } else {
-                keyword_weight + vector_weight
+                kw + vw
             };
 
-            let new_score = (old_score * multiplier).clamp(0.0, 1.0);
+            let new_score = if old_score.is_nan() {
+                0.0
+            } else {
+                (old_score * multiplier).clamp(0.0, 1.0)
+            };
             item.score = new_score;
             total_shift += (new_score - old_score).abs() as f64;
         }
@@ -187,22 +221,37 @@ impl ContextRegenerator {
         keyword_weight: f32,
         vector_weight: f32,
     ) -> Result<Vec<f32>, String> {
+        let kw = if keyword_weight.is_nan() || keyword_weight < 0.0 {
+            0.5
+        } else {
+            keyword_weight
+        };
+        let vw = if vector_weight.is_nan() || vector_weight < 0.0 {
+            0.5
+        } else {
+            vector_weight
+        };
+
         tokio::task::spawn_blocking(move || {
             candidates
                 .into_iter()
                 .map(|(v1, v2)| {
+                    if v1.is_empty() || v2.is_empty() {
+                        return (kw * 0.5).clamp(0.0, 1.0);
+                    }
+
                     let dot: f32 = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum();
                     let norm1: f32 = v1.iter().map(|a| a * a).sum::<f32>().sqrt();
                     let norm2: f32 = v2.iter().map(|b| b * b).sum::<f32>().sqrt();
 
-                    let cos_sim = if norm1 > 0.0 && norm2 > 0.0 {
-                        dot / (norm1 * norm2)
+                    let cos_sim = if norm1 > 0.0 && norm2 > 0.0 && dot.is_finite() {
+                        (dot / (norm1 * norm2)).clamp(-1.0, 1.0)
                     } else {
                         0.0
                     };
 
                     // Blended score weighting vector similarity with keyword ratio
-                    (cos_sim * vector_weight + (1.0 - cos_sim.abs()) * keyword_weight * 0.5)
+                    (cos_sim * vw + (1.0 - cos_sim.abs()) * kw * 0.5)
                         .clamp(0.0, 1.0)
                 })
                 .collect()
@@ -282,8 +331,9 @@ impl ContextRegenerator {
         mut shutdown_rx: tokio::sync::oneshot::Receiver<()>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
+            let interval_secs = self.config.interval_secs.max(1);
             let mut interval =
-                tokio::time::interval(std::time::Duration::from_secs(self.config.interval_secs));
+                tokio::time::interval(std::time::Duration::from_secs(interval_secs));
 
             loop {
                 tokio::select! {
