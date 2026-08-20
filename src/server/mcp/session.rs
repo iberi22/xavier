@@ -12,11 +12,295 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
+use futures_util::stream::StreamExt;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, RwLock};
+use std::time::{Duration, Instant};
 use tracing::info;
 
 pub const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
 pub const ERROR_HEADER_MISMATCH: i32 = -32020;
+pub const DEFAULT_PAYLOAD_LIMIT_BYTES: usize = 4 * 1024 * 1024; // 4MB
+pub const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
+
+// ── MCP Session Lifecycle ──────────────────────────────────────────
+
+/// Session states for Model Context Protocol sessions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum McpSessionState {
+    Connected,
+    Streaming,
+    TimedOut,
+    Disconnected,
+    Closed,
+}
+
+/// Errors related to session lifecycle management.
+#[derive(Debug, thiserror::Error)]
+pub enum McpSessionError {
+    #[error("Session not found: {0}")]
+    SessionNotFound(String),
+    #[error("Payload size limit exceeded: {actual} bytes exceeds limit of {limit} bytes")]
+    PayloadLimitExceeded { limit: usize, actual: usize },
+    #[error("Session timed out after {0:?}")]
+    TimedOut(Duration),
+    #[error("Session disconnected by client (abrupt EOF)")]
+    Disconnected,
+    #[error("Invalid session state transition from {from:?} to {to:?}")]
+    InvalidStateTransition {
+        from: McpSessionState,
+        to: McpSessionState,
+    },
+}
+
+/// Represents an active or historical MCP session.
+#[derive(Debug, Clone)]
+pub struct McpSession {
+    pub id: String,
+    pub state: McpSessionState,
+    pub created_at: Instant,
+    pub last_activity: Instant,
+    pub bytes_transferred: usize,
+    pub payload_limit_bytes: usize,
+    pub timeout_duration: Duration,
+}
+
+static GLOBAL_SESSION_MANAGER: LazyLock<McpSessionManager> =
+    LazyLock::new(McpSessionManager::new);
+
+/// Thread-safe manager for tracking MCP session lifecycles.
+#[derive(Debug, Clone)]
+pub struct McpSessionManager {
+    sessions: Arc<RwLock<HashMap<String, McpSession>>>,
+}
+
+impl Default for McpSessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl McpSessionManager {
+    /// Create a new session manager instance.
+    pub fn new() -> Self {
+        Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Access global shared session manager.
+    pub fn global() -> &'static McpSessionManager {
+        &GLOBAL_SESSION_MANAGER
+    }
+
+    /// Register or create a session with optional custom payload limit and timeout.
+    pub fn create_session(
+        &self,
+        id: impl Into<String>,
+        payload_limit: Option<usize>,
+        timeout: Option<Duration>,
+    ) -> McpSession {
+        let id_str = id.into();
+        let now = Instant::now();
+        let session = McpSession {
+            id: id_str.clone(),
+            state: McpSessionState::Connected,
+            created_at: now,
+            last_activity: now,
+            bytes_transferred: 0,
+            payload_limit_bytes: payload_limit.unwrap_or(DEFAULT_PAYLOAD_LIMIT_BYTES),
+            timeout_duration: timeout.unwrap_or(DEFAULT_TIMEOUT_DURATION),
+        };
+
+        if let Ok(mut map) = self.sessions.write() {
+            map.insert(id_str, session.clone());
+        }
+        session
+    }
+
+    /// Retrieve session snapshot if present.
+    pub fn get_session(&self, id: &str) -> Option<McpSession> {
+        self.sessions
+            .read()
+            .ok()
+            .and_then(|map| map.get(id).cloned())
+    }
+
+    /// Retrieve current state of session.
+    pub fn get_state(&self, id: &str) -> Option<McpSessionState> {
+        self.get_session(id).map(|s| s.state)
+    }
+
+    /// Transition session to a target state.
+    pub fn transition_state(
+        &self,
+        id: &str,
+        target_state: McpSessionState,
+    ) -> Result<McpSessionState, McpSessionError> {
+        let mut map = self
+            .sessions
+            .write()
+            .map_err(|_| McpSessionError::SessionNotFound(id.to_string()))?;
+
+        let session = map
+            .get_mut(id)
+            .ok_or_else(|| McpSessionError::SessionNotFound(id.to_string()))?;
+
+        let old_state = session.state;
+        session.state = target_state;
+        session.last_activity = Instant::now();
+        Ok(old_state)
+    }
+
+    /// Record payload bytes transferred in session, failing if limit exceeded.
+    pub fn record_bytes(&self, id: &str, bytes: usize) -> Result<usize, McpSessionError> {
+        let mut map = self
+            .sessions
+            .write()
+            .map_err(|_| McpSessionError::SessionNotFound(id.to_string()))?;
+
+        let session = map
+            .get_mut(id)
+            .ok_or_else(|| McpSessionError::SessionNotFound(id.to_string()))?;
+
+        if session.bytes_transferred + bytes > session.payload_limit_bytes {
+            session.state = McpSessionState::Closed;
+            return Err(McpSessionError::PayloadLimitExceeded {
+                limit: session.payload_limit_bytes,
+                actual: session.bytes_transferred + bytes,
+            });
+        }
+
+        session.bytes_transferred += bytes;
+        session.last_activity = Instant::now();
+        Ok(session.bytes_transferred)
+    }
+
+    /// Close session gracefully.
+    pub fn close_session(&self, id: &str) -> Result<(), McpSessionError> {
+        self.transition_state(id, McpSessionState::Closed)?;
+        Ok(())
+    }
+
+    /// Mark session disconnected due to abrupt EOF or client channel drop.
+    pub fn handle_disconnect(&self, id: &str) -> Result<(), McpSessionError> {
+        self.transition_state(id, McpSessionState::Disconnected)?;
+        Ok(())
+    }
+
+    /// Prune sessions inactive longer than max_idle.
+    pub fn prune_stale_sessions(&self, max_idle: Duration) -> usize {
+        let mut map = match self.sessions.write() {
+            Ok(m) => m,
+            Err(_) => return 0,
+        };
+
+        let now = Instant::now();
+        let initial = map.len();
+        map.retain(|_, session| now.duration_since(session.last_activity) <= max_idle);
+        initial - map.len()
+    }
+
+    /// Return total active session count.
+    pub fn active_session_count(&self) -> usize {
+        self.sessions.read().map(|m| m.len()).unwrap_or(0)
+    }
+}
+
+/// Wraps execution of an MCP query with timeout detection and session state updates.
+pub async fn execute_query_with_timeout<F, T>(
+    manager: &McpSessionManager,
+    session_id: &str,
+    timeout_dur: Duration,
+    fut: F,
+) -> Result<T, McpSessionError>
+where
+    F: std::future::Future<Output = T>,
+{
+    let _ = manager.transition_state(session_id, McpSessionState::Streaming);
+    match tokio::time::timeout(timeout_dur, fut).await {
+        Ok(result) => {
+            let _ = manager.transition_state(session_id, McpSessionState::Connected);
+            Ok(result)
+        }
+        Err(_) => {
+            let _ = manager.transition_state(session_id, McpSessionState::TimedOut);
+            Err(McpSessionError::TimedOut(timeout_dur))
+        }
+    }
+}
+
+/// Streams large tool responses and detects abrupt client disconnect / EOF.
+pub async fn stream_tool_response_with_cancellation<S, B>(
+    manager: &McpSessionManager,
+    session_id: &str,
+    mut stream: S,
+    tx: tokio::sync::mpsc::Sender<B>,
+) -> Result<usize, McpSessionError>
+where
+    S: futures_util::stream::Stream<Item = B> + Unpin,
+{
+    let _ = manager.transition_state(session_id, McpSessionState::Streaming);
+    let mut total_chunks = 0;
+
+    while let Some(chunk) = stream.next().await {
+        if tx.send(chunk).await.is_err() {
+            let _ = manager.transition_state(session_id, McpSessionState::Disconnected);
+            return Err(McpSessionError::Disconnected);
+        }
+        total_chunks += 1;
+    }
+
+    let _ = manager.transition_state(session_id, McpSessionState::Connected);
+    Ok(total_chunks)
+}
+
+/// Mcp delete handler to gracefully close session.
+pub async fn mcp_delete_handler(headers: HeaderMap) -> Response {
+    let session_id = headers
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("default");
+
+    match McpSessionManager::global().close_session(session_id) {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "session_closed",
+                "session_id": session_id
+            })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": error.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Mcp sse stream handler for server-sent events notification stream.
+pub async fn mcp_sse_handler(headers: HeaderMap) -> Response {
+    let session_id = headers
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("default");
+
+    let manager = McpSessionManager::global();
+    if manager.get_session(session_id).is_none() {
+        manager.create_session(session_id, None, None);
+    }
+    let _ = manager.transition_state(session_id, McpSessionState::Connected);
+
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+        format!("event: connected\ndata: {{\"session_id\": \"{}\"}}\n\n", session_id),
+    )
+        .into_response()
+}
 
 /// Mcp post handler.
 pub async fn mcp_post_handler(
@@ -26,6 +310,24 @@ pub async fn mcp_post_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let session_id = headers
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("default");
+
+    let manager = McpSessionManager::global();
+    if manager.get_session(session_id).is_none() {
+        manager.create_session(session_id, None, None);
+    }
+
+    if let Err(err) = manager.record_bytes(session_id, body.len()) {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(error_response(None, XAVIER_ERROR_VALIDATION, err.to_string())),
+        )
+            .into_response();
+    }
+
     let payload: Value = match serde_json::from_slice(&body) {
         Ok(payload) => payload,
         Err(error) => {
@@ -47,7 +349,11 @@ pub async fn mcp_post_handler(
     }
 
     let claims_ref = claims.as_ref().map(|c| &c.0);
-    match dispatch_mcp_value(state, workspace, claims_ref, payload).await {
+    let _ = manager.transition_state(session_id, McpSessionState::Streaming);
+    let result = dispatch_mcp_value(state, workspace, claims_ref, payload).await;
+    let _ = manager.transition_state(session_id, McpSessionState::Connected);
+
+    match result {
         Ok(Some(response)) => (StatusCode::OK, Json(response)).into_response(),
         Ok(None) => StatusCode::ACCEPTED.into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
