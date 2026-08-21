@@ -198,6 +198,7 @@ async fn memory_sync_endpoints_full_scenario() {
         namespace: "default".to_string(),
         action: DiffAction::Update,
         data: Some(data),
+        record_path: None,
         timestamp: SystemTime::UNIX_EPOCH,
     })
     .expect("serialise ChunkDiff");
