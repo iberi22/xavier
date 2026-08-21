@@ -7,6 +7,7 @@
 
 pub mod beliefs;
 pub mod commits;
+pub mod data_node;
 mod handlers;
 mod params;
 mod store;
@@ -18,7 +19,7 @@ pub mod ws;
 pub use store::MalocaStore;
 pub use types::*;
 
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use std::sync::Arc;
 
@@ -51,13 +52,30 @@ pub fn router() -> Router {
             get(handlers::list_manager_actions).post(handlers::manager_action),
         )
         .route("/feed/status", get(handlers::feed_status))
+        .route(
+            "/consent",
+            get(handlers::list_consents).post(handlers::register_consent),
+        )
+        .route(
+            "/consent/{node_id}",
+            get(handlers::get_consent).delete(handlers::revoke_consent),
+        )
 }
 
-/// Convenience: nested `/maloca` tree with store extension applied.
+/// Convenience: nested `/maloca` tree with store + consent registry extensions.
 pub fn nested_router(store: Arc<MalocaStore>) -> Router {
+    nested_router_with_consent(store, data_node::ConsentRegistry::new_std())
+}
+
+/// Convenience: nested `/maloca` tree with both store and consent registry.
+pub fn nested_router_with_consent(
+    store: Arc<MalocaStore>,
+    consent: Arc<data_node::ConsentRegistry>,
+) -> Router {
     Router::new()
         .nest("/maloca", router())
         .layer(axum::Extension(store))
+        .layer(axum::Extension(consent))
 }
 
 #[cfg(test)]

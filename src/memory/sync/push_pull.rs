@@ -37,6 +37,7 @@ pub async fn collect_changes_since(
                 action: DiffAction::Update,
                 data: Some(data),
                 timestamp,
+                record_path: Some(rec.path.clone()),
             });
         }
     }
@@ -67,6 +68,7 @@ pub async fn entries_as_push_diffs(
                 action: DiffAction::Update,
                 data: Some(data),
                 timestamp: rec.updated_at.into(),
+                record_path: Some(rec.path.clone()),
             });
         } else {
             // Record not found locally — push as Delete
@@ -76,6 +78,7 @@ pub async fn entries_as_push_diffs(
                 action: DiffAction::Delete,
                 data: None,
                 timestamp: std::time::SystemTime::now(),
+                record_path: entry.record_path.clone(),
             });
         }
     }
@@ -101,6 +104,7 @@ pub async fn collect_all_chunks(
             action: DiffAction::Update,
             data: Some(data),
             timestamp,
+            record_path: Some(rec.path.clone()),
         });
     }
     Ok(diffs)

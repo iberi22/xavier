@@ -9,6 +9,7 @@
 //! API) the [`MigrationManager`] and `Migration` trait aliases are preserved at
 //! the bottom of this file. New code should prefer [`MigrationRunner`].
 
+pub mod backup;
 pub mod migrations;
 pub mod multi_db;
 

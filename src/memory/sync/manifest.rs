@@ -14,18 +14,12 @@ use super::{Manifest, ManifestEntry};
 /// Enumerates every record in every workspace and produces a compact
 /// entry for each, suitable for transmission between peers.
 pub async fn build_manifest(store: &dyn MemoryStore) -> Result<Manifest> {
-    // We need workspace IDs first. The MemoryStore trait doesn't provide
-    // a `list_workspaces` method, so we scan a known path or derive from context.
-    // For now, we scan by listing all records under an empty path (which gives
-    // workspace-membership hints) and build entries from what we have.
+    let workspaces = store.list_workspaces().await?;
     let mut entries = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    // We'll try a few common workspace IDs and build their manifests.
-    // A more complete implementation would store a workspace registry.
-    let probe_paths = &["episodic", "semantic", "working", ""];
-    for prefix in probe_paths {
-        let records = store.list(prefix).await?;
+    for workspace_id in &workspaces {
+        let records = store.list(workspace_id).await?;
         for rec in &records {
             // Dedup by chunk_hash (sha256 of content)
             use sha2::{Digest, Sha256};
@@ -42,6 +36,7 @@ pub async fn build_manifest(store: &dyn MemoryStore) -> Result<Manifest> {
                     revision: rec.revision,
                     updated_at: rec.updated_at,
                     size_bytes: rec.content.len() as u64,
+                    record_path: Some(rec.path.clone()),
                 });
             }
         }
@@ -128,6 +123,17 @@ pub(crate) mod tests {
             let records = self.records.lock().unwrap();
             Ok(records.clone())
         }
+        async fn list_workspaces(&self) -> std::result::Result<Vec<String>, anyhow::Error> {
+            let records = self.records.lock().unwrap();
+            let mut seen = std::collections::HashSet::new();
+            let mut ids = Vec::new();
+            for rec in records.iter() {
+                if seen.insert(rec.workspace_id.clone()) {
+                    ids.push(rec.workspace_id.clone());
+                }
+            }
+            Ok(ids)
+        }
         async fn search(
             &self,
             _workspace_id: &str,
@@ -203,5 +209,41 @@ pub(crate) mod tests {
         });
         let manifest = build_manifest(&*store).await.unwrap();
         assert!(manifest.is_empty(), "empty store → empty manifest");
+    }
+
+    #[tokio::test]
+    async fn test_build_manifest_with_records() {
+        use chrono::Utc;
+
+        let store = Arc::new(TestStore {
+            records: std::sync::Mutex::new(vec![MemoryRecord {
+                id: "rec1".into(),
+                workspace_id: "default".into(),
+                path: "/memories/test".into(),
+                content: "hello world".into(),
+                metadata: serde_json::Value::Null,
+                embedding: vec![],
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                revision: 1,
+                primary: false,
+                parent_id: None,
+                cluster_id: None,
+                level: Default::default(),
+                relation: None,
+                clearance: Default::default(),
+                revisions: vec![],
+                encrypted_dek: None,
+                content_iv: None,
+                metadata_iv: None,
+                score: 0.0,
+                deleted_at: None,
+                embedding_status: "ok".into(),
+                embedding_attempts: 0,
+            }]),
+        });
+        let manifest = build_manifest(&*store).await.unwrap();
+        assert_eq!(manifest.len(), 1, "one record → one manifest entry");
+        assert_eq!(manifest[0].namespace, "default");
     }
 }

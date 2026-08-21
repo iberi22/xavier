@@ -39,7 +39,9 @@ impl SessionScanner {
                     candidates.push(candidate);
                 } else if let Some(candidate) = self.detect_assumption(&event.session_id, content) {
                     candidates.push(candidate);
-                } else if let Some(candidate) = self.detect_clarification(&event.session_id, content) {
+                } else if let Some(candidate) =
+                    self.detect_clarification(&event.session_id, content)
+                {
                     candidates.push(candidate);
                 }
             }
@@ -52,8 +54,14 @@ impl SessionScanner {
     fn detect_contradiction(&self, session_id: &str, content: &str) -> Option<HumanChallengeEvent> {
         let lower = content.to_lowercase();
         let contradiction_keywords = [
-            "sin embargo", "por el contrario", "contradice", "en lugar de",
-            "conflict", "contradiction", "previously stated", "inconsistent"
+            "sin embargo",
+            "por el contrario",
+            "contradice",
+            "en lugar de",
+            "conflict",
+            "contradiction",
+            "previously stated",
+            "inconsistent",
         ];
 
         if contradiction_keywords.iter().any(|kw| lower.contains(kw)) {
@@ -73,8 +81,15 @@ impl SessionScanner {
     fn detect_decision(&self, session_id: &str, content: &str) -> Option<HumanChallengeEvent> {
         let lower = content.to_lowercase();
         let decision_keywords = [
-            "decidimos", "se decide", "optamos por", "elegimos", "la decisión es",
-            "we decided", "architecture choice", "decision:", "acordamos"
+            "decidimos",
+            "se decide",
+            "optamos por",
+            "elegimos",
+            "la decisión es",
+            "we decided",
+            "architecture choice",
+            "decision:",
+            "acordamos",
         ];
 
         if decision_keywords.iter().any(|kw| lower.contains(kw)) {
@@ -91,11 +106,26 @@ impl SessionScanner {
     }
 
     /// Detect Execution candidates
-    fn detect_execution(&self, session_id: &str, event: &SessionEvent) -> Option<HumanChallengeEvent> {
-        if matches!(event.event_type, SessionEventType::ToolCall | SessionEventType::ToolResult) {
+    fn detect_execution(
+        &self,
+        session_id: &str,
+        event: &SessionEvent,
+    ) -> Option<HumanChallengeEvent> {
+        if matches!(
+            event.event_type,
+            SessionEventType::ToolCall | SessionEventType::ToolResult
+        ) {
             if let Some(content) = &event.content {
                 let lower = content.to_lowercase();
-                let exec_keywords = ["rm -rf", "drop table", "deploy", "release", "systemctl", "sudo", "migrate"];
+                let exec_keywords = [
+                    "rm -rf",
+                    "drop table",
+                    "deploy",
+                    "release",
+                    "systemctl",
+                    "sudo",
+                    "migrate",
+                ];
                 if exec_keywords.iter().any(|kw| lower.contains(kw)) {
                     return Some(HumanChallengeEvent::new(
                         session_id,
@@ -114,8 +144,14 @@ impl SessionScanner {
     fn detect_assumption(&self, session_id: &str, content: &str) -> Option<HumanChallengeEvent> {
         let lower = content.to_lowercase();
         let assumption_keywords = [
-            "asumiendo", "supongo", "asumimos", "assuming", "hypothesis",
-            "presumiblemente", "sin verificar", "unverified"
+            "asumiendo",
+            "supongo",
+            "asumimos",
+            "assuming",
+            "hypothesis",
+            "presumiblemente",
+            "sin verificar",
+            "unverified",
         ];
 
         if assumption_keywords.iter().any(|kw| lower.contains(kw)) {
@@ -135,8 +171,12 @@ impl SessionScanner {
     fn detect_clarification(&self, session_id: &str, content: &str) -> Option<HumanChallengeEvent> {
         let lower = content.to_lowercase();
         let clarification_keywords = [
-            "por favor aclara", "se requiere clarificación", "ambiguo",
-            "could you clarify", "need clarification", "unclear instruction"
+            "por favor aclara",
+            "se requiere clarificación",
+            "ambiguo",
+            "could you clarify",
+            "need clarification",
+            "unclear instruction",
         ];
 
         if clarification_keywords.iter().any(|kw| lower.contains(kw)) {

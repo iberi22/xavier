@@ -197,12 +197,20 @@ impl SemanticCompressor {
     pub fn calculate_text_similarity(a: &str, b: &str) -> f32 {
         let words_a: HashSet<String> = a
             .split_whitespace()
-            .map(|w| w.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .map(|w| {
+                w.to_lowercase()
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_string()
+            })
             .filter(|w| w.len() >= 3)
             .collect();
         let words_b: HashSet<String> = b
             .split_whitespace()
-            .map(|w| w.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .map(|w| {
+                w.to_lowercase()
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_string()
+            })
             .filter(|w| w.len() >= 3)
             .collect();
 
@@ -247,19 +255,32 @@ impl SemanticCompressor {
             }
 
             // 2. Dates or version numbers like 2025-03-01, v1.2.3
-            if clean.starts_with('v') && clean.len() > 1 && clean[1..].chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            if clean.starts_with('v')
+                && clean.len() > 1
+                && clean[1..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit())
+            {
                 entities.insert(clean.to_string());
             }
 
             // 3. Mixed uppercase/digit codes like AB123, DB42, UUIDs
-            if clean.len() >= 3 && clean.chars().any(|c| c.is_ascii_uppercase()) && clean.chars().any(|c| c.is_ascii_digit()) {
+            if clean.len() >= 3
+                && clean.chars().any(|c| c.is_ascii_uppercase())
+                && clean.chars().any(|c| c.is_ascii_digit())
+            {
                 entities.insert(clean.to_string());
             }
 
             // 4. Proper capitalization (CamelCase or PascalCase)
             if clean.len() >= 4
                 && clean.chars().next().is_some_and(|c| c.is_ascii_uppercase())
-                && !["What", "When", "Where", "This", "That", "There", "Here", "Your", "With", "From"].contains(&clean)
+                && ![
+                    "What", "When", "Where", "This", "That", "There", "Here", "Your", "With",
+                    "From",
+                ]
+                .contains(&clean)
             {
                 entities.insert(clean.to_string());
             }
@@ -288,7 +309,9 @@ impl SemanticCompressor {
                     let sim = self.turn_similarity(&last_cluster[0], turn);
                     let neighbor_sim = self.turn_similarity(last_cluster.last().unwrap(), turn);
 
-                    if sim >= self.config.similarity_threshold || neighbor_sim >= self.config.similarity_threshold {
+                    if sim >= self.config.similarity_threshold
+                        || neighbor_sim >= self.config.similarity_threshold
+                    {
                         last_cluster.push(turn.clone());
                         added = true;
                     }
@@ -304,7 +327,12 @@ impl SemanticCompressor {
     }
 
     /// Synthesize a Level-1 semantic summary card from a cluster of dialogue turns
-    pub fn synthesize_card_level1(&self, session_id: &str, cluster: &[DialogueTurn], card_index: usize) -> SemanticSummaryCard {
+    pub fn synthesize_card_level1(
+        &self,
+        session_id: &str,
+        cluster: &[DialogueTurn],
+        card_index: usize,
+    ) -> SemanticSummaryCard {
         let raw_char_count: usize = cluster.iter().map(|t| t.content.len()).sum();
         let turn_ids: Vec<String> = cluster.iter().map(|t| t.id.clone()).collect();
 
@@ -331,7 +359,10 @@ impl SemanticCompressor {
         }
 
         let roles: HashSet<&str> = cluster.iter().map(|t| t.role.as_str()).collect();
-        summary_lines.push(format!("**Participants**: {}", roles.into_iter().collect::<Vec<_>>().join(", ")));
+        summary_lines.push(format!(
+            "**Participants**: {}",
+            roles.into_iter().collect::<Vec<_>>().join(", ")
+        ));
 
         summary_lines.push("**Key Statements:**".to_string());
         for turn in cluster {
@@ -373,7 +404,11 @@ impl SemanticCompressor {
     }
 
     /// Synthesize a Level-2 hierarchical session summary card from Level-1 cards
-    pub fn synthesize_card_level2(&self, session_id: &str, level1_cards: &[SemanticSummaryCard]) -> SemanticSummaryCard {
+    pub fn synthesize_card_level2(
+        &self,
+        session_id: &str,
+        level1_cards: &[SemanticSummaryCard],
+    ) -> SemanticSummaryCard {
         let raw_char_count: usize = level1_cards.iter().map(|c| c.raw_char_count).sum();
         let mut source_turn_ids = Vec::new();
 
@@ -389,11 +424,19 @@ impl SemanticCompressor {
         key_entities.sort();
 
         let mut summary_lines = Vec::new();
-        summary_lines.push(format!("# Executive Factual Overview for Session {session_id}"));
-        summary_lines.push(format!("- **Total Clusters Summarized**: {}", level1_cards.len()));
+        summary_lines.push(format!(
+            "# Executive Factual Overview for Session {session_id}"
+        ));
+        summary_lines.push(format!(
+            "- **Total Clusters Summarized**: {}",
+            level1_cards.len()
+        ));
 
         if !key_entities.is_empty() {
-            summary_lines.push(format!("- **Preserved Key Entities**: {}", key_entities.join(", ")));
+            summary_lines.push(format!(
+                "- **Preserved Key Entities**: {}",
+                key_entities.join(", ")
+            ));
         }
 
         summary_lines.push("\n## Core Factual Concepts:".to_string());
@@ -437,7 +480,11 @@ impl SemanticCompressor {
             return false;
         }
 
-        let latest_timestamp = turns.iter().map(|t| t.timestamp).max().unwrap_or_else(Utc::now);
+        let latest_timestamp = turns
+            .iter()
+            .map(|t| t.timestamp)
+            .max()
+            .unwrap_or_else(Utc::now);
         let elapsed_hours = (Utc::now() - latest_timestamp).num_hours();
 
         elapsed_hours >= self.config.aged_session_hours as i64
@@ -489,7 +536,10 @@ impl SemanticCompressor {
         preserved_entities.sort();
 
         // Calculate final compressed character count based on the highest level summary
-        let final_overview = cards.iter().find(|c| c.level == 2).unwrap_or_else(|| &cards[0]);
+        let final_overview = cards
+            .iter()
+            .find(|c| c.level == 2)
+            .unwrap_or_else(|| &cards[0]);
         let compressed_char_count = final_overview.compressed_char_count;
 
         let overall_compression_ratio = if original_char_count > 0 {

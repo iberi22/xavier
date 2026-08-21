@@ -8,11 +8,11 @@ use colored::*;
 use serde_json::json;
 use std::io::{self, Write};
 
-use xavier::agents::provider::ModelProviderClient;
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;
 use crate::cli::commands::spawn::load_spawn_memory;
 use crate::cli::config::{resolve_base_url, xavier_token};
 use crate::cli::security::secure_cli_input;
+use xavier::agents::provider::ModelProviderClient;
 
 /// Structure representing a retrieved memory item for chat context.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -41,7 +41,14 @@ pub async fn handle_chat_command(
     } else {
         let question = prompt.unwrap();
         let question = secure_cli_input("chat query", &question, 8_192)?;
-        execute_single_turn(&question, &agent_name, as_json, memory_limit, model.as_deref()).await
+        execute_single_turn(
+            &question,
+            &agent_name,
+            as_json,
+            memory_limit,
+            model.as_deref(),
+        )
+        .await
     }
 }
 
@@ -68,10 +75,25 @@ pub async fn retrieve_chat_context(query: &str, limit: usize) -> Vec<ChatMemoryC
                     let items: Vec<ChatMemoryContext> = results
                         .iter()
                         .map(|item| ChatMemoryContext {
-                            id: item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            title: item.get("title").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            path: item.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            content: item.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            id: item
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            title: item
+                                .get("title")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            path: item
+                                .get("path")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            content: item
+                                .get("content")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
                             score: item.get("score").and_then(|v| v.as_f64()),
                         })
                         .collect();
@@ -90,7 +112,11 @@ pub async fn retrieve_chat_context(query: &str, limit: usize) -> Vec<ChatMemoryC
                 .into_iter()
                 .map(|doc| ChatMemoryContext {
                     id: doc.id.clone().unwrap_or_default(),
-                    title: doc.metadata.get("title").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    title: doc
+                        .metadata
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                     path: doc.path.clone(),
                     content: doc.content.clone(),
                     score: doc.metadata.get("score").and_then(|v| v.as_f64()),
@@ -166,15 +192,24 @@ pub async fn execute_single_turn(
                 });
                 println!("{}", serde_json::to_string_pretty(&output)?);
             } else {
-                println!("
-{}", "─".repeat(60).dimmed());
+                println!(
+                    "
+{}",
+                    "─".repeat(60).dimmed()
+                );
                 println!("{} {}", "🧠 Xavier:".bold().cyan(), response_text);
                 if !memories.is_empty() {
-                    println!("
-{}", format!("(Recuperados {} fragmentos de memoria)", memories.len()).dimmed());
+                    println!(
+                        "
+{}",
+                        format!("(Recuperados {} fragmentos de memoria)", memories.len()).dimmed()
+                    );
                 }
-                println!("{}
-", "─".repeat(60).dimmed());
+                println!(
+                    "{}
+",
+                    "─".repeat(60).dimmed()
+                );
             }
         }
         Err(err) => {
@@ -190,21 +225,36 @@ pub async fn execute_single_turn(
                 });
                 println!("{}", serde_json::to_string_pretty(&output)?);
             } else {
-                println!("
-{}", "─".repeat(60).dimmed());
-                println!("{} {}", "⚠️ Xavier [Modo Memoria Offline]:".bold().yellow(), err.to_string().dimmed());
+                println!(
+                    "
+{}",
+                    "─".repeat(60).dimmed()
+                );
+                println!(
+                    "{} {}",
+                    "⚠️ Xavier [Modo Memoria Offline]:".bold().yellow(),
+                    err.to_string().dimmed()
+                );
                 if !memories.is_empty() {
-                    println!("
-{}", "Información relevante encontrada en memoria:".bold());
+                    println!(
+                        "
+{}",
+                        "Información relevante encontrada en memoria:".bold()
+                    );
                     for (i, m) in memories.iter().enumerate() {
                         println!("  {}. [{}] {}", i + 1, m.path.cyan(), m.content.trim());
                     }
                 } else {
-                    println!("
-No se encontró memoria previa relacionada y el modelo LLM no está disponible.");
+                    println!(
+                        "
+No se encontró memoria previa relacionada y el modelo LLM no está disponible."
+                    );
                 }
-                println!("{}
-", "─".repeat(60).dimmed());
+                println!(
+                    "{}
+",
+                    "─".repeat(60).dimmed()
+                );
             }
         }
     }
@@ -225,16 +275,33 @@ async fn run_interactive_repl(
     memory_limit: usize,
     model_override: Option<String>,
 ) -> Result<()> {
-    println!("{}", "╔══════════════════════════════════════════════════════════════════════╗".cyan());
-    println!("{}", "║  🧠 Xavier Cognitive Memory — CLI Conversacional e Interactivo       ║".cyan().bold());
-    println!("{}", "║  Escribe tu pregunta. Comandos: 'exit'|'quit' salir, '/clear' reset  ║".cyan());
-    println!("{}", "╚══════════════════════════════════════════════════════════════════════╝".cyan());
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════════════════╗".cyan()
+    );
+    println!(
+        "{}",
+        "║  🧠 Xavier Cognitive Memory — CLI Conversacional e Interactivo       ║"
+            .cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "║  Escribe tu pregunta. Comandos: 'exit'|'quit' salir, '/clear' reset  ║".cyan()
+    );
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════════════════╝".cyan()
+    );
     println!(
         "{} Agente: {} | Memoria: Activa (Top {}) | Modelo: {}\n",
         "⚙️".dimmed(),
         agent_name.bold().green(),
         memory_limit,
-        model_override.as_deref().unwrap_or("auto (OpenRouter / Local)").magenta()
+        model_override
+            .as_deref()
+            .unwrap_or("auto (OpenRouter / Local)")
+            .magenta()
     );
 
     let stdin = io::stdin();
@@ -333,7 +400,11 @@ async fn execute_turn_with_history(
         .take(6)
         .rev()
         .map(|t| {
-            let who = if t.role == "user" { "Usuario" } else { "Xavier" };
+            let who = if t.role == "user" {
+                "Usuario"
+            } else {
+                "Xavier"
+            };
             format!("{}: {}", who, t.content.trim())
         })
         .collect::<Vec<_>>()
@@ -383,7 +454,10 @@ async fn execute_turn_with_history(
             }
             println!("{}\n", "─".repeat(60).dimmed());
 
-            history.push(Turn { role: "user".to_string(), content: query.to_string() });
+            history.push(Turn {
+                role: "user".to_string(),
+                content: query.to_string(),
+            });
             history.push(Turn {
                 role: "assistant".to_string(),
                 content: response_text,
@@ -397,7 +471,10 @@ async fn execute_turn_with_history(
                 err.to_string().dimmed()
             );
             if !memories.is_empty() {
-                println!("\n{}", "Información relevante encontrada en memoria:".bold());
+                println!(
+                    "\n{}",
+                    "Información relevante encontrada en memoria:".bold()
+                );
                 for (i, m) in memories.iter().enumerate() {
                     println!("  {}. [{}] {}", i + 1, m.path.cyan(), m.content.trim());
                 }
@@ -408,7 +485,10 @@ async fn execute_turn_with_history(
             }
             println!("{}\n", "─".repeat(60).dimmed());
 
-            history.push(Turn { role: "user".to_string(), content: query.to_string() });
+            history.push(Turn {
+                role: "user".to_string(),
+                content: query.to_string(),
+            });
         }
     }
 

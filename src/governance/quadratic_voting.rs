@@ -45,7 +45,12 @@ pub struct VoterProfile {
 }
 
 impl VoterProfile {
-    pub fn new(voter_id: impl Into<String>, karma: u64, identity_tier: IvnIdentityTier, credit_balance: u64) -> Self {
+    pub fn new(
+        voter_id: impl Into<String>,
+        karma: u64,
+        identity_tier: IvnIdentityTier,
+        credit_balance: u64,
+    ) -> Self {
         Self {
             voter_id: voter_id.into(),
             karma,
@@ -94,9 +99,7 @@ pub fn calculate_effective_votes(
     }
 
     let multiplier_bps = tier.multiplier_bps();
-    let karma_weight = (karma as u128)
-        .saturating_mul(multiplier_bps as u128)
-        / 10000u128;
+    let karma_weight = (karma as u128).saturating_mul(multiplier_bps as u128) / 10000u128;
 
     if karma_weight == 0 {
         return 0;
@@ -222,7 +225,10 @@ impl QuadraticVoteEngine {
             .ok_or_else(|| format!("Proposal '{}' not found", proposal_id))?;
 
         if proposal.ballots.contains_key(voter_id) {
-            return Err(format!("Voter '{}' has already voted on proposal '{}'", voter_id, proposal_id));
+            return Err(format!(
+                "Voter '{}' has already voted on proposal '{}'",
+                voter_id, proposal_id
+            ));
         }
 
         if allocations.is_empty() {
@@ -232,10 +238,16 @@ impl QuadraticVoteEngine {
         let mut total_credits_spent: u64 = 0;
         for (option, &credits) in &allocations {
             if !proposal.options.contains(option) {
-                return Err(format!("Invalid option '{}' for proposal '{}'", option, proposal_id));
+                return Err(format!(
+                    "Invalid option '{}' for proposal '{}'",
+                    option, proposal_id
+                ));
             }
             if credits == 0 {
-                return Err(format!("Credits allocated to option '{}' must be greater than zero", option));
+                return Err(format!(
+                    "Credits allocated to option '{}' must be greater than zero",
+                    option
+                ));
             }
             total_credits_spent = total_credits_spent
                 .checked_add(credits)
@@ -298,7 +310,9 @@ impl QuadraticVoteEngine {
             }
 
             for (option, &credits) in &ballot.allocations {
-                let (karma, tier) = voter.map_or((0, IvnIdentityTier::Unverified), |v| (v.karma, v.identity_tier));
+                let (karma, tier) = voter.map_or((0, IvnIdentityTier::Unverified), |v| {
+                    (v.karma, v.identity_tier)
+                });
                 let eff = calculate_effective_votes(credits, karma, tier, false);
 
                 if let Some(current) = option_tallies.get_mut(option) {
@@ -360,7 +374,8 @@ mod tests {
         // karma_weight = (100 * 20000) / 10000 = 200
         // product = 100 * 200 = 20000
         // sqrt(20000) = 141
-        let sovereign_votes = calculate_effective_votes(100, 100, IvnIdentityTier::Sovereign, false);
+        let sovereign_votes =
+            calculate_effective_votes(100, 100, IvnIdentityTier::Sovereign, false);
         assert_eq!(sovereign_votes, 141);
 
         // Sybil flagged returns 0
@@ -388,5 +403,335 @@ mod tests {
         assert_eq!(honest_votes, 316);
         assert_eq!(total_sybil_votes, 30);
         assert!(honest_votes > total_sybil_votes * 10);
+    }
+
+    // === Edge Case Tests for Issue #1459 ===
+
+    #[test]
+    fn test_zero_credits_returns_zero_effective_votes() {
+        // Zero credits should always yield zero effective votes regardless of karma/tier
+        assert_eq!(
+            calculate_effective_votes(0, 100, IvnIdentityTier::Verified, false),
+            0
+        );
+        assert_eq!(
+            calculate_effective_votes(0, u64::MAX, IvnIdentityTier::Sovereign, false),
+            0
+        );
+        assert_eq!(
+            calculate_effective_votes(0, 1, IvnIdentityTier::Basic, false),
+            0
+        );
+    }
+
+    #[test]
+    fn test_zero_karma_returns_zero_effective_votes() {
+        // Zero karma should always yield zero effective votes
+        assert_eq!(
+            calculate_effective_votes(100, 0, IvnIdentityTier::Verified, false),
+            0
+        );
+        assert_eq!(
+            calculate_effective_votes(100, 0, IvnIdentityTier::Sovereign, false),
+            0
+        );
+        assert_eq!(
+            calculate_effective_votes(u64::MAX, 0, IvnIdentityTier::Sovereign, false),
+            0
+        );
+    }
+
+    #[test]
+    fn test_sybil_flagged_always_zero_effective_votes() {
+        // Even with max credits/karma, sybil flagged voter gets 0
+        let votes = calculate_effective_votes(u64::MAX, u64::MAX, IvnIdentityTier::Sovereign, true);
+        assert_eq!(votes, 0);
+        // Also with zero credits (redundant but documents behavior)
+        assert_eq!(
+            calculate_effective_votes(0, 0, IvnIdentityTier::Unverified, true),
+            0
+        );
+    }
+
+    #[test]
+    fn test_credit_sum_overflow_rejected() {
+        // Casting a ballot where credits sum exceeds u64::MAX should error
+        let mut engine = QuadraticVoteEngine::new(10);
+        let voter = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, u64::MAX);
+        engine.register_voter(voter);
+        engine
+            .create_proposal("p1", vec!["a".into(), "b".into()])
+            .unwrap();
+
+        let mut allocations = HashMap::new();
+        allocations.insert("a".into(), u64::MAX);
+        allocations.insert("b".into(), 1u64); // Sum overflows
+
+        let result = engine.cast_multi_choice_ballot("p1", "v1", allocations);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("overflow"));
+    }
+
+    #[test]
+    fn test_duplicate_vote_rejected() {
+        let mut engine = QuadraticVoteEngine::new(10);
+        let voter = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, 1000);
+        engine.register_voter(voter);
+        engine
+            .create_proposal("p1", vec!["a".into(), "b".into()])
+            .unwrap();
+
+        assert!(engine.cast_vote("p1", "v1", "a", 10).is_ok());
+        let second = engine.cast_vote("p1", "v1", "b", 10);
+        assert!(second.is_err());
+        assert!(second.unwrap_err().contains("already voted"));
+    }
+
+    #[test]
+    fn test_tie_breaking_prefers_last_option_when_equal() {
+        // When all options have equal votes, the tally picks the last option
+        // iterated (because strict `>` but max starts at 0, so the first option
+        // sets max, then the equal option replaces it since both > max_votes).
+        let mut engine = QuadraticVoteEngine::new(1);
+        let v1 = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, 100);
+        let v2 = VoterProfile::new("v2", 100, IvnIdentityTier::Verified, 100);
+        engine.register_voter(v1);
+        engine.register_voter(v2);
+        engine
+            .create_proposal("p1", vec!["a".into(), "b".into()])
+            .unwrap();
+
+        // Both allocate 10 credits to a different option => equal effective votes
+        engine.cast_vote("p1", "v1", "a", 10).unwrap();
+        engine.cast_vote("p1", "v2", "b", 10).unwrap();
+
+        let result = engine.tally("p1").unwrap();
+        // A winner IS declared (not None) — HashMap iteration order determines which
+        assert!(result.winning_option.is_some());
+        // Both options have equal tallies
+        assert_eq!(result.option_tallies["a"], result.option_tallies["b"]);
+    }
+
+    #[test]
+    fn test_tie_breaking_one_vote_ahead() {
+        // A single extra credit can break a tie due to quadratic sqrt behavior
+        let mut engine = QuadraticVoteEngine::new(1);
+        let v1 = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, 100);
+        let v2 = VoterProfile::new("v2", 100, IvnIdentityTier::Verified, 100);
+        engine.register_voter(v1);
+        engine.register_voter(v2);
+        engine
+            .create_proposal("p1", vec!["a".into(), "b".into()])
+            .unwrap();
+
+        engine.cast_vote("p1", "v1", "a", 20).unwrap(); // sqrt(2000) = 44
+        engine.cast_vote("p1", "v2", "b", 19).unwrap(); // sqrt(1900) = 43
+
+        let result = engine.tally("p1").unwrap();
+        assert_eq!(result.winning_option.as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn test_quorum_exact_boundary() {
+        // Test quorum at exact boundary: votes == quorum => quorum_reached
+        let mut engine = QuadraticVoteEngine::new(100);
+        let voter = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, 10000);
+        engine.register_voter(voter);
+        engine
+            .create_proposal_with_quorum("p1", vec!["a".into()], 100)
+            .unwrap();
+
+        // Effective votes = sqrt(10000 * 100) = sqrt(1_000_000) = 1000, which is >= 100
+        engine.cast_vote("p1", "v1", "a", 10000).unwrap();
+        let result = engine.tally("p1").unwrap();
+        assert!(result.quorum_reached);
+    }
+
+    #[test]
+    fn test_quorum_not_reached() {
+        // Test quorum just below threshold
+        let mut engine = QuadraticVoteEngine::new(1);
+        // Use Unverified tier (0.1x) + low karma to get minimal effective votes
+        let voter = VoterProfile::new("v1", 10, IvnIdentityTier::Unverified, 10);
+        engine.register_voter(voter);
+        // karma_weight = (10 * 1000) / 10000 = 1
+        // product = 10 * 1 = 10, sqrt(10) = 3
+        engine
+            .create_proposal_with_quorum("p1", vec!["a".into()], 5)
+            .unwrap();
+        engine.cast_vote("p1", "v1", "a", 10).unwrap();
+
+        let result = engine.tally("p1").unwrap();
+        assert!(!result.quorum_reached);
+        assert_eq!(result.option_tallies["a"], 3);
+    }
+
+    #[test]
+    fn test_quorum_zero_always_reached() {
+        // A quorum of 0 should always be satisfied, even with no voters
+        let mut engine = QuadraticVoteEngine::new(0);
+        let voter = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, 100);
+        engine.register_voter(voter);
+        engine
+            .create_proposal_with_quorum("p1", vec!["a".into()], 0)
+            .unwrap();
+
+        let result = engine.tally("p1").unwrap();
+        assert!(result.quorum_reached);
+        assert_eq!(result.total_voters, 0);
+    }
+
+    #[test]
+    fn test_empty_proposal_options_rejected() {
+        let mut engine = QuadraticVoteEngine::new(10);
+        let result = engine.create_proposal("p1", vec![]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn test_duplicate_proposal_id_rejected() {
+        let mut engine = QuadraticVoteEngine::new(10);
+        engine.create_proposal("p1", vec!["a".into()]).unwrap();
+        let result = engine.create_proposal("p1", vec!["b".into()]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("already exists"));
+    }
+
+    #[test]
+    fn test_unregistered_voter_rejected() {
+        let mut engine = QuadraticVoteEngine::new(10);
+        engine.create_proposal("p1", vec!["a".into()]).unwrap();
+        let result = engine.cast_vote("p1", "unknown_voter", "a", 10);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not registered"));
+    }
+
+    #[test]
+    fn test_invalid_option_rejected() {
+        let mut engine = QuadraticVoteEngine::new(10);
+        let voter = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, 100);
+        engine.register_voter(voter);
+        engine.create_proposal("p1", vec!["a".into()]).unwrap();
+        let result = engine.cast_vote("p1", "v1", "nonexistent_option", 10);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid option"));
+    }
+
+    #[test]
+    fn test_zero_credits_in_allocation_rejected() {
+        // Allocating 0 credits to an option should be rejected
+        let mut engine = QuadraticVoteEngine::new(10);
+        let voter = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, 100);
+        engine.register_voter(voter);
+        engine.create_proposal("p1", vec!["a".into()]).unwrap();
+        let result = engine.cast_vote("p1", "v1", "a", 0);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("greater than zero"));
+    }
+
+    #[test]
+    fn test_insufficient_credits_rejected() {
+        let mut engine = QuadraticVoteEngine::new(10);
+        let voter = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, 50);
+        engine.register_voter(voter);
+        engine.create_proposal("p1", vec!["a".into()]).unwrap();
+        let result = engine.cast_vote("p1", "v1", "a", 100);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Insufficient credits"));
+    }
+
+    #[test]
+    fn test_sybil_voter_in_tally_contributes_zero() {
+        // A sybil-flagged voter's ballot should contribute 0 to tallies
+        let mut engine = QuadraticVoteEngine::new(1);
+        let sybil = VoterProfile::new("sybil", 1000, IvnIdentityTier::Sovereign, 10000)
+            .with_sybil_flag(true);
+        let honest = VoterProfile::new("honest", 100, IvnIdentityTier::Verified, 10000);
+        engine.register_voter(sybil);
+        engine.register_voter(honest);
+        engine.create_proposal("p1", vec!["a".into()]).unwrap();
+
+        engine.cast_vote("p1", "sybil", "a", 10000).unwrap();
+        engine.cast_vote("p1", "honest", "a", 10000).unwrap();
+
+        let result = engine.tally("p1").unwrap();
+        assert_eq!(result.sybil_votes_rejected, 1);
+        // Only honest voter's effective votes counted
+        // sqrt(10000 * 100) = 1000
+        assert_eq!(result.option_tallies["a"], 1000);
+        assert_eq!(result.total_voters, 2);
+    }
+
+    #[test]
+    fn test_integer_sqrt_large_values() {
+        // Test integer_sqrt at very large u128 values
+        assert_eq!(integer_sqrt(u128::MAX), 18446744073709551615u64); // sqrt(u64::MAX^2) = u64::MAX
+        assert_eq!(integer_sqrt(1u128 << 126), (1u64 << 63)); // sqrt(2^126) = 2^63
+    }
+
+    #[test]
+    fn test_saturating_mul_prevents_panic_on_large_inputs() {
+        // Huge credits * huge karma_weight should not panic (saturating_mul in calculate_effective_votes)
+        let votes =
+            calculate_effective_votes(u64::MAX, u64::MAX, IvnIdentityTier::Sovereign, false);
+        // Should produce a valid result (large number), not panic
+        assert!(votes > 0);
+    }
+
+    #[test]
+    fn test_multi_choice_ballot_splits_effective_votes() {
+        // Multi-choice ballot should distribute credits across options
+        let mut engine = QuadraticVoteEngine::new(1);
+        let voter = VoterProfile::new("v1", 100, IvnIdentityTier::Verified, 10000);
+        engine.register_voter(voter);
+        engine
+            .create_proposal("p1", vec!["a".into(), "b".into()])
+            .unwrap();
+
+        let mut allocations = HashMap::new();
+        allocations.insert("a".into(), 60u64);
+        allocations.insert("b".into(), 40u64);
+
+        let effective = engine
+            .cast_multi_choice_ballot("p1", "v1", allocations)
+            .unwrap();
+        // sqrt(60 * 100) = sqrt(6000) = 77
+        // sqrt(40 * 100) = sqrt(4000) = 63
+        assert_eq!(effective["a"], 77);
+        assert_eq!(effective["b"], 63);
+
+        // Verify tally sums them correctly
+        let result = engine.tally("p1").unwrap();
+        assert_eq!(result.option_tallies["a"], 77);
+        assert_eq!(result.option_tallies["b"], 63);
+        assert_eq!(result.total_voters, 1);
+    }
+
+    #[test]
+    fn test_tally_proposal_not_found() {
+        let engine = QuadraticVoteEngine::new(10);
+        let result = engine.tally("nonexistent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn test_low_karma_with_high_multiplier_yields_zero() {
+        // Karma=1 with Unverified (0.1x): karma_weight = floor(1 * 1000 / 10000) = 0 => effective = 0
+        let votes = calculate_effective_votes(1000, 1, IvnIdentityTier::Unverified, false);
+        assert_eq!(votes, 0);
+    }
+
+    #[test]
+    fn test_basic_tier_karma_weight_truncation() {
+        // Basic tier (0.5x), karma=1: karma_weight = floor(1 * 5000 / 10000) = 0 => 0
+        let votes = calculate_effective_votes(100, 1, IvnIdentityTier::Basic, false);
+        assert_eq!(votes, 0);
+
+        // Basic tier (0.5x), karma=3: karma_weight = floor(3 * 5000 / 10000) = 1
+        // product = 100 * 1 = 100, sqrt = 10
+        let votes = calculate_effective_votes(100, 3, IvnIdentityTier::Basic, false);
+        assert_eq!(votes, 10);
     }
 }

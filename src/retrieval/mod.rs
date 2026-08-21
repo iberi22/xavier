@@ -16,8 +16,6 @@ pub use gating::{
     SessionSummary,
 };
 pub mod navigation;
-pub use regeneration::{
-    ContextRegenerator, ContextRegeneratorConfig, RegenerationResult,
-};
+pub use regeneration::{ContextRegenerator, ContextRegeneratorConfig, RegenerationResult};
 pub mod scoring;
 pub use policy::{NavigationPolicy, TraversalWeights};

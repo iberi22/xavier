@@ -9,6 +9,7 @@
 //!   present under the `mesh` cargo feature.
 //! - [`SyncTransport::P2P`] — `MeshTransport` (HTTP), the default fallback.
 
+use crate::memory::schema::MemoryQueryFilters;
 use crate::mesh::cloud_node::CloudPeer;
 #[cfg(feature = "mesh")]
 use crate::mesh::iroh_transport::IrohTransport;
@@ -56,13 +57,17 @@ impl SyncTransport {
     /// `IrohTransport::new` binds its Iroh [`Endpoint`] lazily (on first call)
     /// rather than at construction time. As a result no caller needs to be made
     /// `async` to pick a transport.
-    pub fn for_peer(peer: &PeerInfo, identity: Arc<NodeIdentity>) -> Result<Self> {
+    pub fn for_peer(
+        peer: &PeerInfo,
+        identity: Arc<NodeIdentity>,
+        store: Arc<dyn crate::memory::store::MemoryStore>,
+    ) -> Result<Self> {
         if peer.is_cloud {
             Ok(Self::Cloud(CloudPeer::new(identity)?))
         } else {
             #[cfg(feature = "mesh")]
             if is_iroh_peer(peer) {
-                return Ok(Self::P2pIroh(IrohTransport::new(identity)));
+                return Ok(Self::P2pIroh(IrohTransport::new(identity, store)));
             }
             Ok(Self::P2P(MeshTransport::new(identity)))
         }
@@ -150,6 +155,120 @@ mod tests {
     use super::*;
     use crate::mesh::node::NodeId;
 
+    /// Minimal in-memory store for transport routing tests.
+    fn dummy_store() -> Arc<dyn crate::memory::store::MemoryStore> {
+        use crate::memory::store::*;
+        use std::sync::Mutex;
+
+        struct DummyStore;
+        #[async_trait::async_trait]
+        impl MemoryStore for DummyStore {
+            fn backend(&self) -> MemoryBackend {
+                MemoryBackend::Memory
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            async fn health(&self) -> std::result::Result<String, anyhow::Error> {
+                Ok("ok".into())
+            }
+            async fn put(&self, _: MemoryRecord) -> std::result::Result<(), anyhow::Error> {
+                Ok(())
+            }
+            async fn get(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> std::result::Result<Option<MemoryRecord>, anyhow::Error> {
+                Ok(None)
+            }
+            async fn update(&self, _: MemoryRecord) -> std::result::Result<(), anyhow::Error> {
+                Ok(())
+            }
+            async fn delete(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> std::result::Result<Option<MemoryRecord>, anyhow::Error> {
+                Ok(None)
+            }
+            async fn list(&self, _: &str) -> std::result::Result<Vec<MemoryRecord>, anyhow::Error> {
+                Ok(Vec::new())
+            }
+            async fn list_workspaces(&self) -> std::result::Result<Vec<String>, anyhow::Error> {
+                Ok(Vec::new())
+            }
+            async fn search(
+                &self,
+                _: &str,
+                _: &str,
+                _: Option<&MemoryQueryFilters>,
+            ) -> std::result::Result<Vec<MemoryRecord>, anyhow::Error> {
+                Ok(Vec::new())
+            }
+            async fn load_workspace_state(
+                &self,
+                _: &str,
+            ) -> std::result::Result<DurableWorkspaceState, anyhow::Error> {
+                anyhow::bail!("not implemented")
+            }
+            async fn save_beliefs(
+                &self,
+                _: &str,
+                _: Vec<crate::domain::memory::belief::BeliefEdge>,
+            ) -> std::result::Result<(), anyhow::Error> {
+                Ok(())
+            }
+            async fn save_session_token(
+                &self,
+                _: &str,
+                _: SessionTokenRecord,
+            ) -> std::result::Result<(), anyhow::Error> {
+                Ok(())
+            }
+            async fn is_session_token_valid(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> std::result::Result<bool, anyhow::Error> {
+                Ok(false)
+            }
+            async fn save_checkpoint(
+                &self,
+                _: &str,
+                _: crate::checkpoint::Checkpoint,
+            ) -> std::result::Result<(), anyhow::Error> {
+                Ok(())
+            }
+            async fn load_checkpoint(
+                &self,
+                _: &str,
+                _: &str,
+                _: &str,
+            ) -> std::result::Result<Option<crate::checkpoint::Checkpoint>, anyhow::Error>
+            {
+                Ok(None)
+            }
+            async fn list_checkpoints(
+                &self,
+                _: &str,
+                _: &str,
+            ) -> std::result::Result<Vec<crate::checkpoint::Checkpoint>, anyhow::Error>
+            {
+                Ok(Vec::new())
+            }
+            async fn delete_checkpoint(
+                &self,
+                _: &str,
+                _: &str,
+                _: &str,
+            ) -> std::result::Result<(), anyhow::Error> {
+                Ok(())
+            }
+        }
+        Arc::new(DummyStore)
+    }
+
     /// Build a minimal `PeerInfo` for routing tests.
     fn test_peer(is_cloud: bool, iroh_addr: Option<&str>) -> PeerInfo {
         PeerInfo {
@@ -193,20 +312,12 @@ mod tests {
 
     #[test]
     fn cloud_peer_routes_to_cloud() {
-        // A cloud peer must select the Cloud transport regardless of iroh_addr.
-        // We assert the routing *decision* (not construction): is_iroh_peer is
-        // false for cloud, and for_peer enters the Cloud branch. In a test
-        // environment without XAVIER_PGHEART_URL that branch surfaces a
-        // recognizable error, which distinguishes it from the P2P branch (which
-        // would construct successfully). This keeps the test network-free.
         let peer = test_peer(true, Some("abcdef"));
         assert!(!is_iroh_peer(&peer), "cloud peer must not be an iroh peer");
 
         let identity = Arc::new(NodeIdentity::generate());
-        let res = SyncTransport::for_peer(&peer, identity);
-        // Cloud construction needs the PGHEART url; without it we get an Err that
-        // mentions that env var — proving we took the Cloud branch rather than the
-        // infallible P2P branch. With the env set, we expect the Cloud arm.
+        let store = dummy_store();
+        let res = SyncTransport::for_peer(&peer, identity, store);
         let took_cloud = match res {
             Err(e) => e.to_string().contains("PGHEART"),
             Ok(SyncTransport::Cloud(_)) => true,
@@ -219,22 +330,21 @@ mod tests {
 
     #[test]
     fn plain_peer_routes_to_p2p() {
-        // A non-cloud peer with no iroh_addr selects the HTTP P2P transport.
         let peer = test_peer(false, None);
         let identity = Arc::new(NodeIdentity::generate());
+        let store = dummy_store();
         assert!(matches!(
-            SyncTransport::for_peer(&peer, identity).unwrap(),
+            SyncTransport::for_peer(&peer, identity, store).unwrap(),
             SyncTransport::P2P(_)
         ));
     }
 
     #[test]
     fn iroh_peer_routes_to_p2piroh_under_mesh() {
-        // Under the `mesh` feature, a peer with an iroh_addr selects P2pIroh;
-        // without `mesh` it falls back to P2P (the variant simply doesn't exist).
         let peer = test_peer(false, Some("abcdef"));
         let identity = Arc::new(NodeIdentity::generate());
-        let transport = SyncTransport::for_peer(&peer, identity).unwrap();
+        let store = dummy_store();
+        let transport = SyncTransport::for_peer(&peer, identity, store).unwrap();
         #[cfg(feature = "mesh")]
         {
             assert!(matches!(transport, SyncTransport::P2pIroh(_)));

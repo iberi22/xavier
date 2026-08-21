@@ -561,7 +561,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         node_id,
         mesh_token,
     ));
-    xavier::adapters::inbound::http::handlers::sync::init_memory_sync(sync_service);
+    xavier::adapters::inbound::http::handlers::sync::init_memory_sync(Arc::clone(&sync_service));
+
+    // ── Background sync loop ──────────────────────────────────────────────
+    // Spawns a periodic background task that syncs memory with all configured
+    // peers. Reads peer URLs from the XAVIER_PEERS env var (comma-separated)
+    // or from an explicit list. If neither is configured, the loop idles.
+    let (_sync_handle, _sync_stop) = sync_service.spawn_background_sync(vec![]);
+    tracing::info!("Background memory sync loop spawned");
 
     let protected_routes = Router::new()
         .merge(

@@ -2,11 +2,11 @@
 //!
 //! Handles SQLite persistence for HumanChallenge events on the local node.
 
+use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection, Result as SqliteResult};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Mutex;
-use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, Result as SqliteResult};
 
 use crate::humanchallenge::types::{
     ChallengeStatus, ChallengeType, FarmingSummary, HumanChallengeEvent,
@@ -42,14 +42,18 @@ impl HumanChallengeStore {
     pub fn new<P: AsRef<Path>>(db_path: P) -> SqliteResult<Self> {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(INIT_SQL)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Initialize an in-memory store for testing
     pub fn in_memory() -> SqliteResult<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(INIT_SQL)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Save or ignore a HumanChallenge event
@@ -154,12 +158,7 @@ impl HumanChallengeStore {
     }
 
     /// Record human response and award points
-    pub fn answer_challenge(
-        &self,
-        id: &str,
-        response: &str,
-        points: u32,
-    ) -> SqliteResult<bool> {
+    pub fn answer_challenge(&self, id: &str, response: &str, points: u32) -> SqliteResult<bool> {
         let answered_ts = Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
         let rows_updated = conn.execute(

@@ -45,11 +45,11 @@ pub mod token_accounting;
 pub mod usage_counters;
 
 pub use analyzer::ErrorAnalyzer;
+pub use detector::LogDetector;
 pub use distributed_tracer::{
     DistributedTracer, OtelExportPayload, Span, SpanGuard, SpanKind, SpanStatus, Traceparent,
     TraceparentError,
 };
-pub use detector::LogDetector;
 pub use fixer::Fixer;
 pub use health::{HealthMonitor, HealthStatus, HEALTH};
 pub use middleware::{request_logger, ObservabilityState};

@@ -28,9 +28,11 @@ pub mod encryption;
 pub mod hmac;
 pub mod keys;
 pub mod password;
+pub mod wallet;
 
 pub use encryption::{decrypt_data, encrypt_data, EncryptedBlob};
 pub use keys::{derive_kek_from_password, generate_dek, KeyManager};
+pub use wallet::{Ed25519Wallet, WalletError, WalletResult};
 
 /// Size of DEK (Data Encryption Key) in bytes
 pub const DEK_SIZE: usize = 32;

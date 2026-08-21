@@ -299,6 +299,14 @@ impl MemoryStore for PostgresMemoryStore {
         Ok(records)
     }
 
+    async fn list_workspaces(&self) -> Result<Vec<String>> {
+        let rows =
+            sqlx::query_scalar::<_, String>("SELECT DISTINCT workspace_id FROM memory_records")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows)
+    }
+
     async fn search(
         &self,
         workspace_id: &str,

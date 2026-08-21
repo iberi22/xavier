@@ -5,9 +5,9 @@
     "project": "Xavier",
     "version": "0.13.0",
     "created": "2026-03-05",
-    "last_verified": "2026-08-18",
-    "total_features": 45,
-    "features_complete": 44,
+    "last_verified": "2026-08-21",
+    "total_features": 46,
+    "features_complete": 45,
     "features_beta": 1,
     "features_draft": 0,
     "features_planned": 0,
@@ -1521,6 +1521,33 @@
       "last_tested": null,
       "notes": "Designed 2026-08-15 (IDENTITY_VERIFICATION_NETWORK.md). Issue xavier#1380. PR #1392 en verificación. SECUENCIAL: feat-ivn-karma extends ivn.rs.",
       "spec": "docs/features/specs/FEATURE-feat-ivn.md"
+    },
+    "feat-data-node-consent": {
+      "id": "feat-data-node-consent",
+      "name": "Data Node Opt-In Consent API",
+      "category": "maloca",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "REST API for P2P mesh governance: data nodes must explicitly opt-in to data sharing. ConsentRegistry with register/check/revoke/list backed by JSON persistence.",
+      "steps": [
+        "DataNodeConsent struct with node_id, consented, timestamp, scope",
+        "ConsentScope enum (Full, ReadOnly, MetadataOnly, Custom)",
+        "ConsentRegistry with thread-safe RwLock + JSON persistence",
+        "REST endpoints: POST /maloca/consent, GET /maloca/consent/{id}, DELETE /maloca/consent/{id}",
+        "Integration into maloca module router with Extension layer",
+        "12 unit tests covering CRUD, persistence, serde, error cases"
+      ],
+      "passes": true,
+      "verified_by": "cargo-check + 12 unit tests",
+      "github_issue": 1456,
+      "last_tested": "2026-08-21",
+      "notes": "P2P mesh governance foundation. Thread-safe, disk-persisted consent registry. All 12 tests green.",
+      "test_count": 12,
+      "files": [
+        "src/maloca/data_node.rs",
+        "src/maloca/handlers.rs",
+        "src/maloca/mod.rs"
+      ]
     }
   },
   "verification_commands": {

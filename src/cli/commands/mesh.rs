@@ -93,7 +93,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 .context("Peer not found in registry")?;
 
             let identity = Arc::new(NodeIdentity::load_or_create()?);
-            let transport = SyncTransport::for_peer(peer, identity)?;
+            let transport = SyncTransport::for_peer(peer, identity, xavier::mesh::dummy_store())?;
             let token = resolve_http_token().unwrap_or_default();
 
             println!("Pinging {} at {}...", node_id, peer.endpoint_url);
@@ -124,7 +124,8 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 .context("Peer not found in registry")?;
 
             let identity = Arc::new(NodeIdentity::load_or_create()?);
-            let transport = SyncTransport::for_peer(peer, identity.clone())?;
+            let transport =
+                SyncTransport::for_peer(peer, identity.clone(), xavier::mesh::dummy_store())?;
 
             let token = resolve_http_token().unwrap_or_default();
 

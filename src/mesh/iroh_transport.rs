@@ -33,11 +33,12 @@
 //! service layer; this file focuses on the client dial + framing primitives that
 //! the sync layer calls into.
 
+use crate::memory::store::MemoryStore;
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
 use crate::mesh::private_mesh::EncryptedSessionPayload;
 use crate::mesh::protocol::{
-    MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSessionShare, MeshSyncRequest,
+    ChunkRef, MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSessionShare, MeshSyncRequest,
 };
 use crate::session::sharing::SessionBundle;
 use anyhow::{anyhow, Context, Result};
@@ -97,6 +98,7 @@ pub enum MeshRequest {
 pub struct IrohTransport {
     local_identity: Arc<NodeIdentity>,
     endpoint: OnceCell<Endpoint>,
+    store: Arc<dyn MemoryStore>,
 }
 
 impl IrohTransport {
@@ -106,10 +108,11 @@ impl IrohTransport {
     /// (see [`Self::endpoint`]). This mirrors the synchronous
     /// [`super::MeshTransport::new`] signature so `SyncTransport::for_peer` can
     /// construct either variant without `await`.
-    pub fn new(identity: Arc<NodeIdentity>) -> Self {
+    pub fn new(identity: Arc<NodeIdentity>, store: Arc<dyn MemoryStore>) -> Self {
         Self {
             local_identity: identity,
             endpoint: OnceCell::new(),
+            store,
         }
     }
 
@@ -351,8 +354,9 @@ impl IrohTransport {
             }
         };
         let local_identity = self.local_identity.clone();
+        let store = self.store.clone();
         tokio::spawn(async move {
-            if let Err(err) = Self::run_accept_loop(endpoint, local_identity).await {
+            if let Err(err) = Self::run_accept_loop(endpoint, local_identity, store).await {
                 tracing::warn!("Iroh accept loop ended: {err:#}");
             }
         })
@@ -361,11 +365,15 @@ impl IrohTransport {
     /// Run the server-side accept loop on the Iroh endpoint.
     pub async fn accept_loop(&self) -> Result<()> {
         let endpoint = self.endpoint().await?.clone();
-        Self::run_accept_loop(endpoint, self.local_identity.clone()).await
+        Self::run_accept_loop(endpoint, self.local_identity.clone(), self.store.clone()).await
     }
 
     /// Internal worker loop for processing incoming QUIC connections and bi-streams.
-    async fn run_accept_loop(endpoint: Endpoint, local_identity: Arc<NodeIdentity>) -> Result<()> {
+    async fn run_accept_loop(
+        endpoint: Endpoint,
+        local_identity: Arc<NodeIdentity>,
+        store: Arc<dyn MemoryStore>,
+    ) -> Result<()> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         while let Some(incoming) = endpoint.accept().await {
@@ -382,6 +390,7 @@ impl IrohTransport {
             }
 
             let local_identity = local_identity.clone();
+            let store = store.clone();
             tokio::spawn(async move {
                 while let Ok((mut send, mut recv)) = conn.accept_bi().await {
                     let mut len_buf = [0u8; 4];
@@ -402,42 +411,7 @@ impl IrohTransport {
                         }
                     };
 
-                    let response_value = match req {
-                        MeshRequest::Handshake { body: _ } => {
-                            let resp = MeshHandshakeResponse {
-                                accepted: true,
-                                node_id: local_identity.node_id.clone(),
-                                public_key_hex: crate::crypto::hex_encode(
-                                    &local_identity.public_key,
-                                ),
-                                reason: None,
-                            };
-                            serde_json::to_value(resp)
-                        }
-                        MeshRequest::FetchManifest { .. } => {
-                            let resp = MeshManifest {
-                                node_id: local_identity.node_id.clone(),
-                                chunks: vec![],
-                                generated_at: chrono::Utc::now().timestamp(),
-                            };
-                            serde_json::to_value(resp)
-                        }
-                        MeshRequest::FetchChunks { .. } => {
-                            let resp: HashMap<String, Vec<u8>> = HashMap::new();
-                            serde_json::to_value(resp)
-                        }
-                        MeshRequest::PushChunks { .. } => {
-                            let resp: Vec<String> = vec![];
-                            serde_json::to_value(resp)
-                        }
-                        MeshRequest::ShareSession { .. } => {
-                            serde_json::to_value(serde_json::json!({"status": "ok"}))
-                        }
-                        MeshRequest::PrivateSync {
-                            wallet_id: _,
-                            encrypted,
-                        } => serde_json::to_value(encrypted),
-                    };
+                    let response_value = handle_request(&local_identity, &*store, &req).await;
 
                     let resp_bytes = match response_value.and_then(|v| serde_json::to_vec(&v)) {
                         Ok(bytes) => bytes,
@@ -465,11 +439,90 @@ impl IrohTransport {
     }
 }
 
-// NOTE: The full Iroh server-side accept loop (which reads a `MeshRequest` off an
-// incoming stream and dispatches to the local mesh service) belongs in the mesh
-// service layer alongside the HTTP route handlers. This module provides the client
-// dial + framing primitives; wiring the accept loop is the remaining Phase 2 task
-// tracked in features.json.
+/// Process an incoming `MeshRequest` and return the JSON response value.
+///
+/// This is the server-side dispatch function used by the Iroh accept loop.
+/// It reads real data from the local [`MemoryStore`] via the sync manifest and
+/// chunk lookup helpers, instead of returning empty stubs.
+///
+/// Extracted as a standalone `async fn` (outside the `impl` block) so it can
+/// be unit-tested without an Iroh endpoint.
+pub(crate) async fn handle_request(
+    local_identity: &NodeIdentity,
+    store: &dyn MemoryStore,
+    req: &MeshRequest,
+) -> Result<serde_json::Value> {
+    match req {
+        MeshRequest::Handshake { body: _ } => {
+            let resp = MeshHandshakeResponse {
+                accepted: true,
+                node_id: local_identity.node_id.clone(),
+                public_key_hex: crate::crypto::hex_encode(&local_identity.public_key),
+                reason: None,
+            };
+            Ok(serde_json::to_value(resp)?)
+        }
+
+        MeshRequest::FetchManifest { .. } => {
+            // Build the real manifest from the local store.
+            let sync_manifest = crate::memory::sync::manifest::build_manifest(store).await?;
+
+            // Convert sync ManifestEntries → protocol ChunkRefs.
+            let chunks: Vec<ChunkRef> = sync_manifest
+                .into_iter()
+                .map(|entry| ChunkRef {
+                    hash: entry.chunk_hash,
+                    document_count: entry.size_bytes as usize,
+                    created_at: entry.updated_at.timestamp(),
+                })
+                .collect();
+
+            let resp = MeshManifest {
+                node_id: local_identity.node_id.clone(),
+                chunks,
+                generated_at: chrono::Utc::now().timestamp(),
+            };
+            Ok(serde_json::to_value(resp)?)
+        }
+
+        MeshRequest::FetchChunks { request } => {
+            // Look up each requested hash across all workspaces.
+            let workspaces = store.list_workspaces().await?;
+            let mut result: HashMap<String, Vec<u8>> = HashMap::new();
+
+            for ws in &workspaces {
+                let records = store.list(ws).await?;
+                for rec in &records {
+                    let hash = crate::memory::sync::merge::chunk_hash(rec);
+                    if request.wanted_hashes.contains(&hash) {
+                        let data = crate::memory::sync::merge::serialise_chunk(rec)?;
+                        result.insert(hash, data);
+                    }
+                }
+                // Early exit once we've found all requested hashes.
+                if result.len() >= request.wanted_hashes.len() {
+                    break;
+                }
+            }
+            Ok(serde_json::to_value(result)?)
+        }
+
+        MeshRequest::PushChunks { request } => {
+            // PushChunks carries only the hashes being offered (no payload in
+            // the current protocol). Acknowledge all offered hashes.
+            Ok(serde_json::to_value(&request.wanted_hashes)?)
+        }
+
+        MeshRequest::ShareSession { .. } => {
+            Ok(serde_json::to_value(serde_json::json!({"status": "ok"}))?)
+        }
+
+        MeshRequest::PrivateSync {
+            wallet_id: _,
+            encrypted,
+        } => Ok(serde_json::to_value(encrypted)?),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -558,5 +611,202 @@ mod tests {
             IrohTransport::addr_from_peer(&peer).unwrap(),
             "deadbeefdeadbeef"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for handle_request — the accept loop dispatch function.
+    // -----------------------------------------------------------------------
+
+    use crate::memory::sync::manifest::tests::TestStore;
+
+    fn test_identity() -> NodeIdentity {
+        NodeIdentity::generate()
+    }
+
+    fn test_store_with_records(records: Vec<crate::memory::store::MemoryRecord>) -> Arc<TestStore> {
+        Arc::new(TestStore {
+            records: std::sync::Mutex::new(records),
+        })
+    }
+
+    fn make_test_record(
+        id: &str,
+        workspace: &str,
+        content: &str,
+        revision: u64,
+    ) -> crate::memory::store::MemoryRecord {
+        crate::memory::store::MemoryRecord {
+            id: id.into(),
+            workspace_id: workspace.into(),
+            path: format!("test/{id}"),
+            content: content.into(),
+            metadata: serde_json::Value::Null,
+            embedding: Vec::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            revision,
+            primary: true,
+            parent_id: None,
+            cluster_id: None,
+            level: Default::default(),
+            relation: None,
+            clearance: Default::default(),
+            revisions: Vec::new(),
+            encrypted_dek: None,
+            content_iv: None,
+            metadata_iv: None,
+            score: 0.0,
+            deleted_at: None,
+            embedding_status: "ok".into(),
+            embedding_attempts: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_handshake_returns_identity() {
+        let identity = test_identity();
+        let store = test_store_with_records(vec![]);
+        let req = MeshRequest::Handshake {
+            body: crate::mesh::protocol::MeshHandshake {
+                node_id: crate::mesh::node::NodeId("remote".into()),
+                public_key_hex: "dead".into(),
+                xavier_version: "0.1.0".into(),
+                capabilities: vec![],
+                timestamp: 0,
+                nonce: "n".into(),
+                signature_hex: "s".into(),
+                pairing_secret: None,
+            },
+        };
+        let val = handle_request(&identity, &*store, &req).await.unwrap();
+        assert_eq!(val["accepted"], true);
+        assert_eq!(val["node_id"], identity.node_id.as_str());
+    }
+
+    #[tokio::test]
+    async fn handle_fetch_manifest_empty_store() {
+        let identity = test_identity();
+        let store = test_store_with_records(vec![]);
+        let req = MeshRequest::FetchManifest {
+            node_id: "remote".into(),
+            timestamp: "0".into(),
+            nonce: "n".into(),
+            signature: "s".into(),
+        };
+        let val = handle_request(&identity, &*store, &req).await.unwrap();
+        let chunks = val["chunks"].as_array().unwrap();
+        assert!(
+            chunks.is_empty(),
+            "empty store should produce empty manifest"
+        );
+        assert_eq!(val["node_id"], identity.node_id.as_str());
+    }
+
+    #[tokio::test]
+    async fn handle_fetch_manifest_with_records() {
+        let identity = test_identity();
+        let store = test_store_with_records(vec![make_test_record("r1", "ws1", "hello", 1)]);
+        let req = MeshRequest::FetchManifest {
+            node_id: "remote".into(),
+            timestamp: "0".into(),
+            nonce: "n".into(),
+            signature: "s".into(),
+        };
+        let val = handle_request(&identity, &*store, &req).await.unwrap();
+        let chunks = val["chunks"].as_array().unwrap();
+        assert_eq!(chunks.len(), 1, "one record should produce one chunk ref");
+        assert!(chunks[0]["hash"].as_str().unwrap().len() > 0);
+    }
+
+    #[tokio::test]
+    async fn handle_fetch_chunks_returns_real_data() {
+        let identity = test_identity();
+        let rec = make_test_record("r2", "ws2", "chunk data", 1);
+        let store = test_store_with_records(vec![rec]);
+
+        // Compute the expected hash for the record.
+        let records = {
+            let lock = store.records.lock().unwrap();
+            lock.clone()
+        };
+        let expected_hash = crate::memory::sync::merge::chunk_hash(&records[0]);
+
+        let req = MeshRequest::FetchChunks {
+            request: MeshSyncRequest {
+                requesting_node_id: crate::mesh::node::NodeId("remote".into()),
+                wanted_hashes: vec![expected_hash.clone()],
+                timestamp: 0,
+                nonce: "n".into(),
+                signature_hex: "s".into(),
+            },
+        };
+        let val = handle_request(&identity, &*store, &req).await.unwrap();
+        let map = val.as_object().unwrap();
+        assert!(
+            map.contains_key(&expected_hash),
+            "response must contain the requested hash"
+        );
+        // The value is serialized MemoryRecord bytes.
+        let data = map[&expected_hash].as_array().unwrap();
+        assert!(!data.is_empty(), "chunk data must not be empty");
+    }
+
+    #[tokio::test]
+    async fn handle_fetch_chunks_missing_hash() {
+        let identity = test_identity();
+        let store = test_store_with_records(vec![]);
+        let req = MeshRequest::FetchChunks {
+            request: MeshSyncRequest {
+                requesting_node_id: crate::mesh::node::NodeId("remote".into()),
+                wanted_hashes: vec!["nonexistent_hash".into()],
+                timestamp: 0,
+                nonce: "n".into(),
+                signature_hex: "s".into(),
+            },
+        };
+        let val = handle_request(&identity, &*store, &req).await.unwrap();
+        let map = val.as_object().unwrap();
+        assert!(
+            map.is_empty(),
+            "missing hash should produce empty result map"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_push_chunks_acks_hashes() {
+        let identity = test_identity();
+        let store = test_store_with_records(vec![]);
+        let hashes = vec!["h1".into(), "h2".into()];
+        let req = MeshRequest::PushChunks {
+            request: MeshSyncRequest {
+                requesting_node_id: crate::mesh::node::NodeId("remote".into()),
+                wanted_hashes: hashes.clone(),
+                timestamp: 0,
+                nonce: "n".into(),
+                signature_hex: "s".into(),
+            },
+        };
+        let val = handle_request(&identity, &*store, &req).await.unwrap();
+        let acked: Vec<String> = serde_json::from_value(val).unwrap();
+        assert_eq!(acked, hashes);
+    }
+
+    #[tokio::test]
+    async fn handle_private_sync_echoes_payload() {
+        let identity = test_identity();
+        let store = test_store_with_records(vec![]);
+        let enc = crate::mesh::private_mesh::EncryptedSessionPayload {
+            ciphertext_hex: "aabb".into(),
+            nonce_hex: "1122".into(),
+        };
+        let req = MeshRequest::PrivateSync {
+            wallet_id: "w1".into(),
+            encrypted: enc.clone(),
+        };
+        let val = handle_request(&identity, &*store, &req).await.unwrap();
+        let result: crate::mesh::private_mesh::EncryptedSessionPayload =
+            serde_json::from_value(val).unwrap();
+        assert_eq!(result.ciphertext_hex, enc.ciphertext_hex);
+        assert_eq!(result.nonce_hex, enc.nonce_hex);
     }
 }

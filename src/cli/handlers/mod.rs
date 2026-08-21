@@ -5,6 +5,7 @@
 pub mod agent;
 pub mod agent_cli;
 pub mod auth;
+pub mod benchmarks;
 pub mod billing;
 pub mod chat;
 pub mod cloud;
@@ -41,6 +42,7 @@ pub mod workspace_db;
 pub use agent::*;
 pub use agent_cli::*;
 pub use auth::*;
+pub use benchmarks::*;
 pub use chat::*;
 pub use code::*;
 pub use memory::*;

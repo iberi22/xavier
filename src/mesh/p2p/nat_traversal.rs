@@ -120,13 +120,28 @@ impl StunMessage {
                     encode_mapped_address_attr(&mut attr_bytes, 0x0001, addr);
                 }
                 StunAttribute::XorMappedAddress(addr) => {
-                    encode_xor_mapped_address_attr(&mut attr_bytes, 0x0020, addr, &self.transaction_id);
+                    encode_xor_mapped_address_attr(
+                        &mut attr_bytes,
+                        0x0020,
+                        addr,
+                        &self.transaction_id,
+                    );
                 }
                 StunAttribute::XorRelayedAddress(addr) => {
-                    encode_xor_mapped_address_attr(&mut attr_bytes, 0x0116, addr, &self.transaction_id);
+                    encode_xor_mapped_address_attr(
+                        &mut attr_bytes,
+                        0x0116,
+                        addr,
+                        &self.transaction_id,
+                    );
                 }
                 StunAttribute::XorPeerAddress(addr) => {
-                    encode_xor_mapped_address_attr(&mut attr_bytes, 0x0125, addr, &self.transaction_id);
+                    encode_xor_mapped_address_attr(
+                        &mut attr_bytes,
+                        0x0125,
+                        addr,
+                        &self.transaction_id,
+                    );
                 }
                 StunAttribute::Username(user) => {
                     let u_bytes = user.as_bytes();
@@ -143,7 +158,12 @@ impl StunMessage {
                     let len = (4 + r_bytes.len()) as u16;
                     attr_bytes.extend_from_slice(&0x0009u16.to_be_bytes());
                     attr_bytes.extend_from_slice(&len.to_be_bytes());
-                    attr_bytes.extend_from_slice(&[0u8, 0u8, (code / 100) as u8, (code % 100) as u8]);
+                    attr_bytes.extend_from_slice(&[
+                        0u8,
+                        0u8,
+                        (code / 100) as u8,
+                        (code % 100) as u8,
+                    ]);
                     attr_bytes.extend_from_slice(r_bytes);
                     let pad = (4 - (len as usize % 4)) % 4;
                     attr_bytes.extend_from_slice(&vec![0u8; pad]);
@@ -222,8 +242,7 @@ impl StunMessage {
             let attr = match attr_type {
                 0x0001 => {
                     // MAPPED-ADDRESS
-                    parse_mapped_address_attr(attr_data)?
-                        .map(StunAttribute::MappedAddress)
+                    parse_mapped_address_attr(attr_data)?.map(StunAttribute::MappedAddress)
                 }
                 0x0020 => {
                     // XOR-MAPPED-ADDRESS
@@ -484,8 +503,16 @@ pub struct CandidatePair {
 
 impl CandidatePair {
     pub fn new(local: IceCandidate, remote: IceCandidate, controlling: bool) -> Self {
-        let g = if controlling { local.priority } else { remote.priority };
-        let a = if controlling { remote.priority } else { local.priority };
+        let g = if controlling {
+            local.priority
+        } else {
+            remote.priority
+        };
+        let a = if controlling {
+            remote.priority
+        } else {
+            local.priority
+        };
         // RFC 8445 priority formula for candidate pair
         let min_ga = std::cmp::min(g, a);
         let max_ga = std::cmp::max(g, a);
