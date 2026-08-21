@@ -69,6 +69,8 @@ impl SyncTransport {
             if is_iroh_peer(peer) {
                 return Ok(Self::P2pIroh(IrohTransport::new(identity, store)));
             }
+            #[cfg(not(feature = "mesh"))]
+            let _ = &store;
             Ok(Self::P2P(MeshTransport::new(identity)))
         }
     }
