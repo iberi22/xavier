@@ -107,7 +107,10 @@ fn test_file_persistence_and_reload() {
     assert_eq!(reloaded_manager.storage_quota_bytes(), 8192 * 1024 * 1024);
 
     // Non-existent path falls back to default
-    let non_existent_path = file_path.parent().unwrap().join("non_existent_consent.json");
+    let non_existent_path = file_path
+        .parent()
+        .unwrap()
+        .join("non_existent_consent.json");
     let fallback_manager = DataNodeManager::from_file(&non_existent_path).unwrap();
     assert!(!fallback_manager.is_opted_in());
     assert_eq!(fallback_manager.storage_quota_mb(), 1024);
