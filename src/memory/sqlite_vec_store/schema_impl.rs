@@ -1254,9 +1254,23 @@ mod tests {
         use crate::memory::store::MemoryStore;
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
-        // Ensure embedding client is not configured
-        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
-        std::env::remove_var("OPENAI_API_KEY");
+        // Ensure embedding client is not configured.
+        // Clear every embedder-related key AND set XAVIER_EMBEDDER=disabled:
+        // EmbedderConfig::from_env() falls back to local Ollama when
+        // XAVIER_EMBEDDING_PROVIDER_MODE is unset, so on machines running
+        // Ollama the cleared-env state is still "configured" and put()
+        // would auto-generate an embedding.
+        for key in &[
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+        ] {
+            std::env::remove_var(key);
+        }
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
 
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("test_warn.db");
@@ -1289,5 +1303,13 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(fetched.embedding.is_empty());
+
+        // Cleanup env vars
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::remove_var("XAVIER_EMBEDDING_URL");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDER");
+        std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
     }
 }
