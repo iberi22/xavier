@@ -1,0 +1,3 @@
+## 2024-05-18 - [LeaseHistoryPage Refresh Button UX/a11y Fix]
+**Learning:** Adding accessible elements to icon-only buttons (`aria-label`, `type="button"`, `aria-hidden="true"` on the icon itself, and using `focus-visible` ring styles) is required to comply with Biome linters and general a11y practices in this app. Also, one must be very careful not to let automatic linters arbitrarily modify hooks like `useCallback` (e.g. changing the dependency array to include `apiClient.getLeaseHistory`), as this causes infinite loop bugs when the instance changes every render.
+**Action:** Only make precise minimal changes for UX/a11y and strictly verify that no other logic or hooks have been tampered with or automatically reformatted.
