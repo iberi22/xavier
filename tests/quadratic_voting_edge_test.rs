@@ -1,8 +1,8 @@
 use proptest::prelude::*;
 use std::collections::HashMap;
 use xavier::governance::quadratic_voting::{
-    calculate_effective_votes, integer_sqrt, IvnIdentityTier, MultiChoiceBallot, ProposalTallyResult,
-    QuadraticProposal, QuadraticVoteEngine, VoterProfile,
+    calculate_effective_votes, integer_sqrt, IvnIdentityTier, MultiChoiceBallot,
+    ProposalTallyResult, QuadraticProposal, QuadraticVoteEngine, VoterProfile,
 };
 
 // ---------------------------------------------------------------------------
@@ -189,17 +189,29 @@ fn test_integer_sqrt_boundaries() {
 #[test]
 fn test_calculate_effective_votes_zero_weights() {
     // Zero credits
-    assert_eq!(calculate_effective_votes(0, 100, IvnIdentityTier::Verified, false), 0);
+    assert_eq!(
+        calculate_effective_votes(0, 100, IvnIdentityTier::Verified, false),
+        0
+    );
 
     // Zero karma
-    assert_eq!(calculate_effective_votes(100, 0, IvnIdentityTier::Verified, false), 0);
+    assert_eq!(
+        calculate_effective_votes(100, 0, IvnIdentityTier::Verified, false),
+        0
+    );
 
     // Sybil flagged
-    assert_eq!(calculate_effective_votes(100, 100, IvnIdentityTier::Verified, true), 0);
+    assert_eq!(
+        calculate_effective_votes(100, 100, IvnIdentityTier::Verified, true),
+        0
+    );
 
     // Very low karma resulting in 0 karma_weight
     // Unverified multiplier is 1000 bps (0.1x). If karma is 9, (9 * 1000) / 10000 = 0
-    assert_eq!(calculate_effective_votes(100, 9, IvnIdentityTier::Unverified, false), 0);
+    assert_eq!(
+        calculate_effective_votes(100, 9, IvnIdentityTier::Unverified, false),
+        0
+    );
 }
 
 #[test]
@@ -210,7 +222,8 @@ fn test_calculate_effective_votes_max_u64_allocations() {
     assert_eq!(eff, u64::MAX);
 
     // Max u64 credits with Unverified tier
-    let eff_unverified = calculate_effective_votes(u64::MAX, u64::MAX, IvnIdentityTier::Unverified, false);
+    let eff_unverified =
+        calculate_effective_votes(u64::MAX, u64::MAX, IvnIdentityTier::Unverified, false);
     assert!(eff_unverified > 0);
     assert!(eff_unverified < eff);
 }
@@ -241,7 +254,9 @@ fn test_create_proposal_empty_options() {
 #[test]
 fn test_create_proposal_duplicate_id() {
     let mut engine = QuadraticVoteEngine::new(100);
-    engine.create_proposal("prop_1", vec!["A".to_string()]).unwrap();
+    engine
+        .create_proposal("prop_1", vec!["A".to_string()])
+        .unwrap();
 
     let res = engine.create_proposal("prop_1", vec!["B".to_string()]);
     assert!(res.is_err());
@@ -255,7 +270,9 @@ fn test_create_proposal_duplicate_id() {
 #[test]
 fn test_cast_vote_unregistered_voter() {
     let mut engine = QuadraticVoteEngine::new(100);
-    engine.create_proposal("prop_1", vec!["Yes".to_string()]).unwrap();
+    engine
+        .create_proposal("prop_1", vec!["Yes".to_string()])
+        .unwrap();
 
     let res = engine.cast_vote("prop_1", "ghost_voter", "Yes", 10);
     assert!(res.is_err());
@@ -265,7 +282,12 @@ fn test_cast_vote_unregistered_voter() {
 #[test]
 fn test_cast_vote_nonexistent_proposal() {
     let mut engine = QuadraticVoteEngine::new(100);
-    engine.register_voter(VoterProfile::new("alice", 100, IvnIdentityTier::Verified, 100));
+    engine.register_voter(VoterProfile::new(
+        "alice",
+        100,
+        IvnIdentityTier::Verified,
+        100,
+    ));
 
     let res = engine.cast_vote("prop_missing", "alice", "Yes", 10);
     assert!(res.is_err());
@@ -275,8 +297,15 @@ fn test_cast_vote_nonexistent_proposal() {
 #[test]
 fn test_cast_vote_empty_allocations() {
     let mut engine = QuadraticVoteEngine::new(100);
-    engine.register_voter(VoterProfile::new("alice", 100, IvnIdentityTier::Verified, 100));
-    engine.create_proposal("prop_1", vec!["Yes".to_string()]).unwrap();
+    engine.register_voter(VoterProfile::new(
+        "alice",
+        100,
+        IvnIdentityTier::Verified,
+        100,
+    ));
+    engine
+        .create_proposal("prop_1", vec!["Yes".to_string()])
+        .unwrap();
 
     let res = engine.cast_multi_choice_ballot("prop_1", "alice", HashMap::new());
     assert!(res.is_err());
@@ -286,8 +315,15 @@ fn test_cast_vote_empty_allocations() {
 #[test]
 fn test_cast_vote_invalid_option() {
     let mut engine = QuadraticVoteEngine::new(100);
-    engine.register_voter(VoterProfile::new("alice", 100, IvnIdentityTier::Verified, 100));
-    engine.create_proposal("prop_1", vec!["Yes".to_string(), "No".to_string()]).unwrap();
+    engine.register_voter(VoterProfile::new(
+        "alice",
+        100,
+        IvnIdentityTier::Verified,
+        100,
+    ));
+    engine
+        .create_proposal("prop_1", vec!["Yes".to_string(), "No".to_string()])
+        .unwrap();
 
     let res = engine.cast_vote("prop_1", "alice", "Maybe", 10);
     assert!(res.is_err());
@@ -297,8 +333,15 @@ fn test_cast_vote_invalid_option() {
 #[test]
 fn test_cast_vote_zero_credits_allocation() {
     let mut engine = QuadraticVoteEngine::new(100);
-    engine.register_voter(VoterProfile::new("alice", 100, IvnIdentityTier::Verified, 100));
-    engine.create_proposal("prop_1", vec!["Yes".to_string()]).unwrap();
+    engine.register_voter(VoterProfile::new(
+        "alice",
+        100,
+        IvnIdentityTier::Verified,
+        100,
+    ));
+    engine
+        .create_proposal("prop_1", vec!["Yes".to_string()])
+        .unwrap();
 
     let res = engine.cast_vote("prop_1", "alice", "Yes", 0);
     assert!(res.is_err());
@@ -308,8 +351,15 @@ fn test_cast_vote_zero_credits_allocation() {
 #[test]
 fn test_cast_multi_choice_credit_sum_overflow() {
     let mut engine = QuadraticVoteEngine::new(100);
-    engine.register_voter(VoterProfile::new("alice", 100, IvnIdentityTier::Verified, u64::MAX));
-    engine.create_proposal("prop_1", vec!["A".to_string(), "B".to_string()]).unwrap();
+    engine.register_voter(VoterProfile::new(
+        "alice",
+        100,
+        IvnIdentityTier::Verified,
+        u64::MAX,
+    ));
+    engine
+        .create_proposal("prop_1", vec!["A".to_string(), "B".to_string()])
+        .unwrap();
 
     let mut allocations = HashMap::new();
     allocations.insert("A".to_string(), u64::MAX);
@@ -323,8 +373,15 @@ fn test_cast_multi_choice_credit_sum_overflow() {
 #[test]
 fn test_cast_vote_insufficient_credits() {
     let mut engine = QuadraticVoteEngine::new(100);
-    engine.register_voter(VoterProfile::new("alice", 100, IvnIdentityTier::Verified, 50));
-    engine.create_proposal("prop_1", vec!["Yes".to_string()]).unwrap();
+    engine.register_voter(VoterProfile::new(
+        "alice",
+        100,
+        IvnIdentityTier::Verified,
+        50,
+    ));
+    engine
+        .create_proposal("prop_1", vec!["Yes".to_string()])
+        .unwrap();
 
     let res = engine.cast_vote("prop_1", "alice", "Yes", 51);
     assert!(res.is_err());
@@ -346,7 +403,9 @@ fn test_tally_nonexistent_proposal() {
 #[test]
 fn test_tally_unvoted_proposal() {
     let mut engine = QuadraticVoteEngine::new(50);
-    engine.create_proposal("prop_unvoted", vec!["A".to_string(), "B".to_string()]).unwrap();
+    engine
+        .create_proposal("prop_unvoted", vec!["A".to_string(), "B".to_string()])
+        .unwrap();
 
     let tally = engine.tally("prop_unvoted").unwrap();
     assert_eq!(tally.total_voters, 0);
@@ -360,7 +419,9 @@ fn test_tally_unvoted_proposal() {
 #[test]
 fn test_tally_unvoted_proposal_zero_quorum() {
     let mut engine = QuadraticVoteEngine::new(0);
-    engine.create_proposal("prop_zero_q", vec!["A".to_string()]).unwrap();
+    engine
+        .create_proposal("prop_zero_q", vec!["A".to_string()])
+        .unwrap();
 
     let tally = engine.tally("prop_zero_q").unwrap();
     assert!(tally.quorum_reached);
@@ -369,8 +430,15 @@ fn test_tally_unvoted_proposal_zero_quorum() {
 #[test]
 fn test_tally_voter_unregistered_after_voting() {
     let mut engine = QuadraticVoteEngine::new(10);
-    engine.register_voter(VoterProfile::new("alice", 100, IvnIdentityTier::Verified, 100));
-    engine.create_proposal("prop_1", vec!["Yes".to_string()]).unwrap();
+    engine.register_voter(VoterProfile::new(
+        "alice",
+        100,
+        IvnIdentityTier::Verified,
+        100,
+    ));
+    engine
+        .create_proposal("prop_1", vec!["Yes".to_string()])
+        .unwrap();
     engine.cast_vote("prop_1", "alice", "Yes", 100).unwrap();
 
     // Remove voter from registered map
@@ -386,11 +454,19 @@ fn test_tally_voter_unregistered_after_voting() {
 #[test]
 fn test_tally_all_sybil_voters() {
     let mut engine = QuadraticVoteEngine::new(10);
-    engine.register_voter(VoterProfile::new("sybil_1", 100, IvnIdentityTier::Verified, 100).with_sybil_flag(true));
-    engine.register_voter(VoterProfile::new("sybil_2", 100, IvnIdentityTier::Verified, 100).with_sybil_flag(true));
+    engine.register_voter(
+        VoterProfile::new("sybil_1", 100, IvnIdentityTier::Verified, 100).with_sybil_flag(true),
+    );
+    engine.register_voter(
+        VoterProfile::new("sybil_2", 100, IvnIdentityTier::Verified, 100).with_sybil_flag(true),
+    );
 
-    engine.create_proposal("prop_sybil", vec!["Yes".to_string(), "No".to_string()]).unwrap();
-    engine.cast_vote("prop_sybil", "sybil_1", "Yes", 50).unwrap();
+    engine
+        .create_proposal("prop_sybil", vec!["Yes".to_string(), "No".to_string()])
+        .unwrap();
+    engine
+        .cast_vote("prop_sybil", "sybil_1", "Yes", 50)
+        .unwrap();
     engine.cast_vote("prop_sybil", "sybil_2", "No", 50).unwrap();
 
     let tally = engine.tally("prop_sybil").unwrap();
@@ -414,7 +490,8 @@ fn test_serde_roundtrip_all_types() {
     assert_eq!(tier, deserialized_tier);
 
     // VoterProfile
-    let voter = VoterProfile::new("bob", 250, IvnIdentityTier::Validator, 500).with_sybil_flag(true);
+    let voter =
+        VoterProfile::new("bob", 250, IvnIdentityTier::Validator, 500).with_sybil_flag(true);
     let serialized_voter = serde_json::to_string(&voter).unwrap();
     let deserialized_voter: VoterProfile = serde_json::from_str(&serialized_voter).unwrap();
     assert_eq!(voter, deserialized_voter);
@@ -455,6 +532,7 @@ fn test_serde_roundtrip_all_types() {
         quorum_reached: true,
     };
     let serialized_result = serde_json::to_string(&result).unwrap();
-    let deserialized_result: ProposalTallyResult = serde_json::from_str(&serialized_result).unwrap();
+    let deserialized_result: ProposalTallyResult =
+        serde_json::from_str(&serialized_result).unwrap();
     assert_eq!(result, deserialized_result);
 }

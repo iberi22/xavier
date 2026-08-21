@@ -28,9 +28,8 @@ fn test_unique_path(prefix: &str) -> std::path::PathBuf {
 async fn setup_test_app_state() -> (AppState, WorkspaceContext) {
     std::env::set_var("XAVIER_TOKEN", "test-token-mcp-edge");
     let db_path = test_unique_path("mcp-edge-code.db");
-    let code_db = Arc::new(
-        code_graph::db::CodeGraphDB::new(&db_path).expect("CodeGraphDB creation failed"),
-    );
+    let code_db =
+        Arc::new(code_graph::db::CodeGraphDB::new(&db_path).expect("CodeGraphDB creation failed"));
     let code_indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
     let code_query = Arc::new(code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
     let workspace_registry = Arc::new(WorkspaceRegistry::new());
@@ -324,7 +323,9 @@ fn test_mcp_session_error_display_formatting() {
         limit: 100,
         actual: 200,
     };
-    assert!(err_limit.to_string().contains("200 bytes exceeds limit of 100 bytes"));
+    assert!(err_limit
+        .to_string()
+        .contains("200 bytes exceeds limit of 100 bytes"));
 
     let err_timeout = McpSessionError::TimedOut(Duration::from_secs(5));
     assert!(err_timeout.to_string().contains("Session timed out"));
@@ -336,5 +337,7 @@ fn test_mcp_session_error_display_formatting() {
         from: McpSessionState::Closed,
         to: McpSessionState::Streaming,
     };
-    assert!(err_transition.to_string().contains("Invalid session state transition"));
+    assert!(err_transition
+        .to_string()
+        .contains("Invalid session state transition"));
 }

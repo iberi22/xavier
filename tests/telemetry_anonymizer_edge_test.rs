@@ -1,4 +1,6 @@
-use xavier::agents::telemetry::anonymizer::{AnonymizerConfig, RedactionStrategy, TelemetryAnonymizer};
+use xavier::agents::telemetry::anonymizer::{
+    AnonymizerConfig, RedactionStrategy, TelemetryAnonymizer,
+};
 
 #[test]
 fn test_base64_encoded_secrets_redaction() {
@@ -23,7 +25,10 @@ fn test_malformed_and_broken_ipv6_patterns() {
     let valid_ipv6_2 = "fe80::1ff:fe23:4567:890a";
     let valid_ipv6_3 = "::1";
 
-    let valid_input = format!("IPs: {} and {} and {}", valid_ipv6_1, valid_ipv6_2, valid_ipv6_3);
+    let valid_input = format!(
+        "IPs: {} and {} and {}",
+        valid_ipv6_1, valid_ipv6_2, valid_ipv6_3
+    );
     let valid_scrubbed = anonymizer.anonymize(&valid_input);
 
     assert!(!valid_scrubbed.contains(valid_ipv6_1));
@@ -198,7 +203,10 @@ fn test_disabled_or_zero_differential_privacy() {
         dp_epsilon: 1.0,
     };
     let anonymizer_disabled = TelemetryAnonymizer::new(disabled_dp_config);
-    assert_eq!(anonymizer_disabled.add_differential_privacy_noise(42.0, 1.0), 42.0);
+    assert_eq!(
+        anonymizer_disabled.add_differential_privacy_noise(42.0, 1.0),
+        42.0
+    );
 
     let zero_epsilon_config = AnonymizerConfig {
         strategy: RedactionStrategy::Tag,
@@ -206,7 +214,10 @@ fn test_disabled_or_zero_differential_privacy() {
         dp_epsilon: 0.0,
     };
     let anonymizer_zero = TelemetryAnonymizer::new(zero_epsilon_config);
-    assert_eq!(anonymizer_zero.add_differential_privacy_noise(42.0, 1.0), 42.0);
+    assert_eq!(
+        anonymizer_zero.add_differential_privacy_noise(42.0, 1.0),
+        42.0
+    );
 
     let negative_epsilon_config = AnonymizerConfig {
         strategy: RedactionStrategy::Tag,
@@ -214,7 +225,10 @@ fn test_disabled_or_zero_differential_privacy() {
         dp_epsilon: -0.5,
     };
     let anonymizer_neg = TelemetryAnonymizer::new(negative_epsilon_config);
-    assert_eq!(anonymizer_neg.add_differential_privacy_noise(42.0, 1.0), 42.0);
+    assert_eq!(
+        anonymizer_neg.add_differential_privacy_noise(42.0, 1.0),
+        42.0
+    );
 }
 
 #[test]

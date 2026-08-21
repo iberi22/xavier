@@ -47,7 +47,10 @@ fn test_did_to_public_key_edge_cases() {
     let mut csprng = OsRng;
     let signing_key = SigningKey::generate(&mut csprng);
     let verifying_key = signing_key.verifying_key();
-    let did_with_fragment = format!("{}#key-1", DatasetCredentialGenerator::public_key_to_did(&verifying_key));
+    let did_with_fragment = format!(
+        "{}#key-1",
+        DatasetCredentialGenerator::public_key_to_did(&verifying_key)
+    );
 
     // Valid parsing with fragment #key-1
     let parsed_key = DatasetCredentialGenerator::did_to_public_key(&did_with_fragment)
@@ -56,27 +59,38 @@ fn test_did_to_public_key_edge_cases() {
 
     // Valid parsing without did:swal: prefix
     let hex_pk = hex_encode(verifying_key.as_bytes());
-    let parsed_no_prefix = DatasetCredentialGenerator::did_to_public_key(&hex_pk)
-        .expect("Should parse bare hex DID");
+    let parsed_no_prefix =
+        DatasetCredentialGenerator::did_to_public_key(&hex_pk).expect("Should parse bare hex DID");
     assert_eq!(parsed_no_prefix, verifying_key);
 
     // Invalid hex string
     let res_hex_err = DatasetCredentialGenerator::did_to_public_key("did:swal:not_hex_zz!");
-    assert!(matches!(res_hex_err, Err(CredentialError::InvalidPublicKey(_))));
+    assert!(matches!(
+        res_hex_err,
+        Err(CredentialError::InvalidPublicKey(_))
+    ));
 
     // Wrong byte length (16 bytes = 32 hex chars)
-    let res_short_len = DatasetCredentialGenerator::did_to_public_key("did:swal:00112233445566778899aabbccddeeff");
-    assert!(matches!(res_short_len, Err(CredentialError::InvalidPublicKey(msg)) if msg.contains("Expected 32 bytes")));
+    let res_short_len =
+        DatasetCredentialGenerator::did_to_public_key("did:swal:00112233445566778899aabbccddeeff");
+    assert!(
+        matches!(res_short_len, Err(CredentialError::InvalidPublicKey(msg)) if msg.contains("Expected 32 bytes"))
+    );
 
     // Wrong byte length (64 bytes = 128 hex chars)
     let res_long_len = DatasetCredentialGenerator::did_to_public_key(&"00".repeat(64));
-    assert!(matches!(res_long_len, Err(CredentialError::InvalidPublicKey(msg)) if msg.contains("Expected 32 bytes")));
+    assert!(
+        matches!(res_long_len, Err(CredentialError::InvalidPublicKey(msg)) if msg.contains("Expected 32 bytes"))
+    );
 
     // Find bytes that fail Ed25519 key parse (point decompression failure)
     let invalid_pk_bytes = [2u8; 32];
     let invalid_pk_hex = hex_encode(&invalid_pk_bytes);
-    let res_invalid_pk = DatasetCredentialGenerator::did_to_public_key(&format!("did:swal:{invalid_pk_hex}"));
-    assert!(matches!(res_invalid_pk, Err(CredentialError::InvalidPublicKey(msg)) if msg.contains("Ed25519 key parse error")));
+    let res_invalid_pk =
+        DatasetCredentialGenerator::did_to_public_key(&format!("did:swal:{invalid_pk_hex}"));
+    assert!(
+        matches!(res_invalid_pk, Err(CredentialError::InvalidPublicKey(msg)) if msg.contains("Ed25519 key parse error"))
+    );
 }
 
 #[test]
@@ -87,7 +101,8 @@ fn test_verify_credential_edge_cases() {
     let params = DatasetCredentialParams {
         dataset_id: "ds-edge-1".to_string(),
         dataset_name: "edge-dataset".to_string(),
-        dataset_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+        dataset_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            .to_string(),
         record_count: 1,
         license: "MIT".to_string(),
         curation_status: "APPROVED".to_string(),
@@ -110,7 +125,8 @@ fn test_verify_credential_edge_cases() {
     if let Some(ref mut proof) = vc_bad_proof_type.proof {
         proof.proof_type = "RsaSignature2018".to_string();
     }
-    let res_bad_proof_type = DatasetCredentialGenerator::verify_credential(&vc_bad_proof_type, None);
+    let res_bad_proof_type =
+        DatasetCredentialGenerator::verify_credential(&vc_bad_proof_type, None);
     assert!(matches!(
         res_bad_proof_type,
         Err(CredentialError::MalformedCredential(msg)) if msg.contains("Unsupported proof type")
