@@ -1808,6 +1808,40 @@ mod tests {
             embedding_dimensions: 3,
         };
 
+        // Hermetic linking: store.put() routes memory->symbol auto-linking
+        // through code_graph_db_path_for("."), which on dev machines may
+        // resolve to a pre-existing (possibly empty)
+        // ~/.local/share/xavier/code_graph.db. Redirect
+        // XAVIER_CODE_GRAPH_DB_PATH to a temp code graph seeded with the real
+        // `require_permission` middleware symbol (src/middleware/auth.rs) so
+        // the exact-name matching path is deterministic.
+        let code_graph_path = temp_dir.path().join("code_graph.db");
+        {
+            let cg = CodeGraphDB::new(&code_graph_path).unwrap();
+            cg.insert_symbol(&Symbol {
+                id: None,
+                // Explicit stable_id: empty stable_ids get replaced by a
+                // deterministic sha256 during insert_symbol normalization,
+                // and links store stable_id (falling back to name only when
+                // stable_id is empty in the DB row).
+                stable_id: Some("require_permission".to_string()),
+                name: "require_permission".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: "src/middleware/auth.rs".to_string(),
+                start_line: 23,
+                end_line: 30,
+                start_col: 1,
+                end_col: 1,
+                signature: Some("pub fn require_permission(...)".to_string()),
+                parent: None,
+                complexity: None,
+            })
+            .unwrap();
+        }
+        let prev_cg_path = std::env::var("XAVIER_CODE_GRAPH_DB_PATH").ok();
+        std::env::set_var("XAVIER_CODE_GRAPH_DB_PATH", &code_graph_path);
+
         let store = VecSqliteMemoryStore::new(config).await.unwrap();
 
         let memory = MemoryRecord {
@@ -1821,6 +1855,12 @@ mod tests {
         store.put(memory).await.unwrap();
 
         let symbols = store.symbols_for_memory("agent_mem_123").await.unwrap();
+
+        match prev_cg_path {
+            Some(p) => std::env::set_var("XAVIER_CODE_GRAPH_DB_PATH", p),
+            None => std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH"),
+        }
+
         assert!(symbols.contains(&"require_permission".to_string()));
     }
 }
