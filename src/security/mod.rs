@@ -15,6 +15,7 @@ pub mod groups;
 pub mod initializer;
 pub mod layers;
 pub mod license;
+pub mod rate_limiter;
 pub mod prompt_guard;
 pub mod rate_limiter;
 pub mod recovery;
@@ -30,6 +31,7 @@ pub mod user_store;
 pub use anticipator::{Anticipator, AnticipatorConfig};
 pub use detections::{ScanResult as AnticipatorScanResult, Severity, Threat, ThreatCategory};
 pub use prompt_guard::{AttackType, DetectionResult, PromptInjectionDetector};
+pub use rate_limiter::{RateLimitConfig, RateLimitResult, SlidingWindowLimiter};
 pub use redaction::{parse_segmented, DocSection, RedactionEngine, RedactionRule, SegmentedDoc};
 pub use scanner::entropy::{
     EntropyCalculator, EntropyRegion, EntropyScanner, EntropyThreshold, SecretDetector, SecretMatch,
