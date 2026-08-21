@@ -90,9 +90,23 @@ export default function ConfigModal({
   const [endDate, setEndDate] = useState<string>("");
   const [selectedMilestone, setSelectedMilestone] = useState<string>("all");
 
-  const milestones = Array.from(
-    new Set(graphData.nodes.map((n) => n.milestone).filter(Boolean)),
-  ) as string[];
+  /**
+   * ⚡ Bolt Performance Optimization
+   *
+   * 💡 What: Replaced multiple array allocations (map, filter) with a single-pass reduce and wrapped in useMemo.
+   * 🎯 Why: The original code chained `.map()` and `.filter()` on every render, causing O(N) array allocations
+   *         for each step. By using `.reduce()` and `useMemo`, we avoid re-calculating this on unrelated state
+   *         changes (like switching tabs) and do the work in a single pass.
+   * 📊 Impact: O(1) evaluation on non-graph data updates. Replaces multiple intermediate O(N) allocations with a single O(N) pass.
+   */
+  const milestones = useMemo(() => {
+    return Array.from(
+      graphData.nodes.reduce((acc, n) => {
+        if (n.milestone) acc.add(n.milestone);
+        return acc;
+      }, new Set<string>())
+    );
+  }, [graphData.nodes]);
 
   const filteredGraphData = useMemo(() => {
     let nodes = graphData.nodes;
