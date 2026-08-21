@@ -84,10 +84,14 @@ export default function LeaseHistoryPage({ token }: LeaseHistoryPageProps) {
         </div>
         <button
           onClick={fetchHistory}
-          className="p-2 text-white/20 hover:text-[#39ff14] hover:bg-[#39ff14]/10 rounded-lg transition-all"
+          className="p-2 text-white/20 hover:text-[#39ff14] hover:bg-[#39ff14]/10 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
           title="Refresh History"
+          aria-label="Refresh History"
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+            aria-hidden="true"
+          />
         </button>
       </div>
 
