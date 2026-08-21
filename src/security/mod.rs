@@ -30,7 +30,7 @@ pub mod user_store;
 pub use anticipator::{Anticipator, AnticipatorConfig};
 pub use detections::{ScanResult as AnticipatorScanResult, Severity, Threat, ThreatCategory};
 pub use prompt_guard::{AttackType, DetectionResult, PromptInjectionDetector};
-pub use rate_limiter::{RateLimitConfig, RateLimitResult, SlidingWindowLimiter};
+pub use rate_limiter::{LimiterConfig, LimiterResult, SlidingWindowLimiter};
 pub use redaction::{parse_segmented, DocSection, RedactionEngine, RedactionRule, SegmentedDoc};
 pub use scanner::entropy::{
     EntropyCalculator, EntropyRegion, EntropyScanner, EntropyThreshold, SecretDetector, SecretMatch,
