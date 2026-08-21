@@ -17,7 +17,6 @@ pub mod layers;
 pub mod license;
 pub mod rate_limiter;
 pub mod prompt_guard;
-pub mod rate_limiter;
 pub mod recovery;
 pub mod redaction;
 pub mod rsa_keys;
