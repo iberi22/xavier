@@ -88,7 +88,8 @@ check-errors.txt
 /cargo_check_output.txt
 /diag.json
 # Backup and temp files
-backup/
+# root-level backup dir only (src/storage/backup is real source code)
+/backup/
 panel-ui/scripts/
 scripts/fix_*.py
 
