@@ -61,8 +61,10 @@ proptest! {
         if is_sybil || credits == 0 || karma == 0 {
             prop_assert_eq!(eff, 0);
         } else {
-            // Effective votes must never exceed floor(sqrt(u128::MAX)) = u64::MAX
-            prop_assert!(eff <= u64::MAX);
+            // Effective votes must never overflow: floor(sqrt(u128::MAX)) = u64::MAX,
+            // so the result is representable in u64 by construction (assert the
+            // invariant without a tautological comparison).
+            prop_assert!((eff as u128) <= u64::MAX as u128);
         }
     }
 
