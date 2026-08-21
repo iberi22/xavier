@@ -66,8 +66,12 @@ export async function obtainDeviceKeyViaWebAuthn(options: ObtainDeviceKeyOptions
 
   // Node/headless pseudo-random 32-byte hex fallback
   const fallbackBytes = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    fallbackBytes[i] = Math.floor(Math.random() * 256);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(fallbackBytes);
+  } else {
+    for (let i = 0; i < 32; i++) {
+      fallbackBytes[i] = Math.floor(Math.random() * 256);
+    }
   }
   return bufToHex(fallbackBytes);
 }
