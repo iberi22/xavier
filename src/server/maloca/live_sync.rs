@@ -103,7 +103,10 @@ pub struct MalocaEventFilter {
 
 impl MalocaEventFilter {
     pub fn new(project_id: Option<String>, event_type: Option<String>) -> Self {
-        Self { project_id, event_type }
+        Self {
+            project_id,
+            event_type,
+        }
     }
 
     /// Checks whether an event matches this filter.
@@ -388,11 +391,23 @@ mod tests {
 
     #[test]
     fn test_event_type_parsing() {
-        assert_eq!(MalocaEventType::parse_str("proposals"), MalocaEventType::Proposals);
-        assert_eq!(MalocaEventType::parse_str("PROPOSAL"), MalocaEventType::Proposals);
+        assert_eq!(
+            MalocaEventType::parse_str("proposals"),
+            MalocaEventType::Proposals
+        );
+        assert_eq!(
+            MalocaEventType::parse_str("PROPOSAL"),
+            MalocaEventType::Proposals
+        );
         assert_eq!(MalocaEventType::parse_str("votes"), MalocaEventType::Votes);
-        assert_eq!(MalocaEventType::parse_str("decisions"), MalocaEventType::Decisions);
-        assert_eq!(MalocaEventType::parse_str("beliefs"), MalocaEventType::Beliefs);
+        assert_eq!(
+            MalocaEventType::parse_str("decisions"),
+            MalocaEventType::Decisions
+        );
+        assert_eq!(
+            MalocaEventType::parse_str("beliefs"),
+            MalocaEventType::Beliefs
+        );
         assert_eq!(
             MalocaEventType::parse_str("custom_type"),
             MalocaEventType::Custom("custom_type".to_string())
@@ -403,11 +418,14 @@ mod tests {
     fn test_filter_matching() {
         let filter_proj = MalocaEventFilter::new(Some("proj-1".to_string()), None);
         let filter_type = MalocaEventFilter::new(None, Some("proposals".to_string()));
-        let filter_both = MalocaEventFilter::new(Some("proj-1".to_string()), Some("proposals".to_string()));
+        let filter_both =
+            MalocaEventFilter::new(Some("proj-1".to_string()), Some("proposals".to_string()));
 
         let event_match = MalocaEvent::proposal(Some("proj-1"), serde_json::json!({"title": "P1"}));
-        let event_other_proj = MalocaEvent::proposal(Some("proj-2"), serde_json::json!({"title": "P2"}));
-        let event_other_type = MalocaEvent::vote(Some("proj-1"), serde_json::json!({"choice": "yes"}));
+        let event_other_proj =
+            MalocaEvent::proposal(Some("proj-2"), serde_json::json!({"title": "P2"}));
+        let event_other_type =
+            MalocaEvent::vote(Some("proj-1"), serde_json::json!({"choice": "yes"}));
 
         assert!(filter_proj.matches(&event_match));
         assert!(filter_proj.matches(&event_other_type));
@@ -420,5 +438,265 @@ mod tests {
         assert!(filter_both.matches(&event_match));
         assert!(!filter_both.matches(&event_other_proj));
         assert!(!filter_both.matches(&event_other_type));
+    }
+
+    #[tokio::test]
+    async fn test_livesync_connect_disconnect_cycle() {
+        let broadcaster = MalocaEventBroadcaster::new(64);
+        assert_eq!(broadcaster.subscriber_count(), 0);
+
+        let mut sub1 = broadcaster.subscribe();
+        assert_eq!(broadcaster.subscriber_count(), 1);
+
+        let event1 = MalocaEvent::proposal(Some("proj-1"), serde_json::json!({"step": 1}));
+        broadcaster.publish(event1.clone()).unwrap();
+        let rec1 = sub1.recv().await.unwrap();
+        assert_eq!(rec1.event_id, event1.event_id);
+
+        drop(sub1);
+        assert_eq!(broadcaster.subscriber_count(), 0);
+
+        let event2 = MalocaEvent::vote(Some("proj-1"), serde_json::json!({"step": 2}));
+        let _ = broadcaster.publish(event2);
+
+        let mut sub2 = broadcaster.subscribe();
+        assert_eq!(broadcaster.subscriber_count(), 1);
+
+        let event3 = MalocaEvent::decision(Some("proj-1"), serde_json::json!({"step": 3}));
+        broadcaster.publish(event3.clone()).unwrap();
+        let rec3 = sub2.recv().await.unwrap();
+        assert_eq!(rec3.event_id, event3.event_id);
+    }
+
+    #[tokio::test]
+    async fn test_livesync_broadcast_to_multiple_clients() {
+        let broadcaster = MalocaEventBroadcaster::new(64);
+        let mut clients: Vec<_> = (0..5).map(|_| broadcaster.subscribe()).collect();
+        assert_eq!(broadcaster.subscriber_count(), 5);
+
+        let event = MalocaEvent::belief(Some("proj-multi"), serde_json::json!({"key": "val"}));
+        let delivered_count = broadcaster.publish(event.clone()).unwrap();
+        assert_eq!(delivered_count, 5);
+
+        for (i, client) in clients.iter_mut().enumerate() {
+            let rec = client.recv().await.unwrap();
+            assert_eq!(
+                rec.event_id, event.event_id,
+                "Client {} failed to receive event",
+                i
+            );
+            assert_eq!(rec.payload["key"], "val");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_livesync_event_ordering() {
+        let broadcaster = MalocaEventBroadcaster::new(256);
+        let mut sub = broadcaster.subscribe();
+
+        let count = 100;
+        for i in 0..count {
+            let event =
+                MalocaEvent::new("custom", Some("proj-seq"), serde_json::json!({ "seq": i }));
+            broadcaster.publish(event).unwrap();
+        }
+
+        for i in 0..count {
+            let rec = sub.recv().await.unwrap();
+            assert_eq!(rec.payload["seq"], i);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_livesync_large_event_payload() {
+        let broadcaster = MalocaEventBroadcaster::new(16);
+        let mut sub = broadcaster.subscribe();
+
+        let large_string = "A".repeat(1_050_000);
+        let payload = serde_json::json!({
+            "large_data": large_string,
+            "meta": "1MB test"
+        });
+
+        let event = MalocaEvent::new("large_event", Some("proj-big"), payload);
+        broadcaster.publish(event.clone()).unwrap();
+
+        let rec = sub.recv().await.unwrap();
+        assert_eq!(rec.event_type, "large_event");
+        assert_eq!(rec.payload["large_data"].as_str().unwrap().len(), 1_050_000);
+    }
+
+    #[tokio::test]
+    async fn test_livesync_concurrent_event_broadcast() {
+        let broadcaster = Arc::new(MalocaEventBroadcaster::new(1024));
+        let mut sub = broadcaster.subscribe();
+
+        let num_tasks = 10;
+        let events_per_task = 20;
+
+        let mut handles = Vec::new();
+        for task_idx in 0..num_tasks {
+            let bc = Arc::clone(&broadcaster);
+            handles.push(tokio::spawn(async move {
+                for i in 0..events_per_task {
+                    let evt = MalocaEvent::new(
+                        "concurrent",
+                        Some("proj-concurrent"),
+                        serde_json::json!({ "task": task_idx, "idx": i }),
+                    );
+                    bc.publish(evt).unwrap();
+                }
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let total_expected = num_tasks * events_per_task;
+        let mut received_count = 0;
+
+        for _ in 0..total_expected {
+            let rec = sub.recv().await.unwrap();
+            assert_eq!(rec.event_type, "concurrent");
+            received_count += 1;
+        }
+
+        assert_eq!(received_count, total_expected);
+        assert_eq!(broadcaster.stats().total_published, total_expected as u64);
+    }
+
+    #[tokio::test]
+    async fn test_livesync_client_timeout_disconnect() {
+        let broadcaster = MalocaEventBroadcaster::new(16);
+        let mut sub = broadcaster.subscribe();
+
+        for i in 0..30 {
+            let event =
+                MalocaEvent::proposal(Some("proj-overflow"), serde_json::json!({ "idx": i }));
+            let _ = broadcaster.publish(event);
+        }
+
+        let res = sub.recv().await;
+        assert!(matches!(res, Err(MalocaSubscriberError::Lagged(_))));
+        if let Err(MalocaSubscriberError::Lagged(skipped)) = res {
+            assert!(skipped > 0);
+        }
+        assert!(sub.skipped_count() > 0);
+
+        let small_broadcaster = MalocaEventBroadcaster::new(16);
+        let mut sub_closed = small_broadcaster.subscribe();
+        drop(small_broadcaster);
+        let res_closed = sub_closed.recv().await;
+        assert_eq!(res_closed, Err(MalocaSubscriberError::Closed));
+    }
+
+    #[tokio::test]
+    async fn test_livesync_reconnection_replay() {
+        let broadcaster = MalocaEventBroadcaster::new(100);
+        let mut event_history: Vec<MalocaEvent> = Vec::new();
+
+        // Create a dummy subscriber so publish() doesn't fail
+        let _dummy_sub = broadcaster.subscribe();
+
+        for i in 0..10 {
+            let event = MalocaEvent::vote(Some("proj-replay"), serde_json::json!({ "seq": i }));
+            broadcaster.publish(event.clone()).unwrap();
+            event_history.push(event);
+        }
+
+        let last_seen_index = 5;
+        let missed_events: Vec<&MalocaEvent> = event_history.iter().skip(last_seen_index).collect();
+        assert_eq!(missed_events.len(), 5);
+        for (idx, evt) in missed_events.iter().enumerate() {
+            assert_eq!(evt.payload["seq"], last_seen_index + idx);
+        }
+
+        let mut reconnected_sub = broadcaster.subscribe();
+        let new_event = MalocaEvent::vote(Some("proj-replay"), serde_json::json!({ "seq": 10 }));
+        broadcaster.publish(new_event.clone()).unwrap();
+
+        let live_rec = reconnected_sub.recv().await.unwrap();
+        assert_eq!(live_rec.payload["seq"], 10);
+    }
+
+    #[test]
+    fn test_livesync_event_serialization_roundtrip() {
+        let event = MalocaEvent::decision(
+            Some("proj-serialize".to_string()),
+            serde_json::json!({"decision": "approved", "voters": ["node-1", "node-2"]}),
+        );
+
+        let json_str = serde_json::to_string(&event).expect("Serialization failed");
+        let deserialized: MalocaEvent =
+            serde_json::from_str(&json_str).expect("Deserialization failed");
+
+        assert_eq!(event, deserialized);
+
+        let client_msg = WsClientMessage::Subscribe {
+            project_id: Some("proj-1".to_string()),
+            event_type: Some("proposals".to_string()),
+        };
+        let client_json = serde_json::to_string(&client_msg).unwrap();
+        let deserialized_client: WsClientMessage = serde_json::from_str(&client_json).unwrap();
+        assert!(matches!(
+            deserialized_client,
+            WsClientMessage::Subscribe { .. }
+        ));
+
+        let server_msg = WsServerMessage::Event(event.clone());
+        let server_json = serde_json::to_string(&server_msg).unwrap();
+        let deserialized_server: WsServerMessage = serde_json::from_str(&server_json).unwrap();
+        assert!(matches!(deserialized_server, WsServerMessage::Event(_)));
+    }
+
+    #[tokio::test]
+    async fn test_livesync_filter_isolation() {
+        let broadcaster = MalocaEventBroadcaster::new(64);
+
+        let mut sub_a = broadcaster.subscribe();
+        sub_a.add_filter(MalocaEventFilter::new(Some("proj-A".to_string()), None));
+
+        let mut sub_b = broadcaster.subscribe();
+        sub_b.add_filter(MalocaEventFilter::new(Some("proj-B".to_string()), None));
+
+        let evt_a = MalocaEvent::proposal(Some("proj-A"), serde_json::json!({"target": "A"}));
+        let evt_b = MalocaEvent::proposal(Some("proj-B"), serde_json::json!({"target": "B"}));
+
+        broadcaster.publish(evt_a.clone()).unwrap();
+        broadcaster.publish(evt_b.clone()).unwrap();
+
+        let rec_a = sub_a.recv().await.unwrap();
+        assert_eq!(rec_a.project_id.as_deref(), Some("proj-A"));
+
+        let rec_b = sub_b.recv().await.unwrap();
+        assert_eq!(rec_b.project_id.as_deref(), Some("proj-B"));
+    }
+
+    #[tokio::test]
+    async fn test_livesync_broadcaster_stats_tracking() {
+        let broadcaster = MalocaEventBroadcaster::new(16);
+        let initial_stats = broadcaster.stats();
+        assert_eq!(initial_stats.capacity, 16);
+        assert_eq!(initial_stats.active_subscribers, 0);
+        assert_eq!(initial_stats.total_published, 0);
+
+        let mut sub = broadcaster.subscribe();
+        assert_eq!(broadcaster.stats().active_subscribers, 1);
+
+        for i in 0..5 {
+            let evt = MalocaEvent::proposal(Some("p"), serde_json::json!({ "i": i }));
+            broadcaster.publish(evt).unwrap();
+        }
+
+        let stats = broadcaster.stats();
+        assert_eq!(stats.total_published, 5);
+
+        for _ in 0..5 {
+            let _ = sub.recv().await.unwrap();
+        }
+
+        drop(sub);
+        assert_eq!(broadcaster.stats().active_subscribers, 0);
     }
 }

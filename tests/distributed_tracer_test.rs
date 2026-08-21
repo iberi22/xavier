@@ -1,8 +1,8 @@
+use std::thread;
+use std::time::Duration;
 use xavier::observability::distributed_tracer::{
     DistributedTracer, OtelExportPayload, SpanKind, SpanStatus, Traceparent, TraceparentError,
 };
-use std::thread;
-use std::time::Duration;
 
 #[test]
 fn test_traceparent_parse_and_format_valid() {
@@ -130,23 +130,38 @@ fn test_parent_child_span_linking_and_recording() {
     assert_eq!(spans.len(), 5);
 
     // Verify root span
-    let root = spans.iter().find(|s| s.name == "UserPromptRequest").expect("root span found");
+    let root = spans
+        .iter()
+        .find(|s| s.name == "UserPromptRequest")
+        .expect("root span found");
     assert_eq!(root.trace_id, "4bf92f3577b34da6a3ce929d0e0e4736");
     assert_eq!(root.parent_span_id, Some("00f067aa0ba902b7".to_string()));
-    assert_eq!(root.attributes.get("user.id"), Some(&"usr_1234".to_string()));
+    assert_eq!(
+        root.attributes.get("user.id"),
+        Some(&"usr_1234".to_string())
+    );
     assert_eq!(root.status, SpanStatus::Ok);
 
     // Verify hierarchy
-    let agent = spans.iter().find(|s| s.name == "AgentExecution").expect("agent span found");
+    let agent = spans
+        .iter()
+        .find(|s| s.name == "AgentExecution")
+        .expect("agent span found");
     assert_eq!(agent.trace_id, root.trace_id);
     assert_eq!(agent.parent_span_id, Some(root.span_id.clone()));
 
-    let mcp = spans.iter().find(|s| s.name == "McpToolCall").expect("mcp span found");
+    let mcp = spans
+        .iter()
+        .find(|s| s.name == "McpToolCall")
+        .expect("mcp span found");
     assert_eq!(mcp.trace_id, root.trace_id);
     assert_eq!(mcp.parent_span_id, Some(agent.span_id.clone()));
     assert!(mcp.duration_ms.unwrap_or(0) >= 10);
 
-    let llm = spans.iter().find(|s| s.name == "LlmProviderInvoke").expect("llm span found");
+    let llm = spans
+        .iter()
+        .find(|s| s.name == "LlmProviderInvoke")
+        .expect("llm span found");
     assert_eq!(llm.trace_id, root.trace_id);
     assert_eq!(llm.parent_span_id, Some(agent.span_id.clone()));
     assert_eq!(

@@ -549,7 +549,10 @@ pub trait MemoryStore: Send + Sync {
     async fn load_workspace_metadata(
         &self,
         workspace_id: &str,
-    ) -> Result<(Vec<crate::domain::memory::belief::BeliefEdge>, Vec<SessionTokenRecord>)> {
+    ) -> Result<(
+        Vec<crate::domain::memory::belief::BeliefEdge>,
+        Vec<SessionTokenRecord>,
+    )> {
         let state = self.load_workspace_state(workspace_id).await?;
         Ok((state.beliefs, state.session_tokens))
     }
@@ -582,6 +585,15 @@ pub trait MemoryStore: Send + Sync {
     /// Clean up orphaned vectors or internal resources. Returns the number of cleaned items.
     async fn cleanup_orphans(&self) -> Result<usize> {
         Ok(0)
+    }
+
+    /// List all workspace IDs that contain at least one record.
+    ///
+    /// Used by the sync manifest builder to discover every workspace
+    /// without guessing.  Backends that cannot enumerate workspaces
+    /// return an empty list (the manifest will simply be empty).
+    async fn list_workspaces(&self) -> Result<Vec<String>> {
+        Ok(Vec::new())
     }
 
     /// List memories and virtual directories at a given path.
@@ -901,6 +913,11 @@ impl MemoryStore for FileMemoryStore {
         Ok(MemoryTree::build_ls(all, path))
     }
 
+    async fn list_workspaces(&self) -> Result<Vec<String>> {
+        let state = self.state.read().await;
+        Ok(state.workspaces.keys().cloned().collect())
+    }
+
     async fn load_entity_graph_snapshot(&self, workspace_id: &str) -> Result<Option<String>> {
         let state = self.state.read().await;
         Ok(state
@@ -1111,6 +1128,11 @@ impl MemoryStore for InMemoryMemoryStore {
                 .retain(|item| !(item.task_id == task_id && item.name == name));
         }
         Ok(())
+    }
+
+    async fn list_workspaces(&self) -> Result<Vec<String>> {
+        let state = self.state.read().await;
+        Ok(state.workspaces.keys().cloned().collect())
     }
 
     async fn load_entity_graph_snapshot(&self, workspace_id: &str) -> Result<Option<String>> {

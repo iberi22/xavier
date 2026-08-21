@@ -17,11 +17,13 @@
 use std::sync::{Arc, LazyLock, RwLock};
 use std::time::{Duration, SystemTime};
 
-use axum::{extract::Path, Json};
+use axum::{extract::Path, http::StatusCode, Json};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::memory::sync::{merge::deserialise_chunk, ChunkDiff, PeerMemorySync, SyncSession};
+use crate::memory::sync::{
+    merge::deserialise_chunk, ChunkDiff, PeerMemorySync, SyncError, SyncSession,
+};
 
 /// Default workspace used when a request omits `workspace_id`.
 const DEFAULT_WORKSPACE: &str = "default";
@@ -169,12 +171,15 @@ pub async fn sync_status_handler() -> impl IntoResponse {
 /// `POST /api/v1/memory/sync/push` — push local changes to a remote peer.
 pub async fn sync_push_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return Json(SyncErrorResponse {
-            status: "error",
-            message: "memory sync not initialized".to_string(),
-            peer_url: None,
-        })
-        .into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(SyncErrorResponse {
+                status: "error",
+                message: "memory sync not initialized".to_string(),
+                peer_url: None,
+            }),
+        )
+            .into_response();
     };
 
     let workspace_id = req
@@ -185,30 +190,47 @@ pub async fn sync_push_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoRes
     match sync.push_to(&req.peer_url, &workspace_id, since).await {
         Ok(session) => {
             set_last_session(session.clone());
-            Json(SyncSuccessResponse {
-                status: "ok",
-                session,
-            })
-            .into_response()
+            (
+                StatusCode::OK,
+                Json(SyncSuccessResponse {
+                    status: "ok",
+                    session,
+                }),
+            )
+                .into_response()
         }
-        Err(e) => Json(SyncErrorResponse {
-            status: "error",
-            message: e.to_string(),
-            peer_url: Some(req.peer_url),
-        })
-        .into_response(),
+        Err(e) => {
+            let status_code = match &e {
+                SyncError::Http { status, .. } => {
+                    StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY)
+                }
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (
+                status_code,
+                Json(SyncErrorResponse {
+                    status: "error",
+                    message: e.to_string(),
+                    peer_url: Some(req.peer_url),
+                }),
+            )
+                .into_response()
+        }
     }
 }
 
 /// `POST /api/v1/memory/sync/pull` — pull changes from a remote peer.
 pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return Json(SyncErrorResponse {
-            status: "error",
-            message: "memory sync not initialized".to_string(),
-            peer_url: None,
-        })
-        .into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(SyncErrorResponse {
+                status: "error",
+                message: "memory sync not initialized".to_string(),
+                peer_url: None,
+            }),
+        )
+            .into_response();
     };
 
     let workspace_id = req
@@ -219,18 +241,32 @@ pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoRes
     match sync.pull_from(&req.peer_url, &workspace_id, since).await {
         Ok(session) => {
             set_last_session(session.clone());
-            Json(SyncSuccessResponse {
-                status: "ok",
-                session,
-            })
-            .into_response()
+            (
+                StatusCode::OK,
+                Json(SyncSuccessResponse {
+                    status: "ok",
+                    session,
+                }),
+            )
+                .into_response()
         }
-        Err(e) => Json(SyncErrorResponse {
-            status: "error",
-            message: e.to_string(),
-            peer_url: Some(req.peer_url),
-        })
-        .into_response(),
+        Err(e) => {
+            let status_code = match &e {
+                SyncError::Http { status, .. } => {
+                    StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY)
+                }
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (
+                status_code,
+                Json(SyncErrorResponse {
+                    status: "error",
+                    message: e.to_string(),
+                    peer_url: Some(req.peer_url),
+                }),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -248,12 +284,15 @@ pub async fn sync_resolve_handler(
 ) -> impl IntoResponse {
     let resolution = req.resolution.trim().to_lowercase();
     if resolution != "local" && resolution != "remote" {
-        return Json(SyncResolveErrorResponse {
-            status: "error",
-            message: "resolution must be 'local' or 'remote'",
-            conflict_id,
-        })
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(SyncResolveErrorResponse {
+                status: "error",
+                message: "resolution must be 'local' or 'remote'",
+                conflict_id,
+            }),
+        )
+            .into_response();
     }
 
     let mut applied = false;
@@ -329,6 +368,143 @@ fn parse_since(since: &Option<String>) -> SystemTime {
     SystemTime::UNIX_EPOCH
 }
 
+// ---------------------------------------------------------------------------
+// Legacy data-plane compatibility handlers
+// ---------------------------------------------------------------------------
+
+/// `GET /v1/memory/manifest` — return the full store manifest.
+///
+/// This is the legacy data-plane endpoint used by `PeerMemorySync` clients
+/// to pull the manifest from a remote peer. Delegates to the same
+/// underlying store logic as the control-plane.
+pub async fn legacy_manifest_handler() -> impl IntoResponse {
+    let Some(sync) = current_sync() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"status": "error", "message": "memory sync not initialized"})),
+        )
+            .into_response();
+    };
+
+    match crate::memory::sync::manifest::build_manifest(sync.store().as_ref()).await {
+        Ok(manifest) => (StatusCode::OK, Json(manifest)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "error",
+                "message": format!("Failed to build manifest: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// `POST /v1/memory/push` — receive a batch of ChunkDiffs from a peer.
+///
+/// Accepts the old data-plane format: raw `Vec<ChunkDiff>` as JSON body.
+/// Applies changes via the same LWW merge logic.
+pub async fn legacy_push_handler(
+    Json(diffs): Json<Vec<crate::memory::sync::ChunkDiff>>,
+) -> impl IntoResponse {
+    let Some(sync) = current_sync() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"status": "error", "message": "memory sync not initialized"})),
+        )
+            .into_response();
+    };
+
+    let mut conflicts = 0u64;
+    match crate::memory::sync::merge::apply_changes_received(
+        sync.store().as_ref(),
+        &diffs,
+        &mut conflicts,
+    )
+    .await
+    {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(json!({
+                "status": "ok",
+                "conflicts": conflicts,
+                "received": diffs.len()
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "error",
+                "message": format!("Failed to apply changes: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// `POST /v1/memory/pull` — return diffs for the requested manifest entries.
+///
+/// Accepts `Vec<ManifestEntry>` (old data-plane format) and returns
+/// the corresponding `Vec<ChunkDiff>`.
+pub async fn legacy_pull_handler(
+    Json(want): Json<Vec<crate::memory::sync::ManifestEntry>>,
+) -> impl IntoResponse {
+    let Some(sync) = current_sync() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"status": "error", "message": "memory sync not initialized"})),
+        )
+            .into_response();
+    };
+
+    match crate::memory::sync::push_pull::entries_as_push_diffs(sync.store().as_ref(), &want).await
+    {
+        Ok(diffs) => (StatusCode::OK, Json(diffs)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "error",
+                "message": format!("Failed to build push diffs: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// `GET /v1/memory/pull-since/{workspace_id}/{since}` — incremental pull.
+///
+/// Returns all chunks modified since the given epoch timestamp.
+pub async fn legacy_pull_since_handler(
+    Path((workspace_id, since_secs)): Path<(String, u64)>,
+) -> impl IntoResponse {
+    let Some(sync) = current_sync() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"status": "error", "message": "memory sync not initialized"})),
+        )
+            .into_response();
+    };
+
+    let since = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(since_secs);
+    match crate::memory::sync::push_pull::collect_changes_since(
+        sync.store().as_ref(),
+        &workspace_id,
+        since,
+    )
+    .await
+    {
+        Ok(diffs) => (StatusCode::OK, Json(diffs)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "status": "error",
+                "message": format!("Failed to collect changes: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,5 +544,71 @@ mod tests {
             parse_since(&Some("not-a-date".to_string())),
             SystemTime::UNIX_EPOCH
         );
+    }
+
+    // -------------------------------------------------------------------
+    // HTTP status code propagation tests
+    // -------------------------------------------------------------------
+
+    use axum::{body::Body, http::StatusCode};
+    use http_body_util::BodyExt;
+
+    #[tokio::test]
+    async fn push_handler_returns_503_when_not_initialized() {
+        use axum::response::IntoResponse;
+        // Ensure the singleton is empty (default state).
+        // The handler should return 503 Service Unavailable.
+        let resp = super::sync_push_handler(Json(
+            serde_json::from_value(serde_json::json!({
+                "peer_url": "http://peer:8080"
+            }))
+            .unwrap(),
+        ))
+        .await;
+        let response = resp.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn pull_handler_returns_503_when_not_initialized() {
+        use axum::response::IntoResponse;
+        let resp = super::sync_pull_handler(Json(
+            serde_json::from_value(serde_json::json!({
+                "peer_url": "http://peer:8080"
+            }))
+            .unwrap(),
+        ))
+        .await;
+        let response = resp.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn resolve_handler_returns_400_for_invalid_resolution() {
+        use axum::response::IntoResponse;
+        let resp = super::sync_resolve_handler(
+            Path("conflict-123".to_string()),
+            Json(SyncResolveRequest {
+                resolution: "bogus".to_string(),
+                chunk: None,
+            }),
+        )
+        .await;
+        let response = resp.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        // Verify the body contains the error message.
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        assert_eq!(parsed["status"], "error");
+        assert!(parsed["message"]
+            .as_str()
+            .unwrap()
+            .contains("resolution must be"));
     }
 }

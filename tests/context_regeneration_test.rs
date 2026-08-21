@@ -20,7 +20,10 @@ fn test_rrf_weight_calculation_and_normalization() {
 
     // After reaching sample threshold with 80% keyword hits and 20% vector hits
     let (new_kw, new_vw) = regenerator.calculate_rrf_weights(80, 20, 100, 0.5, 0.5);
-    assert!((new_kw + new_vw - 1.0).abs() < 1e-5, "Sum of weights must be 1.0");
+    assert!(
+        (new_kw + new_vw - 1.0).abs() < 1e-5,
+        "Sum of weights must be 1.0"
+    );
     assert!(
         new_kw > new_vw,
         "Keyword weight ({new_kw}) should be higher than vector weight ({new_vw})"
@@ -90,7 +93,10 @@ async fn test_spawn_blocking_similarity_recalculation() {
         .expect("spawn_blocking batch similarity failed");
 
     assert_eq!(scores.len(), 2);
-    assert!(scores[0] > scores[1], "High similarity pair should score higher");
+    assert!(
+        scores[0] > scores[1],
+        "High similarity pair should score higher"
+    );
 }
 
 #[tokio::test]
@@ -125,7 +131,10 @@ async fn test_full_regeneration_pass_and_convergence() {
         .await
         .expect("Pass 1 failed");
 
-    assert!(!result1.converged, "Pass 1 should not converge after initial weight update");
+    assert!(
+        !result1.converged,
+        "Pass 1 should not converge after initial weight update"
+    );
     assert!(result1.keyword_weight > result1.vector_weight);
 
     // Run passes until converged (or max 50 iterations)
@@ -141,7 +150,10 @@ async fn test_full_regeneration_pass_and_convergence() {
         }
     }
 
-    assert!(converged, "Passes should eventually converge as weights approach stationary value");
+    assert!(
+        converged,
+        "Passes should eventually converge as weights approach stationary value"
+    );
 }
 
 #[tokio::test]

@@ -232,6 +232,10 @@ async fn session_tokens_beliefs_and_checkpoints_persist_between_reloads() {
 
 #[tokio::test]
 async fn test_workspace_working_memory_is_bounded_and_contains_recent_docs() {
+    // Eager-load docs so the working-memory init task gets a populated list.
+    let prev = std::env::var("XAVIER_MEMORY_EAGER_LOAD").ok();
+    std::env::set_var("XAVIER_MEMORY_EAGER_LOAD", "1");
+
     let unique_id = Ulid::new().to_string();
     let root = std::env::temp_dir().join(format!("xavier-wm-{}", unique_id));
     let config = WorkspaceConfig {
@@ -284,6 +288,12 @@ async fn test_workspace_working_memory_is_bounded_and_contains_recent_docs() {
     assert!(!contents.contains("Content of document 19"));
     assert!(contents.contains("Content of document 20"));
     assert!(contents.contains("Content of document 119"));
+
+    // Restore env
+    match prev {
+        Some(v) => std::env::set_var("XAVIER_MEMORY_EAGER_LOAD", v),
+        None => std::env::remove_var("XAVIER_MEMORY_EAGER_LOAD"),
+    }
 }
 
 #[tokio::test]

@@ -71,17 +71,27 @@ impl TelemetryAnonymizer {
             (r"\bxoxb-[a-zA-Z0-9_-]{10,}\b", "SLACK_TOKEN"),
             (r"\bAKIA[0-9A-Z]{16}\b", "AWS_ACCESS_KEY"),
             // JWT Tokens
-            (r"\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b", "JWT"),
+            (
+                r"\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b",
+                "JWT",
+            ),
             // Emails
             (r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "EMAIL"),
             // IPv4
-            (r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b", "IPV4"),
+            (
+                r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b",
+                "IPV4",
+            ),
             // IPv6
-            (r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b|\b(?:[0-9a-fA-F]{1,4}:){1,7}:|:(?::[0-9a-fA-F]{1,4}){1,7}\b", "IPV6"),
+            (
+                r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b|\b(?:[0-9a-fA-F]{1,4}:){1,7}:|:(?::[0-9a-fA-F]{1,4}){1,7}\b",
+                "IPV6",
+            ),
         ];
 
         let pattern_strings: Vec<&str> = pattern_defs.iter().map(|(p, _)| *p).collect();
-        let regex_set = RegexSet::new(&pattern_strings).expect("Invalid regex patterns in TelemetryAnonymizer");
+        let regex_set =
+            RegexSet::new(&pattern_strings).expect("Invalid regex patterns in TelemetryAnonymizer");
 
         let regexes: Vec<(Regex, &'static str)> = pattern_defs
             .into_iter()

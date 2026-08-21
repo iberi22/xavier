@@ -4,9 +4,9 @@
 //! Execution, Assumption, Clarification), storage models, and farming status
 //! following Privacy P4 guidelines (local payload, anonymous mesh score).
 
-use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 /// The 5 canonical HumanChallenge types defined in HUMAN_CHALLENGE.md
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

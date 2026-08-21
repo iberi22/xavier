@@ -26,7 +26,17 @@ pub async fn handle_agent_command(cmd: AgentCommand) -> Result<()> {
             json,
             limit,
             model,
-        } => crate::cli::handlers::chat::handle_chat_command(prompt, agent, interactive, json, limit, model).await,
+        } => {
+            crate::cli::handlers::chat::handle_chat_command(
+                prompt,
+                agent,
+                interactive,
+                json,
+                limit,
+                model,
+            )
+            .await
+        }
         AgentCommand::Converse {
             prompt,
             agent,
@@ -34,7 +44,17 @@ pub async fn handle_agent_command(cmd: AgentCommand) -> Result<()> {
             json,
             limit,
             model,
-        } => crate::cli::handlers::chat::handle_chat_command(prompt, agent, interactive, json, limit, model).await,
+        } => {
+            crate::cli::handlers::chat::handle_chat_command(
+                prompt,
+                agent,
+                interactive,
+                json,
+                limit,
+                model,
+            )
+            .await
+        }
     }
 }
 

@@ -95,6 +95,25 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             "/api/v1/memory/sync/resolve/{conflict_id}",
             post(crate::adapters::inbound::http::handlers::sync::sync_resolve_handler),
         )
+        // ── Legacy data-plane compatibility (backward-compatible aliases) ───
+        // Old `/v1/memory/*` endpoints kept for backward compatibility with
+        // existing PeerMemorySync clients. New code should use `/api/v1/memory/sync/*`.
+        .route(
+            "/v1/memory/manifest",
+            get(crate::adapters::inbound::http::handlers::sync::legacy_manifest_handler),
+        )
+        .route(
+            "/v1/memory/push",
+            post(crate::adapters::inbound::http::handlers::sync::legacy_push_handler),
+        )
+        .route(
+            "/v1/memory/pull",
+            post(crate::adapters::inbound::http::handlers::sync::legacy_pull_handler),
+        )
+        .route(
+            "/v1/memory/pull-since/{workspace_id}/{since}",
+            get(crate::adapters::inbound::http::handlers::sync::legacy_pull_since_handler),
+        )
         // ── Public Node Directory (SWAL Node Discovery) ──────────────────
         .route(
             "/mesh/public/nodes",

@@ -1,4 +1,6 @@
-use xavier::agents::telemetry::anonymizer::{AnonymizerConfig, RedactionStrategy, TelemetryAnonymizer};
+use xavier::agents::telemetry::anonymizer::{
+    AnonymizerConfig, RedactionStrategy, TelemetryAnonymizer,
+};
 
 #[test]
 fn test_api_keys_and_tokens_redaction() {
@@ -60,7 +62,10 @@ fn test_tag_redaction_strategy() {
     let input = "Key: sk-1234567890abcdef12345678 Email: test@swal.dev";
     let anonymized = anonymizer.anonymize(input);
 
-    assert_eq!(anonymized, "Key: [REDACTED:API_KEY] Email: [REDACTED:EMAIL]");
+    assert_eq!(
+        anonymized,
+        "Key: [REDACTED:API_KEY] Email: [REDACTED:EMAIL]"
+    );
 }
 
 #[test]
@@ -91,7 +96,10 @@ fn test_differential_privacy_noise() {
     }
 
     // Ensure values are perturbed and not identical to original
-    let matches_original = noisy_samples.iter().filter(|&&val| val == original_val).count();
+    let matches_original = noisy_samples
+        .iter()
+        .filter(|&&val| val == original_val)
+        .count();
     assert!(matches_original < 5);
 
     // Mean of noisy samples should be close to original value (unbiased Laplace noise)

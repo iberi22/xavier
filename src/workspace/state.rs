@@ -192,7 +192,10 @@ impl WorkspaceState {
             .map(|v| v == "1" || v == "true")
             .unwrap_or(false);
 
-        let (mut memory, docs): (QmdMemory, Arc<tokio::sync::RwLock<Vec<crate::memory::qmd_memory::MemoryDocument>>>) = if eager_load {
+        let (mut memory, docs): (
+            QmdMemory,
+            Arc<tokio::sync::RwLock<Vec<crate::memory::qmd_memory::MemoryDocument>>>,
+        ) = if eager_load {
             let durable_state = store.load_workspace_state(&config.id).await?;
             let docs = Arc::new(tokio::sync::RwLock::new(
                 durable_state
@@ -238,10 +241,7 @@ impl WorkspaceState {
         let belief_graph = Arc::new(RwLock::new(BeliefGraph::new()));
         // Load beliefs from store (small payload, needed for belief graph init).
         if let Ok((beliefs, _tokens)) = store.load_workspace_metadata(&config.id).await {
-            belief_graph
-                .read()
-                .await
-                .replace_relations(beliefs);
+            belief_graph.read().await.replace_relations(beliefs);
         }
         memory.set_belief_graph(Arc::clone(&belief_graph));
         let memory = Arc::new(memory);

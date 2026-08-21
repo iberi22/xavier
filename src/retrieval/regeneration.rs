@@ -341,7 +341,10 @@ mod tests {
         let regenerator = ContextRegenerator::with_defaults();
         // 10 keyword hits vs 90 vector hits -> vector weight increases
         let (kw, vw) = regenerator.calculate_rrf_weights(10, 90, 100, 0.5, 0.5);
-        assert!(vw > kw, "Vector weight ({vw}) should exceed keyword weight ({kw})");
+        assert!(
+            vw > kw,
+            "Vector weight ({vw}) should exceed keyword weight ({kw})"
+        );
         assert!((kw + vw - 1.0).abs() < 0.001, "Weights should sum to 1.0");
     }
 
@@ -400,7 +403,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(scores.len(), 2);
-        assert!(scores[0] > scores[1], "Identical vectors must score higher than orthogonal vectors");
+        assert!(
+            scores[0] > scores[1],
+            "Identical vectors must score higher than orthogonal vectors"
+        );
     }
 
     #[tokio::test]
@@ -423,6 +429,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(res.candidates_processed, 1);
-        assert!(res.converged, "With 0 query hits recorded, weights remain unchanged and pass converges");
+        assert!(
+            res.converged,
+            "With 0 query hits recorded, weights remain unchanged and pass converges"
+        );
     }
 }

@@ -188,3 +188,7 @@ scripts/subagents/mcp/GENERATED/
 # Auto-generated docs (regenerable via `xavier chronicle auto-docs`)
 /docs/auto-docs/
 /docs/auto-docs.bak/
+
+# Build artifacts & foreign lockfiles (wave 4 cleanup)
+/rust_out
+/bun.lock

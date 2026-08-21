@@ -81,6 +81,7 @@ pub fn deletions_from_diff(local: &Manifest, remote: &Manifest) -> Result<Vec<Ch
                 action: DiffAction::Delete,
                 data: None,
                 timestamp: std::time::SystemTime::now(),
+                record_path: entry.record_path.clone(),
             });
         }
     }
@@ -104,6 +105,7 @@ mod tests {
             revision: rev,
             updated_at: Utc::now(),
             size_bytes: 100,
+            record_path: None,
         }
     }
 

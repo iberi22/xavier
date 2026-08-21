@@ -32,12 +32,19 @@ impl std::error::Error for CredentialError {}
 impl fmt::Display for CredentialError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CredentialError::InvalidSignature => write!(f, "Cryptographic signature verification failed"),
+            CredentialError::InvalidSignature => {
+                write!(f, "Cryptographic signature verification failed")
+            }
             CredentialError::DigestMismatch { expected, actual } => {
-                write!(f, "Dataset digest mismatch: expected {expected}, got {actual}")
+                write!(
+                    f,
+                    "Dataset digest mismatch: expected {expected}, got {actual}"
+                )
             }
             CredentialError::InvalidPublicKey(msg) => write!(f, "Invalid public key: {msg}"),
-            CredentialError::InvalidSignatureFormat(msg) => write!(f, "Invalid signature format: {msg}"),
+            CredentialError::InvalidSignatureFormat(msg) => {
+                write!(f, "Invalid signature format: {msg}")
+            }
             CredentialError::SerializationError(msg) => write!(f, "Serialization error: {msg}"),
             CredentialError::MalformedCredential(msg) => write!(f, "Malformed credential: {msg}"),
         }
@@ -148,7 +155,8 @@ impl DatasetCredentialGenerator {
             did.split('#').next().unwrap_or(did)
         };
 
-        let bytes = hex_decode(hex_str).map_err(|e| CredentialError::InvalidPublicKey(e.to_string()))?;
+        let bytes =
+            hex_decode(hex_str).map_err(|e| CredentialError::InvalidPublicKey(e.to_string()))?;
         if bytes.len() != 32 {
             return Err(CredentialError::InvalidPublicKey(format!(
                 "Expected 32 bytes for Ed25519 key, got {}",
@@ -156,9 +164,9 @@ impl DatasetCredentialGenerator {
             )));
         }
 
-        let key_bytes: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| CredentialError::InvalidPublicKey("Invalid key slice conversion".to_string()))?;
+        let key_bytes: [u8; 32] = bytes.try_into().map_err(|_| {
+            CredentialError::InvalidPublicKey("Invalid key slice conversion".to_string())
+        })?;
 
         VerifyingKey::from_bytes(&key_bytes)
             .map_err(|e| CredentialError::InvalidPublicKey(format!("Ed25519 key parse error: {e}")))
@@ -179,7 +187,8 @@ impl DatasetCredentialGenerator {
         let verifying_key = signing_key.verifying_key();
         let issuer_did = Self::public_key_to_did(&verifying_key);
         let credential_id = format!("urn:uuid:{}", uuid::Uuid::new_v4());
-        let created_timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let created_timestamp =
+            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
         let subject_id = format!("urn:swal:dataset:{}", params.dataset_id);
 
@@ -264,9 +273,9 @@ impl DatasetCredentialGenerator {
             )));
         }
 
-        let signature_arr: [u8; 64] = sig_bytes
-            .try_into()
-            .map_err(|_| CredentialError::InvalidSignatureFormat("Invalid signature slice".to_string()))?;
+        let signature_arr: [u8; 64] = sig_bytes.try_into().map_err(|_| {
+            CredentialError::InvalidSignatureFormat("Invalid signature slice".to_string())
+        })?;
 
         let signature = Signature::from_bytes(&signature_arr);
 

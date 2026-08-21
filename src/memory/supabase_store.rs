@@ -203,6 +203,24 @@ impl MemoryStore for SupabaseMemoryStore {
         .await
     }
 
+    async fn list_workspaces(&self) -> Result<Vec<String>> {
+        #[derive(serde::Deserialize)]
+        struct WsRow {
+            workspace_id: String,
+        }
+        let rows: Vec<WsRow> = self
+            .postgrest_get("memory_records", "select=workspace_id&order=workspace_id")
+            .await?;
+        let mut seen = std::collections::HashSet::new();
+        let mut ids = Vec::new();
+        for row in rows {
+            if seen.insert(row.workspace_id.clone()) {
+                ids.push(row.workspace_id);
+            }
+        }
+        Ok(ids)
+    }
+
     async fn search(
         &self,
         workspace_id: &str,

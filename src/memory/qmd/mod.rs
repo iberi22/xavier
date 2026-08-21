@@ -129,9 +129,7 @@ impl QmdMemory {
     }
 
     /// New with workspace and lazy loading flag.
-    pub fn new_lazy(
-        workspace_id: impl Into<String>,
-    ) -> Self {
+    pub fn new_lazy(workspace_id: impl Into<String>) -> Self {
         Self {
             workspace_id: workspace_id.into(),
             docs: Arc::new(AsyncRwLock::new(Vec::new())),

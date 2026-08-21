@@ -88,10 +88,7 @@ async fn test_slow_client_drop_policy() {
 
     // Publish 30 events into buffer of capacity 16 while fast_sub consumes immediately
     for i in 0..30 {
-        let evt = MalocaEvent::proposal(
-            Some("project-alpha"),
-            json!({ "sequence": i }),
-        );
+        let evt = MalocaEvent::proposal(Some("project-alpha"), json!({ "sequence": i }));
         broadcaster.publish(evt).unwrap();
 
         // Fast subscriber reads each event immediately without lag
@@ -125,7 +122,11 @@ async fn test_ws_message_serde() {
     assert!(json_str.contains("\"project_id\":\"proj-1\""));
 
     let de_client: WsClientMessage = serde_json::from_str(&json_str).unwrap();
-    if let WsClientMessage::Subscribe { project_id, event_type } = de_client {
+    if let WsClientMessage::Subscribe {
+        project_id,
+        event_type,
+    } = de_client
+    {
         assert_eq!(project_id, Some("proj-1".to_string()));
         assert_eq!(event_type, Some("proposals".to_string()));
     } else {

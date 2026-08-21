@@ -5,11 +5,11 @@
 //! MCP tool calls, Xavier Memory, and LLM Provider invocations. Supports exporting
 //! recorded spans in OpenTelemetry OTLP JSON format.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
 
 /// Error types for `traceparent` header parsing.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -295,7 +295,10 @@ impl SpanGuard {
 
     /// Access active span's trace_id.
     pub fn trace_id(&self) -> &str {
-        self.span.as_ref().map(|s| s.trace_id.as_str()).unwrap_or("")
+        self.span
+            .as_ref()
+            .map(|s| s.trace_id.as_str())
+            .unwrap_or("")
     }
 
     /// Access active span's span_id.
@@ -379,7 +382,12 @@ impl DistributedTracer {
     }
 
     /// Start a child span under a parent guard/context.
-    pub fn start_child_span(&self, name: impl Into<String>, parent_guard: &SpanGuard, kind: SpanKind) -> SpanGuard {
+    pub fn start_child_span(
+        &self,
+        name: impl Into<String>,
+        parent_guard: &SpanGuard,
+        kind: SpanKind,
+    ) -> SpanGuard {
         let name = name.into();
         let start_time_unix_nano = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -469,7 +477,10 @@ impl DistributedTracer {
                     name: s.name,
                     kind: kind_val,
                     start_time_unix_nano: s.start_time_unix_nano.to_string(),
-                    end_time_unix_nano: s.end_time_unix_nano.unwrap_or(s.start_time_unix_nano).to_string(),
+                    end_time_unix_nano: s
+                        .end_time_unix_nano
+                        .unwrap_or(s.start_time_unix_nano)
+                        .to_string(),
                     attributes: attrs,
                     status: OtelStatus {
                         code: status_code,

@@ -1016,16 +1016,17 @@ pub async fn v1_mesh_session_share(
         }
     };
 
-    let transport = match SyncTransport::for_peer(peer, identity.clone()) {
-        Ok(t) => t,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": e.to_string() })),
-            )
-                .into_response()
-        }
-    };
+    let transport =
+        match SyncTransport::for_peer(peer, identity.clone(), crate::mesh::dummy_store()) {
+            Ok(t) => t,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                )
+                    .into_response()
+            }
+        };
 
     // Note: We need a token to talk to the peer. For now, assume we use the local token
     // or a specialized mesh token if available in PeerInfo.

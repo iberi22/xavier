@@ -486,6 +486,24 @@ impl MemoryStore for SqliteMemoryStore {
             .collect())
     }
 
+    async fn list_workspaces(&self) -> Result<Vec<String>> {
+        let records = ConnectionManager::global()
+            .with_conn(&self.project_id, |conn| {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT DISTINCT workspace_id FROM {}",
+                    TABLE_MEMORIES
+                ))?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                let mut ids = Vec::new();
+                for row in rows {
+                    ids.push(row?);
+                }
+                Ok(ids)
+            })
+            .await?;
+        Ok(records)
+    }
+
     async fn search(
         &self,
         workspace_id: &str,

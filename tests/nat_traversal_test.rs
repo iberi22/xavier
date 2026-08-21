@@ -2,9 +2,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use xavier::mesh::p2p::nat_traversal::{
-    CandidatePairState, HolePunchState, IceCandidate, IceCandidateType, NatType,
-    NatTraversalEngine, StunAttribute, StunMessage, StunMessageType,
-    TransportProtocol, STUN_MAGIC_COOKIE,
+    CandidatePairState, HolePunchState, IceCandidate, IceCandidateType, NatTraversalEngine,
+    NatType, StunAttribute, StunMessage, StunMessageType, TransportProtocol, STUN_MAGIC_COOKIE,
 };
 
 #[test]
@@ -69,7 +68,14 @@ fn test_stun_xor_mapped_address_ipv6() {
 fn test_ice_candidate_priority_ordering() {
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
 
-    let host = IceCandidate::new("c1", 1, TransportProtocol::Udp, addr, IceCandidateType::Host, None);
+    let host = IceCandidate::new(
+        "c1",
+        1,
+        TransportProtocol::Udp,
+        addr,
+        IceCandidateType::Host,
+        None,
+    );
     let prflx = IceCandidate::new(
         "c2",
         1,
@@ -86,7 +92,14 @@ fn test_ice_candidate_priority_ordering() {
         IceCandidateType::ServerReflexive,
         None,
     );
-    let relay = IceCandidate::new("c4", 1, TransportProtocol::Udp, addr, IceCandidateType::Relayed, None);
+    let relay = IceCandidate::new(
+        "c4",
+        1,
+        TransportProtocol::Udp,
+        addr,
+        IceCandidateType::Relayed,
+        None,
+    );
 
     assert!(host.priority > prflx.priority);
     assert!(prflx.priority > srflx.priority);
@@ -209,8 +222,22 @@ async fn test_hole_punching_state_machine() {
     let p1_addr = p1_socket.local_addr().unwrap();
     let p2_addr = p2_socket.local_addr().unwrap();
 
-    let p1_cand = IceCandidate::new("p1", 1, TransportProtocol::Udp, p1_addr, IceCandidateType::Host, None);
-    let p2_cand = IceCandidate::new("p2", 1, TransportProtocol::Udp, p2_addr, IceCandidateType::Host, None);
+    let p1_cand = IceCandidate::new(
+        "p1",
+        1,
+        TransportProtocol::Udp,
+        p1_addr,
+        IceCandidateType::Host,
+        None,
+    );
+    let p2_cand = IceCandidate::new(
+        "p2",
+        1,
+        TransportProtocol::Udp,
+        p2_addr,
+        IceCandidateType::Host,
+        None,
+    );
 
     let pair = xavier::mesh::p2p::nat_traversal::CandidatePair::new(p1_cand, p2_cand, true);
 

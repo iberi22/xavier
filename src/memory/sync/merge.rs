@@ -76,7 +76,18 @@ pub async fn apply_changes_received(
             DiffAction::Delete => {
                 // Delete always wins (tombstone)
                 let workspace_id = &diff.namespace;
-                let path = &diff.chunk_hash; // use hash as path for deletion
+                // Use the actual record path/id, not the chunk_hash.
+                // chunk_hash is a SHA-256 hash which is meaningless as a path.
+                let path = match &diff.record_path {
+                    Some(p) => p.as_str(),
+                    None => {
+                        tracing::warn!(
+                            "apply_changes_received: delete diff for chunk {} has no record_path, skipping",
+                            diff.chunk_hash
+                        );
+                        continue;
+                    }
+                };
                 store.delete(workspace_id, path).await?;
             }
         }
@@ -201,6 +212,7 @@ mod tests {
             action: DiffAction::Update,
             data: Some(serialized),
             timestamp: std::time::SystemTime::now(),
+            record_path: None,
         };
 
         let mut conflicts = 0;
@@ -234,6 +246,7 @@ mod tests {
             action: DiffAction::Update,
             data: Some(serialized),
             timestamp: std::time::SystemTime::now(),
+            record_path: None,
         };
 
         let mut conflicts = 0;
@@ -262,11 +275,12 @@ mod tests {
         store.put(rec).await.unwrap();
 
         let diff = ChunkDiff {
-            chunk_hash: "del1".to_string(),
+            chunk_hash: "some_hash".to_string(),
             namespace: "working".to_string(),
             action: DiffAction::Delete,
             data: None,
             timestamp: std::time::SystemTime::now(),
+            record_path: Some("test/del1".to_string()),
         };
 
         let mut conflicts = 0;
@@ -276,5 +290,161 @@ mod tests {
 
         let fetched = store.get("working", "test/del1").await.unwrap();
         assert!(fetched.is_none(), "record should be deleted");
+    }
+
+    #[tokio::test]
+    async fn test_delete_skipped_without_record_path() {
+        let store = Arc::new(manifest_tests::TestStore {
+            records: std::sync::Mutex::new(Vec::new()),
+        });
+        let rec = make_record("del2", "working", "should survive", Utc::now(), 1, "node_a");
+        store.put(rec).await.unwrap();
+
+        // Delete diff WITHOUT record_path — should be skipped, not crash
+        let diff = ChunkDiff {
+            chunk_hash: "some_hash".to_string(),
+            namespace: "working".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: None,
+        };
+
+        let mut conflicts = 0;
+        apply_changes_received(&*store, &[diff], &mut conflicts)
+            .await
+            .unwrap();
+
+        // Record should survive because we skipped the delete (no path info)
+        let fetched = store.get("working", "test/del2").await.unwrap();
+        assert!(
+            fetched.is_some(),
+            "record should survive when delete has no record_path"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_only_affects_target_record() {
+        let store = Arc::new(manifest_tests::TestStore {
+            records: std::sync::Mutex::new(Vec::new()),
+        });
+        // Put two records in the same workspace
+        let rec1 = make_record("keep", "workspace1", "keep this", Utc::now(), 1, "node_a");
+        let rec2 = make_record(
+            "remove",
+            "workspace1",
+            "remove this",
+            Utc::now(),
+            1,
+            "node_a",
+        );
+        store.put(rec1).await.unwrap();
+        store.put(rec2).await.unwrap();
+
+        // Delete only rec2
+        let diff = ChunkDiff {
+            chunk_hash: "hash_for_rec2".to_string(),
+            namespace: "workspace1".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("test/remove".to_string()),
+        };
+
+        let mut conflicts = 0;
+        apply_changes_received(&*store, &[diff], &mut conflicts)
+            .await
+            .unwrap();
+
+        // rec1 should survive
+        let kept = store.get("workspace1", "test/keep").await.unwrap();
+        assert!(kept.is_some(), "unrelated record should not be deleted");
+        assert_eq!(kept.unwrap().content, "keep this");
+
+        // rec2 should be gone
+        let removed = store.get("workspace1", "test/remove").await.unwrap();
+        assert!(removed.is_none(), "target record should be deleted");
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_record_is_noop() {
+        let store = Arc::new(manifest_tests::TestStore {
+            records: std::sync::Mutex::new(Vec::new()),
+        });
+        // Delete a record that doesn't exist — should not error
+        let diff = ChunkDiff {
+            chunk_hash: "hash".to_string(),
+            namespace: "empty_ws".to_string(),
+            action: DiffAction::Delete,
+            data: None,
+            timestamp: std::time::SystemTime::now(),
+            record_path: Some("nonexistent/path".to_string()),
+        };
+
+        let mut conflicts = 0;
+        apply_changes_received(&*store, &[diff], &mut conflicts)
+            .await
+            .unwrap();
+        // No panic, no error — just a no-op delete
+    }
+
+    #[tokio::test]
+    async fn test_mixed_add_and_delete() {
+        let store = Arc::new(manifest_tests::TestStore {
+            records: std::sync::Mutex::new(Vec::new()),
+        });
+        // Put a record to delete
+        let old = make_record("gone", "ws", "delete me", Utc::now(), 1, "node_a");
+        store.put(old).await.unwrap();
+
+        // Create an Add diff for a new record
+        let new_rec = make_record(
+            "new_one",
+            "ws",
+            "brand new",
+            Utc::now() + TimeDelta::seconds(5),
+            1,
+            "node_b",
+        );
+        let serialized = serialise_chunk(&new_rec).unwrap();
+
+        let diffs = vec![
+            ChunkDiff {
+                chunk_hash: "hash_gone".to_string(),
+                namespace: "ws".to_string(),
+                action: DiffAction::Delete,
+                data: None,
+                timestamp: std::time::SystemTime::now(),
+                record_path: Some("test/gone".to_string()),
+            },
+            ChunkDiff {
+                chunk_hash: chunk_hash(&new_rec),
+                namespace: "ws".to_string(),
+                action: DiffAction::Add,
+                data: Some(serialized),
+                timestamp: std::time::SystemTime::now(),
+                record_path: None,
+            },
+        ];
+
+        let mut conflicts = 0;
+        apply_changes_received(&*store, &diffs, &mut conflicts)
+            .await
+            .unwrap();
+
+        assert!(
+            store.get("ws", "test/gone").await.unwrap().is_none(),
+            "old record deleted"
+        );
+        assert_eq!(
+            store
+                .get("ws", "test/new_one")
+                .await
+                .unwrap()
+                .unwrap()
+                .content,
+            "brand new",
+            "new record added"
+        );
     }
 }

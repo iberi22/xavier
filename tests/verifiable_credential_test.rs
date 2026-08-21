@@ -54,7 +54,8 @@ fn test_credential_json_serialization_roundtrip() {
     let params = DatasetCredentialParams {
         dataset_id: "ds-json-test".to_string(),
         dataset_name: "json-dataset".to_string(),
-        dataset_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+        dataset_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            .to_string(),
         record_count: 42,
         license: "CC-BY-4.0".to_string(),
         curation_status: "APPROVED".to_string(),
@@ -85,7 +86,8 @@ fn test_tamper_detection_modified_subject() {
     let params = DatasetCredentialParams {
         dataset_id: "ds-tamper".to_string(),
         dataset_name: "original-dataset".to_string(),
-        dataset_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+        dataset_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            .to_string(),
         record_count: 500,
         license: "AGPL-3.0-only".to_string(),
         curation_status: "APPROVED".to_string(),
@@ -139,7 +141,8 @@ fn test_tamper_detection_invalid_signature_proof() {
     let params = DatasetCredentialParams {
         dataset_id: "ds-sig-tamper".to_string(),
         dataset_name: "dataset".to_string(),
-        dataset_digest: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+        dataset_digest: "0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
         record_count: 5,
         license: "MIT".to_string(),
         curation_status: "APPROVED".to_string(),

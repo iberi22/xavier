@@ -179,8 +179,8 @@ impl HumanChallengeCron {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use crate::session::types::SessionEventType;
+    use chrono::Utc;
 
     #[test]
     fn test_cron_process_events_and_mesh_scores() {
@@ -204,7 +204,8 @@ mod tests {
 
         // Answer candidate with data_commons reputation weighted reward
         let current_month = Utc::now().format("%Y-%m").to_string();
-        cron.answer_and_award(&candidates[0].id, "Validado", 10, "0xwallet_test").unwrap();
+        cron.answer_and_award(&candidates[0].id, "Validado", 10, "0xwallet_test")
+            .unwrap();
 
         let mesh_scores = cron.prepare_mesh_scores(&current_month).unwrap();
         assert_eq!(mesh_scores.len(), 1);

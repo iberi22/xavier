@@ -80,8 +80,10 @@ pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService, Heartb
 pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
 pub use p2p::{
-    CandidatePair, CandidatePairState, HolePunchState, IceCandidate, IceCandidateType, NatType,
-    NatTraversalEngine, NatTraversalError, StunAttribute, StunMessage, StunMessageType,
+    calculate_backoff, parse_strategy, CandidatePair, CandidatePairState, FallbackError,
+    FallbackStrategy, FilterSummary, FilteredSyncSession, HolePunchState, IceCandidate,
+    IceCandidateType, NatTraversalEngine, NatTraversalError, NatType, OfflineQueue,
+    OfflineQueueConfig, QueuedMessage, StunAttribute, StunMessage, StunMessageType, SyncFilter,
     TransportProtocol, TurnServerConfig,
 };
 pub use peer::{PeerInfo, PeerRegistry};
@@ -100,10 +102,106 @@ pub use transport::MeshTransport;
 #[cfg(feature = "mesh")]
 pub use iroh_transport::IrohTransport;
 
+/// Create a minimal in-memory store for client-only transport construction.
+///
+/// The Iroh accept loop (server-side) needs a real [`MemoryStore`] to serve
+/// chunks, but client-side callers (CLI ping, sync, etc.) only use the
+/// transport for outbound requests. This helper provides a no-op store so
+/// those callers don't need to bootstrap a full database.
+pub fn dummy_store() -> std::sync::Arc<dyn crate::memory::store::MemoryStore> {
+    use crate::memory::store::*;
+    use std::sync::Arc;
+
+    struct _Dummy;
+    #[async_trait::async_trait]
+    impl MemoryStore for _Dummy {
+        fn backend(&self) -> MemoryBackend {
+            MemoryBackend::Memory
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        async fn health(&self) -> anyhow::Result<String> {
+            Ok("ok".into())
+        }
+        async fn put(&self, _: MemoryRecord) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn get(&self, _: &str, _: &str) -> anyhow::Result<Option<MemoryRecord>> {
+            Ok(None)
+        }
+        async fn update(&self, _: MemoryRecord) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn delete(&self, _: &str, _: &str) -> anyhow::Result<Option<MemoryRecord>> {
+            Ok(None)
+        }
+        async fn list(&self, _: &str) -> anyhow::Result<Vec<MemoryRecord>> {
+            Ok(Vec::new())
+        }
+        async fn list_workspaces(&self) -> anyhow::Result<Vec<String>> {
+            Ok(Vec::new())
+        }
+        async fn search(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<&crate::memory::schema::MemoryQueryFilters>,
+        ) -> anyhow::Result<Vec<MemoryRecord>> {
+            Ok(Vec::new())
+        }
+        async fn load_workspace_state(&self, _: &str) -> anyhow::Result<DurableWorkspaceState> {
+            anyhow::bail!("dummy store")
+        }
+        async fn save_beliefs(
+            &self,
+            _: &str,
+            _: Vec<crate::domain::memory::belief::BeliefEdge>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn save_session_token(&self, _: &str, _: SessionTokenRecord) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn is_session_token_valid(&self, _: &str, _: &str) -> anyhow::Result<bool> {
+            Ok(false)
+        }
+        async fn save_checkpoint(
+            &self,
+            _: &str,
+            _: crate::checkpoint::Checkpoint,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn load_checkpoint(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+        ) -> anyhow::Result<Option<crate::checkpoint::Checkpoint>> {
+            Ok(None)
+        }
+        async fn list_checkpoints(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> anyhow::Result<Vec<crate::checkpoint::Checkpoint>> {
+            Ok(Vec::new())
+        }
+        async fn delete_checkpoint(&self, _: &str, _: &str, _: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+    Arc::new(_Dummy)
+}
+
 /// Active Iroh Transport initialization helper.
 #[cfg(feature = "mesh")]
-pub fn init_active_transport(identity: std::sync::Arc<NodeIdentity>) -> IrohTransport {
-    IrohTransport::new(identity)
+pub fn init_active_transport(
+    identity: std::sync::Arc<NodeIdentity>,
+    store: std::sync::Arc<dyn crate::memory::store::MemoryStore>,
+) -> IrohTransport {
+    IrohTransport::new(identity, store)
 }
 
 /// Helper method to connect via the active Iroh transport.
@@ -119,8 +217,9 @@ pub async fn connect_active_transport(
 #[cfg(feature = "mesh")]
 pub async fn start_mesh_node(
     identity: std::sync::Arc<NodeIdentity>,
+    store: std::sync::Arc<dyn crate::memory::store::MemoryStore>,
 ) -> (IrohTransport, tokio::task::JoinHandle<()>) {
-    let transport = init_active_transport(identity);
+    let transport = init_active_transport(identity, store);
     let handle = transport.spawn_accept_loop().await;
     (transport, handle)
 }

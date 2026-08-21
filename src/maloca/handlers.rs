@@ -210,3 +210,43 @@ pub async fn manager_action(
 pub async fn feed_status() -> Json<super::ws::FeedStatus> {
     Json(super::ws::get_feed_status())
 }
+
+// ---------------------------------------------------------------------------
+// Data Node Opt-In Consent handlers
+// ---------------------------------------------------------------------------
+
+pub async fn list_consents(
+    Extension(consent): Extension<Arc<super::data_node::ConsentRegistry>>,
+) -> Json<Vec<super::data_node::DataNodeConsent>> {
+    Json(consent.list_all())
+}
+
+pub async fn register_consent(
+    Extension(consent): Extension<Arc<super::data_node::ConsentRegistry>>,
+    Json(body): Json<super::data_node::ConsentBody>,
+) -> Result<Json<super::data_node::DataNodeConsent>, StatusCode> {
+    if body.node_id.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok(Json(consent.register(body)))
+}
+
+pub async fn get_consent(
+    Extension(consent): Extension<Arc<super::data_node::ConsentRegistry>>,
+    Path(node_id): Path<String>,
+) -> Result<Json<super::data_node::DataNodeConsent>, (StatusCode, String)> {
+    consent
+        .check(&node_id)
+        .map(Json)
+        .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))
+}
+
+pub async fn revoke_consent(
+    Extension(consent): Extension<Arc<super::data_node::ConsentRegistry>>,
+    Path(node_id): Path<String>,
+) -> Result<Json<super::data_node::DataNodeConsent>, (StatusCode, String)> {
+    consent
+        .revoke(&node_id)
+        .map(Json)
+        .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))
+}
