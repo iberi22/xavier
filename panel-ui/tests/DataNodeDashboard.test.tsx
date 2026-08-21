@@ -160,7 +160,8 @@ describe("DataNodeDashboard Component", () => {
     render(<DataNodeDashboard initialOptIn={true} initialMetrics={customMetrics} />);
 
     expect(screen.getByText("42")).toBeInTheDocument();
-    expect(screen.getByText("999,999")).toBeInTheDocument();
+    // Locale-independent: format with the same runtime locale as the component
+    expect(screen.getByText(customMetrics.totalSyncedRecords.toLocaleString())).toBeInTheDocument();
     expect(screen.getByText("8.5 Mbps")).toBeInTheDocument();
     expect(screen.getByText("12 ms")).toBeInTheDocument();
   });
