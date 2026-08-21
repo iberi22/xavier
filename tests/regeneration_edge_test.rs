@@ -65,7 +65,10 @@ fn test_rrf_tuner_extreme_outlier_learning_rates() {
     };
     let regen_neg = ContextRegenerator::new(config_neg);
     let (kw1, vw1) = regen_neg.calculate_rrf_weights(10, 0, 10, 0.5, 0.5);
-    assert!(kw1 > vw1, "Keyword weight should increase with 100% keyword hits");
+    assert!(
+        kw1 > vw1,
+        "Keyword weight should increase with 100% keyword hits"
+    );
     assert!((kw1 + vw1 - 1.0).abs() < 1e-4);
 
     // High learning rate config (> 1.0)
@@ -76,7 +79,10 @@ fn test_rrf_tuner_extreme_outlier_learning_rates() {
     };
     let regen_high = ContextRegenerator::new(config_high);
     let (kw2, vw2) = regen_high.calculate_rrf_weights(0, 10, 10, 0.5, 0.5);
-    assert!(vw2 > kw2, "Vector weight should increase with 100% vector hits");
+    assert!(
+        vw2 > kw2,
+        "Vector weight should increase with 100% vector hits"
+    );
     assert!((kw2 + vw2 - 1.0).abs() < 1e-4);
 
     // NaN learning rate
@@ -103,7 +109,10 @@ fn test_rrf_tuner_extreme_outlier_current_weights() {
 
     // Negative current weights
     let (kw1, vw1) = regenerator.calculate_rrf_weights(10, 10, 20, -5.0, -10.0);
-    assert!(kw1 > 0.0 && vw1 > 0.0, "Weights must be positive after normalization");
+    assert!(
+        kw1 > 0.0 && vw1 > 0.0,
+        "Weights must be positive after normalization"
+    );
     assert!((kw1 + vw1 - 1.0).abs() < 1e-4);
 
     // NaN current weights
@@ -126,11 +135,19 @@ fn test_rrf_tuner_zero_hits_and_zero_queries() {
 
     // Sample size reached but 0 hits total
     let (kw1, vw1) = regenerator.calculate_rrf_weights(0, 0, 10, 0.4, 0.6);
-    assert_eq!((kw1, vw1), (0.4, 0.6), "Zero total hits should preserve current weights");
+    assert_eq!(
+        (kw1, vw1),
+        (0.4, 0.6),
+        "Zero total hits should preserve current weights"
+    );
 
     // Total queries < min_hit_sample
     let (kw2, vw2) = regenerator.calculate_rrf_weights(1, 1, 2, 0.3, 0.7);
-    assert_eq!((kw2, vw2), (0.3, 0.7), "Insufficient queries should preserve current weights");
+    assert_eq!(
+        (kw2, vw2),
+        (0.3, 0.7),
+        "Insufficient queries should preserve current weights"
+    );
 }
 
 #[tokio::test]
@@ -199,7 +216,9 @@ async fn test_simulate_blocking_thread_pool_starvation() {
     // Generate large batch of candidate vector pairs
     let candidate_pair = (
         (0..128).map(|i| i as f32 * 0.01).collect::<Vec<f32>>(),
-        (0..128).map(|i| (128 - i) as f32 * 0.01).collect::<Vec<f32>>(),
+        (0..128)
+            .map(|i| (128 - i) as f32 * 0.01)
+            .collect::<Vec<f32>>(),
     );
     let candidate_batch: Vec<(Vec<f32>, Vec<f32>)> = vec![candidate_pair; 50];
 
@@ -214,7 +233,10 @@ async fn test_simulate_blocking_thread_pool_starvation() {
     }
 
     for task in tasks {
-        let res = task.await.expect("Task join error").expect("Batch similarity error");
+        let res = task
+            .await
+            .expect("Task join error")
+            .expect("Batch similarity error");
         assert_eq!(res.len(), 50);
     }
 }

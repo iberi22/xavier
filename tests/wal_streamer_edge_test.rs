@@ -3,8 +3,8 @@
 use std::io::{Cursor, ErrorKind, Write};
 use tempfile::NamedTempFile;
 use xavier::storage::backup::wal_streamer::{
-    SimulatedIoReader, WalError, WalFrame, WalFrameHeader, WalHeader, WalRecoveryManager,
-    WalStreamer, WalStreamerConfig, WAL_MAGIC_BE, WAL_MAGIC_LE, wal_checksum,
+    wal_checksum, SimulatedIoReader, WalError, WalFrame, WalFrameHeader, WalHeader,
+    WalRecoveryManager, WalStreamer, WalStreamerConfig, WAL_MAGIC_BE, WAL_MAGIC_LE,
 };
 
 fn helper_create_valid_wal_bytes(
@@ -16,7 +16,11 @@ fn helper_create_valid_wal_bytes(
     let salt_2 = 0x9abcdef0;
     let checkpoint_seq = 1;
 
-    let magic = if is_big_endian { WAL_MAGIC_BE } else { WAL_MAGIC_LE };
+    let magic = if is_big_endian {
+        WAL_MAGIC_BE
+    } else {
+        WAL_MAGIC_LE
+    };
     let file_format: u32 = 3000000;
 
     let mut header_buf = [0u8; 32];
@@ -49,7 +53,11 @@ fn helper_create_valid_wal_bytes(
 
     for idx in 0..num_frames {
         let page_no = (idx + 1) as u32;
-        let db_pages = if idx == num_frames - 1 { num_frames as u32 } else { 0 };
+        let db_pages = if idx == num_frames - 1 {
+            num_frames as u32
+        } else {
+            0
+        };
         let mut page_data = vec![idx as u8 + 1; page_size as usize];
         page_data[0] = page_no as u8;
 
@@ -212,8 +220,11 @@ fn test_wal_frame_incomplete_page_data() {
 #[test]
 fn test_simulated_io_disconnect_header_sync() {
     let (bytes, _hdr, _frames) = helper_create_valid_wal_bytes(4096, 1, false);
-    let simulated = SimulatedIoReader::new(Cursor::new(bytes))
-        .with_error_after_bytes(10, ErrorKind::ConnectionReset, "Simulated network drop");
+    let simulated = SimulatedIoReader::new(Cursor::new(bytes)).with_error_after_bytes(
+        10,
+        ErrorKind::ConnectionReset,
+        "Simulated network drop",
+    );
 
     let mut streamer = WalStreamer::new(simulated, WalStreamerConfig::default());
     let err = streamer.read_header_sync().unwrap_err();
@@ -225,8 +236,11 @@ fn test_simulated_io_disconnect_header_sync() {
 fn test_simulated_io_disconnect_frame_sync() {
     let (bytes, _hdr, _frames) = helper_create_valid_wal_bytes(4096, 2, false);
     // Fail after header (32 bytes) + frame 1 header (24 bytes) + partial page (100 bytes)
-    let simulated = SimulatedIoReader::new(Cursor::new(bytes))
-        .with_error_after_bytes(32 + 24 + 100, ErrorKind::ConnectionReset, "Simulated connection reset");
+    let simulated = SimulatedIoReader::new(Cursor::new(bytes)).with_error_after_bytes(
+        32 + 24 + 100,
+        ErrorKind::ConnectionReset,
+        "Simulated connection reset",
+    );
 
     let mut streamer = WalStreamer::new(simulated, WalStreamerConfig::default());
     streamer.read_header_sync().unwrap();
@@ -239,8 +253,11 @@ fn test_simulated_io_disconnect_frame_sync() {
 async fn test_simulated_io_disconnect_frame_async() {
     let (bytes, _hdr, _frames) = helper_create_valid_wal_bytes(4096, 2, false);
     // Fail during frame 1 reading
-    let simulated = SimulatedIoReader::new(Cursor::new(bytes))
-        .with_error_after_bytes(40, ErrorKind::ConnectionReset, "Async stream reset");
+    let simulated = SimulatedIoReader::new(Cursor::new(bytes)).with_error_after_bytes(
+        40,
+        ErrorKind::ConnectionReset,
+        "Async stream reset",
+    );
 
     let mut streamer = WalStreamer::new(simulated, WalStreamerConfig::default());
     streamer.read_header_async().await.unwrap();
@@ -252,8 +269,11 @@ async fn test_simulated_io_disconnect_frame_async() {
 #[test]
 fn test_simulated_io_lock_timeout() {
     let (bytes, _hdr, _frames) = helper_create_valid_wal_bytes(4096, 1, false);
-    let simulated = SimulatedIoReader::new(Cursor::new(bytes))
-        .with_error_after_bytes(0, ErrorKind::WouldBlock, "SQLite WAL lock timeout");
+    let simulated = SimulatedIoReader::new(Cursor::new(bytes)).with_error_after_bytes(
+        0,
+        ErrorKind::WouldBlock,
+        "SQLite WAL lock timeout",
+    );
 
     let mut streamer = WalStreamer::new(simulated, WalStreamerConfig::default());
     let err = streamer.read_header_sync().unwrap_err();

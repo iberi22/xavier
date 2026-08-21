@@ -251,8 +251,7 @@ impl ContextRegenerator {
                     };
 
                     // Blended score weighting vector similarity with keyword ratio
-                    (cos_sim * vw + (1.0 - cos_sim.abs()) * kw * 0.5)
-                        .clamp(0.0, 1.0)
+                    (cos_sim * vw + (1.0 - cos_sim.abs()) * kw * 0.5).clamp(0.0, 1.0)
                 })
                 .collect()
         })
@@ -332,8 +331,7 @@ impl ContextRegenerator {
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let interval_secs = self.config.interval_secs.max(1);
-            let mut interval =
-                tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
 
             loop {
                 tokio::select! {

@@ -31,10 +31,7 @@ struct EnvGuard {
 impl EnvGuard {
     fn new(keys: &[&'static str]) -> Self {
         let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let vars = keys
-            .iter()
-            .map(|&k| (k, std::env::var(k).ok()))
-            .collect();
+        let vars = keys.iter().map(|&k| (k, std::env::var(k).ok())).collect();
         Self { _lock: lock, vars }
     }
 
@@ -63,7 +60,10 @@ impl Drop for EnvGuard {
 
 #[test]
 fn test_constant_time_compare_matching() {
-    assert!(constant_time_compare("exact_secret_token", "exact_secret_token"));
+    assert!(constant_time_compare(
+        "exact_secret_token",
+        "exact_secret_token"
+    ));
     assert!(constant_time_compare("", ""));
     assert!(constant_time_compare("a", "a"));
 }
@@ -79,11 +79,20 @@ fn test_constant_time_compare_mismatched_length() {
 #[test]
 fn test_constant_time_compare_same_length_mismatch() {
     // Differ at start
-    assert!(!constant_time_compare("Asecret_token_123", "Bsecret_token_123"));
+    assert!(!constant_time_compare(
+        "Asecret_token_123",
+        "Bsecret_token_123"
+    ));
     // Differ in middle
-    assert!(!constant_time_compare("secret_Xoken_123", "secret_Yoken_123"));
+    assert!(!constant_time_compare(
+        "secret_Xoken_123",
+        "secret_Yoken_123"
+    ));
     // Differ at end
-    assert!(!constant_time_compare("secret_token_123A", "secret_token_123B"));
+    assert!(!constant_time_compare(
+        "secret_token_123A",
+        "secret_token_123B"
+    ));
 }
 
 // ─── Extract Auth Token Header Edge Cases ───────────────────────────────────
@@ -142,7 +151,10 @@ fn test_extract_auth_token_x_xavier_token_invalid_utf8() {
 #[test]
 fn test_extract_auth_token_authorization_bearer_valid() {
     let mut headers = HeaderMap::new();
-    headers.insert("Authorization", "Bearer valid_bearer_token".parse().unwrap());
+    headers.insert(
+        "Authorization",
+        "Bearer valid_bearer_token".parse().unwrap(),
+    );
     let token = extract_auth_token(&headers).unwrap();
     assert_eq!(token, "valid_bearer_token");
 }
@@ -462,7 +474,11 @@ async fn test_middleware_invalid_token_jwt_fallback_success() {
     let jwt_secret = "super_secret_jwt_key_32bytes_long!!";
     env.set("XAVIER_JWT_SECRET", jwt_secret);
 
-    let user = User::new("user_jwt@swal.dev".to_string(), "JWT User".to_string(), xavier::security::auth::UserRole::User);
+    let user = User::new(
+        "user_jwt@swal.dev".to_string(),
+        "JWT User".to_string(),
+        xavier::security::auth::UserRole::User,
+    );
     let jwt_token = generate_jwt(&user, jwt_secret.as_bytes()).unwrap();
 
     let app = create_test_app();

@@ -66,7 +66,10 @@ pub fn extract_auth_token(headers: &HeaderMap) -> Result<String, ApiError> {
             return Err(ApiError::unauthorized("Empty authentication token"));
         }
 
-        if trimmed_full == "Bearer" || trimmed_full.starts_with("Bearer ") || trimmed_full.starts_with("Bearer\t") {
+        if trimmed_full == "Bearer"
+            || trimmed_full.starts_with("Bearer ")
+            || trimmed_full.starts_with("Bearer\t")
+        {
             let token = trimmed_full.trim_start_matches("Bearer").trim();
             if token.is_empty() {
                 return Err(ApiError::unauthorized("Empty authentication token"));
@@ -74,7 +77,10 @@ pub fn extract_auth_token(headers: &HeaderMap) -> Result<String, ApiError> {
             return Ok(token.to_string());
         }
 
-        if trimmed_full == "token" || trimmed_full.starts_with("token ") || trimmed_full.starts_with("token\t") {
+        if trimmed_full == "token"
+            || trimmed_full.starts_with("token ")
+            || trimmed_full.starts_with("token\t")
+        {
             let token = trimmed_full.trim_start_matches("token").trim();
             if token.is_empty() {
                 return Err(ApiError::unauthorized("Empty authentication token"));
@@ -131,7 +137,9 @@ pub async fn api_auth_middleware(req: Request<Body>, next: Next) -> Response {
         Ok(false) => {
             // Optional JWT secret fallback for legacy JWT tokens
             if let Ok(jwt_secret) = std::env::var("XAVIER_JWT_SECRET") {
-                if let Ok(claims) = crate::security::auth::validate_jwt(&token, jwt_secret.as_bytes()) {
+                if let Ok(claims) =
+                    crate::security::auth::validate_jwt(&token, jwt_secret.as_bytes())
+                {
                     let mut req = req;
                     req.extensions_mut().insert(claims);
                     return next.run(req).await;

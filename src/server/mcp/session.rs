@@ -66,8 +66,7 @@ pub struct McpSession {
     pub timeout_duration: Duration,
 }
 
-static GLOBAL_SESSION_MANAGER: LazyLock<McpSessionManager> =
-    LazyLock::new(McpSessionManager::new);
+static GLOBAL_SESSION_MANAGER: LazyLock<McpSessionManager> = LazyLock::new(McpSessionManager::new);
 
 /// Thread-safe manager for tracking MCP session lifecycles.
 #[derive(Debug, Clone)]
@@ -297,7 +296,10 @@ pub async fn mcp_sse_handler(headers: HeaderMap) -> Response {
 
     (
         [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
-        format!("event: connected\ndata: {{\"session_id\": \"{}\"}}\n\n", session_id),
+        format!(
+            "event: connected\ndata: {{\"session_id\": \"{}\"}}\n\n",
+            session_id
+        ),
     )
         .into_response()
 }
@@ -323,7 +325,11 @@ pub async fn mcp_post_handler(
     if let Err(err) = manager.record_bytes(session_id, body.len()) {
         return (
             StatusCode::PAYLOAD_TOO_LARGE,
-            Json(error_response(None, XAVIER_ERROR_VALIDATION, err.to_string())),
+            Json(error_response(
+                None,
+                XAVIER_ERROR_VALIDATION,
+                err.to_string(),
+            )),
         )
             .into_response();
     }
