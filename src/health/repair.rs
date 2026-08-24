@@ -18,6 +18,33 @@ use tracing::{error, info, warn};
 // Types
 // ---------------------------------------------------------------------------
 
+/// Decision on whether to retry reconnection for a mesh peer based on lag and prior attempts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PeerRetryDecision {
+    /// Sync lag is normal (<= 60s); no reconnection action needed.
+    Healthy,
+    /// High sync lag (> 60s, <= 1 day); attempt reconnection immediately every cycle.
+    RetryImmediately,
+    /// Severe sync lag (> 1 day, <= 7 days); rate limit reconnection hints to 1 every 10 cycles.
+    RetryWithBackoff { should_log: bool },
+    /// Stale peer (> 7 days lag); peer marked stale, auto-repair reconnection hints disabled.
+    Stale,
+}
+
+/// Evaluates peer sync lag and attempt count to determine retry action.
+pub fn should_retry_peer(sync_lag_secs: u64, attempts: u64) -> PeerRetryDecision {
+    if sync_lag_secs <= 60 {
+        PeerRetryDecision::Healthy
+    } else if sync_lag_secs > 604800 {
+        PeerRetryDecision::Stale
+    } else if sync_lag_secs > 86400 {
+        let should_log = attempts % 10 == 0;
+        PeerRetryDecision::RetryWithBackoff { should_log }
+    } else {
+        PeerRetryDecision::RetryImmediately
+    }
+}
+
 /// A single repair action attempted
 #[derive(Debug, Clone, PartialEq)]
 pub enum RepairAction {
@@ -578,6 +605,35 @@ impl Default for HealthAutoRepair {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_should_retry_peer() {
+        // Healthy: <= 60s
+        assert_eq!(should_retry_peer(30, 0), PeerRetryDecision::Healthy);
+        assert_eq!(should_retry_peer(60, 0), PeerRetryDecision::Healthy);
+
+        // Immediate retry: > 60s && <= 86400s (1 day)
+        assert_eq!(should_retry_peer(61, 0), PeerRetryDecision::RetryImmediately);
+        assert_eq!(should_retry_peer(86400, 0), PeerRetryDecision::RetryImmediately);
+
+        // Backoff: > 86400s && <= 604800s (7 days)
+        assert_eq!(
+            should_retry_peer(86401, 0),
+            PeerRetryDecision::RetryWithBackoff { should_log: true }
+        );
+        assert_eq!(
+            should_retry_peer(86401, 1),
+            PeerRetryDecision::RetryWithBackoff { should_log: false }
+        );
+        assert_eq!(
+            should_retry_peer(86401, 10),
+            PeerRetryDecision::RetryWithBackoff { should_log: true }
+        );
+
+        // Stale: > 604800s (7 days)
+        assert_eq!(should_retry_peer(604801, 0), PeerRetryDecision::Stale);
+        assert_eq!(should_retry_peer(1_000_000, 50), PeerRetryDecision::Stale);
+    }
 
     #[test]
     fn test_repair_config_defaults() {
