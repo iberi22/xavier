@@ -26,9 +26,14 @@ impl NotificationDispatcher {
         
         tokio::spawn(async move {
             info!("Notification Dispatcher started in background.");
+            if let Err(e) = crate::notifications::ensure_memory_pool().await {
+                tracing::warn!("Notification Dispatcher: memory pool lazy init warning: {}", e);
+            }
             while let Ok(notification) = rx.recv().await {
                 if let Some(tx) = &self.telegram_tx {
-                    let _ = tx.send(notification).await;
+                    if let Err(e) = tx.send(notification).await {
+                        tracing::warn!("Notification Dispatcher: failed to send to telegram channel: {}", e);
+                    }
                 }
             }
         });
