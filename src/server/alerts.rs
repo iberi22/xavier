@@ -22,6 +22,7 @@ pub struct SystemAlert {
 
 pub struct SystemAlertStore {
     alerts: RwLock<Vec<SystemAlert>>,
+    last_email_sent: RwLock<std::collections::HashMap<String, DateTime<Utc>>>,
 }
 
 impl SystemAlertStore {
@@ -29,6 +30,7 @@ impl SystemAlertStore {
     pub fn new() -> Self {
         Self {
             alerts: RwLock::new(Vec::new()),
+            last_email_sent: RwLock::new(std::collections::HashMap::new()),
         }
     }
 
@@ -64,6 +66,56 @@ impl SystemAlertStore {
     pub fn clear(&self) {
         if let Ok(mut alerts) = self.alerts.write() {
             alerts.clear();
+        }
+        if let Ok(mut emails) = self.last_email_sent.write() {
+            emails.clear();
+        }
+    }
+
+    /// Check if an email notification for the given key should be sent based on deduplication window.
+    pub async fn should_notify_email_async(&self, alert_key: &str, window_secs: u64) -> bool {
+        let now = Utc::now();
+        let window_duration = chrono::Duration::seconds(window_secs as i64);
+
+        if let Ok(guard) = self.last_email_sent.read() {
+            if let Some(last_time) = guard.get(alert_key) {
+                if now < *last_time + window_duration {
+                    return false;
+                }
+            }
+        }
+
+        // Check SQLite notifications table if memory pool is available to persist window check across restarts
+        let key_owned = alert_key.to_string();
+        let db_last_ts: Option<DateTime<Utc>> = crate::codebase::connection_manager::ConnectionManager::global()
+            .with_conn("memory", move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT timestamp FROM notifications WHERE title = ? ORDER BY timestamp DESC LIMIT 1",
+                )?;
+                let mut rows = stmt.query([key_owned])?;
+                if let Some(row) = rows.next()? {
+                    let ts_str: String = row.get(0)?;
+                    Ok(ts_str.parse::<DateTime<Utc>>().ok())
+                } else {
+                    Ok(None)
+                }
+            })
+            .await
+            .unwrap_or(None);
+
+        if let Some(last_ts) = db_last_ts {
+            if now < last_ts + window_duration {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Record that an email notification was sent for the given key.
+    pub fn record_email_sent(&self, alert_key: &str) {
+        if let Ok(mut guard) = self.last_email_sent.write() {
+            guard.insert(alert_key.to_string(), Utc::now());
         }
     }
 
