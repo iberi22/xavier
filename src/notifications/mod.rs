@@ -3,6 +3,9 @@
 //! Provides multi-channel notification delivery (telegram, email, in-app)
 //! with template rendering, scheduling, and delivery status tracking.
 
+pub mod db;
+pub mod dispatcher;
+
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::sqlite_store::TABLE_NOTIFICATIONS;
 use anyhow::Result;
@@ -64,9 +67,19 @@ pub trait NotificationProvider: Send + Sync {
 
 pub struct InAppProvider;
 
+/// Lazily ensures that the SQLite "memory" pool is connected in ConnectionManager and the schema is initialized.
+pub async fn ensure_memory_pool() -> Result<()> {
+    db::init_notifications_schema().await
+}
+
 #[async_trait::async_trait]
 impl NotificationProvider for InAppProvider {
     async fn send(&self, notification: &Notification) -> Result<()> {
+        if let Err(e) = ensure_memory_pool().await {
+            tracing::warn!("InAppProvider: memory pool lazy init warning: {}", e);
+            return Ok(());
+        }
+
         let island_id = notification.island_id.as_str().to_string();
         let id = notification.id.clone();
         let title = notification.title.clone();
@@ -75,13 +88,19 @@ impl NotificationProvider for InAppProvider {
         let read = if notification.read { 1 } else { 0 };
         let severity = notification.severity.clone();
 
-        ConnectionManager::global().with_conn("memory", move |conn| {
+        match ConnectionManager::global().with_conn("memory", move |conn| {
             conn.execute(
                 &format!("INSERT INTO {} (id, island_id, title, body, timestamp, read, severity) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", TABLE_NOTIFICATIONS),
                 params![id, island_id, title, body, timestamp, read, severity],
             )?;
             Ok(())
-        }).await
+        }).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                tracing::warn!("InAppProvider: failed to insert notification into SQLite: {}", e);
+                Ok(())
+            }
+        }
     }
 
     fn id(&self) -> &'static str {
@@ -114,7 +133,13 @@ pub struct WebhookProvider;
 #[async_trait::async_trait]
 impl NotificationProvider for WebhookProvider {
     async fn send(&self, notification: &Notification) -> Result<()> {
-        let subs = NOTIFICATIONS.list_subscriptions().await?;
+        let subs = match NOTIFICATIONS.list_subscriptions().await {
+            Ok(subs) => subs,
+            Err(e) => {
+                tracing::warn!("WebhookProvider: failed to list subscriptions: {}", e);
+                return Ok(());
+            }
+        };
         let client = reqwest::Client::new();
         let island_str = notification.island_id.as_str();
 
@@ -176,10 +201,29 @@ pub struct EmailProvider;
 #[async_trait::async_trait]
 impl NotificationProvider for EmailProvider {
     async fn send(&self, notification: &Notification) -> Result<()> {
+        let dedup_window = std::env::var("XAVIER_EMAIL_DEDUP_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(300);
+
+        let key = notification.title.clone();
+        if !crate::server::alerts::SYSTEM_ALERTS
+            .should_notify_email_async(&key, dedup_window)
+            .await
+        {
+            tracing::info!(
+                "Skipping email notification '{}' due to deduplication window ({}s)",
+                notification.title,
+                dedup_window
+            );
+            return Ok(());
+        }
+
         tracing::info!(
             "Sending email notification to configured address: {}",
             notification.title
         );
+        crate::server::alerts::SYSTEM_ALERTS.record_email_sent(&key);
         let mut emails = SENT_EMAILS.lock().await;
         emails.push(notification.clone());
         Ok(())
@@ -282,7 +326,7 @@ impl NotificationManager {
         for provider in &self.providers {
             if provider.is_enabled() {
                 if let Err(e) = provider.send(&notification).await {
-                    tracing::error!(
+                    tracing::warn!(
                         "Failed to send notification via provider '{}': {}",
                         provider.id(),
                         e
@@ -297,6 +341,7 @@ impl NotificationManager {
 
     /// Ensure webhook table.
     pub async fn ensure_webhook_table(&self) -> Result<()> {
+        let _ = ensure_memory_pool().await;
         ConnectionManager::global()
             .with_conn("memory", move |conn| {
                 conn.execute(
@@ -392,6 +437,7 @@ impl NotificationManager {
 
     /// List notifications.
     pub async fn list_notifications(&self) -> Result<Vec<Notification>> {
+        let _ = ensure_memory_pool().await;
         ConnectionManager::global().with_conn("memory", move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, island_id, title, body, timestamp, read, severity FROM notifications ORDER BY timestamp DESC LIMIT 100",
@@ -417,6 +463,7 @@ impl NotificationManager {
 
     /// Mark as read.
     pub async fn mark_as_read(&self, id: &str) -> Result<()> {
+        let _ = ensure_memory_pool().await;
         let id = id.to_string();
         ConnectionManager::global()
             .with_conn("memory", move |conn| {
@@ -431,6 +478,7 @@ impl NotificationManager {
 
     /// Mark all as read.
     pub async fn mark_all_as_read(&self) -> Result<()> {
+        let _ = ensure_memory_pool().await;
         ConnectionManager::global()
             .with_conn("memory", move |conn| {
                 conn.execute(&format!("UPDATE {} SET read = 1", TABLE_NOTIFICATIONS), [])?;
@@ -441,6 +489,7 @@ impl NotificationManager {
 
     /// Delete all.
     pub async fn delete_all(&self) -> Result<()> {
+        let _ = ensure_memory_pool().await;
         ConnectionManager::global()
             .with_conn("memory", move |conn| {
                 conn.execute(&format!("DELETE FROM {}", TABLE_NOTIFICATIONS), [])?;
@@ -553,5 +602,51 @@ mod tests {
 
         let rx_received = rx.recv().await.unwrap();
         assert_eq!(rx_received.id, notified.id);
+    }
+
+    #[tokio::test]
+    async fn test_lazy_memory_pool_init_and_graceful_notify() {
+        let manager = NotificationManager::new();
+        let result = manager
+            .notify(IslandId::System, "Lazy Test Alert", "Lazy init body", "info")
+            .await;
+        assert!(result.is_ok());
+
+        let list = manager.list_notifications().await;
+        assert!(list.is_ok());
+        let notifications = list.unwrap();
+        assert!(notifications.iter().any(|n| n.title == "Lazy Test Alert"));
+    }
+
+    #[tokio::test]
+    async fn test_email_provider_deduplication_window() {
+        let provider = EmailProvider;
+        let title = format!("Dedup Test Alert {}", uuid::Uuid::new_v4());
+        let notification = Notification {
+            id: "email-dedup-id-1".to_string(),
+            island_id: IslandId::System,
+            title: title.clone(),
+            body: "Testing dedup window".to_string(),
+            timestamp: Utc::now(),
+            read: false,
+            severity: "error".to_string(),
+        };
+
+        let count_title = || async {
+            let emails = SENT_EMAILS.lock().await;
+            emails.iter().filter(|n| n.title == title).count()
+        };
+
+        assert_eq!(count_title().await, 0);
+
+        // First send should succeed
+        let res1 = provider.send(&notification).await;
+        assert!(res1.is_ok());
+        assert_eq!(count_title().await, 1);
+
+        // Immediate duplicate send should be skipped due to dedup window
+        let res2 = provider.send(&notification).await;
+        assert!(res2.is_ok());
+        assert_eq!(count_title().await, 1);
     }
 }
