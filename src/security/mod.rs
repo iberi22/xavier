@@ -22,6 +22,7 @@ pub mod redaction;
 pub mod rsa_keys;
 pub mod scanner;
 pub mod sessions;
+pub mod sliding_limiter;
 pub mod threat_store;
 pub mod tokens;
 pub mod url_validator;
@@ -31,6 +32,7 @@ pub use anticipator::{Anticipator, AnticipatorConfig};
 pub use detections::{ScanResult as AnticipatorScanResult, Severity, Threat, ThreatCategory};
 pub use prompt_guard::{AttackType, DetectionResult, PromptInjectionDetector};
 pub use rate_limiter::{LimiterConfig, LimiterResult, SlidingWindowLimiter};
+pub use sliding_limiter::{LockFreeSlidingLimiter, SlidingLimiterConfig};
 pub use redaction::{parse_segmented, DocSection, RedactionEngine, RedactionRule, SegmentedDoc};
 pub use scanner::entropy::{
     EntropyCalculator, EntropyRegion, EntropyScanner, EntropyThreshold, SecretDetector, SecretMatch,
