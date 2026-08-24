@@ -85,16 +85,28 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
     );
   }
 
-  const mappedQuotas = quotas.map((q) => ({
-    provider: q.provider,
-    tier: q.weekly_quota > 500000 ? "Pro" : "Free",
-    requests: `${q.used_today / 100}K / 5K`, // Simulated request count
-    tokens: `${(q.used_today / 1000).toFixed(1)}K / ${(q.weekly_quota / 1000).toFixed(0)}K`,
-    reset: "2h",
-    status: q.rate_limited_until
-      ? "red"
-      : ((q.used_weekly / q.weekly_quota > 0.8 ? "yellow" : "green") as any),
-  }));
+  const mappedQuotas = useMemo(() => {
+    return quotas.map((q) => ({
+      provider: q.provider,
+      tier: q.weekly_quota > 500000 ? "Pro" : "Free",
+      requests: `${q.used_today / 100}K / 5K`, // Simulated request count
+      tokens: `${(q.used_today / 1000).toFixed(1)}K / ${(q.weekly_quota / 1000).toFixed(0)}K`,
+      reset: "2h",
+      status: q.rate_limited_until
+        ? "red"
+        : ((q.used_weekly / q.weekly_quota > 0.8 ? "yellow" : "green") as any),
+    }));
+  }, [quotas]);
+
+  const mappedProviders = useMemo(() => {
+    return (
+      systemScan?.providers.map((p) => ({
+        name: p.name,
+        status: (p.configured ? "running" : "error") as "running" | "error" | "degraded",
+        configured: p.configured,
+      })) || []
+    );
+  }, [systemScan]);
 
   return (
     <motion.div
@@ -138,13 +150,7 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
               <ProviderSelector
-                providers={
-                  systemScan?.providers.map((p) => ({
-                    name: p.name,
-                    status: p.configured ? "running" : "error",
-                    configured: p.configured,
-                  })) || []
-                }
+                providers={mappedProviders}
                 activeProvider={activeProvider}
                 onSwitch={setActiveProvider}
               />
