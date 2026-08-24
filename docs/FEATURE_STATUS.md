@@ -1,8 +1,8 @@
 # Xavier Feature Status
 
-Current product label: `0.6.1-beta`
+Current product label: `0.13.0`
 
-This matrix is the operational truth for the repository as of v0.6.1-beta stabilization.
+This matrix is the operational truth for the repository as of v0.13.0 stabilization.
 
 ## Release Status
 
@@ -41,6 +41,21 @@ All 7 XTSP end-to-end tests pass:
 - `xtsp_fat_search`, `xtsp_page_in`, `xtsp_dedup`, `xtsp_full_flow`, `xtsp_persist`, `xtsp_prune`, `xtsp_token_savings`
 
 See `tests/xtsp/` for the complete integration test suite.
+## Maloca V1 Integration (Ola 15) — v0.13.0
+
+| Surface | Status | Notes |
+|---|---|---|
+| Unified Axum router | Stable | `v1_maloca_router` in `src/server/maloca/mod.rs`, merged into the live daemon (`src/cli/server.rs`). |
+| Ecosystem App Registry | Stable | `GET /v1/maloca/registry[/{app_id}]`, ETag-cached. |
+| Alignment audit | Stable | `GET /v1/maloca/alignment[/goals]` — GOAL.md compliance. |
+| Unified backlog | Stable | `GET /v1/maloca/backlog/unified|summary` — multi-repo aggregation, TTL cache. |
+| Model Router | Stable | `POST /v1/maloca/models/infer`, `GET list|health` — Ollama/cloud providers. |
+| HumanChallenge engine | Stable | `POST challenges/generate|answer`, `GET list|stats`. |
+| Panel UI tabs | Stable | Registry / Goals / Backlog / Challenges / Models in `panel-ui/src/maloca/MalocaView.tsx`. |
+
+Verified by `test_maloca_http_e2e` (5/5), `test_hc_e2e` (1/1), `maloca-core` unit suite (59/59) and the backoffice E2E `e2e_maloca_flow.spec.ts` (4/4).
+
+
 ## What Was Verified
 
 ### Confirmed working
