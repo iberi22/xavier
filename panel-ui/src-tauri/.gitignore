@@ -8,3 +8,6 @@
 /binaries/xavier-*-unknown-linux-gnu
 /binaries/xavier-*-apple-darwin
 /binaries/.sidecar-stub-*
+
+# Built sidecar binaries (recreated by cargo build / release pipeline)
+/binaries/*.exe
