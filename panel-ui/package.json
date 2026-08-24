@@ -17,6 +17,7 @@
     "test:e2e:generative": "playwright test"
   },
   "dependencies": {
+    "@swal/maloca-embed": "workspace:*",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "2.7.1",
