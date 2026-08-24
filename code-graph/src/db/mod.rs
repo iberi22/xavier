@@ -10,13 +10,43 @@ use crate::types::{
 };
 use rusqlite::{params, Connection};
 use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex;
 use tracing::{debug, info};
 
 const DEFAULT_PROJECT_ID: &str = "default";
 
+static DB_CACHE: std::sync::OnceLock<parking_lot::RwLock<std::collections::HashMap<PathBuf, Arc<Mutex<Connection>>>>> =
+    std::sync::OnceLock::new();
+
+fn db_cache() -> &'static parking_lot::RwLock<std::collections::HashMap<PathBuf, Arc<Mutex<Connection>>>> {
+    DB_CACHE.get_or_init(|| parking_lot::RwLock::new(std::collections::HashMap::new()))
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Flush and checkpoint all cached CodeGraphDB connections gracefully (wal_checkpoint(TRUNCATE)).
+pub fn flush_and_close_cache() {
+    let mut cache = db_cache().write();
+    for (path, conn_arc) in cache.drain() {
+        if let Ok(conn) = conn_arc.lock() {
+            let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+            debug!("Flushed WAL checkpoint for cached CodeGraphDB at {:?}", path);
+        }
+    }
+}
+
+/// Clear the connection cache (e.g. for testing).
+pub fn clear_cache() {
+    db_cache().write().clear();
+}
+
+#[derive(Clone)]
 pub struct CodeGraphDB {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
 }
 
 fn parse_language(value: &str) -> Language {
@@ -101,8 +131,18 @@ fn edge_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CodeEdge> {
 }
 
 impl CodeGraphDB {
-    /// Open or create a database at the given path
+    /// Open or create a database at the given path. Uses cached connection if already opened.
     pub fn new(path: &Path) -> Result<Self> {
+        let norm_path = normalize_path(path);
+        {
+            let cache = db_cache().read();
+            if let Some(conn) = cache.get(&norm_path) {
+                return Ok(Self {
+                    conn: Arc::clone(conn),
+                });
+            }
+        }
+
         info!("Opening database at {:?}", path);
 
         let conn = Connection::open(path).map_err(|e| GraphError::Database(e.to_string()))?;
@@ -110,16 +150,22 @@ impl CodeGraphDB {
         let _ = conn.busy_timeout(std::time::Duration::from_secs(15));
         let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
 
+        let conn_arc = Arc::new(Mutex::new(conn));
         let db = Self {
-            conn: Mutex::new(conn),
+            conn: Arc::clone(&conn_arc),
         };
 
         db.init_schema()?;
+
+        db_cache().write().insert(norm_path, conn_arc);
         Ok(db)
     }
 
     /// Create a new database (overwrite if exists)
     pub fn create_new(path: &Path) -> Result<Self> {
+        let norm_path = normalize_path(path);
+        db_cache().write().remove(&norm_path);
+
         info!("Creating NEW database at {:?}", path);
 
         // Remove existing file if present
@@ -129,11 +175,14 @@ impl CodeGraphDB {
 
         let conn = Connection::open(path).map_err(|e| GraphError::Database(e.to_string()))?;
 
+        let conn_arc = Arc::new(Mutex::new(conn));
         let db = Self {
-            conn: Mutex::new(conn),
+            conn: Arc::clone(&conn_arc),
         };
 
         db.init_schema()?;
+
+        db_cache().write().insert(norm_path, conn_arc);
         Ok(db)
     }
 
@@ -142,7 +191,7 @@ impl CodeGraphDB {
         let conn = Connection::open_in_memory().map_err(|e| GraphError::Database(e.to_string()))?;
 
         let db = Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         };
 
         db.init_schema()?;
@@ -1884,5 +1933,39 @@ mod tests {
 
         let res = db.find_symbols("calculate", 10).expect("find");
         assert_eq!(res.symbols.len(), 1);
+    }
+
+    #[test]
+    fn test_code_graph_db_connection_caching() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let db_path = temp_dir.path().join("cached_test.db");
+
+        let db1 = CodeGraphDB::new(&db_path).expect("first open");
+        let db2 = CodeGraphDB::new(&db_path).expect("second open");
+
+        // Verify both instances point to the exact same underlying Arc<Mutex<Connection>>
+        assert!(Arc::ptr_eq(&db1.conn, &db2.conn));
+
+        // Insert symbol in db1 and verify it is visible in db2 immediately
+        let sym = Symbol {
+            id: None,
+            stable_id: None,
+            name: "cached_symbol".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/cached.rs".to_string(),
+            start_line: 1,
+            end_line: 5,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            parent: None,
+            complexity: None,
+        };
+        db1.insert_symbol(&sym).expect("insert via db1");
+
+        let found = db2.find_by_name("cached_symbol", 1).expect("find via db2");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "cached_symbol");
     }
 }
