@@ -8000,6 +8000,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "maloca-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16183,6 +16190,7 @@ dependencies = [
  "keyring",
  "libc",
  "libsql",
+ "maloca-core",
  "memchr",
  "mockito",
  "moka",

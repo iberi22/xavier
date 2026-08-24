@@ -7,6 +7,7 @@
 
 pub mod beliefs;
 pub mod commits;
+pub mod core_bridge;
 pub mod data_node;
 mod handlers;
 mod params;
