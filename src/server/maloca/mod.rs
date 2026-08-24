@@ -1,5 +1,6 @@
 //! Maloca server modules.
 
+pub mod alignment_route;
 pub mod backlog_route;
 pub mod challenge_routes;
 pub mod data_node;
