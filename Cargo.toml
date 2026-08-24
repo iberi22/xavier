@@ -176,6 +176,7 @@ path = "tests/xtsp/mod.rs"
 
 [dependencies]
 code-graph = { path = "./code-graph" }
+maloca-core = { path = "../maloca/packages/maloca-core" }
 anyhow = "1.0.102"
 git2 = { version = "0.21", default-features = false }
 async-trait = "0.1"
