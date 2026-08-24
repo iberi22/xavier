@@ -248,6 +248,6 @@ fn test_traits_debug_clone_default() {
     assert!(config_debug.contains("AnonymizerConfig"));
     let cloned_config = config.clone();
     assert_eq!(cloned_config.strategy, RedactionStrategy::TruncatedHash);
-    assert_eq!(cloned_config.enable_dp, true);
+    assert!(cloned_config.enable_dp);
     assert_eq!(cloned_config.dp_epsilon, 1.0);
 }

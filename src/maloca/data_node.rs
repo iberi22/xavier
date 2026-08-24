@@ -114,7 +114,7 @@ impl ConsentRegistry {
     /// Create a registry in the user's standard data directory.
     pub fn new_std() -> Arc<Self> {
         let data_dir = dirs::data_local_dir()
-            .or_else(|| dirs::home_dir())
+            .or_else(dirs::home_dir)
             .unwrap_or_else(|| PathBuf::from("."));
         Self::open(&data_dir)
     }
@@ -509,7 +509,7 @@ mod tests {
     #[test]
     fn test_persistence_survives_reload_multiple_records() {
         let dir = TempDir::new().unwrap();
-        let mut revoked_id = String::new();
+        const REVOKED_ID: &str = "persist-3";
         {
             let reg = ConsentRegistry::open(dir.path());
             // Register several records with different states
@@ -521,8 +521,7 @@ mod tests {
                 });
             }
             // Revoke one
-            reg.revoke("persist-3").unwrap();
-            revoked_id = "persist-3".into();
+            reg.revoke(REVOKED_ID).unwrap();
 
             // Add a MetadataOnly record
             reg.register(ConsentBody {
@@ -537,7 +536,7 @@ mod tests {
         assert_eq!(all.len(), 11); // 10 + 1 meta
 
         // Revoked record should still be revoked after reload
-        let revoked = reg2.check(&revoked_id).unwrap();
+        let revoked = reg2.check(REVOKED_ID).unwrap();
         assert!(!revoked.consented);
 
         // MetadataOnly record should survive

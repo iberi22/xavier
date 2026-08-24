@@ -401,13 +401,11 @@ async fn resolve_rejects_invalid_resolution() {
 // Tests: P2P Unified Pipeline Integration Tests
 // ===========================================================================
 
-use xavier::memory::sync::merge::{apply_changes_received, serialise_chunk};
+use xavier::memory::sync::merge::serialise_chunk;
 use xavier::mesh::data_consent::{ConsentLevel, DataConsentManager};
 use xavier::mesh::node::NodeId;
-use xavier::mesh::p2p::fallback::{FallbackStrategy, OfflineQueue, OfflineQueueConfig};
+use xavier::mesh::p2p::fallback::{OfflineQueue, OfflineQueueConfig};
 use xavier::mesh::p2p::sync_filter::SyncFilter;
-use xavier::mesh::tokenomics::rewards::{ContributionType, RewardEngine};
-use xavier::mesh::tokenomics::wallet::Wallet;
 
 /// 1. P2P Pipeline with Rejected Consent:
 ///    attempt sync without consent, verify it's blocked

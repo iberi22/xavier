@@ -1317,9 +1317,9 @@ mod tests {
         let result = streamer.stream_wal_changes().unwrap();
         // After checkpoint, WAL may be empty or smaller — streamer handles this
         // offset should be reset (file smaller than last tracked offset)
-        if result.is_some() {
+        if let Some(changes) = result.as_ref() {
             // If there's data, it should be a new segment
-            assert_eq!(result.unwrap().sequence, 2);
+            assert_eq!(changes.sequence, 2);
         } else {
             // If None, offset was reset and no new data — verify offset was handled
             assert!(streamer.last_wal_offset() <= last_offset || streamer.last_wal_offset() == 0);

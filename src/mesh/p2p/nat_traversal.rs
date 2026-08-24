@@ -708,7 +708,7 @@ impl NatTraversalEngine {
         }
 
         // Sort pairs by descending priority
-        pairs.sort_by(|a, b| b.priority.cmp(&a.priority));
+        pairs.sort_by_key(|p| std::cmp::Reverse(p.priority));
         self.candidate_pairs = pairs.clone();
         pairs
     }
