@@ -1,5 +1,29 @@
 [
   {
+    "hash": "70263c8ab58d9bb5552caaa24324642beede6f7b",
+    "message": "docs(chronicle): regenerate devlog blog via repaired hook pipeline",
+    "date": "2026-08-23",
+    "author": "Belal (NixOS) <belal@swal.dev>",
+    "explanation": "<p><strong>Decisión de Ingeniería:</strong> Commit real de Xavier en la rama principal. Modifica 1 archivos.</p>",
+    "files": [
+      "public/devlog/commits-db.json"
+    ],
+    "diffs": {
+      "public/devlog/commits-db.json": [
+        {
+          "type": "normal",
+          "text": "// No se encontraron cambios"
+        }
+      ]
+    },
+    "rag_nodes": [
+      {
+        "path": "chronicle/auto-docs/public",
+        "type": "Módulo Relacionado"
+      }
+    ]
+  },
+  {
     "hash": "6db920130dc3221c2d17ea834a3ec87f114ede80",
     "message": "chore(chronicle): pre-commit hook uses release binary + OpenRouter provider",
     "date": "2026-08-23",
@@ -366826,16 +366850,6 @@
   {
     "hash": "c45a227bf5809b51d4cc58b35ff603f21e6f2230",
     "message": "Merge pull request #1428 from iberi22/palette/improve-providers-inputs-a11y-3530651092745478051",
-    "date": "2026-08-18",
-    "author": "Belalcazar <iberi22@gmail.com>",
-    "explanation": "<p><strong>Decisión de Ingeniería:</strong> Commit real de Xavier en la rama principal. Modifica 0 archivos.</p>",
-    "files": [],
-    "diffs": {},
-    "rag_nodes": []
-  },
-  {
-    "hash": "ff848a08f1fe251f941b261b0373e76bace2f9a5",
-    "message": "Merge pull request #1427 from iberi22/bolt-optimize-graph-reduce-13949754331014686043",
     "date": "2026-08-18",
     "author": "Belalcazar <iberi22@gmail.com>",
     "explanation": "<p><strong>Decisión de Ingeniería:</strong> Commit real de Xavier en la rama principal. Modifica 0 archivos.</p>",
