@@ -14,6 +14,7 @@
 //! The top-level [`Command`] enum and [`Cli::run()`] dispatch remain visible
 //! through re-exports so that external consumers are unaffected.
 
+pub mod benchmark_runner;
 pub mod billing;
 pub mod cleanup;
 pub mod code;
