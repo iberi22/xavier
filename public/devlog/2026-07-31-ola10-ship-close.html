@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevLog — Ola 10 Stabilize & Ship (close) — Xavier DevLog</title>
+    <meta name="description" content="Post–codebase audit, Xavier still advertised code/MCP/test/packaging surfaces that were">
+    <meta property="og:title" content="DevLog — Ola 10 Stabilize & Ship (close) — Xavier DevLog">
+    <meta property="og:description" content="Post–codebase audit, Xavier still advertised code/MCP/test/packaging surfaces that were">
+    <meta property="og:type" content="article">
+    <meta name="color-scheme" content="dark light">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to content</a>
+    <header class="site-header">
+        <div class="container header-inner">
+            <div class="logo-area">
+                <h1 class="site-title"><a href="index.html">Xavier DevLog</a></h1>
+                <p class="tagline">Cognitive Memory Runtime — Technical Logs</p>
+            </div>
+            <nav class="site-nav" aria-label="Main navigation">
+                <a href="index.html" class="nav-link">DevLog</a>
+                <a href="https://southwest-ai-labs.github.io/xavier/" class="nav-link" target="_blank" rel="noopener">Docs</a>
+                <a href="https://github.com/iberi22/xavier" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark/light mode">
+                    <span class="icon-light">&#9728;</span>
+                    <span class="icon-dark">&#9790;</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main id="main-content" class="container main-content">
+        <article class="post">
+                <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="index.html">DevLog</a><span class="sep">/</span><span class="current">DevLog — Ola 10 Stabilize &amp; Ship (close)</span></nav>
+                <h1>DevLog — Ola 10 Stabilize &amp; Ship (close)</h1>
+                <div class="post-meta">
+                    <span class="post-date">2026-07-31</span>
+                    
+                </div>
+                <div class="post-body">
+                    <h1>DevLog — Ola 10 Stabilize &amp; Ship (close)</h1>
+<p><strong>Date:</strong> 2026-07-31<br />
+<strong>EPIC:</strong> <a href="https://github.com/iberi22/xavier/issues/1098">#1098</a><br />
+<strong>Close issue:</strong> <a href="https://github.com/iberi22/xavier/issues/1112">#1112</a></p>
+<h2>Why this wave</h2>
+<p>Post–codebase audit, Xavier still advertised code/MCP/test/packaging surfaces that were
+partially fake (mocks, ignored tests, dead hexagonal handlers, panel mock unread counts,
+installer docs skew). Ola 10 parallelized <strong>disjoint file islands</strong> for Jules to harden
+ship readiness without merge collisions.</p>
+<h2>Outcomes (01–13)</h2>
+<table><thead><tr><th>#</th><th>Topic</th><th>PR</th><th>Result</th></tr></thead><tbody>
+<tr><td>01</td><td>Notification delivery/persistence</td><td><a href="https://github.com/iberi22/xavier/pull/1125">#1125</a></td><td>Integration 3/3 green via test harness</td></tr>
+<tr><td>02</td><td>Auth <code>password_hash</code> leak</td><td><a href="https://github.com/iberi22/xavier/pull/1126">#1126</a></td><td><code>UserResponse</code> DTO</td></tr>
+<tr><td>03</td><td><code>security_test</code> token secret isolation</td><td><a href="https://github.com/iberi22/xavier/pull/1122">#1122</a></td><td>Drop restore of <code>GLOBAL_SETTINGS</code></td></tr>
+<tr><td>04</td><td>CLI no-args help timeout</td><td><a href="https://github.com/iberi22/xavier/pull/1119">#1119</a></td><td>Integration fix</td></tr>
+<tr><td>05</td><td>TopStatusBar real unread</td><td><a href="https://github.com/iberi22/xavier/pull/1116">#1116</a></td><td>Drop <code>MOCK_UNREAD</code></td></tr>
+<tr><td>06</td><td><code>server_e2e</code> health / ports</td><td><a href="https://github.com/iberi22/xavier/pull/1118">#1118</a></td><td>Port clash + DEGRADED assertion</td></tr>
+<tr><td>07</td><td>CLI <code>code find</code> kind/pattern</td><td><a href="https://github.com/iberi22/xavier/pull/1124">#1124</a></td><td>Wired + unit tests</td></tr>
+<tr><td>08</td><td>Dead adapters <code>handlers/code.rs</code></td><td><a href="https://github.com/iberi22/xavier/pull/1121">#1121</a></td><td>Deleted unmounted module</td></tr>
+<tr><td>09</td><td>MCP <code>codegraph_explore</code> / <code>trace_path</code></td><td><a href="https://github.com/iberi22/xavier/pull/1123">#1123</a></td><td>Tools + un-ignore tests pass</td></tr>
+<tr><td>10</td><td>Headless <code>code_*</code></td><td><a href="https://github.com/iberi22/xavier/pull/1120">#1120</a></td><td>Honest <strong>501</strong> (no fake success)</td></tr>
+<tr><td>11</td><td>Colby ADR</td><td><a href="https://github.com/iberi22/xavier/pull/1113">#1113</a></td><td>Docs</td></tr>
+<tr><td>12</td><td><code>install.ps1</code> + FEATURE_STATUS</td><td><a href="https://github.com/iberi22/xavier/pull/1115">#1115</a></td><td>Packaging truth</td></tr>
+<tr><td>13</td><td>Auth docs</td><td><a href="https://github.com/iberi22/xavier/pull/1114">#1114</a></td><td>Docs</td></tr>
+</tbody></table>
+<p>Side merges same session: Sentinel XSS <a href="https://github.com/iberi22/xavier/pull/1096">#1096</a>, Bolt bookmarks <a href="https://github.com/iberi22/xavier/pull/1092">#1092</a>, palette a11y <a href="https://github.com/iberi22/xavier/pull/1117">#1117</a>.</p>
+<h2>Verification (orchestrator)</h2>
+<ul>
+<li><code>cargo check -p xavier</code> on post-merge <code>main</code>: OK</li>
+<li>Headless 501 unit tests: OK</li>
+<li>CLI kind/pattern unit tests: OK</li>
+<li>MCP explore + trace_path: OK</li>
+<li><code>cargo test --test integration notifications_test</code>: 3/3 OK</li>
+<li><code>security_tests::test_generate_token</code>: OK</li>
+</ul>
+<p>GitHub Actions jobs were <strong>red/UNSTABLE</strong> because the org Actions budget was exhausted;
+merges used <code>--admin</code> after manual diff review (same policy as earlier Ola 10 batch).</p>
+<h2>Honest residuals → Ola 11</h2>
+<ol>
+<li><strong>Headless <code>code_*</code> real wiring</strong> — #1120 intentionally deferred to 501.</li>
+<li><strong>Host <code>--lib</code> failures</strong> — offline_models, health prioritization, embeddings reindex, dedup policies, settings BYO vs local.</li>
+<li><strong>Panel</strong> — dual auth / Tauri onboarding coupling; <code>/panel</code> 503 without <code>pnpm build</code>.</li>
+<li><strong>NixOS Docker</strong> — no <code>docker.service</code>; dockerd helper + socket group workarounds.</li>
+<li><strong>Installer</strong> — WiX/<code>xavier-gui</code> residual; ZIP CI still binaries-only.</li>
+</ol>
+<h2>Decision</h2>
+<p>Close Ola 10 as <strong>stabilize complete with documented deferrals</strong>. Do not claim headless code
+execution is live. Prefer a focused Ola 11 on residuals + local CI path over starting Ola 8
+memory features while ship gaps remain.</p>
+
+                </div>
+            </article>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-inner">
+            <p>&copy; 2026 Xavier Project. Generated by <a href="https://github.com/iberi22/xavier">Xavier Chronicle SSG</a>.</p>
+            <p class="footer-links">
+                <a href="https://github.com/iberi22/xavier" target="_blank" rel="noopener">GitHub</a>
+                <span class="sep">.</span>
+                <a href="https://southwest-ai-labs.github.io/xavier/" target="_blank" rel="noopener">Documentation</a>
+            </p>
+        </div>
+    </footer>
+    <script src="main.js"></script>
+</body>
+</html>

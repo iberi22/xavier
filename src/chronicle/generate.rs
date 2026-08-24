@@ -34,7 +34,7 @@ impl ChronicleGenerator {
     /// New.
     pub fn new() -> Self {
         // Try to prefer MiniMax if available via environment or config
-        let model_override = std::env::var("Xavier_CHRONICLE_MODEL").ok().or_else(|| {
+        let model_override = std::env::var("XAVIER_CHRONICLE_MODEL").ok().or_else(|| {
             // Heuristic: if MINIMAX_API_KEY is present, we might want to use MiniMax
             if std::env::var("MINIMAX_API_KEY").is_ok() {
                 Some("MiniMax-Text-01".to_string())

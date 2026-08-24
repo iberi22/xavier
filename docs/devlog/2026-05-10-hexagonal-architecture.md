@@ -3,7 +3,7 @@
 **Date**: 2026-05-10
 **Author**: Xavier AI
 **Tags**: [rust, architecture, hexagonal, ports-adapters, maintainability]
-**Source Files**: [`src/domain/`](file:///e:/scripts-python/xavier/src/domain/), [`src/adapters/`](file:///e:/scripts-python/xavier/src/adapters/), [`src/memory/store.rs`](file:///e:/scripts-python/xavier/src/memory/store.rs)
+**Source Files**: [`src/domain/`](https://github.com/iberi22/xavier/tree/main/src/domain/), [`src/adapters/`](https://github.com/iberi22/xavier/tree/main/src/adapters/), [`src/memory/store.rs`](https://github.com/iberi22/xavier/blob/main/src/memory/store.rs)
 
 ---
 
@@ -101,5 +101,5 @@ graph TD
 ---
 
 ## References
-- [Architecture Overview](file:///e:/scripts-python/xavier/docs/ARCHITECTURE.md)
-- [MemoryStore Trait definition](file:///e:/scripts-python/xavier/src/memory/store.rs)
+- [Architecture Overview](https://github.com/iberi22/xavier/blob/main/docs/ARCHITECTURE.md)
+- [MemoryStore Trait definition](https://github.com/iberi22/xavier/blob/main/src/memory/store.rs)

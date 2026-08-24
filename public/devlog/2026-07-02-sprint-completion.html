@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint Completion: Iroh Mesh, recall@k Eval, and the Auto-Improvement Loop — Xavier DevLog</title>
+    <meta name="description" content="The just-closed sprint landed three opinionated architectural bets: (1) the mesh transport switched from a broken libp2p scaffold to **Iroh QUIC** with automatic NAT traversal; (2) retrieval quality is now measured by a deterministic **recall@k harness** instead of vibes; (3) an **auto-improvement loop** closes the gap between measured and target recall by generating, validating, and conditionally accepting config experiments. Together they move three integration features to their sprint targets and reconcile overall maturity to 74%.">
+    <meta property="og:title" content="Sprint Completion: Iroh Mesh, recall@k Eval, and the Auto-Improvement Loop — Xavier DevLog">
+    <meta property="og:description" content="The just-closed sprint landed three opinionated architectural bets: (1) the mesh transport switched from a broken libp2p scaffold to **Iroh QUIC** with automatic NAT traversal; (2) retrieval quality is now measured by a deterministic **recall@k harness** instead of vibes; (3) an **auto-improvement loop** closes the gap between measured and target recall by generating, validating, and conditionally accepting config experiments. Together they move three integration features to their sprint targets and reconcile overall maturity to 74%.">
+    <meta property="og:type" content="article">
+    <meta name="color-scheme" content="dark light">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to content</a>
+    <header class="site-header">
+        <div class="container header-inner">
+            <div class="logo-area">
+                <h1 class="site-title"><a href="index.html">Xavier DevLog</a></h1>
+                <p class="tagline">Cognitive Memory Runtime — Technical Logs</p>
+            </div>
+            <nav class="site-nav" aria-label="Main navigation">
+                <a href="index.html" class="nav-link">DevLog</a>
+                <a href="https://southwest-ai-labs.github.io/xavier/" class="nav-link" target="_blank" rel="noopener">Docs</a>
+                <a href="https://github.com/iberi22/xavier" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark/light mode">
+                    <span class="icon-light">&#9728;</span>
+                    <span class="icon-dark">&#9790;</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main id="main-content" class="container main-content">
+        <article class="post">
+                <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="index.html">DevLog</a><span class="sep">/</span><span class="current">Sprint Completion: Iroh Mesh, recall@k Eval, and the Auto-Improvement Loop</span></nav>
+                <h1>Sprint Completion: Iroh Mesh, recall@k Eval, and the Auto-Improvement Loop</h1>
+                <div class="post-meta">
+                    <span class="post-date">2026-07-02</span>
+                    <div class="post-tags"><span class="post-tag">mesh</span><span class="post-tag">iroh</span><span class="post-tag">quic</span><span class="post-tag">retrieval</span><span class="post-tag">eval</span><span class="post-tag">auto-improvement</span><span class="post-tag">rrf</span><span class="post-tag">sprint</span></div>
+                </div>
+                <div class="post-body">
+                    <h1>Sprint Completion: Iroh Mesh, recall@k Eval, and the Auto-Improvement Loop</h1>
+<p><strong>Date</strong>: 2026-07-02
+<strong>Author</strong>: Xavier AI
+<strong>Tags</strong>: [mesh, iroh, quic, retrieval, eval, auto-improvement, rrf, sprint]
+<strong>Source Files</strong>: <a href="https://github.com/iberi22/xavier/blob/main/src/mesh/iroh_transport.rs"><code>src/mesh/iroh_transport.rs</code></a>, <a href="https://github.com/iberi22/xavier/blob/main/src/retrieval/eval.rs"><code>src/retrieval/eval.rs</code></a>, <a href="https://github.com/iberi22/xavier/blob/main/src/retrieval/tuner.rs"><code>src/retrieval/tuner.rs</code></a>, <a href="https://github.com/iberi22/xavier/tree/main/src/auto_improvement/"><code>src/auto_improvement/</code></a></p>
+<hr />
+<h2>TL;DR</h2>
+<p>The just-closed sprint landed three opinionated architectural bets: (1) the mesh transport switched from a broken libp2p scaffold to <strong>Iroh QUIC</strong> with automatic NAT traversal; (2) retrieval quality is now measured by a deterministic <strong>recall@k harness</strong> instead of vibes; (3) an <strong>auto-improvement loop</strong> closes the gap between measured and target recall by generating, validating, and conditionally accepting config experiments. Together they move three integration features to their sprint targets and reconcile overall maturity to 74%.</p>
+<h2>Context &amp; Motivation</h2>
+<p>Two structural gaps were stalling the project below 80%. The mesh was non-functional — the libp2p path didn't resolve on the project toolchain, leaving the "sovereign mesh" claim theoretical. And retrieval tuning was a black box: RRF weights existed but no one could say whether changing <code>rrf_k</code> or the keyword/vector split actually improved results, because there was no fixed benchmark to regress against.</p>
+<h2>The Decisions</h2>
+<h3>Iroh over libp2p</h3>
+<p>We quarantined the libp2p code behind a <code>mesh-legacy</code> feature and shipped <code>IrohTransport</code> mirroring the existing 5-method <code>MeshTransport</code> surface (handshake / fetch_manifest / fetch_chunks / push_chunks / share_session) over length-prefixed JSON frames on a QUIC bidirectional stream. Iroh 1.0's relay-assisted hole punching means two Xavier nodes sync without exposing public ports or running bootstrap nodes — the single biggest operational win.</p>
+<h3>recall@k eval harness</h3>
+<p><code>retrieval::eval</code> loads a versioned dataset (<code>scripts/benchmarks/...</code>), runs each case's query against the live QmdMemory, and judges a hit by path-substring match against <code>expected_path</code>. It rolls up <code>recall_at_k</code>, MRR, and <code>hit_rate</code> from per-case <code>CaseResult</code>s. This gives a reproducible number to tune against.</p>
+<h3>Auto-improvement validation loop</h3>
+<p><code>AutoImprovementEngine::run_cycle</code> runs benchmark → gap detection (target vs current) → experiment generation (concrete <code>config_overrides</code>) → optional autonomous validation that <em>re-measures</em> and only accepts experiments that beat the baseline. Acceptance is gated on real delta, not on hope.</p>
+<h2>Trade-offs</h2>
+<ul>
+<li><strong>Iroh</strong>: we accept a new heavyweight dependency and the N0 public relay preset in exchange for NAT traversal that libp2p never gave us. The wire protocol types (<code>MeshHandshake</code>, <code>MeshManifest</code>) are reused, so a future transport swap stays cheap.</li>
+<li><strong>recall@k</strong>: path-substring hit judgement is coarse (it misses semantic duplicates), but it is deterministic and CI-runnable — the right place to start.</li>
+<li><strong>Auto-improvement</strong>: per-candidate re-measurement requires the weights to actually flip within one process; where they can't, the engine surfaces a recommendation instead of silently mis-applying it.</li>
+</ul>
+<pre><code class="language-mermaid">flowchart LR
+    A[Benchmark dataset] --&gt; B[recall@k harness]
+    B --&gt; C[RetrievalMetrics]
+    C --&gt; D[Gap detection]
+    D --&gt; E[Experiments + overrides]
+    E --&gt; F[Re-measure]
+    F --&gt;|delta &gt; 0| G[Accept]
+    F --&gt;|else| H[Recommend only]
+    I[Iroh QUIC transport] -.sync.-&gt; A
+</code></pre>
+
+                </div>
+            </article>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-inner">
+            <p>&copy; 2026 Xavier Project. Generated by <a href="https://github.com/iberi22/xavier">Xavier Chronicle SSG</a>.</p>
+            <p class="footer-links">
+                <a href="https://github.com/iberi22/xavier" target="_blank" rel="noopener">GitHub</a>
+                <span class="sep">.</span>
+                <a href="https://southwest-ai-labs.github.io/xavier/" target="_blank" rel="noopener">Documentation</a>
+            </p>
+        </div>
+    </footer>
+    <script src="main.js"></script>
+</body>
+</html>

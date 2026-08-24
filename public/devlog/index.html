@@ -39,6 +39,55 @@
                        placeholder="Search posts by title, tag, or keyword..." aria-label="Search posts">
                 <ul class="post-list" id="post-list">
                     <li>
+                    <span class="post-date">2026-08-24</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-08-24-v0130-maloca-launch.html" class="post-title">Daily Chronicle — 2026-08-24</a>
+                        <div class="post-desc">Hoy ha sido un día de cierre masivo y estabilización. Hemos completado la transición hacia la versión **v0.13.0**, consolidando la API de Maloca V1 y cerrando la Wave F12. El foco principal estuvo en la seguridad (Sentinel), la optimización de renders en el panel (Bolt) y la accesibilidad (Palette).</div>
+                        
+                    </div>
+                </li><li>
+                    <span class="post-date">2026-07-31</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-07-31-ola10-ship-close.html" class="post-title">DevLog — Ola 10 Stabilize &amp; Ship (close)</a>
+                        <div class="post-desc">Post–codebase audit, Xavier still advertised code/MCP/test/packaging surfaces that were</div>
+                        
+                    </div>
+                </li><li>
+                    <span class="post-date">2026-07-31</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-07-31-ola11-harden-close.html" class="post-title">DevLog — Ola 11 Harden Residuals (close)</a>
+                        <div class="post-desc">Ola 10 left honest deferrals (headless `code_*` 501, five host `--lib` fails, panel/ops packaging gaps). Ola 11 closed them without waiting on Jules.</div>
+                        
+                    </div>
+                </li><li>
+                    <span class="post-date">2026-07-18</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-07-18-ola4-close.html" class="post-title">Devlog: Ola 4 close — local control plane 100%</a>
+                        <div class="post-desc">| Issue | PR | Deliverable |</div>
+                        
+                    </div>
+                </li><li>
+                    <span class="post-date">2026-07-17</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-07-17-ola3-usage-counters.html" class="post-title">Devlog: Ola 3 UsageCounters (#578)</a>
+                        <div class="post-desc">Implement a process-local `UsageCounters` (`parking_lot::RwLock`) shared between `ProxyUseCase` and `CliState`, rather than re-aggregating SQLite rate-limit logs on every request. RateLimitManager remains the durable quota store; counters are the cheap live snapshot.</div>
+                        
+                    </div>
+                </li><li>
+                    <span class="post-date">2026-07-02</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-07-02-sprint-completion.html" class="post-title">Sprint Completion: Iroh Mesh, recall@k Eval, and the Auto-Improvement Loop</a>
+                        <div class="post-desc">The just-closed sprint landed three opinionated architectural bets: (1) the mesh transport switched from a broken libp2p scaffold to **Iroh QUIC** with automatic NAT traversal; (2) retrieval quality is now measured by a deterministic **recall@k harness** instead of vibes; (3) an **auto-improvement loop** closes the gap between measured and target recall by generating, validating, and conditionally accepting config experiments. Together they move three integration features to their sprint targets and reconcile overall maturity to 74%.</div>
+                        <span class="post-tags-inline"><span class="tag-mini">mesh</span><span class="tag-mini">iroh</span><span class="tag-mini">quic</span><span class="tag-mini">retrieval</span><span class="tag-mini">eval</span><span class="tag-mini">auto-improvement</span><span class="tag-mini">rrf</span><span class="tag-mini">sprint</span></span>
+                    </div>
+                </li><li>
+                    <span class="post-date">2026-05-29</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-05-29-local-first-cli-resilience-and-hexagonal-security.html" class="post-title">Local-First CLI Resilience and Hexagonal Security Wiring</a>
+                        <div class="post-desc">Xavier&#39;s CLI and state management are now 100% resilient. We implemented a local-first offline fallback database mode directly in `xavier search`, `xavier add`, `xavier recall`, and `xavier stats` that triggers if the central HTTP server is unreachable. Additionally, we decoupled our CLI security boundaries by replacing concrete application-layer classes with segmented hexagonal ports (`InputSecurityPort` and `SecurityScanPort`), ensuring complete compile-time architectural integrity.</div>
+                        <span class="post-tags-inline"><span class="tag-mini">cli</span><span class="tag-mini">local-first</span><span class="tag-mini">offline-database</span><span class="tag-mini">sqlite-vec</span><span class="tag-mini">hexagonal-architecture</span><span class="tag-mini">security-ports</span></span>
+                    </div>
+                </li><li>
                     <span class="post-date">2026-05-10</span>
                     <div class="post-title-wrap">
                         <a href="2026-05-10-hexagonal-architecture.html" class="post-title">Hexagonal Architecture in Rust CLI — Why Ports &amp; Adapters Matter</a>

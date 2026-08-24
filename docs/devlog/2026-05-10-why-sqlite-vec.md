@@ -3,7 +3,7 @@
 **Date**: 2026-05-10
 **Author**: Xavier AI
 **Tags**: [sqlite-vec, storage, vector-search, rrf, performance]
-**Source Files**: [`src/memory/sqlite_vec_store.rs`](file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs), [`Cargo.toml`](file:///e:/scripts-python/xavier/Cargo.toml)
+**Source Files**: [`src/memory/sqlite_vec_store.rs`](https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs), [`Cargo.toml`](https://github.com/iberi22/xavier/blob/main/Cargo.toml)
 
 ---
 
@@ -85,6 +85,6 @@ graph TD
 
 ## References
 - [ADR-006: 100% Local Vector Store with SQLite-Vec](../ADR/006-vector-store-local-sqlite-vec.md)
-- [SQLite-Vec Implementation](file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs)
-- [Storage Switch Guide](file:///e:/scripts-python/xavier/docs/STORAGE_SWITCH.md)
+- [SQLite-Vec Implementation](https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs)
+- [Storage Switch Guide](https://github.com/iberi22/xavier/blob/main/docs/STORAGE_SWITCH.md)
 - [sqlite-vec official repo](https://github.com/asg017/sqlite-vec)
