@@ -1354,7 +1354,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let memory_port_cron = state.memory.clone();
     let app = app
         .with_state(state.clone())
-        .merge(xavier::maloca::nested_router(maloca_store));
+        .merge(xavier::maloca::nested_router(maloca_store))
+        .merge(xavier::server::maloca::v1_maloca_router(
+            None,
+            Some(state.workspace_dir.clone()),
+        ));
 
     #[cfg(feature = "enterprise")]
     let app = {
