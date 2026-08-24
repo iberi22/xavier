@@ -1,4 +1,3 @@
-#!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
-
+#!/usr/bin/env sh
+# Xavier pre-commit: harvest chronicle, rebuild devlog blog, stage assets
 ./scripts/pre-commit-chronicle.sh
