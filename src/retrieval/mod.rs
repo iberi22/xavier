@@ -4,6 +4,7 @@
 //! Working, Episodic, and Semantic memory layers using weighted RRF fusion.
 
 pub mod config;
+pub mod cross_encoder;
 pub mod eval;
 pub mod gating;
 pub mod history;
@@ -11,6 +12,10 @@ pub mod policy;
 pub mod regeneration;
 pub mod tuner;
 
+pub use cross_encoder::{
+    CrossEncoderConfig, CrossEncoderError, CrossEncoderReranker, CrossEncoderRerankerBuilder,
+    RerankCandidate, RerankResult, TokenMetrics,
+};
 pub use gating::{
     AdaptiveGating, Event, GatingConfig, LayerSearchResult, LayerStats, LayerWeights,
     SessionSummary,
