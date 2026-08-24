@@ -17,6 +17,9 @@ export default defineConfig(({ command }) => {
     },
     base: "/",
     assetsInclude: ["**/*.wasm"],
+    optimizeDeps: {
+      include: ["@swal/maloca-embed"],
+    },
     plugins: [tailwindcss(), react()],
     resolve: {
       alias: {
