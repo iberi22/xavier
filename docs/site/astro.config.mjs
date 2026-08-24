@@ -23,23 +23,23 @@ export default defineConfig({
         },
         {
           label: "Architecture",
-          autogenerate: { directory: "architecture" },
+          items: [{ autogenerate: { directory: "architecture" } }],
         },
         {
           label: "Modules",
-          autogenerate: { directory: "modules" },
+          items: [{ autogenerate: { directory: "modules" } }],
         },
         {
           label: "Features",
-          autogenerate: { directory: "features" },
+          items: [{ autogenerate: { directory: "features" } }],
         },
         {
           label: "API Reference",
-          autogenerate: { directory: "reference" },
+          items: [{ autogenerate: { directory: "reference" } }],
         },
         {
           label: "Testing",
-          autogenerate: { directory: "testing" },
+          items: [{ autogenerate: { directory: "testing" } }],
         },
       ],
       customCss: ["./src/styles/custom.css"],
