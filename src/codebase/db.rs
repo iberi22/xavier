@@ -85,6 +85,11 @@ pub struct CodebaseDb {
     project_id: String,
 }
 
+/// Retrieve or open a cached `CodeGraphDB` instance for `path`.
+pub fn get_code_graph_db(path: &Path) -> Result<code_graph::db::CodeGraphDB> {
+    ConnectionManager::global().get_code_graph_db(path)
+}
+
 impl CodebaseDb {
     /// Open (or create) the codebase database at `project_root`.
     pub async fn open(project_root: &Path) -> Result<Self> {
@@ -850,6 +855,21 @@ mod tests {
         .unwrap();
         let c = count_rows(&db, "code_patterns").await;
         assert_eq!(c, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_code_graph_db_helper() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("code_graph_helper.db");
+
+        let db1 = get_code_graph_db(&path).unwrap();
+        let db2 = get_code_graph_db(&path).unwrap();
+
+        let stats = db1.stats().unwrap();
+        assert_eq!(stats.total_symbols, 0);
+
+        drop(db1);
+        drop(db2);
     }
 
     #[tokio::test]
