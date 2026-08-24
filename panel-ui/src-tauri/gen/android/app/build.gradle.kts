@@ -51,6 +51,14 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = true
+        }
+    }
 }
 
 rust {
