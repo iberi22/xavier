@@ -75,7 +75,11 @@ impl MaturityScanner {
     /// Create a new scanner with the given anchor manifest file and codebase root.
     pub fn new(anchor_path: &Path, codebase_root: &str) -> Result<Self> {
         let content = if !anchor_path.is_file() {
-            let default_anchors = include_str!("../../.xavier/maturity-anchors.json");
+            let default_anchors = r#"{
+  "version": "2.0.0",
+  "generated": "2026-08-23T00:00:00Z",
+  "features": []
+}"#;
             if let Some(parent) = anchor_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }

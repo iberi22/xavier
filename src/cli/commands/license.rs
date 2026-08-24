@@ -115,8 +115,8 @@ async fn handle_license_accept() -> Result<()> {
 }
 
 async fn handle_license_show() -> Result<()> {
-    let agpl_license = include_str!("../../../LICENSE-AGPL");
-    let mesh_license = include_str!("../../../LICENSE-MESH");
+    let agpl_license = include_str!("../../../LICENSE");
+    let mesh_license = "Xavier Mesh License v1.0 (Dual AGPL-3.0 / Commercial)";
     println!("════════════════════════════════════════════════════════");
     println!("  Xavier Licensing Summary");
     println!("════════════════════════════════════════════════════════");
