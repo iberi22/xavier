@@ -55,3 +55,13 @@ pub struct TimelineEventRecord {
     pub prev_hash: Option<String>,
     pub curr_hash: String,
 }
+
+/// Statistics reporting the integrity of memory embeddings and status alignment.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct EmbeddingIntegrityStats {
+    pub total: usize,
+    pub completed_real: usize,
+    pub completed_without_vector: usize,
+    pub pending: usize,
+    pub retry: usize,
+}
