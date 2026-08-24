@@ -44,7 +44,17 @@ impl AgentIndexer {
             // Usamos un FileIndexer mock o la instancia principal para el chunking
             let chunks = self.generate_chunks_for_session(&markdown_content);
 
-            let virtual_path = format!("agent_memory://{}/{}", session.ide, uuid::Uuid::new_v4());
+            // Path estable derivado del archivo fuente: mismo transcript → mismo
+            // path → add() hace UPSERT por path (sin duplicados entre pasadas).
+            // El UUID aleatorio anterior (uuid::new_v4) duplicaba TODO el corpus
+            // de Cursor en cada escaneo de 6h (42k+ registros de ~414 archivos).
+            let source_stem = std::path::Path::new(&session.source_file)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| {
+                    format!("x-{}", uuid::Uuid::new_v4().to_string())
+                });
+            let virtual_path = format!("agent_memory://{}/{}", session.ide, source_stem);
 
             let indexed_file = IndexedFile {
                 path: virtual_path.clone(),
