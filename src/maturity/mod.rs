@@ -78,7 +78,14 @@ impl MaturityScanner {
             let default_anchors = r#"{
   "version": "2.0.0",
   "generated": "2026-08-23T00:00:00Z",
-  "features": []
+  "features": [
+    {
+      "id": "memory-rag",
+      "name": "Memory RAG",
+      "priority": "high",
+      "subcomponents": []
+    }
+  ]
 }"#;
             if let Some(parent) = anchor_path.parent() {
                 let _ = std::fs::create_dir_all(parent);

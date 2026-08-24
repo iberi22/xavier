@@ -2,7 +2,8 @@
 
 ## Preamble
 Xavier is a cognitive memory system developed by SouthWest AI Labs (SWAL).
-The core engine is licensed under MIT for standalone, local-first use.
+The core engine is dual-licensed under AGPL-3.0-only or a Commercial License
+(see `LICENSE`) for standalone, local-first use.
 This Mesh License applies when you activate Xavier's peer-to-peer (Mesh), Governance, Data Commons, or Enterprise features.
 
 ## 1. Acceptance

@@ -85,7 +85,7 @@ fn test_did_to_public_key_edge_cases() {
 
     // Find bytes that fail Ed25519 key parse (point decompression failure)
     let invalid_pk_bytes = [2u8; 32];
-    let invalid_pk_hex = hex_encode(&invalid_pk_bytes);
+    let invalid_pk_hex = hex_encode(invalid_pk_bytes);
     let res_invalid_pk =
         DatasetCredentialGenerator::did_to_public_key(&format!("did:swal:{invalid_pk_hex}"));
     assert!(

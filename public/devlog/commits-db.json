@@ -1,5 +1,86 @@
 [
   {
+    "hash": "d70ced146d2c0f1eb8cdbf837dbbbc98d5fd9e50",
+    "message": "chore(repo): untrack built Windows sidecar binaries (81MB)",
+    "date": "2026-08-23",
+    "author": "Belal (NixOS) <belal@swal.dev>",
+    "explanation": "<p><strong>Decisión de Ingeniería:</strong> Commit real de Xavier en la rama principal. Modifica 4 archivos.</p>",
+    "files": [
+      "panel-ui/src-tauri/.gitignore",
+      "panel-ui/src-tauri/binaries/xavier-x86_64-pc-windows-msvc.exe",
+      "panel-ui/src-tauri/binaries/xavier.exe",
+      "public/devlog/commits-db.json"
+    ],
+    "diffs": {
+      "panel-ui/src-tauri/.gitignore": [
+        {
+          "type": "info",
+          "text": "@@ -8,3 +8,6 @@"
+        },
+        {
+          "type": "normal",
+          "text": " /binaries/xavier-*-unknown-linux-gnu"
+        },
+        {
+          "type": "normal",
+          "text": " /binaries/xavier-*-apple-darwin"
+        },
+        {
+          "type": "normal",
+          "text": " /binaries/.sidecar-stub-*"
+        },
+        {
+          "type": "addition",
+          "text": "+"
+        },
+        {
+          "type": "addition",
+          "text": "+# Built sidecar binaries (recreated by cargo build / release pipeline)"
+        },
+        {
+          "type": "addition",
+          "text": "+/binaries/*.exe"
+        }
+      ],
+      "panel-ui/src-tauri/binaries/xavier-x86_64-pc-windows-msvc.exe": [
+        {
+          "type": "normal",
+          "text": "deleted file mode 100644"
+        },
+        {
+          "type": "normal",
+          "text": "Binary files a/panel-ui/src-tauri/binaries/xavier-x86_64-pc-windows-msvc.exe and /dev/null differ"
+        }
+      ],
+      "panel-ui/src-tauri/binaries/xavier.exe": [
+        {
+          "type": "normal",
+          "text": "deleted file mode 100644"
+        },
+        {
+          "type": "normal",
+          "text": "Binary files a/panel-ui/src-tauri/binaries/xavier.exe and /dev/null differ"
+        }
+      ],
+      "public/devlog/commits-db.json": [
+        {
+          "type": "normal",
+          "text": "// No se encontraron cambios"
+        }
+      ]
+    },
+    "rag_nodes": [
+      {
+        "path": "chronicle/auto-docs/panel-ui",
+        "type": "Módulo Relacionado"
+      },
+      {
+        "path": "chronicle/auto-docs/public",
+        "type": "Módulo Relacionado"
+      }
+    ]
+  },
+  {
     "hash": "b2db1b60021f08d072c23e439df1b5f73af426af",
     "message": "fix(repo): pre-public audit fixes",
     "date": "2026-08-23",
@@ -500357,15 +500438,5 @@
         "type": "Módulo Relacionado"
       }
     ]
-  },
-  {
-    "hash": "a7aa689004f425d3b173b394836f3e8d40da66d5",
-    "message": "Merge pull request #1431 from iberi22/bolt-perf-opt-notifications-13392627252545889042",
-    "date": "2026-08-19",
-    "author": "Belalcazar <iberi22@gmail.com>",
-    "explanation": "<p><strong>Decisión de Ingeniería:</strong> Commit real de Xavier en la rama principal. Modifica 0 archivos.</p>",
-    "files": [],
-    "diffs": {},
-    "rag_nodes": []
   }
 ]

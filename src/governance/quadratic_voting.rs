@@ -71,7 +71,7 @@ pub fn integer_sqrt(n: u128) -> u64 {
     if n == 0 {
         return 0;
     }
-    let mut x = (1u128 << ((128 - n.leading_zeros() + 1) / 2)) as u128;
+    let mut x = 1u128 << (128 - n.leading_zeros()).div_ceil(2);
     if x == 0 {
         x = 1;
     }
@@ -303,7 +303,7 @@ impl QuadraticVoteEngine {
             total_voters += 1;
             let voter = self.voters.get(voter_id);
 
-            let is_sybil = voter.map_or(false, |v| v.is_sybil_flagged);
+            let is_sybil = voter.is_some_and(|v| v.is_sybil_flagged);
             if is_sybil {
                 sybil_votes_rejected += 1;
                 continue;

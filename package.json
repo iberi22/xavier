@@ -24,8 +24,9 @@
   },
   "pnpm": {
     "overrides": {
-      "js-yaml@>=4": "4.3.0",
-      "js-yaml": "4.3.0",
+      "@swal/ui": "file:../maloca/packages/swal-ui",
+      "undici": "^7.29.0",
+      "esbuild": "^0.28.1",
       "sharp": "^0.35.3"
     }
   },

@@ -109,7 +109,7 @@ proptest! {
         prop_assert_eq!(tally.sybil_votes_rejected, expected_sybil_count);
         prop_assert_eq!(tally.proposal_id, "p1");
 
-        let sum_tallies: u64 = tally.option_tallies.values().map(|v| *v).fold(0u64, |acc, v| acc.saturating_add(v));
+        let sum_tallies: u64 = tally.option_tallies.values().copied().fold(0u64, |acc, v| acc.saturating_add(v));
         prop_assert_eq!(tally.quorum_reached, sum_tallies >= default_quorum);
     }
 }

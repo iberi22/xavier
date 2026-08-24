@@ -363,7 +363,7 @@ pub enum SyncProtocol {
 
 impl SyncProtocol {
     /// Parse from a string (env var or config value).
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "legacy" | "data-plane" | "data_plane" => Some(SyncProtocol::Legacy),
             "control-plane" | "control_plane" | "control" => Some(SyncProtocol::ControlPlane),
@@ -382,27 +382,27 @@ mod tests {
 
     #[test]
     fn protocol_from_str() {
-        assert_eq!(SyncProtocol::from_str("legacy"), Some(SyncProtocol::Legacy));
+        assert_eq!(SyncProtocol::parse("legacy"), Some(SyncProtocol::Legacy));
         assert_eq!(
-            SyncProtocol::from_str("data-plane"),
+            SyncProtocol::parse("data-plane"),
             Some(SyncProtocol::Legacy)
         );
         assert_eq!(
-            SyncProtocol::from_str("control-plane"),
+            SyncProtocol::parse("control-plane"),
             Some(SyncProtocol::ControlPlane)
         );
         assert_eq!(
-            SyncProtocol::from_str("control_plane"),
+            SyncProtocol::parse("control_plane"),
             Some(SyncProtocol::ControlPlane)
         );
-        assert_eq!(SyncProtocol::from_str("bogus"), None);
+        assert_eq!(SyncProtocol::parse("bogus"), None);
     }
 
     #[test]
     fn protocol_case_insensitive() {
-        assert_eq!(SyncProtocol::from_str("LEGACY"), Some(SyncProtocol::Legacy));
+        assert_eq!(SyncProtocol::parse("LEGACY"), Some(SyncProtocol::Legacy));
         assert_eq!(
-            SyncProtocol::from_str("Control-Plane"),
+            SyncProtocol::parse("Control-Plane"),
             Some(SyncProtocol::ControlPlane)
         );
     }

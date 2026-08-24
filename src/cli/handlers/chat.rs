@@ -36,10 +36,10 @@ pub async fn handle_chat_command(
     let agent_name = agent.unwrap_or_else(|| "agent".to_string());
     let memory_limit = limit.clamp(1, 25);
 
-    if interactive || prompt.is_none() {
+    if interactive {
         run_interactive_repl(&agent_name, memory_limit, model).await
     } else {
-        let question = prompt.unwrap();
+        let question = prompt.unwrap_or_default();
         let question = secure_cli_input("chat query", &question, 8_192)?;
         execute_single_turn(
             &question,

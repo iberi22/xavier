@@ -16,7 +16,9 @@ use std::path::{Path, PathBuf};
 /// as the HTTP server / CLI. External workspaces use `workspace/.xavier/code_graph.db`.
 pub fn code_graph_db_path_for(workspace: &Path) -> PathBuf {
     if let Ok(override_path) = std::env::var("XAVIER_CODE_GRAPH_DB_PATH") {
-        return PathBuf::from(override_path);
+        if !override_path.trim().is_empty() {
+            return PathBuf::from(override_path);
+        }
     }
     let cwd = std::env::current_dir().unwrap_or_default();
     if workspace == Path::new(".") || workspace == cwd {
@@ -47,6 +49,9 @@ mod tests {
 
     #[test]
     fn test_code_graph_db_path_for_explicit() {
+        // Serialize with other tests that mutate XAVIER_CODE_GRAPH_DB_PATH.
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
         let ws = Path::new("/tmp/test-workspace");
         let path = code_graph_db_path_for(ws);
         assert_eq!(path, ws.join(".xavier").join("code_graph.db"));

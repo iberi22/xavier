@@ -332,10 +332,12 @@ impl BenchmarkSuite for RrfRecallBenchmark {
         let avg_mrr = total_mrr / num_cases;
         let duration_ms = start_time.elapsed().as_secs_f64() * 1000.0;
 
-        let mut metrics = BenchmarkMetrics::default();
-        metrics.recall_at_k = Some(avg_recall);
-        metrics.mrr = Some(avg_mrr);
-        metrics.duration_ms = Some(duration_ms);
+        let metrics = BenchmarkMetrics {
+            recall_at_k: Some(avg_recall),
+            mrr: Some(avg_mrr),
+            duration_ms: Some(duration_ms),
+            ..BenchmarkMetrics::default()
+        };
 
         BenchmarkResult {
             suite_name: self.name().to_string(),
@@ -357,14 +359,9 @@ impl BenchmarkSuite for RrfRecallBenchmark {
 pub type LatencyWorkload = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
 /// Benchmark suite for measuring latency (avg, min, max, p50, p95, p99).
+#[derive(Default)]
 pub struct LatencyBenchmark {
     workload: Option<LatencyWorkload>,
-}
-
-impl Default for LatencyBenchmark {
-    fn default() -> Self {
-        Self { workload: None }
-    }
 }
 
 impl LatencyBenchmark {
@@ -451,14 +448,16 @@ impl BenchmarkSuite for LatencyBenchmark {
         let p95 = latencies[((len as f64 * 0.95) as usize).min(len - 1)];
         let p99 = latencies[((len as f64 * 0.99) as usize).min(len - 1)];
 
-        let mut metrics = BenchmarkMetrics::default();
-        metrics.avg_latency_ms = Some(avg);
-        metrics.min_latency_ms = Some(min);
-        metrics.max_latency_ms = Some(max);
-        metrics.p50_latency_ms = Some(p50);
-        metrics.p95_latency_ms = Some(p95);
-        metrics.p99_latency_ms = Some(p99);
-        metrics.duration_ms = Some(total_duration_ms);
+        let mut metrics = BenchmarkMetrics {
+            avg_latency_ms: Some(avg),
+            min_latency_ms: Some(min),
+            max_latency_ms: Some(max),
+            p50_latency_ms: Some(p50),
+            p95_latency_ms: Some(p95),
+            p99_latency_ms: Some(p99),
+            duration_ms: Some(total_duration_ms),
+            ..BenchmarkMetrics::default()
+        };
         metrics
             .custom_metrics
             .insert("error_count".to_string(), errors as f64);
@@ -487,14 +486,9 @@ impl BenchmarkSuite for LatencyBenchmark {
 pub type ThroughputWorkload = Arc<dyn Fn() -> Result<usize, String> + Send + Sync>;
 
 /// Benchmark suite for measuring ops/sec throughput.
+#[derive(Default)]
 pub struct ThroughputBenchmark {
     workload: Option<ThroughputWorkload>,
-}
-
-impl Default for ThroughputBenchmark {
-    fn default() -> Self {
-        Self { workload: None }
-    }
 }
 
 impl ThroughputBenchmark {
@@ -555,10 +549,12 @@ impl BenchmarkSuite for ThroughputBenchmark {
             0.0
         };
 
-        let mut metrics = BenchmarkMetrics::default();
-        metrics.ops_per_second = Some(ops_per_sec);
-        metrics.total_operations = Some(total_ops);
-        metrics.duration_ms = Some(duration_ms);
+        let mut metrics = BenchmarkMetrics {
+            ops_per_second: Some(ops_per_sec),
+            total_operations: Some(total_ops),
+            duration_ms: Some(duration_ms),
+            ..BenchmarkMetrics::default()
+        };
         metrics
             .custom_metrics
             .insert("error_count".to_string(), errors as f64);
@@ -722,9 +718,11 @@ mod tests {
         });
 
         let benchmark = LatencyBenchmark::new(workload);
-        let mut config = BenchmarkConfig::default();
-        config.iterations = 20;
-        config.warmup_iterations = 2;
+        let config = BenchmarkConfig {
+            iterations: 20,
+            warmup_iterations: 2,
+            ..BenchmarkConfig::default()
+        };
 
         let res = benchmark.run(&config);
         assert_eq!(res.suite_name, "latency");
@@ -738,9 +736,11 @@ mod tests {
     fn test_5_throughput_benchmark_ops_per_sec() {
         let workload: ThroughputWorkload = Arc::new(|| Ok(5));
         let benchmark = ThroughputBenchmark::new(workload);
-        let mut config = BenchmarkConfig::default();
-        config.iterations = 10;
-        config.warmup_iterations = 1;
+        let config = BenchmarkConfig {
+            iterations: 10,
+            warmup_iterations: 1,
+            ..BenchmarkConfig::default()
+        };
 
         let res = benchmark.run(&config);
         assert_eq!(res.suite_name, "throughput");

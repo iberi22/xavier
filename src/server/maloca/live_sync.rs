@@ -342,7 +342,8 @@ async fn handle_maloca_ws_socket(mut socket: WebSocket, broadcaster: Arc<MalocaE
                         }
                     }
                     Some(Ok(Message::Ping(data))) => {
-                        if socket.send(Message::Pong(data)).await.is_err() {
+                        let pong = socket.send(Message::Pong(data)).await;
+                        if pong.is_err() {
                             break;
                         }
                     }
