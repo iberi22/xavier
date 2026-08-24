@@ -1,6 +1,6 @@
 import { Cpu, Globe, RefreshCcw, Save, ShieldCheck, Zap } from "lucide-react";
 import { motion } from "motion/react";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ApiClient,
   type ProviderConfig,

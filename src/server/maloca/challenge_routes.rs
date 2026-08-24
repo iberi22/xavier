@@ -32,8 +32,8 @@ impl ChallengeState {
 
     /// Creates an in-memory `ChallengeState` for testing.
     pub fn in_memory() -> Self {
-        let store =
-            HumanChallengeStore::in_memory().expect("failed to create in-memory HumanChallengeStore");
+        let store = HumanChallengeStore::in_memory()
+            .expect("failed to create in-memory HumanChallengeStore");
         Self {
             store: Arc::new(store),
         }
@@ -139,7 +139,11 @@ impl HcAnalyzerBridge {
 
         let score = (event.confidence_score * length_quality).clamp(0.0, 1.0);
         let base_points = (score * 10.0).round() as u32;
-        let trust_points = if score >= 0.7 { base_points * 2 } else { base_points };
+        let trust_points = if score >= 0.7 {
+            base_points * 2
+        } else {
+            base_points
+        };
 
         (score, base_points, trust_points)
     }
@@ -204,7 +208,11 @@ pub async fn generate_challenges_handler(
 
         let event = HumanChallengeEvent::new(&session_id, ct, desc, content, conf);
         if let Err(e) = state.store.save_event(&event) {
-            tracing::warn!("Failed to save generated challenge event {}: {}", event.id, e);
+            tracing::warn!(
+                "Failed to save generated challenge event {}: {}",
+                event.id,
+                e
+            );
         }
         generated.push(event);
     }
@@ -267,9 +275,15 @@ pub async fn answer_challenge_handler(
 
     let message = if updated {
         if verified {
-            format!("Response verified with score {:.2}. Awarded {} points and {} trust points.", score, points_awarded, trust_points)
+            format!(
+                "Response verified with score {:.2}. Awarded {} points and {} trust points.",
+                score, points_awarded, trust_points
+            )
         } else {
-            format!("Response recorded with score {:.2}. Awarded {} points.", score, points_awarded)
+            format!(
+                "Response recorded with score {:.2}. Awarded {} points.",
+                score, points_awarded
+            )
         }
     } else {
         "Failed to record response".to_string()
@@ -319,7 +333,10 @@ pub async fn list_challenges_handler(
     };
 
     let filtered_events: Vec<HumanChallengeEvent> = if let Some(ref sid) = query.session_id {
-        events.into_iter().filter(|e| &e.session_id == sid).collect()
+        events
+            .into_iter()
+            .filter(|e| &e.session_id == sid)
+            .collect()
     } else {
         events
     };
@@ -402,8 +419,14 @@ pub async fn stats_handler(
 /// Constructs the Axum Router for Human Challenge endpoints under `/v1/maloca/challenges`.
 pub fn router(state: ChallengeState) -> Router {
     Router::new()
-        .route("/v1/maloca/challenges/generate", post(generate_challenges_handler))
-        .route("/v1/maloca/challenges/answer", post(answer_challenge_handler))
+        .route(
+            "/v1/maloca/challenges/generate",
+            post(generate_challenges_handler),
+        )
+        .route(
+            "/v1/maloca/challenges/answer",
+            post(answer_challenge_handler),
+        )
         .route("/v1/maloca/challenges/list", get(list_challenges_handler))
         .route("/v1/maloca/challenges/stats", get(stats_handler))
         .with_state(state)

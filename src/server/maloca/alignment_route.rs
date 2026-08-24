@@ -4,11 +4,7 @@
 //! - `GET /v1/maloca/alignment`: Returns ecosystem alignment score (0-100), checklist breakdown, and flag list.
 //! - `GET /v1/maloca/alignment/goals`: Returns canonical 12 goals text and verification criteria.
 
-use axum::{
-    response::IntoResponse,
-    routing::get,
-    Json, Router,
-};
+use axum::{response::IntoResponse, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -315,7 +311,10 @@ pub async fn get_alignment_goals_handler() -> impl IntoResponse {
 pub fn router() -> Router {
     Router::new()
         .route("/v1/maloca/alignment", get(get_alignment_handler))
-        .route("/v1/maloca/alignment/goals", get(get_alignment_goals_handler))
+        .route(
+            "/v1/maloca/alignment/goals",
+            get(get_alignment_goals_handler),
+        )
 }
 
 #[cfg(test)]
@@ -332,7 +331,10 @@ mod tests {
         assert_eq!(local_first.title, "Local-First Runtimes");
         assert!(!local_first.verification_criteria.is_empty());
 
-        let stripe_goal = goals.iter().find(|g| g.id == 4).expect("Goal 4 should exist");
+        let stripe_goal = goals
+            .iter()
+            .find(|g| g.id == 4)
+            .expect("Goal 4 should exist");
         assert_eq!(stripe_goal.title, "No Stripe Paywalls");
         assert!(stripe_goal.description.contains("Stripe"));
     }
@@ -359,7 +361,8 @@ mod tests {
             total: 12,
             goals: get_canonical_goals(),
         };
-        let goals_json = serde_json::to_string(&goals_resp).expect("Should serialize goals response");
+        let goals_json =
+            serde_json::to_string(&goals_resp).expect("Should serialize goals response");
         assert!(goals_json.contains("\"total\":12"));
         assert!(goals_json.contains("\"title\":\"Local-First Runtimes\""));
     }

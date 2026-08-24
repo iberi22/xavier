@@ -4,10 +4,10 @@
 //! across the 5 canonical types (Contradiction, Decision, Execution, Assumption, Clarification),
 //! deduplicates and rate-limits them, and persists candidate events into `HumanChallengeStore`.
 
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 use tokio::time::interval;
 use tracing::{info, warn};
 
@@ -125,7 +125,8 @@ impl HcCronBridge {
                     // Try parsing as array of events first, fallback to single event
                     if let Ok(vec_events) = serde_json::from_str::<Vec<SessionEvent>>(&content) {
                         events = vec_events;
-                    } else if let Ok(single_event) = serde_json::from_str::<SessionEvent>(&content) {
+                    } else if let Ok(single_event) = serde_json::from_str::<SessionEvent>(&content)
+                    {
                         events.push(single_event);
                     }
 
@@ -172,7 +173,10 @@ impl HcCronBridge {
 
                 match result {
                     Ok(Ok(count)) => {
-                        info!("HcCronBridge harvest cycle completed, saved {} candidate events", count);
+                        info!(
+                            "HcCronBridge harvest cycle completed, saved {} candidate events",
+                            count
+                        );
                     }
                     Ok(Err(e)) => {
                         warn!("HcCronBridge harvest cycle error: {}", e);

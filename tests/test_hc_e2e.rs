@@ -64,15 +64,28 @@ fn generate_synthetic_session_events(session_id: &str) -> Vec<SessionEvent> {
 fn toy_embed(text: &str) -> Vec<f32> {
     let lower = text.to_lowercase();
     let mut vec = vec![0.0f32; 8];
-    if lower.contains("sqlite") || lower.contains("bd") || lower.contains("db") || lower.contains("base de datos") || lower.contains("arquitectura") {
+    if lower.contains("sqlite")
+        || lower.contains("bd")
+        || lower.contains("db")
+        || lower.contains("base de datos")
+        || lower.contains("arquitectura")
+    {
         vec[0] += 0.9;
         vec[1] += 0.4;
     }
-    if lower.contains("acordamos") || lower.contains("decidimos") || lower.contains("confirmado") || lower.contains("elección") {
+    if lower.contains("acordamos")
+        || lower.contains("decidimos")
+        || lower.contains("confirmado")
+        || lower.contains("elección")
+    {
         vec[0] += 0.3;
         vec[2] += 0.8;
     }
-    if lower.contains("banana") || lower.contains("fruta") || lower.contains("cielo") || lower.contains("amarillo") {
+    if lower.contains("banana")
+        || lower.contains("fruta")
+        || lower.contains("cielo")
+        || lower.contains("amarillo")
+    {
         vec[5] += 0.9;
         vec[6] += 0.9;
     }
@@ -106,9 +119,14 @@ async fn test_hc_e2e_full_cognitive_alignment_loop() {
     // 1. Scan session events and extract all 5 challenge types
     let scanner = SessionScanner::new();
     let candidates = scanner.scan_session_events(&events);
-    assert_eq!(candidates.len(), 5, "SessionScanner must harvest all 5 canonical challenge types");
+    assert_eq!(
+        candidates.len(),
+        5,
+        "SessionScanner must harvest all 5 canonical challenge types"
+    );
 
-    let found_types: std::collections::HashSet<ChallengeType> = candidates.iter().map(|c| c.challenge_type).collect();
+    let found_types: std::collections::HashSet<ChallengeType> =
+        candidates.iter().map(|c| c.challenge_type).collect();
     assert!(found_types.contains(&ChallengeType::Contradiction));
     assert!(found_types.contains(&ChallengeType::Decision));
     assert!(found_types.contains(&ChallengeType::Execution));
@@ -116,12 +134,16 @@ async fn test_hc_e2e_full_cognitive_alignment_loop() {
     assert!(found_types.contains(&ChallengeType::Clarification));
 
     // 2. Process events into cron and save to SQLite store
-    let processed_count = cron.process_events(&events).expect("process events in cron");
+    let processed_count = cron
+        .process_events(&events)
+        .expect("process events in cron");
     assert_eq!(processed_count, 5);
 
     // Retrieve decision challenge from store
     let store_ref = HumanChallengeStore::new(&db_path).expect("reopen store");
-    let stored_events = store_ref.list_events(Some(ChallengeStatus::Candidate), 10).expect("list candidates");
+    let stored_events = store_ref
+        .list_events(Some(ChallengeStatus::Candidate), 10)
+        .expect("list candidates");
     assert_eq!(stored_events.len(), 5);
 
     let decision_challenge = stored_events
@@ -135,7 +157,8 @@ async fn test_hc_e2e_full_cognitive_alignment_loop() {
     // 3. Semantic Verification of Answers (Semantically Similar vs Orthogonal)
     let raw_content_emb = toy_embed(&decision_challenge.raw_content);
 
-    let semantically_similar_response = "Confirmado, acordamos la elección de SQLite como base de datos local.";
+    let semantically_similar_response =
+        "Confirmado, acordamos la elección de SQLite como base de datos local.";
     let orthogonal_response = "El cielo es amarillo y me gustan las bananas.";
 
     let similar_emb = toy_embed(semantically_similar_response);
@@ -144,14 +167,27 @@ async fn test_hc_e2e_full_cognitive_alignment_loop() {
     let sim_high = cosine_similarity(&raw_content_emb, &similar_emb);
     let sim_low = cosine_similarity(&raw_content_emb, &orthogonal_emb);
 
-    assert!(sim_high > 0.6, "Semantically similar response must have high cosine similarity: {}", sim_high);
-    assert!(sim_low < 0.2, "Orthogonal response must have low cosine similarity: {}", sim_low);
+    assert!(
+        sim_high > 0.6,
+        "Semantically similar response must have high cosine similarity: {}",
+        sim_high
+    );
+    assert!(
+        sim_low < 0.2,
+        "Orthogonal response must have low cosine similarity: {}",
+        sim_low
+    );
 
     // 4. Submit Answer and Award X2 Farming Points for Semantically Valid Response
     let wallet_id = "0x_test_reputation_wallet_123";
     let base_points = 10u32;
     let awarded = cron
-        .answer_and_award(&decision_challenge.id, semantically_similar_response, base_points, wallet_id)
+        .answer_and_award(
+            &decision_challenge.id,
+            semantically_similar_response,
+            base_points,
+            wallet_id,
+        )
         .expect("answer and award challenge");
 
     assert!(awarded, "Challenge answer update must return true");
@@ -163,16 +199,23 @@ async fn test_hc_e2e_full_cognitive_alignment_loop() {
         .expect("event exists");
 
     assert_eq!(updated_event.status, ChallengeStatus::Answered);
-    assert_eq!(updated_event.response.as_deref(), Some(semantically_similar_response));
+    assert_eq!(
+        updated_event.response.as_deref(),
+        Some(semantically_similar_response)
+    );
     assert!(updated_event.points_awarded >= base_points);
 
     let current_month = Utc::now().format("%Y-%m").to_string();
-    let summary = cron.get_farming_summary(&current_month).expect("get farming summary");
+    let summary = cron
+        .get_farming_summary(&current_month)
+        .expect("get farming summary");
     assert_eq!(summary.answered_count, 1);
     assert!(summary.total_points >= base_points);
 
     // Verify Privacy P4 compliant Mesh score payload generation
-    let mesh_scores = cron.prepare_mesh_scores(&current_month).expect("prepare mesh scores");
+    let mesh_scores = cron
+        .prepare_mesh_scores(&current_month)
+        .expect("prepare mesh scores");
     assert_eq!(mesh_scores.len(), 1);
     assert_eq!(mesh_scores[0].challenge_type, ChallengeType::Decision);
     assert!(mesh_scores[0].points >= base_points);

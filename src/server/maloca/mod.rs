@@ -15,9 +15,9 @@ pub mod rewards;
 pub use hc_analyzer_bridge::{ChallengeEmbedder, HcAnalyzerBridge};
 pub use hc_cron_bridge::{HcCronBridge, HcCronBridgeConfig};
 
+use crate::humanchallenge::HumanChallengeStore;
 use axum::Router;
 use std::sync::Arc;
-use crate::humanchallenge::HumanChallengeStore;
 
 /// Constructs a unified Axum router aggregating all `/v1/maloca/*` endpoints.
 pub fn v1_maloca_router(

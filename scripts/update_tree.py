@@ -20,10 +20,10 @@ full_tree = ["├── src/"]
 full_tree.extend(["│   " + line for line in generate_tree("src")])
 full_tree_str = "\n".join(full_tree)
 
-with open("SRC.md", "r") as f:
+with open("docs/SRC.md", "r") as f:
     content = f.read()
 
 new_content = re.sub(r"├── src/.*?└── telegram/", full_tree_str, content, flags=re.DOTALL)
 
-with open("SRC.md", "w") as f:
+with open("docs/SRC.md", "w") as f:
     f.write(new_content)
