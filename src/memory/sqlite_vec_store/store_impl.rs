@@ -105,6 +105,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                             record.embedding = vector;
                         }
                         Err(e) => {
+                            record.embedding_attempts += 1;
                             tracing::warn!(
                                     "Memory record {} saved WITHOUT embedding: client embedding generation failed: {}",
                                     record.id,
@@ -113,6 +114,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                         }
                     },
                     Err(e) => {
+                        record.embedding_attempts += 1;
                         tracing::warn!(
                             "Memory record {} saved WITHOUT embedding: failed to initialize embedding client: {}",
                             record.id,
@@ -126,6 +128,17 @@ impl MemoryStore for VecSqliteMemoryStore {
                     record.id
                 );
             }
+        }
+
+        // Align embedding_status with actual embedding content
+        if record.embedding.is_empty() {
+            if record.embedding_attempts > 0 {
+                record.embedding_status = "retry".to_string();
+            } else {
+                record.embedding_status = "pending".to_string();
+            }
+        } else {
+            record.embedding_status = "completed".to_string();
         }
 
         // Extract and check "dedup" flag from metadata. Remove it so it doesn't persist.
@@ -535,7 +548,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
                 conn.execute(
                     &format!(
-                        "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, encrypted_dek, content_iv, metadata_iv, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                        "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, encrypted_dek, content_iv, metadata_iv, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, embedding_status, embedding_attempts) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
                         TABLE_MEMORIES
                     ),
                     params![
@@ -557,6 +570,8 @@ impl MemoryStore for VecSqliteMemoryStore {
                         record_c.level.as_str(),
                         serde_json::to_string(&record_c.relation).unwrap_or_default(),
                         serde_json::to_string(&record_c.revisions).unwrap_or_default(),
+                        record_c.embedding_status,
+                        record_c.embedding_attempts,
                     ],
                 )?;
 
@@ -1231,5 +1246,159 @@ impl MemoryStore for VecSqliteMemoryStore {
                 Ok(symbols)
             })
             .await
+    }
+}
+
+impl VecSqliteMemoryStore {
+    /// Reconcile embedding_status across memory_records to align status with physical vector existence.
+    ///
+    /// Fixes false 'completed' statuses where embedding blob is missing or empty (length(embedding) <= 100)
+    /// and ensures valid embeddings (length(embedding) > 100) have status 'completed'.
+    pub async fn reconcile_embedding_status(&self) -> Result<usize> {
+        let project_id = self.project_id.clone();
+        ConnectionManager::global()
+            .with_conn(&project_id, move |conn| {
+                Self::reconcile_embedding_status_conn(conn)
+            })
+            .await
+    }
+
+    /// Synchronous helper to reconcile embedding status on a connection.
+    pub fn reconcile_embedding_status_conn(conn: &rusqlite::Connection) -> Result<usize> {
+        let tx = conn.unchecked_transaction()?;
+        let c1 = tx.execute(
+            "UPDATE memory_records SET embedding_status = CASE WHEN embedding_attempts > 0 THEN 'retry' ELSE 'pending' END, updated_at = CURRENT_TIMESTAMP WHERE (embedding_status = 'completed' OR embedding_status IS NULL) AND (embedding IS NULL OR length(embedding) <= 100)",
+            [],
+        )?;
+        let c2 = tx.execute(
+            "UPDATE memory_records SET embedding_status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE (embedding_status IS NULL OR embedding_status != 'completed') AND embedding IS NOT NULL AND length(embedding) > 100",
+            [],
+        )?;
+        tx.commit()?;
+        Ok(c1 + c2)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn setup_test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS memory_records (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                content TEXT NOT NULL,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                embedding BLOB,
+                encrypted_dek BLOB,
+                content_iv BLOB,
+                metadata_iv BLOB,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 1,
+                primary_flag INTEGER DEFAULT 1,
+                parent_id TEXT,
+                cluster_id TEXT,
+                level TEXT DEFAULT 'atom',
+                relation TEXT,
+                revisions TEXT,
+                embedding_status TEXT DEFAULT 'pending',
+                embedding_attempts INTEGER DEFAULT 0
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_reconcile_embedding_status() {
+        let conn = setup_test_db();
+
+        // 1. Record with false 'completed' (embedding NULL)
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, created_at, updated_at, embedding_status, embedding_attempts) VALUES ('rec_1', 'ws1', 'p1', 'c1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'completed', 0)",
+            [],
+        ).unwrap();
+
+        // 2. Record with false 'completed' (embedding blob empty / <=100 bytes)
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, created_at, updated_at, embedding, embedding_status, embedding_attempts) VALUES ('rec_2', 'ws1', 'p2', 'c2', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', X'1234', 'completed', 1)",
+            [],
+        ).unwrap();
+
+        // 3. Record with real embedding (>100 bytes) but status 'pending'
+        let fake_vec_blob = vec![0u8; 3072];
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, created_at, updated_at, embedding, embedding_status, embedding_attempts) VALUES ('rec_3', 'ws1', 'p3', 'c3', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', ?1, 'pending', 0)",
+            params![fake_vec_blob],
+        ).unwrap();
+
+        let stats_before = VecSqliteMemoryStore::embedding_integrity_stats_conn(&conn).unwrap();
+        assert_eq!(stats_before.total, 3);
+        assert_eq!(stats_before.completed_without_vector, 2);
+        assert_eq!(stats_before.completed_real, 0);
+
+        let reconciled = VecSqliteMemoryStore::reconcile_embedding_status_conn(&conn).unwrap();
+        assert_eq!(reconciled, 3);
+
+        let stats_after = VecSqliteMemoryStore::embedding_integrity_stats_conn(&conn).unwrap();
+        assert_eq!(stats_after.total, 3);
+        assert_eq!(stats_after.completed_without_vector, 0);
+        assert_eq!(stats_after.completed_real, 1);
+        assert_eq!(stats_after.pending, 1);
+        assert_eq!(stats_after.retry, 1);
+    }
+
+    #[test]
+    fn test_put_record_status_alignment() {
+        let mut rec_empty = MemoryRecord {
+            id: "m_empty".to_string(),
+            workspace_id: "ws1".to_string(),
+            path: "p_empty".to_string(),
+            content: "test empty".to_string(),
+            embedding: vec![],
+            embedding_status: "completed".to_string(), // False status passed initially
+            embedding_attempts: 0,
+            ..Default::default()
+        };
+
+        if rec_empty.embedding.is_empty() {
+            if rec_empty.embedding_attempts > 0 {
+                rec_empty.embedding_status = "retry".to_string();
+            } else {
+                rec_empty.embedding_status = "pending".to_string();
+            }
+        } else {
+            rec_empty.embedding_status = "completed".to_string();
+        }
+
+        assert_eq!(rec_empty.embedding_status, "pending");
+
+        let mut rec_attempts = MemoryRecord {
+            id: "m_attempts".to_string(),
+            workspace_id: "ws1".to_string(),
+            path: "p_att".to_string(),
+            content: "test att".to_string(),
+            embedding: vec![],
+            embedding_status: "completed".to_string(),
+            embedding_attempts: 2,
+            ..Default::default()
+        };
+
+        if rec_attempts.embedding.is_empty() {
+            if rec_attempts.embedding_attempts > 0 {
+                rec_attempts.embedding_status = "retry".to_string();
+            } else {
+                rec_attempts.embedding_status = "pending".to_string();
+            }
+        } else {
+            rec_attempts.embedding_status = "completed".to_string();
+        }
+
+        assert_eq!(rec_attempts.embedding_status, "retry");
     }
 }

@@ -309,4 +309,55 @@ impl VecSqliteMemoryStore {
         )
         .await
     }
+
+    /// Health probe reporting embedding integrity statistics.
+    pub async fn embedding_integrity_stats(&self) -> Result<EmbeddingIntegrityStats> {
+        let project_id = self.project_id.clone();
+        ConnectionManager::global()
+            .with_conn(&project_id, move |conn| {
+                Self::embedding_integrity_stats_conn(conn)
+            })
+            .await
+    }
+
+    /// Synchronous helper to calculate embedding integrity statistics.
+    pub fn embedding_integrity_stats_conn(conn: &rusqlite::Connection) -> Result<EmbeddingIntegrityStats> {
+        let total: usize = conn.query_row(
+            "SELECT COUNT(*) FROM memory_records",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let completed_real: usize = conn.query_row(
+            "SELECT COUNT(*) FROM memory_records WHERE embedding_status = 'completed' AND embedding IS NOT NULL AND length(embedding) > 100",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let completed_without_vector: usize = conn.query_row(
+            "SELECT COUNT(*) FROM memory_records WHERE embedding_status = 'completed' AND (embedding IS NULL OR length(embedding) <= 100)",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let pending: usize = conn.query_row(
+            "SELECT COUNT(*) FROM memory_records WHERE (embedding_status = 'pending' OR embedding_status IS NULL)",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let retry: usize = conn.query_row(
+            "SELECT COUNT(*) FROM memory_records WHERE embedding_status = 'retry'",
+            [],
+            |row| row.get(0),
+        )?;
+
+        Ok(EmbeddingIntegrityStats {
+            total,
+            completed_real,
+            completed_without_vector,
+            pending,
+            retry,
+        })
+    }
 }
