@@ -142,6 +142,24 @@ impl NodeIdentity {
         }
     }
 
+    /// Construct NodeIdentity from raw Ed25519 secret key seed bytes (32 bytes).
+    pub fn from_private_key_bytes(bytes: &[u8]) -> Result<Self> {
+        let key_bytes: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Ed25519 private key must be exactly 32 bytes"))?;
+        let signing_key = SigningKey::from_bytes(&key_bytes);
+        let public_key = signing_key.verifying_key();
+        let pk_bytes = public_key.to_bytes();
+        let node_id = NodeId::from_public_key_bytes(&pk_bytes);
+
+        Ok(NodeIdentity {
+            node_id,
+            public_key: pk_bytes.to_vec(),
+            private_key: bytes.to_vec(),
+            ml_dsa_commitment: None,
+        })
+    }
+
     /// Prefer SWAL vault under `XAVIER_DATA_DIR/node/` when PIN unlocks it.
     pub fn load_preferring_swal_vault(pin: &str, device_key: Option<&[u8; 32]>) -> Result<Self> {
         let store = crate::node_identity::NodeStore::default_from_env();
