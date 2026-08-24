@@ -64,6 +64,25 @@ xavier index
 
 ---
 
+## 🌐 Maloca V1 API (unified Axum routes on :8006)
+
+Since v0.13.0, the daemon exposes the full Maloca V1 surface under `/v1/maloca/*`
+(unified router `v1_maloca_router` in `src/server/maloca/mod.rs`, wired into
+`src/cli/server.rs`). All routes require authentication (`X-Xavier-Token`).
+
+| Group | Endpoints | Purpose |
+|---|---|---|
+| Registry | `GET /v1/maloca/registry`, `GET /v1/maloca/registry/{app_id}` | Ecosystem App Registry (ETag-cached). |
+| Alignment | `GET /v1/maloca/alignment`, `GET /v1/maloca/alignment/goals` | GOAL.md compliance & alignment audit. |
+| Backlog | `GET /v1/maloca/backlog/unified`, `GET /v1/maloca/backlog/summary` | Multi-repo backlog aggregation with TTL cache. |
+| Models | `POST /v1/maloca/models/infer`, `GET /v1/maloca/models/list`, `GET /v1/maloca/models/health` | Model Router (Ollama / cloud providers). |
+| Challenges | `POST /v1/maloca/challenges/generate`, `POST /v1/maloca/challenges/answer`, `GET /v1/maloca/challenges/list`, `GET /v1/maloca/challenges/stats` | HumanChallenge engine with local-embedding semantic verification. |
+
+The panel frontend (`panel-ui/src/maloca/MalocaView.tsx`) renders these services
+as tabs: Registry, Goals, Backlog, Challenges and Models.
+
+---
+
 ## 🛠️ Installer & Service Support
 
 Xavier includes an interactive **TUI setup wizard** (built with `ratatui` and `crossterm`) that guides you through a 6-step initialization.

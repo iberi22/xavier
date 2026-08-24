@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## v0.13.0 (2026-08-23)
+
+Stable release consolidating the **Maloca V1 integration** (Wave 15, issues #1490–#1504),
+the P2P mesh hardening waves, and the public-release documentation pass.
+
+### Added
+
+- **Unified Axum router `v1_maloca_router`** (`src/server/maloca/mod.rs`) merged into the live daemon (`src/cli/server.rs`), exposing all Maloca V1 services under `/v1/maloca/*` on port `8006`:
+  - `GET /v1/maloca/registry`, `GET /v1/maloca/registry/{app_id}` — Ecosystem App Registry (ETag-cached).
+  - `GET /v1/maloca/alignment`, `GET /v1/maloca/alignment/goals` — GOAL.md compliance & alignment audit.
+  - `GET /v1/maloca/backlog/unified`, `GET /v1/maloca/backlog/summary` — multi-repo backlog aggregation with TTL cache.
+  - `POST /v1/maloca/models/infer`, `GET /v1/maloca/models/list`, `GET /v1/maloca/models/health` — Model Router (Ollama/cloud providers).
+  - `POST /v1/maloca/challenges/generate|answer`, `GET /v1/maloca/challenges/list|stats` — HumanChallenge engine.
+- **maloca-core crate** linked into the Cargo workspace (#1490).
+- **HcAnalyzerBridge** with local embeddings and **HcCronBridge** periodic harvester (#1511–#1512).
+- **panel-ui**: MalocaView multi-tab navigation (Registry, Goals, Backlog, Challenges, Models), `@swal/maloca-embed` wired via optimizeDeps (#1505, #1508), memoized provider mappings in Settings/Providers.
+- **@swal/swal-ui**: ModelSelector Svelte component with live API sync (#1506).
+- **P2P mesh features** (mesh waves 1–4): 79 new integration tests; 1879 library tests total.
+
+### Changed
+
+- Public presentation assets cleaned for release: stale Windows-local links replaced with GitHub deep-links across `public/devlog/` (67 link fixes, 359 path normalizations); merge-conflict leftover `public/maloca~HEAD` removed from tracking.
+- Feature ledger reconciled to the post-wave state (see `docs/features/features.json`).
+
+### Verified
+
+- `cargo test --test test_maloca_http_e2e` — 5/5 PASS.
+- `cargo test --test test_hc_e2e` — 1/1 PASS.
+- `cargo test -p maloca-core` — 59/59 PASS.
+- `pnpm --filter @swal/backoffice exec vitest run tests/e2e_maloca_flow.spec.ts` — 4/4 PASS.
+- `cargo check` — 0 errors, 0 warnings (~26s incremental).
+- Secret scan clean: no real credentials in working tree; `.env` gitignored and untracked.
+
+
 ## v0.12.0 (2026-07-05)
 
 ### Added

@@ -61,14 +61,14 @@ const TABS: TabConfig[] = [
     id: "challenges",
     label: "Human Challenge",
     icon: ShieldAlert,
-    endpoint: "/v1/maloca/challenges/active",
+    endpoint: "/v1/maloca/challenges/list",
     description: "Human-in-the-loop validation requests & consensus challenges.",
   },
   {
     id: "models",
     label: "Model Connectivity",
     icon: Cpu,
-    endpoint: "/v1/maloca/models/status",
+    endpoint: "/v1/maloca/models/list",
     description: "LLM backend routes, ONNX cross-encoders & local inference availability.",
   },
 ];

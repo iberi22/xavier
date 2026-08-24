@@ -9694,7 +9694,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- Benchmark results: `E:\\scripts-python\\xavier-benchmark\\`\r"
+          "text": "-- Benchmark results: `~\/proyectosSWAL\/apps\/xavier-benchmark\\`\r"
         },
         {
           "type": "deletion",
@@ -9832,7 +9832,7 @@
         },
         {
           "type": "deletion",
-          "text": "-**Project:** E:\\scripts-python\\xavier\r"
+          "text": "-**Project:** ~\/proyectosSWAL\/apps\/xavier\r"
         },
         {
           "type": "deletion",
@@ -11582,7 +11582,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier\r"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier\r"
         },
         {
           "type": "deletion",
@@ -46037,7 +46037,7 @@
         },
         {
           "type": "addition",
-          "text": "+          \"text\": \"+<strong>Source Files</strong>: <a href=\\\"file:///e:/scripts-python/xavier/src/domain/\\\"><code>src/domain/</code></a>, <a href=\\\"file:///e:/scripts-python/xavier/src/adapters/\\\"><code>src/adapters/</code></a>, <a href=\\\"file:///e:/scripts-python/xavier/src/memory/store.rs\\\"><code>src/memory/store.rs</code></a></p>\""
+          "text": "+          \"text\": \"+<strong>Source Files</strong>: <a href=\\\"https://github.com/iberi22/xavier/tree/main/src/domain/\\\"><code>src/domain/</code></a>, <a href=\\\"https://github.com/iberi22/xavier/tree/main/src/adapters/\\\"><code>src/adapters/</code></a>, <a href=\\\"https://github.com/iberi22/xavier/blob/main/src/memory/store.rs\\\"><code>src/memory/store.rs</code></a></p>\""
         },
         {
           "type": "addition",
@@ -47301,7 +47301,7 @@
         },
         {
           "type": "addition",
-          "text": "+          \"text\": \"+<li><a href=\\\"file:///e:/scripts-python/xavier/docs/ARCHITECTURE.md\\\">Architecture Overview</a></li>\""
+          "text": "+          \"text\": \"+<li><a href=\\\"https://github.com/iberi22/xavier/blob/main/docs/ARCHITECTURE.md\\\">Architecture Overview</a></li>\""
         },
         {
           "type": "addition",
@@ -47317,7 +47317,7 @@
         },
         {
           "type": "addition",
-          "text": "+          \"text\": \"+<li><a href=\\\"file:///e:/scripts-python/xavier/src/memory/store.rs\\\">MemoryStore Trait definition</a></li>\""
+          "text": "+          \"text\": \"+<li><a href=\\\"https://github.com/iberi22/xavier/blob/main/src/memory/store.rs\\\">MemoryStore Trait definition</a></li>\""
         },
         {
           "type": "addition",
@@ -48429,7 +48429,7 @@
         },
         {
           "type": "addition",
-          "text": "+          \"text\": \"+<strong>Source Files</strong>: <a href=\\\"file:///e:/scripts-python/xavier/src/security/prompt_guard.rs\\\"><code>src/security/prompt_guard.rs</code></a>, <a href=\\\"file:///e:/scripts-python/xavier/src/security/detections.rs\\\"><code>src/security/detections.rs</code></a></p>\""
+          "text": "+          \"text\": \"+<strong>Source Files</strong>: <a href=\\\"https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs\\\"><code>src/security/prompt_guard.rs</code></a>, <a href=\\\"https://github.com/iberi22/xavier/blob/main/src/security/detections.rs\\\"><code>src/security/detections.rs</code></a></p>\""
         },
         {
           "type": "addition",
@@ -49517,7 +49517,7 @@
         },
         {
           "type": "addition",
-          "text": "+          \"text\": \"+<li><a href=\\\"file:///e:/scripts-python/xavier/src/security/prompt_guard.rs\\\">Prompt Guard Implementation</a></li>\""
+          "text": "+          \"text\": \"+<li><a href=\\\"https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs\\\">Prompt Guard Implementation</a></li>\""
         },
         {
           "type": "addition",
@@ -49533,7 +49533,7 @@
         },
         {
           "type": "addition",
-          "text": "+          \"text\": \"+<li><a href=\\\"file:///e:/scripts-python/xavier/docs/SECURITY.md\\\">Security Documentation</a></li>\""
+          "text": "+          \"text\": \"+<li><a href=\\\"https://github.com/iberi22/xavier/blob/main/docs/SECURITY.md\\\">Security Documentation</a></li>\""
         },
         {
           "type": "addition",
@@ -50661,7 +50661,7 @@
         },
         {
           "type": "addition",
-          "text": "+          \"text\": \"+<strong>Source Files</strong>: <a href=\\\"file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs\\\"><code>src/memory/sqlite_vec_store.rs</code></a>, <a href=\\\"file:///e:/scripts-python/xavier/Cargo.toml\\\"><code>Cargo.toml</code></a></p>\""
+          "text": "+          \"text\": \"+<strong>Source Files</strong>: <a href=\\\"https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs\\\"><code>src/memory/sqlite_vec_store.rs</code></a>, <a href=\\\"https://github.com/iberi22/xavier/blob/main/Cargo.toml\\\"><code>Cargo.toml</code></a></p>\""
         },
         {
           "type": "addition",
@@ -51637,7 +51637,7 @@
         },
         {
           "type": "addition",
-          "text": "+          \"text\": \"+<li><a href=\\\"file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs\\\">SQLite-Vec Implementation</a></li>\""
+          "text": "+          \"text\": \"+<li><a href=\\\"https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs\\\">SQLite-Vec Implementation</a></li>\""
         },
         {
           "type": "addition",
@@ -51653,7 +51653,7 @@
         },
         {
           "type": "addition",
-          "text": "+          \"text\": \"+<li><a href=\\\"file:///e:/scripts-python/xavier/docs/STORAGE_SWITCH.md\\\">Storage Switch Guide</a></li>\""
+          "text": "+          \"text\": \"+<li><a href=\\\"https://github.com/iberi22/xavier/blob/main/docs/STORAGE_SWITCH.md\\\">Storage Switch Guide</a></li>\""
         },
         {
           "type": "addition",
@@ -166064,7 +166064,7 @@
         },
         {
           "type": "addition",
-          "text": "+<strong>Source Files</strong>: <a href=\"file:///e:/scripts-python/xavier/src/domain/\"><code>src/domain/</code></a>, <a href=\"file:///e:/scripts-python/xavier/src/adapters/\"><code>src/adapters/</code></a>, <a href=\"file:///e:/scripts-python/xavier/src/memory/store.rs\"><code>src/memory/store.rs</code></a></p>"
+          "text": "+<strong>Source Files</strong>: <a href=\"https://github.com/iberi22/xavier/tree/main/src/domain/\"><code>src/domain/</code></a>, <a href=\"https://github.com/iberi22/xavier/tree/main/src/adapters/\"><code>src/adapters/</code></a>, <a href=\"https://github.com/iberi22/xavier/blob/main/src/memory/store.rs\"><code>src/memory/store.rs</code></a></p>"
         },
         {
           "type": "addition",
@@ -166380,11 +166380,11 @@
         },
         {
           "type": "addition",
-          "text": "+<li><a href=\"file:///e:/scripts-python/xavier/docs/ARCHITECTURE.md\">Architecture Overview</a></li>"
+          "text": "+<li><a href=\"https://github.com/iberi22/xavier/blob/main/docs/ARCHITECTURE.md\">Architecture Overview</a></li>"
         },
         {
           "type": "addition",
-          "text": "+<li><a href=\"file:///e:/scripts-python/xavier/src/memory/store.rs\">MemoryStore Trait definition</a></li>"
+          "text": "+<li><a href=\"https://github.com/iberi22/xavier/blob/main/src/memory/store.rs\">MemoryStore Trait definition</a></li>"
         },
         {
           "type": "addition",
@@ -166662,7 +166662,7 @@
         },
         {
           "type": "addition",
-          "text": "+<strong>Source Files</strong>: <a href=\"file:///e:/scripts-python/xavier/src/security/prompt_guard.rs\"><code>src/security/prompt_guard.rs</code></a>, <a href=\"file:///e:/scripts-python/xavier/src/security/detections.rs\"><code>src/security/detections.rs</code></a></p>"
+          "text": "+<strong>Source Files</strong>: <a href=\"https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs\"><code>src/security/prompt_guard.rs</code></a>, <a href=\"https://github.com/iberi22/xavier/blob/main/src/security/detections.rs\"><code>src/security/detections.rs</code></a></p>"
         },
         {
           "type": "addition",
@@ -166934,11 +166934,11 @@
         },
         {
           "type": "addition",
-          "text": "+<li><a href=\"file:///e:/scripts-python/xavier/src/security/prompt_guard.rs\">Prompt Guard Implementation</a></li>"
+          "text": "+<li><a href=\"https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs\">Prompt Guard Implementation</a></li>"
         },
         {
           "type": "addition",
-          "text": "+<li><a href=\"file:///e:/scripts-python/xavier/docs/SECURITY.md\">Security Documentation</a></li>"
+          "text": "+<li><a href=\"https://github.com/iberi22/xavier/blob/main/docs/SECURITY.md\">Security Documentation</a></li>"
         },
         {
           "type": "addition",
@@ -167220,7 +167220,7 @@
         },
         {
           "type": "addition",
-          "text": "+<strong>Source Files</strong>: <a href=\"file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs\"><code>src/memory/sqlite_vec_store.rs</code></a>, <a href=\"file:///e:/scripts-python/xavier/Cargo.toml\"><code>Cargo.toml</code></a></p>"
+          "text": "+<strong>Source Files</strong>: <a href=\"https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs\"><code>src/memory/sqlite_vec_store.rs</code></a>, <a href=\"https://github.com/iberi22/xavier/blob/main/Cargo.toml\"><code>Cargo.toml</code></a></p>"
         },
         {
           "type": "addition",
@@ -167464,11 +167464,11 @@
         },
         {
           "type": "addition",
-          "text": "+<li><a href=\"file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs\">SQLite-Vec Implementation</a></li>"
+          "text": "+<li><a href=\"https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs\">SQLite-Vec Implementation</a></li>"
         },
         {
           "type": "addition",
-          "text": "+<li><a href=\"file:///e:/scripts-python/xavier/docs/STORAGE_SWITCH.md\">Storage Switch Guide</a></li>"
+          "text": "+<li><a href=\"https://github.com/iberi22/xavier/blob/main/docs/STORAGE_SWITCH.md\">Storage Switch Guide</a></li>"
         },
         {
           "type": "addition",
@@ -228054,7 +228054,7 @@
         },
         {
           "type": "normal",
-          "text": " - **Repo:** `E:\\scripts-python\\xavier`\r"
+          "text": " - **Repo:** `~\/proyectosSWAL\/apps\/xavier`\r"
         },
         {
           "type": "normal",
@@ -228090,7 +228090,7 @@
         },
         {
           "type": "normal",
-          "text": " - **Repo:** `E:\\scripts-python\\cortex`\r"
+          "text": " - **Repo:** `~\/proyectosSWAL\/apps\/xavier\\cortex`\r"
         },
         {
           "type": "normal",
@@ -228170,7 +228170,7 @@
         },
         {
           "type": "normal",
-          "text": " - **Script:** `E:\\scripts-python\\xavier\\scripts\\memory_triad_loop.ps1`\r"
+          "text": " - **Script:** `~\/proyectosSWAL\/apps\/xavier\\scripts\\memory_triad_loop.ps1`\r"
         },
         {
           "type": "normal",
@@ -228790,7 +228790,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:/scripts-python/xavier"
+          "text": "-cd ~/proyectosSWAL/apps/xavier"
         },
         {
           "type": "deletion",
@@ -229264,11 +229264,11 @@
         },
         {
           "type": "normal",
-          "text": " docker compose -f E:\\scripts-python\\xavier\\docker-compose.yml down"
+          "text": " docker compose -f ~\/proyectosSWAL\/apps\/xavier\\docker-compose.yml down"
         },
         {
           "type": "normal",
-          "text": " docker compose -f E:\\scripts-python\\xavier\\docker-compose.yml up -d"
+          "text": " docker compose -f ~\/proyectosSWAL\/apps\/xavier\\docker-compose.yml up -d"
         },
         {
           "type": "normal",
@@ -229858,7 +229858,7 @@
         },
         {
           "type": "normal",
-          "text": " $PROJECT_ROOT = 'E:\\scripts-python\\xavier'"
+          "text": " $PROJECT_ROOT = '~\/proyectosSWAL\/apps\/xavier'"
         },
         {
           "type": "deletion",
@@ -230280,7 +230280,7 @@
         },
         {
           "type": "deletion",
-          "text": "-  -d '{\"path\":\"E:/scripts-python/xavier\"}'\r"
+          "text": "-  -d '{\"path\":\"~/proyectosSWAL/apps/xavier\"}'\r"
         },
         {
           "type": "deletion",
@@ -230628,7 +230628,7 @@
         },
         {
           "type": "deletion",
-          "text": "-{\"path\":\"E:/scripts-python/xavier\"}\r"
+          "text": "-{\"path\":\"~/proyectosSWAL/apps/xavier\"}\r"
         },
         {
           "type": "deletion",
@@ -242012,7 +242012,7 @@
         },
         {
           "type": "normal",
-          "text": " $PROJECT_ROOT = 'E:\\scripts-python\\xavier'"
+          "text": " $PROJECT_ROOT = '~\/proyectosSWAL\/apps\/xavier'"
         },
         {
           "type": "normal",
@@ -248535,7 +248535,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- Plugins: Cortex (\"E:\\scripts-python\\cortex\") - PGheart (\"E:\\scripts-python\\pgheart\")."
+          "text": "-- Plugins: Cortex (\"~\/proyectosSWAL\/apps\/xavier\\cortex\") - PGheart (\"~\/proyectosSWAL\/apps\/xavier\\pgheart\")."
         },
         {
           "type": "addition",
@@ -301682,7 +301682,7 @@
         },
         {
           "type": "addition",
-          "text": "+Checking xavier v1.0.0-rc.1 (E:\\scripts-python\\xavier)\r"
+          "text": "+Checking xavier v1.0.0-rc.1 (~\/proyectosSWAL\/apps\/xavier)\r"
         },
         {
           "type": "addition",
@@ -301706,7 +301706,7 @@
         },
         {
           "type": "addition",
-          "text": "+Checking xavier v1.0.0-rc.1 (E:\\scripts-python\\xavier)\r"
+          "text": "+Checking xavier v1.0.0-rc.1 (~\/proyectosSWAL\/apps\/xavier)\r"
         },
         {
           "type": "addition",
@@ -491720,7 +491720,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- Plugins: Cortex(\"E:\\scripts-python\\cortex\") - PGheart(\"E:\\scripts-python\\pgheart\") \r"
+          "text": "-- Plugins: Cortex(\"~\/proyectosSWAL\/apps\/xavier\\cortex\") - PGheart(\"~\/proyectosSWAL\/apps\/xavier\\pgheart\") \r"
         },
         {
           "type": "deletion",
@@ -491864,7 +491864,7 @@
         },
         {
           "type": "addition",
-          "text": "+- Plugins: Cortex (\"E:\\scripts-python\\cortex\") - PGheart (\"E:\\scripts-python\\pgheart\")."
+          "text": "+- Plugins: Cortex (\"~\/proyectosSWAL\/apps\/xavier\\cortex\") - PGheart (\"~\/proyectosSWAL\/apps\/xavier\\pgheart\")."
         },
         {
           "type": "addition",
@@ -566833,7 +566833,7 @@
         },
         {
           "type": "normal",
-          "text": "     (r\"(?i)E:\\\\scripts-python\\\\[^\\s]*\", \"[project]\"),"
+          "text": "     (r\"(?i)~\/proyectosSWAL\/apps\/xavier\\\\[^\\s]*\", \"[project]\"),"
         },
         {
           "type": "deletion",
@@ -616628,11 +616628,11 @@
         },
         {
           "type": "addition",
-          "text": "+- **Cortex** (`E:\\scripts-python\\cortex`) — Sync plugin for Xavier\r"
+          "text": "+- **Cortex** (`~\/proyectosSWAL\/apps\/xavier\\cortex`) — Sync plugin for Xavier\r"
         },
         {
           "type": "addition",
-          "text": "+- **PGheart** (`E:\\scripts-python\\pgheart`) — Companion plugin"
+          "text": "+- **PGheart** (`~\/proyectosSWAL\/apps\/xavier\\pgheart`) — Companion plugin"
         }
       ],
       ".kiro/steering/structure.md": [
@@ -617746,7 +617746,7 @@
         },
         {
           "type": "addition",
-          "text": "+- Plugins: Cortex(\"E:\\scripts-python\\cortex\") - PGheart(\"E:\\scripts-python\\pgheart\") \r"
+          "text": "+- Plugins: Cortex(\"~\/proyectosSWAL\/apps\/xavier\\cortex\") - PGheart(\"~\/proyectosSWAL\/apps\/xavier\\pgheart\") \r"
         },
         {
           "type": "normal",
@@ -621050,7 +621050,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
         },
         {
           "type": "deletion",
@@ -621078,7 +621078,7 @@
         },
         {
           "type": "deletion",
-          "text": "-python E:\\scripts-python\\scripts\\audio-to-text.py audio.ogg --language es\r"
+          "text": "-python ~\/proyectosSWAL\/apps\/xavier\\scripts\\audio-to-text.py audio.ogg --language es\r"
         },
         {
           "type": "deletion",
@@ -625422,7 +625422,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
         },
         {
           "type": "addition",
@@ -625454,7 +625454,7 @@
         },
         {
           "type": "addition",
-          "text": "+python E:\\scripts-python\\scripts\\audio-to-text.py audio.ogg --language es\r"
+          "text": "+python ~\/proyectosSWAL\/apps\/xavier\\scripts\\audio-to-text.py audio.ogg --language es\r"
         },
         {
           "type": "addition",
@@ -625508,7 +625508,7 @@
         },
         {
           "type": "addition",
-          "text": "+**Source Files**: [`src/domain/`](file:///e:/scripts-python/xavier/src/domain/), [`src/adapters/`](file:///e:/scripts-python/xavier/src/adapters/), [`src/memory/store.rs`](file:///e:/scripts-python/xavier/src/memory/store.rs)"
+          "text": "+**Source Files**: [`src/domain/`](https://github.com/iberi22/xavier/tree/main/src/domain/), [`src/adapters/`](https://github.com/iberi22/xavier/tree/main/src/adapters/), [`src/memory/store.rs`](https://github.com/iberi22/xavier/blob/main/src/memory/store.rs)"
         },
         {
           "type": "addition",
@@ -625900,11 +625900,11 @@
         },
         {
           "type": "addition",
-          "text": "+- [Architecture Overview](file:///e:/scripts-python/xavier/docs/ARCHITECTURE.md)"
+          "text": "+- [Architecture Overview](https://github.com/iberi22/xavier/blob/main/docs/ARCHITECTURE.md)"
         },
         {
           "type": "addition",
-          "text": "+- [MemoryStore Trait definition](file:///e:/scripts-python/xavier/src/memory/store.rs)"
+          "text": "+- [MemoryStore Trait definition](https://github.com/iberi22/xavier/blob/main/src/memory/store.rs)"
         }
       ],
       "docs/devlog/2026-05-10-prompt-injection-detector.md": [
@@ -625938,7 +625938,7 @@
         },
         {
           "type": "addition",
-          "text": "+**Source Files**: [`src/security/prompt_guard.rs`](file:///e:/scripts-python/xavier/src/security/prompt_guard.rs), [`src/security/detections.rs`](file:///e:/scripts-python/xavier/src/security/detections.rs)"
+          "text": "+**Source Files**: [`src/security/prompt_guard.rs`](https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs), [`src/security/detections.rs`](https://github.com/iberi22/xavier/blob/main/src/security/detections.rs)"
         },
         {
           "type": "addition",
@@ -626274,11 +626274,11 @@
         },
         {
           "type": "addition",
-          "text": "+- [Prompt Guard Implementation](file:///e:/scripts-python/xavier/src/security/prompt_guard.rs)"
+          "text": "+- [Prompt Guard Implementation](https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs)"
         },
         {
           "type": "addition",
-          "text": "+- [Security Documentation](file:///e:/scripts-python/xavier/docs/SECURITY.md)"
+          "text": "+- [Security Documentation](https://github.com/iberi22/xavier/blob/main/docs/SECURITY.md)"
         },
         {
           "type": "addition",
@@ -626316,7 +626316,7 @@
         },
         {
           "type": "addition",
-          "text": "+**Source Files**: [`src/memory/sqlite_vec_store.rs`](file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs), [`Cargo.toml`](file:///e:/scripts-python/xavier/Cargo.toml)"
+          "text": "+**Source Files**: [`src/memory/sqlite_vec_store.rs`](https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs), [`Cargo.toml`](https://github.com/iberi22/xavier/blob/main/Cargo.toml)"
         },
         {
           "type": "addition",
@@ -626640,11 +626640,11 @@
         },
         {
           "type": "addition",
-          "text": "+- [SQLite-Vec Implementation](file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs)"
+          "text": "+- [SQLite-Vec Implementation](https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs)"
         },
         {
           "type": "addition",
-          "text": "+- [Storage Switch Guide](file:///e:/scripts-python/xavier/docs/STORAGE_SWITCH.md)"
+          "text": "+- [Storage Switch Guide](https://github.com/iberi22/xavier/blob/main/docs/STORAGE_SWITCH.md)"
         },
         {
           "type": "addition",
@@ -627366,7 +627366,7 @@
         },
         {
           "type": "deletion",
-          "text": "-sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "-sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "deletion",
@@ -627396,7 +627396,7 @@
         },
         {
           "type": "deletion",
-          "text": "-sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "-sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "deletion",
@@ -628626,7 +628626,7 @@
         },
         {
           "type": "addition",
-          "text": "+sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "+sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "addition",
@@ -628656,7 +628656,7 @@
         },
         {
           "type": "addition",
-          "text": "+sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "+sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "addition",
@@ -653909,11 +653909,11 @@
         },
         {
           "type": "addition",
-          "text": "+- **Cortex** (`E:\\scripts-python\\cortex`) — Sync plugin for Xavier\r"
+          "text": "+- **Cortex** (`~\/proyectosSWAL\/apps\/xavier\\cortex`) — Sync plugin for Xavier\r"
         },
         {
           "type": "addition",
-          "text": "+- **PGheart** (`E:\\scripts-python\\pgheart`) — Companion plugin"
+          "text": "+- **PGheart** (`~\/proyectosSWAL\/apps\/xavier\\pgheart`) — Companion plugin"
         }
       ],
       ".kiro/steering/structure.md": [
@@ -655027,7 +655027,7 @@
         },
         {
           "type": "addition",
-          "text": "+- Plugins: Cortex(\"E:\\scripts-python\\cortex\") - PGheart(\"E:\\scripts-python\\pgheart\") \r"
+          "text": "+- Plugins: Cortex(\"~\/proyectosSWAL\/apps\/xavier\\cortex\") - PGheart(\"~\/proyectosSWAL\/apps\/xavier\\pgheart\") \r"
         },
         {
           "type": "normal",
@@ -658331,7 +658331,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
         },
         {
           "type": "deletion",
@@ -658359,7 +658359,7 @@
         },
         {
           "type": "deletion",
-          "text": "-python E:\\scripts-python\\scripts\\audio-to-text.py audio.ogg --language es\r"
+          "text": "-python ~\/proyectosSWAL\/apps\/xavier\\scripts\\audio-to-text.py audio.ogg --language es\r"
         },
         {
           "type": "deletion",
@@ -662703,7 +662703,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
         },
         {
           "type": "addition",
@@ -662735,7 +662735,7 @@
         },
         {
           "type": "addition",
-          "text": "+python E:\\scripts-python\\scripts\\audio-to-text.py audio.ogg --language es\r"
+          "text": "+python ~\/proyectosSWAL\/apps\/xavier\\scripts\\audio-to-text.py audio.ogg --language es\r"
         },
         {
           "type": "addition",
@@ -662789,7 +662789,7 @@
         },
         {
           "type": "addition",
-          "text": "+**Source Files**: [`src/domain/`](file:///e:/scripts-python/xavier/src/domain/), [`src/adapters/`](file:///e:/scripts-python/xavier/src/adapters/), [`src/memory/store.rs`](file:///e:/scripts-python/xavier/src/memory/store.rs)"
+          "text": "+**Source Files**: [`src/domain/`](https://github.com/iberi22/xavier/tree/main/src/domain/), [`src/adapters/`](https://github.com/iberi22/xavier/tree/main/src/adapters/), [`src/memory/store.rs`](https://github.com/iberi22/xavier/blob/main/src/memory/store.rs)"
         },
         {
           "type": "addition",
@@ -663181,11 +663181,11 @@
         },
         {
           "type": "addition",
-          "text": "+- [Architecture Overview](file:///e:/scripts-python/xavier/docs/ARCHITECTURE.md)"
+          "text": "+- [Architecture Overview](https://github.com/iberi22/xavier/blob/main/docs/ARCHITECTURE.md)"
         },
         {
           "type": "addition",
-          "text": "+- [MemoryStore Trait definition](file:///e:/scripts-python/xavier/src/memory/store.rs)"
+          "text": "+- [MemoryStore Trait definition](https://github.com/iberi22/xavier/blob/main/src/memory/store.rs)"
         }
       ],
       "docs/devlog/2026-05-10-prompt-injection-detector.md": [
@@ -663219,7 +663219,7 @@
         },
         {
           "type": "addition",
-          "text": "+**Source Files**: [`src/security/prompt_guard.rs`](file:///e:/scripts-python/xavier/src/security/prompt_guard.rs), [`src/security/detections.rs`](file:///e:/scripts-python/xavier/src/security/detections.rs)"
+          "text": "+**Source Files**: [`src/security/prompt_guard.rs`](https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs), [`src/security/detections.rs`](https://github.com/iberi22/xavier/blob/main/src/security/detections.rs)"
         },
         {
           "type": "addition",
@@ -663555,11 +663555,11 @@
         },
         {
           "type": "addition",
-          "text": "+- [Prompt Guard Implementation](file:///e:/scripts-python/xavier/src/security/prompt_guard.rs)"
+          "text": "+- [Prompt Guard Implementation](https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs)"
         },
         {
           "type": "addition",
-          "text": "+- [Security Documentation](file:///e:/scripts-python/xavier/docs/SECURITY.md)"
+          "text": "+- [Security Documentation](https://github.com/iberi22/xavier/blob/main/docs/SECURITY.md)"
         },
         {
           "type": "addition",
@@ -663597,7 +663597,7 @@
         },
         {
           "type": "addition",
-          "text": "+**Source Files**: [`src/memory/sqlite_vec_store.rs`](file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs), [`Cargo.toml`](file:///e:/scripts-python/xavier/Cargo.toml)"
+          "text": "+**Source Files**: [`src/memory/sqlite_vec_store.rs`](https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs), [`Cargo.toml`](https://github.com/iberi22/xavier/blob/main/Cargo.toml)"
         },
         {
           "type": "addition",
@@ -663921,11 +663921,11 @@
         },
         {
           "type": "addition",
-          "text": "+- [SQLite-Vec Implementation](file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs)"
+          "text": "+- [SQLite-Vec Implementation](https://github.com/iberi22/xavier/blob/main/src/memory/sqlite_vec_store.rs)"
         },
         {
           "type": "addition",
-          "text": "+- [Storage Switch Guide](file:///e:/scripts-python/xavier/docs/STORAGE_SWITCH.md)"
+          "text": "+- [Storage Switch Guide](https://github.com/iberi22/xavier/blob/main/docs/STORAGE_SWITCH.md)"
         },
         {
           "type": "addition",
@@ -664647,7 +664647,7 @@
         },
         {
           "type": "deletion",
-          "text": "-sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "-sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "deletion",
@@ -664677,7 +664677,7 @@
         },
         {
           "type": "deletion",
-          "text": "-sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "-sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "deletion",
@@ -665907,7 +665907,7 @@
         },
         {
           "type": "addition",
-          "text": "+sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "+sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "addition",
@@ -665937,7 +665937,7 @@
         },
         {
           "type": "addition",
-          "text": "+sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "+sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "addition",
@@ -695593,7 +695593,7 @@
         },
         {
           "type": "addition",
-          "text": "+    (r\"(?i)E:\\\\scripts-python\\\\[^\\s]*\", \"[project]\"),"
+          "text": "+    (r\"(?i)~\/proyectosSWAL\/apps\/xavier\\\\[^\\s]*\", \"[project]\"),"
         },
         {
           "type": "addition",
@@ -695907,7 +695907,7 @@
         },
         {
           "type": "addition",
-          "text": "+        let input = \"The script is at E:\\\\scripts-python\\\\test.py\";"
+          "text": "+        let input = \"The script is at ~\/proyectosSWAL\/apps\/xavier\\\\test.py\";"
         },
         {
           "type": "addition",
@@ -699215,7 +699215,7 @@
         },
         {
           "type": "deletion",
-          "text": "-**Location:** `E:/scripts-python/xavier`"
+          "text": "-**Location:** `~/proyectosSWAL/apps/xavier`"
         },
         {
           "type": "deletion",
@@ -699363,7 +699363,7 @@
         },
         {
           "type": "addition",
-          "text": "+**Location:** `E:/scripts-python/xavier`\r"
+          "text": "+**Location:** `~/proyectosSWAL/apps/xavier`\r"
         },
         {
           "type": "addition",
@@ -700975,11 +700975,11 @@
         },
         {
           "type": "addition",
-          "text": "+| **Agentic Memory Ops** | Protocols for autonomous memory management, context engineering, and adaptive RAG. | `[.agents/skills/agentic-memory-ops](file:///e:/scripts-python/xavier/.agents/skills/agentic-memory-ops/SKILL.md)` |"
+          "text": "+| **Agentic Memory Ops** | Protocols for autonomous memory management, context engineering, and adaptive RAG. | `[.agents/skills/agentic-memory-ops](https://github.com/iberi22/xavier/blob/main/.agents/skills/agentic-memory-ops/SKILL.md)` |"
         },
         {
           "type": "addition",
-          "text": "+| **Xavier Memory (MCP)** | Durable knowledge layer via MCP transport. Includes tools for memory search, creation, and project context. | `[.agents/skills/cortex-memory](file:///e:/scripts-python/xavier/.agents/skills/cortex-memory/SKILL.md)` |"
+          "text": "+| **Xavier Memory (MCP)** | Durable knowledge layer via MCP transport. Includes tools for memory search, creation, and project context. | `[.agents/skills/cortex-memory](https://github.com/iberi22/xavier/blob/main/.agents/skills/cortex-memory/SKILL.md)` |"
         },
         {
           "type": "addition",
@@ -714859,7 +714859,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\Git-Core Protocol"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\Git-Core Protocol"
         },
         {
           "type": "deletion",
@@ -714895,7 +714895,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\Software Factory"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\Software Factory"
         },
         {
           "type": "deletion",
@@ -714931,7 +714931,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\CGP-Colegios"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\CGP-Colegios"
         },
         {
           "type": "deletion",
@@ -714967,7 +714967,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\orionhealth"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\orionhealth"
         },
         {
           "type": "deletion",
@@ -715003,7 +715003,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\syn"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\syn"
         },
         {
           "type": "deletion",
@@ -715035,7 +715035,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\cpanel4agents"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\cpanel4agents"
         },
         {
           "type": "deletion",
@@ -715071,7 +715071,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\MCP"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\MCP"
         },
         {
           "type": "deletion",
@@ -715107,7 +715107,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\cerebro-flutter"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\cerebro-flutter"
         },
         {
           "type": "deletion",
@@ -715139,7 +715139,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\cooktie"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\cooktie"
         },
         {
           "type": "deletion",
@@ -715171,7 +715171,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\jamstack-admin"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\jamstack-admin"
         },
         {
           "type": "deletion",
@@ -715203,7 +715203,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\tiktboost"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\tiktboost"
         },
         {
           "type": "deletion",
@@ -715235,7 +715235,7 @@
         },
         {
           "type": "deletion",
-          "text": "-      Path: e:\\scripts-python\\vita"
+          "text": "-      Path: ~\/proyectosSWAL\/apps\/xavier\\vita"
         },
         {
           "type": "deletion",
@@ -742207,7 +742207,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\""
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\""
         },
         {
           "type": "deletion",
@@ -742235,7 +742235,7 @@
         },
         {
           "type": "deletion",
-          "text": "-python E:\\scripts-python\\scripts\\audio-to-text.py audio.ogg --language es"
+          "text": "-python ~\/proyectosSWAL\/apps\/xavier\\scripts\\audio-to-text.py audio.ogg --language es"
         },
         {
           "type": "deletion",
@@ -742559,7 +742559,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\"\r"
         },
         {
           "type": "addition",
@@ -742591,7 +742591,7 @@
         },
         {
           "type": "addition",
-          "text": "+python E:\\scripts-python\\scripts\\audio-to-text.py audio.ogg --language es\r"
+          "text": "+python ~\/proyectosSWAL\/apps\/xavier\\scripts\\audio-to-text.py audio.ogg --language es\r"
         },
         {
           "type": "addition",
@@ -748203,7 +748203,7 @@
         },
         {
           "type": "deletion",
-          "text": "-| SH-08 | Where should projects be stored? | MEMORY.md → E:\\scripts-python\\ |"
+          "text": "-| SH-08 | Where should projects be stored? | MEMORY.md → ~\/proyectosSWAL\/apps\/xavier\\ |"
         },
         {
           "type": "deletion",
@@ -748571,7 +748571,7 @@
         },
         {
           "type": "deletion",
-          "text": "-`E:\\scripts-python\\scripts\\swal-locomo-benchmark.ps1`"
+          "text": "-`~\/proyectosSWAL\/apps\/xavier\\scripts\\swal-locomo-benchmark.ps1`"
         },
         {
           "type": "deletion",
@@ -748591,7 +748591,7 @@
         },
         {
           "type": "deletion",
-          "text": "-E:\\scripts-python\\scripts\\swal-locomo-benchmark.ps1"
+          "text": "-~\/proyectosSWAL\/apps\/xavier\\scripts\\swal-locomo-benchmark.ps1"
         },
         {
           "type": "deletion",
@@ -748603,7 +748603,7 @@
         },
         {
           "type": "deletion",
-          "text": "-E:\\scripts-python\\scripts\\swal-locomo-benchmark.ps1 -Category single_hop"
+          "text": "-~\/proyectosSWAL\/apps\/xavier\\scripts\\swal-locomo-benchmark.ps1 -Category single_hop"
         },
         {
           "type": "deletion",
@@ -748623,11 +748623,11 @@
         },
         {
           "type": "deletion",
-          "text": "-- JSON: `E:\\scripts-python\\xavier\\benchmark-results\\swal-locomo-{date}.json`"
+          "text": "-- JSON: `~\/proyectosSWAL\/apps\/xavier\\benchmark-results\\swal-locomo-{date}.json`"
         },
         {
           "type": "deletion",
-          "text": "-- Markdown: `E:\\scripts-python\\xavier\\BENCHMARKS\\SWAL_LOCOMO_BASELINE_{date}.md`"
+          "text": "-- Markdown: `~\/proyectosSWAL\/apps\/xavier\\BENCHMARKS\\SWAL_LOCOMO_BASELINE_{date}.md`"
         },
         {
           "type": "deletion",
@@ -748915,7 +748915,7 @@
         },
         {
           "type": "addition",
-          "text": "+| SH-08 | Where should projects be stored? | MEMORY.md ? E:\\scripts-python\\ |\r"
+          "text": "+| SH-08 | Where should projects be stored? | MEMORY.md ? ~\/proyectosSWAL\/apps\/xavier\\ |\r"
         },
         {
           "type": "addition",
@@ -749299,7 +749299,7 @@
         },
         {
           "type": "addition",
-          "text": "+`E:\\scripts-python\\scripts\\swal-locomo-benchmark.ps1`\r"
+          "text": "+`~\/proyectosSWAL\/apps\/xavier\\scripts\\swal-locomo-benchmark.ps1`\r"
         },
         {
           "type": "addition",
@@ -749319,7 +749319,7 @@
         },
         {
           "type": "addition",
-          "text": "+E:\\scripts-python\\scripts\\swal-locomo-benchmark.ps1\r"
+          "text": "+~\/proyectosSWAL\/apps\/xavier\\scripts\\swal-locomo-benchmark.ps1\r"
         },
         {
           "type": "addition",
@@ -749331,7 +749331,7 @@
         },
         {
           "type": "addition",
-          "text": "+E:\\scripts-python\\scripts\\swal-locomo-benchmark.ps1 -Category single_hop\r"
+          "text": "+~\/proyectosSWAL\/apps\/xavier\\scripts\\swal-locomo-benchmark.ps1 -Category single_hop\r"
         },
         {
           "type": "addition",
@@ -749351,11 +749351,11 @@
         },
         {
           "type": "addition",
-          "text": "+- JSON: `E:\\scripts-python\\xavier\\benchmark-results\\swal-locomo-{date}.json`\r"
+          "text": "+- JSON: `~\/proyectosSWAL\/apps\/xavier\\benchmark-results\\swal-locomo-{date}.json`\r"
         },
         {
           "type": "addition",
-          "text": "+- Markdown: `E:\\scripts-python\\xavier\\BENCHMARKS\\SWAL_LOCOMO_BASELINE_{date}.md`\r"
+          "text": "+- Markdown: `~\/proyectosSWAL\/apps\/xavier\\BENCHMARKS\\SWAL_LOCOMO_BASELINE_{date}.md`\r"
         },
         {
           "type": "addition",
@@ -750297,7 +750297,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\code-graph"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier\\code-graph"
         },
         {
           "type": "deletion",
@@ -751685,7 +751685,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\code-graph\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\\code-graph\r"
         },
         {
           "type": "addition",
@@ -770219,7 +770219,7 @@
         },
         {
           "type": "deletion",
-          "text": "-# E:\\scripts-python\\xavier\\scripts\\benchmark_*.py"
+          "text": "-# ~\/proyectosSWAL\/apps\/xavier\\scripts\\benchmark_*.py"
         },
         {
           "type": "deletion",
@@ -770899,7 +770899,7 @@
         },
         {
           "type": "addition",
-          "text": "+# E:\\scripts-python\\xavier\\scripts\\benchmark_*.py\r"
+          "text": "+# ~\/proyectosSWAL\/apps\/xavier\\scripts\\benchmark_*.py\r"
         },
         {
           "type": "addition",
@@ -783725,7 +783725,7 @@
         },
         {
           "type": "deletion",
-          "text": "-file://E:\\scripts-python\\xavier\\web\\chat\\index.html"
+          "text": "-file://~\/proyectosSWAL\/apps\/xavier\\web\\chat\\index.html"
         },
         {
           "type": "deletion",
@@ -785065,7 +785065,7 @@
         },
         {
           "type": "addition",
-          "text": "+file://E:\\scripts-python\\xavier\\web\\chat\\index.html\r"
+          "text": "+file://~\/proyectosSWAL\/apps\/xavier\\web\\chat\\index.html\r"
         },
         {
           "type": "addition",
@@ -801849,7 +801849,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "deletion",
@@ -802361,7 +802361,7 @@
         },
         {
           "type": "deletion",
-          "text": "-Test-Path E:\\scripts-python\\xavier\\target\\release\\xavier.exe"
+          "text": "-Test-Path ~\/proyectosSWAL\/apps\/xavier\\target\\release\\xavier.exe"
         },
         {
           "type": "deletion",
@@ -802373,7 +802373,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "deletion",
@@ -802633,7 +802633,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\r"
         },
         {
           "type": "addition",
@@ -803145,7 +803145,7 @@
         },
         {
           "type": "addition",
-          "text": "+Test-Path E:\\scripts-python\\xavier\\target\\release\\xavier.exe\r"
+          "text": "+Test-Path ~\/proyectosSWAL\/apps\/xavier\\target\\release\\xavier.exe\r"
         },
         {
           "type": "addition",
@@ -803157,7 +803157,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\r"
         },
         {
           "type": "addition",
@@ -803523,7 +803523,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "deletion",
@@ -803547,7 +803547,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier\\docker"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier\\docker"
         },
         {
           "type": "deletion",
@@ -803851,7 +803851,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\r"
         },
         {
           "type": "addition",
@@ -803875,7 +803875,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier\\docker\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\\docker\r"
         },
         {
           "type": "addition",
@@ -814753,7 +814753,7 @@
         },
         {
           "type": "deletion",
-          "text": "-E:\\scripts-python\\xavier-mobile\\  (NEW)"
+          "text": "-~\/proyectosSWAL\/apps\/xavier-mobile\\  (NEW)"
         },
         {
           "type": "deletion",
@@ -815185,7 +815185,7 @@
         },
         {
           "type": "deletion",
-          "text": "-E:\\scripts-python\\xavier\\"
+          "text": "-~\/proyectosSWAL\/apps\/xavier\\"
         },
         {
           "type": "deletion",
@@ -815245,7 +815245,7 @@
         },
         {
           "type": "deletion",
-          "text": "-E:\\scripts-python\\xavier-mobile\\  (NEW)"
+          "text": "-~\/proyectosSWAL\/apps\/xavier-mobile\\  (NEW)"
         },
         {
           "type": "deletion",
@@ -815957,7 +815957,7 @@
         },
         {
           "type": "addition",
-          "text": "+E:\\scripts-python\\xavier-mobile\\  (NEW)\r"
+          "text": "+~\/proyectosSWAL\/apps\/xavier-mobile\\  (NEW)\r"
         },
         {
           "type": "addition",
@@ -816405,7 +816405,7 @@
         },
         {
           "type": "addition",
-          "text": "+E:\\scripts-python\\xavier\\\r"
+          "text": "+~\/proyectosSWAL\/apps\/xavier\\\r"
         },
         {
           "type": "addition",
@@ -816465,7 +816465,7 @@
         },
         {
           "type": "addition",
-          "text": "+E:\\scripts-python\\xavier-mobile\\  (NEW)\r"
+          "text": "+~\/proyectosSWAL\/apps\/xavier-mobile\\  (NEW)\r"
         },
         {
           "type": "addition",
@@ -826093,7 +826093,7 @@
         },
         {
           "type": "deletion",
-          "text": "-Canonical repository: `E:\\scripts-python\\xavier` (`origin=https://github.com/iberi22/xavier.git`, branch `main`, HEAD `926fb05`)."
+          "text": "-Canonical repository: `~\/proyectosSWAL\/apps\/xavier` (`origin=https://github.com/iberi22/xavier.git`, branch `main`, HEAD `926fb05`)."
         },
         {
           "type": "deletion",
@@ -826101,7 +826101,7 @@
         },
         {
           "type": "deletion",
-          "text": "-Purpose: identify duplicate/temporary Xavier checkouts under `E:\\scripts-python`, decide what to migrate, archive, or delete, and avoid losing dispersed logic."
+          "text": "-Purpose: identify duplicate/temporary Xavier checkouts under `~\/proyectosSWAL\/apps\/xavier`, decide what to migrate, archive, or delete, and avoid losing dispersed logic."
         },
         {
           "type": "deletion",
@@ -826149,35 +826149,35 @@
         },
         {
           "type": "deletion",
-          "text": "-| `E:\\scripts-python\\xavier` | `main` | 5 | Newest canonical repo. Contains post-`0222ed8` release/security/docs/plugin work through `926fb05`. | **KEEP / CANONICAL** |"
+          "text": "-| `~\/proyectosSWAL\/apps\/xavier` | `main` | 5 | Newest canonical repo. Contains post-`0222ed8` release/security/docs/plugin work through `926fb05`. | **KEEP / CANONICAL** |"
         },
         {
           "type": "deletion",
-          "text": "-| `E:\\scripts-python\\xavier-new` | `master` | 0 | Clean old clone at `0222ed8`. Its content is ancestor of canonical `xavier`. | **ARCHIVE then DELETE** |"
+          "text": "-| `~\/proyectosSWAL\/apps\/xavier-new` | `master` | 0 | Clean old clone at `0222ed8`. Its content is ancestor of canonical `xavier`. | **ARCHIVE then DELETE** |"
         },
         {
           "type": "deletion",
-          "text": "-| `E:\\scripts-python\\xavier-temp` | `master` | 0 | Clean temporary old clone at `0222ed8`, shallow/no parent metadata. | **ARCHIVE then DELETE** |"
+          "text": "-| `~\/proyectosSWAL\/apps\/xavier-temp` | `master` | 0 | Clean temporary old clone at `0222ed8`, shallow/no parent metadata. | **ARCHIVE then DELETE** |"
         },
         {
           "type": "deletion",
-          "text": "-| `E:\\scripts-python\\xavier_temp_reclone` | `master` | 0 | Clean reclone at `0222ed8`. Ancestor of canonical. | **ARCHIVE then DELETE** |"
+          "text": "-| `~\/proyectosSWAL\/apps\/xavier_temp_reclone` | `master` | 0 | Clean reclone at `0222ed8`. Ancestor of canonical. | **ARCHIVE then DELETE** |"
         },
         {
           "type": "deletion",
-          "text": "-| `E:\\scripts-python\\xavier-clone` | `fix/email-to-github` | 0 | One extra commit `127ba3a fix: replace email refs` affecting `src/tools/kanban.rs`. Need verify if still relevant before deletion. | **MIGRATION CHECK** |"
+          "text": "-| `~\/proyectosSWAL\/apps\/xavier-clone` | `fix/email-to-github` | 0 | One extra commit `127ba3a fix: replace email refs` affecting `src/tools/kanban.rs`. Need verify if still relevant before deletion. | **MIGRATION CHECK** |"
         },
         {
           "type": "deletion",
-          "text": "-| `E:\\scripts-python\\xavier-work` | `master` | 4 | Old work tree with docs already migrated, plus uncommitted Cortex outbound adapter/port. Canonical has newer inbound plugin architecture. | **DO NOT DIRECT-MERGE; archive after extracting notes** |"
+          "text": "-| `~\/proyectosSWAL\/apps\/xavier-work` | `master` | 4 | Old work tree with docs already migrated, plus uncommitted Cortex outbound adapter/port. Canonical has newer inbound plugin architecture. | **DO NOT DIRECT-MERGE; archive after extracting notes** |"
         },
         {
           "type": "deletion",
-          "text": "-| `E:\\scripts-python\\temp_xavier_check` | `master` | 0 | Old Git Core structure check at `cae4da1`. No obvious logic missing from canonical beyond old generated/build artifacts. | **ARCHIVE then DELETE** |"
+          "text": "-| `~\/proyectosSWAL\/apps\/xavier\\temp_xavier_check` | `master` | 0 | Old Git Core structure check at `cae4da1`. No obvious logic missing from canonical beyond old generated/build artifacts. | **ARCHIVE then DELETE** |"
         },
         {
           "type": "deletion",
-          "text": "-| `E:\\scripts-python\\xavier-benchmark` | non-git | n/a | Benchmark support folder, not same repo. | **KEEP SEPARATE unless obsolete confirmed** |"
+          "text": "-| `~\/proyectosSWAL\/apps\/xavier-benchmark` | non-git | n/a | Benchmark support folder, not same repo. | **KEEP SEPARATE unless obsolete confirmed** |"
         },
         {
           "type": "deletion",
@@ -826461,7 +826461,7 @@
         },
         {
           "type": "deletion",
-          "text": "-1. Create archive folder: `E:\\scripts-python\\_archive\\xavier-reconcile-20260508`."
+          "text": "-1. Create archive folder: `~\/proyectosSWAL\/apps\/xavier\\_archive\\xavier-reconcile-20260508`."
         },
         {
           "type": "deletion",
@@ -826537,7 +826537,7 @@
         },
         {
           "type": "addition",
-          "text": "+Canonical repository: `E:\\scripts-python\\xavier` (`origin=https://github.com/iberi22/xavier.git`, branch `main`, HEAD `926fb05`).\r"
+          "text": "+Canonical repository: `~\/proyectosSWAL\/apps\/xavier` (`origin=https://github.com/iberi22/xavier.git`, branch `main`, HEAD `926fb05`).\r"
         },
         {
           "type": "addition",
@@ -826545,7 +826545,7 @@
         },
         {
           "type": "addition",
-          "text": "+Purpose: identify duplicate/temporary Xavier checkouts under `E:\\scripts-python`, decide what to migrate, archive, or delete, and avoid losing dispersed logic.\r"
+          "text": "+Purpose: identify duplicate/temporary Xavier checkouts under `~\/proyectosSWAL\/apps\/xavier`, decide what to migrate, archive, or delete, and avoid losing dispersed logic.\r"
         },
         {
           "type": "addition",
@@ -826593,35 +826593,35 @@
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier` | `main` | 5 | Newest canonical repo. Contains post-`0222ed8` release/security/docs/plugin work through `926fb05`. | **KEEP / CANONICAL** |\r"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier` | `main` | 5 | Newest canonical repo. Contains post-`0222ed8` release/security/docs/plugin work through `926fb05`. | **KEEP / CANONICAL** |\r"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-new` | `master` | 0 | Clean old clone at `0222ed8`. Its content is ancestor of canonical `xavier`. | **ARCHIVE then DELETE** |\r"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-new` | `master` | 0 | Clean old clone at `0222ed8`. Its content is ancestor of canonical `xavier`. | **ARCHIVE then DELETE** |\r"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-temp` | `master` | 0 | Clean temporary old clone at `0222ed8`, shallow/no parent metadata. | **ARCHIVE then DELETE** |\r"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-temp` | `master` | 0 | Clean temporary old clone at `0222ed8`, shallow/no parent metadata. | **ARCHIVE then DELETE** |\r"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier_temp_reclone` | `master` | 0 | Clean reclone at `0222ed8`. Ancestor of canonical. | **ARCHIVE then DELETE** |\r"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier_temp_reclone` | `master` | 0 | Clean reclone at `0222ed8`. Ancestor of canonical. | **ARCHIVE then DELETE** |\r"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-clone` | `fix/email-to-github` | 0 | One extra commit `127ba3a fix: replace email refs` affecting `src/tools/kanban.rs`. Need verify if still relevant before deletion. | **MIGRATION CHECK** |\r"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-clone` | `fix/email-to-github` | 0 | One extra commit `127ba3a fix: replace email refs` affecting `src/tools/kanban.rs`. Need verify if still relevant before deletion. | **MIGRATION CHECK** |\r"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-work` | `master` | 4 | Old work tree with docs already migrated, plus uncommitted Cortex outbound adapter/port. Canonical has newer inbound plugin architecture. | **DO NOT DIRECT-MERGE; archive after extracting notes** |\r"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-work` | `master` | 4 | Old work tree with docs already migrated, plus uncommitted Cortex outbound adapter/port. Canonical has newer inbound plugin architecture. | **DO NOT DIRECT-MERGE; archive after extracting notes** |\r"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\temp_xavier_check` | `master` | 0 | Old Git Core structure check at `cae4da1`. No obvious logic missing from canonical beyond old generated/build artifacts. | **ARCHIVE then DELETE** |\r"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier\\temp_xavier_check` | `master` | 0 | Old Git Core structure check at `cae4da1`. No obvious logic missing from canonical beyond old generated/build artifacts. | **ARCHIVE then DELETE** |\r"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-benchmark` | non-git | n/a | Benchmark support folder, not same repo. | **KEEP SEPARATE unless obsolete confirmed** |\r"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-benchmark` | non-git | n/a | Benchmark support folder, not same repo. | **KEEP SEPARATE unless obsolete confirmed** |\r"
         },
         {
           "type": "addition",
@@ -826905,7 +826905,7 @@
         },
         {
           "type": "addition",
-          "text": "+1. Create archive folder: `E:\\scripts-python\\_archive\\xavier-reconcile-20260508`.\r"
+          "text": "+1. Create archive folder: `~\/proyectosSWAL\/apps\/xavier\\_archive\\xavier-reconcile-20260508`.\r"
         },
         {
           "type": "addition",
@@ -865031,7 +865031,7 @@
         },
         {
           "type": "deletion",
-          "text": "-You are at E:\\scripts-python\\xavier on branch fix/issue-115."
+          "text": "-You are at ~\/proyectosSWAL\/apps\/xavier on branch fix/issue-115."
         },
         {
           "type": "deletion",
@@ -865247,7 +865247,7 @@
         },
         {
           "type": "addition",
-          "text": "+You are at E:\\scripts-python\\xavier on branch fix/issue-115.\r"
+          "text": "+You are at ~\/proyectosSWAL\/apps\/xavier on branch fix/issue-115.\r"
         },
         {
           "type": "addition",
@@ -865469,7 +865469,7 @@
         },
         {
           "type": "deletion",
-          "text": "-You are at E:\\scripts-python\\xavier on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
+          "text": "-You are at ~\/proyectosSWAL\/apps\/xavier on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
         },
         {
           "type": "deletion",
@@ -865665,7 +865665,7 @@
         },
         {
           "type": "addition",
-          "text": "+You are at E:\\scripts-python\\xavier on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests.\r"
+          "text": "+You are at ~\/proyectosSWAL\/apps\/xavier on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests.\r"
         },
         {
           "type": "addition",
@@ -883147,7 +883147,7 @@
         },
         {
           "type": "deletion",
-          "text": "-Sos un agente de codificación que trabaja en el repositorio Xavier en `E:\\scripts-python\\xavier`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente."
+          "text": "-Sos un agente de codificación que trabaja en el repositorio Xavier en `~\/proyectosSWAL\/apps\/xavier`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente."
         },
         {
           "type": "deletion",
@@ -883731,7 +883731,7 @@
         },
         {
           "type": "deletion",
-          "text": "-$env:CARGO_TARGET_DIR=\"E:\\scripts-python\\xavier\\target\"; cargo build --release --bin xavier -j 1"
+          "text": "-$env:CARGO_TARGET_DIR=\"~\/proyectosSWAL\/apps\/xavier\\target\"; cargo build --release --bin xavier -j 1"
         },
         {
           "type": "deletion",
@@ -883775,7 +883775,7 @@
         },
         {
           "type": "addition",
-          "text": "+Sos un agente de codificación que trabaja en el repositorio Xavier en `E:\\scripts-python\\xavier`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente.\r"
+          "text": "+Sos un agente de codificación que trabaja en el repositorio Xavier en `~\/proyectosSWAL\/apps\/xavier`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente.\r"
         },
         {
           "type": "addition",
@@ -884371,7 +884371,7 @@
         },
         {
           "type": "addition",
-          "text": "+$env:CARGO_TARGET_DIR=\"E:\\scripts-python\\xavier\\target\"; cargo build --release --bin xavier -j 1\r"
+          "text": "+$env:CARGO_TARGET_DIR=\"~\/proyectosSWAL\/apps\/xavier\\target\"; cargo build --release --bin xavier -j 1\r"
         },
         {
           "type": "addition",
@@ -915671,15 +915671,15 @@
         },
         {
           "type": "deletion",
-          "text": "-- Config: E:\\scripts-python\\xavier\\.env"
+          "text": "-- Config: ~\/proyectosSWAL\/apps\/xavier\\.env"
         },
         {
           "type": "deletion",
-          "text": "-- Data: E:\\scripts-python\\xavier\\data\\"
+          "text": "-- Data: ~\/proyectosSWAL\/apps\/xavier\\data\\"
         },
         {
           "type": "deletion",
-          "text": "-- DB: E:\\scripts-python\\xavier\\xavier_memory_vec.db"
+          "text": "-- DB: ~\/proyectosSWAL\/apps\/xavier\\xavier_memory_vec.db"
         },
         {
           "type": "deletion",
@@ -916187,15 +916187,15 @@
         },
         {
           "type": "addition",
-          "text": "+- Config: E:\\scripts-python\\xavier\\.env\r"
+          "text": "+- Config: ~\/proyectosSWAL\/apps\/xavier\\.env\r"
         },
         {
           "type": "addition",
-          "text": "+- Data: E:\\scripts-python\\xavier\\data\\\r"
+          "text": "+- Data: ~\/proyectosSWAL\/apps\/xavier\\data\\\r"
         },
         {
           "type": "addition",
-          "text": "+- DB: E:\\scripts-python\\xavier\\xavier_memory_vec.db\r"
+          "text": "+- DB: ~\/proyectosSWAL\/apps\/xavier\\xavier_memory_vec.db\r"
         },
         {
           "type": "addition",
@@ -918221,11 +918221,11 @@
         },
         {
           "type": "deletion",
-          "text": "-- Xavier core repo: `E:\\scripts-python\\xavier`"
+          "text": "-- Xavier core repo: `~\/proyectosSWAL\/apps\/xavier`"
         },
         {
           "type": "deletion",
-          "text": "-- Cortex enterprise/security repo: `E:\\scripts-python\\cortex`"
+          "text": "-- Cortex enterprise/security repo: `~\/proyectosSWAL\/apps\/xavier\\cortex`"
         },
         {
           "type": "deletion",
@@ -918365,11 +918365,11 @@
         },
         {
           "type": "addition",
-          "text": "+- Xavier core repo: `E:\\scripts-python\\xavier`\r"
+          "text": "+- Xavier core repo: `~\/proyectosSWAL\/apps\/xavier`\r"
         },
         {
           "type": "addition",
-          "text": "+- Cortex enterprise/security repo: `E:\\scripts-python\\cortex`\r"
+          "text": "+- Cortex enterprise/security repo: `~\/proyectosSWAL\/apps\/xavier\\cortex`\r"
         },
         {
           "type": "addition",
@@ -940193,7 +940193,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- Benchmark results: `E:\\scripts-python\\xavier-benchmark\\`"
+          "text": "-- Benchmark results: `~\/proyectosSWAL\/apps\/xavier-benchmark\\`"
         },
         {
           "type": "deletion",
@@ -940913,7 +940913,7 @@
         },
         {
           "type": "addition",
-          "text": "+- Benchmark results: `E:\\scripts-python\\xavier-benchmark\\`\r"
+          "text": "+- Benchmark results: `~\/proyectosSWAL\/apps\/xavier-benchmark\\`\r"
         },
         {
           "type": "addition",
@@ -943505,7 +943505,7 @@
         },
         {
           "type": "deletion",
-          "text": "-**Project:** E:\\scripts-python\\xavier"
+          "text": "-**Project:** ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "deletion",
@@ -945153,7 +945153,7 @@
         },
         {
           "type": "addition",
-          "text": "+**Project:** E:\\scripts-python\\xavier\r"
+          "text": "+**Project:** ~\/proyectosSWAL\/apps\/xavier\r"
         },
         {
           "type": "addition",
@@ -946943,7 +946943,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "deletion",
@@ -947291,7 +947291,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\r"
         },
         {
           "type": "addition",
@@ -1002631,7 +1002631,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- **Repo:** `E:\\scripts-python\\xavier`"
+          "text": "-- **Repo:** `~\/proyectosSWAL\/apps\/xavier`"
         },
         {
           "type": "deletion",
@@ -1002667,7 +1002667,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- **Repo:** `E:\\scripts-python\\cortex`"
+          "text": "-- **Repo:** `~\/proyectosSWAL\/apps\/xavier\\cortex`"
         },
         {
           "type": "deletion",
@@ -1002731,7 +1002731,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- **Script:** `E:\\scripts-python\\xavier\\scripts\\memory_triad_loop.ps1`"
+          "text": "-- **Script:** `~\/proyectosSWAL\/apps\/xavier\\scripts\\memory_triad_loop.ps1`"
         },
         {
           "type": "deletion",
@@ -1003135,7 +1003135,7 @@
         },
         {
           "type": "addition",
-          "text": "+- **Repo:** `E:\\scripts-python\\xavier`\r"
+          "text": "+- **Repo:** `~\/proyectosSWAL\/apps\/xavier`\r"
         },
         {
           "type": "addition",
@@ -1003171,7 +1003171,7 @@
         },
         {
           "type": "addition",
-          "text": "+- **Repo:** `E:\\scripts-python\\cortex`\r"
+          "text": "+- **Repo:** `~\/proyectosSWAL\/apps\/xavier\\cortex`\r"
         },
         {
           "type": "addition",
@@ -1003239,7 +1003239,7 @@
         },
         {
           "type": "addition",
-          "text": "+- **Script:** `E:\\scripts-python\\xavier\\scripts\\memory_triad_loop.ps1`\r"
+          "text": "+- **Script:** `~\/proyectosSWAL\/apps\/xavier\\scripts\\memory_triad_loop.ps1`\r"
         },
         {
           "type": "addition",
@@ -1004071,7 +1004071,7 @@
         },
         {
           "type": "deletion",
-          "text": "-Repo: E:\\scripts-python\\xavier"
+          "text": "-Repo: ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "deletion",
@@ -1004223,7 +1004223,7 @@
         },
         {
           "type": "addition",
-          "text": "+Repo: E:\\scripts-python\\xavier\r"
+          "text": "+Repo: ~\/proyectosSWAL\/apps\/xavier\r"
         },
         {
           "type": "addition",
@@ -1019259,7 +1019259,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "deletion",
@@ -1019419,7 +1019419,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier\r"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\r"
         },
         {
           "type": "addition",
@@ -1019561,7 +1019561,7 @@
         },
         {
           "type": "normal",
-          "text": " $PROJECT_ROOT = 'E:\\scripts-python\\xavier'"
+          "text": " $PROJECT_ROOT = '~\/proyectosSWAL\/apps\/xavier'"
         },
         {
           "type": "deletion",
@@ -1020511,7 +1020511,7 @@
         },
         {
           "type": "deletion",
-          "text": "-  -d '{\"path\":\"E:/scripts-python/xavier\"}'"
+          "text": "-  -d '{\"path\":\"~/proyectosSWAL/apps/xavier\"}'"
         },
         {
           "type": "deletion",
@@ -1021003,7 +1021003,7 @@
         },
         {
           "type": "addition",
-          "text": "+  -d '{\"path\":\"E:/scripts-python/xavier\"}'\r"
+          "text": "+  -d '{\"path\":\"~/proyectosSWAL/apps/xavier\"}'\r"
         },
         {
           "type": "addition",
@@ -1021317,7 +1021317,7 @@
         },
         {
           "type": "deletion",
-          "text": "-{\"path\":\"E:/scripts-python/xavier\"}"
+          "text": "-{\"path\":\"~/proyectosSWAL/apps/xavier\"}"
         },
         {
           "type": "deletion",
@@ -1021517,7 +1021517,7 @@
         },
         {
           "type": "addition",
-          "text": "+{\"path\":\"E:/scripts-python/xavier\"}\r"
+          "text": "+{\"path\":\"~/proyectosSWAL/apps/xavier\"}\r"
         },
         {
           "type": "addition",
@@ -1023231,7 +1023231,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- **Local fallback:** `E:\\scripts-python\\SWAL-Operations-Dashboard\\decisions/`"
+          "text": "-- **Local fallback:** `~\/proyectosSWAL\/apps\/xavier\\SWAL-Operations-Dashboard\\decisions/`"
         },
         {
           "type": "deletion",
@@ -1023711,7 +1023711,7 @@
         },
         {
           "type": "addition",
-          "text": "+- **Local fallback:** `E:\\scripts-python\\SWAL-Operations-Dashboard\\decisions/`\r"
+          "text": "+- **Local fallback:** `~\/proyectosSWAL\/apps\/xavier\\SWAL-Operations-Dashboard\\decisions/`\r"
         },
         {
           "type": "addition",
@@ -1034819,35 +1034819,35 @@
         },
         {
           "type": "deletion",
-          "text": "-      \"Bash(ls -la e:/scripts-python/xavier2/*.md)\","
+          "text": "-      \"Bash(ls -la ~/proyectosSWAL/apps/xavier2/*.md)\","
         },
         {
           "type": "deletion",
-          "text": "-      \"Bash(ls -la e:/scripts-python/xavier2/*.txt)\","
+          "text": "-      \"Bash(ls -la ~/proyectosSWAL/apps/xavier2/*.txt)\","
         },
         {
           "type": "deletion",
-          "text": "-      \"Bash(ls -la e:/scripts-python/xavier2/*.py)\","
+          "text": "-      \"Bash(ls -la ~/proyectosSWAL/apps/xavier2/*.py)\","
         },
         {
           "type": "deletion",
-          "text": "-      \"Bash(ls -la e:/scripts-python/xavier2/*.ps1)\","
+          "text": "-      \"Bash(ls -la ~/proyectosSWAL/apps/xavier2/*.ps1)\","
         },
         {
           "type": "addition",
-          "text": "+      \"Bash(ls -la e:/scripts-python/xavier/*.md)\","
+          "text": "+      \"Bash(ls -la ~/proyectosSWAL/apps/xavier/*.md)\","
         },
         {
           "type": "addition",
-          "text": "+      \"Bash(ls -la e:/scripts-python/xavier/*.txt)\","
+          "text": "+      \"Bash(ls -la ~/proyectosSWAL/apps/xavier/*.txt)\","
         },
         {
           "type": "addition",
-          "text": "+      \"Bash(ls -la e:/scripts-python/xavier/*.py)\","
+          "text": "+      \"Bash(ls -la ~/proyectosSWAL/apps/xavier/*.py)\","
         },
         {
           "type": "addition",
-          "text": "+      \"Bash(ls -la e:/scripts-python/xavier/*.ps1)\","
+          "text": "+      \"Bash(ls -la ~/proyectosSWAL/apps/xavier/*.ps1)\","
         },
         {
           "type": "normal",
@@ -1035541,11 +1035541,11 @@
         },
         {
           "type": "deletion",
-          "text": "-**Location:** `E:/scripts-python/xavier2`"
+          "text": "-**Location:** `~/proyectosSWAL/apps/xavier2`"
         },
         {
           "type": "addition",
-          "text": "+**Location:** `E:/scripts-python/xavier`"
+          "text": "+**Location:** `~/proyectosSWAL/apps/xavier`"
         },
         {
           "type": "normal",
@@ -1051167,7 +1051167,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -87,4 +87,4 @@ python E:\\scripts-python\\scripts\\audio-to-text.py audio.ogg --language es"
+          "text": "@@ -87,4 +87,4 @@ python ~\/proyectosSWAL\/apps\/xavier\\scripts\\audio-to-text.py audio.ogg --language es"
         },
         {
           "type": "normal",
@@ -1054451,7 +1054451,7 @@
         },
         {
           "type": "normal",
-          "text": " | SH-08 | Where should projects be stored? | MEMORY.md → E:\\scripts-python\\ |"
+          "text": " | SH-08 | Where should projects be stored? | MEMORY.md → ~\/proyectosSWAL\/apps\/xavier\\ |"
         },
         {
           "type": "info",
@@ -1054619,7 +1054619,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -168,8 +168,8 @@ E:\\scripts-python\\scripts\\swal-locomo-benchmark.ps1 -Category single_hop"
+          "text": "@@ -168,8 +168,8 @@ ~\/proyectosSWAL\/apps\/xavier\\scripts\\swal-locomo-benchmark.ps1 -Category single_hop"
         },
         {
           "type": "normal",
@@ -1054635,19 +1054635,19 @@
         },
         {
           "type": "deletion",
-          "text": "-- JSON: `E:\\scripts-python\\xavier2\\benchmark-results\\swal-locomo-{date}.json`"
+          "text": "-- JSON: `~\/proyectosSWAL\/apps\/xavier2\\benchmark-results\\swal-locomo-{date}.json`"
         },
         {
           "type": "deletion",
-          "text": "-- Markdown: `E:\\scripts-python\\xavier2\\BENCHMARKS\\SWAL_LOCOMO_BASELINE_{date}.md`"
+          "text": "-- Markdown: `~\/proyectosSWAL\/apps\/xavier2\\BENCHMARKS\\SWAL_LOCOMO_BASELINE_{date}.md`"
         },
         {
           "type": "addition",
-          "text": "+- JSON: `E:\\scripts-python\\xavier\\benchmark-results\\swal-locomo-{date}.json`"
+          "text": "+- JSON: `~\/proyectosSWAL\/apps\/xavier\\benchmark-results\\swal-locomo-{date}.json`"
         },
         {
           "type": "addition",
-          "text": "+- Markdown: `E:\\scripts-python\\xavier\\BENCHMARKS\\SWAL_LOCOMO_BASELINE_{date}.md`"
+          "text": "+- Markdown: `~\/proyectosSWAL\/apps\/xavier\\BENCHMARKS\\SWAL_LOCOMO_BASELINE_{date}.md`"
         },
         {
           "type": "normal",
@@ -1054791,11 +1054791,11 @@
         },
         {
           "type": "deletion",
-          "text": "-  \"dataset\": \"E:\\\\scripts-python\\\\xavier2\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\",\r"
+          "text": "-  \"dataset\": \"~\/proyectosSWAL\/apps\/xavier2\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\",\r"
         },
         {
           "type": "addition",
-          "text": "+  \"dataset\": \"E:\\\\scripts-python\\\\xavier\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\",\r"
+          "text": "+  \"dataset\": \"~\/proyectosSWAL\/apps\/xavier\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\",\r"
         },
         {
           "type": "normal",
@@ -1061145,11 +1061145,11 @@
         },
         {
           "type": "deletion",
-          "text": "-# E:\\scripts-python\\xavier2\\scripts\\benchmark_*.py"
+          "text": "-# ~\/proyectosSWAL\/apps\/xavier2\\scripts\\benchmark_*.py"
         },
         {
           "type": "addition",
-          "text": "+# E:\\scripts-python\\xavier\\scripts\\benchmark_*.py"
+          "text": "+# ~\/proyectosSWAL\/apps\/xavier\\scripts\\benchmark_*.py"
         },
         {
           "type": "normal",
@@ -1063773,11 +1063773,11 @@
         },
         {
           "type": "deletion",
-          "text": "-file://E:\\scripts-python\\xavier2\\web\\chat\\index.html"
+          "text": "-file://~\/proyectosSWAL\/apps\/xavier2\\web\\chat\\index.html"
         },
         {
           "type": "addition",
-          "text": "+file://E:\\scripts-python\\xavier\\web\\chat\\index.html"
+          "text": "+file://~\/proyectosSWAL\/apps\/xavier\\web\\chat\\index.html"
         },
         {
           "type": "normal",
@@ -1065433,11 +1065433,11 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier2"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "normal",
@@ -1065549,7 +1065549,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -48,7 +48,7 @@ cd E:\\scripts-python\\xavier2"
+          "text": "@@ -48,7 +48,7 @@ cd ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "normal",
@@ -1065789,11 +1065789,11 @@
         },
         {
           "type": "deletion",
-          "text": "-Test-Path E:\\scripts-python\\xavier2\\target\\release\\xavier2.exe"
+          "text": "-Test-Path ~\/proyectosSWAL\/apps\/xavier2\\target\\release\\xavier2.exe"
         },
         {
           "type": "addition",
-          "text": "+Test-Path E:\\scripts-python\\xavier\\target\\release\\xavier.exe"
+          "text": "+Test-Path ~\/proyectosSWAL\/apps\/xavier\\target\\release\\xavier.exe"
         },
         {
           "type": "normal",
@@ -1065805,11 +1065805,11 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier2"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "normal",
@@ -1066047,11 +1066047,11 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier2"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "normal",
@@ -1066075,11 +1066075,11 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier2\\docker"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier2\\docker"
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier\\docker"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\\docker"
         },
         {
           "type": "normal",
@@ -1067787,11 +1067787,11 @@
         },
         {
           "type": "deletion",
-          "text": "-E:\\scripts-python\\xavier2-mobile\\  (NEW)"
+          "text": "-~\/proyectosSWAL\/apps\/xavier2-mobile\\  (NEW)"
         },
         {
           "type": "addition",
-          "text": "+E:\\scripts-python\\xavier-mobile\\  (NEW)"
+          "text": "+~\/proyectosSWAL\/apps\/xavier-mobile\\  (NEW)"
         },
         {
           "type": "normal",
@@ -1067807,7 +1067807,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -161,7 +161,7 @@ E:\\scripts-python\\xavier2-mobile\\  (NEW)"
+          "text": "@@ -161,7 +161,7 @@ ~\/proyectosSWAL\/apps\/xavier2-mobile\\  (NEW)"
         },
         {
           "type": "normal",
@@ -1067843,7 +1067843,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -171,7 +171,7 @@ E:\\scripts-python\\xavier2-mobile\\  (NEW)"
+          "text": "@@ -171,7 +171,7 @@ ~\/proyectosSWAL\/apps\/xavier2-mobile\\  (NEW)"
         },
         {
           "type": "normal",
@@ -1067879,7 +1067879,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -179,7 +179,7 @@ E:\\scripts-python\\xavier2-mobile\\  (NEW)"
+          "text": "@@ -179,7 +179,7 @@ ~\/proyectosSWAL\/apps\/xavier2-mobile\\  (NEW)"
         },
         {
           "type": "normal",
@@ -1067915,7 +1067915,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -213,14 +213,14 @@ E:\\scripts-python\\xavier2-mobile\\  (NEW)"
+          "text": "@@ -213,14 +213,14 @@ ~\/proyectosSWAL\/apps\/xavier2-mobile\\  (NEW)"
         },
         {
           "type": "normal",
@@ -1067983,7 +1067983,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -262,7 +262,7 @@ E:\\scripts-python\\xavier2-mobile\\  (NEW)"
+          "text": "@@ -262,7 +262,7 @@ ~\/proyectosSWAL\/apps\/xavier2-mobile\\  (NEW)"
         },
         {
           "type": "normal",
@@ -1067999,11 +1067999,11 @@
         },
         {
           "type": "deletion",
-          "text": "-E:\\scripts-python\\xavier2\\"
+          "text": "-~\/proyectosSWAL\/apps\/xavier2\\"
         },
         {
           "type": "addition",
-          "text": "+E:\\scripts-python\\xavier\\"
+          "text": "+~\/proyectosSWAL\/apps\/xavier\\"
         },
         {
           "type": "normal",
@@ -1068019,7 +1068019,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -277,7 +277,7 @@ E:\\scripts-python\\xavier2\\"
+          "text": "@@ -277,7 +277,7 @@ ~\/proyectosSWAL\/apps\/xavier2\\"
         },
         {
           "type": "normal",
@@ -1068035,11 +1068035,11 @@
         },
         {
           "type": "deletion",
-          "text": "-E:\\scripts-python\\xavier2-mobile\\  (NEW)"
+          "text": "-~\/proyectosSWAL\/apps\/xavier2-mobile\\  (NEW)"
         },
         {
           "type": "addition",
-          "text": "+E:\\scripts-python\\xavier-mobile\\  (NEW)"
+          "text": "+~\/proyectosSWAL\/apps\/xavier-mobile\\  (NEW)"
         },
         {
           "type": "normal",
@@ -1069189,7 +1069189,7 @@
         },
         {
           "type": "addition",
-          "text": "+Canonical repository: `E:\\scripts-python\\xavier` (`origin=https://github.com/iberi22/xavier.git`, branch `main`, HEAD `926fb05`)."
+          "text": "+Canonical repository: `~\/proyectosSWAL\/apps\/xavier` (`origin=https://github.com/iberi22/xavier.git`, branch `main`, HEAD `926fb05`)."
         },
         {
           "type": "addition",
@@ -1069197,7 +1069197,7 @@
         },
         {
           "type": "addition",
-          "text": "+Purpose: identify duplicate/temporary Xavier checkouts under `E:\\scripts-python`, decide what to migrate, archive, or delete, and avoid losing dispersed logic."
+          "text": "+Purpose: identify duplicate/temporary Xavier checkouts under `~\/proyectosSWAL\/apps\/xavier`, decide what to migrate, archive, or delete, and avoid losing dispersed logic."
         },
         {
           "type": "addition",
@@ -1069245,35 +1069245,35 @@
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier` | `main` | 5 | Newest canonical repo. Contains post-`0222ed8` release/security/docs/plugin work through `926fb05`. | **KEEP / CANONICAL** |"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier` | `main` | 5 | Newest canonical repo. Contains post-`0222ed8` release/security/docs/plugin work through `926fb05`. | **KEEP / CANONICAL** |"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-new` | `master` | 0 | Clean old clone at `0222ed8`. Its content is ancestor of canonical `xavier`. | **ARCHIVE then DELETE** |"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-new` | `master` | 0 | Clean old clone at `0222ed8`. Its content is ancestor of canonical `xavier`. | **ARCHIVE then DELETE** |"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-temp` | `master` | 0 | Clean temporary old clone at `0222ed8`, shallow/no parent metadata. | **ARCHIVE then DELETE** |"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-temp` | `master` | 0 | Clean temporary old clone at `0222ed8`, shallow/no parent metadata. | **ARCHIVE then DELETE** |"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier_temp_reclone` | `master` | 0 | Clean reclone at `0222ed8`. Ancestor of canonical. | **ARCHIVE then DELETE** |"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier_temp_reclone` | `master` | 0 | Clean reclone at `0222ed8`. Ancestor of canonical. | **ARCHIVE then DELETE** |"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-clone` | `fix/email-to-github` | 0 | One extra commit `127ba3a fix: replace email refs` affecting `src/tools/kanban.rs`. Need verify if still relevant before deletion. | **MIGRATION CHECK** |"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-clone` | `fix/email-to-github` | 0 | One extra commit `127ba3a fix: replace email refs` affecting `src/tools/kanban.rs`. Need verify if still relevant before deletion. | **MIGRATION CHECK** |"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-work` | `master` | 4 | Old work tree with docs already migrated, plus uncommitted Cortex outbound adapter/port. Canonical has newer inbound plugin architecture. | **DO NOT DIRECT-MERGE; archive after extracting notes** |"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-work` | `master` | 4 | Old work tree with docs already migrated, plus uncommitted Cortex outbound adapter/port. Canonical has newer inbound plugin architecture. | **DO NOT DIRECT-MERGE; archive after extracting notes** |"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\temp_xavier_check` | `master` | 0 | Old Git Core structure check at `cae4da1`. No obvious logic missing from canonical beyond old generated/build artifacts. | **ARCHIVE then DELETE** |"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier\\temp_xavier_check` | `master` | 0 | Old Git Core structure check at `cae4da1`. No obvious logic missing from canonical beyond old generated/build artifacts. | **ARCHIVE then DELETE** |"
         },
         {
           "type": "addition",
-          "text": "+| `E:\\scripts-python\\xavier-benchmark` | non-git | n/a | Benchmark support folder, not same repo. | **KEEP SEPARATE unless obsolete confirmed** |"
+          "text": "+| `~\/proyectosSWAL\/apps\/xavier-benchmark` | non-git | n/a | Benchmark support folder, not same repo. | **KEEP SEPARATE unless obsolete confirmed** |"
         },
         {
           "type": "addition",
@@ -1069557,7 +1069557,7 @@
         },
         {
           "type": "addition",
-          "text": "+1. Create archive folder: `E:\\scripts-python\\_archive\\xavier-reconcile-20260508`."
+          "text": "+1. Create archive folder: `~\/proyectosSWAL\/apps\/xavier\\_archive\\xavier-reconcile-20260508`."
         },
         {
           "type": "addition",
@@ -1078815,11 +1078815,11 @@
         },
         {
           "type": "deletion",
-          "text": "-You are at E:\\scripts-python\\xavier2 on branch fix/issue-115."
+          "text": "-You are at ~\/proyectosSWAL\/apps\/xavier2 on branch fix/issue-115."
         },
         {
           "type": "addition",
-          "text": "+You are at E:\\scripts-python\\xavier on branch fix/issue-115."
+          "text": "+You are at ~\/proyectosSWAL\/apps\/xavier on branch fix/issue-115."
         },
         {
           "type": "normal",
@@ -1079009,11 +1079009,11 @@
         },
         {
           "type": "deletion",
-          "text": "-You are at E:\\scripts-python\\xavier2 on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
+          "text": "-You are at ~\/proyectosSWAL\/apps\/xavier2 on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
         },
         {
           "type": "addition",
-          "text": "+You are at E:\\scripts-python\\xavier on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
+          "text": "+You are at ~\/proyectosSWAL\/apps\/xavier on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
         },
         {
           "type": "normal",
@@ -1079727,11 +1079727,11 @@
         },
         {
           "type": "deletion",
-          "text": "-Sos un agente de codificación que trabaja en el repositorio Xavier2 en `E:\\scripts-python\\xavier2`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente."
+          "text": "-Sos un agente de codificación que trabaja en el repositorio Xavier2 en `~\/proyectosSWAL\/apps\/xavier2`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente."
         },
         {
           "type": "addition",
-          "text": "+Sos un agente de codificación que trabaja en el repositorio Xavier en `E:\\scripts-python\\xavier`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente."
+          "text": "+Sos un agente de codificación que trabaja en el repositorio Xavier en `~\/proyectosSWAL\/apps\/xavier`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente."
         },
         {
           "type": "normal",
@@ -1079971,11 +1079971,11 @@
         },
         {
           "type": "deletion",
-          "text": "-$env:CARGO_TARGET_DIR=\"E:\\scripts-python\\xavier2\\target\"; cargo build --release --bin xavier2 -j 1"
+          "text": "-$env:CARGO_TARGET_DIR=\"~\/proyectosSWAL\/apps\/xavier2\\target\"; cargo build --release --bin xavier2 -j 1"
         },
         {
           "type": "addition",
-          "text": "+$env:CARGO_TARGET_DIR=\"E:\\scripts-python\\xavier\\target\"; cargo build --release --bin xavier -j 1"
+          "text": "+$env:CARGO_TARGET_DIR=\"~\/proyectosSWAL\/apps\/xavier\\target\"; cargo build --release --bin xavier -j 1"
         },
         {
           "type": "normal",
@@ -1092045,15 +1092045,15 @@
         },
         {
           "type": "deletion",
-          "text": "-- Config: E:\\scripts-python\\xavier2\\.env"
+          "text": "-- Config: ~\/proyectosSWAL\/apps\/xavier2\\.env"
         },
         {
           "type": "deletion",
-          "text": "-- Data: E:\\scripts-python\\xavier2\\data\\"
+          "text": "-- Data: ~\/proyectosSWAL\/apps\/xavier2\\data\\"
         },
         {
           "type": "deletion",
-          "text": "-- DB: E:\\scripts-python\\xavier2\\xavier2_memory_vec.db"
+          "text": "-- DB: ~\/proyectosSWAL\/apps\/xavier2\\xavier2_memory_vec.db"
         },
         {
           "type": "addition",
@@ -1092061,15 +1092061,15 @@
         },
         {
           "type": "addition",
-          "text": "+- Config: E:\\scripts-python\\xavier\\.env"
+          "text": "+- Config: ~\/proyectosSWAL\/apps\/xavier\\.env"
         },
         {
           "type": "addition",
-          "text": "+- Data: E:\\scripts-python\\xavier\\data\\"
+          "text": "+- Data: ~\/proyectosSWAL\/apps\/xavier\\data\\"
         },
         {
           "type": "addition",
-          "text": "+- DB: E:\\scripts-python\\xavier\\xavier_memory_vec.db"
+          "text": "+- DB: ~\/proyectosSWAL\/apps\/xavier\\xavier_memory_vec.db"
         },
         {
           "type": "normal",
@@ -1092739,15 +1092739,15 @@
         },
         {
           "type": "deletion",
-          "text": "-- Xavier2 core repo: `E:\\scripts-python\\xavier2`"
+          "text": "-- Xavier2 core repo: `~\/proyectosSWAL\/apps\/xavier2`"
         },
         {
           "type": "addition",
-          "text": "+- Xavier core repo: `E:\\scripts-python\\xavier`"
+          "text": "+- Xavier core repo: `~\/proyectosSWAL\/apps\/xavier`"
         },
         {
           "type": "normal",
-          "text": " - Cortex enterprise/security repo: `E:\\scripts-python\\cortex`"
+          "text": " - Cortex enterprise/security repo: `~\/proyectosSWAL\/apps\/xavier\\cortex`"
         },
         {
           "type": "normal",
@@ -1097393,11 +1097393,11 @@
         },
         {
           "type": "deletion",
-          "text": "-- Benchmark results: `E:\\scripts-python\\xavier2-benchmark\\`"
+          "text": "-- Benchmark results: `~\/proyectosSWAL\/apps\/xavier2-benchmark\\`"
         },
         {
           "type": "addition",
-          "text": "+- Benchmark results: `E:\\scripts-python\\xavier-benchmark\\`"
+          "text": "+- Benchmark results: `~\/proyectosSWAL\/apps\/xavier-benchmark\\`"
         },
         {
           "type": "normal",
@@ -1097893,7 +1097893,7 @@
         },
         {
           "type": "deletion",
-          "text": "-**Project:** E:\\scripts-python\\xavier2  "
+          "text": "-**Project:** ~\/proyectosSWAL\/apps\/xavier2  "
         },
         {
           "type": "deletion",
@@ -1097905,7 +1097905,7 @@
         },
         {
           "type": "addition",
-          "text": "+**Project:** E:\\scripts-python\\xavier"
+          "text": "+**Project:** ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "addition",
@@ -1099247,7 +1099247,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier2"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "deletion",
@@ -1099605,7 +1099605,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "addition",
@@ -1107585,7 +1107585,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- **Repo:** `E:\\scripts-python\\xavier2`"
+          "text": "-- **Repo:** `~\/proyectosSWAL\/apps\/xavier2`"
         },
         {
           "type": "deletion",
@@ -1107621,7 +1107621,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- **Repo:** `E:\\scripts-python\\cortex`"
+          "text": "-- **Repo:** `~\/proyectosSWAL\/apps\/xavier\\cortex`"
         },
         {
           "type": "deletion",
@@ -1107685,7 +1107685,7 @@
         },
         {
           "type": "deletion",
-          "text": "-- **Script:** `E:\\scripts-python\\xavier2\\scripts\\memory_triad_loop.ps1`"
+          "text": "-- **Script:** `~\/proyectosSWAL\/apps\/xavier2\\scripts\\memory_triad_loop.ps1`"
         },
         {
           "type": "deletion",
@@ -1108103,7 +1108103,7 @@
         },
         {
           "type": "addition",
-          "text": "+- **Repo:** `E:\\scripts-python\\xavier`"
+          "text": "+- **Repo:** `~\/proyectosSWAL\/apps\/xavier`"
         },
         {
           "type": "addition",
@@ -1108139,7 +1108139,7 @@
         },
         {
           "type": "addition",
-          "text": "+- **Repo:** `E:\\scripts-python\\cortex`"
+          "text": "+- **Repo:** `~\/proyectosSWAL\/apps\/xavier\\cortex`"
         },
         {
           "type": "addition",
@@ -1108207,7 +1108207,7 @@
         },
         {
           "type": "addition",
-          "text": "+- **Script:** `E:\\scripts-python\\xavier\\scripts\\memory_triad_loop.ps1`"
+          "text": "+- **Script:** `~\/proyectosSWAL\/apps\/xavier\\scripts\\memory_triad_loop.ps1`"
         },
         {
           "type": "addition",
@@ -1109665,11 +1109665,11 @@
         },
         {
           "type": "deletion",
-          "text": "-Repo: E:\\scripts-python\\xavier2"
+          "text": "-Repo: ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "addition",
-          "text": "+Repo: E:\\scripts-python\\xavier"
+          "text": "+Repo: ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "normal",
@@ -1207827,11 +1207827,11 @@
         },
         {
           "type": "deletion",
-          "text": "-sys.path.insert(0, r'E:\\scripts-python\\xavier2\\scripts')"
+          "text": "-sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier2\\scripts')"
         },
         {
           "type": "addition",
-          "text": "+sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "+sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "normal",
@@ -1207857,11 +1207857,11 @@
         },
         {
           "type": "deletion",
-          "text": "-sys.path.insert(0, r'E:\\scripts-python\\xavier2\\scripts')"
+          "text": "-sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier2\\scripts')"
         },
         {
           "type": "addition",
-          "text": "+sys.path.insert(0, r'E:\\scripts-python\\xavier\\scripts')"
+          "text": "+sys.path.insert(0, r'~\/proyectosSWAL\/apps\/xavier\\scripts')"
         },
         {
           "type": "normal",
@@ -1208107,7 +1208107,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -34,16 +34,16 @@ def index_projects(base_path=\"E:\\\\scripts-python\"):"
+          "text": "@@ -34,16 +34,16 @@ def index_projects(base_path=\"~\/proyectosSWAL\/apps\/xavier\"):"
         },
         {
           "type": "normal",
@@ -1208187,7 +1208187,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -56,11 +56,11 @@ def index_projects(base_path=\"E:\\\\scripts-python\"):"
+          "text": "@@ -56,11 +56,11 @@ def index_projects(base_path=\"~\/proyectosSWAL\/apps\/xavier\"):"
         },
         {
           "type": "normal",
@@ -1208527,11 +1208527,11 @@
         },
         {
           "type": "deletion",
-          "text": "-    output = Path(\"E:\\\\scripts-python\\\\xavier2\\\\benchmark_results\")"
+          "text": "-    output = Path(\"~\/proyectosSWAL\/apps\/xavier2\\\\benchmark_results\")"
         },
         {
           "type": "addition",
-          "text": "+    output = Path(\"E:\\\\scripts-python\\\\xavier\\\\benchmark_results\")"
+          "text": "+    output = Path(\"~\/proyectosSWAL\/apps\/xavier\\\\benchmark_results\")"
         },
         {
           "type": "normal",
@@ -1210227,11 +1210227,11 @@
         },
         {
           "type": "deletion",
-          "text": "-    output_dir = Path(\"E:/scripts-python/xavier2/benchmark_results\")"
+          "text": "-    output_dir = Path(\"~/proyectosSWAL/apps/xavier2/benchmark_results\")"
         },
         {
           "type": "addition",
-          "text": "+    output_dir = Path(\"E:/scripts-python/xavier/benchmark_results\")"
+          "text": "+    output_dir = Path(\"~/proyectosSWAL/apps/xavier/benchmark_results\")"
         },
         {
           "type": "normal",
@@ -1210521,11 +1210521,11 @@
         },
         {
           "type": "deletion",
-          "text": "-    'E:\\\\scripts-python\\\\xavier2\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json', 'utf-8'));"
+          "text": "-    '~\/proyectosSWAL\/apps\/xavier2\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json', 'utf-8'));"
         },
         {
           "type": "addition",
-          "text": "+    'E:\\\\scripts-python\\\\xavier\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json', 'utf-8'));"
+          "text": "+    '~\/proyectosSWAL\/apps\/xavier\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json', 'utf-8'));"
         },
         {
           "type": "normal",
@@ -1210763,11 +1210763,11 @@
         },
         {
           "type": "deletion",
-          "text": "-with open(\"E:\\\\scripts-python\\\\xavier2\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\", encoding=\"utf-8\") as f:"
+          "text": "-with open(\"~\/proyectosSWAL\/apps\/xavier2\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\", encoding=\"utf-8\") as f:"
         },
         {
           "type": "addition",
-          "text": "+with open(\"E:\\\\scripts-python\\\\xavier\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\", encoding=\"utf-8\") as f:"
+          "text": "+with open(\"~\/proyectosSWAL\/apps\/xavier\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\", encoding=\"utf-8\") as f:"
         },
         {
           "type": "normal",
@@ -1216439,11 +1216439,11 @@
         },
         {
           "type": "deletion",
-          "text": "-    dataset_path = \"E:\\\\scripts-python\\\\xavier2\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\""
+          "text": "-    dataset_path = \"~\/proyectosSWAL\/apps\/xavier2\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\""
         },
         {
           "type": "addition",
-          "text": "+    dataset_path = \"E:\\\\scripts-python\\\\xavier\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\""
+          "text": "+    dataset_path = \"~\/proyectosSWAL\/apps\/xavier\\\\scripts\\\\benchmarks\\\\datasets\\\\internal_swal_openclaw_memory.json\""
         },
         {
           "type": "normal",
@@ -1218905,19 +1218905,19 @@
         },
         {
           "type": "deletion",
-          "text": "-$sqlContent | Out-File -FilePath \"E:\\scripts-python\\xavier2\\query.sql\" -Encoding ascii"
+          "text": "-$sqlContent | Out-File -FilePath \"~\/proyectosSWAL\/apps\/xavier2\\query.sql\" -Encoding ascii"
         },
         {
           "type": "deletion",
-          "text": "-docker cp \"E:\\scripts-python\\xavier2\\query.sql\" surrealdb:/tmp/query.sql"
+          "text": "-docker cp \"~\/proyectosSWAL\/apps\/xavier2\\query.sql\" surrealdb:/tmp/query.sql"
         },
         {
           "type": "addition",
-          "text": "+$sqlContent | Out-File -FilePath \"E:\\scripts-python\\xavier\\query.sql\" -Encoding ascii"
+          "text": "+$sqlContent | Out-File -FilePath \"~\/proyectosSWAL\/apps\/xavier\\query.sql\" -Encoding ascii"
         },
         {
           "type": "addition",
-          "text": "+docker cp \"E:\\scripts-python\\xavier\\query.sql\" surrealdb:/tmp/query.sql"
+          "text": "+docker cp \"~\/proyectosSWAL\/apps\/xavier\\query.sql\" surrealdb:/tmp/query.sql"
         },
         {
           "type": "normal",
@@ -1218973,19 +1218973,19 @@
         },
         {
           "type": "deletion",
-          "text": "-$body | Out-File -FilePath \"E:\\scripts-python\\xavier2\\query_body.json\" -Encoding ascii -NoNewline"
+          "text": "-$body | Out-File -FilePath \"~\/proyectosSWAL\/apps\/xavier2\\query_body.json\" -Encoding ascii -NoNewline"
         },
         {
           "type": "deletion",
-          "text": "-docker cp \"E:\\scripts-python\\xavier2\\query_body.json\" xavier2:/tmp/query_body.json"
+          "text": "-docker cp \"~\/proyectosSWAL\/apps\/xavier2\\query_body.json\" xavier2:/tmp/query_body.json"
         },
         {
           "type": "addition",
-          "text": "+$body | Out-File -FilePath \"E:\\scripts-python\\xavier\\query_body.json\" -Encoding ascii -NoNewline"
+          "text": "+$body | Out-File -FilePath \"~\/proyectosSWAL\/apps\/xavier\\query_body.json\" -Encoding ascii -NoNewline"
         },
         {
           "type": "addition",
-          "text": "+docker cp \"E:\\scripts-python\\xavier\\query_body.json\" xavier:/tmp/query_body.json"
+          "text": "+docker cp \"~\/proyectosSWAL\/apps\/xavier\\query_body.json\" xavier:/tmp/query_body.json"
         },
         {
           "type": "normal",
@@ -1219071,7 +1219071,7 @@
         },
         {
           "type": "deletion",
-          "text": "-const BACKUP_DIR = 'E:\\\\scripts-python\\\\xavier2\\\\backup';"
+          "text": "-const BACKUP_DIR = '~\/proyectosSWAL\/apps\/xavier2\\\\backup';"
         },
         {
           "type": "deletion",
@@ -1219083,7 +1219083,7 @@
         },
         {
           "type": "addition",
-          "text": "+const BACKUP_DIR = 'E:\\\\scripts-python\\\\xavier\\\\backup';"
+          "text": "+const BACKUP_DIR = '~\/proyectosSWAL\/apps\/xavier\\\\backup';"
         },
         {
           "type": "addition",
@@ -1219583,7 +1219583,7 @@
         },
         {
           "type": "deletion",
-          "text": "-    python xavier2_cli.py sync-gitcore --project \"E:/scripts-python/manteniapp\""
+          "text": "-    python xavier2_cli.py sync-gitcore --project \"~/proyectosSWAL/apps/xavier/manteniapp\""
         },
         {
           "type": "addition",
@@ -1219615,7 +1219615,7 @@
         },
         {
           "type": "addition",
-          "text": "+    python xavier_cli.py sync-gitcore --project \"E:/scripts-python/manteniapp\""
+          "text": "+    python xavier_cli.py sync-gitcore --project \"~/proyectosSWAL/apps/xavier/manteniapp\""
         },
         {
           "type": "normal",
@@ -1222173,11 +1222173,11 @@
         },
         {
           "type": "deletion",
-          "text": "-with open(r'E:\\scripts-python\\xavier2\\src\\memory\\sqlite_vec_store.rs', 'r', encoding='utf-8') as f:"
+          "text": "-with open(r'~\/proyectosSWAL\/apps\/xavier2\\src\\memory\\sqlite_vec_store.rs', 'r', encoding='utf-8') as f:"
         },
         {
           "type": "addition",
-          "text": "+with open(r'E:\\scripts-python\\xavier\\src\\memory\\sqlite_vec_store.rs', 'r', encoding='utf-8') as f:"
+          "text": "+with open(r'~\/proyectosSWAL\/apps\/xavier\\src\\memory\\sqlite_vec_store.rs', 'r', encoding='utf-8') as f:"
         },
         {
           "type": "normal",
@@ -1222209,11 +1222209,11 @@
         },
         {
           "type": "deletion",
-          "text": "-with open(r'E:\\scripts-python\\xavier2\\src\\memory\\sqlite_vec_store.rs', 'w', encoding='utf-8') as f:"
+          "text": "-with open(r'~\/proyectosSWAL\/apps\/xavier2\\src\\memory\\sqlite_vec_store.rs', 'w', encoding='utf-8') as f:"
         },
         {
           "type": "addition",
-          "text": "+with open(r'E:\\scripts-python\\xavier\\src\\memory\\sqlite_vec_store.rs', 'w', encoding='utf-8') as f:"
+          "text": "+with open(r'~\/proyectosSWAL\/apps\/xavier\\src\\memory\\sqlite_vec_store.rs', 'w', encoding='utf-8') as f:"
         },
         {
           "type": "normal",
@@ -1223409,15 +1223409,15 @@
         },
         {
           "type": "deletion",
-          "text": "-    console.log(`   - E:/scripts-python/xavier2:/mnt/swal/xavier2:ro`);"
+          "text": "-    console.log(`   - ~/proyectosSWAL/apps/xavier2:/mnt/swal/xavier2:ro`);"
         },
         {
           "type": "addition",
-          "text": "+    console.log(`   - E:/scripts-python/xavier:/mnt/swal/xavier:ro`);"
+          "text": "+    console.log(`   - ~/proyectosSWAL/apps/xavier:/mnt/swal/xavier:ro`);"
         },
         {
           "type": "normal",
-          "text": "     console.log(`   - E:/scripts-python/scripts:/mnt/swal/scripts:ro`);"
+          "text": "     console.log(`   - ~/proyectosSWAL/apps/xavier/scripts:/mnt/swal/scripts:ro`);"
         },
         {
           "type": "normal",
@@ -1223571,7 +1223571,7 @@
         },
         {
           "type": "deletion",
-          "text": "-Set-Location \"E:\\scripts-python\\xavier2\""
+          "text": "-Set-Location \"~\/proyectosSWAL\/apps\/xavier2\""
         },
         {
           "type": "addition",
@@ -1223579,7 +1223579,7 @@
         },
         {
           "type": "addition",
-          "text": "+Set-Location \"E:\\scripts-python\\xavier\""
+          "text": "+Set-Location \"~\/proyectosSWAL\/apps\/xavier\""
         },
         {
           "type": "normal",
@@ -1223809,7 +1223809,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:/scripts-python/xavier2"
+          "text": "-cd ~/proyectosSWAL/apps/xavier2"
         },
         {
           "type": "addition",
@@ -1223817,7 +1223817,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:/scripts-python/xavier"
+          "text": "+cd ~/proyectosSWAL/apps/xavier"
         },
         {
           "type": "normal",
@@ -1225173,7 +1225173,7 @@
         },
         {
           "type": "deletion",
-          "text": "-report under E:/scripts-python/xavier2/benchmark_results."
+          "text": "-report under ~/proyectosSWAL/apps/xavier2/benchmark_results."
         },
         {
           "type": "addition",
@@ -1225181,7 +1225181,7 @@
         },
         {
           "type": "addition",
-          "text": "+report under E:/scripts-python/xavier/benchmark_results."
+          "text": "+report under ~/proyectosSWAL/apps/xavier/benchmark_results."
         },
         {
           "type": "normal",
@@ -1225979,15 +1225979,15 @@
         },
         {
           "type": "deletion",
-          "text": "-$XavierRoot = \"E:\\scripts-python\\xavier2\""
+          "text": "-$XavierRoot = \"~\/proyectosSWAL\/apps\/xavier2\""
         },
         {
           "type": "addition",
-          "text": "+$XavierRoot = \"E:\\scripts-python\\xavier\""
+          "text": "+$XavierRoot = \"~\/proyectosSWAL\/apps\/xavier\""
         },
         {
           "type": "normal",
-          "text": " $CortexRoot = \"E:\\scripts-python\\cortex\""
+          "text": " $CortexRoot = \"~\/proyectosSWAL\/apps\/xavier\\cortex\""
         },
         {
           "type": "normal",
@@ -1227013,7 +1227013,7 @@
         },
         {
           "type": "normal",
-          "text": "     content = \"# SouthWest AI Labs\\n\\n**Website:** https://github.com/southwest-ai-labs\\n**Proyectos:** E:\\\\scripts-python\\n**GitHub Repo Principal:** iberi22/* (NO southwest-ai-labs)\\n**Infraestructura:** Proxmox (192.168.1.10) - apagada por ahorro\\n\\n## Líneas de Negocio\\n1. Desarrollo de Software - Rust, TypeScript, automatización\\n2. Creación de Contenido - Producción, automatización\\n3. Trading de Criptoactivos - Copy trading, estrategias\\n4. Agentes IA Alquilables - SEO, trading, desarrollo, contenido, segurança\\n5. Finetuning de modelos - lenguaje, visión\\n6. Investigación - análise de datos\\n7. Seguridad Informática - vulnerabilidades, penetración\\n\\n## Filosofía\\n> La comodidad de todos los seres humanos en la Tierra, brindando tecnología segura, abierta e inteligente.\""
+          "text": "     content = \"# SouthWest AI Labs\\n\\n**Website:** https://github.com/southwest-ai-labs\\n**Proyectos:** ~\/proyectosSWAL\/apps\/xavier\\n**GitHub Repo Principal:** iberi22/* (NO southwest-ai-labs)\\n**Infraestructura:** Proxmox (192.168.1.10) - apagada por ahorro\\n\\n## Líneas de Negocio\\n1. Desarrollo de Software - Rust, TypeScript, automatización\\n2. Creación de Contenido - Producción, automatización\\n3. Trading de Criptoactivos - Copy trading, estrategias\\n4. Agentes IA Alquilables - SEO, trading, desarrollo, contenido, segurança\\n5. Finetuning de modelos - lenguaje, visión\\n6. Investigación - análise de datos\\n7. Seguridad Informática - vulnerabilidades, penetración\\n\\n## Filosofía\\n> La comodidad de todos los seres humanos en la Tierra, brindando tecnología segura, abierta e inteligente.\""
         },
         {
           "type": "normal",
@@ -1227215,7 +1227215,7 @@
         },
         {
           "type": "normal",
-          "text": " STATUS_FILE = Path(\"E:/scripts-python/SWAL-Operations-Dashboard/projects/STATUS.md\")"
+          "text": " STATUS_FILE = Path(\"~/proyectosSWAL/apps/xavier/SWAL-Operations-Dashboard/projects/STATUS.md\")"
         },
         {
           "type": "normal",
@@ -1227569,11 +1227569,11 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier2"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "normal",
@@ -1227671,7 +1227671,7 @@
         },
         {
           "type": "addition",
-          "text": "+    [string]$Root = 'E:\\scripts-python',"
+          "text": "+    [string]$Root = '~\/proyectosSWAL\/apps\/xavier',"
         },
         {
           "type": "addition",
@@ -1228871,11 +1228871,11 @@
         },
         {
           "type": "deletion",
-          "text": "-$proc = Start-Process node -ArgumentList 'E:\\scripts-python\\xavier2\\scripts\\sync-all-to-xavier2.js' -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err"
+          "text": "-$proc = Start-Process node -ArgumentList '~\/proyectosSWAL\/apps\/xavier2\\scripts\\sync-all-to-xavier2.js' -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err"
         },
         {
           "type": "addition",
-          "text": "+$proc = Start-Process node -ArgumentList 'E:\\scripts-python\\xavier\\scripts\\sync-all-to-xavier.js' -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err"
+          "text": "+$proc = Start-Process node -ArgumentList '~\/proyectosSWAL\/apps\/xavier\\scripts\\sync-all-to-xavier.js' -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err"
         },
         {
           "type": "normal",
@@ -1228905,11 +1228905,11 @@
         },
         {
           "type": "deletion",
-          "text": "-$proc = Start-Process node -ArgumentList 'E:\\scripts-python\\xavier2\\scripts\\sync-all-to-xavier2.js' -NoNewWindow -PassThru -RedirectStandardOutput $out"
+          "text": "-$proc = Start-Process node -ArgumentList '~\/proyectosSWAL\/apps\/xavier2\\scripts\\sync-all-to-xavier2.js' -NoNewWindow -PassThru -RedirectStandardOutput $out"
         },
         {
           "type": "addition",
-          "text": "+$proc = Start-Process node -ArgumentList 'E:\\scripts-python\\xavier\\scripts\\sync-all-to-xavier.js' -NoNewWindow -PassThru -RedirectStandardOutput $out"
+          "text": "+$proc = Start-Process node -ArgumentList '~\/proyectosSWAL\/apps\/xavier\\scripts\\sync-all-to-xavier.js' -NoNewWindow -PassThru -RedirectStandardOutput $out"
         },
         {
           "type": "normal",
@@ -1228939,11 +1228939,11 @@
         },
         {
           "type": "deletion",
-          "text": "-You are a senior Rust developer. Your mission: fix the SurrealDB persistence issue in this Xavier2 project at E:\\scripts-python\\xavier2."
+          "text": "-You are a senior Rust developer. Your mission: fix the SurrealDB persistence issue in this Xavier2 project at ~\/proyectosSWAL\/apps\/xavier2."
         },
         {
           "type": "addition",
-          "text": "+You are a senior Rust developer. Your mission: fix the SurrealDB persistence issue in this Xavier project at E:\\scripts-python\\xavier."
+          "text": "+You are a senior Rust developer. Your mission: fix the SurrealDB persistence issue in this Xavier project at ~\/proyectosSWAL\/apps\/xavier."
         },
         {
           "type": "normal",
@@ -1228979,11 +1228979,11 @@
         },
         {
           "type": "deletion",
-          "text": "-docker compose -f E:\\scripts-python\\xavier2\\docker-compose.yml down"
+          "text": "-docker compose -f ~\/proyectosSWAL\/apps\/xavier2\\docker-compose.yml down"
         },
         {
           "type": "deletion",
-          "text": "-docker compose -f E:\\scripts-python\\xavier2\\docker-compose.yml up -d"
+          "text": "-docker compose -f ~\/proyectosSWAL\/apps\/xavier2\\docker-compose.yml up -d"
         },
         {
           "type": "addition",
@@ -1228991,11 +1228991,11 @@
         },
         {
           "type": "addition",
-          "text": "+docker compose -f E:\\scripts-python\\xavier\\docker-compose.yml down"
+          "text": "+docker compose -f ~\/proyectosSWAL\/apps\/xavier\\docker-compose.yml down"
         },
         {
           "type": "addition",
-          "text": "+docker compose -f E:\\scripts-python\\xavier\\docker-compose.yml up -d"
+          "text": "+docker compose -f ~\/proyectosSWAL\/apps\/xavier\\docker-compose.yml up -d"
         },
         {
           "type": "normal",
@@ -1229035,11 +1229035,11 @@
         },
         {
           "type": "deletion",
-          "text": "-- NEVER move the project from E:\\scripts-python\\xavier2"
+          "text": "-- NEVER move the project from ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "addition",
-          "text": "+- NEVER move the project from E:\\scripts-python\\xavier"
+          "text": "+- NEVER move the project from ~\/proyectosSWAL\/apps\/xavier"
         },
         {
           "type": "normal",
@@ -1229067,11 +1229067,11 @@
         },
         {
           "type": "deletion",
-          "text": "-Set-Content -Path \"E:\\scripts-python\\xavier2\\task-prompt.txt\" -Value $PROMPT"
+          "text": "-Set-Content -Path \"~\/proyectosSWAL\/apps\/xavier2\\task-prompt.txt\" -Value $PROMPT"
         },
         {
           "type": "addition",
-          "text": "+Set-Content -Path \"E:\\scripts-python\\xavier\\task-prompt.txt\" -Value $PROMPT"
+          "text": "+Set-Content -Path \"~\/proyectosSWAL\/apps\/xavier\\task-prompt.txt\" -Value $PROMPT"
         }
       ],
       "scripts/save_cycle.ps1": [
@@ -1229547,7 +1229547,7 @@
         },
         {
           "type": "deletion",
-          "text": "-Set-Location 'E:\\scripts-python\\xavier2'"
+          "text": "-Set-Location '~\/proyectosSWAL\/apps\/xavier2'"
         },
         {
           "type": "deletion",
@@ -1229555,7 +1229555,7 @@
         },
         {
           "type": "addition",
-          "text": "+Set-Location 'E:\\scripts-python\\xavier'"
+          "text": "+Set-Location '~\/proyectosSWAL\/apps\/xavier'"
         },
         {
           "type": "addition",
@@ -1230743,7 +1230743,7 @@
         },
         {
           "type": "normal",
-          "text": " const DASHBOARD_BASE = 'E:\\\\scripts-python\\\\SWAL-Operations-Dashboard';"
+          "text": " const DASHBOARD_BASE = '~\/proyectosSWAL\/apps\/xavier\\\\SWAL-Operations-Dashboard';"
         },
         {
           "type": "normal",
@@ -1230961,7 +1230961,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -53,20 +53,20 @@ def index_projects(base_path: str = \"E:\\\\scripts-python\") -> Dict[str, Any]:"
+          "text": "@@ -53,20 +53,20 @@ def index_projects(base_path: str = \"~\/proyectosSWAL\/apps\/xavier\") -> Dict[str, Any]:"
         },
         {
           "type": "normal",
@@ -1231057,7 +1231057,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -79,7 +79,7 @@ def index_projects(base_path: str = \"E:\\\\scripts-python\") -> Dict[str, Any]:"
+          "text": "@@ -79,7 +79,7 @@ def index_projects(base_path: str = \"~\/proyectosSWAL\/apps\/xavier\") -> Dict[str, Any]:"
         },
         {
           "type": "normal",
@@ -1231093,7 +1231093,7 @@
         },
         {
           "type": "info",
-          "text": "@@ -89,15 +89,15 @@ def index_projects(base_path: str = \"E:\\\\scripts-python\") -> Dict[str, Any]:"
+          "text": "@@ -89,15 +89,15 @@ def index_projects(base_path: str = \"~\/proyectosSWAL\/apps\/xavier\") -> Dict[str, Any]:"
         },
         {
           "type": "normal",
@@ -1231805,11 +1231805,11 @@
         },
         {
           "type": "deletion",
-          "text": "-    output_file = f\"E:\\\\scripts-python\\\\xavier2\\\\benchmark_results\\\\benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json\""
+          "text": "-    output_file = f\"~\/proyectosSWAL\/apps\/xavier2\\\\benchmark_results\\\\benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json\""
         },
         {
           "type": "addition",
-          "text": "+    output_file = f\"E:\\\\scripts-python\\\\xavier\\\\benchmark_results\\\\benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json\""
+          "text": "+    output_file = f\"~\/proyectosSWAL\/apps\/xavier\\\\benchmark_results\\\\benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json\""
         },
         {
           "type": "normal",
@@ -1231835,11 +1231835,11 @@
         },
         {
           "type": "deletion",
-          "text": "-node \"E:\\scripts-python\\xavier2\\scripts\\sync-all-to-xavier2.js\""
+          "text": "-node \"~\/proyectosSWAL\/apps\/xavier2\\scripts\\sync-all-to-xavier2.js\""
         },
         {
           "type": "addition",
-          "text": "+node \"E:\\scripts-python\\xavier\\scripts\\sync-all-to-xavier.js\""
+          "text": "+node \"~\/proyectosSWAL\/apps\/xavier\\scripts\\sync-all-to-xavier.js\""
         }
       ],
       "scripts/test-cortex.ps1": [
@@ -1233225,7 +1233225,7 @@
         },
         {
           "type": "deletion",
-          "text": "-        Set-Location \"E:\\scripts-python\\xavier2\""
+          "text": "-        Set-Location \"~\/proyectosSWAL\/apps\/xavier2\""
         },
         {
           "type": "deletion",
@@ -1233237,7 +1233237,7 @@
         },
         {
           "type": "addition",
-          "text": "+        Set-Location \"E:\\scripts-python\\xavier\""
+          "text": "+        Set-Location \"~\/proyectosSWAL\/apps\/xavier\""
         },
         {
           "type": "addition",
@@ -1234339,7 +1234339,7 @@
         },
         {
           "type": "addition",
-          "text": "+$LogFile = \"E:\\scripts-python\\xavier\\xavier-optimizer.log\""
+          "text": "+$LogFile = \"~\/proyectosSWAL\/apps\/xavier\\xavier-optimizer.log\""
         },
         {
           "type": "addition",
@@ -1234719,15 +1234719,15 @@
         },
         {
           "type": "addition",
-          "text": "+        \"E:\\scripts-python\\xavier\","
+          "text": "+        \"~\/proyectosSWAL\/apps\/xavier\","
         },
         {
           "type": "addition",
-          "text": "+        \"E:\\scripts-python\\gestalt-rust\","
+          "text": "+        \"~\/proyectosSWAL\/apps\/xavier\\gestalt-rust\","
         },
         {
           "type": "addition",
-          "text": "+        \"E:\\scripts-python\\manteniapp\""
+          "text": "+        \"~\/proyectosSWAL\/apps\/xavier\\manteniapp\""
         },
         {
           "type": "addition",
@@ -1234973,7 +1234973,7 @@
         },
         {
           "type": "addition",
-          "text": "+#   - Xavier binary at: E:\\scripts-python\\xavier\\target\\release\\xavier.exe"
+          "text": "+#   - Xavier binary at: ~\/proyectosSWAL\/apps\/xavier\\target\\release\\xavier.exe"
         },
         {
           "type": "addition",
@@ -1235029,7 +1235029,7 @@
         },
         {
           "type": "addition",
-          "text": "+$PROJECT_ROOT = 'E:\\scripts-python\\xavier'"
+          "text": "+$PROJECT_ROOT = '~\/proyectosSWAL\/apps\/xavier'"
         },
         {
           "type": "addition",
@@ -1236377,7 +1236377,7 @@
         },
         {
           "type": "deletion",
-          "text": "-$LogFile = \"E:\\scripts-python\\xavier2\\xavier2-optimizer.log\""
+          "text": "-$LogFile = \"~\/proyectosSWAL\/apps\/xavier2\\xavier2-optimizer.log\""
         },
         {
           "type": "deletion",
@@ -1236757,15 +1236757,15 @@
         },
         {
           "type": "deletion",
-          "text": "-        \"E:\\scripts-python\\xavier2\","
+          "text": "-        \"~\/proyectosSWAL\/apps\/xavier2\","
         },
         {
           "type": "deletion",
-          "text": "-        \"E:\\scripts-python\\gestalt-rust\","
+          "text": "-        \"~\/proyectosSWAL\/apps\/xavier\\gestalt-rust\","
         },
         {
           "type": "deletion",
-          "text": "-        \"E:\\scripts-python\\manteniapp\""
+          "text": "-        \"~\/proyectosSWAL\/apps\/xavier\\manteniapp\""
         },
         {
           "type": "deletion",
@@ -1237011,7 +1237011,7 @@
         },
         {
           "type": "deletion",
-          "text": "-#   - Xavier2 binary at: E:\\scripts-python\\xavier2\\target\\release\\xavier2.exe"
+          "text": "-#   - Xavier2 binary at: ~\/proyectosSWAL\/apps\/xavier2\\target\\release\\xavier2.exe"
         },
         {
           "type": "deletion",
@@ -1237067,7 +1237067,7 @@
         },
         {
           "type": "deletion",
-          "text": "-$PROJECT_ROOT = 'E:\\scripts-python\\xavier2'"
+          "text": "-$PROJECT_ROOT = '~\/proyectosSWAL\/apps\/xavier2'"
         },
         {
           "type": "deletion",
@@ -1240031,11 +1240031,11 @@
         },
         {
           "type": "deletion",
-          "text": "-  -d '{\"path\":\"E:/scripts-python/xavier2\"}'"
+          "text": "-  -d '{\"path\":\"~/proyectosSWAL/apps/xavier2\"}'"
         },
         {
           "type": "addition",
-          "text": "+  -d '{\"path\":\"E:/scripts-python/xavier\"}'"
+          "text": "+  -d '{\"path\":\"~/proyectosSWAL/apps/xavier\"}'"
         },
         {
           "type": "normal",
@@ -1240307,11 +1240307,11 @@
         },
         {
           "type": "deletion",
-          "text": "-{\"path\":\"E:/scripts-python/xavier2\"}"
+          "text": "-{\"path\":\"~/proyectosSWAL/apps/xavier2\"}"
         },
         {
           "type": "addition",
-          "text": "+{\"path\":\"E:/scripts-python/xavier\"}"
+          "text": "+{\"path\":\"~/proyectosSWAL/apps/xavier\"}"
         },
         {
           "type": "normal",
@@ -1240853,7 +1240853,7 @@
         },
         {
           "type": "normal",
-          "text": " - **Local fallback:** `E:\\scripts-python\\SWAL-Operations-Dashboard\\decisions/`"
+          "text": " - **Local fallback:** `~\/proyectosSWAL\/apps\/xavier\\SWAL-Operations-Dashboard\\decisions/`"
         },
         {
           "type": "normal",
@@ -1258933,7 +1258933,7 @@
         },
         {
           "type": "deletion",
-          "text": "-                \"directory\": \"E:/scripts-python/xavier2\","
+          "text": "-                \"directory\": \"~/proyectosSWAL/apps/xavier2\","
         },
         {
           "type": "addition",
@@ -1258941,7 +1258941,7 @@
         },
         {
           "type": "addition",
-          "text": "+                \"directory\": \"E:/scripts-python/xavier\","
+          "text": "+                \"directory\": \"~/proyectosSWAL/apps/xavier\","
         },
         {
           "type": "normal",
@@ -1389108,7 +1389108,7 @@
         },
         {
           "type": "deletion",
-          "text": "-cd E:\\scripts-python\\xavier2"
+          "text": "-cd ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "deletion",
@@ -1390404,7 +1390404,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\""
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier\\cortex ; codex --dangerously-bypass-approvals-and-sandbox exec \"tu prompt\""
         },
         {
           "type": "normal",
@@ -1390444,7 +1390444,7 @@
         },
         {
           "type": "addition",
-          "text": "+python E:\\scripts-python\\scripts\\audio-to-text.py audio.ogg --language es"
+          "text": "+python ~\/proyectosSWAL\/apps\/xavier\\scripts\\audio-to-text.py audio.ogg --language es"
         },
         {
           "type": "addition",
@@ -1450311,7 +1450311,7 @@
         },
         {
           "type": "addition",
-          "text": "+You are at E:\\scripts-python\\xavier2 on branch fix/issue-115."
+          "text": "+You are at ~\/proyectosSWAL\/apps\/xavier2 on branch fix/issue-115."
         },
         {
           "type": "addition",
@@ -1450537,7 +1450537,7 @@
         },
         {
           "type": "addition",
-          "text": "+You are at E:\\scripts-python\\xavier2 on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
+          "text": "+You are at ~\/proyectosSWAL\/apps\/xavier2 on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
         },
         {
           "type": "addition",
@@ -1450759,7 +1450759,7 @@
         },
         {
           "type": "addition",
-          "text": "+Sos un agente de codificación que trabaja en el repositorio Xavier2 en `E:\\scripts-python\\xavier2`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente."
+          "text": "+Sos un agente de codificación que trabaja en el repositorio Xavier2 en `~\/proyectosSWAL\/apps\/xavier2`. Tu objetivo es continuar con las tareas pendientes del proyecto en el orden indicado. **No repitas lo que ya está hecho** (ver checklist abajo). Cada cambio debe compilar con `cargo build --lib` antes de pasar al siguiente."
         },
         {
           "type": "addition",
@@ -1451355,7 +1451355,7 @@
         },
         {
           "type": "addition",
-          "text": "+$env:CARGO_TARGET_DIR=\"E:\\scripts-python\\xavier2\\target\"; cargo build --release --bin xavier2 -j 1"
+          "text": "+$env:CARGO_TARGET_DIR=\"~\/proyectosSWAL\/apps\/xavier2\\target\"; cargo build --release --bin xavier2 -j 1"
         },
         {
           "type": "addition",
@@ -1462169,7 +1462169,7 @@
         },
         {
           "type": "deletion",
-          "text": "-You are at E:\\scripts-python\\xavier2 on branch fix/issue-115."
+          "text": "-You are at ~\/proyectosSWAL\/apps\/xavier2 on branch fix/issue-115."
         },
         {
           "type": "deletion",
@@ -1462395,7 +1462395,7 @@
         },
         {
           "type": "deletion",
-          "text": "-You are at E:\\scripts-python\\xavier2 on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
+          "text": "-You are at ~\/proyectosSWAL\/apps\/xavier2 on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
         },
         {
           "type": "deletion",
@@ -1462769,7 +1462769,7 @@
         },
         {
           "type": "addition",
-          "text": "+cd E:\\scripts-python\\xavier2"
+          "text": "+cd ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "addition",
@@ -1479721,7 +1479721,7 @@
         },
         {
           "type": "addition",
-          "text": "+You are at E:\\scripts-python\\xavier2 on branch fix/issue-115."
+          "text": "+You are at ~\/proyectosSWAL\/apps\/xavier2 on branch fix/issue-115."
         },
         {
           "type": "addition",
@@ -1479947,7 +1479947,7 @@
         },
         {
           "type": "addition",
-          "text": "+You are at E:\\scripts-python\\xavier2 on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
+          "text": "+You are at ~\/proyectosSWAL\/apps\/xavier2 on branch fix/issue-115. All code compiles clean. You have 414 passing lib tests."
         },
         {
           "type": "addition",
@@ -1560263,7 +1560263,7 @@
         },
         {
           "type": "addition",
-          "text": "+Repo: E:\\scripts-python\\xavier2"
+          "text": "+Repo: ~\/proyectosSWAL\/apps\/xavier2"
         },
         {
           "type": "addition",
@@ -1579785,7 +1579785,7 @@
         },
         {
           "type": "deletion",
-          "text": "-   Compiling xavier2 v0.4.1 (E:\\scripts-python\\xavier2)"
+          "text": "-   Compiling xavier2 v0.4.1 (~\/proyectosSWAL\/apps\/xavier2)"
         },
         {
           "type": "deletion",
