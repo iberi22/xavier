@@ -1657,7 +1657,17 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     }
 
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(6 * 3600));
+        // Env-gated agentic scanner (2026-08-24): XAVIER_AGENT_SCANNER_INTERVAL
+        // en segundos; 0 deshabilita el scanner por completo.
+        let scan_interval = std::env::var("XAVIER_AGENT_SCANNER_INTERVAL")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(6 * 3600);
+        if scan_interval == 0 {
+            info!("Agentic Scanner DISABLED (XAVIER_AGENT_SCANNER_INTERVAL=0)");
+            return;
+        }
+        let mut interval = tokio::time::interval(Duration::from_secs(scan_interval));
         loop {
             interval.tick().await;
             info!("Running scheduled Agentic Scanner pass...");
