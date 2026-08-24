@@ -5,11 +5,13 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::health::repair::{should_retry_peer, PeerRetryDecision};
 use crate::embedding::Embedder;
 use crate::mesh::PeerRegistry;
 use crate::notifications::{IslandId, NOTIFICATIONS};
@@ -73,6 +75,8 @@ pub struct PeerHealth {
     pub connectivity_ok: bool,
     pub sync_lag_secs: u64,
     pub trust_score: f32,
+    #[serde(default)]
+    pub is_stale: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +160,7 @@ pub struct HealthMonitor {
     embedder: Arc<RwLock<Option<Arc<dyn Embedder>>>>,
     tgd_progress: Arc<RwLock<Option<Arc<RwLock<crate::tgd::consolidation::ProgressReport>>>>>,
     llm_failure_count: Arc<RwLock<u32>>,
+    peer_attempts: Arc<RwLock<HashMap<String, u64>>>,
     http_client: reqwest::Client,
 }
 
@@ -169,6 +174,7 @@ impl HealthMonitor {
             embedder: Arc::new(RwLock::new(None)),
             tgd_progress: Arc::new(RwLock::new(None)),
             llm_failure_count: Arc::new(RwLock::new(0)),
+            peer_attempts: Arc::new(RwLock::new(HashMap::new())),
             http_client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(2))
                 .build()
@@ -283,15 +289,47 @@ impl HealthMonitor {
                 .await;
         }
 
-        for peer in &new_status.mesh.peers {
-            if peer.sync_lag_secs > 60 {
-                tracing::info!(
-                    "Auto-repair: High lag for peer {} ({}s), attempting reconnection hint...",
-                    peer.node_id,
-                    peer.sync_lag_secs
-                );
-                // In Phase 1, we don't have a direct "reconnect" call, but we log the attempt.
-                // Reconnection is handled by the sync loop in future runs.
+        let auto_repair_enabled = std::env::var("XAVIER_MESH_AUTO_REPAIR")
+            .map(|v| v != "0" && v.to_lowercase() != "false")
+            .unwrap_or(true);
+
+        if auto_repair_enabled {
+            let mut attempts = self.peer_attempts.write().await;
+            for peer in &new_status.mesh.peers {
+                let attempt = attempts.get(&peer.node_id).copied().unwrap_or(0);
+                let decision = should_retry_peer(peer.sync_lag_secs, attempt);
+
+                match decision {
+                    PeerRetryDecision::Healthy => {
+                        attempts.remove(&peer.node_id);
+                    }
+                    PeerRetryDecision::RetryImmediately => {
+                        attempts.insert(peer.node_id.clone(), attempt + 1);
+                        tracing::info!(
+                            "Auto-repair: High lag for peer {} ({}s), attempting reconnection hint...",
+                            peer.node_id,
+                            peer.sync_lag_secs
+                        );
+                    }
+                    PeerRetryDecision::RetryWithBackoff { should_log } => {
+                        attempts.insert(peer.node_id.clone(), attempt + 1);
+                        if should_log {
+                            tracing::info!(
+                                "Auto-repair: High lag for peer {} ({}s), attempting reconnection hint...",
+                                peer.node_id,
+                                peer.sync_lag_secs
+                            );
+                        }
+                    }
+                    PeerRetryDecision::Stale => {
+                        attempts.insert(peer.node_id.clone(), attempt + 1);
+                        tracing::debug!(
+                            "Auto-repair: Peer {} is stale (lag {}s > 7 days), skipping reconnection hint",
+                            peer.node_id,
+                            peer.sync_lag_secs
+                        );
+                    }
+                }
             }
         }
 
@@ -545,6 +583,7 @@ impl HealthMonitor {
                 connectivity_ok: lag < 60, // 1 minute threshold for mesh connectivity alert
                 sync_lag_secs: lag,
                 trust_score: 1.0,
+                is_stale: lag > 604800,
             });
         }
 
@@ -586,6 +625,27 @@ mod tests {
         assert_eq!(status.status, HealthLevel::Healthy);
         assert_eq!(status.system.status, HealthLevel::Healthy);
         assert_eq!(status.database.status, HealthLevel::Healthy);
+    }
+
+    #[tokio::test]
+    async fn test_peer_health_stale_flag() {
+        let peer_normal = PeerHealth {
+            node_id: "node1".into(),
+            connectivity_ok: true,
+            sync_lag_secs: 100,
+            trust_score: 1.0,
+            is_stale: false,
+        };
+        assert!(!peer_normal.is_stale);
+
+        let peer_stale = PeerHealth {
+            node_id: "node2".into(),
+            connectivity_ok: false,
+            sync_lag_secs: 700_000, // > 7 days (604800)
+            trust_score: 1.0,
+            is_stale: 700_000 > 604800,
+        };
+        assert!(peer_stale.is_stale);
     }
 
     #[tokio::test]
