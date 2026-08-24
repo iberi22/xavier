@@ -109,7 +109,10 @@ impl ModelRouterService {
     /// Dispatches an inference request to the selected model provider.
     pub async fn infer(&self, req: ModelInferRequest) -> ModelInferResponse {
         let tokens_used = (req.prompt.split_whitespace().count() as u32).max(1) + 16;
-        let output = format!("Inference response for [{}] prompt: {}", req.model, req.prompt);
+        let output = format!(
+            "Inference response for [{}] prompt: {}",
+            req.model, req.prompt
+        );
         ModelInferResponse {
             model: req.model,
             output,
@@ -183,17 +186,13 @@ pub async fn infer_handler(
 }
 
 /// GET `/v1/maloca/models/list`: Lists available local and cloud models.
-pub async fn list_handler(
-    State(service): State<ModelRouterService>,
-) -> impl IntoResponse {
+pub async fn list_handler(State(service): State<ModelRouterService>) -> impl IntoResponse {
     let response = service.list().await;
     Json(ApiResponse::ok(response))
 }
 
 /// GET `/v1/maloca/models/health`: Reports provider availability and credit status.
-pub async fn health_handler(
-    State(service): State<ModelRouterService>,
-) -> impl IntoResponse {
+pub async fn health_handler(State(service): State<ModelRouterService>) -> impl IntoResponse {
     let response = service.health().await;
     Json(ApiResponse::ok(response))
 }
@@ -245,7 +244,10 @@ mod tests {
 
         assert_eq!(json["status"], "ok");
         assert_eq!(json["data"]["model"], "llama3-8b-local");
-        assert!(json["data"]["output"].as_str().unwrap().contains("Hello world test prompt"));
+        assert!(json["data"]["output"]
+            .as_str()
+            .unwrap()
+            .contains("Hello world test prompt"));
         assert!(json["data"]["tokens_used"].as_u64().unwrap() > 0);
     }
 

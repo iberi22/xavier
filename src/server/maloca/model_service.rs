@@ -187,9 +187,7 @@ mod tests {
         let secret = "sk-clavis-super-secret-key-998877";
         let token_id = "test-token";
 
-        let lease = service
-            .lease_clavis_token(token_id, secret, Some(10))
-            .await;
+        let lease = service.lease_clavis_token(token_id, secret, Some(10)).await;
 
         assert_eq!(lease.token_id, token_id);
         assert_eq!(lease.token_value, secret);
@@ -209,7 +207,9 @@ mod tests {
         let secret = "clavis-expiring-token-123456";
 
         // Lease token with 0 second TTL
-        let lease = service.lease_clavis_token("expiring", secret, Some(0)).await;
+        let lease = service
+            .lease_clavis_token("expiring", secret, Some(0))
+            .await;
         // Small pause to cross expiration
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
@@ -233,7 +233,10 @@ mod tests {
 
         let service_clone2 = service.clone();
         let handle2 = tokio::spawn(async move {
-            service_clone2.switch_provider(ProviderKind::Anthropic).await.unwrap();
+            service_clone2
+                .switch_provider(ProviderKind::Anthropic)
+                .await
+                .unwrap();
         });
 
         handle1.await.unwrap();

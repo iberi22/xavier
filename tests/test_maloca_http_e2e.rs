@@ -209,7 +209,9 @@ async fn test_maloca_http_e2e_models_infer() {
     assert_eq!(res.status(), 200);
 
     let body: InferResponse = res.json().await.unwrap();
-    assert!(body.response.contains("Synthesize SWAL node consensus status"));
+    assert!(body
+        .response
+        .contains("Synthesize SWAL node consensus status"));
     assert_eq!(body.model, "llama3-swal-fine-tuned");
     assert_eq!(body.provider, "local-mock-provider");
 }

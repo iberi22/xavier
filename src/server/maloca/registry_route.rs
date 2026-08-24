@@ -92,7 +92,8 @@ impl Default for AppRegistry {
                     app_id: "xavier".to_string(),
                     name: "Xavier Core Runtime".to_string(),
                     role: "Cognitive Memory Runtime & MCP Server".to_string(),
-                    description: "High-performance vector memory engine and AI agent coordinator.".to_string(),
+                    description: "High-performance vector memory engine and AI agent coordinator."
+                        .to_string(),
                     repository: RepositoryInfo {
                         repo: "iberi22/xavier".to_string(),
                         state: "active".to_string(),
@@ -113,7 +114,8 @@ impl Default for AppRegistry {
                     app_id: "maloca".to_string(),
                     name: "Maloca Portal".to_string(),
                     role: "Decentralized P2P Data Commons & Identity Network".to_string(),
-                    description: "Social consensus and memory replication portal for SWAL nodes.".to_string(),
+                    description: "Social consensus and memory replication portal for SWAL nodes."
+                        .to_string(),
                     repository: RepositoryInfo {
                         repo: "iberi22/swal-apps-registry".to_string(),
                         state: "active".to_string(),
@@ -134,7 +136,8 @@ impl Default for AppRegistry {
                     app_id: "code-graph".to_string(),
                     name: "Code Graph Engine".to_string(),
                     role: "AST Symbol Analysis & Blast Radius Engine".to_string(),
-                    description: "Language server AST indexer and dependency graph analyzer.".to_string(),
+                    description: "Language server AST indexer and dependency graph analyzer."
+                        .to_string(),
                     repository: RepositoryInfo {
                         repo: "iberi22/xavier/code-graph".to_string(),
                         state: "active".to_string(),
@@ -155,7 +158,9 @@ impl Default for AppRegistry {
                     app_id: "panel-ui".to_string(),
                     name: "Panel UI Frontend".to_string(),
                     role: "Management Dashboard & Visualizer".to_string(),
-                    description: "React and Tauri frontend UI for Xavier memory and Maloca control.".to_string(),
+                    description:
+                        "React and Tauri frontend UI for Xavier memory and Maloca control."
+                            .to_string(),
                     repository: RepositoryInfo {
                         repo: "iberi22/xavier/panel-ui".to_string(),
                         state: "active".to_string(),
@@ -352,7 +357,13 @@ mod tests {
         let response = app.clone().oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        let etag_header = response.headers().get(header::ETAG).unwrap().to_str().unwrap().to_string();
+        let etag_header = response
+            .headers()
+            .get(header::ETAG)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
         assert!(!etag_header.is_empty());
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();

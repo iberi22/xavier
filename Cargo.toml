@@ -1,6 +1,3 @@
-[patch.crates-io]
-burn-candle = { path = "patches/burn-candle" }
-
 [package]
 name = "xavier"
 version = "0.13.0"

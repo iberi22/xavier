@@ -219,8 +219,7 @@ mod tests {
         // "use", "database" overlap (2 common) out of {"use", "sqlite", "postgres", "database"} (4 total) => 2/4 = 0.5
         assert!((score_partial - 0.5).abs() < 1e-4);
 
-        let score_disjoint =
-            HcAnalyzerBridge::fallback_similarity("alpha beta", "gamma delta");
+        let score_disjoint = HcAnalyzerBridge::fallback_similarity("alpha beta", "gamma delta");
         assert_eq!(score_disjoint, 0.0);
     }
 
@@ -240,9 +239,7 @@ mod tests {
     async fn test_hc_analyzer_bridge_noop_embedder_fallback() {
         let bridge = HcAnalyzerBridge::new(Arc::new(NoopEmbedder));
         // NoopEmbedder returns Ok(vec![]), so bridge should gracefully use fallback_similarity
-        let score = bridge
-            .score_response("we use rust", "we use rust")
-            .await;
+        let score = bridge.score_response("we use rust", "we use rust").await;
         assert_eq!(score, 1.0);
     }
 

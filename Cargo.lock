@@ -2085,6 +2085,8 @@ dependencies = [
 [[package]]
 name = "burn-candle"
 version = "0.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21c752d5008923eb9299783da5edae3242b94afdb956e88d2b37b025244b5071"
 dependencies = [
  "burn-backend",
  "burn-std",
