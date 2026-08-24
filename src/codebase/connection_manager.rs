@@ -199,6 +199,20 @@ impl ConnectionManager {
         Ok(())
     }
 
+    /// Get or open a cached `CodeGraphDB` instance for a given database path.
+    pub fn get_code_graph_db(
+        &self,
+        db_path: &std::path::Path,
+    ) -> Result<code_graph::db::CodeGraphDB> {
+        code_graph::db::CodeGraphDB::new(db_path).map_err(|e| anyhow::anyhow!(e))
+    }
+
+    /// Shutdown the connection manager and flush all SQLite WAL checkpoints cleanly.
+    pub fn shutdown(&self) {
+        self.pools.write().clear();
+        code_graph::db::flush_and_close_cache();
+    }
+
     /// Manually disconnect and drop a pool.
     pub fn disconnect(&self, project_id: &str) {
         self.pools.write().remove(project_id);
@@ -313,6 +327,37 @@ mod tests {
         assert_eq!(cm.pools.read().len(), 2);
         assert!(cm.pools.read().contains_key("p1"));
         assert!(cm.pools.read().contains_key("p2"));
+    }
+
+    #[tokio::test]
+    async fn test_get_code_graph_db_and_shutdown() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("code_graph_cm.db");
+
+        let cg1 = cm.get_code_graph_db(&db_path).unwrap();
+        let cg2 = cm.get_code_graph_db(&db_path).unwrap();
+
+        let sym = code_graph::types::Symbol {
+            id: None,
+            stable_id: None,
+            name: "cm_test_symbol".to_string(),
+            kind: code_graph::types::SymbolKind::Function,
+            lang: code_graph::types::Language::Rust,
+            file_path: "src/cm_test.rs".to_string(),
+            start_line: 1,
+            end_line: 2,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            parent: None,
+            complexity: None,
+        };
+        cg1.insert_symbol(&sym).unwrap();
+        let found = cg2.find_by_name("cm_test_symbol", 1).unwrap();
+        assert_eq!(found.len(), 1);
+
+        cm.shutdown();
     }
 
     #[tokio::test]
