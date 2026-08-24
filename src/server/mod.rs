@@ -3,6 +3,7 @@
 pub mod alerts;
 pub mod events;
 pub mod f12_routes;
+pub mod gpud_sidecar;
 pub mod headless;
 pub mod http;
 pub mod maloca;
