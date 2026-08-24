@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Chronicle — 2026-08-24 — Xavier DevLog</title>
+    <meta name="description" content="Hoy ha sido un día de cierre masivo y estabilización. Hemos completado la transición hacia la versión **v0.13.0**, consolidando la API de Maloca V1 y cerrando la Wave F12. El foco principal estuvo en la seguridad (Sentinel), la optimización de renders en el panel (Bolt) y la accesibilidad (Palette).">
+    <meta property="og:title" content="Daily Chronicle — 2026-08-24 — Xavier DevLog">
+    <meta property="og:description" content="Hoy ha sido un día de cierre masivo y estabilización. Hemos completado la transición hacia la versión **v0.13.0**, consolidando la API de Maloca V1 y cerrando la Wave F12. El foco principal estuvo en la seguridad (Sentinel), la optimización de renders en el panel (Bolt) y la accesibilidad (Palette).">
+    <meta property="og:type" content="article">
+    <meta name="color-scheme" content="dark light">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to content</a>
+    <header class="site-header">
+        <div class="container header-inner">
+            <div class="logo-area">
+                <h1 class="site-title"><a href="index.html">Xavier DevLog</a></h1>
+                <p class="tagline">Cognitive Memory Runtime — Technical Logs</p>
+            </div>
+            <nav class="site-nav" aria-label="Main navigation">
+                <a href="index.html" class="nav-link">DevLog</a>
+                <a href="https://southwest-ai-labs.github.io/xavier/" class="nav-link" target="_blank" rel="noopener">Docs</a>
+                <a href="https://github.com/iberi22/xavier" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark/light mode">
+                    <span class="icon-light">&#9728;</span>
+                    <span class="icon-dark">&#9790;</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main id="main-content" class="container main-content">
+        <article class="post">
+                <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="index.html">DevLog</a><span class="sep">/</span><span class="current">Daily Chronicle — 2026-08-24</span></nav>
+                <h1>Daily Chronicle — 2026-08-24</h1>
+                <div class="post-meta">
+                    <span class="post-date">2026-08-24</span>
+                    
+                </div>
+                <div class="post-body">
+                    <h1>Daily Chronicle — 2026-08-24</h1>
+<h2>Resumen del día</h2>
+<p>Hoy ha sido un día de cierre masivo y estabilización. Hemos completado la transición hacia la versión <strong>v0.13.0</strong>, consolidando la API de Maloca V1 y cerrando la Wave F12. El foco principal estuvo en la seguridad (Sentinel), la optimización de renders en el panel (Bolt) y la accesibilidad (Palette).</p>
+<p>Lo más destacable es la implementación del sistema de <strong>Self-Managed Runtime</strong> con herramientas MCP para el "guardian" del nodo y la resolución de vulnerabilidades críticas de <em>Path Traversal</em> en varias rutas de la API. También hemos avanzado en la infraestructura de red con el soporte de <strong>Iroh QUIC</strong> y la implementación de un sistema de votación cuadrática resistente a Sybil para la gobernanza. Para cerrar, hemos hecho una limpieza profunda del repositorio para el lanzamiento público, migrando a licencia <strong>AGPL-3.0</strong> y archivando planes históricos.</p>
+<h2>Decisiones Técnicas</h2>
+<h3>Implementación de Lazy-Loading en el Pool de Documentos</h3>
+<p><strong>Contexto:</strong> El tiempo de arranque del servidor era prohibitivo (~4 min) debido a la carga ansiosa de más de 30k documentos al iniciar.
+<strong>Decisión:</strong> Implementar <code>QmdMemory::new_lazy()</code>, moviendo la carga al primer acceso mediante un guardián atómico (<code>ensure_loaded</code>).
+<strong>Alternativas consideradas:</strong> Paginación de carga inicial o uso de un índice externo más ligero.
+<strong>Lección aprendida:</strong> El tiempo de arranque bajó a ~75s, demostrando que la carga diferida es la solución más efectiva para datasets de tamaño medio en memoria.</p>
+<h3>Optimización de Recálculos en GraphView</h3>
+<p><strong>Contexto:</strong> El componente <code>ForceGraph2D</code> es computacionalmente costoso y se re-renderizaba innecesariamente cada vez que el estado del padre (<code>App.tsx</code>) cambiaba.
+<strong>Decisión:</strong> Envolver <code>GraphView</code> en <code>React.memo</code> y optimizar la navegación de árboles reemplazando el operador spread por <code>.reduce()</code> en el cálculo de profundidad.
+<strong>Alternativas consideradas:</strong> Implementar un estado global más granular (Zustand/Redux) para evitar el paso de props.
+<strong>Lección aprendida:</strong> El uso</p>
+
+                </div>
+            </article>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-inner">
+            <p>&copy; 2026 Xavier Project. Generated by <a href="https://github.com/iberi22/xavier">Xavier Chronicle SSG</a>.</p>
+            <p class="footer-links">
+                <a href="https://github.com/iberi22/xavier" target="_blank" rel="noopener">GitHub</a>
+                <span class="sep">.</span>
+                <a href="https://southwest-ai-labs.github.io/xavier/" target="_blank" rel="noopener">Documentation</a>
+            </p>
+        </div>
+    </footer>
+    <script src="main.js"></script>
+</body>
+</html>

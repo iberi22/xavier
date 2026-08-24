@@ -24,9 +24,10 @@ function generateDatabase() {
     mainBranch = runGit('git rev-parse --abbrev-ref HEAD');
   }
 
-  // Get all commits on main
-  const logOutput = runGit(`git log ${mainBranch} --pretty=format:"%H|%an|%ae|%ad|%s" --date=short`);
-  if (!logOutput) {
+  // Get recent commits on main (bounded so the generated DB stays reviewable)
+  const maxCommits = parseInt(process.env.MAX_COMMITS || '120', 10);
+  const logOutput = runGit(`git log ${mainBranch} -n ${maxCommits} --pretty=format:"%H|%an|%ae|%ad|%s" --date=short`);
+if (!logOutput) {
     console.error('❌ No se pudieron recuperar los commits de Git.');
     return;
   }
@@ -38,9 +39,9 @@ function generateDatabase() {
     if (!line) continue;
     const [hash, authorName, authorEmail, date, message] = line.split('|');
 
-    // Get files changed in this commit
+    // Get files changed in this commit (cap per-commit fan-out)
     const filesOutput = runGit(`git diff-tree --no-commit-id --name-only -r ${hash}`);
-    const files = filesOutput ? filesOutput.split('\n').filter(Boolean) : [];
+    const files = filesOutput ? filesOutput.split('\n').filter(Boolean).slice(0, 60) : [];
 
     const diffs = {};
     const fileStats = {};

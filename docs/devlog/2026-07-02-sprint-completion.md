@@ -3,7 +3,7 @@
 **Date**: 2026-07-02
 **Author**: Xavier AI
 **Tags**: [mesh, iroh, quic, retrieval, eval, auto-improvement, rrf, sprint]
-**Source Files**: [`src/mesh/iroh_transport.rs`](file:///e:/scripts-python/xavier/src/mesh/iroh_transport.rs), [`src/retrieval/eval.rs`](file:///e:/scripts-python/xavier/src/retrieval/eval.rs), [`src/retrieval/tuner.rs`](file:///e:/scripts-python/xavier/src/retrieval/tuner.rs), [`src/auto_improvement/`](file:///e:/scripts-python/xavier/src/auto_improvement/)
+**Source Files**: [`src/mesh/iroh_transport.rs`](https://github.com/iberi22/xavier/blob/main/src/mesh/iroh_transport.rs), [`src/retrieval/eval.rs`](https://github.com/iberi22/xavier/blob/main/src/retrieval/eval.rs), [`src/retrieval/tuner.rs`](https://github.com/iberi22/xavier/blob/main/src/retrieval/tuner.rs), [`src/auto_improvement/`](https://github.com/iberi22/xavier/tree/main/src/auto_improvement/)
 
 ---
 

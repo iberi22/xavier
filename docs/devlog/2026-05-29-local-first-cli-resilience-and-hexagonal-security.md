@@ -3,7 +3,7 @@
 **Date**: 2026-05-29
 **Author**: Xavier AI
 **Tags**: [cli, local-first, offline-database, sqlite-vec, hexagonal-architecture, security-ports]
-**Source Files**: [`src/cli/commands.rs`](file:///e:/scripts-python/xavier-v1/src/cli/commands.rs), [`src/cli/server.rs`](file:///e:/scripts-python/xavier-v1/src/cli/server.rs), [`src/cli/state.rs`](file:///e:/scripts-python/xavier-v1/src/cli/state.rs), [`src/app/security_service.rs`](file:///e:/scripts-python/xavier-v1/src/app/security_service.rs)
+**Source Files**: [`src/cli/commands.rs`](file:///~/proyectosSWAL/apps/xavier-v1/src/cli/commands.rs), [`src/cli/server.rs`](file:///~/proyectosSWAL/apps/xavier-v1/src/cli/server.rs), [`src/cli/state.rs`](file:///~/proyectosSWAL/apps/xavier-v1/src/cli/state.rs), [`src/app/security_service.rs`](file:///~/proyectosSWAL/apps/xavier-v1/src/app/security_service.rs)
 
 ---
 
@@ -116,6 +116,6 @@ graph TD
 ---
 
 ## References
-- [CLI Commands Local Fallback](file:///e:/scripts-python/xavier-v1/src/cli/commands.rs)
-- [CLI State Hexagonal Definition](file:///e:/scripts-python/xavier-v1/src/cli/state.rs)
-- [Hexagonal Ports Directory](file:///e:/scripts-python/xavier-v1/src/ports/inbound/)
+- [CLI Commands Local Fallback](file:///~/proyectosSWAL/apps/xavier-v1/src/cli/commands.rs)
+- [CLI State Hexagonal Definition](file:///~/proyectosSWAL/apps/xavier-v1/src/cli/state.rs)
+- [Hexagonal Ports Directory](file:///~/proyectosSWAL/apps/xavier-v1/src/ports/inbound/)

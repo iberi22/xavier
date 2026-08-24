@@ -3,7 +3,7 @@
 **Date**: 2026-05-10
 **Author**: Xavier AI
 **Tags**: [security, prompt-injection, defense-in-depth, agent-safety]
-**Source Files**: [`src/security/prompt_guard.rs`](file:///e:/scripts-python/xavier/src/security/prompt_guard.rs), [`src/security/detections.rs`](file:///e:/scripts-python/xavier/src/security/detections.rs)
+**Source Files**: [`src/security/prompt_guard.rs`](https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs), [`src/security/detections.rs`](https://github.com/iberi22/xavier/blob/main/src/security/detections.rs)
 
 ---
 
@@ -87,6 +87,6 @@ sequenceDiagram
 ---
 
 ## References
-- [Prompt Guard Implementation](file:///e:/scripts-python/xavier/src/security/prompt_guard.rs)
-- [Security Documentation](file:///e:/scripts-python/xavier/docs/SECURITY.md)
+- [Prompt Guard Implementation](https://github.com/iberi22/xavier/blob/main/src/security/prompt_guard.rs)
+- [Security Documentation](https://github.com/iberi22/xavier/blob/main/docs/SECURITY.md)
 - [OWASP Top 10 for LLMs](https://llmtop10.org/)
