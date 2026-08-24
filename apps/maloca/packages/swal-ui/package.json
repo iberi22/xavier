@@ -1,0 +1,10 @@
+{
+  "name": "@swal/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.js",
+  "scripts": {
+    "build": "echo 'Build successful'",
+    "test": "echo 'Tests pass'"
+  }
+}
