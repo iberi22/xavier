@@ -6,9 +6,24 @@ use crate::codebase::connection_manager::ConnectionManager;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use anyhow::Result;
 use rusqlite::{params, Connection};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use super::{vector, VecSqliteMemoryStore};
+
+pub static REINDEX_RUNNING: AtomicBool = AtomicBool::new(false);
+pub static REINDEX_TOTAL: AtomicUsize = AtomicUsize::new(0);
+pub static REINDEX_PROCESSED: AtomicUsize = AtomicUsize::new(0);
+pub static REINDEX_SUCCESS: AtomicUsize = AtomicUsize::new(0);
+pub static REINDEX_FAILED: AtomicUsize = AtomicUsize::new(0);
+
+struct ReindexRunningGuard;
+
+impl Drop for ReindexRunningGuard {
+    fn drop(&mut self) {
+        REINDEX_RUNNING.store(false, Ordering::SeqCst);
+    }
+}
 
 impl SchemaInitializer for VecSqliteMemoryStore {
     fn init_schema(&self) -> Result<()> {
@@ -135,6 +150,9 @@ impl VecSqliteMemoryStore {
         &self,
         limit: Option<usize>,
     ) -> Result<usize> {
+        REINDEX_RUNNING.store(true, Ordering::SeqCst);
+        let _guard = ReindexRunningGuard;
+
         let embedder = match crate::embedding::build_embedder_from_env().await {
             Ok(emb) => emb,
             Err(e) => {
@@ -184,12 +202,17 @@ impl VecSqliteMemoryStore {
             return Ok(0);
         }
 
+        REINDEX_TOTAL.store(total_records, Ordering::SeqCst);
+        REINDEX_PROCESSED.store(0, Ordering::SeqCst);
+        REINDEX_SUCCESS.store(0, Ordering::SeqCst);
+        REINDEX_FAILED.store(0, Ordering::SeqCst);
+
         tracing::info!(
             "Starting background reindexing for {} records.",
             total_records
         );
 
-        let batch_size = 10;
+        let batch_size = 100;
         let mut processed_count = 0;
         let mut success_count = 0;
         let mut fail_count = 0;
@@ -221,55 +244,61 @@ impl VecSqliteMemoryStore {
 
             let results = futures_util::future::join_all(tasks).await;
 
-            for res in results {
-                match res {
-                    Ok((record_id, embedding)) => {
-                        let project_id_c = self.project_id.clone();
-                        let record_to_update = chunk.iter().find(|r| r.id == record_id).cloned();
-                        if let Some(record) = record_to_update {
-                            let workspace_id = record.workspace_id.clone();
-                            let embedding_c: Vec<f32> = embedding.clone();
-                            let record_id_for_db = record_id.clone();
-                            let update_res = ConnectionManager::global()
-                                .with_conn(&project_id_c, move |conn| {
+            let project_id_c = self.project_id.clone();
+            let chunk_vec: Vec<_> = chunk.to_vec();
+
+            let (b_success, b_fail) = ConnectionManager::global()
+                .with_conn(&project_id_c, move |conn| {
+                    let tx = conn.unchecked_transaction()?;
+                    let mut s_cnt = 0;
+                    let mut f_cnt = 0;
+
+                    for res in results {
+                        match res {
+                            Ok((record_id, embedding)) => {
+                                let record_to_update =
+                                    chunk_vec.iter().find(|r| r.id == record_id);
+                                if let Some(record) = record_to_update {
+                                    let workspace_id = &record.workspace_id;
                                     let qjl_enabled = {
                                         let threshold = Self::configured_qjl_threshold();
-                                        let current_vectors: usize = conn.query_row(
-                                            "SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?",
-                                            params![workspace_id],
-                                            |row| row.get(0)
-                                        ).unwrap_or(0);
+                                        let current_vectors: usize = tx
+                                            .query_row(
+                                                "SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?",
+                                                params![workspace_id],
+                                                |row| row.get(0),
+                                            )
+                                            .unwrap_or(0);
                                         current_vectors >= threshold
                                     };
 
                                     let embedding_blob = if qjl_enabled {
-                                        vector::serialize_embedding_qjl(&embedding_c)
+                                        vector::serialize_embedding_qjl(&embedding)
                                     } else {
-                                        vector::serialize_embedding(&embedding_c)
+                                        vector::serialize_embedding(&embedding)
                                     };
 
-                                    // Update memory_records
-                                    conn.execute(
+                                    tx.execute(
                                         "UPDATE memory_records SET embedding = ?1, updated_at = ?2, embedding_status = 'completed', embedding_attempts = 0 WHERE id = ?3",
                                         params![
                                             embedding_blob,
                                             chrono::Utc::now().to_rfc3339(),
-                                            record_id_for_db.as_str()
+                                            record_id.as_str()
                                         ],
                                     )?;
 
-                                    // Update vector table (delete + insert is reliable for vec0)
-                                    conn.execute(
+                                    tx.execute(
                                         "DELETE FROM memory_embeddings WHERE id = ?1",
-                                        params![record_id_for_db.as_str()],
+                                        params![record_id.as_str()],
                                     )?;
-                                    conn.execute(
+                                    tx.execute(
                                         "DELETE FROM memory_embeddings_768 WHERE id = ?1",
-                                        params![record_id_for_db.as_str()],
+                                        params![record_id.as_str()],
                                     )?;
+
                                     let embedding_json =
-                                        serde_json::to_string(&embedding_c).unwrap_or_default();
-                                    let table_name = if embedding_c.len() == 768 {
+                                        serde_json::to_string(&embedding).unwrap_or_default();
+                                    let table_name = if embedding.len() == 768 {
                                         "memory_embeddings_768"
                                     } else {
                                         "memory_embeddings"
@@ -278,88 +307,70 @@ impl VecSqliteMemoryStore {
                                         "INSERT INTO {}(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
                                         table_name
                                     );
-                                    let inserted = conn.execute(
+                                    let inserted = tx.execute(
                                         &sql,
                                         params![
-                                            record_id_for_db.as_str(),
+                                            record_id.as_str(),
                                             workspace_id.as_str(),
                                             embedding_json
                                         ],
                                     )?;
                                     if inserted == 0 {
-                                        anyhow::bail!(
+                                        tracing::error!(
                                             "vector table insert affected 0 rows for {}",
-                                            record_id_for_db
+                                            record_id
                                         );
+                                        f_cnt += 1;
+                                    } else {
+                                        s_cnt += 1;
                                     }
-                                    let count_sql = format!(
-                                        "SELECT COUNT(*) FROM {} WHERE id = ?1",
-                                        table_name
-                                    );
-                                    let vec_rows: i64 = conn.query_row(
-                                        &count_sql,
-                                        params![record_id_for_db.as_str()],
-                                        |r| r.get(0),
-                                    )?;
-                                    if vec_rows == 0 {
-                                        anyhow::bail!(
-                                            "vector table missing row after insert for {}",
-                                            record_id_for_db
-                                        );
-                                    }
-
-                                    Ok(())
-                                })
-                                .await;
-
-                            if let Err(e) = update_res {
-                                tracing::error!(
-                                    "Failed to update embedded record {} in database: {}",
-                                    record_id,
-                                    e
-                                );
-                                fail_count += 1;
-                            } else {
-                                success_count += 1;
+                                } else {
+                                    tracing::error!("Record {} not found in chunk", record_id);
+                                    f_cnt += 1;
+                                }
                             }
-                        } else {
-                            tracing::error!("Record {} not found in chunk", record_id);
-                            fail_count += 1;
-                        }
-                    }
-                    Err((record_id, err_details)) => {
-                        tracing::error!(
-                            "Failed to generate embedding for record {}: {}",
-                            record_id,
-                            err_details
-                        );
-                        let project_id_c = self.project_id.clone();
-                        let record_id_for_db = record_id.clone();
-                        let chunk_rec = chunk.iter().find(|r| r.id == record_id);
-                        let attempts = chunk_rec.map(|r| r.embedding_attempts + 1).unwrap_or(1);
-                        let new_status = if attempts >= 5 { "failed" } else { "retry" };
+                            Err((record_id, err_details)) => {
+                                tracing::error!(
+                                    "Failed to generate embedding for record {}: {}",
+                                    record_id,
+                                    err_details
+                                );
+                                let chunk_rec = chunk_vec.iter().find(|r| r.id == record_id);
+                                let attempts =
+                                    chunk_rec.map(|r| r.embedding_attempts + 1).unwrap_or(1);
+                                let new_status = if attempts >= 5 { "failed" } else { "retry" };
 
-                        let _ = ConnectionManager::global()
-                            .with_conn(&project_id_c, move |conn| {
-                                conn.execute(
+                                tx.execute(
                                     "UPDATE memory_records SET embedding_status = ?1, embedding_attempts = ?2, updated_at = ?3 WHERE id = ?4",
                                     params![
                                         new_status,
                                         attempts,
                                         chrono::Utc::now().to_rfc3339(),
-                                        record_id_for_db.as_str()
+                                        record_id.as_str()
                                     ],
                                 )?;
-                                Ok(())
-                            })
-                            .await;
-
-                        fail_count += 1;
+                                f_cnt += 1;
+                            }
+                        }
                     }
-                }
-            }
+
+                    tx.commit()?;
+                    Ok((s_cnt, f_cnt))
+                })
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::error!("Failed batch transaction for reindexing chunk: {}", e);
+                    (0, chunk.len())
+                });
+
+            success_count += b_success;
+            fail_count += b_fail;
 
             processed_count += chunk.len();
+            REINDEX_PROCESSED.store(processed_count, Ordering::SeqCst);
+            REINDEX_SUCCESS.store(success_count, Ordering::SeqCst);
+            REINDEX_FAILED.store(fail_count, Ordering::SeqCst);
+
             let prev_hundred = (processed_count - chunk.len()) / 100;
             let curr_hundred = processed_count / 100;
             if curr_hundred > prev_hundred || processed_count == total_records {

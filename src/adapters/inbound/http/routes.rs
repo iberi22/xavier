@@ -126,9 +126,11 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         // ── Maintenance API ──────────────────────────────────────────────
         .route(
             "/v1/maintenance/reindex-embeddings",
-            post(maintenance_reindex_handler).layer(axum::middleware::from_fn(
-                crate::middleware::require_permission(|r| r.can_edit_config()),
-            )),
+            post(maintenance_reindex_handler)
+                .get(maintenance_reindex_status_handler)
+                .layer(axum::middleware::from_fn(
+                    crate::middleware::require_permission(|r| r.can_edit_config()),
+                )),
         )
         // ── Training Datasets API ─────────────────────────────────────────
         .route("/v1/training/export", post(training_export_handler))
@@ -603,12 +605,57 @@ pub struct ReindexMaintenanceResponse {
     pub dry_run: bool,
     pub null_embeddings_count: usize,
     pub processed_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_applied: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReindexStatusResponse {
+    pub status: String,
+    pub is_running: bool,
+    pub total_records: usize,
+    pub processed_count: usize,
+    pub success_count: usize,
+    pub failed_count: usize,
+}
+
+/// GET /v1/maintenance/reindex-embeddings — query reindexing status and progress.
+pub async fn maintenance_reindex_status_handler() -> impl axum::response::IntoResponse {
+    use crate::memory::sqlite_vec_store::schema_impl::*;
+    use std::sync::atomic::Ordering;
+
+    Json(ReindexStatusResponse {
+        status: "ok".to_string(),
+        is_running: REINDEX_RUNNING.load(Ordering::SeqCst),
+        total_records: REINDEX_TOTAL.load(Ordering::SeqCst),
+        processed_count: REINDEX_PROCESSED.load(Ordering::SeqCst),
+        success_count: REINDEX_SUCCESS.load(Ordering::SeqCst),
+        failed_count: REINDEX_FAILED.load(Ordering::SeqCst),
+    })
 }
 
 /// POST /v1/maintenance/reindex-embeddings — trigger reindexing of memories lacking embeddings.
 pub async fn maintenance_reindex_handler(
     Json(payload): Json<ReindexMaintenanceRequest>,
 ) -> impl axum::response::IntoResponse {
+    use crate::memory::sqlite_vec_store::schema_impl::REINDEX_RUNNING;
+    use std::sync::atomic::Ordering;
+
+    let (effective_limit, limit_applied) = match payload.limit {
+        Some(lim) => (Some(lim), None),
+        None => (Some(500), Some(500)),
+    };
+
+    if !payload.dry_run {
+        if REINDEX_RUNNING.swap(true, Ordering::SeqCst) {
+            return (
+                axum::http::StatusCode::CONFLICT,
+                Json(serde_json::json!({ "status": "already_running" })),
+            )
+                .into_response();
+        }
+    }
+
     let store_config = VecSqliteStoreConfig::from_env();
 
     match VecSqliteMemoryStore::new(store_config).await {
@@ -633,18 +680,18 @@ pub async fn maintenance_reindex_handler(
                     dry_run: true,
                     null_embeddings_count: null_count,
                     processed_count: 0,
+                    limit_applied,
                 })
                 .into_response()
             } else {
-                let limit = payload.limit;
                 // Spawn the background reindexing task!
                 tokio::spawn(async move {
                     tracing::info!(
                         "Starting triggered background reindexing (limit: {:?})...",
-                        limit
+                        effective_limit
                     );
                     match store
-                        .reindex_null_embeddings_background_with_limit(limit)
+                        .reindex_null_embeddings_background_with_limit(effective_limit)
                         .await
                     {
                         Ok(success_count) => {
@@ -659,20 +706,30 @@ pub async fn maintenance_reindex_handler(
                     }
                 });
 
+                let processed_expected = effective_limit
+                    .unwrap_or(null_count)
+                    .min(null_count);
+
                 Json(ReindexMaintenanceResponse {
                     status: "reindexing_started".to_string(),
                     dry_run: false,
                     null_embeddings_count: null_count,
-                    processed_count: limit.unwrap_or(null_count).min(null_count),
+                    processed_count: processed_expected,
+                    limit_applied,
                 })
                 .into_response()
             }
         }
-        Err(e) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to initialize memory store for reindexing: {}", e),
-        )
-            .into_response(),
+        Err(e) => {
+            if !payload.dry_run {
+                REINDEX_RUNNING.store(false, Ordering::SeqCst);
+            }
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to initialize memory store for reindexing: {}", e),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -1412,6 +1469,131 @@ mod route_tests {
         assert_eq!(parsed["dry_run"], true);
         assert!(parsed.get("null_embeddings_count").is_some());
         assert_eq!(parsed["processed_count"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_route_maintenance_reindex_null_limit_applies_default_500() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let req_body = serde_json::json!({
+            "dry_run": true,
+            "limit": null
+        });
+        let mut req = Request::builder()
+            .uri("/v1/maintenance/reindex-embeddings")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+            .unwrap();
+        req.extensions_mut()
+            .insert(crate::security::auth::Claims::new(
+                "admin".to_string(),
+                "admin@example.com".to_string(),
+                crate::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
+        let response: Response = create_router()
+            .oneshot(req)
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse reindex response");
+
+        assert_eq!(parsed["limit_applied"], 500);
+    }
+
+    #[tokio::test]
+    async fn test_route_maintenance_reindex_already_running_guard() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        use crate::memory::sqlite_vec_store::schema_impl::REINDEX_RUNNING;
+        use std::sync::atomic::Ordering;
+
+        REINDEX_RUNNING.store(true, Ordering::SeqCst);
+
+        let req_body = serde_json::json!({
+            "dry_run": false,
+            "limit": 10
+        });
+        let mut req = Request::builder()
+            .uri("/v1/maintenance/reindex-embeddings")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+            .unwrap();
+        req.extensions_mut()
+            .insert(crate::security::auth::Claims::new(
+                "admin".to_string(),
+                "admin@example.com".to_string(),
+                crate::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
+        let response: Response = create_router()
+            .oneshot(req)
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse already running response");
+
+        assert_eq!(parsed["status"], "already_running");
+
+        REINDEX_RUNNING.store(false, Ordering::SeqCst);
+    }
+
+    #[tokio::test]
+    async fn test_route_maintenance_reindex_status_get() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+
+        let mut req = Request::builder()
+            .uri("/v1/maintenance/reindex-embeddings")
+            .method(Method::GET)
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut()
+            .insert(crate::security::auth::Claims::new(
+                "admin".to_string(),
+                "admin@example.com".to_string(),
+                crate::security::auth::UserRole::Admin,
+                chrono::Duration::hours(1),
+            ));
+        let response: Response = create_router()
+            .oneshot(req)
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse status response");
+
+        assert_eq!(parsed["status"], "ok");
+        assert!(parsed.get("is_running").is_some());
+        assert!(parsed.get("processed_count").is_some());
     }
 }
 
