@@ -57,6 +57,57 @@
   margin-top: 4px;
 }
 
+/* Sub-header Tab Bar Navigation */
+.maloca-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--maloca-bg-elevated) 85%, transparent);
+  border: 1px solid var(--maloca-border);
+  border-radius: var(--maloca-radius);
+}
+
+.maloca-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--maloca-text-muted);
+  padding: 8px 14px;
+  border-radius: calc(var(--maloca-radius) - 4px);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.maloca-tab:hover {
+  color: var(--maloca-text);
+  background: color-mix(in srgb, var(--maloca-bg-muted) 60%, transparent);
+}
+
+.maloca-tab.active,
+.maloca-tab[aria-selected="true"] {
+  background: var(--maloca-accent-soft);
+  color: var(--maloca-text);
+  border-color: color-mix(in srgb, var(--maloca-accent) 40%, transparent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.maloca-tab:focus-visible {
+  outline: 2px solid var(--maloca-accent);
+  outline-offset: 1px;
+}
+
+/* Specific Tab selectors for test matching and targeted overrides */
+.maloca-tab.tab-registry,
+.tab-registry {
+  position: relative;
+}
+
 .maloca-nav {
   display: flex;
   flex-wrap: wrap;
@@ -87,7 +138,8 @@
   color: var(--maloca-text);
 }
 
-.maloca-panel {
+.maloca-panel,
+.maloca-subview {
   background: color-mix(in srgb, var(--maloca-bg-elevated) 92%, transparent);
   border: 1px solid var(--maloca-border);
   border-radius: var(--maloca-radius);
