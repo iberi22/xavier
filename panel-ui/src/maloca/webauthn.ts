@@ -35,7 +35,7 @@ export async function obtainDeviceKeyViaWebAuthn(
 		try {
 			// Attempt navigator.credentials.get with WebAuthn PRF extension
 			const challenge = new Uint8Array(32);
-			if (window.crypto && window.crypto.getRandomValues) {
+			if (window.crypto?.getRandomValues) {
 				window.crypto.getRandomValues(challenge);
 			}
 
@@ -88,8 +88,11 @@ export async function obtainDeviceKeyViaWebAuthn(
 	if (typeof crypto !== "undefined" && crypto.getRandomValues) {
 		crypto.getRandomValues(fallbackBytes);
 	} else {
+		// 🛡️ Sentinel: Never use Math.random() for security keys.
+		// It is not a Cryptographically Secure Random Number Generator (CSPRNG)
+		// and would result in a predictable device key.
 		throw new Error(
-			"Cryptographically secure random number generator is required but not available.",
+			"Secure random number generator (crypto.getRandomValues) is required but not available.",
 		);
 	}
 	return bufToHex(fallbackBytes);
