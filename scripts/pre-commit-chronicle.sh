@@ -20,23 +20,33 @@ export XAVIER_WORKSPACE_DIR=.
 
 echo "🛡️ Starting Xavier pre-commit documentation and RAG indexing..."
 
+XAVIER_BIN="/build/rust-target/xavier/release/xavier"
+if [ ! -x "$XAVIER_BIN" ]; then
+  XAVIER_BIN="/build/rust-target/xavier/debug/xavier"
+fi
+
+if [ ! -x "$XAVIER_BIN" ]; then
+  echo "⚠️ Xavier binary not found in release or debug target. Skipping pre-commit chronicle."
+  exit 0
+fi
+
 # 1. Harvest recent git commits & diff metrics
 echo "📊 Step 1/5: Harvesting recent commits and git diff metrics..."
-CARGO_TARGET_DIR=/build/rust-target/xavier-chronicle /build/rust-target/xavier/release/xavier chronicle harvest --workspace .
+CARGO_TARGET_DIR=/build/rust-target/xavier-chronicle "$XAVIER_BIN" chronicle harvest --workspace .
 
 # 2. Generate Daily Chronicle release post and ingest it to vector store
 echo "📝 Step 2/5: Generating Daily Chronicle release notes and indexing into RAG..."
-if ! XAVIER_MODEL_PROVIDER=openrouter /build/rust-target/xavier/release/xavier chronicle generate --ingest; then
+if ! XAVIER_MODEL_PROVIDER=openrouter "$XAVIER_BIN" chronicle generate --ingest; then
   echo "⚠️ WARNING: Failed to generate Daily Chronicle (is your local LLM or Ollama server offline?). Skipping chronicle post generation..."
 fi
 
 # 3. Generate Code Auto-Docs (module summaries) and ingest them
 echo "🔍 Step 3/5: Generating module understanding auto-docs and indexing into RAG..."
-CARGO_TARGET_DIR=/build/rust-target/xavier-chronicle /build/rust-target/xavier/release/xavier chronicle auto-docs --ingest
+CARGO_TARGET_DIR=/build/rust-target/xavier-chronicle "$XAVIER_BIN" chronicle auto-docs --ingest
 
 # 4. Compile the static blog
 echo "🌐 Step 4/5: Compiling static HTML/CSS/JS DevLog blog..."
-CARGO_TARGET_DIR=/build/rust-target/xavier-chronicle /build/rust-target/xavier/release/xavier chronicle build
+CARGO_TARGET_DIR=/build/rust-target/xavier-chronicle "$XAVIER_BIN" chronicle build
 # Copy the premium human review interactive code diff dashboard
 if [ -f web/chronicle/review.html ]; then
   echo "🖥️ Copying Premium Code Diff & Review dashboard to public output..."
