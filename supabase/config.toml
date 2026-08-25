@@ -1,0 +1,7 @@
+project_id = "xavier-supabase"
+
+[functions.auth-challenge]
+verify_jwt = false
+
+[functions.auth-verify]
+verify_jwt = false
