@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "workspaces": [
     "panel-ui",
-    "docs/site"
+    "docs/site",
+    "packages/*"
   ],
   "scripts": {
     "install:all": "npm install --workspaces",

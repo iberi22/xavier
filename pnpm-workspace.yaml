@@ -1,3 +1,4 @@
 packages:
   - 'panel-ui'
   - 'docs/site'
+  - 'packages/*'
