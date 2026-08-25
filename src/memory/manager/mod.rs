@@ -26,3 +26,6 @@ pub mod types;
 // Re-export primary types and struct
 pub use core::MemoryManager;
 pub use types::*;
+
+#[cfg(test)]
+mod tests;

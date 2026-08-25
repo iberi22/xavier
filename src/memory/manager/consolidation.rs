@@ -262,7 +262,7 @@ impl MemoryManager {
             .unwrap_or("medium");
 
         let mut hasher = DefaultHasher::new();
-        (normalized.len(), kind, priority).hash(&mut hasher);
+        (normalized.as_bytes(), kind, priority).hash(&mut hasher);
         format!("{:x}", hasher.finish())
     }
 }
