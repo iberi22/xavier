@@ -12,6 +12,7 @@ pub mod codegraph_sidecar;
 pub mod connection_manager;
 pub mod conversations_db;
 pub mod db;
+pub mod executor_bridge;
 pub mod issue_context;
 pub mod snapshot;
 
