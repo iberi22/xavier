@@ -6,12 +6,14 @@
 use serde::{Deserialize, Serialize};
 
 pub mod audit;
+pub mod byo;
 pub mod cert;
 pub mod provision;
 pub mod registry;
 pub mod secrets;
 
 pub use audit::*;
+pub use byo::*;
 pub use cert::*;
 pub use provision::*;
 pub use registry::*;
