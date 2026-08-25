@@ -50,3 +50,38 @@ fn test_decay_calculation() {
     // Ephemeral decays fast
     assert!(MemoryPriority::Ephemeral.decay_base() < 0.6);
 }
+
+#[tokio::test]
+async fn test_consolidation_signature_no_collision_on_equal_length() {
+    use crate::memory::manager::MemoryManager;
+    use crate::memory::qmd_memory::QmdMemory;
+    use std::sync::Arc;
+
+    let docs = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+    let qmd = Arc::new(QmdMemory::new(docs));
+    let manager = MemoryManager::new(qmd, None);
+
+    let doc_a = MemoryDocument {
+        id: Some("doc_a".to_string()),
+        path: "a.md".to_string(),
+        content: "aaaa".to_string(), // length 4
+        metadata: serde_json::json!({"kind": "note"}),
+        ..Default::default()
+    };
+
+    let doc_b = MemoryDocument {
+        id: Some("doc_b".to_string()),
+        path: "b.md".to_string(),
+        content: "bbbb".to_string(), // length 4
+        metadata: serde_json::json!({"kind": "note"}),
+        ..Default::default()
+    };
+
+    let sig_a = manager.create_consolidation_signature(&doc_a);
+    let sig_b = manager.create_consolidation_signature(&doc_b);
+
+    assert_ne!(
+        sig_a, sig_b,
+        "Signatures must differ for different documents of equal length"
+    );
+}
