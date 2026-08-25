@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod audit;
+pub mod byo;
 pub mod cert;
 pub mod provision;
 pub mod registry;
