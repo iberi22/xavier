@@ -7,8 +7,11 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::enterprise::rbac::Permission;
+use crate::mesh::network::{CrossGrant, MeshNetwork};
 use crate::mesh::node::NodeId;
 
 /// Represents a node within a private mesh, bound to a specific wallet ID.
@@ -109,10 +112,19 @@ pub fn decrypt_session_payload(
     Ok(payload)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedRegistry {
+    #[serde(default)]
+    nodes: Vec<WalletNode>,
+    #[serde(default)]
+    networks: HashMap<String, MeshNetwork>,
+}
+
 /// registry to load/save JSON data for private mesh nodes.
 #[derive(Debug)]
 pub struct PrivateMeshRegistry {
     nodes: Vec<WalletNode>,
+    networks: HashMap<String, MeshNetwork>,
     file_path: PathBuf,
 }
 
@@ -121,6 +133,7 @@ impl PrivateMeshRegistry {
     pub fn new(file_path: PathBuf) -> Self {
         Self {
             nodes: Vec::new(),
+            networks: HashMap::new(),
             file_path,
         }
     }
@@ -129,14 +142,39 @@ impl PrivateMeshRegistry {
     pub fn load_or_create(file_path: PathBuf) -> Result<Self> {
         if file_path.exists() && std::fs::metadata(&file_path)?.len() > 0 {
             let data = std::fs::read_to_string(&file_path)?;
+            // Try new format first (object with nodes+networks), fall back to legacy Vec<WalletNode>
+            if let Ok(persisted) = serde_json::from_str::<PersistedRegistry>(&data) {
+                // Heuristic: if data was a bare array, this will succeed with empty nodes/networks
+                // but we need to distinguish. Check if raw JSON starts with '['
+                let trimmed = data.trim_start();
+                if trimmed.starts_with('[') {
+                    let nodes: Vec<WalletNode> = serde_json::from_str(&data)?;
+                    return Ok(Self {
+                        nodes,
+                        networks: HashMap::new(),
+                        file_path,
+                    });
+                }
+                return Ok(Self {
+                    nodes: persisted.nodes,
+                    networks: persisted.networks,
+                    file_path,
+                });
+            }
+            // fallback legacy
             let nodes: Vec<WalletNode> = serde_json::from_str(&data)?;
-            Ok(Self { nodes, file_path })
+            Ok(Self {
+                nodes,
+                networks: HashMap::new(),
+                file_path,
+            })
         } else {
             if let Some(parent) = file_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
             let registry = Self {
                 nodes: Vec::new(),
+                networks: HashMap::new(),
                 file_path,
             };
             registry.save()?;
@@ -149,7 +187,11 @@ impl PrivateMeshRegistry {
         if let Some(parent) = self.file_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let data = serde_json::to_string_pretty(&self.nodes)?;
+        let persisted = PersistedRegistry {
+            nodes: self.nodes.clone(),
+            networks: self.networks.clone(),
+        };
+        let data = serde_json::to_string_pretty(&persisted)?;
         std::fs::write(&self.file_path, data)?;
         Ok(())
     }
@@ -188,6 +230,132 @@ impl PrivateMeshRegistry {
     /// Returns a slice of all nodes currently in memory.
     pub fn all_nodes(&self) -> &[WalletNode] {
         &self.nodes
+    }
+
+    // -----------------------------------------------------------------------
+    // Network delegation (first-class MeshNetwork)
+    // -----------------------------------------------------------------------
+
+    /// Create a new network owned by `owner_node`.
+    pub fn create_network(
+        &mut self,
+        id: String,
+        name: String,
+        owner_node: String,
+    ) -> Result<MeshNetwork> {
+        if self.networks.contains_key(&id) {
+            return Err(anyhow!("Network '{}' already exists", id));
+        }
+        let net = MeshNetwork::create_network(id.clone(), name, owner_node);
+        self.networks.insert(id, net.clone());
+        self.save()?;
+        Ok(net)
+    }
+
+    /// Add a member to an existing network.
+    pub fn add_member(&mut self, network_id: &str, node_id: String) -> Result<()> {
+        let net = self
+            .networks
+            .get_mut(network_id)
+            .ok_or_else(|| anyhow!("Network '{}' not found", network_id))?;
+        net.add_member(node_id)?;
+        self.save()?;
+        Ok(())
+    }
+
+    /// Remove a member from a network.
+    pub fn remove_member(&mut self, network_id: &str, node_id: &str) -> Result<()> {
+        let net = self
+            .networks
+            .get_mut(network_id)
+            .ok_or_else(|| anyhow!("Network '{}' not found", network_id))?;
+        net.remove_member(node_id)?;
+        self.save()?;
+        Ok(())
+    }
+
+    /// Create a cross-grant on a network.
+    pub fn grant_cross(
+        &mut self,
+        network_id: &str,
+        resource_id: String,
+        target_node: String,
+        permission: Permission,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Result<CrossGrant> {
+        let net = self
+            .networks
+            .get_mut(network_id)
+            .ok_or_else(|| anyhow!("Network '{}' not found", network_id))?;
+        let grant = net.grant_cross(resource_id, target_node, permission, expires_at);
+        self.save()?;
+        Ok(grant)
+    }
+
+    /// Revoke a grant by id within a network.
+    pub fn revoke_grant(&mut self, network_id: &str, grant_id: &str) -> Result<()> {
+        let net = self
+            .networks
+            .get_mut(network_id)
+            .ok_or_else(|| anyhow!("Network '{}' not found", network_id))?;
+        net.revoke_grant(grant_id)?;
+        self.save()?;
+        Ok(())
+    }
+
+    /// Check permission for a node on a resource (convenience bool: checks Read across provided resource, or any active grant).
+    /// This variant checks across ALL networks if `network_id` is None, or within a specific network otherwise.
+    pub fn check_permission(&self, node: &str, resource: &str) -> bool {
+        self.check_permission_with_perm(node, resource, &Permission::Read)
+    }
+
+    /// Check permission with explicit Permission across all networks.
+    pub fn check_permission_with_perm(
+        &self,
+        node: &str,
+        resource: &str,
+        perm: &Permission,
+    ) -> bool {
+        for net in self.networks.values() {
+            if net.check_permission(node, resource, perm) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check permission within a specific network.
+    pub fn check_permission_in_network(
+        &self,
+        network_id: &str,
+        node: &str,
+        resource: &str,
+        perm: &Permission,
+    ) -> bool {
+        if let Some(net) = self.networks.get(network_id) {
+            net.check_permission(node, resource, perm)
+        } else {
+            false
+        }
+    }
+
+    /// List all networks (cloned).
+    pub fn all_networks(&self) -> Vec<MeshNetwork> {
+        self.networks.values().cloned().collect()
+    }
+
+    /// List networks that a node belongs to (member or owner).
+    pub fn networks_for_node(&self, node: &str) -> Vec<MeshNetwork> {
+        self.networks
+            .values()
+            .filter(|n| n.members.contains(&node.to_string()) || n.owner_node == node)
+            .cloned()
+            .collect()
+    }
+
+    /// Get a network by id.
+    pub fn get_network(&self, id: &str) -> Option<MeshNetwork> {
+        self.networks.get(id).cloned()
     }
 
     /// Synchronizes memory deltas and snapshots between two nodes.
