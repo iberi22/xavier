@@ -10,7 +10,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -213,6 +213,26 @@ pub struct PrivateSyncApiResponse {
     pub synced_memories: usize,
     pub synced_snapshots: usize,
     pub target_node: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateNetworkRequest {
+    pub id: String,
+    pub name: String,
+    pub owner_node: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddMemberRequest {
+    pub node_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateGrantRequest {
+    pub resource_id: String,
+    pub target_node: String,
+    pub permission: String,
+    pub expires_at: Option<String>,
 }
 
 // ---------- handlers ----------
@@ -709,6 +729,132 @@ The root decryption key is 0xDEADBEEF42.
         .into_response()
 }
 
+// ---------- network handlers (first-class mesh networks) ----------
+
+fn parse_permission(s: &str) -> Option<crate::enterprise::rbac::Permission> {
+    match s.to_lowercase().as_str() {
+        "read" => Some(crate::enterprise::rbac::Permission::Read),
+        "write" => Some(crate::enterprise::rbac::Permission::Write),
+        "delete" => Some(crate::enterprise::rbac::Permission::Delete),
+        "share" => Some(crate::enterprise::rbac::Permission::Share),
+        "manage" => Some(crate::enterprise::rbac::Permission::Manage),
+        _ => None,
+    }
+}
+
+pub async fn create_network(
+    State(state): State<F12State>,
+    Json(req): Json<CreateNetworkRequest>,
+) -> impl IntoResponse {
+    if req.id.trim().is_empty() || req.name.trim().is_empty() || req.owner_node.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "id, name and owner_node required").into_response();
+    }
+    let mut reg = state.private_mesh_mut();
+    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    match mesh.create_network(req.id.clone(), req.name, req.owner_node) {
+        Ok(net) => (StatusCode::CREATED, Json(net)).into_response(),
+        Err(e) => (StatusCode::CONFLICT, e.to_string()).into_response(),
+    }
+}
+
+pub async fn list_networks(
+    State(state): State<F12State>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let reg = state.private_mesh_mut();
+    let mesh = reg.private_mesh.as_ref().expect("mesh");
+    if let Some(caller) = params.get("node_id").or_else(|| params.get("caller")) {
+        Json(mesh.networks_for_node(caller)).into_response()
+    } else {
+        Json(mesh.all_networks()).into_response()
+    }
+}
+
+pub async fn add_network_member(
+    State(state): State<F12State>,
+    Path(id): Path<String>,
+    Json(req): Json<AddMemberRequest>,
+) -> impl IntoResponse {
+    if req.node_id.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "node_id required").into_response();
+    }
+    let mut reg = state.private_mesh_mut();
+    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    match mesh.add_member(&id, req.node_id) {
+        Ok(_) => {
+            let net = mesh.get_network(&id).unwrap();
+            (StatusCode::OK, Json(net)).into_response()
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("not found") {
+                (StatusCode::NOT_FOUND, msg).into_response()
+            } else {
+                (StatusCode::CONFLICT, msg).into_response()
+            }
+        }
+    }
+}
+
+pub async fn create_grant(
+    State(state): State<F12State>,
+    Path(id): Path<String>,
+    Json(req): Json<CreateGrantRequest>,
+) -> impl IntoResponse {
+    if req.resource_id.trim().is_empty() || req.target_node.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            "resource_id and target_node required",
+        )
+            .into_response();
+    }
+    let perm = match parse_permission(&req.permission) {
+        Some(p) => p,
+        None => return (StatusCode::BAD_REQUEST, "invalid permission").into_response(),
+    };
+    let expires_at = match &req.expires_at {
+        Some(s) => match s.parse::<chrono::DateTime<chrono::Utc>>() {
+            Ok(dt) => Some(dt),
+            Err(_) => {
+                return (StatusCode::BAD_REQUEST, "invalid expires_at (RFC3339)").into_response()
+            }
+        },
+        None => None,
+    };
+    let mut reg = state.private_mesh_mut();
+    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    match mesh.grant_cross(&id, req.resource_id, req.target_node, perm, expires_at) {
+        Ok(grant) => (StatusCode::CREATED, Json(grant)).into_response(),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("not found") {
+                (StatusCode::NOT_FOUND, msg).into_response()
+            } else {
+                (StatusCode::BAD_REQUEST, msg).into_response()
+            }
+        }
+    }
+}
+
+pub async fn revoke_grant(
+    State(state): State<F12State>,
+    Path((id, grant_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let mut reg = state.private_mesh_mut();
+    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    match mesh.revoke_grant(&id, &grant_id) {
+        Ok(_) => (StatusCode::OK, "revoked").into_response(),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("not found") {
+                (StatusCode::NOT_FOUND, msg).into_response()
+            } else {
+                (StatusCode::CONFLICT, msg).into_response()
+            }
+        }
+    }
+}
+
 // ---------- router ----------
 
 pub fn router(state: F12State) -> Router {
@@ -748,6 +894,14 @@ pub fn router(state: F12State) -> Router {
         .route("/v1/f12/snapshots/{repo}", get(get_snapshot))
         .route("/v1/documents/{id}", get(get_document_handler))
         .route("/v1/f12/documents/{id}", get(get_document_handler))
+        .route("/v1/f12/networks", post(create_network))
+        .route("/v1/f12/networks", get(list_networks))
+        .route("/v1/f12/networks/{id}/members", post(add_network_member))
+        .route("/v1/f12/networks/{id}/grants", post(create_grant))
+        .route(
+            "/v1/f12/networks/{id}/grants/{grant_id}",
+            delete(revoke_grant),
+        )
         .with_state(state)
 }
 
