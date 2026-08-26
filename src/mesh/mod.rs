@@ -51,6 +51,7 @@ pub mod heartbeat;
 pub mod iroh_transport;
 pub mod maturity;
 pub mod namespace;
+pub mod network;
 pub mod node;
 pub mod p2p;
 pub mod pairing;
@@ -78,6 +79,7 @@ pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
 #[cfg(feature = "mesh")]
 pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService, HeartbeatStatus};
 pub use maturity::MeshMaturityReport;
+pub use network::{CrossGrant, MeshNetwork, NetworkAcl};
 pub use node::{NodeId, NodeIdentity};
 pub use p2p::{
     calculate_backoff, parse_strategy, CandidatePair, CandidatePairState, FallbackError,
