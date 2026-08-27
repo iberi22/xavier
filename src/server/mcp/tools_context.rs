@@ -1,9 +1,11 @@
 //! Context-related MCP tools
 //!
 //! Provides tools for saving, restoring, and searching optimized context,
-//! as well as reporting token savings.
+//! as well as reporting token savings and packaging GitHub issues into PreciseChange context packages.
 
 use super::types::*;
+use crate::codebase::issue_context::assemble_package;
+use crate::codebase::snapshot::SnapshotManager;
 use crate::context::{
     ContextBudgetConfig, ContextBuilder, ContextBuilderConfig, ContextDocument, ContextLevel,
     Orchestrator,
@@ -13,6 +15,7 @@ use crate::observability::token_accounting::TRACKER;
 use crate::workspace::WorkspaceContext;
 use crate::AppState;
 use serde_json::{json, Value};
+use std::path::Path;
 use std::sync::Arc;
 
 /// Get xavier context tools.
@@ -64,12 +67,28 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
                 "properties": {}
             }),
         },
+        MCPTool {
+            name: "xavier_issue_context_package".to_string(),
+            description: "Analyze a GitHub issue (title, body, repo) and produce a PreciseChange context package"
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "issue_id": { "type": "string", "description": "GitHub issue ID or number" },
+                    "title": { "type": "string", "description": "Issue title" },
+                    "body": { "type": "string", "description": "Issue body / description text" },
+                    "repo": { "type": "string", "description": "Repository identifier (e.g. owner/repo)" },
+                    "repo_path": { "type": "string", "description": "Path to local repository root (defaults to current dir)" }
+                },
+                "required": ["issue_id", "title", "body"]
+            }),
+        },
     ]
 }
 
 /// Handle context tool.
 pub async fn handle_context_tool(
-    _state: AppState,
+    state: AppState,
     workspace: WorkspaceContext,
     name: &str,
     arguments: Value,
@@ -278,6 +297,43 @@ pub async fn handle_context_tool(
         "xavier_token_savings" => {
             let stats = TRACKER.get_stats().await;
             super::server::mcp_text_result(serde_json::to_string_pretty(&stats)?, false)
+        }
+        "xavier_issue_context_package" => {
+            let issue_id = arguments
+                .get("issue_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let title = arguments
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let body = arguments
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let repo = arguments
+                .get("repo")
+                .and_then(|v| v.as_str())
+                .unwrap_or("owner/repo");
+            let repo_path_str = arguments
+                .get("repo_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or(".");
+
+            let repo_root = Path::new(repo_path_str);
+            let snapshot_manager = SnapshotManager::new(repo_root);
+
+            let package = assemble_package(
+                issue_id,
+                title,
+                repo,
+                body,
+                &state.code_db,
+                &snapshot_manager,
+                repo_root,
+            )?;
+
+            super::server::mcp_text_result(serde_json::to_string_pretty(&package)?, false)
         }
         _ => Err(anyhow::anyhow!("Unknown context tool: {}", name)),
     }

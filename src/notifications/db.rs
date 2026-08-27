@@ -32,6 +32,9 @@ pub const NOTIFICATION_COLUMNS: &[(&str, &str)] = &[
 
 /// Synchronously initializes the notifications table schema and auto-migrates missing columns on the given SQLite connection.
 pub fn init_notifications_schema_conn(conn: &Connection) -> Result<()> {
+    crate::storage::apply_pragmas(conn)
+        .context("Failed to apply SQLite pragmas for notifications database")?;
+
     conn.execute_batch(CREATE_NOTIFICATIONS_TABLE_DDL)
         .context("Failed to execute CREATE TABLE IF NOT EXISTS notifications DDL")?;
 

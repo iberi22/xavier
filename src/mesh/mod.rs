@@ -49,6 +49,7 @@ pub mod governance;
 pub mod heartbeat;
 #[cfg(feature = "mesh")]
 pub mod iroh_transport;
+pub mod keystore;
 pub mod maturity;
 pub mod namespace;
 pub mod network;

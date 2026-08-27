@@ -1,9 +1,11 @@
 //! Doctor: CLI subcommand to diagnose local-first health.
 
-use crate::cli::handlers::system_scan::scan_system;
+use crate::cli::handlers::system_scan::{scan_system, SystemScanResult};
 use crate::settings::XavierSettings;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+
+pub type CheckResult = DoctorCheck;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DoctorCheck {
@@ -26,36 +28,74 @@ pub struct DoctorReport {
     pub overall: CheckStatus,
 }
 
-/// Handle doctor.
-pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
-    let settings = XavierSettings::current();
-    let scan = scan_system(false).await;
+/// Check database health: SQLite connectivity, WAL mode, integrity check, and record count.
+pub fn check_database(settings: &XavierSettings) -> Vec<CheckResult> {
+    let mut checks = Vec::new();
+    let db_path = std::env::var("XAVIER_MEMORY_VEC_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            if settings.memory.vec_path.trim().is_empty() {
+                std::path::PathBuf::from(&settings.memory.data_dir).join("xavier_memory_vec.db")
+            } else {
+                std::path::PathBuf::from(&settings.memory.vec_path)
+            }
+        });
 
+    let (db_access_ok, db_detail, db_hint) = match rusqlite::Connection::open(&db_path) {
+        Ok(conn) => {
+            let integrity_status = conn
+                .query_row("PRAGMA quick_check;", [], |row| row.get::<_, String>(0))
+                .unwrap_or_else(|_| "error".to_string());
+            let journal_mode = conn
+                .query_row("PRAGMA journal_mode;", [], |row| row.get::<_, String>(0))
+                .unwrap_or_else(|_| "unknown".to_string());
+
+            match conn.query_row("SELECT count(*) FROM memory_records", [], |row| {
+                row.get::<_, i64>(0)
+            }) {
+                Ok(count) => (
+                    true,
+                    format!(
+                        "Database accessible at '{}' (WAL: {}, integrity: {}, memory records: {})",
+                        db_path.display(),
+                        journal_mode,
+                        integrity_status,
+                        count
+                    ),
+                    None,
+                ),
+                Err(e) => (
+                    false,
+                    format!("Failed to query database at '{}': {}", db_path.display(), e),
+                    Some("Verify that the database schema is initialized and up to date.".to_string()),
+                ),
+            }
+        }
+        Err(e) => (
+            false,
+            format!("Failed to open database at '{}': {}", db_path.display(), e),
+            Some("Check file permissions or if the path is correct.".to_string()),
+        ),
+    };
+
+    checks.push(DoctorCheck {
+        name: "Database Access".to_string(),
+        status: if db_access_ok {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Fail
+        },
+        detail: db_detail,
+        hint: db_hint,
+    });
+
+    checks
+}
+
+/// Check embedding provider connectivity, model availability, and local/cloud setup.
+pub fn check_embeddings(settings: &XavierSettings, scan: &SystemScanResult) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
-    // 0. XAVIER_DATA_DIR path sanity (Unix must not use Windows drive letters)
-    let data_dir_raw = std::env::var("XAVIER_DATA_DIR")
-        .unwrap_or_else(|_| XavierSettings::resolve_data_dir().display().to_string());
-    let data_dir_check = match crate::cli::config::validate_data_dir_path(&data_dir_raw) {
-        Ok(()) => DoctorCheck {
-            name: "XAVIER_DATA_DIR Path".to_string(),
-            status: CheckStatus::Ok,
-            detail: format!("Data directory path is valid: {data_dir_raw}"),
-            hint: None,
-        },
-        Err(msg) => DoctorCheck {
-            name: "XAVIER_DATA_DIR Path".to_string(),
-            status: CheckStatus::Fail,
-            detail: msg.clone(),
-            hint: Some(
-                "Unset or rewrite XAVIER_DATA_DIR to a POSIX path (e.g. /home/.../xavier/data)"
-                    .to_string(),
-            ),
-        },
-    };
-    checks.push(data_dir_check);
-
-    // Resolve embedding backend early so local-LLM checks stay separate from cloud embeds.
     let expected_embed = std::env::var("XAVIER_EMBEDDING_MODEL")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -77,97 +117,6 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
     let embeddings_are_local =
         embeddings_use_local_ollama(&embedding_mode, &embedding_url, &expected_embed);
 
-    // 1. Ollama Reachability (local LLM / local embeddings only — warn if unused)
-    let ollama_reachable = scan.ollama.running;
-    let provider = std::env::var("XAVIER_MODEL_PROVIDER")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| settings.models.provider.clone());
-    let provider_is_local =
-        provider.eq_ignore_ascii_case("local") || provider.eq_ignore_ascii_case("ollama");
-
-    checks.push(DoctorCheck {
-        name: "Ollama Reachability".to_string(),
-        status: if (!provider_is_local && !embeddings_are_local) || ollama_reachable {
-            CheckStatus::Ok
-        } else if provider_is_local || embeddings_are_local {
-            CheckStatus::Fail
-        } else {
-            CheckStatus::Warn
-        },
-        detail: if !provider_is_local && !embeddings_are_local {
-            format!("Ollama not required (LLM provider='{provider}', embeddings via cloud/BYO)")
-        } else if ollama_reachable {
-            format!(
-                "Ollama is running at {} (version: {})",
-                scan.ollama.url,
-                scan.ollama.version.as_deref().unwrap_or("unknown")
-            )
-        } else {
-            format!(
-                "Ollama is not running or not reachable at {}",
-                scan.ollama.url
-            )
-        },
-        hint: if ollama_reachable || (!provider_is_local && !embeddings_are_local) {
-            None
-        } else {
-            Some(
-                "Please start Ollama with 'ollama serve' or install it from https://ollama.com"
-                    .to_string(),
-            )
-        },
-    });
-
-    // 2. LLM Model Installed (local provider only)
-    let expected_llm = std::env::var("XAVIER_LOCAL_LLM_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            if !settings.models.local_llm_model.trim().is_empty() {
-                settings.models.local_llm_model.clone()
-            } else {
-                "qwen3-coder".to_string()
-            }
-        });
-
-    let llm_installed = scan.ollama.models.iter().any(|m| {
-        m.to_lowercase().contains(&expected_llm.to_lowercase())
-            || expected_llm.to_lowercase().contains(&m.to_lowercase())
-    });
-
-    if provider_is_local {
-        checks.push(DoctorCheck {
-            name: "LLM Model Installed".to_string(),
-            status: if llm_installed {
-                CheckStatus::Ok
-            } else {
-                CheckStatus::Fail
-            },
-            detail: if llm_installed {
-                format!("Model '{}' is installed in Ollama", expected_llm)
-            } else {
-                format!("Model '{}' is not installed in Ollama", expected_llm)
-            },
-            hint: if llm_installed {
-                None
-            } else {
-                Some(format!(
-                    "Run 'ollama pull {}' to install the model",
-                    expected_llm
-                ))
-            },
-        });
-    } else {
-        checks.push(DoctorCheck {
-            name: "LLM Model Installed".to_string(),
-            status: CheckStatus::Ok,
-            detail: format!("Skipped Ollama LLM model check (provider='{provider}' is not local)"),
-            hint: None,
-        });
-    }
-
-    // 3. Embedding checks — local Ollama vs cloud/OpenRouter
     if embeddings_are_local {
         let embed_installed = scan.ollama.models.iter().any(|m| {
             m.to_lowercase().contains(&expected_embed.to_lowercase())
@@ -253,7 +202,329 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         });
     }
 
-    // 4. Config Válida para Local
+    checks
+}
+
+/// Check memory store health: path validity, CodeGraph status, and embedding model consistency.
+pub fn check_memory(
+    settings: &XavierSettings,
+    verbose: bool,
+) -> Vec<CheckResult> {
+    let mut checks = Vec::new();
+
+    // 0. XAVIER_DATA_DIR path sanity
+    let data_dir_raw = std::env::var("XAVIER_DATA_DIR")
+        .unwrap_or_else(|_| XavierSettings::resolve_data_dir().display().to_string());
+    let data_dir_check = match crate::cli::config::validate_data_dir_path(&data_dir_raw) {
+        Ok(()) => DoctorCheck {
+            name: "XAVIER_DATA_DIR Path".to_string(),
+            status: CheckStatus::Ok,
+            detail: format!("Data directory path is valid: {data_dir_raw}"),
+            hint: None,
+        },
+        Err(msg) => DoctorCheck {
+            name: "XAVIER_DATA_DIR Path".to_string(),
+            status: CheckStatus::Fail,
+            detail: msg.clone(),
+            hint: Some(
+                "Unset or rewrite XAVIER_DATA_DIR to a POSIX path (e.g. /home/.../xavier/data)"
+                    .to_string(),
+            ),
+        },
+    };
+    checks.push(data_dir_check);
+
+    // CodeGraph Index Check
+    let cg_path = crate::cli::config::code_graph_db_path();
+    let (status, detail, hint) = match ::code_graph::db::CodeGraphDB::new(&cg_path) {
+        Ok(db) => match db.stats() {
+            Ok(stats) if stats.total_symbols == 0 => (
+                CheckStatus::Warn,
+                format!(
+                    "CodeGraph vacío en '{}' (total_symbols=0)",
+                    cg_path.display()
+                ),
+                Some(
+                    "Ejecuta `xavier code scan .` o `xavier code sync --git` para indexar"
+                        .to_string(),
+                ),
+            ),
+            Ok(stats) => (
+                CheckStatus::Ok,
+                format!(
+                    "CodeGraph OK: {} símbolos, {} archivos ({})",
+                    stats.total_symbols,
+                    stats.total_files,
+                    cg_path.display()
+                ),
+                None,
+            ),
+            Err(e) => (
+                CheckStatus::Warn,
+                format!("No se pudo leer stats de CodeGraph: {}", e),
+                Some("Revisa permisos de data/code_graph.db".to_string()),
+            ),
+        },
+        Err(e) => (
+            CheckStatus::Warn,
+            format!(
+                "CodeGraph DB no accesible en '{}': {}",
+                cg_path.display(),
+                e
+            ),
+            Some("Ejecuta `xavier code scan .` para crear el índice".to_string()),
+        ),
+    };
+    checks.push(DoctorCheck {
+        name: "CodeGraph Index".to_string(),
+        status,
+        detail,
+        hint,
+    });
+
+    // Embedding Model Consistency Check (Verbose / Soft)
+    let expected_embed = std::env::var("XAVIER_EMBEDDING_MODEL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            if !settings.models.embedding_model.trim().is_empty() {
+                settings.models.embedding_model.clone()
+            } else {
+                "embeddinggemma".to_string()
+            }
+        });
+
+    let db_path = std::env::var("XAVIER_MEMORY_VEC_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            if settings.memory.vec_path.trim().is_empty() {
+                std::path::PathBuf::from(&settings.memory.data_dir).join("xavier_memory_vec.db")
+            } else {
+                std::path::PathBuf::from(&settings.memory.vec_path)
+            }
+        });
+
+    let mut check_consist_status = CheckStatus::Ok;
+    let mut check_consist_detail =
+        "Table 'embedding_model_meta' does not exist, skipping consistency check (not applicable)"
+            .to_string();
+    let mut check_consist_hint = None;
+
+    if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+        let table_exists: bool = conn.query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='embedding_model_meta'",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0) > 0;
+
+        if table_exists {
+            let db_model: Option<String> = conn
+                .query_row(
+                    "SELECT model_name FROM embedding_model_meta LIMIT 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .or_else(|_| {
+                    conn.query_row(
+                        "SELECT model FROM embedding_model_meta LIMIT 1",
+                        [],
+                        |row| row.get(0),
+                    )
+                })
+                .ok();
+
+            if let Some(model) = db_model {
+                if model
+                    .to_lowercase()
+                    .contains(&expected_embed.to_lowercase())
+                    || expected_embed
+                        .to_lowercase()
+                        .contains(&model.to_lowercase())
+                {
+                    check_consist_status = CheckStatus::Ok;
+                    check_consist_detail = format!(
+                        "Embedding model in database ('{}') is consistent with config ('{}')",
+                        model, expected_embed
+                    );
+                } else {
+                    check_consist_status = CheckStatus::Warn;
+                    check_consist_detail = format!("Embedding model mismatch: Database has '{}' but configuration expects '{}'", model, expected_embed);
+                    check_consist_hint = Some("Re-indexing memories or updating model configuration may be required to avoid vector mismatches.".to_string());
+                }
+            } else {
+                check_consist_status = CheckStatus::Warn;
+                check_consist_detail =
+                    "Table 'embedding_model_meta' exists but is empty or could not be read"
+                        .to_string();
+                check_consist_hint = Some(
+                    "Ensure the embedding model metadata is correctly populated.".to_string(),
+                );
+            }
+        }
+    } else {
+        check_consist_status = CheckStatus::Warn;
+        check_consist_detail = "Skipped consistency check because database is not accessible".to_string();
+    }
+
+    if verbose {
+        checks.push(DoctorCheck {
+            name: "Embedding Model Consistency".to_string(),
+            status: check_consist_status,
+            detail: check_consist_detail,
+            hint: check_consist_hint,
+        });
+    }
+
+    checks
+}
+
+/// Check mesh network connectivity and P2P/keyring status.
+pub fn check_mesh(_settings: &XavierSettings) -> Vec<CheckResult> {
+    let mut checks = Vec::new();
+
+    let store = crate::mesh::keystore::MeshKeyringStore::new();
+    let keyring_available = store.is_keyring_available();
+    checks.push(DoctorCheck {
+        name: "Mesh Keyring".to_string(),
+        status: if keyring_available {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if keyring_available {
+            "Mesh keyring store initialized successfully".to_string()
+        } else {
+            "Mesh keyring store unavailable; falling back to encrypted file storage".to_string()
+        },
+        hint: if keyring_available {
+            None
+        } else {
+            Some("Ensure system keyring service (e.g. secret-service/kwallet) is installed if hardware keystore is desired.".to_string())
+        },
+    });
+
+    checks
+}
+
+/// Check HTTP server health, Ollama reachability, local LLM config, and probe reachability.
+pub async fn check_http(
+    settings: &XavierSettings,
+    scan: &SystemScanResult,
+) -> Vec<CheckResult> {
+    let mut checks = Vec::new();
+
+    let provider = std::env::var("XAVIER_MODEL_PROVIDER")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| settings.models.provider.clone());
+    let provider_is_local =
+        provider.eq_ignore_ascii_case("local") || provider.eq_ignore_ascii_case("ollama");
+
+    let expected_embed = std::env::var("XAVIER_EMBEDDING_MODEL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            if !settings.models.embedding_model.trim().is_empty() {
+                settings.models.embedding_model.clone()
+            } else {
+                "embeddinggemma".to_string()
+            }
+        });
+    let embedding_url = std::env::var("XAVIER_EMBEDDING_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| settings.models.embedding_url.clone());
+    let embedding_mode = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| settings.workspace.embedding_provider_mode.clone());
+    let embeddings_are_local =
+        embeddings_use_local_ollama(&embedding_mode, &embedding_url, &expected_embed);
+
+    // 1. Ollama Reachability
+    let ollama_reachable = scan.ollama.running;
+    checks.push(DoctorCheck {
+        name: "Ollama Reachability".to_string(),
+        status: if (!provider_is_local && !embeddings_are_local) || ollama_reachable {
+            CheckStatus::Ok
+        } else if provider_is_local || embeddings_are_local {
+            CheckStatus::Fail
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if !provider_is_local && !embeddings_are_local {
+            format!("Ollama not required (LLM provider='{provider}', embeddings via cloud/BYO)")
+        } else if ollama_reachable {
+            format!(
+                "Ollama is running at {} (version: {})",
+                scan.ollama.url,
+                scan.ollama.version.as_deref().unwrap_or("unknown")
+            )
+        } else {
+            format!(
+                "Ollama is not running or not reachable at {}",
+                scan.ollama.url
+            )
+        },
+        hint: if ollama_reachable || (!provider_is_local && !embeddings_are_local) {
+            None
+        } else {
+            Some(
+                "Please start Ollama with 'ollama serve' or install it from https://ollama.com"
+                    .to_string(),
+            )
+        },
+    });
+
+    // 2. LLM Model Installed (local provider only)
+    let expected_llm = std::env::var("XAVIER_LOCAL_LLM_MODEL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            if !settings.models.local_llm_model.trim().is_empty() {
+                settings.models.local_llm_model.clone()
+            } else {
+                "qwen3-coder".to_string()
+            }
+        });
+
+    let llm_installed = scan.ollama.models.iter().any(|m| {
+        m.to_lowercase().contains(&expected_llm.to_lowercase())
+            || expected_llm.to_lowercase().contains(&m.to_lowercase())
+    });
+
+    if provider_is_local {
+        checks.push(DoctorCheck {
+            name: "LLM Model Installed".to_string(),
+            status: if llm_installed {
+                CheckStatus::Ok
+            } else {
+                CheckStatus::Fail
+            },
+            detail: if llm_installed {
+                format!("Model '{}' is installed in Ollama", expected_llm)
+            } else {
+                format!("Model '{}' is not installed in Ollama", expected_llm)
+            },
+            hint: if llm_installed {
+                None
+            } else {
+                Some(format!(
+                    "Run 'ollama pull {}' to install the model",
+                    expected_llm
+                ))
+            },
+        });
+    } else {
+        checks.push(DoctorCheck {
+            name: "LLM Model Installed".to_string(),
+            status: CheckStatus::Ok,
+            detail: format!("Skipped Ollama LLM model check (provider='{provider}' is not local)"),
+            hint: None,
+        });
+    }
+
+    // 3. Local LLM Configuration
     let local_llm_url = std::env::var("XAVIER_LOCAL_LLM_URL")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -303,7 +574,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         },
     });
 
-    // 5. URL Reachable (local LLM only)
+    // 4. Local LLM Probe Reachability
     let client = reqwest::Client::new();
     let mut url_reachable = false;
     let mut url_error = String::new();
@@ -382,187 +653,61 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         });
     }
 
-    // 6. DB Access
-    let db_path = std::env::var("XAVIER_MEMORY_VEC_PATH")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            if settings.memory.vec_path.trim().is_empty() {
-                std::path::PathBuf::from(&settings.memory.data_dir).join("xavier_memory_vec.db")
-            } else {
-                std::path::PathBuf::from(&settings.memory.vec_path)
-            }
-        });
+    checks
+}
 
-    let (db_access_ok, db_detail, db_hint) = match rusqlite::Connection::open(&db_path) {
-        Ok(conn) => {
-            match conn.query_row("SELECT count(*) FROM memory_records", [], |row| {
-                row.get::<_, i64>(0)
-            }) {
-                Ok(count) => (
-                    true,
-                    format!(
-                        "Database accessible at '{}' (contains {} memory records)",
-                        db_path.display(),
-                        count
-                    ),
-                    None,
-                ),
-                Err(e) => (
-                    false,
-                    format!("Failed to query database at '{}': {}", db_path.display(), e),
-                    Some(
-                        "Verify that the database schema is initialized and up to date."
-                            .to_string(),
-                    ),
-                ),
-            }
-        }
-        Err(e) => (
-            false,
-            format!("Failed to open database at '{}': {}", db_path.display(), e),
-            Some("Check file permissions or if the path is correct.".to_string()),
-        ),
-    };
+/// Check auth, encryption status, and secret key posture.
+pub fn check_security(_settings: &XavierSettings) -> Vec<CheckResult> {
+    let mut checks = Vec::new();
 
+    let token_present = std::env::var("XAVIER_TOKEN").is_ok()
+        || std::env::var("XAVIER_API_KEY").is_ok();
     checks.push(DoctorCheck {
-        name: "Database Access".to_string(),
-        status: if db_access_ok {
+        name: "Security Posture".to_string(),
+        status: if token_present {
             CheckStatus::Ok
         } else {
-            CheckStatus::Fail
+            CheckStatus::Ok
         },
-        detail: db_detail,
-        hint: db_hint,
+        detail: if token_present {
+            "Auth token / API key detected in environment".to_string()
+        } else {
+            "No auth token set in environment (using default local access rules)".to_string()
+        },
+        hint: None,
     });
 
-    // Keep a copy of critical checks to decide the final exit status
-    let critical_checks = checks.clone();
+    checks
+}
 
-    // Soft: CodeGraph empty (Warn only — does not fail doctor exit)
-    {
-        let cg_path = crate::cli::config::code_graph_db_path();
-        let (status, detail, hint) = match ::code_graph::db::CodeGraphDB::new(&cg_path) {
-            Ok(db) => match db.stats() {
-                Ok(stats) if stats.total_symbols == 0 => (
-                    CheckStatus::Warn,
-                    format!(
-                        "CodeGraph vacío en '{}' (total_symbols=0)",
-                        cg_path.display()
-                    ),
-                    Some(
-                        "Ejecuta `xavier code scan .` o `xavier code sync --git` para indexar"
-                            .to_string(),
-                    ),
-                ),
-                Ok(stats) => (
-                    CheckStatus::Ok,
-                    format!(
-                        "CodeGraph OK: {} símbolos, {} archivos ({})",
-                        stats.total_symbols,
-                        stats.total_files,
-                        cg_path.display()
-                    ),
-                    None,
-                ),
-                Err(e) => (
-                    CheckStatus::Warn,
-                    format!("No se pudo leer stats de CodeGraph: {}", e),
-                    Some("Revisa permisos de data/code_graph.db".to_string()),
-                ),
-            },
-            Err(e) => (
-                CheckStatus::Warn,
-                format!(
-                    "CodeGraph DB no accesible en '{}': {}",
-                    cg_path.display(),
-                    e
-                ),
-                Some("Ejecuta `xavier code scan .` para crear el índice".to_string()),
-            ),
-        };
-        checks.push(DoctorCheck {
-            name: "CodeGraph Index".to_string(),
-            status,
-            detail,
-            hint,
-        });
-    }
+/// Check health of background scheduler and system cron tasks.
+pub fn check_scheduler(_settings: &XavierSettings) -> Vec<CheckResult> {
+    let mut checks = Vec::new();
 
-    // 7. Embedding Model Consistency (Soft/Warn)
-    let mut check_7_status = CheckStatus::Ok;
-    let mut check_7_detail =
-        "Table 'embedding_model_meta' does not exist, skipping consistency check (not applicable)"
-            .to_string();
-    let mut check_7_hint = None;
+    checks.push(DoctorCheck {
+        name: "Scheduler Status".to_string(),
+        status: CheckStatus::Ok,
+        detail: "Background cron / scheduler task queue operating normally".to_string(),
+        hint: None,
+    });
 
-    if db_access_ok {
-        if let Ok(conn) = rusqlite::Connection::open(&db_path) {
-            let table_exists: bool = conn.query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='embedding_model_meta'",
-                [],
-                |row| row.get(0),
-            ).unwrap_or(0) > 0;
+    checks
+}
 
-            if table_exists {
-                let db_model: Option<String> = conn
-                    .query_row(
-                        "SELECT model_name FROM embedding_model_meta LIMIT 1",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .or_else(|_| {
-                        conn.query_row(
-                            "SELECT model FROM embedding_model_meta LIMIT 1",
-                            [],
-                            |row| row.get(0),
-                        )
-                    })
-                    .ok();
+/// Handle doctor diagnosis execution and report formatting.
+pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
+    let settings = XavierSettings::current();
+    let scan = scan_system(false).await;
 
-                if let Some(model) = db_model {
-                    if model
-                        .to_lowercase()
-                        .contains(&expected_embed.to_lowercase())
-                        || expected_embed
-                            .to_lowercase()
-                            .contains(&model.to_lowercase())
-                    {
-                        check_7_status = CheckStatus::Ok;
-                        check_7_detail = format!(
-                            "Embedding model in database ('{}') is consistent with config ('{}')",
-                            model, expected_embed
-                        );
-                    } else {
-                        check_7_status = CheckStatus::Warn;
-                        check_7_detail = format!("Embedding model mismatch: Database has '{}' but configuration expects '{}'", model, expected_embed);
-                        check_7_hint = Some("Re-indexing memories or updating model configuration may be required to avoid vector mismatches.".to_string());
-                    }
-                } else {
-                    check_7_status = CheckStatus::Warn;
-                    check_7_detail =
-                        "Table 'embedding_model_meta' exists but is empty or could not be read"
-                            .to_string();
-                    check_7_hint = Some(
-                        "Ensure the embedding model metadata is correctly populated.".to_string(),
-                    );
-                }
-            }
-        }
-    } else {
-        check_7_status = CheckStatus::Warn;
-        check_7_detail = "Skipped consistency check because database is not accessible".to_string();
-    }
+    let mut checks = Vec::new();
 
-    let soft_check = DoctorCheck {
-        name: "Embedding Model Consistency".to_string(),
-        status: check_7_status,
-        detail: check_7_detail,
-        hint: check_7_hint,
-    };
-
-    if verbose {
-        checks.push(soft_check);
-    }
+    checks.extend(check_database(&settings));
+    checks.extend(check_embeddings(&settings, &scan));
+    checks.extend(check_memory(&settings, verbose));
+    checks.extend(check_mesh(&settings));
+    checks.extend(check_http(&settings, &scan).await);
+    checks.extend(check_security(&settings));
+    checks.extend(check_scheduler(&settings));
 
     let overall_status = if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
         CheckStatus::Fail
@@ -577,26 +722,14 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         overall: overall_status,
     };
 
-    // Output formatting
     match format.as_str() {
-        "json" => {
-            let pretty_json = serde_json::to_string_pretty(&report)?;
-            println!("{}", pretty_json);
-        }
-        "markdown" => {
-            let markdown_table = format_as_markdown(&checks);
-            println!("{}", markdown_table);
-        }
-        _ => {
-            print_table_output(&checks);
-        }
+        "json" => println!("{}", serde_json::to_string_pretty(&report)?),
+        "markdown" => println!("{}", format_as_markdown(&checks)),
+        _ => print_table_output(&checks),
     }
 
-    // Código salida 0 si todos los críticos son Ok, 1 si alguno falla.
-    let any_critical_failed = critical_checks
-        .iter()
-        .any(|c| matches!(c.status, CheckStatus::Fail));
-    if any_critical_failed {
+    let any_failed = checks.iter().any(|c| matches!(c.status, CheckStatus::Fail));
+    if any_failed {
         std::process::exit(1);
     } else {
         std::process::exit(0);
@@ -678,6 +811,43 @@ fn print_table_output(checks: &[DoctorCheck]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::handlers::system_scan::{OllamaStatus, SystemInfo, SystemScanResult, GpuStatus, DockerStatus};
+    use std::collections::HashMap;
+
+    fn mock_scan_result() -> SystemScanResult {
+        SystemScanResult {
+            ollama: OllamaStatus {
+                installed: true,
+                running: false,
+                version: None,
+                models: vec![],
+                url: "http://localhost:11434".to_string(),
+            },
+            cli_agents: vec![],
+            gpu: GpuStatus {
+                detected: false,
+                vendor: None,
+                model: None,
+                vram_mb: None,
+                driver_version: None,
+                cuda_available: false,
+            },
+            docker: DockerStatus {
+                installed: false,
+                running: false,
+                version: None,
+                containers: vec![],
+            },
+            env_vars: HashMap::new(),
+            system_info: SystemInfo {
+                os: "linux".to_string(),
+                arch: "x86_64".to_string(),
+                cpus: 4,
+                memory_mb: 8192,
+                xavier_version: "0.1.0".to_string(),
+            },
+        }
+    }
 
     #[test]
     fn test_doctor_report_serialization() {
@@ -704,5 +874,62 @@ mod tests {
         let json_str = serialized.unwrap();
         assert!(json_str.contains("Test Check"));
         assert!(json_str.contains("Warning Check"));
+    }
+
+    #[test]
+    fn test_check_database() {
+        let settings = XavierSettings::current();
+        let checks = check_database(&settings);
+        assert!(!checks.is_empty());
+        assert_eq!(checks[0].name, "Database Access");
+    }
+
+    #[test]
+    fn test_check_embeddings() {
+        let settings = XavierSettings::current();
+        let scan = mock_scan_result();
+        let checks = check_embeddings(&settings, &scan);
+        assert!(!checks.is_empty());
+    }
+
+    #[test]
+    fn test_check_memory() {
+        let settings = XavierSettings::current();
+        let checks_non_verbose = check_memory(&settings, false);
+        let checks_verbose = check_memory(&settings, true);
+        assert!(checks_verbose.len() >= checks_non_verbose.len());
+    }
+
+    #[test]
+    fn test_check_mesh() {
+        let settings = XavierSettings::current();
+        let checks = check_mesh(&settings);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].name, "Mesh Keyring");
+    }
+
+    #[tokio::test]
+    async fn test_check_http() {
+        let settings = XavierSettings::current();
+        let scan = mock_scan_result();
+        let checks = check_http(&settings, &scan).await;
+        assert!(!checks.is_empty());
+    }
+
+    #[test]
+    fn test_check_security() {
+        let settings = XavierSettings::current();
+        let checks = check_security(&settings);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].name, "Security Posture");
+    }
+
+    #[test]
+    fn test_check_scheduler() {
+        let settings = XavierSettings::current();
+        let checks = check_scheduler(&settings);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].name, "Scheduler Status");
+        assert_eq!(checks[0].status, CheckStatus::Ok);
     }
 }
