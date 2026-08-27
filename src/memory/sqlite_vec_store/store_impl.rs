@@ -94,571 +94,22 @@ impl MemoryStore for VecSqliteMemoryStore {
     }
 
     async fn put(&self, record: MemoryRecord) -> Result<()> {
-        let mut record = record;
-
-        // Auto-generate missing embeddings if a provider is configured
-        if record.embedding.is_empty() {
-            if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
-                match crate::memory::embedder::EmbeddingClient::from_env_async().await {
-                    Ok(client) => match client.embed(&record.content).await {
-                        Ok(vector) => {
-                            record.embedding = vector;
-                        }
-                        Err(e) => {
-                            record.embedding_attempts += 1;
-                            tracing::warn!(
-                                    "Memory record {} saved WITHOUT embedding: client embedding generation failed: {}",
-                                    record.id,
-                                    e
-                                );
-                        }
-                    },
-                    Err(e) => {
-                        record.embedding_attempts += 1;
-                        tracing::warn!(
-                            "Memory record {} saved WITHOUT embedding: failed to initialize embedding client: {}",
-                            record.id,
-                            e
-                        );
-                    }
-                }
-            } else {
-                tracing::warn!(
-                    "Memory record {} saved WITHOUT embedding: embedding provider is not configured",
-                    record.id
-                );
-            }
-        }
-
-        // Align embedding_status with actual embedding content
-        if record.embedding.is_empty() {
-            if record.embedding_attempts > 0 {
-                record.embedding_status = "retry".to_string();
-            } else {
-                record.embedding_status = "pending".to_string();
-            }
-        } else {
-            record.embedding_status = "completed".to_string();
-        }
-
-        // Extract and check "dedup" flag from metadata. Remove it so it doesn't persist.
-        let mut is_dedup = false;
-        if let serde_json::Value::Object(ref mut map) = record.metadata {
-            if let Some(val) = map.remove("dedup") {
-                is_dedup = val.as_bool().unwrap_or(false);
-            }
-        }
-
-        // SSP canonical paths (stability/{repo}/... and features/{repo}/{feature_id})
-        // always UPSERT by exact path: reuse the existing row id so INSERT OR REPLACE
-        // updates in place instead of creating duplicates on every stabilize/index run.
-        // (SSP-OlaB #1234). The kind string is normalized by resolve_metadata, so the
-        // canonical-path prefix is the reliable contract.
-        let canonical_path =
-            record.path.starts_with("stability/") || record.path.starts_with("features/");
-        if canonical_path && !record.path.is_empty() {
-            let project_id = self.project_id.clone();
-            let path_c = record.path.clone();
-            let ws_c = record.workspace_id.clone();
-            let existing: Option<String> = ConnectionManager::global()
-                .with_conn(&project_id, move |conn| {
-                    let mut stmt = conn.prepare(
-                        "SELECT id FROM memory_records WHERE workspace_id = ?1 AND path = ?2 LIMIT 1",
-                    )?;
-                    match stmt.query_row(params![ws_c, path_c], |row| row.get::<_, String>(0)) {
-                        Ok(id) => Ok(Some(id)),
-                        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-                        Err(e) => Err(anyhow::anyhow!("SSP upsert lookup failed: {e}")),
-                    }
-                })
-                .await
-                .unwrap_or(None);
-            if let Some(existing_id) = existing {
-                record.id = existing_id;
-                record.revision += 1;
-            }
-        }
-
-        let mut dedup_settings = {
-            let lock = self.dedup_config.read().await;
-            lock.clone()
-        };
-
-        let is_ssp_path =
-            record.path.starts_with("stability/") || record.path.starts_with("features/");
-        if is_ssp_path {
-            dedup_settings.enabled = true;
-            dedup_settings.scope = crate::settings::types::DedupScope::PathExact;
-        }
-
-        if dedup_settings.enabled && (is_dedup || is_ssp_path) && !record.embedding.is_empty() {
-            let record_c = record.clone();
-            let project_id_c = self.project_id.clone();
-            let dedup_settings_c = dedup_settings.clone();
-
-            let record_ns = match crate::memory::schema::resolve_metadata(
-                &record_c.path,
-                &record_c.metadata,
-                &record_c.workspace_id,
-                None,
-            ) {
-                Ok(res) => res.namespace,
-                Err(_) => crate::memory::schema::MemoryNamespace::default(),
-            };
-
-            let namespaces_match = |ns1: &crate::memory::schema::MemoryNamespace,
-                                    ns2: &crate::memory::schema::MemoryNamespace|
-             -> bool {
-                ns1.org_id == ns2.org_id
-                    && ns1.user_id == ns2.user_id
-                    && ns1.agent_id == ns2.agent_id
-                    && ns1.session_id == ns2.session_id
-                    && ns1.project == ns2.project
-                    && ns1.scope == ns2.scope
-            };
-
-            let query_res = ConnectionManager::global().with_conn(&project_id_c, move |conn| {
-                let mut best_cand: Option<(MemoryRecord, f32)> = None;
-
-                // 1. Try sqlite-vec cosine distance query (vector_distance equivalent)
-                if let Ok(emb_json) = serde_json::to_string(&record_c.embedding) {
-                    let table_name = if record_c.embedding.len() == 768 {
-                        "memory_embeddings_768"
-                    } else {
-                        "memory_embeddings"
-                    };
-                    let (sql, query_params) = match dedup_settings_c.scope {
-                        crate::settings::types::DedupScope::PathExact => {
-                            (
-                                format!(
-                                    r#"
-                                 SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
-                                        m.created_at, m.updated_at, m.revision, m.primary_flag,
-                                        m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
-                                        m.encrypted_dek, m.content_iv, m.metadata_iv,
-                                        CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
-                                 FROM {} e
-                                 JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
-                                 WHERE e.workspace_id = ?2 AND m.path = ?3
-                                 ORDER BY distance ASC
-                                 LIMIT 1
-                                 "#,
-                                    table_name
-                                ),
-                                vec![
-                                    rusqlite::types::Value::Text(emb_json),
-                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
-                                    rusqlite::types::Value::Text(record_c.path.clone()),
-                                ]
-                            )
-                        }
-                        crate::settings::types::DedupScope::Namespace => {
-                            (
-                                format!(
-                                    r#"
-                                 SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
-                                        m.created_at, m.updated_at, m.revision, m.primary_flag,
-                                        m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
-                                        m.encrypted_dek, m.content_iv, m.metadata_iv,
-                                        CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
-                                 FROM {} e
-                                 JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
-                                 WHERE e.workspace_id = ?2
-                                   AND json_extract(m.metadata, '$.namespace.org_id') IS ?3
-                                   AND json_extract(m.metadata, '$.namespace.user_id') IS ?4
-                                   AND json_extract(m.metadata, '$.namespace.agent_id') IS ?5
-                                   AND json_extract(m.metadata, '$.namespace.session_id') IS ?6
-                                   AND json_extract(m.metadata, '$.namespace.project') IS ?7
-                                   AND json_extract(m.metadata, '$.namespace.scope') IS ?8
-                                 ORDER BY distance ASC
-                                 LIMIT 1
-                                 "#,
-                                    table_name
-                                ),
-                                vec![
-                                    rusqlite::types::Value::Text(emb_json),
-                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
-                                    record_ns.org_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.user_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.agent_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.session_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.project.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.scope.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                ]
-                            )
-                        }
-                    };
-
-                    match conn.prepare(&sql) {
-                        Ok(mut stmt) => {
-                            match stmt.query(rusqlite::params_from_iter(&query_params)) {
-                                Ok(mut rows) => {
-                                    if let Ok(Some(row)) = rows.next() {
-                                        let distance = match row.get::<_, rusqlite::types::Value>(18) {
-                                            Ok(rusqlite::types::Value::Real(v)) => v as f32,
-                                            Ok(rusqlite::types::Value::Integer(v)) => v as f32,
-                                            _ => 1.0,
-                                        };
-                                        let similarity = 1.0 - distance;
-                                        if let Ok(rec) = Self::deserialize_record(row) {
-                                            best_cand = Some((rec, similarity));
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::warn!("v1_api: stmt.query 1 error: {:?}", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("v1_api: conn.prepare 1 error: {:?}", e);
-                        }
-                    }
-                }
-
-                // 2. Fallback to manual Rust cosine similarity search
-                if best_cand.is_none() {
-                    let (sql, query_params) = match dedup_settings_c.scope {
-                        crate::settings::types::DedupScope::PathExact => {
-                            (
-                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND path = ?".to_string(),
-                                vec![
-                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
-                                    rusqlite::types::Value::Text(record_c.path.clone()),
-                                ]
-                            )
-                        }
-                        crate::settings::types::DedupScope::Namespace => {
-                            (
-                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND json_extract(metadata, '$.namespace.org_id') IS ? AND json_extract(metadata, '$.namespace.user_id') IS ? AND json_extract(metadata, '$.namespace.agent_id') IS ? AND json_extract(metadata, '$.namespace.session_id') IS ? AND json_extract(metadata, '$.namespace.project') IS ? AND json_extract(metadata, '$.namespace.scope') IS ?".to_string(),
-                                vec![
-                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
-                                    record_ns.org_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.user_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.agent_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.session_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.project.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                    record_ns.scope.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
-                                ]
-                            )
-                        }
-                    };
-
-                    match conn.prepare(&sql) {
-                        Ok(mut stmt) => {
-                            match stmt.query(rusqlite::params_from_iter(&query_params)) {
-                                Ok(mut rows) => {
-                                    let mut best_sim = -1.0f32;
-                                    let mut best_rec = None;
-                                    while let Ok(Some(row)) = rows.next() {
-                                        match Self::deserialize_record(row) {
-                                            Ok(rec) => {
-                                                let is_match = match dedup_settings_c.scope {
-                                                    crate::settings::types::DedupScope::PathExact => rec.path == record_c.path,
-                                                    crate::settings::types::DedupScope::Namespace => {
-                                                        let rec_meta = match crate::memory::schema::resolve_metadata(&rec.path, &rec.metadata, &rec.workspace_id, None) {
-                                                            Ok(m) => m,
-                                                            Err(_) => continue,
-                                                        };
-                                                        namespaces_match(&record_ns, &rec_meta.namespace)
-                                                    }
-                                                };
-                                                if is_match {
-                                                    let sim = cosine_similarity(&record_c.embedding, &rec.embedding);
-                                                    if sim > best_sim {
-                                                        best_sim = sim;
-                                                        best_rec = Some(rec);
-                                                    }
-                                                }
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!("v1_api: deserialize 2 error: {:?}", e);
-                                            }
-                                        }
-                                    }
-                                    if let Some(rec) = best_rec {
-                                        best_cand = Some((rec, best_sim));
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::warn!("v1_api: stmt.query 2 error: {:?}", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("v1_api: conn.prepare 2 error: {:?}", e);
-                        }
-                    }
-                }
-
-                Ok(best_cand)
-            }).await;
-
-            if let Ok(Some((mut existing_record, mut similarity))) = query_res {
-                // Prefer true cosine when both embeddings are present. The vec_distance
-                // column can fail to deserialize (fallback distance=1.0 → similarity 0),
-                // which skipped legitimate PathExact/Namespace merges.
-                if !existing_record.embedding.is_empty() && !record.embedding.is_empty() {
-                    similarity = cosine_similarity(&record.embedding, &existing_record.embedding);
-                }
-                if similarity >= dedup_settings.threshold {
-                    tracing::info!(
-                        "Semantic dedup (similarity {} >= {}): Updating existing memory {} with new content",
-                        similarity,
-                        dedup_settings.threshold,
-                        existing_record.id
-                    );
-                    // Decrypt existing record first if it's encrypted so revisioned_record merges correctly
-                    let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(
-                        &mut existing_record,
-                    );
-
-                    if is_superset(&record.content, &existing_record.content) {
-                        // REPLACE in place, no revision
-                        let existing_revisions = existing_record.revisions.clone();
-                        let existing_revision_num = existing_record.revision;
-
-                        record.id = existing_record.id.clone();
-                        record.created_at = existing_record.created_at;
-                        record.updated_at = chrono::Utc::now();
-                        record.revision = existing_revision_num + 1;
-                        record.revisions = existing_revisions; // No new revision pushed!
-                    } else {
-                        // Push 1 revision, enforce max_revisions (default 5)
-                        record = crate::memory::store::revisioned_record(existing_record, record);
-
-                        let max_revs = if dedup_settings.max_revisions > 0 {
-                            dedup_settings.max_revisions
-                        } else {
-                            5
-                        };
-                        if record.revisions.len() > max_revs {
-                            let excess = record.revisions.len() - max_revs;
-                            record.revisions.drain(0..excess);
-                        }
-                    }
-                } else {
-                    tracing::info!(
-                        "Semantic dedup (similarity {} <= {}): Similarity is below threshold, inserting as new memory {}",
-                        similarity,
-                        dedup_settings.threshold,
-                        record.id
-                    );
-                }
-            }
-        }
-
-        let security = crate::security::get_security_service();
-        if security.get_config().encryption_at_rest_enabled {
-            let mgr = security.get_key_manager()?;
-            let kek = security.get_kek()?;
-
-            // Get or create salt for this workspace
-            let workspace_id = record.workspace_id.clone();
-            let project_id = self.project_id.clone();
-            let _salt_bytes = ConnectionManager::global()
-                .with_conn(&project_id, move |conn| {
-                    let mut stmt = conn.prepare(
-                        "SELECT salt FROM encryption_metadata WHERE workspace_id = ?",
-                    )?;
-                    match stmt.query_row([&workspace_id], |row| row.get::<_, Vec<u8>>(0)) {
-                        Ok(salt) => Ok(salt),
-                        Err(rusqlite::Error::QueryReturnedNoRows) => {
-                            let new_salt = crate::crypto::keys::KeySalt::generate();
-                            let salt_vec = new_salt.as_bytes().to_vec();
-                            conn.execute(
-                                "INSERT INTO encryption_metadata (id, workspace_id, salt, created_at) VALUES (?, ?, ?, ?)",
-                                params![ulid::Ulid::new().to_string(), workspace_id, salt_vec, chrono::Utc::now().to_rfc3339()],
-                            )?;
-                            Ok(salt_vec)
-                        }
-                        Err(e) => Err(anyhow::anyhow!("Database error: {}", e)),
-                    }
-                })
-                .await?;
-
-            // Generate DEK
-            let dek = mgr.generate_dek();
-            let encrypted_dek = mgr
-                .encrypt_dek(&dek, &kek)
-                .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
-
-            // Encrypt content
-            let content_nonce = crate::crypto::encryption::NonceBytes::generate();
-            let encrypted_content = crate::crypto::encryption::encrypt_data(
-                record.content.as_bytes(),
-                dek.as_bytes(),
-                &content_nonce,
-            )
-            .map_err(|e| anyhow::anyhow!("Content encryption failed: {}", e))?;
-
-            // Encrypt metadata
-            let metadata_nonce = crate::crypto::encryption::NonceBytes::generate();
-            let metadata_json = serde_json::to_string(&record.metadata)?;
-            let encrypted_metadata = crate::crypto::encryption::encrypt_data(
-                metadata_json.as_bytes(),
-                dek.as_bytes(),
-                &metadata_nonce,
-            )
-            .map_err(|e| anyhow::anyhow!("Metadata encryption failed: {}", e))?;
-
-            record.content = crate::utils::crypto::hex_encode(&encrypted_content.ciphertext);
-            record.metadata = serde_json::json!({
-                "encrypted": crate::utils::crypto::hex_encode(&encrypted_metadata.ciphertext)
-            });
-            record.encrypted_dek = Some(encrypted_dek);
-            record.content_iv = Some(content_nonce.as_bytes().to_vec());
-            record.metadata_iv = Some(metadata_nonce.as_bytes().to_vec());
-        }
+        let record = self.put_embed(record).await?;
+        let record = self.put_validate(record).await?;
 
         let project_id = self.project_id.clone();
+        let store = self.clone();
         let record_c = record.clone();
 
-        ConnectionManager::global().with_conn(&project_id, move |conn| {
-            // Compute content hash for tamper-evident hash chain
-            let content_hash = format!("{:x}", Sha256::digest(record_c.content.as_bytes()));
+        ConnectionManager::global()
+            .with_conn(&project_id, move |conn| {
+                store.put_store(conn, &record_c)?;
+                store.put_index(conn, &record_c)?;
+                store.put_link(conn, &record_c)?;
+                Ok(())
+            })
+            .await?;
 
-            // Get the previous hash for chain linking
-            let prev_hash: Option<String> = {
-                conn.query_row(
-                    "SELECT content_hash FROM memory_chain ORDER BY created_at DESC LIMIT 1",
-                    (),
-                    |row| row.get(0)
-                ).ok()
-            };
-
-            // Store in main table first
-            {
-                let qjl_enabled = {
-                    let threshold = super::VecSqliteMemoryStore::configured_qjl_threshold();
-                    let current_vectors: usize = conn.query_row(
-                        "SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?",
-                        params![record_c.workspace_id],
-                        |row| row.get(0)
-                    ).unwrap_or(0);
-                    current_vectors >= threshold
-                };
-
-                let embedding_blob = if !record_c.embedding.is_empty() && qjl_enabled
-                {
-                    vector::serialize_embedding_qjl(&record_c.embedding)
-                } else {
-                    vector::serialize_embedding(&record_c.embedding)
-                };
-
-                conn.execute(
-                    &format!(
-                        "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, encrypted_dek, content_iv, metadata_iv, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, embedding_status, embedding_attempts) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
-                        TABLE_MEMORIES
-                    ),
-                    params![
-                        record_c.id,
-                        record_c.workspace_id,
-                        record_c.path,
-                        record_c.content,
-                        serde_json::to_string(&record_c.metadata).unwrap_or_default(),
-                        embedding_blob,
-                        record_c.encrypted_dek,
-                        record_c.content_iv,
-                        record_c.metadata_iv,
-                        record_c.created_at.to_rfc3339(),
-                        record_c.updated_at.to_rfc3339(),
-                        record_c.revision,
-                        record_c.primary as i32,
-                        record_c.parent_id,
-                        record_c.cluster_id,
-                        record_c.level.as_str(),
-                        serde_json::to_string(&record_c.relation).unwrap_or_default(),
-                        serde_json::to_string(&record_c.revisions).unwrap_or_default(),
-                        record_c.embedding_status,
-                        record_c.embedding_attempts,
-                    ],
-                )?;
-
-                // Sync to FTS5
-                conn.execute(
-                    "DELETE FROM memory_fts WHERE id = ?",
-                    params![record_c.id],
-                )?;
-                let code_tokens =
-                    super::fts::code_tokens(&format!("{} {}", &record_c.path, &record_c.content)).join(" ");
-                conn.execute(
-                    "INSERT INTO memory_fts(id, path, content, code_tokens) VALUES (?, ?, ?, ?)",
-                    params![
-                        record_c.id,
-                        record_c.path,
-                        record_c.content,
-                        code_tokens
-                    ],
-                )?;
-
-                graph::sync_memory_entities(conn, &record_c.workspace_id, &record_c)?;
-
-                // Add to hash chain
-                let chain_id = ulid::Ulid::new().to_string();
-                conn.execute(
-                    "INSERT INTO memory_chain (id, prev_hash, content_hash) VALUES (?, ?, ?)",
-                    params![chain_id, prev_hash, content_hash],
-                )?;
-
-                // Auto-link code symbols mentioned in content
-                let candidate_words: std::collections::HashSet<&str> = record_c
-                    .content
-                    .split(|c: char| !c.is_alphanumeric() && c != '_')
-                    .filter(|w| w.len() >= 4)
-                    .collect();
-
-                let code_db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(
-                    std::path::Path::new("."),
-                );
-                if code_db_path.exists() {
-                    if let Ok(code_db) = code_graph::db::CodeGraphDB::new(&code_db_path) {
-                        if let Ok(links) = code_db.link_memory_to_symbols(&record_c.id, &record_c.content) {
-                            for link in links {
-                                let _ = conn.execute(
-                                    "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, ?3)",
-                                    params![link.memory_id, link.symbol_id, link.confidence],
-                                );
-                            }
-                        }
-                    }
-                } else {
-                    for word in candidate_words {
-                        let _ = conn.execute(
-                            "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, 1.0)",
-                            params![record_c.id, word],
-                        );
-                    }
-                }
-
-                // Call refined append_timeline_event (now sync inside with_conn)
-                // Need a reference to Self, but we're inside closure.
-                // Wait, append_timeline_event can be a static-like helper or we can pass store state.
-                // For now, let's keep the logic inline or make it a method that takes &Connection.
-            }
-
-            // Store vector in native vector search table
-            if !record_c.embedding.is_empty() {
-                let embedding_json = serde_json::to_string(&record_c.embedding).unwrap_or_default();
-                let table_name = if record_c.embedding.len() == 768 {
-                    "memory_embeddings_768"
-                } else {
-                    "memory_embeddings"
-                };
-                let sql = format!(
-                    "INSERT OR REPLACE INTO {}(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
-                    table_name
-                );
-                conn.execute(
-                    &sql,
-                    params![record_c.id, record_c.workspace_id, embedding_json],
-                )?;
-            }
-
-            Ok(())
-        }).await?;
-
-        // Re-run timeline event outside to handle broadcast if needed, or refine append_timeline_event
         let store_clone = self.clone();
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
@@ -1250,6 +701,554 @@ impl MemoryStore for VecSqliteMemoryStore {
 }
 
 impl VecSqliteMemoryStore {
+    /// Decomposed put step 1: Generate embeddings if missing and align embedding status.
+    pub async fn put_embed(&self, mut record: MemoryRecord) -> Result<MemoryRecord> {
+        // Auto-generate missing embeddings if a provider is configured
+        if record.embedding.is_empty() {
+            if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
+                match crate::memory::embedder::EmbeddingClient::from_env_async().await {
+                    Ok(client) => match client.embed(&record.content).await {
+                        Ok(vector) => {
+                            record.embedding = vector;
+                        }
+                        Err(e) => {
+                            record.embedding_attempts += 1;
+                            tracing::warn!(
+                                "Memory record {} saved WITHOUT embedding: client embedding generation failed: {}",
+                                record.id,
+                                e
+                            );
+                        }
+                    },
+                    Err(e) => {
+                        record.embedding_attempts += 1;
+                        tracing::warn!(
+                            "Memory record {} saved WITHOUT embedding: failed to initialize embedding client: {}",
+                            record.id,
+                            e
+                        );
+                    }
+                }
+            } else {
+                tracing::warn!(
+                    "Memory record {} saved WITHOUT embedding: embedding provider is not configured",
+                    record.id
+                );
+            }
+        }
+
+        // Align embedding_status with actual embedding content
+        if record.embedding.is_empty() {
+            if record.embedding_attempts > 0 {
+                record.embedding_status = "retry".to_string();
+            } else {
+                record.embedding_status = "pending".to_string();
+            }
+        } else {
+            record.embedding_status = "completed".to_string();
+        }
+
+        Ok(record)
+    }
+
+    /// Decomposed put step 2: Input validation, SSP path sanitization, deduplication, and rest encryption.
+    pub async fn put_validate(&self, mut record: MemoryRecord) -> Result<MemoryRecord> {
+        // Extract and check "dedup" flag from metadata. Remove it so it doesn't persist.
+        let mut is_dedup = false;
+        if let serde_json::Value::Object(ref mut map) = record.metadata {
+            if let Some(val) = map.remove("dedup") {
+                is_dedup = val.as_bool().unwrap_or(false);
+            }
+        }
+
+        // SSP canonical paths (stability/{repo}/... and features/{repo}/{feature_id})
+        // always UPSERT by exact path: reuse the existing row id so INSERT OR REPLACE
+        // updates in place instead of creating duplicates on every stabilize/index run.
+        let canonical_path =
+            record.path.starts_with("stability/") || record.path.starts_with("features/");
+        if canonical_path && !record.path.is_empty() {
+            let project_id = self.project_id.clone();
+            let path_c = record.path.clone();
+            let ws_c = record.workspace_id.clone();
+            let existing: Option<String> = ConnectionManager::global()
+                .with_conn(&project_id, move |conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT id FROM memory_records WHERE workspace_id = ?1 AND path = ?2 LIMIT 1",
+                    )?;
+                    match stmt.query_row(params![ws_c, path_c], |row| row.get::<_, String>(0)) {
+                        Ok(id) => Ok(Some(id)),
+                        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                        Err(e) => Err(anyhow::anyhow!("SSP upsert lookup failed: {e}")),
+                    }
+                })
+                .await
+                .unwrap_or(None);
+            if let Some(existing_id) = existing {
+                record.id = existing_id;
+                record.revision += 1;
+            }
+        }
+
+        let mut dedup_settings = {
+            let lock = self.dedup_config.read().await;
+            lock.clone()
+        };
+
+        let is_ssp_path =
+            record.path.starts_with("stability/") || record.path.starts_with("features/");
+        if is_ssp_path {
+            dedup_settings.enabled = true;
+            dedup_settings.scope = crate::settings::types::DedupScope::PathExact;
+        }
+
+        if dedup_settings.enabled && (is_dedup || is_ssp_path) && !record.embedding.is_empty() {
+            let record_c = record.clone();
+            let project_id_c = self.project_id.clone();
+            let dedup_settings_c = dedup_settings.clone();
+
+            let record_ns = match crate::memory::schema::resolve_metadata(
+                &record_c.path,
+                &record_c.metadata,
+                &record_c.workspace_id,
+                None,
+            ) {
+                Ok(res) => res.namespace,
+                Err(_) => crate::memory::schema::MemoryNamespace::default(),
+            };
+
+            let namespaces_match = |ns1: &crate::memory::schema::MemoryNamespace,
+                                    ns2: &crate::memory::schema::MemoryNamespace|
+             -> bool {
+                ns1.org_id == ns2.org_id
+                    && ns1.user_id == ns2.user_id
+                    && ns1.agent_id == ns2.agent_id
+                    && ns1.session_id == ns2.session_id
+                    && ns1.project == ns2.project
+                    && ns1.scope == ns2.scope
+            };
+
+            let query_res = ConnectionManager::global().with_conn(&project_id_c, move |conn| {
+                let mut best_cand: Option<(MemoryRecord, f32)> = None;
+
+                // 1. Try sqlite-vec cosine distance query (vector_distance equivalent)
+                if let Ok(emb_json) = serde_json::to_string(&record_c.embedding) {
+                    let table_name = if record_c.embedding.len() == 768 {
+                        "memory_embeddings_768"
+                    } else {
+                        "memory_embeddings"
+                    };
+                    let (sql, query_params) = match dedup_settings_c.scope {
+                        crate::settings::types::DedupScope::PathExact => {
+                            (
+                                format!(
+                                    r#"
+                                 SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                        m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                        m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                        m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                        CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                                 FROM {} e
+                                 JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                                 WHERE e.workspace_id = ?2 AND m.path = ?3
+                                 ORDER BY distance ASC
+                                 LIMIT 1
+                                 "#,
+                                    table_name
+                                ),
+                                vec![
+                                    rusqlite::types::Value::Text(emb_json),
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    rusqlite::types::Value::Text(record_c.path.clone()),
+                                ]
+                            )
+                        }
+                        crate::settings::types::DedupScope::Namespace => {
+                            (
+                                format!(
+                                    r#"
+                                 SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                        m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                        m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                        m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                        CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                                 FROM {} e
+                                 JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                                 WHERE e.workspace_id = ?2
+                                   AND json_extract(m.metadata, '$.namespace.org_id') IS ?3
+                                   AND json_extract(m.metadata, '$.namespace.user_id') IS ?4
+                                   AND json_extract(m.metadata, '$.namespace.agent_id') IS ?5
+                                   AND json_extract(m.metadata, '$.namespace.session_id') IS ?6
+                                   AND json_extract(m.metadata, '$.namespace.project') IS ?7
+                                   AND json_extract(m.metadata, '$.namespace.scope') IS ?8
+                                 ORDER BY distance ASC
+                                 LIMIT 1
+                                 "#,
+                                    table_name
+                                ),
+                                vec![
+                                    rusqlite::types::Value::Text(emb_json),
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    record_ns.org_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.user_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.agent_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.session_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.project.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.scope.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                ]
+                            )
+                        }
+                    };
+
+                    match conn.prepare(&sql) {
+                        Ok(mut stmt) => {
+                            match stmt.query(rusqlite::params_from_iter(&query_params)) {
+                                Ok(mut rows) => {
+                                    if let Ok(Some(row)) = rows.next() {
+                                        let distance = match row.get::<_, rusqlite::types::Value>(18) {
+                                            Ok(rusqlite::types::Value::Real(v)) => v as f32,
+                                            Ok(rusqlite::types::Value::Integer(v)) => v as f32,
+                                            _ => 1.0,
+                                        };
+                                        let similarity = 1.0 - distance;
+                                        if let Ok(rec) = Self::deserialize_record(row) {
+                                            best_cand = Some((rec, similarity));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("v1_api: stmt.query 1 error: {:?}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("v1_api: conn.prepare 1 error: {:?}", e);
+                        }
+                    }
+                }
+
+                // 2. Fallback to manual Rust cosine similarity search
+                if best_cand.is_none() {
+                    let (sql, query_params) = match dedup_settings_c.scope {
+                        crate::settings::types::DedupScope::PathExact => {
+                            (
+                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND path = ?".to_string(),
+                                vec![
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    rusqlite::types::Value::Text(record_c.path.clone()),
+                                ]
+                            )
+                        }
+                        crate::settings::types::DedupScope::Namespace => {
+                            (
+                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND json_extract(metadata, '$.namespace.org_id') IS ? AND json_extract(metadata, '$.namespace.user_id') IS ? AND json_extract(metadata, '$.namespace.agent_id') IS ? AND json_extract(metadata, '$.namespace.session_id') IS ? AND json_extract(metadata, '$.namespace.project') IS ? AND json_extract(metadata, '$.namespace.scope') IS ?".to_string(),
+                                vec![
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    record_ns.org_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.user_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.agent_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.session_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.project.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.scope.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                ]
+                            )
+                        }
+                    };
+
+                    match conn.prepare(&sql) {
+                        Ok(mut stmt) => {
+                            match stmt.query(rusqlite::params_from_iter(&query_params)) {
+                                Ok(mut rows) => {
+                                    let mut best_sim = -1.0f32;
+                                    let mut best_rec = None;
+                                    while let Ok(Some(row)) = rows.next() {
+                                        match Self::deserialize_record(row) {
+                                            Ok(rec) => {
+                                                let is_match = match dedup_settings_c.scope {
+                                                    crate::settings::types::DedupScope::PathExact => rec.path == record_c.path,
+                                                    crate::settings::types::DedupScope::Namespace => {
+                                                        let rec_meta = match crate::memory::schema::resolve_metadata(&rec.path, &rec.metadata, &rec.workspace_id, None) {
+                                                            Ok(m) => m,
+                                                            Err(_) => continue,
+                                                        };
+                                                        namespaces_match(&record_ns, &rec_meta.namespace)
+                                                    }
+                                                };
+                                                if is_match {
+                                                    let sim = cosine_similarity(&record_c.embedding, &rec.embedding);
+                                                    if sim > best_sim {
+                                                        best_sim = sim;
+                                                        best_rec = Some(rec);
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("v1_api: deserialize 2 error: {:?}", e);
+                                            }
+                                        }
+                                    }
+                                    if let Some(rec) = best_rec {
+                                        best_cand = Some((rec, best_sim));
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("v1_api: stmt.query 2 error: {:?}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("v1_api: conn.prepare 2 error: {:?}", e);
+                        }
+                    }
+                }
+
+                Ok(best_cand)
+            }).await;
+
+            if let Ok(Some((mut existing_record, mut similarity))) = query_res {
+                if !existing_record.embedding.is_empty() && !record.embedding.is_empty() {
+                    similarity = cosine_similarity(&record.embedding, &existing_record.embedding);
+                }
+                if similarity >= dedup_settings.threshold {
+                    tracing::info!(
+                        "Semantic dedup (similarity {} >= {}): Updating existing memory {} with new content",
+                        similarity,
+                        dedup_settings.threshold,
+                        existing_record.id
+                    );
+                    let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(
+                        &mut existing_record,
+                    );
+
+                    if is_superset(&record.content, &existing_record.content) {
+                        let existing_revisions = existing_record.revisions.clone();
+                        let existing_revision_num = existing_record.revision;
+
+                        record.id = existing_record.id.clone();
+                        record.created_at = existing_record.created_at;
+                        record.updated_at = chrono::Utc::now();
+                        record.revision = existing_revision_num + 1;
+                        record.revisions = existing_revisions;
+                    } else {
+                        record = crate::memory::store::revisioned_record(existing_record, record);
+
+                        let max_revs = if dedup_settings.max_revisions > 0 {
+                            dedup_settings.max_revisions
+                        } else {
+                            5
+                        };
+                        if record.revisions.len() > max_revs {
+                            let excess = record.revisions.len() - max_revs;
+                            record.revisions.drain(0..excess);
+                        }
+                    }
+                } else {
+                    tracing::info!(
+                        "Semantic dedup (similarity {} <= {}): Similarity is below threshold, inserting as new memory {}",
+                        similarity,
+                        dedup_settings.threshold,
+                        record.id
+                    );
+                }
+            }
+        }
+
+        let security = crate::security::get_security_service();
+        if security.get_config().encryption_at_rest_enabled {
+            let mgr = security.get_key_manager()?;
+            let kek = security.get_kek()?;
+
+            let workspace_id = record.workspace_id.clone();
+            let project_id = self.project_id.clone();
+            let _salt_bytes = ConnectionManager::global()
+                .with_conn(&project_id, move |conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT salt FROM encryption_metadata WHERE workspace_id = ?",
+                    )?;
+                    match stmt.query_row([&workspace_id], |row| row.get::<_, Vec<u8>>(0)) {
+                        Ok(salt) => Ok(salt),
+                        Err(rusqlite::Error::QueryReturnedNoRows) => {
+                            let new_salt = crate::crypto::keys::KeySalt::generate();
+                            let salt_vec = new_salt.as_bytes().to_vec();
+                            conn.execute(
+                                "INSERT INTO encryption_metadata (id, workspace_id, salt, created_at) VALUES (?, ?, ?, ?)",
+                                params![ulid::Ulid::new().to_string(), workspace_id, salt_vec, chrono::Utc::now().to_rfc3339()],
+                            )?;
+                            Ok(salt_vec)
+                        }
+                        Err(e) => Err(anyhow::anyhow!("Database error: {}", e)),
+                    }
+                })
+                .await?;
+
+            let dek = mgr.generate_dek();
+            let encrypted_dek = mgr
+                .encrypt_dek(&dek, &kek)
+                .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
+
+            let content_nonce = crate::crypto::encryption::NonceBytes::generate();
+            let encrypted_content = crate::crypto::encryption::encrypt_data(
+                record.content.as_bytes(),
+                dek.as_bytes(),
+                &content_nonce,
+            )
+            .map_err(|e| anyhow::anyhow!("Content encryption failed: {}", e))?;
+
+            let metadata_nonce = crate::crypto::encryption::NonceBytes::generate();
+            let metadata_json = serde_json::to_string(&record.metadata)?;
+            let encrypted_metadata = crate::crypto::encryption::encrypt_data(
+                metadata_json.as_bytes(),
+                dek.as_bytes(),
+                &metadata_nonce,
+            )
+            .map_err(|e| anyhow::anyhow!("Metadata encryption failed: {}", e))?;
+
+            record.content = crate::utils::crypto::hex_encode(&encrypted_content.ciphertext);
+            record.metadata = serde_json::json!({
+                "encrypted": crate::utils::crypto::hex_encode(&encrypted_metadata.ciphertext)
+            });
+            record.encrypted_dek = Some(encrypted_dek);
+            record.content_iv = Some(content_nonce.as_bytes().to_vec());
+            record.metadata_iv = Some(metadata_nonce.as_bytes().to_vec());
+        }
+
+        Ok(record)
+    }
+
+    /// Decomposed put step 3: SQLite INSERT or REPLACE into memory_records table and hash chain linking.
+    pub fn put_store(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
+        let content_hash = format!("{:x}", Sha256::digest(record.content.as_bytes()));
+
+        let prev_hash: Option<String> = {
+            conn.query_row(
+                "SELECT content_hash FROM memory_chain ORDER BY created_at DESC LIMIT 1",
+                (),
+                |row| row.get(0),
+            )
+            .ok()
+        };
+
+        let qjl_enabled = {
+            let threshold = super::VecSqliteMemoryStore::configured_qjl_threshold();
+            let current_vectors: usize = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?",
+                    params![record.workspace_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            current_vectors >= threshold
+        };
+
+        let embedding_blob = if !record.embedding.is_empty() && qjl_enabled {
+            vector::serialize_embedding_qjl(&record.embedding)
+        } else {
+            vector::serialize_embedding(&record.embedding)
+        };
+
+        conn.execute(
+            &format!(
+                "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, encrypted_dek, content_iv, metadata_iv, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, embedding_status, embedding_attempts) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                TABLE_MEMORIES
+            ),
+            params![
+                record.id,
+                record.workspace_id,
+                record.path,
+                record.content,
+                serde_json::to_string(&record.metadata).unwrap_or_default(),
+                embedding_blob,
+                record.encrypted_dek,
+                record.content_iv,
+                record.metadata_iv,
+                record.created_at.to_rfc3339(),
+                record.updated_at.to_rfc3339(),
+                record.revision,
+                record.primary as i32,
+                record.parent_id,
+                record.cluster_id,
+                record.level.as_str(),
+                serde_json::to_string(&record.relation).unwrap_or_default(),
+                serde_json::to_string(&record.revisions).unwrap_or_default(),
+                record.embedding_status,
+                record.embedding_attempts,
+            ],
+        )?;
+
+        graph::sync_memory_entities(conn, &record.workspace_id, record)?;
+
+        let chain_id = ulid::Ulid::new().to_string();
+        conn.execute(
+            "INSERT INTO memory_chain (id, prev_hash, content_hash) VALUES (?, ?, ?)",
+            params![chain_id, prev_hash, content_hash],
+        )?;
+
+        Ok(())
+    }
+
+    /// Decomposed put step 4: FTS5 and vector index updates.
+    pub fn put_index(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
+        conn.execute("DELETE FROM memory_fts WHERE id = ?", params![record.id])?;
+        let code_tokens =
+            super::fts::code_tokens(&format!("{} {}", &record.path, &record.content)).join(" ");
+        conn.execute(
+            "INSERT INTO memory_fts(id, path, content, code_tokens) VALUES (?, ?, ?, ?)",
+            params![record.id, record.path, record.content, code_tokens],
+        )?;
+
+        if !record.embedding.is_empty() {
+            let embedding_json = serde_json::to_string(&record.embedding).unwrap_or_default();
+            let table_name = if record.embedding.len() == 768 {
+                "memory_embeddings_768"
+            } else {
+                "memory_embeddings"
+            };
+            let sql = format!(
+                "INSERT OR REPLACE INTO {}(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                table_name
+            );
+            conn.execute(
+                &sql,
+                params![record.id, record.workspace_id, embedding_json],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Decomposed put step 5: Symbol linking.
+    pub fn put_link(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
+        let candidate_words: std::collections::HashSet<&str> = record
+            .content
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .filter(|w| w.len() >= 4)
+            .collect();
+
+        let code_db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(
+            std::path::Path::new("."),
+        );
+        if code_db_path.exists() {
+            if let Ok(code_db) = code_graph::db::CodeGraphDB::new(&code_db_path) {
+                if let Ok(links) = code_db.link_memory_to_symbols(&record.id, &record.content) {
+                    for link in links {
+                        let _ = conn.execute(
+                            "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, ?3)",
+                            params![link.memory_id, link.symbol_id, link.confidence],
+                        );
+                    }
+                }
+            }
+        } else {
+            for word in candidate_words {
+                let _ = conn.execute(
+                    "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, 1.0)",
+                    params![record.id, word],
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     /// Reconcile embedding_status across memory_records to align status with physical vector existence.
     ///
     /// Fixes false 'completed' statuses where embedding blob is missing or empty (length(embedding) <= 100)
