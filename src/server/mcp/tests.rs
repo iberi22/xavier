@@ -212,6 +212,41 @@ async fn list_tools_returns_all_tools() {
 }
 
 #[tokio::test]
+async fn xavier_issue_context_package_mcp_integration() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    let response = post_json(
+        router,
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {
+                "name": "xavier_issue_context_package",
+                "arguments": {
+                    "issue_id": "101",
+                    "title": "[bug] Fix search_code in db.rs",
+                    "body": "The `search_code` function in `src/codebase/db.rs` needs improvement.",
+                    "repo": "owner/repo"
+                }
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    let text = match body["result"]["content"][0]["text"].as_str() {
+        Some(t) => t,
+        None => panic!("content[0]['text'] was None. Full body: {:?}", body),
+    };
+    let val: Value = serde_json::from_str(text).unwrap();
+
+    assert_eq!(val["issue_id"], "101");
+    assert_eq!(val["issue_type"], "bug");
+    assert_eq!(val["repo"], "owner/repo");
+}
+
+#[tokio::test]
 async fn create_and_get_memory_integration() {
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
