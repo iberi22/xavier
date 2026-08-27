@@ -99,7 +99,7 @@ export interface NotificationCenterProps {
 	wsUrl?: string;
 }
 
-export function NotificationItem({
+export const NotificationItem = React.memo(function NotificationItem({
 	notif,
 	onRead,
 	onDismiss,
@@ -180,9 +180,9 @@ export function NotificationItem({
 			</div>
 		</motion.div>
 	);
-}
+});
 
-export function ToastBanner({
+export const ToastBanner = React.memo(function ToastBanner({
 	toast,
 	onDismiss,
 }: {
@@ -220,7 +220,7 @@ export function ToastBanner({
 			</button>
 		</motion.div>
 	);
-}
+});
 
 export function NotificationCenter({
 	isOpen,
