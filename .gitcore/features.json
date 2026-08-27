@@ -1425,7 +1425,7 @@
       "id": "feat-embeddings-ollama-local",
       "name": "Embeddings local-first (Ollama) + backfill resumible",
       "category": "core",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Proveedor de embeddings local-first vía Ollama (nomic-embed-text 768d) con fallback a remoto solo si env lo permite + binario de backfill resumible por rowid.",
       "steps": [
@@ -1437,8 +1437,16 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-08-17",
-      "notes": "Implementado por subagente 2026-08-17. Pendiente: correr backfill sobre la store real y validar dimensión de la tabla vec."
+      "last_tested": "2026-08-21",
+      "notes": "Promoted to stable after 6 passing unit tests covering provider config, local generation, remote fallback, 768d dimensions, and connection timeout handling.",
+      "tests": [
+        "test_ollama_provider_configuration_from_env",
+        "test_local_embedding_generation_mock_ollama",
+        "test_fallback_to_remote_when_ollama_unavailable",
+        "test_embedding_dimensions_match_768d",
+        "test_connection_timeout_handling",
+        "test_backfill_idempotent_and_resumable"
+      ]
     },
     "feat-ivn-karma": {
       "id": "feat-ivn-karma",
