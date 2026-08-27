@@ -328,6 +328,21 @@ impl CodeGraphDB {
             self.ensure_symbols_fts(&conn)?;
         }
 
+        // Cleanup bloated legacy memory_symbol_links if present (> 100,000 rows)
+        {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+            let count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| row.get(0))
+                .unwrap_or(0);
+            if count > 100_000 {
+                info!("Bloated memory_symbol_links table detected ({} rows); purging and vacuuming", count);
+                let _ = conn.execute_batch("DELETE FROM memory_symbol_links; VACUUM;");
+            }
+        }
+
         info!("Database schema initialized");
         Ok(())
     }
@@ -1733,11 +1748,40 @@ impl CodeGraphDB {
 
         drop(conn);
 
+        // Sort by confidence DESC and limit to top-10 max links per memory
+        links.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        links.truncate(10);
+
         if !links.is_empty() {
             self.batch_insert_memory_symbol_links(&links)?;
         }
 
         Ok(links)
+    }
+
+    /// Prune stale memory symbol links and enforce max 10 links per memory
+    pub fn prune_stale_memory_symbol_links(&self) -> Result<usize> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let deleted = conn
+            .execute(
+                r#"
+                DELETE FROM memory_symbol_links
+                WHERE rowid NOT IN (
+                    SELECT rowid FROM (
+                        SELECT rowid, ROW_NUMBER() OVER (PARTITION BY memory_id ORDER BY confidence DESC, created_at DESC) as rn
+                        FROM memory_symbol_links
+                    ) WHERE rn <= 10
+                )
+                "#,
+                [],
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(deleted)
     }
 
     /// Clear all data
