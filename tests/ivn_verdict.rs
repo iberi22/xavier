@@ -8,11 +8,10 @@ use xavier::data_commons::ivn::{
 use xavier::data_commons::types::WalletAddress;
 
 #[test]
-fn test_selection_karma_weighted_distribution() {
+fn test_validator_selection_weights_by_karma() {
     let mut high_karma_selected_count = 0;
     let total_trials = 100;
 
-    // High karma node (karma = 3000) vs Low karma nodes (karma = 300)
     let pool = vec![
         ValidatorCandidate {
             node_id: WalletAddress("xv1_high_karma".into()),
@@ -65,7 +64,125 @@ fn test_selection_karma_weighted_distribution() {
         }
     }
 
-    // Due to karma^2 weighting (3000^2 = 9,000,000 vs 300^2 = 90,000), high karma node should be selected almost 100% of the time
+    assert!(
+        high_karma_selected_count >= 95,
+        "High karma node should be selected in almost all trials, got {}",
+        high_karma_selected_count
+    );
+}
+
+#[test]
+fn test_dynamic_quorum_calculation() {
+    let dq = DynamicQuorum::new(0.8, 0.51);
+
+    // Baseline user quorum is 0.8
+    assert_eq!(dq.effective_user_quorum(0.50), 0.8);
+
+    // Low participation (<0.30) lowers quorum by 20% (0.8 -> 0.64)
+    let low_q = dq.effective_user_quorum(0.20);
+    assert!((low_q - 0.64).abs() < 1e-6);
+
+    // High participation (>0.80) raises quorum by 10% (0.8 -> 0.88)
+    let high_q = dq.effective_user_quorum(0.90);
+    assert!((high_q - 0.88).abs() < 1e-6);
+}
+
+#[test]
+fn test_sanction_application() {
+    let config = IvnConfig::default();
+
+    // False positive sanction
+    let sanction_fp = sanction_validator_with_config(&config, 1, false);
+    assert_eq!(sanction_fp.karma_penalty, -10);
+    assert_eq!(sanction_fp.exclusion_days, 90);
+
+    // Liar sanction
+    let sanction_liar = sanction_validator_with_config(&config, 0, true);
+    assert_eq!(sanction_liar.karma_penalty, -50);
+    assert_eq!(sanction_liar.exclusion_days, 90);
+
+    // Combined false positive + liar sanction
+    let sanction_both = sanction_validator_with_config(&config, 2, true);
+    assert_eq!(sanction_both.karma_penalty, -70); // -50 liar + (2 * -10)
+    assert_eq!(sanction_both.exclusion_days, 90);
+}
+
+#[test]
+fn test_vote_recording_and_tallying() {
+    let votes = vec![
+        Vote::Check,
+        Vote::Check,
+        Vote::Check,
+        Vote::Reject,
+        Vote::Abstain,
+    ];
+
+    let verdict = VerdictEngine::evaluate_votes(&votes, 0.6);
+    assert_eq!(verdict.check_count, 3);
+    assert_eq!(verdict.reject_count, 1);
+    assert_eq!(verdict.abstain_count, 1);
+    assert_eq!(verdict.total_votes, 5);
+    assert!((verdict.approval_ratio - 0.6).abs() < 1e-6);
+    assert_eq!(verdict.status, VerdictStatus::Passed);
+}
+
+#[test]
+fn test_selection_karma_weighted_distribution() {
+    let mut high_karma_selected_count = 0;
+    let total_trials = 100;
+
+    let pool = vec![
+        ValidatorCandidate {
+            node_id: WalletAddress("xv1_high_karma".into()),
+            wallet: WalletAddress("xv1_w_high".into()),
+            karma: 3000,
+            seed: "seed_high".into(),
+        },
+        ValidatorCandidate {
+            node_id: WalletAddress("xv1_low_1".into()),
+            wallet: WalletAddress("xv1_w_low1".into()),
+            karma: 300,
+            seed: "seed_low1".into(),
+        },
+        ValidatorCandidate {
+            node_id: WalletAddress("xv1_low_2".into()),
+            wallet: WalletAddress("xv1_w_low2".into()),
+            karma: 300,
+            seed: "seed_low2".into(),
+        },
+        ValidatorCandidate {
+            node_id: WalletAddress("xv1_low_3".into()),
+            wallet: WalletAddress("xv1_w_low3".into()),
+            karma: 300,
+            seed: "seed_low3".into(),
+        },
+        ValidatorCandidate {
+            node_id: WalletAddress("xv1_low_4".into()),
+            wallet: WalletAddress("xv1_w_low4".into()),
+            karma: 300,
+            seed: "seed_low4".into(),
+        },
+        ValidatorCandidate {
+            node_id: WalletAddress("xv1_low_5".into()),
+            wallet: WalletAddress("xv1_w_low5".into()),
+            karma: 300,
+            seed: "seed_low5".into(),
+        },
+    ];
+
+    for trial in 0..total_trials {
+        let mut rng = StdRng::seed_from_u64(trial as u64 + 100);
+        let selected =
+            ValidatorSelection::select_validators(&pool, "applicant_seed", &mut rng).unwrap();
+
+        if selected
+            .iter()
+            .any(|v| v.node_id == WalletAddress("xv1_high_karma".into()))
+        {
+            high_karma_selected_count += 1;
+        }
+    }
+
     assert!(
         high_karma_selected_count >= 95,
         "High karma node should be selected in almost all trials, got {}",
@@ -84,12 +201,12 @@ fn test_exclusion_of_shared_seed_and_insufficient_karma() {
             node_id: WalletAddress("xv1_shared1".into()),
             wallet: WalletAddress("xv1_w_s1".into()),
             karma: 1000,
-            seed: shared_seed.into(), // Excluded due to matching seed
+            seed: shared_seed.into(),
         },
         ValidatorCandidate {
             node_id: WalletAddress("xv1_low_karma".into()),
             wallet: WalletAddress("xv1_w_lk".into()),
-            karma: 250, // Excluded due to karma < 300
+            karma: 250,
             seed: "unique_seed_1".into(),
         },
         ValidatorCandidate {
@@ -132,7 +249,6 @@ fn test_exclusion_of_shared_seed_and_insufficient_karma() {
         assert!(v.karma >= 300);
     }
 
-    // Testing error when insufficient eligible validators remain
     let small_pool = vec![
         ValidatorCandidate {
             node_id: WalletAddress("xv1_shared_only".into()),
@@ -161,7 +277,6 @@ fn test_exclusion_of_shared_seed_and_insufficient_karma() {
 
 #[test]
 fn test_quorum_4_of_5_pass_and_fail() {
-    // 4 Check out of 5 = 80% approval (quorum = 0.8) -> Passed
     let votes_4_pass = vec![
         Vote::Check,
         Vote::Check,
@@ -176,7 +291,6 @@ fn test_quorum_4_of_5_pass_and_fail() {
     assert_eq!(verdict_pass.reject_count, 1);
     assert_eq!(verdict_pass.approval_ratio, 0.8);
 
-    // 3 Check out of 5 = 60% approval (quorum = 0.8) -> Rejected
     let votes_3_fail = vec![
         Vote::Check,
         Vote::Check,
@@ -189,7 +303,6 @@ fn test_quorum_4_of_5_pass_and_fail() {
     assert!(!verdict_fail.is_passed());
     assert_eq!(verdict_fail.approval_ratio, 0.6);
 
-    // 5 Check out of 5 = 100% approval -> Passed
     let votes_5_pass = vec![
         Vote::Check,
         Vote::Check,
@@ -204,7 +317,6 @@ fn test_quorum_4_of_5_pass_and_fail() {
 
 #[test]
 fn test_abstention_handling_in_verdict() {
-    // 3 Check, 0 Reject, 2 Abstain out of 5 -> Max possible Check ratio is 3/5 = 0.6 < 0.8 -> QuorumNotMet
     let votes_abstain_fail = vec![
         Vote::Check,
         Vote::Check,
@@ -217,7 +329,6 @@ fn test_abstention_handling_in_verdict() {
     assert_eq!(verdict_abstain.check_count, 3);
     assert_eq!(verdict_abstain.abstain_count, 2);
 
-    // 4 Check, 0 Reject, 1 Abstain out of 5 -> 4/5 = 0.8 >= 0.8 -> Passed
     let votes_abstain_pass = vec![
         Vote::Check,
         Vote::Check,
@@ -243,21 +354,17 @@ fn test_dynamic_quorum_integration_with_ivn() {
         Vote::Reject,
     ];
 
-    // Low participation (<0.30) lowers quorum by 20% (0.8 -> 0.64)
     let verdict_low_part = dq.evaluate_ivn_verdict(&votes, 0.20);
     assert_eq!(verdict_low_part.status, VerdictStatus::Passed);
     assert!((verdict_low_part.effective_quorum - 0.64).abs() < 1e-6);
 
-    // High participation (>0.80) raises quorum by 10% (0.8 -> 0.88)
     let verdict_high_part = dq.evaluate_ivn_verdict(&votes, 0.90);
-    // With 4/5 = 0.80 < 0.88 effective quorum -> Rejected
     assert_eq!(verdict_high_part.status, VerdictStatus::Rejected);
     assert!((verdict_high_part.effective_quorum - 0.88).abs() < 1e-6);
 }
 
 #[test]
 fn test_sanction_validator_penalties() {
-    // Single false positive penalty (-10)
     let sanction1 = sanction_validator(1);
     assert_eq!(
         sanction1,
@@ -267,11 +374,9 @@ fn test_sanction_validator_penalties() {
         }
     );
 
-    // Multiple false positives (3 * -10 = -30)
     let sanction3 = sanction_validator(3);
     assert_eq!(sanction3.karma_penalty, -30);
 
-    // Lie penalty (-50) plus false positive (-10) = -60
     let config = IvnConfig::default();
     let sanction_lie = sanction_validator_with_config(&config, 1, true);
     assert_eq!(
