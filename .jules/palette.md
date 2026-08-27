@@ -1,3 +1,7 @@
 ## 2024-05-18 - [LeaseHistoryPage Refresh Button UX/a11y Fix]
 **Learning:** Adding accessible elements to icon-only buttons (`aria-label`, `type="button"`, `aria-hidden="true"` on the icon itself, and using `focus-visible` ring styles) is required to comply with Biome linters and general a11y practices in this app. Also, one must be very careful not to let automatic linters arbitrarily modify hooks like `useCallback` (e.g. changing the dependency array to include `apiClient.getLeaseHistory`), as this causes infinite loop bugs when the instance changes every render.
 **Action:** Only make precise minimal changes for UX/a11y and strictly verify that no other logic or hooks have been tampered with or automatically reformatted.
+
+## 2024-05-18 - [Fix a11y htmlFor and id on form elements]
+**Learning:** When making accessibility improvements to form inputs (like connecting `label`s to `input`s via `htmlFor` and `id`), be cautious when running formatters/linters like Biome. Biome's unsafe fixes may alter unused variables in `catch` blocks or change button `type`s automatically, which might introduce regressions or conflict with existing logic. Auto-formatting can also touch completely unrelated files, so it's critical to scope fixes and revert unintended changes.
+**Action:** Use targeted linting or skip unsafe fixes when verifying code. Explicitly review `git diff` to ensure auto-formatters did not modify unintended files before committing.
