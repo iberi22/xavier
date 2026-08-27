@@ -7,3 +7,4 @@ pub mod search;
 pub mod settings;
 pub mod skills;
 pub mod timeline;
+pub mod mesh;
