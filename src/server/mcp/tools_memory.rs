@@ -506,64 +506,46 @@ async fn handle_search_fragments(
         })
         .collect();
 
-    let content = filtered
-        .into_iter()
-        .map(|doc| {
-            MCPContent::Text(MCPTextContent {
-                content_type: "text".to_string(),
-                text: format!(
-                    "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                    doc.id.as_deref().unwrap_or("none"),
-                    doc.path,
-                    doc.content,
-                    doc.metadata.get("gestalt_context"),
-                    doc.metadata.get("tags")
-                ),
-            })
-        })
-        .collect();
+            let has_filters = filters.project.is_some()
+                || filters.agent_id.is_some()
+                || filters.scope.is_some()
+                || filters.session_id.is_some()
+                || filters.user_id.is_some()
+                || filters.kinds.is_some()
+                || filters.path_prefix.is_some();
+            let filters_opt = if has_filters { Some(filters) } else { None };
 
-    Ok(serde_json::to_value(MCPToolResult {
-        content,
-        is_error: Some(false),
-    })?)
-}
-
-async fn handle_get_recent_fragments(
-    workspace: &WorkspaceContext,
-    arguments: &Value,
-) -> anyhow::Result<Value> {
-    let agent_id = require_memoryfragment_component(arguments, "agent_id")?;
-    let context = optional_memoryfragment_component(arguments, "context", None)?;
-    let limit = memoryfragment_limit(arguments);
-
-    let records = workspace
-        .workspace
-        .list_memory_records_filtered(
-            MemoryQueryFilters {
-                agent_id: Some(agent_id.to_string()),
-                scope: context,
+            let engine = crate::memory::query_engine::MemoryQueryEngine::new();
+            let search_req = crate::memory::query_engine::SearchQuery {
+                query: query.to_string(),
+                limit,
+                depth,
+                filters: filters_opt,
+                include_content: Some(include_content),
                 ..Default::default()
-            },
-            limit,
-        )
-        .await?;
-    let content = records
-        .into_iter()
-        .map(|record| {
-            MCPContent::Text(MCPTextContent {
-                content_type: "text".to_string(),
-                text: format!(
-                    "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                    record.id,
-                    record.path,
-                    record.content,
-                    record.metadata.get("gestalt_context"),
-                    record.metadata.get("tags")
-                ),
-            })
-        })
-        .collect();
+            };
+
+            let search_res = engine.search(&workspace.workspace.memory, search_req).await?;
+
+            let candidates: Vec<Value> = search_res
+                .results
+                .into_iter()
+                .map(|item| {
+                    let mut obj = json!({
+                        "id": item.id,
+                        "path": item.path,
+                        "score": item.score,
+                        "snippet": item.snippet,
+                        "kind": item.kind,
+                    });
+                    if include_content {
+                        obj.as_object_mut()
+                            .expect("object")
+                            .insert("content".to_string(), json!(item.content));
+                    }
+                    obj
+                })
+                .collect();
 
     Ok(serde_json::to_value(MCPToolResult {
         content,
@@ -855,14 +837,137 @@ pub async fn handle_memory_delete(
             let id = arguments
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
-            let record = workspace.workspace.delete_memory_record(id).await?;
-            let message = if let Some(r) = record {
-                format!("Deleted memory fragment: {} (path: {})", r.id, r.path)
-            } else {
-                format!("Memory fragment not found: {}", id)
+                .ok_or_else(|| anyhow::anyhow!("Missing text"))?;
+            let metadata = arguments
+                .get("metadata")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            let namespace = parse_namespace_arg(&arguments)?;
+
+            let unique_id = Ulid::new().to_string();
+            let path = match &namespace {
+                Some(ns) if ns.project.is_some() => {
+                    format!("mcp/{}/{}", ns.project.as_ref().unwrap(), unique_id)
+                }
+                Some(ns) if ns.agent_id.is_some() => {
+                    format!("mcp/agent/{}/{}", ns.agent_id.as_ref().unwrap(), unique_id)
+                }
+                _ => format!("mcp/save/{unique_id}"),
             };
-            super::server::mcp_text_result(message, false)
+
+            let typed = Some(TypedMemoryPayload {
+                kind: Some(MemoryKind::Document),
+                evidence_kind: Some(EvidenceKind::Observation),
+                namespace: namespace.clone(),
+                provenance: Some(MemoryProvenance {
+                    source_app: Some("mcp".to_string()),
+                    source_type: Some("tool:memory_save".to_string()),
+                    ..MemoryProvenance::default()
+                }),
+                ..Default::default()
+            });
+
+            let doc_id = workspace
+                .workspace
+                .ingest_typed(path, text.to_string(), metadata, typed, None, false)
+                .await?;
+            super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
+        }
+        "memory_context" | "mem_context" => {
+            let query = arguments.get("query").and_then(|v| v.as_str());
+            let ids = arguments.get("ids").and_then(|v| v.as_array());
+
+            if query.is_none() && ids.is_none() {
+                return Err(anyhow::anyhow!("Either 'query' or 'ids' must be provided"));
+            }
+
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(5)
+                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+            let max_chars = arguments
+                .get("max_chars")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(CONTEXT_DEFAULT_MAX_CHARS as u64)
+                .clamp(1, CONTEXT_ABSOLUTE_MAX_CHARS as u64) as usize;
+            let max_chars_per_doc = arguments
+                .get("max_chars_per_doc")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or_else(|| std::cmp::min(800, max_chars));
+            let depth = arguments
+                .get("depth")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .clamp(0, 2) as usize;
+
+            let explicit_docs = if let Some(ids_arr) = ids {
+                let mut docs = Vec::new();
+                for id_val in ids_arr {
+                    if let Some(id) = id_val.as_str() {
+                        if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
+                            docs.push(record.to_document());
+                        }
+                    }
+                }
+                Some(docs)
+            } else {
+                None
+            };
+
+            let engine = crate::memory::query_engine::MemoryQueryEngine::new();
+            let context_params = crate::memory::query_engine::ContextParams {
+                query: query.map(|s| s.to_string()),
+                ids: None,
+                explicit_docs,
+                limit,
+                max_chars,
+                max_chars_per_doc,
+                depth,
+                filters: None,
+            };
+
+            let mem_ctx = engine
+                .context(&workspace.workspace.memory, context_params)
+                .await?;
+
+            let mcp_sources: Vec<MCPSearchResult> = mem_ctx
+                .sources
+                .into_iter()
+                .map(|src| MCPSearchResult {
+                    id: src.id,
+                    path: src.path,
+                    score: src.score as f64,
+                    snippet: src.snippet,
+                    provenance: MCPProvenance {
+                        source: "search_filtered".to_string(),
+                        retrieved_at: chrono::Utc::now().to_rfc3339(),
+                        retrieval_method: "context_depth_search".to_string(),
+                        embedding_model: None,
+                        version: None,
+                    },
+                    metadata: src.metadata,
+                })
+                .collect();
+
+            let payload = MCPContextResult {
+                total_chars: mem_ctx.total_chars,
+                total_records: mem_ctx.total_records,
+                truncated: mem_ctx.truncated,
+                truncated_reason: mem_ctx.truncated_reason,
+                content: mem_ctx.content,
+                sources: mcp_sources,
+                estimated_tokens: mem_ctx.estimated_tokens,
+            };
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPContent::Structured(MCPStructuredContent {
+                    content_type: "structuredContent".to_string(),
+                    structured_content: serde_json::to_value(payload)?,
+                })],
+                is_error: Some(false),
+            })?)
         }
         "memory_prune" => {
             let kind = arguments

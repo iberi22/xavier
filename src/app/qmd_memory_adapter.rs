@@ -44,15 +44,34 @@ impl MemoryQueryPort for QmdMemoryAdapter {
         limit: usize,
         filters: Option<MemoryQueryFilters>,
     ) -> anyhow::Result<Vec<MemoryRecord>> {
-        let results = self
-            .inner
-            .search_filtered(query, limit, filters.as_ref())
-            .await?;
+        let engine = crate::memory::query_engine::MemoryQueryEngine::new();
+        let query_req = crate::memory::query_engine::SearchQuery {
+            query: query.to_string(),
+            limit,
+            filters,
+            include_embedding: Some(true),
+            ..Default::default()
+        };
 
+        let search_res = engine.search(&self.inner, query_req).await?;
         let workspace_id = self.inner.workspace_id();
-        Ok(results
+
+        Ok(search_res
+            .results
             .into_iter()
-            .map(|doc| MemoryRecord::from_document(workspace_id, &doc, true, None))
+            .map(|item| {
+                MemoryRecord {
+                    id: item.id,
+                    workspace_id: workspace_id.to_string(),
+                    path: item.path,
+                    content: item.content,
+                    metadata: item.metadata,
+                    embedding: item.embedding.unwrap_or_default(),
+                    score: item.score,
+                    primary: true,
+                    ..Default::default()
+                }
+            })
             .collect())
     }
 
