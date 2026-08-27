@@ -3,12 +3,20 @@ use std::net::TcpListener;
 use std::process::{Child, Stdio};
 use std::time::Duration;
 
-struct ChildGuard(Child);
+struct ChildGuard {
+    child: Child,
+    db_paths: Vec<String>,
+}
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        for path in &self.db_paths {
+            let _ = std::fs::remove_file(path);
+            let _ = std::fs::remove_file(format!("{}-wal", path));
+            let _ = std::fs::remove_file(format!("{}-shm", path));
+        }
     }
 }
 
@@ -22,25 +30,23 @@ async fn test_headless_chat_completions() {
 
     let url = format!("http://127.0.0.1:{port}/v1/chat/completions");
 
-    let _child = ChildGuard(
-        std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+    let code_db = format!("data/headless-chat-code-{port}.db");
+    let mem_db = format!("data/headless-chat-mem-{port}.db");
+
+    let _child = ChildGuard {
+        child: std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")
             .env("XAVIER_HEADLESS", "true")
-            .env(
-                "XAVIER_CODE_GRAPH_DB_PATH",
-                format!("data/headless-chat-code-{port}.db"),
-            )
-            .env(
-                "XAVIER_MEMORY_VEC_PATH",
-                format!("data/headless-chat-mem-{port}.db"),
-            )
+            .env("XAVIER_CODE_GRAPH_DB_PATH", &code_db)
+            .env("XAVIER_MEMORY_VEC_PATH", &mem_db)
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()
             .expect("failed to start xavier binary"),
-    );
+        db_paths: vec![code_db, mem_db],
+    };
 
     let client = Client::new();
     let mut started = false;
