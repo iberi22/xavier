@@ -12,6 +12,9 @@
 pub mod backup;
 pub mod migrations;
 pub mod multi_db;
+pub mod pragma;
+
+pub use pragma::apply_pragmas;
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};

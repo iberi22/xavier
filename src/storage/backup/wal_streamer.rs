@@ -265,7 +265,7 @@ impl WalStreamer {
         } else {
             let conn = Connection::open(&self.config.db_path)
                 .context("Failed to initialize database for snapshot")?;
-            let _ = conn.execute_batch("PRAGMA journal_mode=WAL;");
+            let _ = crate::storage::apply_pragmas(&conn);
         }
 
         let seq = self.manifest.current_snapshot_seq + 1;
@@ -610,9 +610,9 @@ mod tests {
 
     fn create_test_db(db_path: &Path) -> Connection {
         let conn = Connection::open(db_path).expect("Failed to create test DB");
+        crate::storage::apply_pragmas(&conn).expect("Failed to apply pragmas on test DB");
         conn.execute_batch(
-            "PRAGMA journal_mode=WAL;
-             CREATE TABLE test_data (id INTEGER PRIMARY KEY, content TEXT, created_at TEXT);",
+            "CREATE TABLE test_data (id INTEGER PRIMARY KEY, content TEXT, created_at TEXT);",
         )
         .expect("Failed to initialize test DB schema");
         conn

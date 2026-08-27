@@ -93,7 +93,10 @@ pub async fn handle_tool_call(
 
     if super::tools_core::is_core_tool(name) {
         super::tools_core::handle_core_tool(state, workspace, name, arguments).await
-    } else if name.starts_with("xavier_context") || name == "xavier_token_savings" {
+    } else if name.starts_with("xavier_context")
+        || name == "xavier_token_savings"
+        || name == "xavier_issue_context_package"
+    {
         super::tools_context::handle_context_tool(state, workspace, name, arguments).await
     } else {
         super::tools_memory::handle_memory_tool(state, workspace, name, arguments).await

@@ -291,7 +291,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
     ]
 }
 
-/// Handle memory tool.
+/// Handle memory tool dispatching.
 pub async fn handle_memory_tool(
     state: AppState,
     workspace: WorkspaceContext,
@@ -299,115 +299,473 @@ pub async fn handle_memory_tool(
     arguments: Value,
 ) -> anyhow::Result<Value> {
     match name {
-        "mem_search" | "search_memory" | "memory_search" => {
-            let query = arguments
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let limit = arguments
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(10)
-                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
-            let include_content = arguments
-                .get("include_content")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let depth = arguments
-                .get("depth")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0)
-                .clamp(0, 2) as usize;
-            let mut filters = arguments
-                .get("filters")
-                .cloned()
-                .map(serde_json::from_value::<MemoryQueryFilters>)
-                .transpose()?
-                .unwrap_or_default();
+        "mem_search" | "search_memory" | "memory_search" | "search_fragments"
+        | "memoryfragment_search" | "get_recent_fragments" | "memoryfragment_recent" => {
+            handle_memory_search(&state, &workspace, name, &arguments).await
+        }
+        "create_memory" | "save_fragment" | "memoryfragment_save" | "memory_save" => {
+            handle_memory_create(&state, &workspace, name, &arguments).await
+        }
+        "get_memory" | "memoryfragment_get" | "stats" => {
+            handle_memory_update(&state, &workspace, name, &arguments).await
+        }
+        "memoryfragment_delete" | "memory_prune" => {
+            handle_memory_delete(&state, &workspace, name, &arguments).await
+        }
+        "memory_context" | "mem_context" => {
+            handle_memory_context(&state, &workspace, name, &arguments).await
+        }
+        _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
+    }
+}
 
-            // memory_search compat: merge namespace into filters when provided
-            if let Some(ns) = parse_namespace_arg(&arguments)? {
-                if filters.project.is_none() {
-                    filters.project = ns.project;
-                }
-                if filters.agent_id.is_none() {
-                    filters.agent_id = ns.agent_id;
-                }
-                if filters.scope.is_none() {
-                    filters.scope = ns.scope;
-                }
-                if filters.session_id.is_none() {
-                    filters.session_id = ns.session_id;
-                }
-                if filters.user_id.is_none() {
-                    filters.user_id = ns.user_id;
+/// Handles search/query memory operations.
+pub async fn handle_memory_search(
+    state: &AppState,
+    workspace: &WorkspaceContext,
+    name: &str,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    match name {
+        "mem_search" | "search_memory" | "memory_search" => {
+            handle_mem_search(workspace, arguments).await
+        }
+        "search_fragments" | "memoryfragment_search" => {
+            handle_search_fragments(state, workspace, arguments).await
+        }
+        "get_recent_fragments" | "memoryfragment_recent" => {
+            handle_get_recent_fragments(workspace, arguments).await
+        }
+        _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
+    }
+}
+
+async fn handle_mem_search(
+    workspace: &WorkspaceContext,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    let query = arguments
+        .get("query")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let limit = arguments
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10)
+        .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+    let include_content = arguments
+        .get("include_content")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let depth = arguments
+        .get("depth")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
+        .clamp(0, 2) as usize;
+    let mut filters = arguments
+        .get("filters")
+        .cloned()
+        .map(serde_json::from_value::<MemoryQueryFilters>)
+        .transpose()?
+        .unwrap_or_default();
+
+    // memory_search compat: merge namespace into filters when provided
+    if let Some(ns) = parse_namespace_arg(arguments)? {
+        if filters.project.is_none() {
+            filters.project = ns.project;
+        }
+        if filters.agent_id.is_none() {
+            filters.agent_id = ns.agent_id;
+        }
+        if filters.scope.is_none() {
+            filters.scope = ns.scope;
+        }
+        if filters.session_id.is_none() {
+            filters.session_id = ns.session_id;
+        }
+        if filters.user_id.is_none() {
+            filters.user_id = ns.user_id;
+        }
+    }
+
+    let has_filters = filters.project.is_some()
+        || filters.agent_id.is_some()
+        || filters.scope.is_some()
+        || filters.session_id.is_some()
+        || filters.user_id.is_some()
+        || filters.kinds.is_some()
+        || filters.path_prefix.is_some();
+    let filter_ref = if has_filters { Some(&filters) } else { None };
+
+    let results = workspace
+        .workspace
+        .memory
+        .search_filtered(query, limit, filter_ref)
+        .await?;
+
+    let results = if depth > 0 {
+        workspace
+            .workspace
+            .memory
+            .expand_depth(&results, depth, filter_ref)
+            .await?
+    } else {
+        results
+    };
+
+    // Progressive disclosure: fat index by default (structured candidates).
+    let candidates: Vec<Value> = results
+        .into_iter()
+        .map(|doc| {
+            let snippet: String =
+                crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
+            let kind = doc
+                .metadata
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let mut obj = json!({
+                "id": doc.id.clone().unwrap_or_default(),
+                "path": doc.path,
+                "score": doc.score,
+                "snippet": snippet,
+                "kind": kind,
+            });
+            if include_content {
+                obj.as_object_mut()
+                    .expect("object")
+                    .insert("content".to_string(), json!(doc.content));
+            }
+            obj
+        })
+        .collect();
+
+    let payload = json!({
+        "query": query,
+        "include_content": include_content,
+        "count": candidates.len(),
+        "candidates": candidates,
+    });
+
+    Ok(serde_json::to_value(MCPToolResult::structured(
+        payload, false,
+    ))?)
+}
+
+async fn handle_search_fragments(
+    state: &AppState,
+    workspace: &WorkspaceContext,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    let query = arguments
+        .get("query")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let query = match secure_mcp_external_input(state, "memoryfragment query", query).await? {
+        Ok(query) => query,
+        Err(blocked) => return Ok(blocked),
+    };
+    let agent_id = optional_memoryfragment_component(arguments, "agent_id", None)?;
+    let context = optional_memoryfragment_component(arguments, "context", None)?;
+    let tags = memoryfragment_tags(arguments)?;
+    let limit = memoryfragment_limit(arguments);
+
+    let mut filters = MemoryQueryFilters::default();
+    if let Some(aid) = agent_id {
+        filters.agent_id = Some(aid);
+    }
+    if let Some(ctx) = context {
+        filters.scope = Some(ctx);
+    }
+
+    let results = workspace
+        .workspace
+        .memory
+        .search_filtered(&query, limit, Some(&filters))
+        .await?;
+    let filtered: Vec<_> = results
+        .into_iter()
+        .filter(|doc| {
+            if !tags.is_empty() {
+                let doc_tags: Vec<String> = doc
+                    .metadata
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !tags.iter().any(|t| doc_tags.contains(t)) {
+                    return false;
                 }
             }
+            true
+        })
+        .collect();
 
-            let has_filters = filters.project.is_some()
-                || filters.agent_id.is_some()
-                || filters.scope.is_some()
-                || filters.session_id.is_some()
-                || filters.user_id.is_some()
-                || filters.kinds.is_some()
-                || filters.path_prefix.is_some();
-            let filter_ref = if has_filters { Some(&filters) } else { None };
+    let content = filtered
+        .into_iter()
+        .map(|doc| {
+            MCPContent::Text(MCPTextContent {
+                content_type: "text".to_string(),
+                text: format!(
+                    "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
+                    doc.id.as_deref().unwrap_or("none"),
+                    doc.path,
+                    doc.content,
+                    doc.metadata.get("gestalt_context"),
+                    doc.metadata.get("tags")
+                ),
+            })
+        })
+        .collect();
 
-            let results = workspace
-                .workspace
-                .memory
-                .search_filtered(query, limit, filter_ref)
-                .await?;
+    Ok(serde_json::to_value(MCPToolResult {
+        content,
+        is_error: Some(false),
+    })?)
+}
 
-            let results = if depth > 0 {
-                workspace
-                    .workspace
-                    .memory
-                    .expand_depth(&results, depth, filter_ref)
-                    .await?
-            } else {
-                results
-            };
+async fn handle_get_recent_fragments(
+    workspace: &WorkspaceContext,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    let agent_id = require_memoryfragment_component(arguments, "agent_id")?;
+    let context = optional_memoryfragment_component(arguments, "context", None)?;
+    let limit = memoryfragment_limit(arguments);
 
-            // Progressive disclosure: fat index by default (structured candidates).
-            let candidates: Vec<Value> = results
-                .into_iter()
-                .map(|doc| {
-                    let snippet: String =
-                        crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
-                    let kind = doc
-                        .metadata
-                        .get("kind")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-                    let mut obj = json!({
-                        "id": doc.id.clone().unwrap_or_default(),
-                        "path": doc.path,
-                        "score": doc.score,
-                        "snippet": snippet,
-                        "kind": kind,
-                    });
-                    if include_content {
-                        obj.as_object_mut()
-                            .expect("object")
-                            .insert("content".to_string(), json!(doc.content));
-                    }
-                    obj
-                })
-                .collect();
+    let records = workspace
+        .workspace
+        .list_memory_records_filtered(
+            MemoryQueryFilters {
+                agent_id: Some(agent_id.to_string()),
+                scope: context,
+                ..Default::default()
+            },
+            limit,
+        )
+        .await?;
+    let content = records
+        .into_iter()
+        .map(|record| {
+            MCPContent::Text(MCPTextContent {
+                content_type: "text".to_string(),
+                text: format!(
+                    "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
+                    record.id,
+                    record.path,
+                    record.content,
+                    record.metadata.get("gestalt_context"),
+                    record.metadata.get("tags")
+                ),
+            })
+        })
+        .collect();
 
-            let payload = json!({
-                "query": query,
-                "include_content": include_content,
-                "count": candidates.len(),
-                "candidates": candidates,
-            });
+    Ok(serde_json::to_value(MCPToolResult {
+        content,
+        is_error: Some(false),
+    })?)
+}
 
-            Ok(serde_json::to_value(MCPToolResult::structured(
-                payload, false,
-            ))?)
+/// Handles create/put memory operations.
+pub async fn handle_memory_create(
+    state: &AppState,
+    workspace: &WorkspaceContext,
+    name: &str,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    match name {
+        "create_memory" => handle_create_memory(workspace, arguments).await,
+        "save_fragment" | "memoryfragment_save" => {
+            handle_save_fragment(state, workspace, arguments).await
         }
+        "memory_save" => handle_memory_save(workspace, arguments).await,
+        _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
+    }
+}
+
+async fn handle_create_memory(
+    workspace: &WorkspaceContext,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    let path = arguments
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing path"))?;
+    let content = arguments
+        .get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
+    let metadata = arguments
+        .get("metadata")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let kind = arguments
+        .get("kind")
+        .cloned()
+        .map(serde_json::from_value::<MemoryKind>)
+        .transpose()?;
+    let evidence_kind = arguments
+        .get("evidence_kind")
+        .cloned()
+        .map(serde_json::from_value::<EvidenceKind>)
+        .transpose()?;
+    let namespace = arguments
+        .get("namespace")
+        .cloned()
+        .map(serde_json::from_value::<MemoryNamespace>)
+        .transpose()?;
+    let provenance = arguments
+        .get("provenance")
+        .cloned()
+        .map(serde_json::from_value::<MemoryProvenance>)
+        .transpose()?;
+
+    workspace
+        .workspace
+        .ingest_typed(
+            path.to_string(),
+            content.to_string(),
+            metadata,
+            Some(TypedMemoryPayload {
+                kind,
+                evidence_kind,
+                namespace,
+                provenance,
+                ..Default::default()
+            }),
+            None,
+            false,
+        )
+        .await?;
+    super::server::mcp_text_result(
+        format!("Memory created successfully at path: {}", path),
+        false,
+    )
+}
+
+async fn handle_save_fragment(
+    state: &AppState,
+    workspace: &WorkspaceContext,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    let agent_id = require_memoryfragment_component(arguments, "agent_id")?;
+    let content = arguments
+        .get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
+    let content = match secure_mcp_external_input(state, "memoryfragment content", content).await?
+    {
+        Ok(content) => content,
+        Err(blocked) => return Ok(blocked),
+    };
+    let context = optional_memoryfragment_component(arguments, "context", Some("observation"))?
+        .expect("default context is always present");
+    let tags = memoryfragment_tags(arguments)?;
+    let importance = memoryfragment_importance(arguments)?;
+    let repo_url = validate_memoryfragment_provenance(arguments, "repo_url")?;
+    let file_path = validate_memoryfragment_provenance(arguments, "file_path")?;
+    let chunk_id = validate_memoryfragment_provenance(arguments, "chunk_id")?;
+
+    let unique_id = Ulid::new().to_string();
+    let path = format!("gestalt/{}/{}/{}", agent_id, context, unique_id);
+    let mut metadata = serde_json::json!({ "gestalt_context": context, "importance": importance });
+    if !tags.is_empty() {
+        metadata["tags"] = serde_json::json!(tags);
+    }
+    if let Some(url) = &repo_url {
+        metadata["repo_url"] = serde_json::json!(url);
+    }
+    if let Some(fp) = &file_path {
+        metadata["source_file_path"] = serde_json::json!(fp);
+    }
+    if let Some(cid) = &chunk_id {
+        metadata["chunk_id"] = serde_json::json!(cid);
+    }
+
+    let typed = Some(TypedMemoryPayload {
+        kind: Some(MemoryKind::Document),
+        evidence_kind: Some(EvidenceKind::Observation),
+        namespace: Some(MemoryNamespace {
+            agent_id: Some(agent_id.to_string()),
+            ..MemoryNamespace::default()
+        }),
+        provenance: Some(MemoryProvenance {
+            source_app: Some("gestalt".to_string()),
+            source_type: Some(context.to_string()),
+            repo_url,
+            file_path,
+            ..MemoryProvenance::default()
+        }),
+        ..Default::default()
+    });
+
+    workspace
+        .workspace
+        .ingest_typed(path, content, metadata, typed, None, false)
+        .await?;
+    super::server::mcp_text_result(
+        format!("MemoryFragment saved successfully for agent {}", agent_id),
+        false,
+    )
+}
+
+async fn handle_memory_save(
+    workspace: &WorkspaceContext,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    let text = arguments
+        .get("text")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing text"))?;
+    let metadata = arguments
+        .get("metadata")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let namespace = parse_namespace_arg(arguments)?;
+
+    let unique_id = Ulid::new().to_string();
+    let path = match &namespace {
+        Some(ns) if ns.project.is_some() => {
+            format!("mcp/{}/{}", ns.project.as_ref().unwrap(), unique_id)
+        }
+        Some(ns) if ns.agent_id.is_some() => {
+            format!("mcp/agent/{}/{}", ns.agent_id.as_ref().unwrap(), unique_id)
+        }
+        _ => format!("mcp/save/{unique_id}"),
+    };
+
+    let typed = Some(TypedMemoryPayload {
+        kind: Some(MemoryKind::Document),
+        evidence_kind: Some(EvidenceKind::Observation),
+        namespace: namespace.clone(),
+        provenance: Some(MemoryProvenance {
+            source_app: Some("mcp".to_string()),
+            source_type: Some("tool:memory_save".to_string()),
+            ..MemoryProvenance::default()
+        }),
+        ..Default::default()
+    });
+
+    let doc_id = workspace
+        .workspace
+        .ingest_typed(path, text.to_string(), metadata, typed, None, false)
+        .await?;
+    super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
+}
+
+/// Handles update/read/stats memory operations.
+pub async fn handle_memory_update(
+    _state: &AppState,
+    workspace: &WorkspaceContext,
+    name: &str,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    match name {
         "get_memory" => {
             let id = arguments
                 .get("id")
@@ -435,235 +793,6 @@ pub async fn handle_memory_tool(
                 is_error: Some(false),
             })?)
         }
-        "create_memory" => {
-            let path = arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing path"))?;
-            let content = arguments
-                .get("content")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
-            let metadata = arguments
-                .get("metadata")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
-            let kind = arguments
-                .get("kind")
-                .cloned()
-                .map(serde_json::from_value::<MemoryKind>)
-                .transpose()?;
-            let evidence_kind = arguments
-                .get("evidence_kind")
-                .cloned()
-                .map(serde_json::from_value::<EvidenceKind>)
-                .transpose()?;
-            let namespace = arguments
-                .get("namespace")
-                .cloned()
-                .map(serde_json::from_value::<MemoryNamespace>)
-                .transpose()?;
-            let provenance = arguments
-                .get("provenance")
-                .cloned()
-                .map(serde_json::from_value::<MemoryProvenance>)
-                .transpose()?;
-
-            workspace
-                .workspace
-                .ingest_typed(
-                    path.to_string(),
-                    content.to_string(),
-                    metadata,
-                    Some(TypedMemoryPayload {
-                        kind,
-                        evidence_kind,
-                        namespace,
-                        provenance,
-                        ..Default::default()
-                    }),
-                    None,
-                    false,
-                )
-                .await?;
-            super::server::mcp_text_result(
-                format!("Memory created successfully at path: {}", path),
-                false,
-            )
-        }
-        "save_fragment" | "memoryfragment_save" => {
-            let agent_id = require_memoryfragment_component(&arguments, "agent_id")?;
-            let content = arguments
-                .get("content")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
-            let content =
-                match secure_mcp_external_input(&state, "memoryfragment content", content).await? {
-                    Ok(content) => content,
-                    Err(blocked) => return Ok(blocked),
-                };
-            let context =
-                optional_memoryfragment_component(&arguments, "context", Some("observation"))?
-                    .expect("default context is always present");
-            let tags = memoryfragment_tags(&arguments)?;
-            let importance = memoryfragment_importance(&arguments)?;
-            let repo_url = validate_memoryfragment_provenance(&arguments, "repo_url")?;
-            let file_path = validate_memoryfragment_provenance(&arguments, "file_path")?;
-            let chunk_id = validate_memoryfragment_provenance(&arguments, "chunk_id")?;
-
-            let unique_id = Ulid::new().to_string();
-            let path = format!("gestalt/{}/{}/{}", agent_id, context, unique_id);
-            let mut metadata =
-                serde_json::json!({ "gestalt_context": context, "importance": importance });
-            if !tags.is_empty() {
-                metadata["tags"] = serde_json::json!(tags);
-            }
-            if let Some(url) = &repo_url {
-                metadata["repo_url"] = serde_json::json!(url);
-            }
-            if let Some(fp) = &file_path {
-                metadata["source_file_path"] = serde_json::json!(fp);
-            }
-            if let Some(cid) = &chunk_id {
-                metadata["chunk_id"] = serde_json::json!(cid);
-            }
-
-            let typed = Some(TypedMemoryPayload {
-                kind: Some(MemoryKind::Document),
-                evidence_kind: Some(EvidenceKind::Observation),
-                namespace: Some(MemoryNamespace {
-                    agent_id: Some(agent_id.to_string()),
-                    ..MemoryNamespace::default()
-                }),
-                provenance: Some(MemoryProvenance {
-                    source_app: Some("gestalt".to_string()),
-                    source_type: Some(context.to_string()),
-                    repo_url,
-                    file_path,
-                    ..MemoryProvenance::default()
-                }),
-                ..Default::default()
-            });
-
-            workspace
-                .workspace
-                .ingest_typed(path, content, metadata, typed, None, false)
-                .await?;
-            super::server::mcp_text_result(
-                format!("MemoryFragment saved successfully for agent {}", agent_id),
-                false,
-            )
-        }
-        "search_fragments" | "memoryfragment_search" => {
-            let query = arguments
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let query =
-                match secure_mcp_external_input(&state, "memoryfragment query", query).await? {
-                    Ok(query) => query,
-                    Err(blocked) => return Ok(blocked),
-                };
-            let agent_id = optional_memoryfragment_component(&arguments, "agent_id", None)?;
-            let context = optional_memoryfragment_component(&arguments, "context", None)?;
-            let tags = memoryfragment_tags(&arguments)?;
-            let limit = memoryfragment_limit(&arguments);
-
-            let mut filters = MemoryQueryFilters::default();
-            if let Some(aid) = agent_id {
-                filters.agent_id = Some(aid);
-            }
-            if let Some(ctx) = context {
-                filters.scope = Some(ctx);
-            }
-
-            let results = workspace
-                .workspace
-                .memory
-                .search_filtered(&query, limit, Some(&filters))
-                .await?;
-            let filtered: Vec<_> = results
-                .into_iter()
-                .filter(|doc| {
-                    if !tags.is_empty() {
-                        let doc_tags: Vec<String> = doc
-                            .metadata
-                            .get("tags")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| v.as_str().map(String::from))
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        if !tags.iter().any(|t| doc_tags.contains(t)) {
-                            return false;
-                        }
-                    }
-                    true
-                })
-                .collect();
-
-            let content = filtered
-                .into_iter()
-                .map(|doc| {
-                    MCPContent::Text(MCPTextContent {
-                        content_type: "text".to_string(),
-                        text: format!(
-                            "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                            doc.id.as_deref().unwrap_or("none"),
-                            doc.path,
-                            doc.content,
-                            doc.metadata.get("gestalt_context"),
-                            doc.metadata.get("tags")
-                        ),
-                    })
-                })
-                .collect();
-
-            Ok(serde_json::to_value(MCPToolResult {
-                content,
-                is_error: Some(false),
-            })?)
-        }
-        "get_recent_fragments" | "memoryfragment_recent" => {
-            let agent_id = require_memoryfragment_component(&arguments, "agent_id")?;
-            let context = optional_memoryfragment_component(&arguments, "context", None)?;
-            let limit = memoryfragment_limit(&arguments);
-
-            let records = workspace
-                .workspace
-                .list_memory_records_filtered(
-                    MemoryQueryFilters {
-                        agent_id: Some(agent_id.to_string()),
-                        scope: context,
-                        ..Default::default()
-                    },
-                    limit,
-                )
-                .await?;
-            let content = records
-                .into_iter()
-                .map(|record| {
-                    MCPContent::Text(MCPTextContent {
-                        content_type: "text".to_string(),
-                        text: format!(
-                            "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                            record.id,
-                            record.path,
-                            record.content,
-                            record.metadata.get("gestalt_context"),
-                            record.metadata.get("tags")
-                        ),
-                    })
-                })
-                .collect();
-
-            Ok(serde_json::to_value(MCPToolResult {
-                content,
-                is_error: Some(false),
-            })?)
-        }
         "memoryfragment_get" => {
             let id = arguments
                 .get("id")
@@ -682,19 +811,6 @@ pub async fn handle_memory_tool(
                 })],
                 is_error: Some(false),
             })?)
-        }
-        "memoryfragment_delete" => {
-            let id = arguments
-                .get("id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
-            let record = workspace.workspace.delete_memory_record(id).await?;
-            let message = if let Some(r) = record {
-                format!("Deleted memory fragment: {} (path: {})", r.id, r.path)
-            } else {
-                format!("Memory fragment not found: {}", id)
-            };
-            super::server::mcp_text_result(message, false)
         }
         "stats" => {
             let records = workspace.workspace.list_memory_records().await?;
@@ -723,210 +839,30 @@ pub async fn handle_memory_tool(
 
             super::server::mcp_text_result(serde_json::json!({ "total_memories": records.len(), "projects": projects.len(), "agents": agents.len(), "total_entities": entity_count, "semantic_entities": semantic_stats.total_entities, "semantic_relations": semantic_stats.total_relations }).to_string(), false)
         }
-        "memory_save" => {
-            let text = arguments
-                .get("text")
+        _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
+    }
+}
+
+/// Handles delete/remove memory operations.
+pub async fn handle_memory_delete(
+    _state: &AppState,
+    workspace: &WorkspaceContext,
+    name: &str,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    match name {
+        "memoryfragment_delete" => {
+            let id = arguments
+                .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing text"))?;
-            let metadata = arguments
-                .get("metadata")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
-            let namespace = parse_namespace_arg(&arguments)?;
-
-            let unique_id = Ulid::new().to_string();
-            let path = match &namespace {
-                Some(ns) if ns.project.is_some() => {
-                    format!("mcp/{}/{}", ns.project.as_ref().unwrap(), unique_id)
-                }
-                Some(ns) if ns.agent_id.is_some() => {
-                    format!("mcp/agent/{}/{}", ns.agent_id.as_ref().unwrap(), unique_id)
-                }
-                _ => format!("mcp/save/{unique_id}"),
-            };
-
-            let typed = Some(TypedMemoryPayload {
-                kind: Some(MemoryKind::Document),
-                evidence_kind: Some(EvidenceKind::Observation),
-                namespace: namespace.clone(),
-                provenance: Some(MemoryProvenance {
-                    source_app: Some("mcp".to_string()),
-                    source_type: Some("tool:memory_save".to_string()),
-                    ..MemoryProvenance::default()
-                }),
-                ..Default::default()
-            });
-
-            let doc_id = workspace
-                .workspace
-                .ingest_typed(path, text.to_string(), metadata, typed, None, false)
-                .await?;
-            super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
-        }
-        "memory_context" | "mem_context" => {
-            let query = arguments.get("query").and_then(|v| v.as_str());
-            let ids = arguments.get("ids").and_then(|v| v.as_array());
-
-            if query.is_none() && ids.is_none() {
-                return Err(anyhow::anyhow!("Either 'query' or 'ids' must be provided"));
-            }
-
-            let limit = arguments
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(5)
-                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
-            let max_chars = arguments
-                .get("max_chars")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(CONTEXT_DEFAULT_MAX_CHARS as u64)
-                .clamp(1, CONTEXT_ABSOLUTE_MAX_CHARS as u64) as usize;
-            let max_chars_per_doc = arguments
-                .get("max_chars_per_doc")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or_else(|| std::cmp::min(800, max_chars));
-            let depth = arguments
-                .get("depth")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0)
-                .clamp(0, 2) as usize;
-
-            let mut results = Vec::new();
-
-            if let Some(ids) = ids {
-                for id_val in ids {
-                    if let Some(id) = id_val.as_str() {
-                        if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
-                            results.push(record.to_document());
-                        }
-                    }
-                }
-            } else if let Some(q) = query {
-                results = workspace
-                    .workspace
-                    .memory
-                    .search_filtered(q, limit, None)
-                    .await?;
-            }
-
-            if results.is_empty() {
-                let payload = MCPContextResult {
-                    total_chars: 0,
-                    total_records: 0,
-                    truncated: false,
-                    truncated_reason: None,
-                    content: "No relevant context found for query/ids".to_string(),
-                    sources: Vec::new(),
-                    estimated_tokens: 0,
-                };
-                Ok(serde_json::to_value(MCPToolResult {
-                    content: vec![MCPContent::Structured(MCPStructuredContent {
-                        content_type: "structuredContent".to_string(),
-                        structured_content: serde_json::to_value(payload)?,
-                    })],
-                    is_error: Some(false),
-                })?)
+                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
+            let record = workspace.workspace.delete_memory_record(id).await?;
+            let message = if let Some(r) = record {
+                format!("Deleted memory fragment: {} (path: {})", r.id, r.path)
             } else {
-                let expanded = if depth > 0 {
-                    workspace
-                        .workspace
-                        .memory
-                        .expand_depth(&results, depth, None)
-                        .await?
-                } else {
-                    results.to_vec()
-                };
-
-                let mut sources: Vec<MCPSearchResult> = Vec::new();
-                let mut context = String::from("# Relevant Memory Context\n\n");
-                let mut any_doc_truncated = false;
-
-                for record in &expanded {
-                    let total_record_chars = record.content.chars().count();
-                    let is_this_doc_truncated = total_record_chars > max_chars_per_doc;
-                    if is_this_doc_truncated {
-                        any_doc_truncated = true;
-                    }
-
-                    let doc_content = if is_this_doc_truncated {
-                        let mut truncated: String =
-                            crate::memory::snippet::clip_chars(&record.content, max_chars_per_doc)
-                                .to_string();
-                        truncated.push_str("\n[... doc truncated ...]");
-                        truncated
-                    } else {
-                        record.content.clone()
-                    };
-
-                    context.push_str(&format!(
-                        "### {} (id: {})\n{}\n\n",
-                        record.path,
-                        record.id.as_deref().unwrap_or("none"),
-                        doc_content
-                    ));
-
-                    let mut meta = record.metadata.clone();
-                    if let Some(obj) = meta.as_object_mut() {
-                        obj.insert("truncated".to_string(), json!(is_this_doc_truncated));
-                        obj.insert("total_chars".to_string(), json!(total_record_chars));
-                    }
-
-                    sources.push(MCPSearchResult {
-                        id: record.id.clone().unwrap_or_default(),
-                        path: record.path.clone(),
-                        score: 0.0,
-                        snippet: crate::memory::snippet::clip_chars(&record.content, 200)
-                            .to_string(),
-                        provenance: MCPProvenance {
-                            source: "search_filtered".to_string(),
-                            retrieved_at: chrono::Utc::now().to_rfc3339(),
-                            retrieval_method: "context_depth_search".to_string(),
-                            embedding_model: None,
-                            version: None,
-                        },
-                        metadata: meta,
-                    });
-                }
-
-                // Phase 4: enforce absolute max_chars truncation
-                let mut truncated = any_doc_truncated;
-                let mut truncated_reason = None;
-                let total_chars = context.chars().count();
-                if total_chars > max_chars {
-                    truncated = true;
-                    truncated_reason = Some(format!(
-                        "Context truncated from {} to {} characters",
-                        total_chars, max_chars
-                    ));
-                    // Truncate at character boundary
-                    let mut truncated_text: String =
-                        crate::memory::snippet::clip_chars(&context, max_chars).to_string();
-                    truncated_text.push_str("\n[... truncated ...]");
-                    context = truncated_text;
-                } else if any_doc_truncated {
-                    truncated_reason = Some("One or more documents were truncated".to_string());
-                }
-
-                let final_total_chars = context.chars().count();
-                let estimated_tokens = crate::context::estimate_tokens(&context);
-                let payload = MCPContextResult {
-                    total_chars: final_total_chars,
-                    total_records: expanded.len(),
-                    truncated,
-                    truncated_reason,
-                    content: context,
-                    sources,
-                    estimated_tokens,
-                };
-                Ok(serde_json::to_value(MCPToolResult {
-                    content: vec![MCPContent::Structured(MCPStructuredContent {
-                        content_type: "structuredContent".to_string(),
-                        structured_content: serde_json::to_value(payload)?,
-                    })],
-                    is_error: Some(false),
-                })?)
-            }
+                format!("Memory fragment not found: {}", id)
+            };
+            super::server::mcp_text_result(message, false)
         }
         "memory_prune" => {
             let kind = arguments
@@ -1010,6 +946,182 @@ pub async fn handle_memory_tool(
             Ok(serde_json::to_value(MCPToolResult::structured(
                 payload, false,
             ))?)
+        }
+        _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
+    }
+}
+
+/// Handles context assembly operations.
+pub async fn handle_memory_context(
+    _state: &AppState,
+    workspace: &WorkspaceContext,
+    name: &str,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    match name {
+        "memory_context" | "mem_context" => {
+            let query = arguments.get("query").and_then(|v| v.as_str());
+            let ids = arguments.get("ids").and_then(|v| v.as_array());
+
+            if query.is_none() && ids.is_none() {
+                return Err(anyhow::anyhow!("Either 'query' or 'ids' must be provided"));
+            }
+
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(5)
+                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+            let max_chars = arguments
+                .get("max_chars")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(CONTEXT_DEFAULT_MAX_CHARS as u64)
+                .clamp(1, CONTEXT_ABSOLUTE_MAX_CHARS as u64) as usize;
+            let max_chars_per_doc = arguments
+                .get("max_chars_per_doc")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or_else(|| std::cmp::min(800, max_chars));
+            let depth = arguments
+                .get("depth")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .clamp(0, 2) as usize;
+
+            let mut results = Vec::new();
+
+            if let Some(ids) = ids {
+                for id_val in ids {
+                    if let Some(id) = id_val.as_str() {
+                        if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
+                            results.push(record.to_document());
+                        }
+                    }
+                }
+            } else if let Some(q) = query {
+                results = workspace
+                    .workspace
+                    .memory
+                    .search_filtered(q, limit, None)
+                    .await?;
+            }
+
+            if results.is_empty() {
+                let payload = MCPContextResult {
+                    total_chars: 0,
+                    total_records: 0,
+                    truncated: false,
+                    truncated_reason: None,
+                    content: "No relevant context found for query/ids".to_string(),
+                    sources: Vec::new(),
+                    estimated_tokens: 0,
+                };
+                return Ok(serde_json::to_value(MCPToolResult {
+                    content: vec![MCPContent::Structured(MCPStructuredContent {
+                        content_type: "structuredContent".to_string(),
+                        structured_content: serde_json::to_value(payload)?,
+                    })],
+                    is_error: Some(false),
+                })?);
+            }
+
+            let expanded = if depth > 0 {
+                workspace
+                    .workspace
+                    .memory
+                    .expand_depth(&results, depth, None)
+                    .await?
+            } else {
+                results.to_vec()
+            };
+
+            let mut sources: Vec<MCPSearchResult> = Vec::new();
+            let mut context = String::from("# Relevant Memory Context\n\n");
+            let mut any_doc_truncated = false;
+
+            for record in &expanded {
+                let total_record_chars = record.content.chars().count();
+                let is_this_doc_truncated = total_record_chars > max_chars_per_doc;
+                if is_this_doc_truncated {
+                    any_doc_truncated = true;
+                }
+
+                let doc_content = if is_this_doc_truncated {
+                    let mut truncated: String =
+                        crate::memory::snippet::clip_chars(&record.content, max_chars_per_doc)
+                            .to_string();
+                    truncated.push_str("\n[... doc truncated ...]");
+                    truncated
+                } else {
+                    record.content.clone()
+                };
+
+                context.push_str(&format!(
+                    "### {} (id: {})\n{}\n\n",
+                    record.path,
+                    record.id.as_deref().unwrap_or("none"),
+                    doc_content
+                ));
+
+                let mut meta = record.metadata.clone();
+                if let Some(obj) = meta.as_object_mut() {
+                    obj.insert("truncated".to_string(), json!(is_this_doc_truncated));
+                    obj.insert("total_chars".to_string(), json!(total_record_chars));
+                }
+
+                sources.push(MCPSearchResult {
+                    id: record.id.clone().unwrap_or_default(),
+                    path: record.path.clone(),
+                    score: 0.0,
+                    snippet: crate::memory::snippet::clip_chars(&record.content, 200).to_string(),
+                    provenance: MCPProvenance {
+                        source: "search_filtered".to_string(),
+                        retrieved_at: chrono::Utc::now().to_rfc3339(),
+                        retrieval_method: "context_depth_search".to_string(),
+                        embedding_model: None,
+                        version: None,
+                    },
+                    metadata: meta,
+                });
+            }
+
+            // Phase 4: enforce absolute max_chars truncation
+            let mut truncated = any_doc_truncated;
+            let mut truncated_reason = None;
+            let total_chars = context.chars().count();
+            if total_chars > max_chars {
+                truncated = true;
+                truncated_reason = Some(format!(
+                    "Context truncated from {} to {} characters",
+                    total_chars, max_chars
+                ));
+                // Truncate at character boundary
+                let mut truncated_text: String =
+                    crate::memory::snippet::clip_chars(&context, max_chars).to_string();
+                truncated_text.push_str("\n[... truncated ...]");
+                context = truncated_text;
+            } else if any_doc_truncated {
+                truncated_reason = Some("One or more documents were truncated".to_string());
+            }
+
+            let final_total_chars = context.chars().count();
+            let estimated_tokens = crate::context::estimate_tokens(&context);
+            let payload = MCPContextResult {
+                total_chars: final_total_chars,
+                total_records: expanded.len(),
+                truncated,
+                truncated_reason,
+                content: context,
+                sources,
+                estimated_tokens,
+            };
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPContent::Structured(MCPStructuredContent {
+                    content_type: "structuredContent".to_string(),
+                    structured_content: serde_json::to_value(payload)?,
+                })],
+                is_error: Some(false),
+            })?)
         }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
     }
