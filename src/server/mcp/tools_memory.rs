@@ -351,47 +351,35 @@ pub async fn handle_memory_tool(
                 || filters.user_id.is_some()
                 || filters.kinds.is_some()
                 || filters.path_prefix.is_some();
-            let filter_ref = if has_filters { Some(&filters) } else { None };
+            let filters_opt = if has_filters { Some(filters) } else { None };
 
-            let results = workspace
-                .workspace
-                .memory
-                .search_filtered(query, limit, filter_ref)
-                .await?;
-
-            let results = if depth > 0 {
-                workspace
-                    .workspace
-                    .memory
-                    .expand_depth(&results, depth, filter_ref)
-                    .await?
-            } else {
-                results
+            let engine = crate::memory::query_engine::MemoryQueryEngine::new();
+            let search_req = crate::memory::query_engine::SearchQuery {
+                query: query.to_string(),
+                limit,
+                depth,
+                filters: filters_opt,
+                include_content: Some(include_content),
+                ..Default::default()
             };
 
-            // Progressive disclosure: fat index by default (structured candidates).
-            let candidates: Vec<Value> = results
+            let search_res = engine.search(&workspace.workspace.memory, search_req).await?;
+
+            let candidates: Vec<Value> = search_res
+                .results
                 .into_iter()
-                .map(|doc| {
-                    let snippet: String =
-                        crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
-                    let kind = doc
-                        .metadata
-                        .get("kind")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string();
+                .map(|item| {
                     let mut obj = json!({
-                        "id": doc.id.clone().unwrap_or_default(),
-                        "path": doc.path,
-                        "score": doc.score,
-                        "snippet": snippet,
-                        "kind": kind,
+                        "id": item.id,
+                        "path": item.path,
+                        "score": item.score,
+                        "snippet": item.snippet,
+                        "kind": item.kind,
                     });
                     if include_content {
                         obj.as_object_mut()
                             .expect("object")
-                            .insert("content".to_string(), json!(doc.content));
+                            .insert("content".to_string(), json!(item.content));
                     }
                     obj
                 })
@@ -792,141 +780,72 @@ pub async fn handle_memory_tool(
                 .unwrap_or(0)
                 .clamp(0, 2) as usize;
 
-            let mut results = Vec::new();
-
-            if let Some(ids) = ids {
-                for id_val in ids {
+            let explicit_docs = if let Some(ids_arr) = ids {
+                let mut docs = Vec::new();
+                for id_val in ids_arr {
                     if let Some(id) = id_val.as_str() {
                         if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
-                            results.push(record.to_document());
+                            docs.push(record.to_document());
                         }
                     }
                 }
-            } else if let Some(q) = query {
-                results = workspace
-                    .workspace
-                    .memory
-                    .search_filtered(q, limit, None)
-                    .await?;
-            }
-
-            if results.is_empty() {
-                let payload = MCPContextResult {
-                    total_chars: 0,
-                    total_records: 0,
-                    truncated: false,
-                    truncated_reason: None,
-                    content: "No relevant context found for query/ids".to_string(),
-                    sources: Vec::new(),
-                    estimated_tokens: 0,
-                };
-                Ok(serde_json::to_value(MCPToolResult {
-                    content: vec![MCPContent::Structured(MCPStructuredContent {
-                        content_type: "structuredContent".to_string(),
-                        structured_content: serde_json::to_value(payload)?,
-                    })],
-                    is_error: Some(false),
-                })?)
+                Some(docs)
             } else {
-                let expanded = if depth > 0 {
-                    workspace
-                        .workspace
-                        .memory
-                        .expand_depth(&results, depth, None)
-                        .await?
-                } else {
-                    results.to_vec()
-                };
+                None
+            };
 
-                let mut sources: Vec<MCPSearchResult> = Vec::new();
-                let mut context = String::from("# Relevant Memory Context\n\n");
-                let mut any_doc_truncated = false;
+            let engine = crate::memory::query_engine::MemoryQueryEngine::new();
+            let context_params = crate::memory::query_engine::ContextParams {
+                query: query.map(|s| s.to_string()),
+                ids: None,
+                explicit_docs,
+                limit,
+                max_chars,
+                max_chars_per_doc,
+                depth,
+                filters: None,
+            };
 
-                for record in &expanded {
-                    let total_record_chars = record.content.chars().count();
-                    let is_this_doc_truncated = total_record_chars > max_chars_per_doc;
-                    if is_this_doc_truncated {
-                        any_doc_truncated = true;
-                    }
+            let mem_ctx = engine
+                .context(&workspace.workspace.memory, context_params)
+                .await?;
 
-                    let doc_content = if is_this_doc_truncated {
-                        let mut truncated: String =
-                            crate::memory::snippet::clip_chars(&record.content, max_chars_per_doc)
-                                .to_string();
-                        truncated.push_str("\n[... doc truncated ...]");
-                        truncated
-                    } else {
-                        record.content.clone()
-                    };
+            let mcp_sources: Vec<MCPSearchResult> = mem_ctx
+                .sources
+                .into_iter()
+                .map(|src| MCPSearchResult {
+                    id: src.id,
+                    path: src.path,
+                    score: src.score as f64,
+                    snippet: src.snippet,
+                    provenance: MCPProvenance {
+                        source: "search_filtered".to_string(),
+                        retrieved_at: chrono::Utc::now().to_rfc3339(),
+                        retrieval_method: "context_depth_search".to_string(),
+                        embedding_model: None,
+                        version: None,
+                    },
+                    metadata: src.metadata,
+                })
+                .collect();
 
-                    context.push_str(&format!(
-                        "### {} (id: {})\n{}\n\n",
-                        record.path,
-                        record.id.as_deref().unwrap_or("none"),
-                        doc_content
-                    ));
+            let payload = MCPContextResult {
+                total_chars: mem_ctx.total_chars,
+                total_records: mem_ctx.total_records,
+                truncated: mem_ctx.truncated,
+                truncated_reason: mem_ctx.truncated_reason,
+                content: mem_ctx.content,
+                sources: mcp_sources,
+                estimated_tokens: mem_ctx.estimated_tokens,
+            };
 
-                    let mut meta = record.metadata.clone();
-                    if let Some(obj) = meta.as_object_mut() {
-                        obj.insert("truncated".to_string(), json!(is_this_doc_truncated));
-                        obj.insert("total_chars".to_string(), json!(total_record_chars));
-                    }
-
-                    sources.push(MCPSearchResult {
-                        id: record.id.clone().unwrap_or_default(),
-                        path: record.path.clone(),
-                        score: 0.0,
-                        snippet: crate::memory::snippet::clip_chars(&record.content, 200)
-                            .to_string(),
-                        provenance: MCPProvenance {
-                            source: "search_filtered".to_string(),
-                            retrieved_at: chrono::Utc::now().to_rfc3339(),
-                            retrieval_method: "context_depth_search".to_string(),
-                            embedding_model: None,
-                            version: None,
-                        },
-                        metadata: meta,
-                    });
-                }
-
-                // Phase 4: enforce absolute max_chars truncation
-                let mut truncated = any_doc_truncated;
-                let mut truncated_reason = None;
-                let total_chars = context.chars().count();
-                if total_chars > max_chars {
-                    truncated = true;
-                    truncated_reason = Some(format!(
-                        "Context truncated from {} to {} characters",
-                        total_chars, max_chars
-                    ));
-                    // Truncate at character boundary
-                    let mut truncated_text: String =
-                        crate::memory::snippet::clip_chars(&context, max_chars).to_string();
-                    truncated_text.push_str("\n[... truncated ...]");
-                    context = truncated_text;
-                } else if any_doc_truncated {
-                    truncated_reason = Some("One or more documents were truncated".to_string());
-                }
-
-                let final_total_chars = context.chars().count();
-                let estimated_tokens = crate::context::estimate_tokens(&context);
-                let payload = MCPContextResult {
-                    total_chars: final_total_chars,
-                    total_records: expanded.len(),
-                    truncated,
-                    truncated_reason,
-                    content: context,
-                    sources,
-                    estimated_tokens,
-                };
-                Ok(serde_json::to_value(MCPToolResult {
-                    content: vec![MCPContent::Structured(MCPStructuredContent {
-                        content_type: "structuredContent".to_string(),
-                        structured_content: serde_json::to_value(payload)?,
-                    })],
-                    is_error: Some(false),
-                })?)
-            }
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPContent::Structured(MCPStructuredContent {
+                    content_type: "structuredContent".to_string(),
+                    structured_content: serde_json::to_value(payload)?,
+                })],
+                is_error: Some(false),
+            })?)
         }
         "memory_prune" => {
             let kind = arguments

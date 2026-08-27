@@ -178,7 +178,6 @@ pub async fn search_handler(
             let documents: Vec<_> = results
                 .into_iter()
                 .map(|doc| {
-                    // FIX A007: Include path and metadata in search results
                     serde_json::json!({
                         "id": doc.id,
                         "path": doc.path,
@@ -407,7 +406,6 @@ pub async fn memory_query_handler(
             let documents: Vec<_> = results
                 .into_iter()
                 .map(|doc| {
-                    // FIX A007: Include path and metadata in search results
                     serde_json::json!({
                         "id": doc.id,
                         "path": doc.path,
