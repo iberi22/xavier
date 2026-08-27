@@ -150,13 +150,122 @@ mod tests {
     use crate::memory::sqlite_vec_store::vector;
     use rusqlite::{params, Connection};
     use std::sync::Arc;
+    use tokio::net::TcpListener;
+
+    #[test]
+    fn test_ollama_provider_configuration_from_env() {
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        std::env::set_var("XAVIER_OLLAMA_URL", "http://127.0.0.1:11434/api/embed");
+        std::env::set_var("XAVIER_OLLAMA_MODEL", "nomic-embed-text");
+        std::env::set_var("XAVIER_OLLAMA_DIMS", "768");
+
+        let embedder = OllamaEmbedder::from_env().unwrap();
+        assert_eq!(embedder.endpoint(), "http://127.0.0.1:11434/api/embed");
+        assert_eq!(embedder.model(), "nomic-embed-text");
+        assert_eq!(embedder.dimension(), 768);
+
+        std::env::remove_var("XAVIER_OLLAMA_URL");
+        std::env::remove_var("XAVIER_OLLAMA_MODEL");
+        std::env::remove_var("XAVIER_OLLAMA_DIMS");
+    }
 
     #[tokio::test]
-    async fn test_ollama_embedder_encode_returns_768_dim_vector() {
+    async fn test_local_embedding_generation_mock_ollama() {
         let mut server = mockito::Server::new_async().await;
         let mock_url = format!("{}/api/embed", server.url());
 
         let fake_vector: Vec<f32> = (0..768).map(|i| i as f32 * 0.001).collect();
+        let body_json = serde_json::json!({
+            "model": "nomic-embed-text",
+            "embeddings": [fake_vector]
+        });
+
+        let mock = server
+            .mock("POST", "/api/embed")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body_json.to_string())
+            .create_async()
+            .await;
+
+        let embedder = OllamaEmbedder::new(
+            "nomic-embed-text".to_string(),
+            mock_url,
+            768,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+
+        let vector = embedder.encode("test prompt").await.unwrap();
+        assert_eq!(vector.len(), 768);
+        assert_eq!(vector[0], 0.0);
+        assert_eq!(embedder.dimension(), 768);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fallback_to_remote_when_ollama_unavailable() {
+        // Ollama server returns 500 error
+        let mut ollama_server = mockito::Server::new_async().await;
+        let ollama_url = format!("{}/api/embed", ollama_server.url());
+        let _ollama_mock = ollama_server
+            .mock("POST", "/api/embed")
+            .with_status(500)
+            .create_async()
+            .await;
+
+        // Remote OpenAI-compatible server returns valid 768-dim vector
+        let mut remote_server = mockito::Server::new_async().await;
+        let remote_url = format!("{}/v1/embeddings", remote_server.url());
+        let fake_vector: Vec<f32> = vec![0.5; 768];
+        let remote_body = serde_json::json!({
+            "data": [{ "embedding": fake_vector }]
+        });
+        let _remote_mock = remote_server
+            .mock("POST", "/v1/embeddings")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(remote_body.to_string())
+            .create_async()
+            .await;
+
+        let ollama_embedder = Arc::new(
+            OllamaEmbedder::new(
+                "nomic-embed-text".to_string(),
+                ollama_url,
+                768,
+                Duration::from_secs(2),
+            )
+            .unwrap(),
+        );
+
+        let remote_embedder = Arc::new(
+            crate::embedding::openai::OpenAICompatibleEmbedder::new(
+                Some("test-key".to_string()),
+                "text-embedding-3-small".to_string(),
+                remote_url,
+                768,
+                Duration::from_secs(2),
+            )
+            .unwrap(),
+        );
+
+        let fallback = FallbackEmbedder {
+            embedders: vec![ollama_embedder, remote_embedder],
+        };
+
+        let result = fallback.encode("hello fallback").await.unwrap();
+        assert_eq!(result.len(), 768);
+        assert_eq!(result[0], 0.5);
+    }
+
+    #[tokio::test]
+    async fn test_embedding_dimensions_match_768d() {
+        let mut server = mockito::Server::new_async().await;
+        let mock_url = format!("{}/api/embed", server.url());
+
+        let fake_vector: Vec<f32> = vec![0.42; 768];
         let body_json = serde_json::json!({
             "model": "nomic-embed-text",
             "embeddings": [fake_vector]
@@ -178,66 +287,50 @@ mod tests {
         )
         .unwrap();
 
-        let vector = embedder.encode("test prompt").await.unwrap();
-        assert_eq!(vector.len(), 768);
-        assert_eq!(vector[0], 0.0);
         assert_eq!(embedder.dimension(), 768);
+        assert_eq!(
+            crate::embedding::embedding_dimension_for_model("nomic-embed-text"),
+            768
+        );
+
+        let vector = embedder.encode("dimension check").await.unwrap();
+        assert_eq!(vector.len(), embedder.dimension());
+        assert_eq!(vector.len(), 768);
     }
 
     #[tokio::test]
-    async fn test_fallback_to_openai_compatible_when_ollama_is_down() {
-        // Ollama server returns 500 error
-        let mut ollama_server = mockito::Server::new_async().await;
-        let ollama_url = format!("{}/api/embed", ollama_server.url());
-        let _ollama_mock = ollama_server
-            .mock("POST", "/api/embed")
-            .with_status(500)
-            .create_async()
-            .await;
+    async fn test_connection_timeout_handling() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let endpoint = format!("http://{}/api/embed", addr);
 
-        // OpenAI server returns valid 768-dim vector
-        let mut openai_server = mockito::Server::new_async().await;
-        let openai_url = format!("{}/v1/embeddings", openai_server.url());
-        let fake_vector: Vec<f32> = vec![0.5; 768];
-        let openai_body = serde_json::json!({
-            "data": [{ "embedding": fake_vector }]
+        tokio::spawn(async move {
+            if let Ok((_stream, _)) = listener.accept().await {
+                // Sleep longer than the client timeout to trigger network timeout
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
         });
-        let _openai_mock = openai_server
-            .mock("POST", "/v1/embeddings")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(openai_body.to_string())
-            .create_async()
-            .await;
 
-        let ollama_embedder = Arc::new(
-            OllamaEmbedder::new(
-                "nomic-embed-text".to_string(),
-                ollama_url,
-                768,
-                Duration::from_secs(2),
-            )
-            .unwrap(),
-        );
+        let embedder = OllamaEmbedder::new(
+            "nomic-embed-text".to_string(),
+            endpoint,
+            768,
+            Duration::from_millis(100),
+        )
+        .unwrap();
 
-        let openai_embedder = Arc::new(
-            crate::embedding::openai::OpenAICompatibleEmbedder::new(
-                Some("test-key".to_string()),
-                "text-embedding-3-small".to_string(),
-                openai_url,
-                768,
-                Duration::from_secs(2),
-            )
-            .unwrap(),
-        );
-
-        let fallback = FallbackEmbedder {
-            embedders: vec![ollama_embedder, openai_embedder],
-        };
-
-        let result = fallback.encode("hello fallback").await.unwrap();
-        assert_eq!(result.len(), 768);
-        assert_eq!(result[0], 0.5);
+        let result = embedder.encode("timeout test").await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            EmbeddingError::Network(msg) => {
+                assert!(
+                    msg.contains("timed out") || msg.contains("timeout") || msg.contains("error"),
+                    "unexpected error message: {}",
+                    msg
+                );
+            }
+            err => panic!("expected Network error, got {:?}", err),
+        }
     }
 
     #[tokio::test]
