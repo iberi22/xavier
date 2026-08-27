@@ -472,6 +472,23 @@ impl LegacyMigration for MigrationV1InitialSchema {
     }
 }
 
+pub struct MigrationV11CleanupMemorySymbolLinks;
+
+impl LegacyMigration for MigrationV11CleanupMemorySymbolLinks {
+    fn version(&self) -> u32 {
+        11
+    }
+    fn description(&self) -> &str {
+        "Clean up bloated memory_symbol_links table"
+    }
+    fn run(&self, conn: &Connection) -> Result<()> {
+        if table_exists(conn, "memory_symbol_links")? {
+            conn.execute_batch("DELETE FROM memory_symbol_links;")?;
+        }
+        Ok(())
+    }
+}
+
 const V10_UP: &str = r#"
 CREATE TABLE IF NOT EXISTS memory_embeddings_768 (
     id TEXT PRIMARY KEY,
