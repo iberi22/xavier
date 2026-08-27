@@ -68,6 +68,7 @@ impl VecSqliteMemoryStore {
                 manager.add_migration(crate::storage::migrations::MigrationV8EntityGraphSnapshots);
                 manager.add_migration(crate::storage::migrations::MigrationV9EmbeddingStatus);
                 manager.add_migration(crate::storage::migrations::MigrationV10Embeddings768);
+                manager.add_migration(crate::storage::migrations::MigrationV11CleanupMemorySymbolLinks);
                 manager.run_migrations(conn)?;
 
                 // Run automatic vector migration
@@ -677,6 +678,7 @@ mod tests {
         ] {
             std::env::remove_var(key);
         }
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
 
         // Setup a mock API server using mockito
         let mut server = mockito::Server::new_async().await;
@@ -708,6 +710,7 @@ mod tests {
         store.put(record).await.unwrap();
 
         // Now set env vars and mock for the reindex step
+        std::env::remove_var("XAVIER_EMBEDDER");
         std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
         std::env::set_var(
             "XAVIER_EMBEDDING_URL",
@@ -834,6 +837,7 @@ mod tests {
         ] {
             std::env::remove_var(key);
         }
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
 
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
@@ -863,6 +867,7 @@ mod tests {
             store.put(record).await.unwrap();
         }
 
+        std::env::remove_var("XAVIER_EMBEDDER");
         std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
         std::env::set_var(
             "XAVIER_EMBEDDING_URL",
@@ -962,6 +967,8 @@ mod tests {
 
         let store = VecSqliteMemoryStore::new(config).await.unwrap();
 
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+
         let record = crate::memory::store::MemoryRecord {
             id: "test_mem_err_1".to_string(),
             workspace_id: "test_ws_1".to_string(),
@@ -976,6 +983,7 @@ mod tests {
 
         store.put(record).await.unwrap();
 
+        std::env::remove_var("XAVIER_EMBEDDER");
         std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
         std::env::set_var(
             "XAVIER_EMBEDDING_URL",

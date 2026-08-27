@@ -1,6 +1,6 @@
 {
   "protocol": "3.8.0",
-  "_comment": "Feature tracking — product 1.0 MVP 100% stable (Ola 6). Phase-2 mesh R&D on #115.",
+  "_comment": "Feature tracking \u2014 product 1.0 MVP 100% stable (Ola 6). Phase-2 mesh R&D on #115.",
   "metadata": {
     "project": "Xavier",
     "version": "0.13.0",
@@ -18,7 +18,7 @@
     "complete": 6,
     "percent": 99.3,
     "updated": "2026-08-17",
-    "verification_note": "wave-tests: 5 PRs (#1388-#1393) merged — 146 tests nuevos"
+    "verification_note": "wave-tests: 5 PRs (#1388-#1393) merged \u2014 146 tests nuevos"
   },
   "features": {
     "feat-unified-storage": {
@@ -203,7 +203,7 @@
       "verified_by": "production-usage",
       "github_issue": 81,
       "last_tested": "2026-08-04",
-      "notes": "39 tests (PR #1388) — auto_save, event_mapper, indexer, sharing [wave-tests 2026-08-15, PRs #1388-#1393]",
+      "notes": "39 tests (PR #1388) \u2014 auto_save, event_mapper, indexer, sharing [wave-tests 2026-08-15, PRs #1388-#1393]",
       "implemented_in": "src/session/, src/domain/memory/",
       "tests": [
         "test_auto_save",
@@ -287,7 +287,7 @@
       "category": "documentation",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Source Code Reference (SRC) — comprehensive documentation per GitCore protocol",
+      "description": "Source Code Reference (SRC) \u2014 comprehensive documentation per GitCore protocol",
       "steps": [
         "Document directory structure",
         "Document core modules (a2a, agents, memory, server, tasks)",
@@ -300,7 +300,7 @@
       "verified_by": "repo-audit",
       "github_issue": 80,
       "last_tested": "2026-08-04",
-      "notes": "Comprehensive SRC reference documentation and SRC_CONFIG reference files complete with requirement mappings. [2026-08-15: path SRC.md corregido a raíz]",
+      "notes": "Comprehensive SRC reference documentation and SRC_CONFIG reference files complete with requirement mappings. [2026-08-15: path SRC.md corregido a ra\u00edz]",
       "implemented_in": "SRC.md",
       "tests": [
         "SRC reference and config references verified"
@@ -334,7 +334,7 @@
       "verified_by": "automated",
       "github_issue": 115,
       "last_tested": "2026-08-04",
-      "notes": "P2P network and Data Commons are fully complete. Includes peer discovery, encrypted transport, Pair Codes, memory sync, and EigenTrust integration. Real operational progress: libp2p 10%, onchain 0%, 0 peers — EPIC #115.",
+      "notes": "P2P network and Data Commons are fully complete. Includes peer discovery, encrypted transport, Pair Codes, memory sync, and EigenTrust integration. Real operational progress: libp2p 10%, onchain 0%, 0 peers \u2014 EPIC #115.",
       "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs, tests/health_test.rs",
       "tests": [
         "test_mesh_handshake_and_sync",
@@ -403,7 +403,7 @@
       "verified_by": "automated",
       "github_issue": 4,
       "last_tested": "2026-08-04",
-      "notes": "6+ tests (PR #1389) — dispatcher, mod, CLI handler [wave-tests 2026-08-15, PRs #1388-#1393]",
+      "notes": "6+ tests (PR #1389) \u2014 dispatcher, mod, CLI handler [wave-tests 2026-08-15, PRs #1388-#1393]",
       "implemented_in": "src/notifications/, src/cli/handlers/notifications.rs, src/cli/server.rs",
       "tests": [
         "test_dispatcher_new_and_default",
@@ -456,11 +456,11 @@
       "category": "enterprise",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Bicameral governance system — 50% node operators + 50% Xavier Core Council — with weighted voting, veto, XIP lifecycle, and on-chain integration",
+      "description": "Bicameral governance system \u2014 50% node operators + 50% Xavier Core Council \u2014 with weighted voting, veto, XIP lifecycle, and on-chain integration",
       "steps": [
         "Bicameral DAO design (users + council)",
         "Weighted voting by reputation + activity",
-        "XIP lifecycle (proposal → discussion → vote → execution)",
+        "XIP lifecycle (proposal \u2192 discussion \u2192 vote \u2192 execution)",
         "Veto mechanism (66% council for security)",
         "Community overrule (75% override veto)",
         "On-chain integration (Solana/Ethereum)",
@@ -505,7 +505,7 @@
       "verified_by": "build",
       "github_issue": null,
       "last_tested": "2026-08-04",
-      "notes": "56 tests health suite (PR #1390) — health_service + http adapter (single-thread por estado global) [wave-tests 2026-08-15, PRs #1388-#1393]",
+      "notes": "56 tests health suite (PR #1390) \u2014 health_service + http adapter (single-thread por estado global) [wave-tests 2026-08-15, PRs #1388-#1393]",
       "implemented_in": "src/health/, src/app/health_service.rs",
       "tests": [
         "test_get_health_status_ok",
@@ -525,7 +525,7 @@
       "category": "enterprise",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Closed-loop auto-improvement: benchmark → gap analysis → generate experiment → validate → merge → re-measure",
+      "description": "Closed-loop auto-improvement: benchmark \u2192 gap analysis \u2192 generate experiment \u2192 validate \u2192 merge \u2192 re-measure",
       "steps": [
         "Benchmark runner",
         "Gap analysis",
@@ -627,8 +627,8 @@
       "description": "Scans clawd/agents/ directories for OpenClaw agent memory files (MEMORY.md, SOUL.md, USER.md, daily logs)",
       "steps": [
         "Implement OpenClawAgentScanner struct",
-        "scan_all_agents() — recursive directory scan",
-        "scan_agent(name) — single agent scan",
+        "scan_all_agents() \u2014 recursive directory scan",
+        "scan_agent(name) \u2014 single agent scan",
         "Detect MEMORY.md, TOOLS.md, SOUL.md, USER.md, daily logs",
         "Integration with OpenClawAgentIndexer for embedding",
         "Wire into CloudMemorySync for Supabase push"
@@ -668,7 +668,7 @@
       "verified_by": "build",
       "github_issue": 339,
       "last_tested": "2026-08-04",
-      "notes": "10 tests unitarios (PR #1393) — reemplaza verificación manual [wave-tests 2026-08-15, PRs #1388-#1393]",
+      "notes": "10 tests unitarios (PR #1393) \u2014 reemplaza verificaci\u00f3n manual [wave-tests 2026-08-15, PRs #1388-#1393]",
       "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs",
       "tests": [
         "test_parse_agent_scan_cmd",
@@ -695,12 +695,12 @@
       "category": "local-first",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
+      "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradaci\u00f3n elegante a memoria cuando ning\u00fan provider responde.",
       "steps": [
-        "Ola 1 estabilizacion — DONE",
-        "Ola 2 fallback chain + local provider — DONE",
-        "Ola 3 observabilidad + panel LLM + UsageCounters — DONE",
-        "Ola 4 headless memory-fallback + Ollama hot-swap API/UI + metrics UI + docs — DONE"
+        "Ola 1 estabilizacion \u2014 DONE",
+        "Ola 2 fallback chain + local provider \u2014 DONE",
+        "Ola 3 observabilidad + panel LLM + UsageCounters \u2014 DONE",
+        "Ola 4 headless memory-fallback + Ollama hot-swap API/UI + metrics UI + docs \u2014 DONE"
       ],
       "passes": true,
       "verified_by": "integration-tests",
@@ -851,7 +851,7 @@
     },
     "feat-codegraph-maturity-bridge": {
       "id": "feat-codegraph-maturity-bridge",
-      "name": "Codegraph → Maturity/Docs Bridge",
+      "name": "Codegraph \u2192 Maturity/Docs Bridge",
       "category": "infra",
       "status": "stable",
       "progress_pct": 100,
@@ -859,7 +859,7 @@
       "steps": [
         "Shared codegraph path helper",
         "Soft auto-dump after CLI and HTTP scan/index",
-        "Maturity SQLite → JSON → grep chain",
+        "Maturity SQLite \u2192 JSON \u2192 grep chain",
         "Chronicle auto-docs/harvest path alignment",
         "Unit/smoke tests + docs + features.json reconcile"
       ],
@@ -891,7 +891,7 @@
         "F1 mesh challenge + namespace + ACL bridge + Pro heartbeat (100%)",
         "F2 Polygon ABI + live-prepared + dao-evm broadcast + deploy script (100% shippable; Amoy live tx = ops runbook)",
         "F3 hybrid Ed25519+ML-DSA packs + ML-KEM eval ADR (100%)",
-        "F4 research ADR + fuzzy-extractor spike + go/no-go medido (70%, non-blocking; NO-GO hot-path día 1, watch-list)"
+        "F4 research ADR + fuzzy-extractor spike + go/no-go medido (70%, non-blocking; NO-GO hot-path d\u00eda 1, watch-list)"
       ],
       "passes": true,
       "verified_by": "unit+e2e",
@@ -925,23 +925,23 @@
     },
     "feat-clearance-levels": {
       "id": "feat-clearance-levels",
-      "name": "Clasificación por niveles de sensibilidad",
+      "name": "Clasificaci\u00f3n por niveles de sensibilidad",
       "category": "security",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Documentos clasificados como gobierno: UNCLASSIFIED/INTERNAL/RESTRICTED/CONFIDENTIAL/SECRET/TOPSECRET con redacción por segmento",
+      "description": "Documentos clasificados como gobierno: UNCLASSIFIED/INTERNAL/RESTRICTED/CONFIDENTIAL/SECRET/TOPSECRET con redacci\u00f3n por segmento",
       "steps": [
         "Definir enum ClearanceLevel (0-5)",
-        "Añadir clearance a MemoryRecord y DatasetMetadata",
-        "Middleware de lectura que redacta según clearance del solicitante",
+        "A\u00f1adir clearance a MemoryRecord y DatasetMetadata",
+        "Middleware de lectura que redacta seg\u00fan clearance del solicitante",
         "Soporte de secciones REDACTED dentro de un documento",
-        "Auditoría de accesos por clearance"
+        "Auditor\u00eda de accesos por clearance"
       ],
       "passes": true,
       "verified_by": "orquestador-hermes",
       "github_issue": null,
       "last_tested": "2026-08-08",
-      "notes": "ClearanceLevel enum (5 levels), ClearanceManager with role→level mapping, document access checks. Tests: 4/4 passing.",
+      "notes": "ClearanceLevel enum (5 levels), ClearanceManager with role\u2192level mapping, document access checks. Tests: 4/4 passing.",
       "implemented_in": "src/security/acl/mod.rs",
       "tests": [
         "test_clearance_ordering",
@@ -958,16 +958,16 @@
     },
     "feat-groups-permissions": {
       "id": "feat-groups-permissions",
-      "name": "Grupos de información con permisos rigurosos",
+      "name": "Grupos de informaci\u00f3n con permisos rigurosos",
       "category": "security",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Grupos de información con ACL rigurosa (leer/escribir/auditar) y enforcement sin bypass",
+      "description": "Grupos de informaci\u00f3n con ACL rigurosa (leer/escribir/auditar) y enforcement sin bypass",
       "steps": [
         "Modelo de grupos (core-xavier-dev, nodos-servicio, familia)",
         "ACL por grupo con roles read/write/audit",
         "Enforcement en TODAS las lecturas del servidor",
-        "Registro de auditoría de accesos",
+        "Registro de auditor\u00eda de accesos",
         "Tests de bypass (intentos no autorizados)"
       ],
       "passes": true,
@@ -996,7 +996,7 @@
       "progress_pct": 100,
       "description": "Endpoints /v1/training/* para servir datasets de entrenamiento (train/eval splits con consentimiento)",
       "steps": [
-        "Exponer TrainingExporter existente vía REST",
+        "Exponer TrainingExporter existente v\u00eda REST",
         "GET /v1/training/datasets + /datasets/{id}",
         "GET /datasets/{id}/train + /eval (JSONL)",
         "POST /v1/training/bundles (generar bundle con seed)",
@@ -1026,11 +1026,11 @@
       "category": "ai",
       "status": "implemented",
       "progress_pct": 100,
-      "description": "Modelos pequeños (1-3B) entrenados con datos propios del usuario, solo su idioma, servidos localmente con Ollama",
+      "description": "Modelos peque\u00f1os (1-3B) entrenados con datos propios del usuario, solo su idioma, servidos localmente con Ollama",
       "steps": [
-        "Exportar dataset vía /v1/training/*",
+        "Exportar dataset v\u00eda /v1/training/*",
         "Pipeline de entrenamiento con Colab/Vertex (agy)",
-        "Conversión a GGUF + servir con Ollama/llama.cpp",
+        "Conversi\u00f3n a GGUF + servir con Ollama/llama.cpp",
         "Registro de mini-expertos con metadata (segmento, idioma, clearance)",
         "Router de xavier incluye mini-expertos locales"
       ],
@@ -1060,27 +1060,27 @@
         "commit": "5f50dcff",
         "note": "MiniExpertRegistry + Ollama local runtime, merged wave-16",
         "verified": "2026-08-15",
-        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+        "tests": "Validado: cargo check PASS + tests de m\u00f3dulo (wave-16 integration)"
       }
     },
     "feat-mesh-service-network": {
       "id": "feat-mesh-service-network",
-      "name": "Red de servicio SWAL (telemetría interna)",
+      "name": "Red de servicio SWAL (telemetr\u00eda interna)",
       "category": "mesh",
       "status": "implemented",
       "progress_pct": 100,
-      "description": "Compartir benchmarks, logs, feedbacks y telemetría de funcionamiento entre nodos de servicio para mejorar Xavier — sin datos personales",
+      "description": "Compartir benchmarks, logs, feedbacks y telemetr\u00eda de funcionamiento entre nodos de servicio para mejorar Xavier \u2014 sin datos personales",
       "steps": [
-        "Clasificar telemetría como INTERNAL",
-        "Publicar telemetría en la red de servicio",
+        "Clasificar telemetr\u00eda como INTERNAL",
+        "Publicar telemetr\u00eda en la red de servicio",
         "Consumo: nodos de servicio mejoran Xavier con datos reales",
-        "Exclusión garantizada de datos personales"
+        "Exclusi\u00f3n garantizada de datos personales"
       ],
       "passes": false,
       "verified_by": "orquestador-hermes",
       "github_issue": 1343,
       "last_tested": "2026-08-08",
-      "notes": "Capa 2 de la visión — red interna de trabajo",
+      "notes": "Capa 2 de la visi\u00f3n \u2014 red interna de trabajo",
       "implemented_in": "src/mesh/mod.rs",
       "tests": [
         "test_mesh_service_deregistration",
@@ -1099,7 +1099,7 @@
         "commit": "d881e7b9",
         "note": "ServiceRegistry + TelemetrySample INTERNAL con PII redaction, merged wave-16",
         "verified": "2026-08-15",
-        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+        "tests": "Validado: cargo check PASS + tests de m\u00f3dulo (wave-16 integration)"
       }
     },
     "feat-mesh-private-wallet": {
@@ -1108,12 +1108,12 @@
       "category": "mesh",
       "status": "implemented",
       "progress_pct": 100,
-      "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos — terceros no los ven",
+      "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos \u2014 terceros no los ven",
       "steps": [
         "Registro de nodos por billetera (Clavis)",
         "Descubrimiento privado (solo misma billetera)",
         "Sync de memoria + snapshots + modelos entre dispositivos",
-        "Cifrado de sesión entre nodos privados",
+        "Cifrado de sesi\u00f3n entre nodos privados",
         "Tests: nodo de otra billetera NO ve la mesh"
       ],
       "passes": false,
@@ -1137,9 +1137,9 @@
       "evidence": {
         "pr": "#1346",
         "commit": "99672677",
-        "note": "PrivateMeshSync con cifrado de sesión (merge manual conflictos resueltos), merged wave-16",
+        "note": "PrivateMeshSync con cifrado de sesi\u00f3n (merge manual conflictos resueltos), merged wave-16",
         "verified": "2026-08-15",
-        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+        "tests": "Validado: cargo check PASS + tests de m\u00f3dulo (wave-16 integration)"
       }
     },
     "feat-content-redaction": {
@@ -1148,18 +1148,18 @@
       "category": "security",
       "status": "implemented",
       "progress_pct": 100,
-      "description": "Documentos con secciones REDACTED: el servidor sirve versión censurada según clearance del solicitante",
+      "description": "Documentos con secciones REDACTED: el servidor sirve versi\u00f3n censurada seg\u00fan clearance del solicitante",
       "steps": [
         "Formato de documento segmentado (secciones con nivel)",
-        "Motor de redacción por segmento",
-        "Servir versión redactada vs completa según clearance",
-        "Tests de redacción (sección secreta oculta a nivel bajo)"
+        "Motor de redacci\u00f3n por segmento",
+        "Servir versi\u00f3n redactada vs completa seg\u00fan clearance",
+        "Tests de redacci\u00f3n (secci\u00f3n secreta oculta a nivel bajo)"
       ],
       "passes": false,
       "verified_by": "orquestador-hermes",
       "github_issue": 1344,
       "last_tested": "2026-08-08",
-      "notes": "Como documentos clasificados del gobierno — Visión §3",
+      "notes": "Como documentos clasificados del gobierno \u2014 Visi\u00f3n \u00a73",
       "implemented_in": "src/security/redaction.rs, src/security/acl/mod.rs",
       "tests": [
         "test_custom_rules",
@@ -1179,27 +1179,27 @@
         "commit": "cea4546a",
         "note": "RedactionEngine segmented + render_for_clearance, merged wave-16",
         "verified": "2026-08-15",
-        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+        "tests": "Validado: cargo check PASS + tests de m\u00f3dulo (wave-16 integration)"
       }
     },
     "feat-human-curation": {
       "id": "feat-human-curation",
-      "name": "Curaduría humana de información",
+      "name": "Curadur\u00eda humana de informaci\u00f3n",
       "category": "governance",
       "status": "implemented",
       "progress_pct": 100,
-      "description": "Los humanos son curadores: revisan, aprueban, clasifican la información que Xavier preserva",
+      "description": "Los humanos son curadores: revisan, aprueban, clasifican la informaci\u00f3n que Xavier preserva",
       "steps": [
-        "UI/API para revisar información pendiente de clasificación",
-        "Flujo de aprobación humana (curar = clasificar + validar)",
-        "Historial de curaduría (quién clasificó qué, cuándo)",
+        "UI/API para revisar informaci\u00f3n pendiente de clasificaci\u00f3n",
+        "Flujo de aprobaci\u00f3n humana (curar = clasificar + validar)",
+        "Historial de curadur\u00eda (qui\u00e9n clasific\u00f3 qu\u00e9, cu\u00e1ndo)",
         "Los modelos personales se entrenan SOLO con info curada"
       ],
       "passes": false,
       "verified_by": "orquestador-hermes",
       "github_issue": 1345,
       "last_tested": "2026-08-08",
-      "notes": "Misión: el futuro se construye con info real regenerada, no generada",
+      "notes": "Misi\u00f3n: el futuro se construye con info real regenerada, no generada",
       "implemented_in": "src/curation/mod.rs",
       "tests": [
         "test_approve_item",
@@ -1222,24 +1222,24 @@
         "commit": "db9a309d",
         "note": "CurationQueue + review API + training gate, merged wave-16",
         "verified": "2026-08-15",
-        "tests": "Validado: cargo check PASS + tests de módulo (wave-16 integration)"
+        "tests": "Validado: cargo check PASS + tests de m\u00f3dulo (wave-16 integration)"
       }
     },
     "feat-issue-context-packager": {
       "id": "feat-issue-context-packager",
-      "name": "Issue Context Packager — análisis automático de issues con línea exacta",
+      "name": "Issue Context Packager \u2014 an\u00e1lisis autom\u00e1tico de issues con l\u00ednea exacta",
       "category": "ai",
       "status": "beta",
       "progress_pct": 80,
-      "description": "Xavier revisa un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qué archivos/símbolos tocar, línea exacta o número de carácter a modificar, fragmento before/after — el análisis ya hecho para que un agente solo ejecute",
+      "description": "Xavier revisa un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qu\u00e9 archivos/s\u00edmbolos tocar, l\u00ednea exacta o n\u00famero de car\u00e1cter a modificar, fragmento before/after \u2014 el an\u00e1lisis ya hecho para que un agente solo ejecute",
       "steps": [
-        "Parser de issues (título + cuerpo → entidades: archivos, símbolos, features)",
-        "Mapper issue→CodeGraph: find_by_name + search para localizar símbolos",
-        "Generador de paquete: PreciseChange por símbolo (file, línea, before/after)",
+        "Parser de issues (t\u00edtulo + cuerpo \u2192 entidades: archivos, s\u00edmbolos, features)",
+        "Mapper issue\u2192CodeGraph: find_by_name + search para localizar s\u00edmbolos",
+        "Generador de paquete: PreciseChange por s\u00edmbolo (file, l\u00ednea, before/after)",
         "Ensamblador: IssueContextPackage { issue_id, changes: [PreciseChange], deps, tests_a_fijar }",
-        "Endpoint POST /v1/f12/issue-context (issue body → paquete JSON)",
-        "Integración: el agente ejecutor recibe el paquete y aplica los deltas",
-        "Métrica de ahorro: tokens sin paquete vs con paquete (benchmark)"
+        "Endpoint POST /v1/f12/issue-context (issue body \u2192 paquete JSON)",
+        "Integraci\u00f3n: el agente ejecutor recibe el paquete y aplica los deltas",
+        "M\u00e9trica de ahorro: tokens sin paquete vs con paquete (benchmark)"
       ],
       "passes": true,
       "verified_by": "hermes-cron",
@@ -1279,7 +1279,7 @@
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-08-14",
-      "notes": "32 tests unitarios (PR #1391) — beliefs, timeline, params, commits, universal, ws, router [wave-tests 2026-08-15]",
+      "notes": "32 tests unitarios (PR #1391) \u2014 beliefs, timeline, params, commits, universal, ws, router [wave-tests 2026-08-15]",
       "implemented": true,
       "req_ids": [],
       "user_stories": [],
@@ -1351,11 +1351,11 @@
     },
     "feat-store-path-hierarchy": {
       "id": "feat-store-path-hierarchy",
-      "name": "Jerarquía de paths preservada + migración",
+      "name": "Jerarqu\u00eda de paths preservada + migraci\u00f3n",
       "category": "core",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
-      "description": "El path canónico (hermes/2026-08-17/...) se persiste VERBATIM: se bloquea traversal (.., NUL) sin destruir la jerarquía ni los acentos. Migración one-shot reconstruye paths aplanados previos.",
+      "description": "El path can\u00f3nico (hermes/2026-08-17/...) se persiste VERBATIM: se bloquea traversal (.., NUL) sin destruir la jerarqu\u00eda ni los acentos. Migraci\u00f3n one-shot reconstruye paths aplanados previos.",
       "steps": [
         "Fix sanitizer en cli/handlers/memory.rs (2 handlers)",
         "scripts/migrate-flattened-paths.py con backup .bak",
@@ -1365,7 +1365,15 @@
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-08-17",
-      "notes": "Causa raíz: .replace('/', '') + retain(ascii) en cli/handlers/memory.rs. Fix + migración 2026-08-17."
+      "notes": "Causa raíz: .replace('/', '') + retain(ascii) en cli/handlers/memory.rs. Fix + migración 2026-08-17.",
+      "implemented_in": "src/cli/handlers/memory.rs, tests/test_store_path_hierarchy.rs",
+      "tests": [
+        "test_path_stored_verbatim",
+        "test_path_traversal_blocked",
+        "test_nul_byte_injection_blocked",
+        "test_valid_nested_directory_paths",
+        "test_path_hierarchy_queries"
+      ]
     },
     "feat-ivn-api": {
       "id": "feat-ivn-api",
@@ -1404,7 +1412,7 @@
     },
     "feat-search-degraded-fallback": {
       "id": "feat-search-degraded-fallback",
-      "name": "Búsqueda resiliente: timeout + fallback BM25 + flag degraded",
+      "name": "B\u00fasqueda resiliente: timeout + fallback BM25 + flag degraded",
       "category": "search",
       "status": "implemented",
       "progress_pct": 100,
@@ -1413,13 +1421,13 @@
         "Timeout tokio en llamada al proveedor de embeddings",
         "Fallback BM25/substring con degraded:true",
         "Cache LRU de embeddings de queries",
-        "Propagación del flag degraded en respuestas v1 (ids/snippet/full)"
+        "Propagaci\u00f3n del flag degraded en respuestas v1 (ids/snippet/full)"
       ],
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-08-17",
-      "notes": "Implementado por subagente + integración Hermes 2026-08-17. cargo check + clippy -D warnings verdes."
+      "notes": "Implementado por subagente + integraci\u00f3n Hermes 2026-08-17. cargo check + clippy -D warnings verdes."
     },
     "feat-embeddings-ollama-local": {
       "id": "feat-embeddings-ollama-local",
@@ -1427,18 +1435,18 @@
       "category": "core",
       "status": "implemented",
       "progress_pct": 100,
-      "description": "Proveedor de embeddings local-first vía Ollama (nomic-embed-text 768d) con fallback a remoto solo si env lo permite + binario de backfill resumible por rowid.",
+      "description": "Proveedor de embeddings local-first v\u00eda Ollama (nomic-embed-text 768d) con fallback a remoto solo si env lo permite + binario de backfill resumible por rowid.",
       "steps": [
         "src/embedding/ollama.rs con trait del proveedor existente",
         "Config por env XAVIER_EMBED_PROVIDER / XAVIER_OLLAMA_URL / XAVIER_OLLAMA_MODEL",
         "src/bin/backfill_embeddings.rs resumible por checkpoint",
-        "Documentación en .env.example"
+        "Documentaci\u00f3n en .env.example"
       ],
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-08-17",
-      "notes": "Implementado por subagente 2026-08-17. Pendiente: correr backfill sobre la store real y validar dimensión de la tabla vec."
+      "notes": "Implementado por subagente 2026-08-17. Pendiente: correr backfill sobre la store real y validar dimensi\u00f3n de la tabla vec."
     },
     "feat-ivn-karma": {
       "id": "feat-ivn-karma",
@@ -1481,7 +1489,7 @@
       "id": "feat-marketplace-api",
       "name": "DataMarketplace HTTP API (list/query/revoke/pricing)",
       "category": "marketplace",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Expose data_commons::marketplace (DataMarketplace: list_dataset/query_dataset/revoke_dataset) + pricing.rs (PricingOracle) as REST API /v1/marketplace/*. Motor exists (16 unit tests), routes added by PR #1394.",
       "steps": [
@@ -1493,20 +1501,34 @@
         "Wire DataMarketplace in shared state",
         "tests/marketplace_api.rs"
       ],
-      "passes": false,
-      "verified_by": null,
+      "passes": true,
+      "verified_by": "verify-pipeline",
       "github_issue": 1379,
-      "last_tested": null,
-      "notes": "Wave M (2026-08-15). Issue xavier#1379. PR #1394 en verificación.",
-      "spec": null
+      "last_tested": "2026-08-27",
+      "notes": "Wave M (2026-08-15). Issue xavier#1379. PR #1394 en verificaci\u00f3n.",
+      "spec": null,
+      "tests": [
+        "test_list_datasets_returns_available_datasets",
+        "test_query_dataset_valid_and_invalid_id",
+        "test_revoke_dataset_removes_access",
+        "test_pricing_metadata_responses",
+        "test_marketplace_full_lifecycle"
+      ],
+      "test_names": [
+        "test_list_datasets_returns_available_datasets",
+        "test_query_dataset_valid_and_invalid_id",
+        "test_revoke_dataset_removes_access",
+        "test_pricing_metadata_responses",
+        "test_marketplace_full_lifecycle"
+      ]
     },
     "feat-ivn": {
       "id": "feat-ivn",
       "name": "Identity Verification Core (selection + verdict + sanctions)",
       "category": "identity",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
-      "description": "Karma-weighted validator selection, dynamic quorum votes, sanctions. Root of Xavier's truth pyramid — verified real identity before human refinement.",
+      "description": "Karma-weighted validator selection, dynamic quorum votes, sanctions. Root of Xavier's truth pyramid \u2014 verified real identity before human refinement.",
       "steps": [
         "IvnConfig (5 validators, karma>=300, quorum 0.8, karma^2)",
         "select_validators (karma-pondered, excludes shared-seed)",
@@ -1515,12 +1537,36 @@
         "Wire VerdictEngine -> DynamicQuorum in governance.rs",
         "tests/ivn_verdict.rs"
       ],
-      "passes": false,
-      "verified_by": null,
+      "passes": true,
+      "verified_by": "verify-pipeline",
       "github_issue": 1380,
-      "last_tested": null,
-      "notes": "Designed 2026-08-15 (IDENTITY_VERIFICATION_NETWORK.md). Issue xavier#1380. PR #1392 en verificación. SECUENCIAL: feat-ivn-karma extends ivn.rs.",
-      "spec": "docs/features/specs/FEATURE-feat-ivn.md"
+      "last_tested": "2026-08-27",
+      "notes": "Designed 2026-08-15 (IDENTITY_VERIFICATION_NETWORK.md). Issue xavier#1380. PR #1392 en verificaci\u00f3n. SECUENCIAL: feat-ivn-karma extends ivn.rs.",
+      "spec": "docs/features/specs/FEATURE-feat-ivn.md",
+      "tests": [
+        "test_validator_selection_weights_by_karma",
+        "test_dynamic_quorum_calculation",
+        "test_sanction_application",
+        "test_vote_recording_and_tallying",
+        "test_selection_karma_weighted_distribution",
+        "test_exclusion_of_shared_seed_and_insufficient_karma",
+        "test_quorum_4_of_5_pass_and_fail",
+        "test_abstention_handling_in_verdict",
+        "test_dynamic_quorum_integration_with_ivn",
+        "test_sanction_validator_penalties"
+      ],
+      "test_names": [
+        "test_validator_selection_weights_by_karma",
+        "test_dynamic_quorum_calculation",
+        "test_sanction_application",
+        "test_vote_recording_and_tallying",
+        "test_selection_karma_weighted_distribution",
+        "test_exclusion_of_shared_seed_and_insufficient_karma",
+        "test_quorum_4_of_5_pass_and_fail",
+        "test_abstention_handling_in_verdict",
+        "test_dynamic_quorum_integration_with_ivn",
+        "test_sanction_validator_penalties"
+      ]
     },
     "feat-data-node-consent": {
       "id": "feat-data-node-consent",

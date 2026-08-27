@@ -87,6 +87,10 @@ check-errors.txt
 /target_local/
 /cargo_check_output.txt
 /diag.json
+# Test databases
+data/headless-*.db*
+data/health-test-*.db*
+
 # Backup and temp files
 # root-level backup dir only (src/storage/backup is real source code)
 /backup/
