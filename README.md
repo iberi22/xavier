@@ -2,170 +2,256 @@
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
 [![Version](https://img.shields.io/badge/version-0.13.0-brightgreen.svg)](https://github.com/iberi22/xavier)
+[![CI Build Status](https://github.com/iberi22/xavier/actions/workflows/ci.yml/badge.svg)](https://github.com/iberi22/xavier/actions/workflows/ci.yml)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 
-Xavier is a **high-performance, Rust-based vector memory runtime for AI agents** with native HTTP, CLI, and MCP entry points. It manages vector embeddings, hierarchical context graphs, and semantic relationships using a robust SQLite-backed store (`sqlite-vec`), granting agents sub-millisecond contextual recall without external service dependencies.
+Xavier is a **high-performance, Rust-based vector memory runtime for AI agents** with native HTTP REST, CLI, and Model Context Protocol (MCP) entry points. It manages vector embeddings, hierarchical context graphs, and semantic relationships using a robust SQLite-backed store (`sqlite-vec`), granting agents sub-millisecond contextual recall without external service dependencies.
 
 ---
 
-## 🤖 Dual-Layer Documentation System
+## 🚀 Quick Start
 
-Xavier separates system documentation into two dedicated layers optimized for their respective audiences:
+### 1. Build & Installation
 
-### 1. Codebase Memory (`README.md` & `.md` Files)
-This `README.md` and associated markdown assets are structured **strictly as context-injection memory for AI Agents**. They provide exact schema specs, system parameters, architectural constraints, and bootstrapping instructions that agents ingest to operate optimally inside this repository.
+Ensure you have Rust (1.80+) installed.
 
-### 2. Maloca (Human-in-the-loop Presentation Portal)
-For humans, Xavier features **Maloca** (named after the Amazonian indigenous communal house where shared architecture, decisions, stories, and communal knowledge are kept). 
-* **Maloca** is the central presentation layer of Xavier's architectural logic, system diagrams, daily release chronicles (ADRs), module breakdowns, and code diff statistics.
-* It is compiled into a high-density, static HTML/CSS/JS experience under `public/maloca/` (symlinked to `public/devlog/`).
-* It includes a **Premium Interactive Code Diff & Human Curation Dashboard** (`review.html`) where developers can review chronological changes, write curation notes saved in `localStorage`, and inspect exactly which vector RAG memory nodes are linked to each change.
+```bash
+# Clone repository
+git clone https://github.com/iberi22/xavier.git
+cd xavier
+
+# Build release binary
+cargo build --release
+
+# Or install binary locally to PATH
+cargo install --path . --locked
+```
+
+For platform-specific installation options (such as Windows Scheduled Tasks or Linux systemd setup), see [Installer Guides](docs/guides/WINDOWS_INSTALL.md).
+
+### 2. Environment Setup
+
+Configure master credentials and target workspace path:
+
+```bash
+export XAVIER_TOKEN=your-secure-token
+export XAVIER_WORKSPACE_DIR=.
+```
+
+### 3. Launching Services
+
+Xavier provides unified daemons for HTTP REST and MCP interfaces:
+
+```bash
+# Start HTTP REST server on port 8006 and MCP HTTP+SSE on port 8100
+xavier http
+
+# Start HTTP REST server only (disabling MCP HTTP port)
+xavier http --mcp-port 0
+
+# Start MCP stdio server for Cursor, Claude Desktop, or CLI integration
+xavier mcp
+```
+
+### 4. Basic CLI Usage
+
+```bash
+# Add a memory fragment
+xavier add "Architecture decision: Use SQLite-vec for local vector storage" "ADR-001" --kind decision
+
+# Search memory fragments
+xavier search "SQLite vector storage" -n 5
+
+# Recall memories with score breakdown
+xavier recall "vector memory" --limit 5
+
+# Diagnose local node health and runtime readiness
+xavier doctor
+```
 
 ---
 
-## 🛖 The Maloca RAG & Conversation Sync Loop
+## 🏗️ Architecture Overview
 
-**Maloca** is not a static log; it is a **circular context database**. 
+Xavier is organized into modular subsystems designed for autonomous agent contextual awareness and local-first execution:
+
+```
+src/
+├── memory/        — Hybrid RAG Engine (SQLite-vec + BM25 + Semantic Search + Belief Graph)
+├── codebase/      — Code GraphDB (Tree-sitter AST symbol extraction & call dependency graphs)
+├── mesh/          — P2P Mesh Network (QUIC/Iroh transport, offline SQLite queue, keychains)
+├── agents/        — Agent lifecycle, Provider Router (Ollama / Cloud LLM switching), Rate limits
+├── server/        — Axum HTTP REST server, MCP Server (HTTP+SSE & Stdio), GPU sidecar
+├── maloca/        — Maloca presentation bridge, HumanChallenge engine, Backlog & App Registry
+└── storage/       — Centralized SQLite connection management & PRAGMA configuration
+```
+
+- **`memory`**: Provides hybrid vector + keyword search (`BM25` + `sqlite-vec`), hierarchical context tree clustering (HCE engine), and dynamic zone weighting (1.5x boost for active work contexts). Memory symbol links are resolved on-demand.
+- **`codebase` / `code-graph`**: Performs incremental language parsing (Rust, TypeScript, Python, Go, Java, C/C++) to compute call chains, reverse dependencies, complexity hotspots, and blast radius for code entities.
+- **`mesh`**: Handles decentralized P2P synchronization between same-tenant nodes with last-write-wins timestamp conflict resolution and local SQLite offline queue fallback (`offline_queue` table).
+- **`agents` & `server`**: Houses the Axum HTTP REST API, MCP JSON-RPC transports (Stdio and SSE), hardware VRAM/GPU discovery sidecar (`gpud`), and provider routing.
+- **`maloca`**: Connects Xavier to the Maloca presentation portal, tracking ecosystem alignment, backlog features, agent challenge scoring, and app registry metadata.
+
+---
+
+## 📚 API & Interface Reference
+
+### 🌐 HTTP REST API (`:8006`)
+
+All authenticated HTTP routes require the `X-Xavier-Token` header (or `XAVIER_DEV_MODE=true` for local development).
+
+#### Maloca V1 Services (`/v1/maloca/*`)
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/maloca/registry` | `GET` | List ecosystem applications (supports ETag `If-None-Match`) |
+| `/v1/maloca/registry/{app_id}` | `GET` | Retrieve specific application metadata entry |
+| `/v1/maloca/alignment` | `GET` | Retrieve ecosystem alignment audit score and active flags |
+| `/v1/maloca/alignment/goals` | `GET` | Retrieve canonical SWAL goals and verification criteria |
+| `/v1/maloca/backlog/unified` | `GET` | Query aggregated multi-repo features (`wave`, `status`, `priority`) |
+| `/v1/maloca/backlog/summary` | `GET` | Retrieve backlog progress metrics (30s TTL cache) |
+| `/v1/maloca/models/infer` | `POST` | Execute inference request via model router |
+| `/v1/maloca/models/list` | `GET` | List available Ollama and cloud LLM models |
+| `/v1/maloca/models/health` | `GET` | Query model engine health status |
+| `/v1/maloca/challenges/generate` | `POST` | Generate cognitive HumanChallenge candidate |
+| `/v1/maloca/challenges/answer` | `POST` | Submit response to challenge for semantic similarity scoring |
+| `/v1/maloca/challenges/list` | `GET` | List active challenges |
+| `/v1/maloca/challenges/stats` | `GET` | Retrieve challenge engine statistics |
+
+#### GPU Discovery & Sidecar (`/v1/gpud/*`)
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/gpud/health` | `GET` | GPU sidecar health check |
+| `/v1/gpud/detect` | `GET` | Hardware acceleration probe (NVIDIA nvcc/nvidia-smi, ROCm, Apple Silicon) |
+| `/v1/gpud/serve` | `POST` | Request GPU compute allocation |
+| `/v1/gpud/status` | `GET` | Monitor current VRAM allocation and fallback CPU state |
+
+#### Maintenance & Memory (`/v1/maintenance/*`, `/memory/*`)
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/maintenance/reindex-embeddings` | `GET` | Reindex missing vector embeddings (batched with 409 Conflict anti-double guard) |
+| `/memory/search` | `POST` | Hybrid memory vector search query |
+| `/memory/add` | `POST` | Add new memory fragment |
+
+---
+
+### 🔌 Model Context Protocol (MCP) Tools
+
+Xavier exposes standard MCP tools for integration with Cursor, Claude Desktop, and autonomous agent loops:
+
+#### Core System Tools
+- `health_check`: Report full system health status (database, embedding, mesh).
+- `sys_health`: Host node guardian metrics (PSI, swap usage, load averages, top processes).
+- `log_scan`: Scan runtime logs under `~/.xavier/logs` with regex secret redaction.
+- `env_status`: Check systemd services, TCP network connectivity, and swap memory.
+- `ticket_create`: Create GitHub issues or Maloca backlog entries with deduplication.
+- `get_code_graph`: Export portable code graph dump (`.xavier/codegraph.json`).
+- `codegraph_explore`: Search code graph symbols by name or query.
+- `trace_path`: Trace forward dependencies or caller chains for code symbols.
+
+#### Memory Management Tools
+- `mem_search`: Candidate memory retrieval with similarity scores, snippets, and provenance.
+- `mem_context`: Packaged memory context injection bounded by `max_records` and `max_chars`.
+- `mem_add`: Store semantic, episodic, or procedural memory records.
+- `mem_update`: Update existing memory records by path or ID.
+- `mem_delete`: Remove memory records from vector store.
+
+#### Context & Issue Tools
+- `xavier_context_save`: Create session context checkpoints.
+- `xavier_context_restore`: Restore optimized context blocks tailored to specified token budget.
+- `xavier_context_search`: Search within saved session contexts.
+- `xavier_token_savings`: Report token savings statistics achieved via context compression.
+- `xavier_issue_context_package`: Produce a `PreciseChange` context package for a GitHub issue.
+
+---
+
+### 💻 CLI Command Summary
+
+```bash
+xavier http [--port PORT] [--mcp-port MCP_PORT]  # Start HTTP REST and MCP SSE servers
+xavier mcp                                        # Start stdio MCP JSON-RPC transport
+xavier search <QUERY> [-n MAX]                    # Search memory store
+xavier recall <QUERY> [--limit N]                 # Recall memories with score details
+xavier add <CONTENT> [TITLE]                      # Add memory fragment
+xavier chat [--prompt P] [--agent A]              # Interactive or single-shot agent chat
+xavier ask <PROMPT>                               # Quick question alias for chat
+xavier code scan <PATH>                           # Index code directory into code graph
+xavier code find <QUERY>                          # Find symbols in code graph
+xavier code blast-radius <SYMBOL>                 # Calculate call graph blast radius
+xavier nav affected --path <PATH>                 # Impact analysis for file/concept change
+xavier mesh list                                  # List known P2P mesh peers
+xavier node create                                # Initialize SWAL node identity
+xavier nodes add --provider <PROVIDER>            # Provision BYO node instance
+xavier secrets lend <SECRET> <AGENT>              # Issue ephemeral secret lease
+xavier doctor [--format table|json|markdown]      # Diagnostic node checks
+xavier improve --ci                               # Run auto-improvement benchmark cycle
+xavier regen benchmark                            # Measure recall@k metrics
+```
+
+---
+
+## ⚙️ System Configuration Reference
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `XAVIER_TOKEN` | *Required* | Master authentication token for HTTP REST API requests |
+| `XAVIER_PORT` | `8006` | Main HTTP REST server bind port |
+| `XAVIER_HOST` | `0.0.0.0` | Network bind interface for HTTP server |
+| `XAVIER_WORKSPACE_DIR` | `.` | Root directory path for indexing and local database operations |
+| `XAVIER_EMBEDDING_CACHE_ENABLED` | `true` | Enables persistent SQLite LRU cache for vector embeddings |
+| `XAVIER_EMBEDDING_CACHE_CAPACITY` | `10000` | Maximum in-memory LRU cache capacity |
+| `XAVIER_EMBEDDING_CACHE_TTL` | `24` | Embedding cache TTL in hours |
+| `XAVIER_DEV_MODE` | `false` | Development mode; bypasses HTTP authentication when set to `true` |
+| `XAVIER_EMAIL_DEDUP_SECS` | `300` | Rate-limiting window in seconds for email notification deduplication |
+| `XAVIER_MESH_AUTO_REPAIR` | `1` | Auto-repair peer connection manager (`0` or `false` disables auto-reconnect) |
+
+### Centralized SQLite PRAGMAs
+
+Xavier centralizes database PRAGMA configuration across all SQLite storage connections:
+
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA cache_size = -8000;      -- ~8MB memory cache
+PRAGMA mmap_size = 268435456;   -- 256MB memory-mapped I/O
+PRAGMA temp_store = MEMORY;
+PRAGMA busy_timeout = 5000;     -- 5 second timeout on locks
+PRAGMA foreign_keys = ON;
+```
+
+---
+
+## 🛖 The Maloca RAG & Presentation Portal
+
+**Maloca** is Xavier's human-in-the-loop presentation portal (named after the Amazonian communal house). It presents system diagrams, release chronicles (ADRs), module breakdowns, and code diff statistics.
 
 ```
 ┌────────────────────────┐       ┌────────────────────────┐
-│  Git Commit History    │ ────> │  Cosecha de Chronicle  │
+│  Git Commit History    │ ────> │  Chronicle Harvester   │
 └────────────────────────┘       └───────────┬────────────┘
             ▲                                │
             │                                ▼
 ┌───────────┴────────────┐       ┌────────────────────────┐
-│   Despliegue Humano    │ <──── │  Auto-Docs & RAG (BERT)│
-│  (public/maloca/)      │       └────────────────────────┘
+│   Maloca Presentation  │ <──── │   Auto-Docs & RAG      │
+│   (public/maloca/)     │       └────────────────────────┘
 └────────────────────────┘
 ```
 
-1. **Automation Hook**: In every git commit, a Husky pre-commit hook runs `scripts/pre-commit-chronicle.sh`.
-2. **Context Harvesting**: It harvests commits, code symbols, and git diff statistics, and uses a local BERT embedder to automatically index module understandings into the **Xavier Memory Store**.
-3. **Conversational Sync**: The portal integrates development conversation histories. Whenever developers discuss features or decisions with their coding agents, the logs are synchronized directly with Xavier's memory adapters.
-4. **Unified Search**: Both human developers and autonomous agents query the same RAG system to instantly retrieve deep historical context about *why* a line of code was changed, what decisions were made, and how components interact.
-
----
-
-## 🚀 Quick Start (Agent Setup)
-
-Ensure your environment contains the required settings:
-
-```bash
-# Set up secure token and workspace path
-export XAVIER_TOKEN=your-secure-token
-export XAVIER_WORKSPACE_DIR=.
-
-# Launch the memory runtime server (HTTP REST on default port 8006)
-xavier serve
-
-# Index the local workspace (creates SQLite database and context-tree.json)
-xavier index
-```
-
----
-
-## 🌐 Maloca V1 API (unified Axum routes on :8006)
-
-Since v0.13.0, the daemon exposes the full Maloca V1 surface under `/v1/maloca/*`
-(unified router `v1_maloca_router` in `src/server/maloca/mod.rs`, wired into
-`src/cli/server.rs`). All routes require authentication (`X-Xavier-Token`).
-
-| Group | Endpoints | Purpose |
-|---|---|---|
-| Registry | `GET /v1/maloca/registry`, `GET /v1/maloca/registry/{app_id}` | Ecosystem App Registry (ETag-cached). |
-| Alignment | `GET /v1/maloca/alignment`, `GET /v1/maloca/alignment/goals` | GOAL.md compliance & alignment audit. |
-| Backlog | `GET /v1/maloca/backlog/unified`, `GET /v1/maloca/backlog/summary` | Multi-repo backlog aggregation with TTL cache. |
-| Models | `POST /v1/maloca/models/infer`, `GET /v1/maloca/models/list`, `GET /v1/maloca/models/health` | Model Router (Ollama / cloud providers). |
-| Challenges | `POST /v1/maloca/challenges/generate`, `POST /v1/maloca/challenges/answer`, `GET /v1/maloca/challenges/list`, `GET /v1/maloca/challenges/stats` | HumanChallenge engine with local-embedding semantic verification. |
-
-The panel frontend (`panel-ui/src/maloca/MalocaView.tsx`) renders these services
-as tabs: Registry, Goals, Backlog, Challenges and Models.
-
----
-
-## 🛠️ Installer & Service Support
-
-Xavier includes an interactive **TUI setup wizard** (built with `ratatui` and `crossterm`) that guides you through a 6-step initialization.
-
-### Install Commands
-
-**From source (recommended):**
-```bash
-cargo install --path . --locked
-# or: ./install.sh   # prints the same steps and checks for cargo
-```
-
-**Windows (PowerShell as Administrator):**
-```powershell
-irm https://raw.githubusercontent.com/iberi22/xavier/main/install.ps1 | iex
-```
-
-**Linux/macOS helper:** `install.sh` in this repo documents `cargo install` and points at the MCP/HTTP docs. Prefer cloning the repo and installing from source rather than piping remote scripts blindly.
-
-### Start HTTP + optional remote MCP
-
-```bash
-xavier http                 # REST :8006; MCP JSON-RPC :8100 by default
-xavier http --mcp-port 0    # REST only
-xavier mcp                  # MCP stdio for Cursor/Claude (see docs/guides/MCP_INTEGRATION.md)
-```
-
-### Background Execution
-* **Linux**: Sets up a persistent `systemd` daemon.
-* **Windows**: Configures a robust Scheduled Task that launches `xavier serve` / `xavier http` on user logon with automatic retries.
-
----
-
-## 🔑 Key Architectural Features
-
-- **Belief Graph & GraphRAG** — Dynamic hierarchical clustering (HCE engine) and context-weighted zone boost (1.5x weights for active zones) for intelligent query routing.
-- **Embedded BERT & SQLite-vec** — Zero-touch, high-speed local embedding generation (` MiniLM-L6-v2`) writing directly to a vector-enabled SQLite backend.
-- **Multi-layered Security Shield** — Proactive scanner analyzing direct, indirect, and semantic threats (prompt injection, path traversal, API key leaks).
-- **Interactive Human Curation Dashboard** — Beautiful HTML review dashboard (`review.html`) featuring file diff views, status management, and RAG node links.
-- **Model Context Protocol (MCP)** — Stdio (`xavier mcp`) and optional HTTP JSON-RPC (`xavier http --mcp-port`, default `:8100`) for Cursor/Claude.
-
----
-
-## 📊 Public Dataset Export Schema
-
-Xavier lets you export read-optimized datasets for agent indexing:
-
-```bash
-xavier export --public --format tree
-```
-
-Outputs lightweight NDJSON streams in `xavier-dataset/` representing:
-* `memories.ndjson` — All vector memory records.
-* `code_symbols.ndjson` — Structural elements (structs, functions) mapped to files.
-* `context-tree.json` — Hierarchical cluster trees representing module architecture.
-
----
-
-## 📐 System Configuration
-
-Runtime configurations live in `config/xavier.config.json`. Sensitive credentials reside in `.env`.
-
-| Variable | Type | Description |
-|---|---|---|
-| `XAVIER_TOKEN` | String | Master authentication token for HTTP REST routes |
-| `XAVIER_WORKSPACE_DIR` | Path | Root repository path for active indexing operations |
-| `XAVIER_EMBEDDING_CACHE_ENABLED` | Boolean | Activates persistent SQLite LRU cache for vector mappings |
-| `XAVIER_EMBEDDING_CACHE_CAPACITY` | Integer | Maximum in-memory LRU cache capacity (default: `10000`) |
-| `XAVIER_EMBEDDING_CACHE_TTL` | Integer | Cache TTL in hours (default: `24`) |
-| `XAVIER_DEV_MODE` | Boolean | Bypasses HTTP middleware authentication for rapid testing |
+1. **Pre-commit Chronicle**: Commits, code symbols, and git diff statistics are harvested automatically during pre-commit workflows.
+2. **Context Memory**: Module understandings and development conversations are indexed into Xavier's vector store.
+3. **Interactive Dashboard**: The panel web UI under `panel-ui/` renders Maloca tabs (Overview, Registry, Goals, Backlog, Challenges, Models).
 
 ---
 
 ## 📂 Documentation Manifest
 
-For agents indexing the repository, use these entry paths:
-* [Agent Rules (AGENTS.md)](AGENTS.md) — Mandatory guidelines for memory formatting.
-* [Xavier Memory Protocol](.agents/skills/xavier-memory-protocol/SKILL.md) — Canonical Fat Search → Page-In → Persist.
-* [Feature Status (FEATURE_STATUS.md)](docs/FEATURE_STATUS.md) — Checked-off verified surface.
-* [CLI Reference (docs/guides/CLI_REFERENCE.md)](docs/guides/CLI_REFERENCE.md) — Comprehensive command arguments.
-* [MCP Integration (docs/guides/MCP_INTEGRATION.md)](docs/guides/MCP_INTEGRATION.md) — Cursor/Claude MCP setup.
-* [API Reference (docs/site/.../api.md)](docs/site/src/content/docs/reference/api.md) — HTTP payload specifications.
-* [Architecture Guide (docs/ARCHITECTURE.md)](docs/ARCHITECTURE.md) — Hexagonal domain layout.
+- [Agent Rules (AGENTS.md)](AGENTS.md) — Mandatory guidelines for memory formatting and agent behavior.
+- [Feature Status](docs/FEATURE_STATUS.md) — Comprehensive surface verification checklist.
+- [CLI Reference Guide](docs/guides/CLI_REFERENCE.md) — Extended CLI command arguments and usage examples.
+- [MCP Integration Guide](docs/guides/MCP_INTEGRATION.md) — Cursor and Claude Desktop MCP setup guide.
+- [Quickstart Guide](docs/guides/QUICKSTART.md) — Quick start walkthrough.
+- [System Architecture](docs/ARCHITECTURE.md) — Domain layout and hexagonal design documentation.
 
 ---
 
