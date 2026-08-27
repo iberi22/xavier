@@ -1759,7 +1759,7 @@ impl CodeGraphDB {
         Ok(links)
     }
 
-    /// Prune stale memory symbol links and enforce max 10 links per memory
+    /// Prune stale memory symbol links (>30 days) and enforce max 10 links per memory
     pub fn prune_stale_memory_symbol_links(&self) -> Result<usize> {
         let conn = self
             .conn
@@ -1770,7 +1770,8 @@ impl CodeGraphDB {
             .execute(
                 r#"
                 DELETE FROM memory_symbol_links
-                WHERE rowid NOT IN (
+                WHERE created_at < datetime('now', '-30 days')
+                   OR rowid NOT IN (
                     SELECT rowid FROM (
                         SELECT rowid, ROW_NUMBER() OVER (PARTITION BY memory_id ORDER BY confidence DESC, created_at DESC) as rn
                         FROM memory_symbol_links
