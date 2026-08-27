@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.14.0] - 2026-08-27
+
+### Added
+
+- MemoryQueryEngine unification (HTTP/CLI/MCP)
+- Centralized SQLite pragmas (cache_size, mmap, temp_store)
+- Tests for feat-store-path-hierarchy, feat-marketplace-api, feat-ivn, feat-ollama-local
+- On-demand symbol linking for code_graph
+
+### Changed
+
+- Decomposed handle_memory_tool (727 lines -> 5 functions)
+- Decomposed handle_doctor (577 lines -> 7 subsystem checks)
+- Decomposed put() in sqlite_vec_store (574 lines -> 5 functions)
+- Cleaned orphan test databases from data/
+
+### Fixed
+
+- Insecure random number generator fallback (Sentinel #1574)
+- Insecure WebAuthn device key generation (Sentinel #1549)
+- memory_symbol_links bloat (1.4M rows -> 0, DB 1.6GB -> 39MB)
+
+### Security
+
+- CRITICAL: Fixed Math.random() usage in WebAuthn key generation
+- CRITICAL: Fixed insecure RNG fallback in security module
+
 ## v0.13.0 (2026-08-23)
 
 Stable release consolidating the **Maloca V1 integration** (Wave 15, issues #1490–#1504),
