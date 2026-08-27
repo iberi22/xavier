@@ -37,13 +37,7 @@ struct PragmaCustomizer;
 
 impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer {
     fn on_acquire(&self, conn: &mut Connection) -> std::result::Result<(), rusqlite::Error> {
-        conn.execute_batch(
-            "PRAGMA busy_timeout=5000; \
-             PRAGMA synchronous=NORMAL; \
-             PRAGMA mmap_size=268435456; \
-             PRAGMA foreign_keys=ON;",
-        )
-        .map_err(|e| {
+        crate::storage::apply_pragmas(conn).map_err(|e| {
             eprintln!("PragmaCustomizer: PRAGMA error: {}", e);
             e
         })
@@ -55,8 +49,8 @@ fn initialize_wal_mode(conn: &Connection, db_path: &PathBuf) -> Result<()> {
         .lock()
         .map_err(|_| anyhow::anyhow!("SQLite WAL initialization lock was poisoned"))?;
 
-    conn.execute_batch("PRAGMA busy_timeout=5000;")
-        .with_context(|| format!("failed to configure SQLite busy timeout at {:?}", db_path))?;
+    crate::storage::apply_pragmas(conn)
+        .with_context(|| format!("failed to configure SQLite pragmas at {:?}", db_path))?;
 
     for attempt in 1..=WAL_INIT_ATTEMPTS {
         match conn.execute_batch("PRAGMA journal_mode=WAL;") {

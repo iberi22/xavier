@@ -455,8 +455,7 @@ impl Embedder for CachedEmbedder {
 fn open_cache_db(path: &Path) -> Result<Connection, rusqlite::Error> {
     let db = Connection::open(path)?;
 
-    // Use WAL mode for better concurrent read/write performance.
-    db.execute_batch("PRAGMA journal_mode=WAL;")?;
+    crate::storage::apply_pragmas(&db)?;
 
     db.execute_batch(
         "CREATE TABLE IF NOT EXISTS embedding_cache (
