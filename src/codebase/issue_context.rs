@@ -2,9 +2,10 @@
 //!
 //! Given an issue title + body, this module:
 //! 1. Parses the issue to extract file paths, symbol names, and feature references.
-//! 2. Maps each entity to the CodeGraph (find_symbols, search_code).
-//! 3. Generates a `PreciseChange` per matched symbol.
-//! 4. Assembles an `IssueContextPackage` ready for an executor agent.
+//! 2. Detects issue type (bug, feature, refactor, other).
+//! 3. Maps each entity to the CodeGraph (find_symbols, search_code) with relevance scoring.
+//! 4. Generates a `PreciseChange` per matched symbol.
+//! 5. Assembles an `IssueContextPackage` ready for an executor agent.
 //!
 //! This is the token-saving core: the agent receives only the fragments to change,
 //! never the whole file.
@@ -15,6 +16,16 @@ use code_graph::db::CodeGraphDB;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+
+/// Categorization of GitHub issues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IssueType {
+    Bug,
+    Feature,
+    Refactor,
+    Other,
+}
 
 /// A single entity extracted from an issue body.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +49,8 @@ pub struct MappedEntity {
     pub file: Option<String>,
     pub start_line: Option<u32>,
     pub end_line: Option<u32>,
+    /// Calculated relevance score of this entity to the issue (0.0 to 1.0).
+    pub relevance_score: f64,
 }
 
 /// The complete context package for an issue.
@@ -49,9 +62,11 @@ pub struct IssueContextPackage {
     pub title: String,
     /// Repository name (owner/repo).
     pub repo: String,
+    /// Categorized issue type (bug, feature, refactor, other).
+    pub issue_type: IssueType,
     /// Extracted entities from the issue body.
     pub entities: Vec<ExtractedEntity>,
-    /// Mapped entities with CodeGraph results.
+    /// Mapped entities with CodeGraph results and relevance scores.
     pub mapped: Vec<MappedEntity>,
     /// PreciseChange objects for each matched symbol.
     pub changes: Vec<PreciseChange>,
@@ -61,6 +76,127 @@ pub struct IssueContextPackage {
     pub tests_to_fix: Vec<String>,
     /// Token estimate: issue body tokens without package vs with package.
     pub token_savings_estimate: Option<f64>,
+}
+
+/// Detect issue type based on title and body tags/keywords.
+pub fn detect_issue_type(title: &str, body: &str) -> IssueType {
+    let t_lower = title.to_lowercase();
+    let b_lower = body.to_lowercase();
+
+    // Direct tag checks in title first
+    if t_lower.contains("[bug]")
+        || t_lower.contains("bug:")
+        || t_lower.contains("fix:")
+        || t_lower.starts_with("bug")
+        || t_lower.starts_with("fix")
+    {
+        return IssueType::Bug;
+    }
+    if t_lower.contains("[feat]")
+        || t_lower.contains("[feature]")
+        || t_lower.contains("feat:")
+        || t_lower.contains("feature:")
+        || t_lower.starts_with("feat")
+    {
+        return IssueType::Feature;
+    }
+    if t_lower.contains("[refactor]")
+        || t_lower.contains("refactor:")
+        || t_lower.starts_with("refactor")
+    {
+        return IssueType::Refactor;
+    }
+
+    // Direct tag checks in body
+    if b_lower.contains("[bug]") || b_lower.contains("bug:") || b_lower.contains("type: bug") {
+        return IssueType::Bug;
+    }
+    if b_lower.contains("[feat]")
+        || b_lower.contains("feat:")
+        || b_lower.contains("type: feature")
+        || b_lower.contains("feature:")
+    {
+        return IssueType::Feature;
+    }
+    if b_lower.contains("[refactor]")
+        || b_lower.contains("refactor:")
+        || b_lower.contains("type: refactor")
+    {
+        return IssueType::Refactor;
+    }
+
+    // Keyword heuristics in title
+    if t_lower.contains("bug")
+        || t_lower.contains("fix")
+        || t_lower.contains("panic")
+        || t_lower.contains("error")
+        || t_lower.contains("issue")
+    {
+        return IssueType::Bug;
+    }
+    if t_lower.contains("feat")
+        || t_lower.contains("feature")
+        || t_lower.contains("add ")
+        || t_lower.contains("implement")
+    {
+        return IssueType::Feature;
+    }
+    if t_lower.contains("refactor")
+        || t_lower.contains("clean")
+        || t_lower.contains("restructure")
+    {
+        return IssueType::Refactor;
+    }
+
+    // Keyword heuristics in body
+    if b_lower.contains("bug") || b_lower.contains("fix") || b_lower.contains("panic") {
+        return IssueType::Bug;
+    }
+    if b_lower.contains("feature") || b_lower.contains("feat") {
+        return IssueType::Feature;
+    }
+    if b_lower.contains("refactor") {
+        return IssueType::Refactor;
+    }
+
+    IssueType::Other
+}
+
+/// Calculate relevance score for an entity based on kind, title match, path specificity, and CodeGraph presence.
+pub fn calculate_relevance(
+    entity: &ExtractedEntity,
+    found: bool,
+    title: &str,
+    file: Option<&str>,
+) -> f64 {
+    if !found {
+        return 0.0;
+    }
+
+    let mut score: f64 = match entity.kind.as_str() {
+        "symbol" => 0.85,
+        "file" => 0.70,
+        "feature" => 0.50,
+        _ => 0.30,
+    };
+
+    let title_lower = title.to_lowercase();
+    let val_lower = entity.value.to_lowercase();
+    if title_lower.contains(&val_lower) {
+        score += 0.10;
+    }
+
+    if entity.kind == "file" {
+        if let Some(f) = file {
+            if f.contains('/') {
+                score += 0.05;
+            }
+        }
+    } else if entity.kind == "symbol" {
+        score += 0.05;
+    }
+
+    score.min(1.0).max(0.0)
 }
 
 /// Parse a GitHub issue body to extract entities.
@@ -134,6 +270,7 @@ pub fn map_entities_to_codegraph(
     _snapshot_manager: &SnapshotManager,
     _repo: &str,
     repo_root: &Path,
+    title: &str,
 ) -> Result<Vec<MappedEntity>> {
     let mut mapped = Vec::new();
 
@@ -142,13 +279,16 @@ pub fn map_entities_to_codegraph(
             "symbol" => match code_graph_db.find_symbols(&entity.value, 5) {
                 Ok(result) => {
                     if let Some(sym) = result.symbols.first() {
+                        let file = Some(sym.file_path.clone());
+                        let rel = calculate_relevance(entity, true, title, file.as_deref());
                         mapped.push(MappedEntity {
                             entity: entity.clone(),
                             found: true,
                             symbol_name: Some(sym.name.clone()),
-                            file: Some(sym.file_path.clone()),
+                            file,
                             start_line: Some(sym.start_line),
                             end_line: Some(sym.end_line),
+                            relevance_score: rel,
                         });
                     } else {
                         mapped.push(MappedEntity {
@@ -158,6 +298,7 @@ pub fn map_entities_to_codegraph(
                             file: None,
                             start_line: None,
                             end_line: None,
+                            relevance_score: 0.0,
                         });
                     }
                 }
@@ -170,34 +311,33 @@ pub fn map_entities_to_codegraph(
                         file: None,
                         start_line: None,
                         end_line: None,
+                        relevance_score: 0.0,
                     });
                 }
             },
             "file" => {
                 // Check if file exists in the repo
                 let file_path = repo_root.join(&entity.value);
-                if file_path.exists() {
-                    mapped.push(MappedEntity {
-                        entity: entity.clone(),
-                        found: true,
-                        symbol_name: None,
-                        file: Some(entity.value.clone()),
-                        start_line: None,
-                        end_line: None,
-                    });
+                let found = file_path.exists();
+                let file = if found {
+                    Some(entity.value.clone())
                 } else {
-                    mapped.push(MappedEntity {
-                        entity: entity.clone(),
-                        found: false,
-                        symbol_name: None,
-                        file: None,
-                        start_line: None,
-                        end_line: None,
-                    });
-                }
+                    None
+                };
+                let rel = calculate_relevance(entity, found, title, file.as_deref());
+                mapped.push(MappedEntity {
+                    entity: entity.clone(),
+                    found,
+                    symbol_name: None,
+                    file,
+                    start_line: None,
+                    end_line: None,
+                    relevance_score: rel,
+                });
             }
             "feature" => {
                 // Feature references are always "found" (they're metadata, not code)
+                let rel = calculate_relevance(entity, true, title, None);
                 mapped.push(MappedEntity {
                     entity: entity.clone(),
                     found: true,
@@ -205,6 +345,7 @@ pub fn map_entities_to_codegraph(
                     file: None,
                     start_line: None,
                     end_line: None,
+                    relevance_score: rel,
                 });
             }
             _ => {
@@ -215,6 +356,7 @@ pub fn map_entities_to_codegraph(
                     file: None,
                     start_line: None,
                     end_line: None,
+                    relevance_score: 0.0,
                 });
             }
         }
@@ -266,9 +408,10 @@ pub fn assemble_package(
     snapshot_manager: &SnapshotManager,
     repo_root: &Path,
 ) -> Result<IssueContextPackage> {
+    let issue_type = detect_issue_type(title, body);
     let entities = parse_issue_entities(title, body);
     let mapped =
-        map_entities_to_codegraph(&entities, code_graph_db, snapshot_manager, repo, repo_root)?;
+        map_entities_to_codegraph(&entities, code_graph_db, snapshot_manager, repo, repo_root, title)?;
     let changes = generate_changes(&mapped, snapshot_manager, repo, repo_root)?;
 
     // Extract deps from file entities
@@ -315,6 +458,7 @@ pub fn assemble_package(
         issue_id: issue_id.to_string(),
         title: title.to_string(),
         repo: repo.to_string(),
+        issue_type,
         entities,
         mapped,
         changes,
@@ -327,6 +471,24 @@ pub fn assemble_package(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_detect_issue_type() {
+        assert_eq!(detect_issue_type("[bug] Fix crash in server", ""), IssueType::Bug);
+        assert_eq!(detect_issue_type("feat: add new CLI command", ""), IssueType::Feature);
+        assert_eq!(detect_issue_type("refactor: split issue_context into modules", ""), IssueType::Refactor);
+        assert_eq!(detect_issue_type("Update README", "documentation update"), IssueType::Other);
+    }
+
+    #[test]
+    fn test_calculate_relevance() {
+        let entity_sym = ExtractedEntity { kind: "symbol".to_string(), value: "search_code".to_string(), offset: 0 };
+        let rel_sym = calculate_relevance(&entity_sym, true, "Fix search_code in db", Some("src/db.rs"));
+        assert!(rel_sym > 0.8, "Symbol matched in title should have high relevance");
+
+        let rel_unfound = calculate_relevance(&entity_sym, false, "Fix search_code", None);
+        assert_eq!(rel_unfound, 0.0, "Unfound entity must have relevance 0.0");
+    }
 
     #[test]
     fn test_parse_issue_entities_files() {
