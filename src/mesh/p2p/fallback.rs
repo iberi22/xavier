@@ -182,7 +182,7 @@ impl OfflineQueue {
             Connection::open(db_path).map_err(|e| FallbackError::DatabaseInit(e.to_string()))?;
 
         // Enable WAL mode for better concurrent read performance.
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
+        crate::storage::apply_pragmas(&conn)
             .map_err(|e| FallbackError::DatabaseInit(e.to_string()))?;
 
         // Create the messages table if it doesn't exist.

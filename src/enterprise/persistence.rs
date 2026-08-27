@@ -47,12 +47,8 @@ impl EnterpriseDb {
             .with_context(|| format!("failed to open enterprise database at {}", path.display()))?;
 
         // Enable WAL mode for better concurrent read/write performance
-        conn.execute_batch(
-            "PRAGMA journal_mode=WAL;
-             PRAGMA synchronous=NORMAL;
-             PRAGMA foreign_keys=ON;",
-        )
-        .context("failed to set pragmas on enterprise database")?;
+        crate::storage::apply_pragmas(&conn)
+            .context("failed to set pragmas on enterprise database")?;
 
         let db = Self {
             conn: Mutex::new(conn),
