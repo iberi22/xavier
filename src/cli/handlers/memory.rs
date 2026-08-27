@@ -224,72 +224,44 @@ pub async fn search_handler(
         .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
     filters.zones = Some(zones);
 
-    // WAVEX-13-02 fix: use hybrid search (vector + lexical + KG, RRF-scored)
-    // so results carry real similarity scores, path, and metadata. The CLI
-    // recall display reads `score` and `metadata.kind` — previously the
-    // handler only serialized id/content/embedding, which is why recall
-    // always showed σ=0.000 and [unknown]. Falls back to the plain
-    // lexical search when hybrid search is unsupported by the backend.
-    let search_results: Vec<serde_json::Value> = match state
-        .store
-        .hybrid_search(
-            &state.workspace_id,
-            effective_query,
-            xavier::memory::store::HybridSearchMode::Both,
-            Some(&filters),
-            10,
-        )
+    let engine = xavier::memory::query_engine::MemoryQueryEngine::new();
+    let query_req = xavier::memory::query_engine::SearchQuery {
+        query: effective_query.to_string(),
+        limit,
+        filters: Some(filters),
+        include_embedding: Some(true),
+        ..Default::default()
+    };
+
+    let search_results: Vec<serde_json::Value> = match engine
+        .search(&state.qmd_memory, query_req)
         .await
     {
-        Ok(hybrid) => hybrid
+        Ok(res) => res
+            .results
             .into_iter()
-            .map(|hr| {
+            .map(|item| {
                 serde_json::json!({
-                    "id": hr.record.id,
-                    "path": hr.record.path,
-                    "content": hr.record.content,
-                    "metadata": hr.record.metadata,
-                    "score": hr.score,
-                    "vector_score": hr.vector_score,
-                    "lexical_score": hr.lexical_score,
-                    "embedding": hr.record.embedding,
+                    "id": item.id,
+                    "path": item.path,
+                    "content": item.content,
+                    "metadata": item.metadata,
+                    "score": item.score,
+                    "vector_score": item.vector_score,
+                    "lexical_score": item.lexical_score,
+                    "embedding": item.embedding,
                 })
             })
             .collect(),
         Err(e) => {
-            info!(
-                "Hybrid search unavailable ({}), falling back to lexical search",
-                e
-            );
-            match state
-                .memory
-                .search(effective_query, 10, Some(filters))
-                .await
-            {
-                Ok(results) => results
-                    .into_iter()
-                    .map(|document| {
-                        serde_json::json!({
-                            "id": document.id,
-                            "path": document.path,
-                            "content": document.content,
-                            "metadata": document.metadata,
-                            "score": document.score,
-                            "embedding": document.embedding,
-                        })
-                    })
-                    .collect(),
-                Err(e2) => {
-                    info!("Search error: {}", e2);
-                    return axum::Json(serde_json::json!({
-                        "results": [],
-                        "query": payload.query,
-                        "count": 0,
-                        "error": e2.to_string(),
-                        "workspace_id": state.workspace_id,
-                    }));
-                }
-            }
+            info!("Search error: {}", e);
+            return axum::Json(serde_json::json!({
+                "results": [],
+                "query": payload.query,
+                "count": 0,
+                "error": e.to_string(),
+                "workspace_id": state.workspace_id,
+            }));
         }
     };
 
@@ -1134,28 +1106,37 @@ pub async fn search_memories_filtered(
         filters: &xavier::memory::schema::MemoryQueryFilters,
     ) -> anyhow::Result<()> {
         match load_spawn_memory().await {
-            Ok(memory) => match memory.search_filtered(query, limit, Some(filters)).await {
-                Ok(docs) => {
-                    println!("\n[OFFLINE] Search results for: {}", query);
-                    let json_results = serde_json::json!({
-                        "results": docs.iter().map(|doc: &MemoryDocument| {
-                            serde_json::json!({
-                                "id": doc.id,
-                                "path": doc.path,
-                                "content": doc.content,
-                                "metadata": doc.metadata,
-                                "score": doc.metadata.get("score").and_then(|v: &serde_json::Value| v.as_f64()).unwrap_or(1.0),
-                            })
-                        }).collect::<Vec<_>>()
-                    });
-                    println!("{}", serde_json::to_string_pretty(&json_results)?);
-                    Ok(())
+            Ok(memory) => {
+                let engine = xavier::memory::query_engine::MemoryQueryEngine::new();
+                let query_req = xavier::memory::query_engine::SearchQuery {
+                    query: query.to_string(),
+                    limit,
+                    filters: Some(filters.clone()),
+                    ..Default::default()
+                };
+                match engine.search(&memory, query_req).await {
+                    Ok(res) => {
+                        println!("\n[OFFLINE] Search results for: {}", query);
+                        let json_results = serde_json::json!({
+                            "results": res.results.iter().map(|item| {
+                                serde_json::json!({
+                                    "id": item.id,
+                                    "path": item.path,
+                                    "content": item.content,
+                                    "metadata": item.metadata,
+                                    "score": item.score,
+                                })
+                            }).collect::<Vec<_>>()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&json_results)?);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        println!("❌ Local search failed: {}", e);
+                        Err(anyhow::anyhow!("local offline search failed: {e}"))
+                    }
                 }
-                Err(e) => {
-                    println!("❌ Local search failed: {}", e);
-                    Err(anyhow::anyhow!("local offline search failed: {e}"))
-                }
-            },
+            }
             Err(e) => {
                 println!(
                     "❌ Failed to initialize local offline database store: {}",

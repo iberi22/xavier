@@ -27,6 +27,7 @@ pub mod manager;
 pub mod openclaw_indexer;
 pub mod openclaw_scanner;
 pub mod pack;
+pub mod query_engine;
 pub mod postgres_store;
 pub mod qmd;
 pub mod qmd_memory;
@@ -43,6 +44,7 @@ pub mod sync;
 pub mod telemetry;
 pub mod virtual_memory;
 pub mod working;
+pub use query_engine::*;
 pub use store::*;
 
 #[cfg(test)]
