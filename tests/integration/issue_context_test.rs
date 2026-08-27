@@ -10,7 +10,7 @@ use tempfile::tempdir;
 use code_graph::db::CodeGraphDB;
 use code_graph::indexer::Indexer;
 use xavier::codebase::issue_context::{
-    assemble_package, generate_changes, map_entities_to_codegraph, parse_issue_entities,
+    assemble_package, generate_changes, map_entities_to_codegraph, parse_issue_entities, IssueType,
 };
 use xavier::codebase::snapshot::SnapshotManager;
 
@@ -143,19 +143,21 @@ fn test_parse_empty_body() {
 async fn test_map_entities_finds_symbols_in_codegraph() {
     let (_dir, db, snapshot) = setup_test_env().await;
 
+    let title = "Fix search_code";
     let entities = parse_issue_entities(
-        "Fix search_code",
+        title,
         "The `search_code` function in `src/lib.rs` needs work.",
     );
 
     let mapped =
-        map_entities_to_codegraph(&entities, &db, &snapshot, "test/repo", _dir.path())
+        map_entities_to_codegraph(&entities, &db, &snapshot, "test/repo", _dir.path(), title)
             .expect("map_entities");
 
     // search_code should be found in CodeGraph
     let search_sym = mapped.iter().find(|m| m.entity.value == "search_code");
     assert!(search_sym.is_some(), "search_code should be mapped");
     assert!(search_sym.unwrap().found, "search_code should be found in CodeGraph");
+    assert!(search_sym.unwrap().relevance_score > 0.0, "Relevance score should be positive");
 
     // src/lib.rs should be found (file exists)
     let lib_file = mapped.iter().find(|m| m.entity.value == "src/lib.rs");
@@ -167,13 +169,14 @@ async fn test_map_entities_finds_symbols_in_codegraph() {
 async fn test_generate_changes_builds_precise_changes() {
     let (_dir, db, snapshot) = setup_test_env().await;
 
+    let title = "Fix search_code";
     let entities = parse_issue_entities(
-        "Fix search_code",
+        title,
         "The `search_code` function in `src/lib.rs` needs work.",
     );
 
     let mapped =
-        map_entities_to_codegraph(&entities, &db, &snapshot, "test/repo", _dir.path())
+        map_entities_to_codegraph(&entities, &db, &snapshot, "test/repo", _dir.path(), title)
             .expect("map_entities");
 
     let changes =
@@ -209,6 +212,7 @@ async fn test_assemble_package_full_pipeline() {
     assert_eq!(package.issue_id, "42");
     assert_eq!(package.title, "Fix search_code and PreciseChange");
     assert_eq!(package.repo, "test/repo");
+    assert_eq!(package.issue_type, IssueType::Bug);
 
     // Should have extracted entities
     assert!(
@@ -237,6 +241,50 @@ async fn test_assemble_package_full_pipeline() {
         package.token_savings_estimate.unwrap() > 0.0,
         "Token savings should be positive"
     );
+}
+
+#[tokio::test]
+async fn test_assemble_package_large_issue() {
+    let temp_dir = tempdir().expect("failed to create temp dir");
+    let temp_path = temp_dir.path();
+    fs::create_dir_all(temp_path.join(".git")).expect("mock .git");
+
+    let src_dir = temp_path.join("src");
+    fs::create_dir_all(&src_dir).expect("src dir");
+
+    // Create 60 test files and reference them in body
+    let mut body = String::from("Refactor large issue context packager across files:\n");
+    for i in 0..60 {
+        let file_name = format!("file_{}.rs", i);
+        let rel_path = format!("src/{}", file_name);
+        fs::write(
+            src_dir.join(&file_name),
+            format!("pub fn func_{}() -> usize {{ {} }}\n", i, i),
+        )
+        .expect("write mock file");
+
+        body.push_str(&format!("- Modifying `{}` for `func_{}`\n", rel_path, i));
+    }
+
+    let db = Arc::new(CodeGraphDB::in_memory().expect("CodeGraphDB"));
+    let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
+    indexer.index(temp_path, true).await.expect("index repo");
+    let snapshot = SnapshotManager::new(temp_path);
+
+    let package = assemble_package(
+        "100",
+        "Refactor: Large scale refactoring across 60 files",
+        "test/repo",
+        &body,
+        &db,
+        &snapshot,
+        temp_path,
+    )
+    .expect("assemble_package_large_issue");
+
+    assert_eq!(package.issue_type, IssueType::Refactor);
+    assert!(package.entities.len() >= 60, "Expected at least 60 entities");
+    assert!(package.deps.len() >= 60, "Expected at least 60 deps");
 }
 
 #[tokio::test]
