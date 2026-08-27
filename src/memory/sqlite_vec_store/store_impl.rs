@@ -646,6 +646,12 @@ impl MemoryStore for VecSqliteMemoryStore {
                     ()
                 )?;
 
+                // Cleanup orphaned or stale memory symbol links (>30 days)
+                tx.execute(
+                    "DELETE FROM memory_symbol_links WHERE created_at < datetime('now', '-30 days') OR memory_id NOT IN (SELECT id FROM memory_records)",
+                    (),
+                )?;
+
                 tx.commit()?;
                 Ok(orphans)
             })
@@ -686,14 +692,40 @@ impl MemoryStore for VecSqliteMemoryStore {
         let memory_id = memory_id.to_string();
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
+                // Delete stale links older than 30 days
+                let _ = conn.execute(
+                    "DELETE FROM memory_symbol_links WHERE created_at < datetime('now', '-30 days')",
+                    [],
+                );
+
                 let mut stmt = conn.prepare(
-                    "SELECT symbol_id FROM memory_symbol_links WHERE memory_id = ? ORDER BY confidence DESC",
+                    "SELECT symbol_id FROM memory_symbol_links WHERE memory_id = ? ORDER BY confidence DESC LIMIT 10",
                 )?;
                 let rows = stmt.query_map([&memory_id], |row| row.get::<_, String>(0))?;
                 let mut symbols = Vec::new();
                 for symbol in rows.flatten() {
                     symbols.push(symbol);
                 }
+
+                if symbols.is_empty() {
+                    let mut rec_stmt = conn.prepare(
+                        "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE id = ? LIMIT 1",
+                    )?;
+                    let record = {
+                        let mut rows = rec_stmt.query([&memory_id])?;
+                        if let Some(row) = rows.next()? {
+                            Some(VecSqliteMemoryStore::deserialize_record(row)?)
+                        } else {
+                            None
+                        }
+                    };
+
+                    if let Some(mut record) = record {
+                        let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record);
+                        symbols = Self::link_memory_on_demand(conn, &memory_id, &record.content)?;
+                    }
+                }
+
                 Ok(symbols)
             })
             .await
@@ -1215,38 +1247,61 @@ impl VecSqliteMemoryStore {
         Ok(())
     }
 
-    /// Decomposed put step 5: Symbol linking.
-    pub fn put_link(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
-        let candidate_words: std::collections::HashSet<&str> = record
-            .content
-            .split(|c: char| !c.is_alphanumeric() && c != '_')
-            .filter(|w| w.len() >= 4)
-            .collect();
+    /// Decomposed put step 5: Symbol linking (no-op on put to prevent auto-linking bloat; linking is performed on demand).
+    pub fn put_link(&self, _conn: &rusqlite::Connection, _record: &MemoryRecord) -> Result<()> {
+        Ok(())
+    }
+
+    /// On-demand symbol linking for a given memory record (max 10 links per memory).
+    pub fn link_memory_on_demand(
+        conn: &rusqlite::Connection,
+        memory_id: &str,
+        content: &str,
+    ) -> Result<Vec<String>> {
+        if content.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut symbol_links: Vec<(String, f64)> = Vec::new();
 
         let code_db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(
             std::path::Path::new("."),
         );
         if code_db_path.exists() {
             if let Ok(code_db) = code_graph::db::CodeGraphDB::new(&code_db_path) {
-                if let Ok(links) = code_db.link_memory_to_symbols(&record.id, &record.content) {
+                if let Ok(links) = code_db.link_memory_to_symbols(memory_id, content) {
                     for link in links {
-                        let _ = conn.execute(
-                            "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, ?3)",
-                            params![link.memory_id, link.symbol_id, link.confidence],
-                        );
+                        symbol_links.push((link.symbol_id, link.confidence));
                     }
                 }
             }
-        } else {
+        }
+
+        if symbol_links.is_empty() {
+            let candidate_words: std::collections::HashSet<&str> = content
+                .split(|c: char| !c.is_alphanumeric() && c != '_')
+                .filter(|w| w.len() >= 4)
+                .collect();
+
             for word in candidate_words {
-                let _ = conn.execute(
-                    "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, 1.0)",
-                    params![record.id, word],
-                );
+                symbol_links.push((word.to_string(), 1.0));
             }
         }
 
-        Ok(())
+        // Cap at max_links_per_memory = 10
+        symbol_links.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        symbol_links.truncate(10);
+
+        let mut symbols = Vec::new();
+        for (symbol_id, confidence) in symbol_links {
+            let _ = conn.execute(
+                "INSERT OR REPLACE INTO memory_symbol_links (memory_id, symbol_id, confidence) VALUES (?1, ?2, ?3)",
+                params![memory_id, symbol_id, confidence],
+            );
+            symbols.push(symbol_id);
+        }
+
+        Ok(symbols)
     }
 
     /// Reconcile embedding_status across memory_records to align status with physical vector existence.
@@ -1307,6 +1362,13 @@ mod tests {
                 revisions TEXT,
                 embedding_status TEXT DEFAULT 'pending',
                 embedding_attempts INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS memory_symbol_links (
+                memory_id TEXT NOT NULL,
+                symbol_id TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 1.0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (memory_id, symbol_id)
             );",
         )
         .unwrap();
@@ -1399,5 +1461,87 @@ mod tests {
         }
 
         assert_eq!(rec_attempts.embedding_status, "retry");
+    }
+
+    #[test]
+    fn test_put_link_no_op() {
+        let conn = setup_test_db();
+        let record = MemoryRecord {
+            id: "mem_no_auto_link".to_string(),
+            content: "one two three four five six seven eight nine ten eleven twelve".to_string(),
+            ..Default::default()
+        };
+
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: std::path::PathBuf::from(":memory:"),
+            ..Default::default()
+        };
+        let store = VecSqliteMemoryStore {
+            config,
+            project_id: "test_project".to_string(),
+            event_tx: None,
+            dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
+        };
+
+        store.put_link(&conn, &record).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "put_link should be no-op and not insert symbol links eagerly");
+    }
+
+    #[test]
+    fn test_link_memory_on_demand_and_max_10() {
+        let conn = setup_test_db();
+        let content = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu";
+        let symbols = VecSqliteMemoryStore::link_memory_on_demand(&conn, "mem_demand", content).unwrap();
+
+        assert!(!symbols.is_empty());
+        assert!(symbols.len() <= 10, "On-demand linking must cap at max 10 links");
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memory_symbol_links WHERE memory_id = 'mem_demand'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count as usize, symbols.len());
+        assert!(count <= 10);
+    }
+
+    #[test]
+    fn test_stale_symbol_links_cleanup() {
+        let conn = setup_test_db();
+        // Insert a fresh link and a stale link (>30 days old)
+        conn.execute(
+            "INSERT INTO memory_symbol_links (memory_id, symbol_id, confidence, created_at) VALUES ('m1', 'fresh_sym', 1.0, datetime('now'))",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO memory_symbol_links (memory_id, symbol_id, confidence, created_at) VALUES ('m1', 'stale_sym', 1.0, datetime('now', '-31 days'))",
+            [],
+        ).unwrap();
+
+        let count_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count_before, 2);
+
+        conn.execute(
+            "DELETE FROM memory_symbol_links WHERE created_at < datetime('now', '-30 days')",
+            [],
+        ).unwrap();
+
+        let count_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count_after, 1);
+
+        let remaining_symbol: String = conn
+            .query_row("SELECT symbol_id FROM memory_symbol_links", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining_symbol, "fresh_sym");
     }
 }
