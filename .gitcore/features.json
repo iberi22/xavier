@@ -1353,7 +1353,7 @@
       "id": "feat-store-path-hierarchy",
       "name": "Jerarquía de paths preservada + migración",
       "category": "core",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "El path canónico (hermes/2026-08-17/...) se persiste VERBATIM: se bloquea traversal (.., NUL) sin destruir la jerarquía ni los acentos. Migración one-shot reconstruye paths aplanados previos.",
       "steps": [
@@ -1365,7 +1365,15 @@
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-08-17",
-      "notes": "Causa raíz: .replace('/', '') + retain(ascii) en cli/handlers/memory.rs. Fix + migración 2026-08-17."
+      "notes": "Causa raíz: .replace('/', '') + retain(ascii) en cli/handlers/memory.rs. Fix + migración 2026-08-17.",
+      "implemented_in": "src/cli/handlers/memory.rs, tests/test_store_path_hierarchy.rs",
+      "tests": [
+        "test_path_stored_verbatim",
+        "test_path_traversal_blocked",
+        "test_nul_byte_injection_blocked",
+        "test_valid_nested_directory_paths",
+        "test_path_hierarchy_queries"
+      ]
     },
     "feat-ivn-api": {
       "id": "feat-ivn-api",
