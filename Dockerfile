@@ -42,8 +42,9 @@ COPY patches/ patches/
 COPY panel-ui/src-tauri/ panel-ui/src-tauri/
 
 # Build only xavier binary (skip bench, gui, tui for smaller image)
+# Production path: cargo build --release --bin xavier -j 1 --features "${FEATURES}"
+# Heavy optional features (e.g. local-gllm, cli-interactive, enterprise) can be enabled via the FEATURES build-arg.
 # Using -j 1 to avoid OOM on memory-constrained systems (Windows Docker Desktop)
-# FEATURES build-arg enables enterprise features when needed (e.g. "local-gllm,cli-interactive,enterprise")
 RUN cargo build --release --bin xavier -j 1 --features "${FEATURES}"
 
 # Strip debug symbols to reduce binary size (~15-20MB savings)
@@ -53,7 +54,8 @@ RUN strip -s /app/target/release/xavier
 # Minimal Debian-based runtime with only essential libs
 FROM debian:bookworm-slim
 
-ARG XAVIER_VERSION=0.6.1-beta
+ARG XAVIER_VERSION=0.13.0
+LABEL org.opencontainers.image.version=$XAVIER_VERSION
 
 # Runtime dependencies:
 # - ca-certificates: for HTTPS/TLS certificate validation
