@@ -661,11 +661,7 @@ pub fn check_security(_settings: &XavierSettings) -> Vec<CheckResult> {
         std::env::var("XAVIER_TOKEN").is_ok() || std::env::var("XAVIER_API_KEY").is_ok();
     checks.push(DoctorCheck {
         name: "Security Posture".to_string(),
-        status: if token_present {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Ok
-        },
+        status: CheckStatus::Ok,
         detail: if token_present {
             "Auth token / API key detected in environment".to_string()
         } else {

@@ -45,8 +45,7 @@ pub enum GpudHealthStatus {
 }
 
 /// Detected GPU device details.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct GpuDeviceInfo {
     pub detected: bool,
     pub vendor: Option<String>,
@@ -56,7 +55,6 @@ pub struct GpuDeviceInfo {
     pub driver_version: Option<String>,
     pub cuda_available: bool,
 }
-
 
 /// Policy governing GPU vs CPU execution selection and dynamic fallback rules.
 #[derive(Debug, Clone, Serialize, Deserialize)]

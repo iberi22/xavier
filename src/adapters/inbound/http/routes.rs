@@ -651,14 +651,13 @@ pub async fn maintenance_reindex_handler(
         None => (Some(500), Some(500)),
     };
 
-    if !payload.dry_run
-        && REINDEX_RUNNING.swap(true, Ordering::SeqCst) {
-            return (
-                axum::http::StatusCode::CONFLICT,
-                Json(serde_json::json!({ "status": "already_running" })),
-            )
-                .into_response();
-        }
+    if !payload.dry_run && REINDEX_RUNNING.swap(true, Ordering::SeqCst) {
+        return (
+            axum::http::StatusCode::CONFLICT,
+            Json(serde_json::json!({ "status": "already_running" })),
+        )
+            .into_response();
+    }
 
     let store_config = VecSqliteStoreConfig::from_env();
 
