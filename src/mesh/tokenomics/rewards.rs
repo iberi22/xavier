@@ -12,6 +12,7 @@ use chrono::Utc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use std::collections::HashMap;
 use super::wallet::{TransactionKind, Wallet};
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,60 @@ pub struct RewardEvent {
 // RewardEngine — Core reward calculation and distribution
 // ---------------------------------------------------------------------------
 
+/// Tracks false-positive validator reports for anti-spam penalty damping.
+#[derive(Debug, Clone, Default)]
+pub struct ValidatorPenaltyTracker {
+    /// Maps validator node address / ID to continuous false-positive count.
+    false_positive_counts: HashMap<String, u32>,
+    /// Base penalty per false positive report (default: 10 XP)
+    base_penalty: u64,
+    /// Multiplier scaling factor for progressive damping (default: 1.5)
+    damping_factor: f64,
+}
+
+impl ValidatorPenaltyTracker {
+    /// Create a new penalty tracker with default settings.
+    pub fn new() -> Self {
+        Self {
+            false_positive_counts: HashMap::new(),
+            base_penalty: 10,
+            damping_factor: 1.5,
+        }
+    }
+
+    /// Record a false-positive claim for a validator and return the progressive dampened penalty.
+    pub fn record_false_positive(&mut self, validator_id: &str) -> u64 {
+        let count = self.false_positive_counts.entry(validator_id.to_string()).or_insert(0);
+        *count += 1;
+        let c = *count;
+        self.calculate_dampened_penalty(c)
+    }
+
+    /// Record a valid claim for a validator, resetting or decaying their false-positive count.
+    pub fn record_valid_claim(&mut self, validator_id: &str) {
+        if let Some(count) = self.false_positive_counts.get_mut(validator_id) {
+            if *count > 0 {
+                *count -= 1;
+            }
+        }
+    }
+
+    /// Get current consecutive false-positive count for a validator.
+    pub fn get_false_positive_count(&self, validator_id: &str) -> u32 {
+        self.false_positive_counts.get(validator_id).copied().unwrap_or(0)
+    }
+
+    /// Calculate progressive penalty based on consecutive false-positive report count.
+    /// Formula: base_penalty * (damping_factor ^ (count - 1))
+    pub fn calculate_dampened_penalty(&self, count: u32) -> u64 {
+        if count == 0 {
+            return 0;
+        }
+        let scaled = self.base_penalty as f64 * self.damping_factor.powi((count - 1) as i32);
+        (scaled.floor() as u64).max(self.base_penalty)
+    }
+}
+
 /// Controls XP reward calculations, enforces daily caps, and credits wallets.
 pub struct RewardEngine {
     /// The node's wallet (shared for concurrent access)
@@ -83,6 +138,8 @@ pub struct RewardEngine {
     today_earned: AtomicU64,
     /// Unix timestamp of the last daily reset
     last_reset: AtomicI64,
+    /// Penalty tracker for validator anti-spam and penalty damping
+    pub validator_penalty_tracker: Mutex<ValidatorPenaltyTracker>,
 }
 
 impl RewardEngine {
@@ -97,6 +154,7 @@ impl RewardEngine {
             daily_cap: 10_000,
             today_earned: AtomicU64::new(0),
             last_reset: AtomicI64::new(now),
+            validator_penalty_tracker: Mutex::new(ValidatorPenaltyTracker::new()),
         }
     }
 
@@ -146,6 +204,19 @@ impl RewardEngine {
         } else {
             0
         }
+    }
+
+    /// Record a false-positive claim for a validator and return the progressive dampened penalty.
+    pub async fn apply_validator_false_positive_penalty(&self, validator_id: &str) -> u64 {
+        let mut tracker = self.validator_penalty_tracker.lock().await;
+        let penalty = tracker.record_false_positive(validator_id);
+        tracing::debug!(
+            validator = validator_id,
+            penalty = penalty,
+            count = tracker.get_false_positive_count(validator_id),
+            "⚠️ RewardEngine: applied dampened false-positive penalty"
+        );
+        penalty
     }
 
     /// Check and perform daily reset if the day has changed.
@@ -387,5 +458,38 @@ mod tests {
             engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base),
             2500
         );
+    }
+
+    #[tokio::test]
+    async fn test_ivn_karma_repeated_false_positive_damping() {
+        let (engine, _) = setup_engine().await;
+        let validator_id = "xv1-val-false-positive-node";
+
+        // 1st false positive: base penalty (10 XP)
+        let p1 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        assert_eq!(p1, 10);
+
+        // 2nd consecutive false positive: 10 * 1.5^1 = 15 XP
+        let p2 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        assert_eq!(p2, 15);
+
+        // 3rd consecutive false positive: 10 * 1.5^2 = 22 XP
+        let p3 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        assert_eq!(p3, 22);
+
+        // 4th consecutive false positive: 10 * 1.5^3 = 33 XP
+        let p4 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        assert_eq!(p4, 33);
+
+        // Valid claim decays false-positive count by 1 (down to 3)
+        {
+            let mut tracker = engine.validator_penalty_tracker.lock().await;
+            tracker.record_valid_claim(validator_id);
+            assert_eq!(tracker.get_false_positive_count(validator_id), 3);
+        }
+
+        // Next false positive is now count = 4 again: 10 * 1.5^3 = 33 XP
+        let p5 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        assert_eq!(p5, 33);
     }
 }
