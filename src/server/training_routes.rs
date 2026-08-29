@@ -13,6 +13,7 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -40,6 +41,8 @@ pub struct ExportRequest {
     #[serde(default)]
     pub curated_only: bool,
     pub limit: Option<usize>,
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 pub fn router(state: TrainingState) -> Router {
@@ -253,6 +256,26 @@ pub async fn export_handler(
     let exporter = TrainingExporter::new(&state.db_path);
     match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
         Ok(bundle) => {
+            if payload.format.as_deref() == Some("jsonl") {
+                let stream_records = bundle
+                    .train_split
+                    .into_iter()
+                    .chain(bundle.eval_split.into_iter());
+
+                let stream = futures_util::stream::iter(stream_records).map(|record| {
+                    let mut json_str = serde_json::to_string(&record).unwrap_or_default();
+                    json_str.push('\n');
+                    Ok::<_, std::convert::Infallible>(json_str)
+                });
+
+                return axum::response::Response::builder()
+                    .header("content-type", "application/x-ndjson")
+                    .body(axum::body::Body::from_stream(stream))
+                    .unwrap_or_else(|e| {
+                        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+                    });
+            }
+
             let manifest = match serde_json::to_value(&bundle.manifest) {
                 Ok(v) => v,
                 Err(e) => {
@@ -702,6 +725,48 @@ mod tests {
         assert!(res_json.get("manifest").is_some());
         assert_eq!(res_json["train_count"], 8);
         assert_eq!(res_json["eval_count"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_export_jsonl_streaming() {
+        let (db_file, data_dir) = setup_test_env();
+        let state = TrainingState {
+            db_path: db_file.path().to_path_buf(),
+            data_dir: data_dir.path().to_path_buf(),
+        };
+        let app = router(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/training/export")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "format": "jsonl",
+                    "seed": 42,
+                    "eval_ratio": 0.2
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/x-ndjson"
+        );
+
+        let body_bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+        let lines: Vec<&str> = body_str.lines().filter(|l| !l.is_empty()).collect();
+
+        // 10 total records in setup_test_env (8 train + 2 eval)
+        assert_eq!(lines.len(), 10);
+        for line in lines {
+            let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert!(parsed.get("event").is_some());
+        }
     }
 }
 
