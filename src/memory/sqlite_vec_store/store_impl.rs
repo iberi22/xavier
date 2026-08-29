@@ -1559,4 +1559,70 @@ mod tests {
             .unwrap();
         assert_eq!(remaining_symbol, "fresh_sym");
     }
+
+    #[test]
+    fn test_path_hierarchy_unicode_and_deep_subfolders() {
+        use unicode_normalization::UnicodeNormalization;
+
+        let conn = setup_test_db();
+
+        // 1. Unicode NFC vs NFD normalization equivalence verification
+        let path_nfc = "documentos/guía-español.md";
+        let path_nfd: String = path_nfc.nfd().collect();
+        assert_ne!(
+            path_nfc, path_nfd,
+            "NFC and NFD strings should be byte-wise distinct"
+        );
+        assert_eq!(
+            path_nfd.nfc().collect::<String>(),
+            path_nfc,
+            "NFD converted to NFC must match original NFC path verbatim"
+        );
+
+        // Insert record with NFC path
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, created_at, updated_at) VALUES ('rec_nfc', 'ws1', ?1, 'contenido en español', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            params![path_nfc],
+        )
+        .unwrap();
+
+        // Querying with normalized NFC path finds exact verbatim record
+        let found_path: String = conn
+            .query_row(
+                "SELECT path FROM memory_records WHERE workspace_id = 'ws1' AND path = ?1",
+                params![path_nfd.nfc().collect::<String>()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(found_path, path_nfc);
+
+        // 2. Deep subfolder query prefix isolation & hierarchy consistency
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, created_at, updated_at) VALUES ('rec_deep1', 'ws1', 'a/b/c/d/e/file1.md', 'deep file 1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, created_at, updated_at) VALUES ('rec_deep2', 'ws1', 'a/b/c/d/file2.md', 'deep file 2', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, created_at, updated_at) VALUES ('rec_diff', 'ws1', 'a/b/c/diff/file3.md', 'isolated file 3', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        // Query prefix 'a/b/c/d/' should strictly isolate deep subfolders under a/b/c/d/ and exclude a/b/c/diff/
+        let mut stmt = conn
+            .prepare("SELECT path FROM memory_records WHERE workspace_id = 'ws1' AND path LIKE 'a/b/c/d/%' ORDER BY path ASC")
+            .unwrap();
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0)).unwrap();
+        let matched_paths: Vec<String> = rows.map(|r| r.unwrap()).collect();
+
+        assert_eq!(matched_paths.len(), 2);
+        assert_eq!(matched_paths[0], "a/b/c/d/e/file1.md");
+        assert_eq!(matched_paths[1], "a/b/c/d/file2.md");
+        assert!(!matched_paths.contains(&"a/b/c/diff/file3.md".to_string()));
+    }
 }

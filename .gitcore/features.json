@@ -1356,8 +1356,8 @@
       "id": "feat-store-path-hierarchy",
       "name": "Jerarqu\u00eda de paths preservada + migraci\u00f3n",
       "category": "core",
-      "status": "beta",
-      "progress_pct": 60,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "El path can\u00f3nico (hermes/2026-08-17/...) se persiste VERBATIM: se bloquea traversal (.., NUL) sin destruir la jerarqu\u00eda ni los acentos. Migraci\u00f3n one-shot reconstruye paths aplanados previos.",
       "steps": [
         "Fix sanitizer en cli/handlers/memory.rs (2 handlers)",
@@ -1367,15 +1367,16 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-08-17",
-      "notes": "Public readiness gate: path preservation & sanitization fixed; multi-platform migration validation in beta (honest 60%)",
-      "implemented_in": "src/cli/handlers/memory.rs, tests/test_store_path_hierarchy.rs",
+      "last_tested": "2026-08-29",
+      "notes": "Path preservation, Unicode NFC/NFD equivalence, and deep subfolder prefix isolation fully verified.",
+      "implemented_in": "src/cli/handlers/memory.rs, src/memory/sqlite_vec_store/store_impl.rs, tests/test_store_path_hierarchy.rs",
       "tests": [
         "test_path_stored_verbatim",
         "test_path_traversal_blocked",
         "test_nul_byte_injection_blocked",
         "test_valid_nested_directory_paths",
-        "test_path_hierarchy_queries"
+        "test_path_hierarchy_queries",
+        "test_path_hierarchy_unicode_and_deep_subfolders"
       ]
     },
     "feat-ivn-api": {
