@@ -12,8 +12,8 @@ use chrono::Utc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use std::collections::HashMap;
 use super::wallet::{TransactionKind, Wallet};
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // ContributionType — What kind of resource the node contributed
@@ -95,7 +95,10 @@ impl ValidatorPenaltyTracker {
 
     /// Record a false-positive claim for a validator and return the progressive dampened penalty.
     pub fn record_false_positive(&mut self, validator_id: &str) -> u64 {
-        let count = self.false_positive_counts.entry(validator_id.to_string()).or_insert(0);
+        let count = self
+            .false_positive_counts
+            .entry(validator_id.to_string())
+            .or_insert(0);
         *count += 1;
         let c = *count;
         self.calculate_dampened_penalty(c)
@@ -112,7 +115,10 @@ impl ValidatorPenaltyTracker {
 
     /// Get current consecutive false-positive count for a validator.
     pub fn get_false_positive_count(&self, validator_id: &str) -> u32 {
-        self.false_positive_counts.get(validator_id).copied().unwrap_or(0)
+        self.false_positive_counts
+            .get(validator_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Calculate progressive penalty based on consecutive false-positive report count.
@@ -466,19 +472,27 @@ mod tests {
         let validator_id = "xv1-val-false-positive-node";
 
         // 1st false positive: base penalty (10 XP)
-        let p1 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        let p1 = engine
+            .apply_validator_false_positive_penalty(validator_id)
+            .await;
         assert_eq!(p1, 10);
 
         // 2nd consecutive false positive: 10 * 1.5^1 = 15 XP
-        let p2 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        let p2 = engine
+            .apply_validator_false_positive_penalty(validator_id)
+            .await;
         assert_eq!(p2, 15);
 
         // 3rd consecutive false positive: 10 * 1.5^2 = 22 XP
-        let p3 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        let p3 = engine
+            .apply_validator_false_positive_penalty(validator_id)
+            .await;
         assert_eq!(p3, 22);
 
         // 4th consecutive false positive: 10 * 1.5^3 = 33 XP
-        let p4 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        let p4 = engine
+            .apply_validator_false_positive_penalty(validator_id)
+            .await;
         assert_eq!(p4, 33);
 
         // Valid claim decays false-positive count by 1 (down to 3)
@@ -489,7 +503,9 @@ mod tests {
         }
 
         // Next false positive is now count = 4 again: 10 * 1.5^3 = 33 XP
-        let p5 = engine.apply_validator_false_positive_penalty(validator_id).await;
+        let p5 = engine
+            .apply_validator_false_positive_penalty(validator_id)
+            .await;
         assert_eq!(p5, 33);
     }
 }

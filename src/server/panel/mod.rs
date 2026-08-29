@@ -456,7 +456,9 @@ mod tests {
             .method("POST")
             .uri("/panel/api/graph")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_string(&multi_layer_graph).unwrap()))
+            .body(Body::from(
+                serde_json::to_string(&multi_layer_graph).unwrap(),
+            ))
             .expect("test assertion");
         let save_res = app.clone().oneshot(save_req).await.expect("test assertion");
         assert_eq!(save_res.status(), StatusCode::OK);
@@ -498,7 +500,11 @@ mod tests {
             .header("content-type", "application/json")
             .body(Body::from(serde_json::to_string(&valid_payload).unwrap()))
             .expect("test assertion");
-        let valid_res = app.clone().oneshot(valid_req).await.expect("test assertion");
+        let valid_res = app
+            .clone()
+            .oneshot(valid_req)
+            .await
+            .expect("test assertion");
         assert_eq!(valid_res.status(), StatusCode::OK);
 
         // Invalid structure with legacy "edges" instead of "links" is filtered/rejected
@@ -512,7 +518,9 @@ mod tests {
             .method("POST")
             .uri("/panel/api/graph")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_string(&invalid_edges_payload).unwrap()))
+            .body(Body::from(
+                serde_json::to_string(&invalid_edges_payload).unwrap(),
+            ))
             .expect("test assertion");
         let invalid_edges_res = app
             .clone()
@@ -532,7 +540,9 @@ mod tests {
             .method("POST")
             .uri("/panel/api/graph")
             .header("content-type", "application/json")
-            .body(Body::from(serde_json::to_string(&invalid_nodes_payload).unwrap()))
+            .body(Body::from(
+                serde_json::to_string(&invalid_nodes_payload).unwrap(),
+            ))
             .expect("test assertion");
         let invalid_nodes_res = app
             .clone()
@@ -571,12 +581,17 @@ mod tests {
             .uri("/panel/api/graph")
             .body(Body::empty())
             .expect("test assertion");
-        let recover_get_res = app.clone().oneshot(recover_get_req).await.expect("test assertion");
+        let recover_get_res = app
+            .clone()
+            .oneshot(recover_get_req)
+            .await
+            .expect("test assertion");
         assert_eq!(recover_get_res.status(), StatusCode::OK);
         let recover_body = to_bytes(recover_get_res.into_body(), usize::MAX)
             .await
             .expect("test assertion");
-        let recovered_graph: GraphData = serde_json::from_slice(&recover_body).expect("test assertion");
+        let recovered_graph: GraphData =
+            serde_json::from_slice(&recover_body).expect("test assertion");
         assert_eq!(
             recovered_graph.data["nodes"].as_array().map(|a| a.len()),
             Some(0)
@@ -602,7 +617,11 @@ mod tests {
             .header("content-type", "application/json")
             .body(Body::from(serde_json::to_string(&recovery_save).unwrap()))
             .expect("test assertion");
-        let recovery_save_res = app.clone().oneshot(recovery_save_req).await.expect("test assertion");
+        let recovery_save_res = app
+            .clone()
+            .oneshot(recovery_save_req)
+            .await
+            .expect("test assertion");
         assert_eq!(recovery_save_res.status(), StatusCode::OK);
 
         // 4. Memory KG (EntityGraph) snapshot durability & corruption recovery
