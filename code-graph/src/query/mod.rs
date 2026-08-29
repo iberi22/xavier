@@ -126,7 +126,7 @@ impl QueryEngine {
                 let id_matches = sym
                     .stable_id
                     .as_deref()
-                    .map_or(false, |id| id.to_lowercase().contains(&q_lower));
+                    .is_some_and(|id| id.to_lowercase().contains(&q_lower));
                 name_matches || id_matches
             });
             result.symbols.truncate(limit);
