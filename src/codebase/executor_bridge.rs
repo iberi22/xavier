@@ -46,11 +46,7 @@ pub fn calculate_token_savings(
     }
 
     let precise_delta_tokens = estimate_tokens(&delta_text);
-    let tokens_saved = if full_file_tokens > precise_delta_tokens {
-        full_file_tokens - precise_delta_tokens
-    } else {
-        0
-    };
+    let tokens_saved = full_file_tokens.saturating_sub(precise_delta_tokens);
 
     let savings_percentage = if full_file_tokens > 0 {
         ((tokens_saved as f64) / (full_file_tokens as f64)) * 100.0

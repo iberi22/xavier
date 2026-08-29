@@ -124,7 +124,7 @@ async fn test_path_stored_verbatim() {
     assert_eq!(res_json["path"], canonical_path);
 
     // Verify stored in QmdMemory domain & store verbatim
-    let doc = state.qmd_memory.get(&canonical_path).await.unwrap();
+    let doc = state.qmd_memory.get(canonical_path).await.unwrap();
     assert!(
         doc.is_some(),
         "Document with verbatim canonical path should be persisted in QmdMemory"
