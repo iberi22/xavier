@@ -274,9 +274,16 @@ impl CodeGraphDB {
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS projects (
+                root TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS file_metadata (
                 path TEXT PRIMARY KEY,
-                mtime INTEGER NOT NULL
+                mtime INTEGER NOT NULL,
+                project_root TEXT
             );
 
             CREATE TABLE IF NOT EXISTS symbol_embeddings (
@@ -306,6 +313,9 @@ impl CodeGraphDB {
         self.ensure_column("symbols", "signature", "TEXT")?;
         self.ensure_column("symbols", "parent", "TEXT")?;
         self.ensure_column("symbols", "complexity", "REAL")?;
+        self.ensure_column("symbols", "project_root", "TEXT")?;
+        self.ensure_column("edges", "project_root", "TEXT")?;
+        self.ensure_column("file_metadata", "project_root", "TEXT")?;
 
         // Create indexes that might depend on added columns
         {
@@ -421,8 +431,8 @@ impl CodeGraphDB {
     }
 
     fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<()> {
-        let allowed_tables = ["symbols"];
-        let allowed_columns = ["stable_id", "signature", "parent", "complexity"];
+        let allowed_tables = ["symbols", "edges", "file_metadata"];
+        let allowed_columns = ["stable_id", "signature", "parent", "complexity", "project_root"];
 
         if !allowed_tables.contains(&table) {
             return Err(GraphError::Database(format!(
@@ -1785,6 +1795,49 @@ impl CodeGraphDB {
         Ok(deleted)
     }
 
+    /// Register a project root and human readable name in projects table
+    pub fn register_project(&self, root: &str, name: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        conn.execute(
+            r#"INSERT INTO projects (root, name) VALUES (?1, ?2)
+               ON CONFLICT(root) DO UPDATE SET name = excluded.name"#,
+            params![root, name],
+        )
+        .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    /// List all registered projects as (root, name) pairs sorted by root
+    pub fn list_projects(&self) -> Result<Vec<(String, String)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        let mut stmt = conn
+            .prepare("SELECT root, name FROM projects ORDER BY root ASC")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    /// Drop a registered project by root path
+    pub fn drop_project(&self, root: &str) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        conn.execute("DELETE FROM projects WHERE root = ?1", params![root])
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(())
+    }
+
     /// Clear all data
     pub fn clear(&self) -> Result<()> {
         let conn = self
@@ -2012,5 +2065,59 @@ mod tests {
         let found = db2.find_by_name("cached_symbol", 1).expect("find via db2");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "cached_symbol");
+    }
+
+    #[test]
+    fn test_project_registry_db_methods_and_coexistence() {
+        let db = CodeGraphDB::in_memory().expect("in-memory db");
+
+        db.register_project("/app/service-a", "Service A")
+            .expect("register A");
+        db.register_project("/app/service-b", "Service B")
+            .expect("register B");
+
+        let projects = db.list_projects().expect("list projects");
+        assert_eq!(projects.len(), 2);
+        assert_eq!(
+            projects,
+            vec![
+                ("/app/service-a".to_string(), "Service A".to_string()),
+                ("/app/service-b".to_string(), "Service B".to_string())
+            ]
+        );
+
+        // Test multi-project symbols coexisting in same path with different project_root
+        let mut sym_a = Symbol {
+            id: None,
+            stable_id: None,
+            name: "init".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/lib.rs".to_string(),
+            start_line: 1,
+            end_line: 10,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("fn init()".to_string()),
+            parent: None,
+            complexity: Some(1.0),
+        };
+
+        let mut sym_b = sym_a.clone();
+
+        sym_a.stable_id = Some(sym_a.deterministic_id("/app/service-a"));
+        sym_b.stable_id = Some(sym_b.deterministic_id("/app/service-b"));
+
+        db.insert_symbol(&sym_a).expect("insert sym A");
+        db.insert_symbol(&sym_b).expect("insert sym B");
+
+        let found = db.find_symbols("init", 10).expect("find init");
+        assert_eq!(found.symbols.len(), 2);
+
+        // Drop project
+        db.drop_project("/app/service-a").expect("drop A");
+        let remaining = db.list_projects().expect("list remaining");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].0, "/app/service-b");
     }
 }
