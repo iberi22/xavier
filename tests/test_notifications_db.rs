@@ -3,6 +3,13 @@
 #[path = "../src/notifications/db.rs"]
 mod db;
 
+#[path = "../src/storage/pragma.rs"]
+mod pragma;
+
+mod storage {
+    pub use super::pragma::apply_pragmas;
+}
+
 use rusqlite::Connection;
 
 #[test]
