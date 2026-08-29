@@ -675,16 +675,13 @@ pub fn check_security(_settings: &XavierSettings) -> Vec<CheckResult> {
 
 /// Check health of background scheduler and system cron tasks.
 pub fn check_scheduler(_settings: &XavierSettings) -> Vec<CheckResult> {
-    let mut checks = Vec::new();
-
-    checks.push(DoctorCheck {
+    let single = DoctorCheck {
         name: "Scheduler Status".to_string(),
         status: CheckStatus::Ok,
         detail: "Background cron / scheduler task queue operating normally".to_string(),
         hint: None,
-    });
-
-    checks
+    };
+    vec![single]
 }
 
 /// Handle doctor diagnosis execution and report formatting.
