@@ -191,6 +191,11 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route("/plugins/health", get(plugins_health_handler))
         .route("/plugins/sync", post(plugins_sync_handler));
 
+    // Global rate limiting middleware (token_bucket per IP: 100 capacity, 60 req/min refill rate).
+    let router = router.layer(axum::middleware::from_fn(
+        crate::middleware::token_bucket::rate_limit_middleware,
+    ));
+
     router.with_state(agent_registry)
 }
 
@@ -1594,6 +1599,25 @@ mod route_tests {
         assert_eq!(parsed["status"], "ok");
         assert!(parsed.get("is_running").is_some());
         assert!(parsed.get("processed_count").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_middleware_exceeded_returns_429() {
+        use crate::middleware::token_bucket::IpRateLimiter;
+        use std::time::Duration;
+
+        let test_limiter = IpRateLimiter::new(2.0, 0.1);
+        let test_ip = "192.168.1.100";
+
+        let (allowed1, _) = test_limiter.try_consume(test_ip, 1.0);
+        assert!(allowed1);
+
+        let (allowed2, _) = test_limiter.try_consume(test_ip, 1.0);
+        assert!(allowed2);
+
+        let (allowed3, retry_after) = test_limiter.try_consume(test_ip, 1.0);
+        assert!(!allowed3);
+        assert!(retry_after > Duration::ZERO);
     }
 }
 
