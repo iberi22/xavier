@@ -238,7 +238,11 @@ pub async fn bulk_curate_handler(
     Json(payload): Json<BulkCurateRequest>,
 ) -> impl IntoResponse {
     if payload.items.is_empty() {
-        return (StatusCode::BAD_REQUEST, "No items provided for bulk curation").into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            "No items provided for bulk curation",
+        )
+            .into_response();
     }
 
     let mut queue = load_curation_queue(&state);
@@ -371,10 +375,7 @@ pub async fn export_handler(
     match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
         Ok(bundle) => {
             if payload.format.as_deref() == Some("jsonl") {
-                let stream_records = bundle
-                    .train_split
-                    .into_iter()
-                    .chain(bundle.eval_split.into_iter());
+                let stream_records = bundle.train_split.into_iter().chain(bundle.eval_split);
 
                 let stream = futures_util::stream::iter(stream_records).map(|record| {
                     let mut json_str = serde_json::to_string(&record).unwrap_or_default();
@@ -979,13 +980,21 @@ mod tests {
 
         // Verify persisted queue file state
         let reloaded_queue = CurationQueue::load_from_path(&queue_file).unwrap();
-        let q_item1 = reloaded_queue.items.iter().find(|i| i.id == item1.id).unwrap();
+        let q_item1 = reloaded_queue
+            .items
+            .iter()
+            .find(|i| i.id == item1.id)
+            .unwrap();
         assert_eq!(q_item1.status, crate::curation::CurationStatus::Approved);
         assert_eq!(q_item1.curated_by, Some("reviewer_alice".to_string()));
         assert_eq!(q_item1.classification, Some("verified_data".to_string()));
         assert_eq!(q_item1.proposed_clearance, "PUBLIC");
 
-        let q_item2 = reloaded_queue.items.iter().find(|i| i.id == item2.id).unwrap();
+        let q_item2 = reloaded_queue
+            .items
+            .iter()
+            .find(|i| i.id == item2.id)
+            .unwrap();
         assert_eq!(
             q_item2.status,
             crate::curation::CurationStatus::Rejected {
@@ -994,7 +1003,11 @@ mod tests {
         );
         assert_eq!(q_item2.curated_by, Some("reviewer_alice".to_string()));
 
-        let q_item3 = reloaded_queue.items.iter().find(|i| i.id == item3.id).unwrap();
+        let q_item3 = reloaded_queue
+            .items
+            .iter()
+            .find(|i| i.id == item3.id)
+            .unwrap();
         assert_eq!(q_item3.status, crate::curation::CurationStatus::Pending);
     }
 }
