@@ -927,8 +927,8 @@
       "id": "feat-clearance-levels",
       "name": "Clasificaci\u00f3n por niveles de sensibilidad",
       "category": "security",
-      "status": "beta",
-      "progress_pct": 60,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Documentos clasificados como gobierno: UNCLASSIFIED/INTERNAL/RESTRICTED/CONFIDENTIAL/SECRET/TOPSECRET con redacci\u00f3n por segmento",
       "steps": [
         "Definir enum ClearanceLevel (0-5)",
@@ -940,14 +940,15 @@
       "passes": true,
       "verified_by": "orquestador-hermes",
       "github_issue": null,
-      "last_tested": "2026-08-08",
-      "notes": "Public readiness gate: ClearanceLevel enum & manager ready; document redaction integration in beta (honest 60%)",
-      "implemented_in": "src/security/acl/mod.rs",
+      "last_tested": "2026-08-29",
+      "notes": "ClearanceLevel enum, role clearance inheritance matrix, and document redaction integration complete and verified stable.",
+      "implemented_in": "src/security/clearance.rs, src/security/acl/mod.rs",
       "tests": [
         "test_clearance_ordering",
         "test_clearance_from_str",
         "test_clearance_manager_default_mapping",
-        "test_clearance_manager_custom"
+        "test_clearance_manager_custom",
+        "test_clearance_role_inheritance_matrix"
       ],
       "req_ids": [
         "REQ-020"

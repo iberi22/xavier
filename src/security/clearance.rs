@@ -1,3 +1,4 @@
+use crate::security::auth::UserRole;
 use serde::{Deserialize, Serialize};
 
 /// Clearance levels for information classification.
@@ -91,6 +92,21 @@ impl ClearanceLevel {
 /// Access is granted if requester >= doc.
 pub fn can_access(requester: ClearanceLevel, doc: ClearanceLevel) -> bool {
     requester >= doc
+}
+
+/// Returns default clearance level assigned to a given user role.
+pub fn role_clearance(role: UserRole) -> ClearanceLevel {
+    match role {
+        UserRole::Admin => ClearanceLevel::TopSecret,
+        UserRole::User => ClearanceLevel::Confidential,
+        UserRole::Readonly => ClearanceLevel::Internal,
+    }
+}
+
+/// Helper that checks if a user role has clearance level high enough
+/// to access a resource requiring a given clearance level.
+pub fn can_access_clearance(role: UserRole, required_level: ClearanceLevel) -> bool {
+    role_clearance(role) >= required_level
 }
 
 #[cfg(test)]
@@ -192,5 +208,36 @@ mod tests {
 
         let deserialized_ts: ClearanceLevel = serde_json::from_str("\"TOPSECRET\"").unwrap();
         assert_eq!(deserialized_ts, ClearanceLevel::TopSecret);
+    }
+
+    #[test]
+    fn test_clearance_role_inheritance_matrix() {
+        assert_eq!(role_clearance(UserRole::Admin), ClearanceLevel::TopSecret);
+        assert_eq!(role_clearance(UserRole::User), ClearanceLevel::Confidential);
+        assert_eq!(role_clearance(UserRole::Readonly), ClearanceLevel::Internal);
+
+        // Admin (TopSecret) can access all levels
+        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Unclassified));
+        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Internal));
+        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Restricted));
+        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Confidential));
+        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Secret));
+        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::TopSecret));
+
+        // User (Confidential) can access up to Confidential, cannot access Secret or TopSecret
+        assert!(can_access_clearance(UserRole::User, ClearanceLevel::Unclassified));
+        assert!(can_access_clearance(UserRole::User, ClearanceLevel::Internal));
+        assert!(can_access_clearance(UserRole::User, ClearanceLevel::Restricted));
+        assert!(can_access_clearance(UserRole::User, ClearanceLevel::Confidential));
+        assert!(!can_access_clearance(UserRole::User, ClearanceLevel::Secret));
+        assert!(!can_access_clearance(UserRole::User, ClearanceLevel::TopSecret));
+
+        // Readonly (Internal) can access Unclassified and Internal, cannot access Restricted+
+        assert!(can_access_clearance(UserRole::Readonly, ClearanceLevel::Unclassified));
+        assert!(can_access_clearance(UserRole::Readonly, ClearanceLevel::Internal));
+        assert!(!can_access_clearance(UserRole::Readonly, ClearanceLevel::Restricted));
+        assert!(!can_access_clearance(UserRole::Readonly, ClearanceLevel::Confidential));
+        assert!(!can_access_clearance(UserRole::Readonly, ClearanceLevel::Secret));
+        assert!(!can_access_clearance(UserRole::Readonly, ClearanceLevel::TopSecret));
     }
 }
