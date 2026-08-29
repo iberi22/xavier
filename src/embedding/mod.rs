@@ -16,6 +16,16 @@ pub mod pipeline;
 
 pub const DIMENSION_768: usize = 768;
 
+pub static EMBEDDING_ERROR_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn increment_embedding_error_count() {
+    EMBEDDING_ERROR_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn get_embedding_error_count() -> u64 {
+    EMBEDDING_ERROR_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 const DEFAULT_LOCAL_EMBEDDING_ENDPOINT: &str = "http://localhost:11434/v1/embeddings";
 const DEFAULT_LOCAL_EMBEDDING_MODEL: &str = "embeddinggemma";
 const DEFAULT_CLOUD_EMBEDDING_ENDPOINT: &str = "https://api.openai.com/v1/embeddings";
@@ -34,6 +44,15 @@ pub enum EmbeddingError {
 #[async_trait]
 pub trait Embedder: Send + Sync {
     async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
+
+    /// Live health probe that measures backend response latency in milliseconds.
+    /// Standard implementation bypasses caches and tests liveness with "health_probe".
+    async fn probe_health(&self) -> Result<f64, EmbeddingError> {
+        let start = std::time::Instant::now();
+        self.encode("health_probe").await?;
+        Ok(start.elapsed().as_secs_f64() * 1000.0)
+    }
+
     fn dimension(&self) -> usize;
     fn cache_metrics(&self) -> Option<cache::EmbeddingCacheMetrics> {
         None
@@ -463,6 +482,10 @@ impl Embedder for NoopEmbedder {
         Ok(Vec::new())
     }
 
+    async fn probe_health(&self) -> Result<f64, EmbeddingError> {
+        Err(EmbeddingError::Config("No-op embedder is disabled".to_string()))
+    }
+
     fn dimension(&self) -> usize {
         0
     }
@@ -488,8 +511,23 @@ impl Embedder for FallbackEmbedder {
             }
         }
 
+        increment_embedding_error_count();
         Err(last_error.unwrap_or_else(|| {
             EmbeddingError::Config("no embedding backend produced a usable vector".to_string())
+        }))
+    }
+
+    async fn probe_health(&self) -> Result<f64, EmbeddingError> {
+        let mut last_error = None;
+        for embedder in &self.embedders {
+            match embedder.probe_health().await {
+                Ok(latency_ms) => return Ok(latency_ms),
+                Err(err) => last_error = Some(err),
+            }
+        }
+        increment_embedding_error_count();
+        Err(last_error.unwrap_or_else(|| {
+            EmbeddingError::Config("no embedding backend responded to health probe".to_string())
         }))
     }
 
@@ -586,6 +624,7 @@ impl Embedder for CircuitBreakerEmbedder {
                 Ok(vector)
             }
             Err(error) => {
+                increment_embedding_error_count();
                 let prev = self
                     .failure_count
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -614,6 +653,10 @@ impl Embedder for CircuitBreakerEmbedder {
                 Err(error)
             }
         }
+    }
+
+    async fn probe_health(&self) -> Result<f64, EmbeddingError> {
+        self.inner.probe_health().await
     }
 
     fn dimension(&self) -> usize {
