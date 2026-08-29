@@ -994,26 +994,34 @@
       "id": "feat-training-datasets-api",
       "name": "API de datasets para entrenamiento",
       "category": "data",
-      "status": "beta",
-      "progress_pct": 55,
-      "description": "Endpoints /v1/training/* para servir datasets de entrenamiento (train/eval splits con consentimiento)",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Endpoints /v1/training/* para servir datasets de entrenamiento (train/eval splits con consentimiento) y streaming JSONL",
       "steps": [
         "Exponer TrainingExporter existente v\u00eda REST",
         "GET /v1/training/datasets + /datasets/{id}",
         "GET /datasets/{id}/train + /eval (JSONL)",
         "POST /v1/training/bundles (generar bundle con seed)",
-        "Metadata: clearance, consent, segment, idioma"
+        "Metadata: clearance, consent, segment, idioma",
+        "POST /v1/training/export streaming jsonl format"
       ],
       "passes": true,
-      "verified_by": "orquestador-hermes",
+      "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-08-08",
-      "notes": "Public readiness gate: TrainingExporter REST endpoints operational; CLI subcommand and disk writing in beta (honest 55%)",
-      "implemented_in": "src/data_commons/training.rs,src/adapters/inbound/http/routes.rs",
+      "last_tested": "2026-08-30",
+      "notes": "Wave 15: Promoted to stable with streaming JSONL support on /v1/training/export",
+      "implemented_in": "src/data_commons/training.rs,src/server/training_routes.rs,src/adapters/inbound/http/routes.rs",
       "tests": [
         "test_anonymization_consistency",
         "test_export_logic_with_mock_db",
-        "test_deterministic_split"
+        "test_deterministic_split",
+        "test_export_jsonl_streaming"
+      ],
+      "test_names": [
+        "test_anonymization_consistency",
+        "test_export_logic_with_mock_db",
+        "test_deterministic_split",
+        "test_export_jsonl_streaming"
       ],
       "req_ids": [
         "REQ-022"
