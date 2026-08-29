@@ -382,7 +382,7 @@ pub fn check_memory(settings: &XavierSettings, verbose: bool) -> Vec<CheckResult
 pub fn check_mesh(_settings: &XavierSettings) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
-    let store = crate::mesh::keystore::MeshKeyringStore::new();
+    let store = xavier_lib::mesh::keystore::MeshKeyringStore::new();
     let keyring_available = store.is_keyring_available();
     checks.push(DoctorCheck {
         name: "Mesh Keyring".to_string(),
