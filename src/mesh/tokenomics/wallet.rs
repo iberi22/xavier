@@ -6,10 +6,177 @@
 
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use uuid::Uuid;
 
 use crate::mesh::node::NodeId;
+
+// ---------------------------------------------------------------------------
+// Ephemeral Session Challenge & Verification — Peer-to-peer mesh authentication
+// ---------------------------------------------------------------------------
+
+/// Ephemeral session keypair derived for peer-to-peer mesh synchronization authentication.
+#[derive(Clone)]
+pub struct EphemeralSessionKey {
+    /// Signing key for signing ephemeral challenge proofs
+    pub signing_key: SigningKey,
+    /// Public verifying key
+    pub verifying_key: VerifyingKey,
+    /// Associated session identifier
+    pub session_id: String,
+}
+
+impl EphemeralSessionKey {
+    /// Derive an ephemeral Ed25519 session keypair from a master seed and session ID.
+    pub fn derive(master_seed: &[u8], session_id: &str) -> Result<Self> {
+        let hk = Hkdf::<Sha256>::new(Some(b"swal-wallet-ephemeral-salt-v1"), master_seed);
+        let mut okm = [0u8; 32];
+        let info = format!("swal-wallet-ephemeral-session-v1|{}", session_id);
+        hk.expand(info.as_bytes(), &mut okm)
+            .map_err(|_| anyhow::anyhow!("HKDF expansion failed for ephemeral session key"))?;
+
+        let signing_key = SigningKey::from_bytes(&okm);
+        let verifying_key = signing_key.verifying_key();
+        Ok(Self {
+            signing_key,
+            verifying_key,
+            session_id: session_id.to_string(),
+        })
+    }
+
+    /// Public key bytes (32 bytes).
+    pub fn public_key_bytes(&self) -> [u8; 32] {
+        self.verifying_key.to_bytes()
+    }
+
+    /// Sign a session challenge payload and construct a proof response.
+    pub fn sign_challenge(&self, challenge: &EphemeralSessionChallenge) -> EphemeralSessionProof {
+        let payload = challenge.to_sign_bytes();
+        let sig: Signature = self.signing_key.sign(&payload);
+        EphemeralSessionProof {
+            session_id: challenge.session_id.clone(),
+            nonce: challenge.nonce.clone(),
+            public_key_bytes: self.public_key_bytes(),
+            signature_bytes: sig.to_bytes(),
+            timestamp: Utc::now().timestamp() as u64,
+        }
+    }
+}
+
+/// Ephemeral session challenge issued during mesh synchronization handshake.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EphemeralSessionChallenge {
+    /// Session identifier
+    pub session_id: String,
+    /// One-time random challenge nonce
+    pub nonce: String,
+    /// Node ID of the peer initiating/target of the challenge
+    pub peer_node_id: NodeId,
+    /// Unix timestamp when issued
+    pub issued_at: u64,
+    /// Unix timestamp when challenge expires
+    pub expires_at: u64,
+}
+
+impl EphemeralSessionChallenge {
+    /// Create a new ephemeral challenge for a target peer node and session.
+    pub fn new(peer_node_id: NodeId, session_id: &str, ttl_secs: u64) -> Self {
+        let now = Utc::now().timestamp() as u64;
+        let nonce = Uuid::new_v4().to_string();
+        Self {
+            session_id: session_id.to_string(),
+            nonce,
+            peer_node_id,
+            issued_at: now,
+            expires_at: now + ttl_secs,
+        }
+    }
+
+    /// Canonical byte payload signed for challenge verification.
+    pub fn to_sign_bytes(&self) -> Vec<u8> {
+        format!(
+            "swal-wallet-ephemeral-challenge-v1|{}|{}|{}|{}|{}",
+            self.session_id,
+            self.nonce,
+            self.peer_node_id.as_str(),
+            self.issued_at,
+            self.expires_at
+        )
+        .into_bytes()
+    }
+
+    /// Check whether the challenge has expired.
+    pub fn is_expired(&self) -> bool {
+        let now = Utc::now().timestamp() as u64;
+        now > self.expires_at
+    }
+}
+
+mod bytes_64 {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(bytes: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        bytes.as_slice().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 64], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let v = Vec::<u8>::deserialize(deserializer)?;
+        v.try_into()
+            .map_err(|_| serde::de::Error::custom("expected 64 bytes"))
+    }
+}
+
+/// Signed proof of ephemeral session ownership returned by a peer.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EphemeralSessionProof {
+    /// Session identifier
+    pub session_id: String,
+    /// Nonce from the original challenge
+    pub nonce: String,
+    /// Public key bytes (32 bytes) of the signer
+    pub public_key_bytes: [u8; 32],
+    /// Signature bytes (64 bytes)
+    #[serde(with = "bytes_64")]
+    pub signature_bytes: [u8; 64],
+    /// Timestamp when proof was generated
+    pub timestamp: u64,
+}
+
+/// Verify an ephemeral session challenge proof against the issued challenge.
+pub fn verify_ephemeral_challenge_signature(
+    challenge: &EphemeralSessionChallenge,
+    proof: &EphemeralSessionProof,
+) -> Result<()> {
+    if challenge.is_expired() {
+        bail!("Ephemeral session challenge has expired");
+    }
+    if challenge.session_id != proof.session_id {
+        bail!("Session ID mismatch in ephemeral proof");
+    }
+    if challenge.nonce != proof.nonce {
+        bail!("Nonce mismatch in ephemeral proof");
+    }
+
+    let verifying_key = VerifyingKey::from_bytes(&proof.public_key_bytes)
+        .map_err(|e| anyhow::anyhow!("Invalid public key bytes in ephemeral proof: {}", e))?;
+    let signature = Signature::from_bytes(&proof.signature_bytes);
+    let payload = challenge.to_sign_bytes();
+
+    verifying_key
+        .verify(&payload, &signature)
+        .map_err(|_| anyhow::anyhow!("Invalid ephemeral session challenge signature"))?;
+
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // InvestmentTier — Progressive APY and vesting tiers
@@ -831,5 +998,51 @@ mod tests {
         // Check recipient in registry got funded
         let recipient_wallet = get_multisig_wallet(&recipient_addr).unwrap();
         assert_eq!(recipient_wallet.wallet.balance.xp_balance, 300);
+    }
+
+    #[test]
+    fn test_wallet_ephemeral_challenge_signature_verification() {
+        let master_seed = [42u8; 32];
+        let session_id = "session_p2p_mesh_12345";
+        let peer_node = test_node_id();
+
+        // 1. Derive key pair from master seed and session ID
+        let key = EphemeralSessionKey::derive(&master_seed, session_id).unwrap();
+        let key2 = EphemeralSessionKey::derive(&master_seed, session_id).unwrap();
+        assert_eq!(key.public_key_bytes(), key2.public_key_bytes());
+
+        // 2. Create challenge and sign proof
+        let challenge = EphemeralSessionChallenge::new(peer_node.clone(), session_id, 300);
+        assert!(!challenge.is_expired());
+        let proof = key.sign_challenge(&challenge);
+
+        // 3. Verify valid signature
+        assert!(verify_ephemeral_challenge_signature(&challenge, &proof).is_ok());
+
+        // 4. Test invalid signature (tampered signature bytes)
+        let mut bad_proof = proof.clone();
+        bad_proof.signature_bytes[0] ^= 0xFF;
+        assert!(verify_ephemeral_challenge_signature(&challenge, &bad_proof).is_err());
+
+        // 5. Test session ID mismatch
+        let mut wrong_session_proof = proof.clone();
+        wrong_session_proof.session_id = "wrong_session".to_string();
+        assert!(verify_ephemeral_challenge_signature(&challenge, &wrong_session_proof).is_err());
+
+        // 6. Test nonce mismatch
+        let mut wrong_nonce_proof = proof.clone();
+        wrong_nonce_proof.nonce = "tampered_nonce".to_string();
+        assert!(verify_ephemeral_challenge_signature(&challenge, &wrong_nonce_proof).is_err());
+
+        // 7. Test expired challenge
+        let expired_challenge = EphemeralSessionChallenge {
+            session_id: session_id.to_string(),
+            nonce: challenge.nonce.clone(),
+            peer_node_id: peer_node,
+            issued_at: 1000,
+            expires_at: 1005,
+        };
+        assert!(expired_challenge.is_expired());
+        assert!(verify_ephemeral_challenge_signature(&expired_challenge, &proof).is_err());
     }
 }
