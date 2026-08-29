@@ -90,6 +90,7 @@ check-errors.txt
 # Test databases
 data/headless-*.db*
 data/health-test-*.db*
+data/memory_vec.db*
 
 # Backup and temp files
 # root-level backup dir only (src/storage/backup is real source code)
