@@ -52,7 +52,7 @@ impl SegmentedDoc {
 
         for section in &self.sections {
             if requester_level >= section.clearance_level {
-                let clean_content = engine.redact(&section.content);
+                let clean_content = engine.redact_nested_markdown(&section.content, requester_level);
                 if !section.title.is_empty() {
                     rendered.push(format!("## {}\n{}", section.title, clean_content));
                 } else {
@@ -236,6 +236,135 @@ impl RedactionEngine {
             }
         }
         redacted
+    }
+
+    /// Redacts nested segmented markdown blocks (`:::redact[level]` ... `:::`) based on `requester_level`
+    /// and applies PII redaction rules to accessible content.
+    pub fn redact_nested_markdown(&self, input: &str, requester_level: ClearanceLevel) -> String {
+        let nodes = parse_nested_doc(input);
+        render_nodes(&nodes, requester_level, self)
+    }
+}
+
+/// A node in a parsed nested markdown document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MarkdownNode {
+    /// Raw markdown text line(s)
+    Text(String),
+    /// A clearance-gated container block defined by `:::redact[level]` ... `:::`
+    RedactBlock {
+        /// Raw level string specified in tag (e.g. "CONFIDENTIAL" or "3")
+        level_str: String,
+        /// Parsed clearance level required to view this block
+        clearance_level: ClearanceLevel,
+        /// Inner nodes nested within this block
+        children: Vec<MarkdownNode>,
+    },
+}
+
+/// Redact nested segmented markdown text (`:::redact[level]`) for a given requester clearance level using default redaction rules.
+pub fn redact_nested_markdown(input: &str, requester_level: ClearanceLevel) -> String {
+    let engine = RedactionEngine::default();
+    engine.redact_nested_markdown(input, requester_level)
+}
+
+/// Parse nested markdown string containing `:::redact[level]` blocks into a list of `MarkdownNode`s.
+pub fn parse_nested_doc(markdown: &str) -> Vec<MarkdownNode> {
+    let lines: Vec<&str> = markdown.lines().collect();
+    let mut all_nodes = Vec::new();
+    let mut idx = 0;
+    while idx < lines.len() {
+        let (mut nodes, next_idx) = parse_markdown_nodes(&lines, idx);
+        all_nodes.append(&mut nodes);
+        if next_idx == idx {
+            idx += 1;
+        } else {
+            idx = next_idx;
+        }
+    }
+    all_nodes
+}
+
+fn parse_markdown_nodes(lines: &[&str], start_idx: usize) -> (Vec<MarkdownNode>, usize) {
+    let mut nodes = Vec::new();
+    let mut current_text = Vec::new();
+    let mut i = start_idx;
+
+    let open_re = Regex::new(r"(?i)^\s*:::\s*redact\s*\[\s*([^\]]+)\s*\]\s*$").unwrap();
+    let close_re = Regex::new(r"^\s*:::\s*$").unwrap();
+
+    while i < lines.len() {
+        let line = lines[i];
+
+        if let Some(caps) = open_re.captures(line) {
+            if !current_text.is_empty() {
+                nodes.push(MarkdownNode::Text(current_text.join("\n")));
+                current_text.clear();
+            }
+
+            let level_str = caps.get(1).unwrap().as_str().trim().to_string();
+            let clearance_level = if let Ok(num) = level_str.parse::<u8>() {
+                ClearanceLevel::from(num)
+            } else {
+                ClearanceLevel::from(level_str.as_str())
+            };
+
+            let (children, next_idx) = parse_markdown_nodes(lines, i + 1);
+            nodes.push(MarkdownNode::RedactBlock {
+                level_str,
+                clearance_level,
+                children,
+            });
+            i = next_idx;
+        } else if close_re.is_match(line) {
+            if !current_text.is_empty() {
+                nodes.push(MarkdownNode::Text(current_text.join("\n")));
+                current_text.clear();
+            }
+            return (nodes, i + 1);
+        } else {
+            current_text.push(line);
+            i += 1;
+        }
+    }
+
+    if !current_text.is_empty() {
+        nodes.push(MarkdownNode::Text(current_text.join("\n")));
+    }
+
+    (nodes, i)
+}
+
+fn render_nodes(
+    nodes: &[MarkdownNode],
+    requester_level: ClearanceLevel,
+    engine: &RedactionEngine,
+) -> String {
+    let rendered_parts: Vec<String> = nodes
+        .iter()
+        .map(|node| render_single_node(node, requester_level, engine))
+        .collect();
+    rendered_parts.join("\n")
+}
+
+fn render_single_node(
+    node: &MarkdownNode,
+    requester_level: ClearanceLevel,
+    engine: &RedactionEngine,
+) -> String {
+    match node {
+        MarkdownNode::Text(text) => engine.redact(text),
+        MarkdownNode::RedactBlock {
+            level_str,
+            clearance_level,
+            children,
+        } => {
+            if requester_level >= *clearance_level {
+                render_nodes(children, requester_level, engine)
+            } else {
+                format!("[REDACTED: {}]", level_str)
+            }
+        }
     }
 }
 
@@ -444,5 +573,77 @@ The nuclear launch codes are 000000.
             parsed.sections[2].clearance_level,
             ClearanceLevel::TopSecret
         );
+    }
+
+    #[test]
+    fn test_nested_segmented_markdown_redaction() {
+        let input = r#"# Main Title
+
+Public intro line. Contact help@example.com.
+
+:::redact[INTERNAL]
+Internal notes line.
+:::redact[CONFIDENTIAL]
+Confidential ops details. Call 123-456-7890.
+:::redact[TOPSECRET]
+Ultra secret nuclear codes 0000.
+:::
+:::
+:::
+
+Ending public note."#;
+
+        // Requester Clearance: Unclassified (0)
+        let redacted_unclass = redact_nested_markdown(input, ClearanceLevel::Unclassified);
+        assert!(redacted_unclass.contains("Public intro line. Contact [EMAIL]."));
+        assert!(redacted_unclass.contains("[REDACTED: INTERNAL]"));
+        assert!(!redacted_unclass.contains("Internal notes line."));
+        assert!(!redacted_unclass.contains("Confidential ops details."));
+        assert!(!redacted_unclass.contains("Ultra secret nuclear codes"));
+        assert!(redacted_unclass.contains("Ending public note."));
+
+        // Requester Clearance: Internal (1)
+        let redacted_internal = redact_nested_markdown(input, ClearanceLevel::Internal);
+        assert!(redacted_internal.contains("Internal notes line."));
+        assert!(redacted_internal.contains("[REDACTED: CONFIDENTIAL]"));
+        assert!(!redacted_internal.contains("Confidential ops details."));
+        assert!(!redacted_internal.contains("Ultra secret nuclear codes"));
+
+        // Requester Clearance: Confidential (3)
+        let redacted_confidential = redact_nested_markdown(input, ClearanceLevel::Confidential);
+        assert!(redacted_confidential.contains("Internal notes line."));
+        assert!(redacted_confidential.contains("Confidential ops details. Call [PHONE]."));
+        assert!(redacted_confidential.contains("[REDACTED: TOPSECRET]"));
+        assert!(!redacted_confidential.contains("Ultra secret nuclear codes"));
+
+        // Requester Clearance: TopSecret (5)
+        let redacted_topsecret = redact_nested_markdown(input, ClearanceLevel::TopSecret);
+        assert!(redacted_topsecret.contains("Internal notes line."));
+        assert!(redacted_topsecret.contains("Confidential ops details. Call [PHONE]."));
+        assert!(redacted_topsecret.contains("Ultra secret nuclear codes 0000."));
+        assert!(!redacted_topsecret.contains("[REDACTED:"));
+    }
+
+    #[test]
+    fn test_nested_segmented_markdown_sibling_blocks() {
+        let input = r#":::redact[1]
+Level 1 content with email user@domain.com
+:::
+
+:::redact[4]
+Level 4 secret info
+:::"#;
+
+        let red_lvl0 = redact_nested_markdown(input, ClearanceLevel::Unclassified);
+        assert!(red_lvl0.contains("[REDACTED: 1]"));
+        assert!(red_lvl0.contains("[REDACTED: 4]"));
+
+        let red_lvl2 = redact_nested_markdown(input, ClearanceLevel::Restricted);
+        assert!(red_lvl2.contains("Level 1 content with email [EMAIL]"));
+        assert!(red_lvl2.contains("[REDACTED: 4]"));
+
+        let red_lvl5 = redact_nested_markdown(input, ClearanceLevel::TopSecret);
+        assert!(red_lvl5.contains("Level 1 content with email [EMAIL]"));
+        assert!(red_lvl5.contains("Level 4 secret info"));
     }
 }
