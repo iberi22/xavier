@@ -440,6 +440,7 @@ pub fn assemble_package(
 }
 
 /// Assemble the full IssueContextPackage with custom boundary limits.
+#[allow(clippy::too_many_arguments)]
 pub fn assemble_package_with_limits(
     issue_id: &str,
     title: &str,
@@ -490,7 +491,9 @@ pub fn assemble_package_with_limits(
     let mut current_diff_lines = 0;
     for c in changes {
         let snippet_lines = c.before_snippet.lines().count().max(1);
-        if truncated_changes.is_empty() || current_diff_lines + snippet_lines <= limits.max_diff_lines {
+        if truncated_changes.is_empty()
+            || current_diff_lines + snippet_lines <= limits.max_diff_lines
+        {
             current_diff_lines += snippet_lines;
             truncated_changes.push(c);
         } else {
@@ -679,9 +682,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_issue_context_package_oversized_diff_budget() {
-        use tempfile::tempdir;
         use code_graph::indexer::Indexer;
         use std::sync::Arc;
+        use tempfile::tempdir;
 
         let temp_dir = tempdir().expect("failed to create temp dir");
         let temp_path = temp_dir.path();
@@ -727,8 +730,16 @@ mod tests {
         )
         .expect("assemble_package_with_limits");
 
-        let mapped_symbols = package.mapped.iter().filter(|m| m.entity.kind == "symbol").count();
-        let mapped_files = package.mapped.iter().filter(|m| m.entity.kind == "file").count();
+        let mapped_symbols = package
+            .mapped
+            .iter()
+            .filter(|m| m.entity.kind == "symbol")
+            .count();
+        let mapped_files = package
+            .mapped
+            .iter()
+            .filter(|m| m.entity.kind == "file")
+            .count();
 
         assert!(
             mapped_symbols <= limits.max_symbols,

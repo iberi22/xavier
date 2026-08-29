@@ -17,8 +17,12 @@ impl std::fmt::Display for PromptValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::EmptyTemplate => write!(f, "Prompt template cannot be empty"),
-            Self::UnbalancedPlaceholders => write!(f, "Prompt template has unbalanced placeholders"),
-            Self::InvalidPlaceholderSyntax => write!(f, "Prompt template has invalid placeholder syntax"),
+            Self::UnbalancedPlaceholders => {
+                write!(f, "Prompt template has unbalanced placeholders")
+            }
+            Self::InvalidPlaceholderSyntax => {
+                write!(f, "Prompt template has invalid placeholder syntax")
+            }
         }
     }
 }
@@ -35,7 +39,11 @@ pub struct MiniExpertPromptTemplate {
 
 impl MiniExpertPromptTemplate {
     /// Creates a new template instance.
-    pub fn new(segment: impl Into<String>, language: impl Into<String>, template: impl Into<String>) -> Self {
+    pub fn new(
+        segment: impl Into<String>,
+        language: impl Into<String>,
+        template: impl Into<String>,
+    ) -> Self {
         Self {
             segment: segment.into(),
             language: normalize_language(&language.into()),
@@ -55,11 +63,7 @@ pub fn normalize_language(lang: &str) -> String {
     if trimmed.is_empty() {
         return "en".to_string();
     }
-    trimmed
-        .split(|c: char| c == '-' || c == '_')
-        .next()
-        .unwrap_or("en")
-        .to_string()
+    trimmed.split(['-', '_']).next().unwrap_or("en").to_string()
 }
 
 /// Validates a template string for non-emptiness and balanced `{{` and `}}` placeholders.
@@ -136,7 +140,10 @@ impl MiniExpertPromptRegistry {
     }
 
     /// Registers a custom prompt template for a segment and language.
-    pub fn register(&mut self, template: MiniExpertPromptTemplate) -> Result<(), PromptValidationError> {
+    pub fn register(
+        &mut self,
+        template: MiniExpertPromptTemplate,
+    ) -> Result<(), PromptValidationError> {
         template.validate()?;
         let lang = normalize_language(&template.language);
         let key = format!("{}:{}", template.segment.to_lowercase(), lang);
@@ -202,11 +209,8 @@ mod tests {
         assert!(registry.register(valid_es).is_ok());
 
         // Test 2: Validation of invalid template (unbalanced placeholders)
-        let invalid_tpl = MiniExpertPromptTemplate::new(
-            "security",
-            "en",
-            "Security expert context: {{context",
-        );
+        let invalid_tpl =
+            MiniExpertPromptTemplate::new("security", "en", "Security expert context: {{context");
         assert_eq!(
             registry.register(invalid_tpl),
             Err(PromptValidationError::UnbalancedPlaceholders)
@@ -221,7 +225,10 @@ mod tests {
 
         // Test 4: Resolving registered target language template
         let rendered_es = registry.render_prompt("codebase", "es", "rust functions");
-        assert_eq!(rendered_es, "Eres un experto en codigo. Contexto: rust functions");
+        assert_eq!(
+            rendered_es,
+            "Eres un experto en codigo. Contexto: rust functions"
+        );
 
         // Test 5: English fallback when requested language template is missing
         let valid_en = MiniExpertPromptTemplate::new(
@@ -232,7 +239,10 @@ mod tests {
         assert!(registry.register(valid_en).is_ok());
 
         let rendered_sec_fr = registry.render_prompt("security", "fr", "auth service");
-        assert_eq!(rendered_sec_fr, "You are a security expert. Context: auth service");
+        assert_eq!(
+            rendered_sec_fr,
+            "You are a security expert. Context: auth service"
+        );
 
         // Test 6: Built-in default prompt fallback when no custom templates exist
         let rendered_default = registry.render_prompt("architecture", "de", "microservices");
