@@ -6,8 +6,65 @@
 
 use crate::mesh::node::NodeId;
 use crate::mesh::peer::PeerRegistry;
-use crate::security::redaction::RedactionEngine;
+use crate::security::redaction::{RedactionEngine, RedactionRule};
 use serde::{Deserialize, Serialize};
+
+/// Telemetry sanitizer stripping file paths, IP subnets, hostnames, and PII before telemetry broadcast.
+#[derive(Debug, Clone)]
+pub struct TelemetrySanitizer {
+    engine: RedactionEngine,
+}
+
+impl Default for TelemetrySanitizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TelemetrySanitizer {
+    /// Create a new `TelemetrySanitizer` configured with telemetry privacy rules.
+    pub fn new() -> Self {
+        let mut rules = vec![
+            RedactionRule {
+                name: "ip_subnet".to_string(),
+                pattern: r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[1-2][0-9]|3[0-2])\b".to_string(),
+                mask: "[IP_SUBNET]".to_string(),
+            },
+            RedactionRule {
+                name: "win_path".to_string(),
+                pattern: r"(?i)\b[a-z]:\\(?:[^\\\s:]+\\)+[^\\\s:]*".to_string(),
+                mask: "[PATH]".to_string(),
+            },
+            RedactionRule {
+                name: "unix_path".to_string(),
+                pattern: r"(?:/(?:home|Users|var|tmp|etc|opt|usr|root|app|mnt|Volumes|workspace|projects)/[a-zA-Z0-9_.-]+[a-zA-Z0-9_/.-]*|/[a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)+\.(?:rs|ts|js|py|json|db|log|txt|toml|md|sh|yaml|yml))\b".to_string(),
+                mask: "[PATH]".to_string(),
+            },
+            RedactionRule {
+                name: "hostname_kv".to_string(),
+                pattern: r"\b(?:hostname|host|machine_name|node_host)\s*[:=]\s*[a-zA-Z0-9_.-]+\b".to_string(),
+                mask: "[HOSTNAME]".to_string(),
+            },
+            RedactionRule {
+                name: "local_hostname".to_string(),
+                pattern: r"\b[a-zA-Z0-9_-]+\.(?:local|lan|internal|domain)\b".to_string(),
+                mask: "[HOSTNAME]".to_string(),
+            },
+        ];
+
+        let default_engine = RedactionEngine::default();
+        rules.extend(default_engine.rules);
+
+        Self {
+            engine: RedactionEngine::new(rules),
+        }
+    }
+
+    /// Sanitize input text by scrubbing file paths, IP subnets, hostnames, and PII.
+    pub fn sanitize(&self, input: &str) -> String {
+        self.engine.redact(input)
+    }
+}
 use std::collections::HashMap;
 
 /// Telemetry sample published across the service network.
@@ -119,11 +176,11 @@ impl ServiceRegistry {
 
     /// Publish a telemetry sample to the service network.
     ///
-    /// The payload is automatically scrubbed for PII (emails, phone numbers, addresses, etc.)
-    /// via `RedactionEngine`, and `classification` is enforced to be "INTERNAL".
+    /// The payload is automatically scrubbed for sensitive workspace paths, IP subnets,
+    /// hostnames, and PII via `TelemetrySanitizer`, and `classification` is enforced to be "INTERNAL".
     pub fn publish_telemetry(&mut self, mut sample: TelemetrySample) -> TelemetrySample {
-        let engine = RedactionEngine::default();
-        sample.payload = engine.redact(&sample.payload);
+        let sanitizer = TelemetrySanitizer::default();
+        sample.payload = sanitizer.sanitize(&sample.payload);
         sample.classification = "INTERNAL".to_string();
         if sample.ts == 0 {
             sample.ts = chrono::Utc::now().timestamp();
@@ -256,6 +313,42 @@ mod tests {
         // Case 3: None healthy -> should return None
         let routed_none = registry.route_service(&ServiceKind::CodeGraph, |_| false);
         assert!(routed_none.is_none());
+    }
+
+    #[test]
+    fn test_service_network_telemetry_sanitization() {
+        let mut registry = ServiceRegistry::new();
+        let node_id = NodeId("xv1-sanitizer-node".to_string());
+
+        let raw_sample = TelemetrySample {
+            node_id: node_id.clone(),
+            kind: ServiceKind::Memory,
+            payload: "Error on hostname=dev-box-01 (ip 192.168.1.0/24) path /home/user/project/src/main.rs or C:\\Users\\admin\\config.json contact john.doe@example.com".to_string(),
+            ts: 2000,
+            classification: "PUBLIC".to_string(),
+        };
+
+        let published = registry.publish_telemetry(raw_sample);
+
+        // Classification forced to INTERNAL
+        assert_eq!(published.classification, "INTERNAL");
+
+        // Paths scrubbed
+        assert!(!published.payload.contains("/home/user/project/src/main.rs"));
+        assert!(!published.payload.contains("C:\\Users\\admin\\config.json"));
+        assert!(published.payload.contains("[PATH]"));
+
+        // IP subnets scrubbed
+        assert!(!published.payload.contains("192.168.1.0/24"));
+        assert!(published.payload.contains("[IP_SUBNET]"));
+
+        // Hostnames scrubbed
+        assert!(!published.payload.contains("hostname=dev-box-01"));
+        assert!(published.payload.contains("[HOSTNAME]"));
+
+        // PII scrubbed
+        assert!(!published.payload.contains("john.doe@example.com"));
+        assert!(published.payload.contains("[EMAIL]"));
     }
 
     #[test]
