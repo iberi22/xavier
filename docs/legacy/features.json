@@ -1355,8 +1355,8 @@
       "id": "feat-store-path-hierarchy",
       "name": "Jerarqu\u00eda de paths preservada + migraci\u00f3n",
       "category": "core",
-      "status": "beta",
-      "progress_pct": 60,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "El path can\u00f3nico (hermes/2026-08-17/...) se persiste VERBATIM: se bloquea traversal (.., NUL) sin destruir la jerarqu\u00eda ni los acentos. Migraci\u00f3n one-shot reconstruye paths aplanados previos.",
       "steps": [
         "Fix sanitizer en cli/handlers/memory.rs (2 handlers)",
