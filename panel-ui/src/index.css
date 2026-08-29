@@ -1,14 +1,26 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #09090b;
+}
+
+.dark {
+  --background: #050505;
+  --foreground: #ffffff;
+}
+
 @theme {
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
 body {
-  background-color: #050505;
-  color: #ffffff;
+  background-color: var(--background, #050505);
+  color: var(--foreground, #ffffff);
   overflow: hidden;
 }
 
