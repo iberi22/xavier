@@ -42,6 +42,37 @@ pub struct ExportRequest {
     pub limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BulkCurateAction {
+    Approve,
+    Reject,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BulkCurateItem {
+    pub id: String,
+    pub action: BulkCurateAction,
+    pub reason: Option<String>,
+    pub classification: Option<String>,
+    pub clearance: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BulkCurateRequest {
+    pub curator: String,
+    pub items: Vec<BulkCurateItem>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BulkCurateResponse {
+    pub status: String,
+    pub processed_count: usize,
+    pub approved_count: usize,
+    pub rejected_count: usize,
+    pub items: Vec<crate::curation::CurationItem>,
+}
+
 pub fn router(state: TrainingState) -> Router {
     Router::new()
         .route("/v1/training/datasets", get(list_datasets_handler))
@@ -59,6 +90,7 @@ pub fn router(state: TrainingState) -> Router {
         )
         .route("/v1/training/bundles", post(generate_bundle_handler))
         .route("/v1/training/export", post(export_handler))
+        .route("/v1/training/curate/bulk", post(bulk_curate_handler))
         .layer(Extension(state))
 }
 
@@ -196,6 +228,88 @@ pub async fn generate_bundle_handler(
         )
             .into_response(),
     }
+}
+
+pub async fn bulk_curate_handler(
+    Extension(state): Extension<TrainingState>,
+    Json(payload): Json<BulkCurateRequest>,
+) -> impl IntoResponse {
+    if payload.items.is_empty() {
+        return (StatusCode::BAD_REQUEST, "No items provided for bulk curation").into_response();
+    }
+
+    let mut queue = load_curation_queue(&state);
+
+    // Anti-Hallucination Guard: enforce item ID existence verification during bulk operations
+    let existing_ids: std::collections::HashSet<&str> =
+        queue.items.iter().map(|i| i.id.as_str()).collect();
+
+    for item in &payload.items {
+        if !existing_ids.contains(item.id.as_str()) {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Item ID '{}' not found in curation queue", item.id),
+            )
+                .into_response();
+        }
+    }
+
+    let mut updated_items = Vec::new();
+    let mut approved_count = 0;
+    let mut rejected_count = 0;
+
+    for item in &payload.items {
+        match item.action {
+            BulkCurateAction::Approve => {
+                match queue.approve(
+                    &item.id,
+                    payload.curator.clone(),
+                    item.classification.clone(),
+                    item.clearance.clone(),
+                ) {
+                    Ok(updated) => {
+                        approved_count += 1;
+                        updated_items.push(updated);
+                    }
+                    Err(e) => {
+                        return (StatusCode::BAD_REQUEST, e).into_response();
+                    }
+                }
+            }
+            BulkCurateAction::Reject => {
+                let reason = item
+                    .reason
+                    .clone()
+                    .unwrap_or_else(|| "Rejected in bulk review".to_string());
+                match queue.reject(&item.id, payload.curator.clone(), reason) {
+                    Ok(updated) => {
+                        rejected_count += 1;
+                        updated_items.push(updated);
+                    }
+                    Err(e) => {
+                        return (StatusCode::BAD_REQUEST, e).into_response();
+                    }
+                }
+            }
+        }
+    }
+
+    if let Err(e) = queue.save() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to save curation queue: {}", e),
+        )
+            .into_response();
+    }
+
+    Json(BulkCurateResponse {
+        status: "ok".to_string(),
+        processed_count: updated_items.len(),
+        approved_count,
+        rejected_count,
+        items: updated_items,
+    })
+    .into_response()
 }
 
 pub async fn export_handler(
@@ -702,6 +816,121 @@ mod tests {
         assert!(res_json.get("manifest").is_some());
         assert_eq!(res_json["train_count"], 8);
         assert_eq!(res_json["eval_count"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_bulk_curation_approve_and_reject() {
+        let (db_file, data_dir) = setup_test_env();
+        let curation_dir = data_dir.path().join("curation");
+        std::fs::create_dir_all(&curation_dir).unwrap();
+        let queue_file = curation_dir.join("queue.json");
+
+        let mut queue = CurationQueue::new_with_path(queue_file.clone());
+        let item1 = queue.submit_for_curation(
+            "Item 1 content".to_string(),
+            "CONFIDENTIAL".to_string(),
+            Some("agent".to_string()),
+        );
+        let item2 = queue.submit_for_curation(
+            "Item 2 content".to_string(),
+            "SECRET".to_string(),
+            Some("agent".to_string()),
+        );
+        let item3 = queue.submit_for_curation(
+            "Item 3 content".to_string(),
+            "RESTRICTED".to_string(),
+            Some("import".to_string()),
+        );
+        queue.save().unwrap();
+
+        let state = TrainingState {
+            db_path: db_file.path().to_path_buf(),
+            data_dir: data_dir.path().join("datasets"),
+        };
+        let app = router(state);
+
+        // 1. Test Anti-Hallucination Guard with non-existent item ID
+        let invalid_req = Request::builder()
+            .method("POST")
+            .uri("/v1/training/curate/bulk")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "curator": "reviewer_bob",
+                    "items": [
+                        {
+                            "id": item1.id,
+                            "action": "approve"
+                        },
+                        {
+                            "id": "non_existent_id_999",
+                            "action": "approve"
+                        }
+                    ]
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp_invalid = app.clone().oneshot(invalid_req).await.unwrap();
+        assert_eq!(resp_invalid.status(), StatusCode::BAD_REQUEST);
+
+        // 2. Test valid bulk approval and rejection
+        let bulk_req = Request::builder()
+            .method("POST")
+            .uri("/v1/training/curate/bulk")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "curator": "reviewer_alice",
+                    "items": [
+                        {
+                            "id": item1.id,
+                            "action": "approve",
+                            "classification": "verified_data",
+                            "clearance": "PUBLIC"
+                        },
+                        {
+                            "id": item2.id,
+                            "action": "reject",
+                            "reason": "Contains sensitive telemetry"
+                        }
+                    ]
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp_bulk = app.oneshot(bulk_req).await.unwrap();
+        assert_eq!(resp_bulk.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(resp_bulk.into_body(), usize::MAX).await.unwrap();
+        let res_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(res_json["status"], "ok");
+        assert_eq!(res_json["processed_count"], 2);
+        assert_eq!(res_json["approved_count"], 1);
+        assert_eq!(res_json["rejected_count"], 1);
+
+        // Verify persisted queue file state
+        let reloaded_queue = CurationQueue::load_from_path(&queue_file).unwrap();
+        let q_item1 = reloaded_queue.items.iter().find(|i| i.id == item1.id).unwrap();
+        assert_eq!(q_item1.status, crate::curation::CurationStatus::Approved);
+        assert_eq!(q_item1.curated_by, Some("reviewer_alice".to_string()));
+        assert_eq!(q_item1.classification, Some("verified_data".to_string()));
+        assert_eq!(q_item1.proposed_clearance, "PUBLIC");
+
+        let q_item2 = reloaded_queue.items.iter().find(|i| i.id == item2.id).unwrap();
+        assert_eq!(
+            q_item2.status,
+            crate::curation::CurationStatus::Rejected {
+                reason: "Contains sensitive telemetry".to_string()
+            }
+        );
+        assert_eq!(q_item2.curated_by, Some("reviewer_alice".to_string()));
+
+        let q_item3 = reloaded_queue.items.iter().find(|i| i.id == item3.id).unwrap();
+        assert_eq!(q_item3.status, crate::curation::CurationStatus::Pending);
     }
 }
 
