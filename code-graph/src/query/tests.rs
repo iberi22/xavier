@@ -631,7 +631,9 @@ mod tests_inner {
         assert_eq!(res.symbols.len(), 1);
         assert_eq!(res.symbols[0].name, "useXavierMemory");
 
-        let lang_res = query.by_language(Language::TypeScript, 10).expect("by_language");
+        let lang_res = query
+            .by_language(Language::TypeScript, 10)
+            .expect("by_language");
         assert_eq!(lang_res.len(), 3);
     }
 }

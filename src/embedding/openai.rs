@@ -123,7 +123,9 @@ impl Embedder for OpenAICompatibleEmbedder {
                             primary_err,
                             normalized_local
                         );
-                        let local_endpoint = if normalized_local.ends_with("/v1/embeddings") || normalized_local.ends_with("/api/embed") {
+                        let local_endpoint = if normalized_local.ends_with("/v1/embeddings")
+                            || normalized_local.ends_with("/api/embed")
+                        {
                             normalized_local
                         } else {
                             format!("{}/v1/embeddings", normalized_local)
@@ -141,7 +143,9 @@ impl Embedder for OpenAICompatibleEmbedder {
                         if let Ok(fallback_resp) = fallback_req.send().await {
                             if let Ok(valid_resp) = fallback_resp.error_for_status() {
                                 if let Ok(body) = valid_resp.json::<EmbeddingResponse>().await {
-                                    tracing::info!("Single local fallback succeeded after cloud failure");
+                                    tracing::info!(
+                                        "Single local fallback succeeded after cloud failure"
+                                    );
                                     return Ok(body.first_embedding().unwrap_or_default());
                                 }
                             }

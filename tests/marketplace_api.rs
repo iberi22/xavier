@@ -100,7 +100,9 @@ async fn test_query_dataset_valid_and_invalid_id() {
         .uri(format!("/v1/marketplace/datasets/{}/query", dataset_id))
         .method(Method::POST)
         .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&valid_query_payload).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&valid_query_payload).unwrap(),
+        ))
         .unwrap();
 
     let response = router.clone().oneshot(query_req).await.unwrap();
@@ -118,7 +120,9 @@ async fn test_query_dataset_valid_and_invalid_id() {
         .uri(format!("/v1/marketplace/datasets/{}/query", invalid_id))
         .method(Method::POST)
         .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&valid_query_payload).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&valid_query_payload).unwrap(),
+        ))
         .unwrap();
 
     let response = router.clone().oneshot(invalid_query_req).await.unwrap();

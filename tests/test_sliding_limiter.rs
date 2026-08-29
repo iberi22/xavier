@@ -17,9 +17,7 @@ fn test_lock_free_sliding_limiter_high_concurrency() {
 
     for _ in 0..num_threads {
         let limiter_clone = Arc::clone(&limiter);
-        let handle = thread::spawn(move || {
-            limiter_clone.check("concurrent_agent")
-        });
+        let handle = thread::spawn(move || limiter_clone.check("concurrent_agent"));
         handles.push(handle);
     }
 
@@ -35,6 +33,12 @@ fn test_lock_free_sliding_limiter_high_concurrency() {
     }
 
     // Exactly 50 requests should have been allowed, and 50 rejected
-    assert_eq!(allowed_count, 50, "Expected exactly 50 allowed requests under concurrent load");
-    assert_eq!(rejected_count, 50, "Expected exactly 50 rejected requests under concurrent load");
+    assert_eq!(
+        allowed_count, 50,
+        "Expected exactly 50 allowed requests under concurrent load"
+    );
+    assert_eq!(
+        rejected_count, 50,
+        "Expected exactly 50 rejected requests under concurrent load"
+    );
 }

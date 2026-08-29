@@ -711,9 +711,7 @@ pub async fn maintenance_reindex_handler(
                     }
                 });
 
-                let processed_expected = effective_limit
-                    .unwrap_or(null_count)
-                    .min(null_count);
+                let processed_expected = effective_limit.unwrap_or(null_count).min(null_count);
 
                 Json(ReindexMaintenanceResponse {
                     status: "reindexing_started".to_string(),
@@ -1518,11 +1516,11 @@ mod route_tests {
 
     #[tokio::test]
     async fn test_route_maintenance_reindex_already_running_guard() {
+        use crate::memory::sqlite_vec_store::schema_impl::REINDEX_RUNNING;
         use axum::response::Response;
         use http_body_util::BodyExt;
-        use tower::ServiceExt;
-        use crate::memory::sqlite_vec_store::schema_impl::REINDEX_RUNNING;
         use std::sync::atomic::Ordering;
+        use tower::ServiceExt;
 
         REINDEX_RUNNING.store(true, Ordering::SeqCst);
 

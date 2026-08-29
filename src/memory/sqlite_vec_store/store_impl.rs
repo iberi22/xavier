@@ -1264,9 +1264,8 @@ impl VecSqliteMemoryStore {
 
         let mut symbol_links: Vec<(String, f64)> = Vec::new();
 
-        let code_db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(
-            std::path::Path::new("."),
-        );
+        let code_db_path =
+            crate::codebase::codegraph_paths::code_graph_db_path_for(std::path::Path::new("."));
         if code_db_path.exists() {
             if let Ok(code_db) = code_graph::db::CodeGraphDB::new(&code_db_path) {
                 if let Ok(links) = code_db.link_memory_to_symbols(memory_id, content) {
@@ -1486,19 +1485,28 @@ mod tests {
         store.put_link(&conn, &record).unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| {
+                row.get(0)
+            })
             .unwrap();
-        assert_eq!(count, 0, "put_link should be no-op and not insert symbol links eagerly");
+        assert_eq!(
+            count, 0,
+            "put_link should be no-op and not insert symbol links eagerly"
+        );
     }
 
     #[test]
     fn test_link_memory_on_demand_and_max_10() {
         let conn = setup_test_db();
         let content = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu";
-        let symbols = VecSqliteMemoryStore::link_memory_on_demand(&conn, "mem_demand", content).unwrap();
+        let symbols =
+            VecSqliteMemoryStore::link_memory_on_demand(&conn, "mem_demand", content).unwrap();
 
         assert!(!symbols.is_empty());
-        assert!(symbols.len() <= 10, "On-demand linking must cap at max 10 links");
+        assert!(
+            symbols.len() <= 10,
+            "On-demand linking must cap at max 10 links"
+        );
 
         let count: i64 = conn
             .query_row(
@@ -1525,22 +1533,29 @@ mod tests {
         ).unwrap();
 
         let count_before: i64 = conn
-            .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(count_before, 2);
 
         conn.execute(
             "DELETE FROM memory_symbol_links WHERE created_at < datetime('now', '-30 days')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         let count_after: i64 = conn
-            .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(count_after, 1);
 
         let remaining_symbol: String = conn
-            .query_row("SELECT symbol_id FROM memory_symbol_links", [], |row| row.get(0))
+            .query_row("SELECT symbol_id FROM memory_symbol_links", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(remaining_symbol, "fresh_sym");
     }

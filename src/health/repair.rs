@@ -613,8 +613,14 @@ mod tests {
         assert_eq!(should_retry_peer(60, 0), PeerRetryDecision::Healthy);
 
         // Immediate retry: > 60s && <= 86400s (1 day)
-        assert_eq!(should_retry_peer(61, 0), PeerRetryDecision::RetryImmediately);
-        assert_eq!(should_retry_peer(86400, 0), PeerRetryDecision::RetryImmediately);
+        assert_eq!(
+            should_retry_peer(61, 0),
+            PeerRetryDecision::RetryImmediately
+        );
+        assert_eq!(
+            should_retry_peer(86400, 0),
+            PeerRetryDecision::RetryImmediately
+        );
 
         // Backoff: > 86400s && <= 604800s (7 days)
         assert_eq!(

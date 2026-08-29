@@ -35,7 +35,9 @@ fn test_1_missing_model_fallback_to_bm25() {
         make_candidate("2", "python data science pandas numpy", 0.4),
     ];
 
-    let results = reranker.rerank_candidates("rust async", &candidates).unwrap();
+    let results = reranker
+        .rerank_candidates("rust async", &candidates)
+        .unwrap();
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].id, "1");
     assert_eq!(results[0].source, "bm25_fallback");
@@ -53,7 +55,9 @@ fn test_2_onnx_model_loading_from_bytes() {
         make_candidate("2", "completely unrelated text input candidate", 0.8),
     ];
 
-    let results = reranker.rerank_candidates("onnx cross encoder", &candidates).unwrap();
+    let results = reranker
+        .rerank_candidates("onnx cross encoder", &candidates)
+        .unwrap();
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].id, "1");
     assert_eq!(results[0].source, "onnx_cross_encoder");
@@ -84,7 +88,9 @@ fn test_4_relevance_sorting_order_and_score_adjustment() {
         make_candidate("3", "python automation script", 0.5),
     ];
 
-    let results = reranker_with_session.rerank_candidates("cross encoder rust", &candidates).unwrap();
+    let results = reranker_with_session
+        .rerank_candidates("cross encoder rust", &candidates)
+        .unwrap();
     assert_eq!(results.len(), 3);
     assert_eq!(results[0].id, "2");
     assert!(results[0].score >= results[1].score);
@@ -102,16 +108,28 @@ fn test_5_batch_processing_and_invalid_batch_size() {
     let reranker = CrossEncoderReranker::from_bytes(mock_bytes, "batch.onnx").unwrap();
 
     let candidates: Vec<_> = (0..10)
-        .map(|i| make_candidate(&format!("{i}"), &format!("candidate document item {i}"), 0.1 * (i as f32)))
+        .map(|i| {
+            make_candidate(
+                &format!("{i}"),
+                &format!("candidate document item {i}"),
+                0.1 * (i as f32),
+            )
+        })
         .collect();
 
-    let res_b1 = reranker.rerank_candidates_batch("candidate item", &candidates, 1).unwrap();
-    let res_b4 = reranker.rerank_candidates_batch("candidate item", &candidates, 4).unwrap();
+    let res_b1 = reranker
+        .rerank_candidates_batch("candidate item", &candidates, 1)
+        .unwrap();
+    let res_b4 = reranker
+        .rerank_candidates_batch("candidate item", &candidates, 4)
+        .unwrap();
 
     assert_eq!(res_b1.len(), 10);
     assert_eq!(res_b4.len(), 10);
 
-    let err = reranker.rerank_candidates_batch("query", &candidates, 0).unwrap_err();
+    let err = reranker
+        .rerank_candidates_batch("query", &candidates, 0)
+        .unwrap_err();
     assert_eq!(err, CrossEncoderError::InvalidBatchSize(0));
 }
 
@@ -125,7 +143,9 @@ fn test_6_rerank_scored_results_in_place() {
         make_scored_result("doc2", "high performance cross encoder candidate", 0.2),
     ];
 
-    let updated = reranker.rerank_scored_results("cross encoder candidate", &scored).unwrap();
+    let updated = reranker
+        .rerank_scored_results("cross encoder candidate", &scored)
+        .unwrap();
     assert_eq!(updated.len(), 2);
     assert_eq!(updated[0].id, "doc2");
     assert!(updated[0].score > updated[1].score);
@@ -165,14 +185,17 @@ fn test_8_disable_fallback_errors_when_no_model() {
     let reranker = CrossEncoderReranker::with_config(config);
     let candidates = vec![make_candidate("1", "content", 0.5)];
 
-    let err = reranker.rerank_candidates("query", &candidates).unwrap_err();
+    let err = reranker
+        .rerank_candidates("query", &candidates)
+        .unwrap_err();
     assert!(matches!(err, CrossEncoderError::ModelLoadError(_)));
 }
 
 #[test]
 fn test_9_multi_threaded_concurrent_reranker_calls() {
     let mock_bytes = b"ONNX_CONCURRENT_TEST_PAYLOAD";
-    let reranker = Arc::new(CrossEncoderReranker::from_bytes(mock_bytes, "concurrent.onnx").unwrap());
+    let reranker =
+        Arc::new(CrossEncoderReranker::from_bytes(mock_bytes, "concurrent.onnx").unwrap());
 
     let mut handles = Vec::new();
     for t in 0..4 {

@@ -307,10 +307,7 @@ pub async fn handle_context_tool(
                 .get("title")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let body = arguments
-                .get("body")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let body = arguments.get("body").and_then(|v| v.as_str()).unwrap_or("");
             let repo = arguments
                 .get("repo")
                 .and_then(|v| v.as_str())
