@@ -72,13 +72,30 @@ pub async fn query_with_embedding_filtered(
             });
     }
 
-    let (query_vector, degraded) = match generate_embedding(&processed_query).await {
-        Ok(v) if !v.is_empty() => (v, false),
-        Ok(_) => (Vec::new(), true),
-        Err(e) => {
+    let timeout_ms = std::env::var("XAVIER_EMBEDDING_FALLBACK_BUDGET_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(2000);
+
+    let (query_vector, degraded) = match tokio::time::timeout(
+        std::time::Duration::from_millis(timeout_ms),
+        generate_embedding(&processed_query),
+    )
+    .await
+    {
+        Ok(Ok(v)) if !v.is_empty() => (v, false),
+        Ok(Ok(_)) => (Vec::new(), true),
+        Ok(Err(e)) => {
             tracing::warn!(
                 error = %e,
                 "embedding generation failed, falling back to BM25/substring"
+            );
+            (Vec::new(), true)
+        }
+        Err(_) => {
+            tracing::warn!(
+                timeout_ms = timeout_ms,
+                "embedding generation timed out, falling back to BM25/substring"
             );
             (Vec::new(), true)
         }
