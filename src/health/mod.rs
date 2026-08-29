@@ -633,48 +633,6 @@ async fn collect_health_impl(
         },
     };
 
-    // --- Dependency Graph & Status Propagation ---
-    let db_status_str = if db_health.needs_vacuum {
-        "degraded"
-    } else {
-        "healthy"
-    };
-    let emb_status_str =
-        if settings.embedding.embedder == "disabled" || settings.embedding.embedder == "noop" {
-            "disabled"
-        } else if !embedding.connected || embedding.error_rate_pct > 0.0 {
-            "degraded"
-        } else {
-            "healthy"
-        };
-    let mesh_status_str = if mesh.connectivity == "online" || mesh.connectivity == "no peers" {
-        "healthy"
-    } else {
-        "degraded"
-    };
-    let tg_status_str = if telegram.enabled {
-        "healthy"
-    } else {
-        "disabled"
-    };
-
-    let dependency_graph = ComponentDependencyGraph::build(vec![
-        ("database", db_status_str, db_health.latency_ms, vec![]),
-        (
-            "embedding",
-            emb_status_str,
-            embedding.latency_ms,
-            vec!["database"],
-        ),
-        ("mesh", mesh_status_str, mesh.latency_ms, vec!["database"]),
-        (
-            "telegram",
-            tg_status_str,
-            telegram.latency_ms,
-            vec!["embedding", "database"],
-        ),
-    ]);
-
     // --- Checks ---
     let mut checks = Vec::new();
 
@@ -726,6 +684,7 @@ async fn collect_health_impl(
     }
 
     // 2b. SQLite integrity check (when connection is available)
+    let mut sqlite_integrity_failed = false;
     if let Some(conn) = db {
         match run_integrity_check(conn) {
             Ok(ref msg) if msg == "ok" => {
@@ -737,6 +696,7 @@ async fn collect_health_impl(
                 });
             }
             Ok(msg) => {
+                sqlite_integrity_failed = true;
                 checks.push(HealthCheck {
                     name: "sqlite_integrity".into(),
                     status: CheckStatus::Fail,
@@ -745,6 +705,7 @@ async fn collect_health_impl(
                 });
             }
             Err(e) => {
+                sqlite_integrity_failed = true;
                 checks.push(HealthCheck {
                     name: "sqlite_integrity".into(),
                     status: CheckStatus::Fail,
@@ -754,6 +715,50 @@ async fn collect_health_impl(
             }
         }
     }
+
+    // --- Dependency Graph & Status Propagation ---
+    let db_status_str = if sqlite_integrity_failed {
+        "unhealthy"
+    } else if db_health.needs_vacuum {
+        "degraded"
+    } else {
+        "healthy"
+    };
+    let emb_status_str =
+        if settings.embedding.embedder == "disabled" || settings.embedding.embedder == "noop" {
+            "disabled"
+        } else if !embedding.connected || embedding.error_rate_pct > 0.0 {
+            "degraded"
+        } else {
+            "healthy"
+        };
+    let mesh_status_str = if mesh.connectivity == "online" || mesh.connectivity == "no peers" {
+        "healthy"
+    } else {
+        "degraded"
+    };
+    let tg_status_str = if telegram.enabled {
+        "healthy"
+    } else {
+        "disabled"
+    };
+
+    let dependency_graph = ComponentDependencyGraph::build(vec![
+        ("database", db_status_str, db_health.latency_ms, vec![]),
+        (
+            "embedding",
+            emb_status_str,
+            embedding.latency_ms,
+            vec!["database"],
+        ),
+        ("mesh", mesh_status_str, mesh.latency_ms, vec!["database"]),
+        (
+            "telegram",
+            tg_status_str,
+            telegram.latency_ms,
+            vec!["embedding", "database"],
+        ),
+    ]);
 
     // 3. Memory check
     if mem_total > 0 {
@@ -1446,5 +1451,30 @@ mod tests {
             .unwrap();
         assert_eq!(tg_node.status, "healthy");
         assert_eq!(tg_node.propagated_status, "degraded");
+    }
+
+    #[tokio::test]
+    async fn test_integrity_check_failure_surfaces_as_unhealthy() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+
+        let check_res = run_integrity_check(&conn).unwrap();
+        assert_eq!(check_res, "ok");
+
+        // Verify prioritized status returns unhealthy on sqlite_integrity Fail
+        let failed_checks = vec![HealthCheck {
+            name: "sqlite_integrity".into(),
+            status: CheckStatus::Fail,
+            detail: "PRAGMA integrity_check: file is corrupted".into(),
+            timestamp_secs: 0,
+        }];
+        assert_eq!(prioritize_status(&failed_checks), "unhealthy");
+
+        let warn_checks = vec![HealthCheck {
+            name: "database_integrity".into(),
+            status: CheckStatus::Warn,
+            detail: "Database fragmentation at 40% — VACUUM recommended".into(),
+            timestamp_secs: 0,
+        }];
+        assert_eq!(prioritize_status(&warn_checks), "warn");
     }
 }

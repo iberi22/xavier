@@ -148,6 +148,42 @@ Returns workspace storage and request limits.
 
 Returns current and supported sync policy metadata.
 
+### POST /v1/context/package
+
+One-shot context packaging endpoint for external agents (Hermes/Gestalt). Runs a ranked snippet-mode search within token budget limits:
+
+```json
+{
+  "query": "rust memory architecture",
+  "max_tokens_budget": 1024,
+  "limit": 10,
+  "kinds": ["decision", "document"],
+  "path_prefix": "features/"
+}
+```
+
+Response:
+
+```json
+{
+  "snippets": [
+    {
+      "id": "01J...",
+      "path": "features/core/architecture",
+      "kind": "decision",
+      "score": 0.89,
+      "snippet": "Architecture decisions regarding memory layers..."
+    }
+  ],
+  "total_tokens_estimate": 240,
+  "truncated": false,
+  "ranking_meta": {
+    "total_candidates": 5,
+    "included_count": 1
+  }
+}
+```
+
 ## Public Dataset
 
 The `/v1/public/*` surface exposes the generated `xavier-dataset/` export as read-only, cacheable project context. These endpoints are intended for agents and public documentation tooling that need repository intelligence without cloning, indexing, or authenticating against the private memory API.
