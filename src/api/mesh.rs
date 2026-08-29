@@ -88,15 +88,22 @@ pub fn mesh_routes(state: Arc<RwLock<MeshState>>) -> Router {
         .with_state(state)
 }
 
-async fn list_peers(
-    State(state): State<Arc<RwLock<MeshState>>>,
-) -> Json<PeersResponse> {
+async fn list_peers(State(state): State<Arc<RwLock<MeshState>>>) -> Json<PeersResponse> {
     let state = state.read().await;
     let registry = state.registry.read().await;
-    let peers: Vec<PeerView> = registry.all_peers().iter().map(PeerView::from).collect();
+    let peers: Vec<PeerView> = registry
+        .all_peers()
+        .iter()
+        .cloned()
+        .map(PeerView::from)
+        .collect();
     let healthy = peers.iter().filter(|p| p.healthy).count();
     let total = peers.len();
-    Json(PeersResponse { peers, total, healthy })
+    Json(PeersResponse {
+        peers,
+        total,
+        healthy,
+    })
 }
 
 async fn add_peer(
@@ -104,7 +111,10 @@ async fn add_peer(
     Json(req): Json<AddPeerRequest>,
 ) -> Result<Json<PeerView>, (StatusCode, String)> {
     if req.node_id.is_empty() || req.endpoint_url.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "node_id and endpoint_url required".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "node_id and endpoint_url required".into(),
+        ));
     }
     let peer = PeerInfo {
         node_id: NodeId(req.node_id.clone()),
@@ -121,8 +131,10 @@ async fn add_peer(
     };
     let state = state.read().await;
     let mut registry = state.registry.write().await;
-    registry.add_peer(peer.clone());
-    registry.save().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Save: {e}")))?;
+    let _ = registry.add_peer(peer.clone());
+    registry
+        .save()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Save: {e}")))?;
     Ok(Json(PeerView::from(&peer)))
 }
 
@@ -132,23 +144,28 @@ async fn remove_peer(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let state = state.read().await;
     let mut registry = state.registry.write().await;
-    let removed = registry.remove_peer(&NodeId(node_id.clone()));
-    if !removed {
+    if registry.get_peer(&NodeId(node_id.clone())).is_none() {
         return Err((StatusCode::NOT_FOUND, format!("Peer {node_id} not found")));
     }
-    registry.save().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Save: {e}")))?;
+    registry
+        .remove_peer(&NodeId(node_id.clone()))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Remove: {e}")))?;
+    registry
+        .save()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Save: {e}")))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn mesh_health(
-    State(state): State<Arc<RwLock<MeshState>>>,
-) -> Json<MeshHealthResponse> {
+async fn mesh_health(State(state): State<Arc<RwLock<MeshState>>>) -> Json<MeshHealthResponse> {
     let state = state.read().await;
     let registry = state.registry.read().await;
     let all = registry.all_peers();
     let total = all.len();
     let healthy = all.iter().filter(|p| p.is_healthy()).count();
-    let connected = all.iter().filter(|p| p.is_valid() && p.is_healthy()).count();
+    let connected = all
+        .iter()
+        .filter(|p| p.is_valid() && p.is_healthy())
+        .count();
     let status = if connected > 0 {
         "healthy"
     } else if total > 0 {
@@ -175,9 +192,14 @@ async fn heartbeat(
     let mut registry = state.registry.write().await;
     if let Some(peer) = registry.get_peer_mut(&NodeId(req.node_id.clone())) {
         peer.last_seen_at = Some(chrono::Utc::now().timestamp());
-        registry.save().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Save: {e}")))?;
+        registry
+            .save()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Save: {e}")))?;
         Ok(StatusCode::OK)
     } else {
-        Err((StatusCode::NOT_FOUND, format!("Peer {} not found", req.node_id)))
+        Err((
+            StatusCode::NOT_FOUND,
+            format!("Peer {} not found", req.node_id),
+        ))
     }
 }

@@ -453,18 +453,44 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    let search_text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(search_text.contains("fragment content"));
+    // search_fragments now returns structuredContent.candidates plus optional text.
+    // Prefer the structured id; fall back to the legacy "Id: <ulid>" text line.
+    let content_entry = &body["result"]["content"][0];
+    let structured_id = content_entry
+        .get("structuredContent")
+        .and_then(|v| v.get("candidates"))
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let text_opt = content_entry
+        .get("text")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let id: String = if let Some(cid) = structured_id {
+        // verify fragment text is present somewhere in the payload
+        let all = content_entry
+            .get("structuredContent")
+            .map(|v| v.to_string())
+            .unwrap_or_default()
+            + &text_opt.clone().unwrap_or_default();
+        assert!(all.contains("fragment content"));
+        cid
+    } else {
+        let search_text = text_opt
+            .as_deref()
+            .expect("search_fragments returned neither structured nor legacy text");
+        assert!(search_text.contains("fragment content"));
+        search_text
+            .split('\n')
+            .next()
+            .expect("missing Id line")
+            .strip_prefix("Id: ")
+            .expect("missing Id: prefix")
+            .to_string()
+    };
 
-    // Extract ID from search text (Id: <ulid>)
-    let id = search_text
-        .split('\n')
-        .next()
-        .unwrap()
-        .strip_prefix("Id: ")
-        .unwrap();
-
-    // get_recent_fragments
+    // get_recent_fragments — now structuredContent.candidates (migrated PR)
     let response = post_json(
         router.clone(),
         json!({
@@ -481,10 +507,18 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"]
-        .as_str()
-        .unwrap()
-        .contains("fragment content"));
+    let rec_text = body["result"]["content"][0]
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let rec_struct = body["result"]["content"][0]
+        .get("structuredContent")
+        .map(|v| v.to_string())
+        .unwrap_or_default();
+    assert!(
+        rec_text.contains("fragment content") || rec_struct.contains("fragment content"),
+        "get_recent_fragments returned neither text nor structured containing fragment: {body}"
+    );
 
     // memoryfragment_get
     let response = post_json(

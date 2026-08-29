@@ -191,6 +191,11 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route("/plugins/health", get(plugins_health_handler))
         .route("/plugins/sync", post(plugins_sync_handler));
 
+    // Global rate limiting middleware (token_bucket per IP: 100 capacity, 60 req/min refill rate).
+    let router = router.layer(axum::middleware::from_fn(
+        crate::middleware::token_bucket::rate_limit_middleware,
+    ));
+
     router.with_state(agent_registry)
 }
 
@@ -646,14 +651,12 @@ pub async fn maintenance_reindex_handler(
         None => (Some(500), Some(500)),
     };
 
-    if !payload.dry_run {
-        if REINDEX_RUNNING.swap(true, Ordering::SeqCst) {
-            return (
-                axum::http::StatusCode::CONFLICT,
-                Json(serde_json::json!({ "status": "already_running" })),
-            )
-                .into_response();
-        }
+    if !payload.dry_run && REINDEX_RUNNING.swap(true, Ordering::SeqCst) {
+        return (
+            axum::http::StatusCode::CONFLICT,
+            Json(serde_json::json!({ "status": "already_running" })),
+        )
+            .into_response();
     }
 
     let store_config = VecSqliteStoreConfig::from_env();
@@ -706,9 +709,7 @@ pub async fn maintenance_reindex_handler(
                     }
                 });
 
-                let processed_expected = effective_limit
-                    .unwrap_or(null_count)
-                    .min(null_count);
+                let processed_expected = effective_limit.unwrap_or(null_count).min(null_count);
 
                 Json(ReindexMaintenanceResponse {
                     status: "reindexing_started".to_string(),
@@ -1513,11 +1514,11 @@ mod route_tests {
 
     #[tokio::test]
     async fn test_route_maintenance_reindex_already_running_guard() {
+        use crate::memory::sqlite_vec_store::schema_impl::REINDEX_RUNNING;
         use axum::response::Response;
         use http_body_util::BodyExt;
-        use tower::ServiceExt;
-        use crate::memory::sqlite_vec_store::schema_impl::REINDEX_RUNNING;
         use std::sync::atomic::Ordering;
+        use tower::ServiceExt;
 
         REINDEX_RUNNING.store(true, Ordering::SeqCst);
 
@@ -1594,6 +1595,25 @@ mod route_tests {
         assert_eq!(parsed["status"], "ok");
         assert!(parsed.get("is_running").is_some());
         assert!(parsed.get("processed_count").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_middleware_exceeded_returns_429() {
+        use crate::middleware::token_bucket::IpRateLimiter;
+        use std::time::Duration;
+
+        let test_limiter = IpRateLimiter::new(2.0, 0.1);
+        let test_ip = "192.168.1.100";
+
+        let (allowed1, _) = test_limiter.try_consume(test_ip, 1.0);
+        assert!(allowed1);
+
+        let (allowed2, _) = test_limiter.try_consume(test_ip, 1.0);
+        assert!(allowed2);
+
+        let (allowed3, retry_after) = test_limiter.try_consume(test_ip, 1.0);
+        assert!(!allowed3);
+        assert!(retry_after > Duration::ZERO);
     }
 }
 

@@ -99,7 +99,7 @@ impl QueryEngine {
         }
     }
 
-    /// Search for symbols by name (with caching)
+    /// Search for symbols by name (with caching and strict narrow filter)
     pub fn search(&self, query: &str, limit: usize) -> Result<QueryResult> {
         // Try cache first
         if let Some(ref cache) = self.cache {
@@ -108,8 +108,30 @@ impl QueryEngine {
             }
         }
 
-        // Query database
-        let result = self.db.find_symbols(query, limit)?;
+        // Query database (over-fetch candidates from DB FTS / LIKE)
+        let fetch_limit = if query.trim().is_empty() {
+            limit
+        } else {
+            (limit * 10).max(100)
+        };
+        let mut result = self.db.find_symbols(query, fetch_limit)?;
+
+        // Narrow filter gate: filter WHERE name LIKE '%query%' COLLATE NOCASE
+        // or matching stable_id to drop generic false positives (e.g. imports)
+        let q_trimmed = query.trim();
+        if !q_trimmed.is_empty() {
+            let q_lower = q_trimmed.to_lowercase();
+            result.symbols.retain(|sym| {
+                let name_matches = sym.name.to_lowercase().contains(&q_lower);
+                let id_matches = sym
+                    .stable_id
+                    .as_deref()
+                    .is_some_and(|id| id.to_lowercase().contains(&q_lower));
+                name_matches || id_matches
+            });
+            result.symbols.truncate(limit);
+            result.total = result.symbols.len();
+        }
 
         // Store in cache
         if let Some(ref cache) = self.cache {
@@ -341,10 +363,28 @@ impl QueryEngine {
         self.db.find_by_file(file_path)
     }
 
-    /// Get all symbols of a specific language
-    pub fn by_language(&self, _lang: crate::types::Language, _limit: usize) -> Result<Vec<Symbol>> {
-        // Would need a new db method
-        Ok(vec![])
+    /// by_language query filter symbols WHERE lang = ? COLLATE NOCASE
+    pub fn by_language(&self, lang: crate::types::Language, limit: usize) -> Result<Vec<Symbol>> {
+        let all_symbols = self.db.get_all_symbols()?;
+        let lang_str = lang.as_str().to_lowercase();
+        let lang_db_str = lang.as_db_str().to_lowercase();
+        let lang_debug_str = format!("{:?}", lang).to_lowercase();
+
+        // Filter WHERE lang = ? COLLATE NOCASE
+        let mut filtered: Vec<Symbol> = all_symbols
+            .into_iter()
+            .filter(|sym| {
+                let sym_lang = sym.lang.as_str().to_lowercase();
+                let sym_db_lang = sym.lang.as_db_str().to_lowercase();
+                let sym_debug_lang = format!("{:?}", sym.lang).to_lowercase();
+                sym_lang == lang_str
+                    || sym_db_lang == lang_db_str
+                    || sym_debug_lang == lang_debug_str
+            })
+            .collect();
+
+        filtered.truncate(limit);
+        Ok(filtered)
     }
 
     /// Get indexing statistics

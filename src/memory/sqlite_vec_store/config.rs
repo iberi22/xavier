@@ -17,7 +17,7 @@ pub const DEFAULT_QJL_THRESHOLD: usize = 30_000;
 pub const QJL_MAGIC: &[u8; 4] = b"QJL2";
 pub static SQLITE_VEC_EXTENSION_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct VecSqliteStoreConfig {
     pub path: PathBuf,
     pub embedding_dimensions: usize,

@@ -66,8 +66,8 @@ impl ProfileVault {
 
     /// Save or update a user profile (upsert semantics, single profile per tenant_id).
     pub async fn save_profile(&self, profile: &UserProfile) -> Result<()> {
-        let json_bytes = serde_json::to_vec(profile)
-            .context("Failed to serialize UserProfile to JSON")?;
+        let json_bytes =
+            serde_json::to_vec(profile).context("Failed to serialize UserProfile to JSON")?;
 
         let nonce = NonceBytes::generate();
         let encrypted_blob = aes_encrypt(&json_bytes, &self.dek, &nonce)

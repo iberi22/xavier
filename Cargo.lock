@@ -2819,7 +2819,7 @@ dependencies = [
 
 [[package]]
 name = "code-graph"
-version = "0.6.1-beta"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -16150,7 +16150,7 @@ dependencies = [
 
 [[package]]
 name = "xavier"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "aes-gcm",
  "aho-corasick",

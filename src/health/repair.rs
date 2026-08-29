@@ -38,7 +38,7 @@ pub fn should_retry_peer(sync_lag_secs: u64, attempts: u64) -> PeerRetryDecision
     } else if sync_lag_secs > 604800 {
         PeerRetryDecision::Stale
     } else if sync_lag_secs > 86400 {
-        let should_log = attempts % 10 == 0;
+        let should_log = attempts.is_multiple_of(10);
         PeerRetryDecision::RetryWithBackoff { should_log }
     } else {
         PeerRetryDecision::RetryImmediately
@@ -613,8 +613,14 @@ mod tests {
         assert_eq!(should_retry_peer(60, 0), PeerRetryDecision::Healthy);
 
         // Immediate retry: > 60s && <= 86400s (1 day)
-        assert_eq!(should_retry_peer(61, 0), PeerRetryDecision::RetryImmediately);
-        assert_eq!(should_retry_peer(86400, 0), PeerRetryDecision::RetryImmediately);
+        assert_eq!(
+            should_retry_peer(61, 0),
+            PeerRetryDecision::RetryImmediately
+        );
+        assert_eq!(
+            should_retry_peer(86400, 0),
+            PeerRetryDecision::RetryImmediately
+        );
 
         // Backoff: > 86400s && <= 604800s (7 days)
         assert_eq!(

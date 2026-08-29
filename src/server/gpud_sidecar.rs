@@ -45,7 +45,7 @@ pub enum GpudHealthStatus {
 }
 
 /// Detected GPU device details.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct GpuDeviceInfo {
     pub detected: bool,
     pub vendor: Option<String>,
@@ -54,20 +54,6 @@ pub struct GpuDeviceInfo {
     pub vram_free_mb: u64,
     pub driver_version: Option<String>,
     pub cuda_available: bool,
-}
-
-impl Default for GpuDeviceInfo {
-    fn default() -> Self {
-        Self {
-            detected: false,
-            vendor: None,
-            model: None,
-            vram_total_mb: 0,
-            vram_free_mb: 0,
-            driver_version: None,
-            cuda_available: false,
-        }
-    }
 }
 
 /// Policy governing GPU vs CPU execution selection and dynamic fallback rules.
@@ -93,7 +79,11 @@ impl Default for GpudFallbackPolicy {
 
 impl GpudFallbackPolicy {
     /// Creates a new custom fallback policy.
-    pub fn new(min_vram_mb: u64, max_vram_utilization_pct: f64, fallback_to_cpu_on_failure: bool) -> Self {
+    pub fn new(
+        min_vram_mb: u64,
+        max_vram_utilization_pct: f64,
+        fallback_to_cpu_on_failure: bool,
+    ) -> Self {
         Self {
             min_vram_mb,
             max_vram_utilization_pct,
@@ -146,7 +136,10 @@ impl GpudFallbackPolicy {
 
         ExecutionBackend::Gpu {
             vendor: dev.vendor.clone().unwrap_or_else(|| "Unknown".to_string()),
-            model: dev.model.clone().unwrap_or_else(|| "Generic GPU".to_string()),
+            model: dev
+                .model
+                .clone()
+                .unwrap_or_else(|| "Generic GPU".to_string()),
             vram_free_mb: dev.vram_free_mb,
             vram_total_mb: dev.vram_total_mb,
         }
@@ -238,10 +231,7 @@ impl GpudService {
         }
 
         // Try AMD rocm-smi
-        if let Ok(output) = Command::new("rocm-smi")
-            .arg("--showproductname")
-            .output()
-        {
+        if let Ok(output) = Command::new("rocm-smi").arg("--showproductname").output() {
             if output.status.success() {
                 return GpuDeviceInfo {
                     detected: true,
@@ -400,13 +390,21 @@ async fn serve_handler(
     let model = payload.model.unwrap_or_else(|| "default-llm".to_string());
 
     let (status, output) = match &active_backend {
-        ExecutionBackend::Gpu { model: gpu_model, .. } => (
+        ExecutionBackend::Gpu {
+            model: gpu_model, ..
+        } => (
             "ok",
-            format!("Processed prompt on GPU ({}) using model {}", gpu_model, model),
+            format!(
+                "Processed prompt on GPU ({}) using model {}",
+                gpu_model, model
+            ),
         ),
         ExecutionBackend::Cpu { reason } => (
             "fallback_cpu",
-            format!("Processed prompt on CPU (Reason: {}) using model {}", reason, model),
+            format!(
+                "Processed prompt on CPU (Reason: {}) using model {}",
+                reason, model
+            ),
         ),
     };
 

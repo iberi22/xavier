@@ -109,7 +109,9 @@ impl SqliteMemoryStore {
                 manager.add_migration(crate::storage::migrations::MigrationV4UnifiedIsolation);
                 manager.add_migration(crate::storage::migrations::MigrationV5SessionTokensId);
                 manager.add_migration(crate::storage::migrations::MigrationV8EntityGraphSnapshots);
-                manager.add_migration(crate::storage::migrations::MigrationV11CleanupMemorySymbolLinks);
+                manager.add_migration(
+                    crate::storage::migrations::MigrationV11CleanupMemorySymbolLinks,
+                );
                 manager.run_migrations(conn)
             })
             .await?;

@@ -7,3 +7,4 @@ pub mod auth;
 pub mod token_bucket;
 
 pub use auth::require_permission;
+pub use token_bucket::{rate_limit_middleware, IpRateLimiter, RateLimiter, TokenBucket};
