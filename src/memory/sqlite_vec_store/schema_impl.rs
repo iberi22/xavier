@@ -741,8 +741,11 @@ mod tests {
         // Manually update to set embedding = NULL in the DB to simulate model change invalidation
         ConnectionManager::global()
             .with_conn(&store.project_id, |conn| {
-                conn.execute("UPDATE memory_records SET embedding = NULL", [])
-                    .unwrap();
+                conn.execute(
+                    "UPDATE memory_records SET embedding = NULL, embedding_status = 'pending', embedding_attempts = 0",
+                    [],
+                )
+                .unwrap();
                 conn.execute("DELETE FROM memory_embeddings", []).unwrap();
                 Ok(())
             })
@@ -898,8 +901,11 @@ mod tests {
         // Force embeddings to NULL
         ConnectionManager::global()
             .with_conn(&store.project_id, |conn| {
-                conn.execute("UPDATE memory_records SET embedding = NULL", [])
-                    .unwrap();
+                conn.execute(
+                    "UPDATE memory_records SET embedding = NULL, embedding_status = 'pending', embedding_attempts = 0",
+                    [],
+                )
+                .unwrap();
                 conn.execute("DELETE FROM memory_embeddings", []).unwrap();
                 Ok(())
             })
@@ -1003,8 +1009,11 @@ mod tests {
 
         ConnectionManager::global()
             .with_conn(&store.project_id, |conn| {
-                conn.execute("UPDATE memory_records SET embedding = NULL", [])
-                    .unwrap();
+                conn.execute(
+                    "UPDATE memory_records SET embedding = NULL, embedding_status = 'pending', embedding_attempts = 0",
+                    [],
+                )
+                .unwrap();
                 conn.execute("DELETE FROM memory_embeddings", []).unwrap();
                 Ok(())
             })
@@ -1100,8 +1109,11 @@ mod tests {
 
         ConnectionManager::global()
             .with_conn(&store.project_id, |conn| {
-                conn.execute("UPDATE memory_records SET embedding = NULL", [])
-                    .unwrap();
+                conn.execute(
+                    "UPDATE memory_records SET embedding = NULL, embedding_status = 'pending', embedding_attempts = 0",
+                    [],
+                )
+                .unwrap();
                 conn.execute("DELETE FROM memory_embeddings", []).unwrap();
                 Ok(())
             })
