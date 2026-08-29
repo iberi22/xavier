@@ -490,7 +490,7 @@ async fn fragment_tools_integration() {
             .to_string()
     };
 
-    // get_recent_fragments
+    // get_recent_fragments — now structuredContent.candidates (migrated PR)
     let response = post_json(
         router.clone(),
         json!({
@@ -507,10 +507,18 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"]
-        .as_str()
-        .unwrap()
-        .contains("fragment content"));
+    let rec_text = body["result"]["content"][0]
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let rec_struct = body["result"]["content"][0]
+        .get("structuredContent")
+        .map(|v| v.to_string())
+        .unwrap_or_default();
+    assert!(
+        rec_text.contains("fragment content") || rec_struct.contains("fragment content"),
+        "get_recent_fragments returned neither text nor structured containing fragment: {body}"
+    );
 
     // memoryfragment_get
     let response = post_json(
