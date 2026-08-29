@@ -455,16 +455,25 @@ async fn fragment_tools_integration() {
     let body = get_json_body(response).await;
     // search_fragments now returns structuredContent.candidates plus optional text.
     // Prefer the structured id; fall back to the legacy "Id: <ulid>" text line.
-    let structured_id = body["result"]["structuredContent"]["candidates"][0]["id"]
-        .as_str()
+    let content_entry = &body["result"]["content"][0];
+    let structured_id = content_entry
+        .get("structuredContent")
+        .and_then(|v| v.get("candidates"))
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
         .map(String::from);
-    let text_opt = body["result"]["content"][0]["text"]
-        .as_str()
+    let text_opt = content_entry
+        .get("text")
+        .and_then(|v| v.as_str())
         .map(String::from);
     let id: String = if let Some(cid) = structured_id {
         // verify fragment text is present somewhere in the payload
-        let all =
-            body["result"]["structuredContent"].to_string() + &text_opt.clone().unwrap_or_default();
+        let all = content_entry
+            .get("structuredContent")
+            .map(|v| v.to_string())
+            .unwrap_or_default()
+            + &text_opt.clone().unwrap_or_default();
         assert!(all.contains("fragment content"));
         cid
     } else {
