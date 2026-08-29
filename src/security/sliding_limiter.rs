@@ -3,11 +3,11 @@
 //! Provides a lock-free, atomic sliding window rate limiter designed for high-concurrency
 //! agentic workloads without acquiring global Mutex locks during the hot path.
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use parking_lot::RwLock;
 
 /// Configuration for the LockFreeSlidingLimiter
 #[derive(Debug, Clone)]
@@ -96,12 +96,16 @@ impl ClientRateState {
 
         if prev_time != current_bucket_time {
             // Attempt to update the bucket timestamp atomically
-            if target_bucket.timestamp.compare_exchange(
-                prev_time,
-                current_bucket_time,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ).is_ok() {
+            if target_bucket
+                .timestamp
+                .compare_exchange(
+                    prev_time,
+                    current_bucket_time,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+            {
                 target_bucket.count.store(1, Ordering::Release);
                 return true;
             }
@@ -160,7 +164,8 @@ impl LockFreeSlidingLimiter {
             } else {
                 drop(read_guard);
                 let mut write_guard = self.clients.write();
-                write_guard.entry(key.to_string())
+                write_guard
+                    .entry(key.to_string())
                     .or_insert_with(|| Arc::new(ClientRateState::new(&self.config)))
                     .clone()
             }
@@ -190,7 +195,9 @@ impl LockFreeSlidingLimiter {
         let window_ms = self.config.window_duration.as_millis() as u64;
         let mut write_guard = self.clients.write();
         write_guard.retain(|_, state| {
-            state.current_count(now_ms) > 0 || (now_ms.saturating_sub(state.buckets[0].timestamp.load(Ordering::Acquire))) < window_ms * 2
+            state.current_count(now_ms) > 0
+                || (now_ms.saturating_sub(state.buckets[0].timestamp.load(Ordering::Acquire)))
+                    < window_ms * 2
         });
     }
 }

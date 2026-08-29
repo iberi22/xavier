@@ -109,7 +109,11 @@ impl QueryEngine {
         }
 
         // Query database (over-fetch candidates from DB FTS / LIKE)
-        let fetch_limit = if query.trim().is_empty() { limit } else { (limit * 10).max(100) };
+        let fetch_limit = if query.trim().is_empty() {
+            limit
+        } else {
+            (limit * 10).max(100)
+        };
         let mut result = self.db.find_symbols(query, fetch_limit)?;
 
         // Narrow filter gate: filter WHERE name LIKE '%query%' COLLATE NOCASE
@@ -119,7 +123,10 @@ impl QueryEngine {
             let q_lower = q_trimmed.to_lowercase();
             result.symbols.retain(|sym| {
                 let name_matches = sym.name.to_lowercase().contains(&q_lower);
-                let id_matches = sym.stable_id.as_deref().map_or(false, |id| id.to_lowercase().contains(&q_lower));
+                let id_matches = sym
+                    .stable_id
+                    .as_deref()
+                    .map_or(false, |id| id.to_lowercase().contains(&q_lower));
                 name_matches || id_matches
             });
             result.symbols.truncate(limit);

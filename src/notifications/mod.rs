@@ -608,7 +608,12 @@ mod tests {
     async fn test_lazy_memory_pool_init_and_graceful_notify() {
         let manager = NotificationManager::new();
         let result = manager
-            .notify(IslandId::System, "Lazy Test Alert", "Lazy init body", "info")
+            .notify(
+                IslandId::System,
+                "Lazy Test Alert",
+                "Lazy init body",
+                "info",
+            )
             .await;
         assert!(result.is_ok());
 

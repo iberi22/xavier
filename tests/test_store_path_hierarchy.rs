@@ -311,7 +311,11 @@ async fn test_path_hierarchy_queries() {
         .await
         .unwrap();
 
-    assert_eq!(results.len(), 2, "Should return 2 files under projects/alpha");
+    assert_eq!(
+        results.len(),
+        2,
+        "Should return 2 files under projects/alpha"
+    );
     let paths: Vec<String> = results.into_iter().map(|r| r.path).collect();
     assert!(paths.contains(&"projects/alpha/readme.md".to_string()));
     assert!(paths.contains(&"projects/alpha/src/main.rs".to_string()));
@@ -319,5 +323,8 @@ async fn test_path_hierarchy_queries() {
 
     // 2. Verify QmdMemory `ls` parent/child hierarchy navigation
     let nav_entries = state.qmd_memory.ls("projects/alpha/").await.unwrap();
-    assert!(!nav_entries.is_empty(), "ls on parent directory should return entries");
+    assert!(
+        !nav_entries.is_empty(),
+        "ls on parent directory should return entries"
+    );
 }

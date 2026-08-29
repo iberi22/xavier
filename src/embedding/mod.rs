@@ -16,7 +16,8 @@ pub mod pipeline;
 
 pub const DIMENSION_768: usize = 768;
 
-pub static EMBEDDING_ERROR_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static EMBEDDING_ERROR_COUNT: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 pub fn increment_embedding_error_count() {
     EMBEDDING_ERROR_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -483,7 +484,9 @@ impl Embedder for NoopEmbedder {
     }
 
     async fn probe_health(&self) -> Result<f64, EmbeddingError> {
-        Err(EmbeddingError::Config("No-op embedder is disabled".to_string()))
+        Err(EmbeddingError::Config(
+            "No-op embedder is disabled".to_string(),
+        ))
     }
 
     fn dimension(&self) -> usize {

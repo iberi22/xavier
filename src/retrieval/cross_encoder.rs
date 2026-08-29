@@ -502,8 +502,7 @@ impl CrossEncoderReranker {
         let candidates: Vec<RerankCandidate> = results.iter().map(RerankCandidate::from).collect();
         let reranked = self.rerank_candidates(query, &candidates)?;
 
-        let id_map: HashMap<String, f32> =
-            reranked.into_iter().map(|r| (r.id, r.score)).collect();
+        let id_map: HashMap<String, f32> = reranked.into_iter().map(|r| (r.id, r.score)).collect();
 
         let mut updated: Vec<ScoredResult> = results
             .iter()
@@ -599,8 +598,7 @@ mod tests {
 
         let base_score = 0.40;
         let ce_score = 0.90;
-        let (final_score, adjustment) =
-            reranker.calculate_score_adjustment(base_score, ce_score);
+        let (final_score, adjustment) = reranker.calculate_score_adjustment(base_score, ce_score);
 
         // final = 0.4 * 0.40 + 0.6 * 0.90 = 0.16 + 0.54 = 0.70
         assert!((final_score - 0.70).abs() < 1e-5);

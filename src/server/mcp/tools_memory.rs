@@ -299,8 +299,13 @@ pub async fn handle_memory_tool(
     arguments: Value,
 ) -> anyhow::Result<Value> {
     match name {
-        "mem_search" | "search_memory" | "memory_search" | "search_fragments"
-        | "memoryfragment_search" | "get_recent_fragments" | "memoryfragment_recent" => {
+        "mem_search"
+        | "search_memory"
+        | "memory_search"
+        | "search_fragments"
+        | "memoryfragment_search"
+        | "get_recent_fragments"
+        | "memoryfragment_recent" => {
             handle_memory_search(&state, &workspace, name, &arguments).await
         }
         "create_memory" | "save_fragment" | "memoryfragment_save" | "memory_save" => {
@@ -417,8 +422,7 @@ async fn handle_mem_search(
     let candidates: Vec<Value> = results
         .into_iter()
         .map(|doc| {
-            let snippet: String =
-                crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
+            let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
             let kind = doc
                 .metadata
                 .get("kind")
@@ -506,46 +510,48 @@ async fn handle_search_fragments(
         })
         .collect();
 
-            let has_filters = filters.project.is_some()
-                || filters.agent_id.is_some()
-                || filters.scope.is_some()
-                || filters.session_id.is_some()
-                || filters.user_id.is_some()
-                || filters.kinds.is_some()
-                || filters.path_prefix.is_some();
-            let filters_opt = if has_filters { Some(filters) } else { None };
+    let has_filters = filters.project.is_some()
+        || filters.agent_id.is_some()
+        || filters.scope.is_some()
+        || filters.session_id.is_some()
+        || filters.user_id.is_some()
+        || filters.kinds.is_some()
+        || filters.path_prefix.is_some();
+    let filters_opt = if has_filters { Some(filters) } else { None };
 
-            let engine = crate::memory::query_engine::MemoryQueryEngine::new();
-            let search_req = crate::memory::query_engine::SearchQuery {
-                query: query.to_string(),
-                limit,
-                depth,
-                filters: filters_opt,
-                include_content: Some(include_content),
-                ..Default::default()
-            };
+    let engine = crate::memory::query_engine::MemoryQueryEngine::new();
+    let search_req = crate::memory::query_engine::SearchQuery {
+        query: query.to_string(),
+        limit,
+        depth,
+        filters: filters_opt,
+        include_content: Some(include_content),
+        ..Default::default()
+    };
 
-            let search_res = engine.search(&workspace.workspace.memory, search_req).await?;
+    let search_res = engine
+        .search(&workspace.workspace.memory, search_req)
+        .await?;
 
-            let candidates: Vec<Value> = search_res
-                .results
-                .into_iter()
-                .map(|item| {
-                    let mut obj = json!({
-                        "id": item.id,
-                        "path": item.path,
-                        "score": item.score,
-                        "snippet": item.snippet,
-                        "kind": item.kind,
-                    });
-                    if include_content {
-                        obj.as_object_mut()
-                            .expect("object")
-                            .insert("content".to_string(), json!(item.content));
-                    }
-                    obj
-                })
-                .collect();
+    let candidates: Vec<Value> = search_res
+        .results
+        .into_iter()
+        .map(|item| {
+            let mut obj = json!({
+                "id": item.id,
+                "path": item.path,
+                "score": item.score,
+                "snippet": item.snippet,
+                "kind": item.kind,
+            });
+            if include_content {
+                obj.as_object_mut()
+                    .expect("object")
+                    .insert("content".to_string(), json!(item.content));
+            }
+            obj
+        })
+        .collect();
 
     Ok(serde_json::to_value(MCPToolResult {
         content,
@@ -640,8 +646,7 @@ async fn handle_save_fragment(
         .get("content")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
-    let content = match secure_mcp_external_input(state, "memoryfragment content", content).await?
-    {
+    let content = match secure_mcp_external_input(state, "memoryfragment content", content).await? {
         Ok(content) => content,
         Err(blocked) => return Ok(blocked),
     };
