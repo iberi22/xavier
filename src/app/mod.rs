@@ -4,6 +4,7 @@
 //! providing the public API surface for module consumers.
 pub mod health_service;
 pub mod memory_usecase;
+pub mod mini_experts;
 pub mod proxy_use_case;
 pub mod qmd_memory_adapter;
 pub mod security_service;
