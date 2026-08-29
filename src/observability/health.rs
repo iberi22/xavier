@@ -11,8 +11,8 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 
 use crate::codebase::connection_manager::ConnectionManager;
-use crate::health::repair::{should_retry_peer, PeerRetryDecision};
 use crate::embedding::Embedder;
+use crate::health::repair::{should_retry_peer, PeerRetryDecision};
 use crate::mesh::PeerRegistry;
 use crate::notifications::{IslandId, NOTIFICATIONS};
 

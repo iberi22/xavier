@@ -3,11 +3,7 @@
 //! Validates contracts across Web APIs, Desktop/Headless mode, Memory subsystem,
 //! and Mesh P2P offline buffering & consent filters.
 
-use axum::{
-    extract::Json,
-    routing::get,
-    Router,
-};
+use axum::{extract::Json, routing::get, Router};
 use chrono::Utc;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -208,20 +204,28 @@ async fn test_full_ecosystem_flow() {
             session_id: "e2e_ecosystem_sess_1".to_string(),
             event_type: SessionEventType::Message,
             timestamp: Utc::now(),
-            content: Some("Sin embargo, esta propuesta contradice la decisión tomada en la reunión anterior.".to_string()),
+            content: Some(
+                "Sin embargo, esta propuesta contradice la decisión tomada en la reunión anterior."
+                    .to_string(),
+            ),
             metadata: None,
         },
         SessionEvent {
             session_id: "e2e_ecosystem_sess_1".to_string(),
             event_type: SessionEventType::Message,
             timestamp: Utc::now(),
-            content: Some("Acordamos implementar el almacenamiento local utilizando SQLite.".to_string()),
+            content: Some(
+                "Acordamos implementar el almacenamiento local utilizando SQLite.".to_string(),
+            ),
             metadata: None,
         },
     ];
     let scanner = SessionScanner::new();
     let candidates = scanner.scan_session_events(&session_events);
-    assert!(!candidates.is_empty(), "Session scanner must detect challenges");
+    assert!(
+        !candidates.is_empty(),
+        "Session scanner must detect challenges"
+    );
 
     // 3.2 Semantic Compression Card Generation
     let turn1 = DialogueTurn::new(
@@ -289,8 +293,8 @@ async fn test_full_ecosystem_flow() {
     assert_eq!(vote_engine.default_quorum, 10);
 
     let effective_votes = calculate_effective_votes(
-        16,   // 16 credits -> sqrt(16 * karma_weight)
-        80,   // 80 EigenTrust karma multiplier
+        16, // 16 credits -> sqrt(16 * karma_weight)
+        80, // 80 EigenTrust karma multiplier
         IvnIdentityTier::Verified,
         false, // not sybil flagged
     );

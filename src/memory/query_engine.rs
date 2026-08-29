@@ -136,39 +136,49 @@ impl MemoryQueryEngine {
         let limit = if req.limit == 0 { 10 } else { req.limit };
         let filter_ref = req.filters.as_ref();
 
-        let raw_docs = if req.rrf_k.is_some() || req.keyword_weight != 0.5 || req.vector_weight != 0.5 {
-            let mut searcher = HybridSearcher::new();
-            searcher.keyword_weight = req.keyword_weight;
-            searcher.vector_weight = req.vector_weight;
-            if let Some(rrf_k) = req.rrf_k {
-                searcher.rrf_k = rrf_k;
-            }
-            if let Ok(scored) = searcher.search(memory, &req.query, limit, filter_ref).await {
-                let mut docs = Vec::new();
-                for res in scored {
-                    let mut doc = memory.get(&res.id).await.ok().flatten().unwrap_or_else(|| MemoryDocument {
-                        id: Some(res.id.clone()),
-                        path: res.path.clone(),
-                        content: res.content.clone(),
-                        score: res.score,
-                        metadata: serde_json::json!({}),
-                        ..Default::default()
-                    });
-                    doc.score = res.score;
-                    if let Some(obj) = doc.metadata.as_object_mut() {
-                        if !obj.contains_key("source") {
-                            obj.insert("source".to_string(), serde_json::json!(res.source));
-                        }
-                    }
-                    docs.push(doc);
+        let raw_docs =
+            if req.rrf_k.is_some() || req.keyword_weight != 0.5 || req.vector_weight != 0.5 {
+                let mut searcher = HybridSearcher::new();
+                searcher.keyword_weight = req.keyword_weight;
+                searcher.vector_weight = req.vector_weight;
+                if let Some(rrf_k) = req.rrf_k {
+                    searcher.rrf_k = rrf_k;
                 }
-                docs
+                if let Ok(scored) = searcher.search(memory, &req.query, limit, filter_ref).await {
+                    let mut docs = Vec::new();
+                    for res in scored {
+                        let mut doc =
+                            memory.get(&res.id).await.ok().flatten().unwrap_or_else(|| {
+                                MemoryDocument {
+                                    id: Some(res.id.clone()),
+                                    path: res.path.clone(),
+                                    content: res.content.clone(),
+                                    score: res.score,
+                                    metadata: serde_json::json!({}),
+                                    ..Default::default()
+                                }
+                            });
+                        doc.score = res.score;
+                        if let Some(obj) = doc.metadata.as_object_mut() {
+                            if !obj.contains_key("source") {
+                                obj.insert("source".to_string(), serde_json::json!(res.source));
+                            }
+                        }
+                        docs.push(doc);
+                    }
+                    docs
+                } else {
+                    memory
+                        .search_filtered(&req.query, limit, filter_ref)
+                        .await
+                        .unwrap_or_default()
+                }
             } else {
-                memory.search_filtered(&req.query, limit, filter_ref).await.unwrap_or_default()
-            }
-        } else {
-            memory.search_filtered(&req.query, limit, filter_ref).await.unwrap_or_default()
-        };
+                memory
+                    .search_filtered(&req.query, limit, filter_ref)
+                    .await
+                    .unwrap_or_default()
+            };
 
         let mut documents = Vec::with_capacity(raw_docs.len());
         for doc in raw_docs {
@@ -197,7 +207,11 @@ impl MemoryQueryEngine {
                 metadata: doc.metadata,
                 vector_score: None,
                 lexical_score: None,
-                embedding: doc.content_vector.or(if doc.embedding.is_empty() { None } else { Some(doc.embedding) }),
+                embedding: doc.content_vector.or(if doc.embedding.is_empty() {
+                    None
+                } else {
+                    Some(doc.embedding)
+                }),
             });
         }
 
@@ -215,7 +229,9 @@ impl MemoryQueryEngine {
                 })
                 .collect();
 
-            let expanded = memory.expand_depth(&docs_to_expand, req.depth, filter_ref).await?;
+            let expanded = memory
+                .expand_depth(&docs_to_expand, req.depth, filter_ref)
+                .await?;
             expanded
                 .into_iter()
                 .map(|doc| {
@@ -338,8 +354,14 @@ impl MemoryQueryEngine {
 
             let mut meta = record.metadata.clone();
             if let Some(obj) = meta.as_object_mut() {
-                obj.insert("truncated".to_string(), serde_json::json!(is_this_doc_truncated));
-                obj.insert("total_chars".to_string(), serde_json::json!(total_record_chars));
+                obj.insert(
+                    "truncated".to_string(),
+                    serde_json::json!(is_this_doc_truncated),
+                );
+                obj.insert(
+                    "total_chars".to_string(),
+                    serde_json::json!(total_record_chars),
+                );
             }
 
             let kind = record

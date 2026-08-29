@@ -228,7 +228,11 @@ pub fn run_xtsp_benchmark(
     }
 
     let num_queries = cases.len();
-    let num_q_f64 = if num_queries > 0 { num_queries as f64 } else { 1.0 };
+    let num_q_f64 = if num_queries > 0 {
+        num_queries as f64
+    } else {
+        1.0
+    };
 
     let snippet_compression_ratio = if full_mode_bytes > 0 {
         snippet_mode_bytes as f64 / full_mode_bytes as f64
@@ -289,7 +293,8 @@ mod tests {
                 XtspDocument {
                     id: "doc_1".to_string(),
                     title: "LLVM Optimization Pass".to_string(),
-                    content: "This document describes compiler optimization passes in LLVM.".to_string(),
+                    content: "This document describes compiler optimization passes in LLVM."
+                        .to_string(),
                 },
                 XtspDocument {
                     id: "doc_2".to_string(),

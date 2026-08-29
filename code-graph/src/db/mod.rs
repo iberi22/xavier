@@ -17,10 +17,12 @@ use tracing::{debug, info};
 
 const DEFAULT_PROJECT_ID: &str = "default";
 
-static DB_CACHE: std::sync::OnceLock<parking_lot::RwLock<std::collections::HashMap<PathBuf, Arc<Mutex<Connection>>>>> =
-    std::sync::OnceLock::new();
+static DB_CACHE: std::sync::OnceLock<
+    parking_lot::RwLock<std::collections::HashMap<PathBuf, Arc<Mutex<Connection>>>>,
+> = std::sync::OnceLock::new();
 
-fn db_cache() -> &'static parking_lot::RwLock<std::collections::HashMap<PathBuf, Arc<Mutex<Connection>>>> {
+fn db_cache(
+) -> &'static parking_lot::RwLock<std::collections::HashMap<PathBuf, Arc<Mutex<Connection>>>> {
     DB_CACHE.get_or_init(|| parking_lot::RwLock::new(std::collections::HashMap::new()))
 }
 
@@ -34,7 +36,10 @@ pub fn flush_and_close_cache() {
     for (path, conn_arc) in cache.drain() {
         if let Ok(conn) = conn_arc.lock() {
             let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
-            debug!("Flushed WAL checkpoint for cached CodeGraphDB at {:?}", path);
+            debug!(
+                "Flushed WAL checkpoint for cached CodeGraphDB at {:?}",
+                path
+            );
         }
     }
 }
@@ -345,10 +350,15 @@ impl CodeGraphDB {
                 .lock()
                 .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
             let count: i64 = conn
-                .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| row.get(0))
+                .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |row| {
+                    row.get(0)
+                })
                 .unwrap_or(0);
             if count > 100_000 {
-                info!("Bloated memory_symbol_links table detected ({} rows); purging and vacuuming", count);
+                info!(
+                    "Bloated memory_symbol_links table detected ({} rows); purging and vacuuming",
+                    count
+                );
                 let _ = conn.execute_batch("DELETE FROM memory_symbol_links; VACUUM;");
             }
         }
@@ -432,7 +442,13 @@ impl CodeGraphDB {
 
     fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<()> {
         let allowed_tables = ["symbols", "edges", "file_metadata"];
-        let allowed_columns = ["stable_id", "signature", "parent", "complexity", "project_root"];
+        let allowed_columns = [
+            "stable_id",
+            "signature",
+            "parent",
+            "complexity",
+            "project_root",
+        ];
 
         if !allowed_tables.contains(&table) {
             return Err(GraphError::Database(format!(
@@ -1759,7 +1775,11 @@ impl CodeGraphDB {
         drop(conn);
 
         // Sort by confidence DESC and limit to top-10 max links per memory
-        links.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        links.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         links.truncate(10);
 
         if !links.is_empty() {
