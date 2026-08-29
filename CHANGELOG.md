@@ -2,9 +2,11 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## [0.14.0] - 2026-08-27
+## [0.14.0] - 2026-08-29
 
 ### Added
+
+- Public readiness wave (data litter prune script, orphan branches docs, version bump 0.14.0)
 
 - MemoryQueryEngine unification (HTTP/CLI/MCP)
 - Centralized SQLite pragmas (cache_size, mmap, temp_store)
