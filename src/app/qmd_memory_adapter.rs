@@ -59,18 +59,16 @@ impl MemoryQueryPort for QmdMemoryAdapter {
         Ok(search_res
             .results
             .into_iter()
-            .map(|item| {
-                MemoryRecord {
-                    id: item.id,
-                    workspace_id: workspace_id.to_string(),
-                    path: item.path,
-                    content: item.content,
-                    metadata: item.metadata,
-                    embedding: item.embedding.unwrap_or_default(),
-                    score: item.score,
-                    primary: true,
-                    ..Default::default()
-                }
+            .map(|item| MemoryRecord {
+                id: item.id,
+                workspace_id: workspace_id.to_string(),
+                path: item.path,
+                content: item.content,
+                metadata: item.metadata,
+                embedding: item.embedding.unwrap_or_default(),
+                score: item.score,
+                primary: true,
+                ..Default::default()
             })
             .collect())
     }

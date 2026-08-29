@@ -32,7 +32,6 @@ pub use anticipator::{Anticipator, AnticipatorConfig};
 pub use detections::{ScanResult as AnticipatorScanResult, Severity, Threat, ThreatCategory};
 pub use prompt_guard::{AttackType, DetectionResult, PromptInjectionDetector};
 pub use rate_limiter::{LimiterConfig, LimiterResult, SlidingWindowLimiter};
-pub use sliding_limiter::{LockFreeSlidingLimiter, SlidingLimiterConfig};
 pub use redaction::{parse_segmented, DocSection, RedactionEngine, RedactionRule, SegmentedDoc};
 pub use scanner::entropy::{
     EntropyCalculator, EntropyRegion, EntropyScanner, EntropyThreshold, SecretDetector, SecretMatch,
@@ -42,6 +41,7 @@ pub use scanner::{
     is_threat, scan_text, DetectionLayer, ScanResult, SecurityScanner, ThreatLevel,
     TriggeredDetection, SCANNER,
 };
+pub use sliding_limiter::{LockFreeSlidingLimiter, SlidingLimiterConfig};
 
 use std::collections::HashMap;
 use std::sync::RwLock;

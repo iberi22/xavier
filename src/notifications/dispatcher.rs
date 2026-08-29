@@ -9,9 +9,7 @@ pub struct NotificationDispatcher {
 impl NotificationDispatcher {
     /// New.
     pub fn new() -> Self {
-        Self {
-            telegram_tx: None,
-        }
+        Self { telegram_tx: None }
     }
 
     /// With telegram.
@@ -23,16 +21,22 @@ impl NotificationDispatcher {
     /// Start.
     pub fn start(self) {
         let mut rx = NOTIFICATIONS.subscribe();
-        
+
         tokio::spawn(async move {
             info!("Notification Dispatcher started in background.");
             if let Err(e) = crate::notifications::ensure_memory_pool().await {
-                tracing::warn!("Notification Dispatcher: memory pool lazy init warning: {}", e);
+                tracing::warn!(
+                    "Notification Dispatcher: memory pool lazy init warning: {}",
+                    e
+                );
             }
             while let Ok(notification) = rx.recv().await {
                 if let Some(tx) = &self.telegram_tx {
                     if let Err(e) = tx.send(notification).await {
-                        tracing::warn!("Notification Dispatcher: failed to send to telegram channel: {}", e);
+                        tracing::warn!(
+                            "Notification Dispatcher: failed to send to telegram channel: {}",
+                            e
+                        );
                     }
                 }
             }
@@ -75,7 +79,14 @@ mod tests {
         let dispatcher = NotificationDispatcher::new().with_telegram(tx);
         dispatcher.start();
 
-        let _ = NOTIFICATIONS.notify(IslandId::System, "Dispatcher Test Title", "Dispatcher Test Body", "info").await;
+        let _ = NOTIFICATIONS
+            .notify(
+                IslandId::System,
+                "Dispatcher Test Title",
+                "Dispatcher Test Body",
+                "info",
+            )
+            .await;
 
         let received = timeout(Duration::from_secs(2), rx.recv())
             .await

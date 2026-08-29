@@ -527,29 +527,40 @@ async fn collect_health_impl(
 
     // --- Embedding health ---
     let probe_start = std::time::Instant::now();
-    let (connected, latency_ms, error_rate_pct, last_success) = match crate::embedding::build_embedder_from_env().await {
-        Ok(embedder) => {
-            if embedder.dimension() == 0 {
-                (false, 0.0, 0.0, None)
-            } else {
-                match tokio::time::timeout(std::time::Duration::from_secs(2), embedder.probe_health()).await {
-                    Ok(Ok(lat)) => (true, lat, 0.0, Some(now_secs)),
-                    Ok(Err(_err)) => {
-                        let total_errors = crate::embedding::get_embedding_error_count().max(1);
-                        (false, probe_start.elapsed().as_secs_f64() * 1000.0, (total_errors as f64).min(100.0), None)
-                    }
-                    Err(_timeout) => {
-                        let total_errors = crate::embedding::get_embedding_error_count().max(1);
-                        (false, 2000.0, (total_errors as f64).min(100.0), None)
+    let (connected, latency_ms, error_rate_pct, last_success) =
+        match crate::embedding::build_embedder_from_env().await {
+            Ok(embedder) => {
+                if embedder.dimension() == 0 {
+                    (false, 0.0, 0.0, None)
+                } else {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        embedder.probe_health(),
+                    )
+                    .await
+                    {
+                        Ok(Ok(lat)) => (true, lat, 0.0, Some(now_secs)),
+                        Ok(Err(_err)) => {
+                            let total_errors = crate::embedding::get_embedding_error_count().max(1);
+                            (
+                                false,
+                                probe_start.elapsed().as_secs_f64() * 1000.0,
+                                (total_errors as f64).min(100.0),
+                                None,
+                            )
+                        }
+                        Err(_timeout) => {
+                            let total_errors = crate::embedding::get_embedding_error_count().max(1);
+                            (false, 2000.0, (total_errors as f64).min(100.0), None)
+                        }
                     }
                 }
             }
-        }
-        Err(_) => {
-            let total_errors = crate::embedding::get_embedding_error_count().max(1);
-            (false, 0.0, (total_errors as f64).min(100.0), None)
-        }
-    };
+            Err(_) => {
+                let total_errors = crate::embedding::get_embedding_error_count().max(1);
+                (false, 0.0, (total_errors as f64).min(100.0), None)
+            }
+        };
 
     let embedding = EmbeddingHealth {
         provider: settings.embedding.embedder.clone(),
@@ -628,13 +639,14 @@ async fn collect_health_impl(
     } else {
         "healthy"
     };
-    let emb_status_str = if settings.embedding.embedder == "disabled" || settings.embedding.embedder == "noop" {
-        "disabled"
-    } else if !embedding.connected || embedding.error_rate_pct > 0.0 {
-        "degraded"
-    } else {
-        "healthy"
-    };
+    let emb_status_str =
+        if settings.embedding.embedder == "disabled" || settings.embedding.embedder == "noop" {
+            "disabled"
+        } else if !embedding.connected || embedding.error_rate_pct > 0.0 {
+            "degraded"
+        } else {
+            "healthy"
+        };
     let mesh_status_str = if mesh.connectivity == "online" || mesh.connectivity == "no peers" {
         "healthy"
     } else {

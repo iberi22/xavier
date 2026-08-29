@@ -321,12 +321,11 @@ impl VecSqliteMemoryStore {
     }
 
     /// Synchronous helper to calculate embedding integrity statistics.
-    pub fn embedding_integrity_stats_conn(conn: &rusqlite::Connection) -> Result<EmbeddingIntegrityStats> {
-        let total: usize = conn.query_row(
-            "SELECT COUNT(*) FROM memory_records",
-            [],
-            |row| row.get(0),
-        )?;
+    pub fn embedding_integrity_stats_conn(
+        conn: &rusqlite::Connection,
+    ) -> Result<EmbeddingIntegrityStats> {
+        let total: usize =
+            conn.query_row("SELECT COUNT(*) FROM memory_records", [], |row| row.get(0))?;
 
         let completed_real: usize = conn.query_row(
             "SELECT COUNT(*) FROM memory_records WHERE embedding_status = 'completed' AND embedding IS NOT NULL AND length(embedding) > 100",

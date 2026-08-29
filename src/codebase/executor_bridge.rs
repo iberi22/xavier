@@ -31,9 +31,12 @@ pub fn estimate_tokens(text: &str) -> usize {
 }
 
 /// Calculate token savings achieved by using `PreciseChange` instead of transmitting full file content.
-pub fn calculate_token_savings(full_content: &str, changes: &[PreciseChange]) -> TokenSavingsReport {
+pub fn calculate_token_savings(
+    full_content: &str,
+    changes: &[PreciseChange],
+) -> TokenSavingsReport {
     let full_file_tokens = estimate_tokens(full_content);
-    
+
     let mut delta_text = String::new();
     for change in changes {
         delta_text.push_str(&change.file);
@@ -41,14 +44,14 @@ pub fn calculate_token_savings(full_content: &str, changes: &[PreciseChange]) ->
         delta_text.push_str(&change.before_snippet);
         delta_text.push_str(&change.after_snippet);
     }
-    
+
     let precise_delta_tokens = estimate_tokens(&delta_text);
     let tokens_saved = if full_file_tokens > precise_delta_tokens {
         full_file_tokens - precise_delta_tokens
     } else {
         0
     };
-    
+
     let savings_percentage = if full_file_tokens > 0 {
         ((tokens_saved as f64) / (full_file_tokens as f64)) * 100.0
     } else {

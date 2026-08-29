@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     memory::{
-        schema::MemoryQueryFilters,
         query_engine::{MemoryQueryEngine, SearchQuery, SearchResultItem},
+        schema::MemoryQueryFilters,
     },
     workspace::WorkspaceContext,
 };

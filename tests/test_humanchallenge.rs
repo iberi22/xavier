@@ -86,8 +86,12 @@ fn test_humanchallenge_farming_summary() {
     assert_eq!(summary.total_points, 0);
 
     // Answer 2 events
-    store.answer_challenge("hc-event-0", "Answer 0", 10).expect("answer");
-    store.answer_challenge("hc-event-1", "Answer 1", 10).expect("answer");
+    store
+        .answer_challenge("hc-event-0", "Answer 0", 10)
+        .expect("answer");
+    store
+        .answer_challenge("hc-event-1", "Answer 1", 10)
+        .expect("answer");
 
     let summary2 = store.get_farming_summary(&ym).expect("get farming summary");
     assert_eq!(summary2.total_points, 20);
@@ -124,15 +128,13 @@ fn test_humanchallenge_cron_process_and_award() {
         store,
     );
 
-    let events = vec![
-        SessionEvent {
-            session_id: "sess-cron-01".to_string(),
-            event_type: SessionEventType::Message,
-            timestamp: Utc::now(),
-            content: Some("He decidido migrar a NixOS pero sin embargo mantengo Ubuntu.".to_string()),
-            metadata: None,
-        }
-    ];
+    let events = vec![SessionEvent {
+        session_id: "sess-cron-01".to_string(),
+        event_type: SessionEventType::Message,
+        timestamp: Utc::now(),
+        content: Some("He decidido migrar a NixOS pero sin embargo mantengo Ubuntu.".to_string()),
+        metadata: None,
+    }];
 
     let count = cron.process_events(&events).expect("process events");
     assert_eq!(count, 1);
