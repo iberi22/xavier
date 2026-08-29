@@ -438,6 +438,11 @@ impl Embedder for CachedEmbedder {
         }
     }
 
+    async fn probe_health(&self) -> Result<f64, EmbeddingError> {
+        // Bypass cache during health probe
+        self.inner.probe_health().await
+    }
+
     fn dimension(&self) -> usize {
         self.inner.dimension()
     }
