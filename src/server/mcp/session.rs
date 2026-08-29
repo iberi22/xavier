@@ -359,9 +359,24 @@ pub async fn mcp_post_handler(
     let result = dispatch_mcp_value(state, workspace, claims_ref, payload).await;
     let _ = manager.transition_state(session_id, McpSessionState::Connected);
 
+    let active_session_id = if session_id == "default" {
+        ulid::Ulid::new().to_string()
+    } else {
+        session_id.to_string()
+    };
+
     match result {
-        Ok(Some(response)) => (StatusCode::OK, Json(response)).into_response(),
-        Ok(None) => StatusCode::ACCEPTED.into_response(),
+        Ok(Some(response)) => (
+            StatusCode::OK,
+            [("mcp-session-id", active_session_id)],
+            Json(response),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::ACCEPTED,
+            [("mcp-session-id", active_session_id)],
+        )
+            .into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
     }
 }
@@ -649,6 +664,36 @@ async fn handle_mcp_request(
             result: Some(serde_json::json!({ "tools": super::server::get_xavier_tools() })),
             error: None,
         }),
+        "server/discover" => {
+            let tools = super::server::get_xavier_tools();
+            let resources = super::server::get_xavier_resources();
+            Some(MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: request.id.unwrap_or(Value::Null),
+                result: Some(serde_json::json!({
+                    "serverInfo": {
+                        "name": "xavier-memory",
+                        "version": env!("CARGO_PKG_VERSION")
+                    },
+                    "protocolVersion": "2026-07-28",
+                    "capabilities": {
+                        "tools": {
+                            "count": tools.len(),
+                            "list": tools
+                        },
+                        "resources": {
+                            "count": resources.len(),
+                            "list": resources
+                        },
+                        "prompts": {
+                            "count": 0,
+                            "list": []
+                        }
+                    }
+                })),
+                error: None,
+            })
+        }
         "tools/call" => {
             let params = request.params.unwrap_or(serde_json::json!({}));
             let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");

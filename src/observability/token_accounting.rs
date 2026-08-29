@@ -92,5 +92,102 @@ pub struct TokenStats {
     pub operation_count: usize,
 }
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[derive(Debug, Default)]
+pub struct SearchTokenStats {
+    pub searches_total: AtomicU64,
+    pub searches_snippet: AtomicU64,
+    pub searches_full: AtomicU64,
+    pub searches_ids: AtomicU64,
+    pub bytes_snippet: AtomicU64,
+    pub bytes_full: AtomicU64,
+}
+
+impl SearchTokenStats {
+    pub fn record_search(&self, mode: &str, bytes: usize) {
+        self.searches_total.fetch_add(1, Ordering::Relaxed);
+        let b = bytes as u64;
+        match mode {
+            "snippet" => {
+                self.searches_snippet.fetch_add(1, Ordering::Relaxed);
+                self.bytes_snippet.fetch_add(b, Ordering::Relaxed);
+            }
+            "ids" => {
+                self.searches_ids.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => {
+                // "full" or default
+                self.searches_full.fetch_add(1, Ordering::Relaxed);
+                self.bytes_full.fetch_add(b, Ordering::Relaxed);
+            }
+        }
+    }
+
+    pub fn snapshot(&self) -> SearchTokenStatsSnapshot {
+        let searches_total = self.searches_total.load(Ordering::Relaxed);
+        let snippet = self.searches_snippet.load(Ordering::Relaxed);
+        let full = self.searches_full.load(Ordering::Relaxed);
+        let ids = self.searches_ids.load(Ordering::Relaxed);
+        let bytes_snippet = self.bytes_snippet.load(Ordering::Relaxed);
+        let bytes_full = self.bytes_full.load(Ordering::Relaxed);
+
+        // Theoretical full bytes if all snippet searches had returned full payloads
+        // (using average full payload bytes per search or 2.5x snippet factor)
+        let est_saved_bytes = if full > 0 && bytes_full > 0 {
+            let avg_full = bytes_full / full;
+            snippet
+                .saturating_mul(avg_full)
+                .saturating_sub(bytes_snippet)
+        } else {
+            bytes_snippet.saturating_mul(2) // Heuristic ~60% savings
+        };
+        let est_tokens_saved = (est_saved_bytes / 4) as usize;
+
+        let total_bytes = bytes_snippet + bytes_full;
+        let saved_ratio = if total_bytes > 0 {
+            est_saved_bytes as f64 / (total_bytes + est_saved_bytes) as f64
+        } else {
+            0.0
+        };
+
+        SearchTokenStatsSnapshot {
+            searches_total,
+            by_mode: SearchByMode { snippet, full, ids },
+            bytes_returned: SearchBytesReturned {
+                snippet: bytes_snippet,
+                full: bytes_full,
+            },
+            est_tokens_saved,
+            saved_ratio,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SearchTokenStatsSnapshot {
+    pub searches_total: u64,
+    pub by_mode: SearchByMode,
+    pub bytes_returned: SearchBytesReturned,
+    pub est_tokens_saved: usize,
+    pub saved_ratio: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SearchByMode {
+    pub snippet: u64,
+    pub full: u64,
+    pub ids: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SearchBytesReturned {
+    pub snippet: u64,
+    pub full: u64,
+}
+
+pub static SEARCH_STATS: std::sync::LazyLock<SearchTokenStats> =
+    std::sync::LazyLock::new(SearchTokenStats::default);
+
 pub static TRACKER: std::sync::LazyLock<TokenAccountingTracker> =
     std::sync::LazyLock::new(TokenAccountingTracker::new);

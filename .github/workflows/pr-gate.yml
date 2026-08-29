@@ -1,0 +1,47 @@
+name: PR Gate (Report Only)
+
+# Non-blocking PR parity gate workflow calling scripts/ci-local.sh
+# Standard SWAL pattern: report pass/fail summary without blocking PR merge on Actions budget limits.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'panel-ui/**'
+
+permissions:
+  contents: read
+
+jobs:
+  pr-parity-gate:
+    name: Local CI Parity Check
+    runs-on: ubuntu-latest
+    continue-on-error: true # Flip to false if remote blocking enforcement is explicitly requested
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo target and registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-pr-gate-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-pr-gate-
+
+      - name: Run Canonical Local CI Gates
+        id: ci_gate
+        run: |
+          bash scripts/ci-local.sh
