@@ -220,7 +220,90 @@ impl Permission for UserRole {
     }
 }
 
+/// Token configuration health status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenConfigStatus {
+    Valid,
+    Unset,
+    SuspectComment,
+}
+
+/// Inspects current XAVIER_TOKEN configuration
+pub fn inspect_xavier_token() -> (TokenConfigStatus, Option<&'static str>) {
+    match std::env::var("XAVIER_TOKEN") {
+        Ok(t) if t.trim().is_empty() => (
+            TokenConfigStatus::Unset,
+            Some("XAVIER_TOKEN is empty. Set a non-empty token in your environment or .env file."),
+        ),
+        Ok(t) if t.contains('#') => (
+            TokenConfigStatus::SuspectComment,
+            Some("XAVIER_TOKEN contains a '#' character. Check for unquoted inline comments in your .env file."),
+        ),
+        Ok(_) => (TokenConfigStatus::Valid, None),
+        Err(_) => (
+            TokenConfigStatus::Unset,
+            Some("XAVIER_TOKEN is unset in the environment. Configure XAVIER_TOKEN in .env or systemd EnvironmentFile."),
+        ),
+    }
+}
+
 /// Resolves the Xavier token from environment variable
 pub fn resolve_xavier_token() -> String {
+    let (status, warning) = inspect_xavier_token();
+    if let Some(msg) = warning {
+        tracing::warn!(token_status = ?status, "{msg}");
+    }
     std::env::var("XAVIER_TOKEN").unwrap_or_default()
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AuthHealth {
+    pub token_config: TokenConfigStatus,
+}
+
+impl Default for AuthHealth {
+    fn default() -> Self {
+        let (status, _) = inspect_xavier_token();
+        Self {
+            token_config: status,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_inspect_xavier_token_branches() {
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        // Valid token
+        std::env::set_var("XAVIER_TOKEN", "valid-secret-token");
+        let (status, warn) = inspect_xavier_token();
+        assert_eq!(status, TokenConfigStatus::Valid);
+        assert!(warn.is_none());
+
+        // Empty token
+        std::env::set_var("XAVIER_TOKEN", "   ");
+        let (status, warn) = inspect_xavier_token();
+        assert_eq!(status, TokenConfigStatus::Unset);
+        assert!(warn.is_some());
+
+        // Suspect comment token (# in token)
+        std::env::set_var("XAVIER_TOKEN", "secret-token # inline comment");
+        let (status, warn) = inspect_xavier_token();
+        assert_eq!(status, TokenConfigStatus::SuspectComment);
+        assert!(warn.is_some());
+
+        // Unset
+        std::env::remove_var("XAVIER_TOKEN");
+        let (status, warn) = inspect_xavier_token();
+        assert_eq!(status, TokenConfigStatus::Unset);
+        assert!(warn.is_some());
+
+        // Restore
+        std::env::set_var("XAVIER_TOKEN", "test-token");
+    }
 }

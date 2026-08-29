@@ -195,7 +195,7 @@ xavier regen benchmark                            # Measure recall@k metrics
 
 | Variable | Default | Description |
 |---|---|---|
-| `XAVIER_TOKEN` | *Required* | Master authentication token for HTTP REST API requests |
+| `XAVIER_TOKEN` | *Required* | Master authentication token for HTTP REST API requests. **Note:** In `.env` files, place comments on their own lines — inline comments (e.g. `XAVIER_TOKEN=foo # comment`) become part of the literal token. Inspect active process environment via `tr '\0' '\n' < /proc/$(pgrep xavier)/environ | grep XAVIER_TOKEN`. |
 | `XAVIER_PORT` | `8006` | Main HTTP REST server bind port |
 | `XAVIER_HOST` | `0.0.0.0` | Network bind interface for HTTP server |
 | `XAVIER_WORKSPACE_DIR` | `.` | Root directory path for indexing and local database operations |

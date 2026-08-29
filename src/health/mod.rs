@@ -59,6 +59,8 @@ pub struct HealthResponse {
     #[serde(default)]
     pub telegram: TelegramHealth,
     #[serde(default)]
+    pub auth: crate::security::auth::AuthHealth,
+    #[serde(default)]
     pub dependency_graph: ComponentDependencyGraph,
     pub checks: Vec<HealthCheck>,
     pub embedding_coverage: EmbeddingCoverage,
@@ -856,6 +858,7 @@ async fn collect_health_impl(
         embedding,
         mesh,
         telegram,
+        auth: crate::security::auth::AuthHealth::default(),
         dependency_graph: dependency_graph.clone(),
         checks,
         embedding_coverage,
