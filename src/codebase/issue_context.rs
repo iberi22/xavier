@@ -53,6 +53,27 @@ pub struct MappedEntity {
     pub relevance_score: f64,
 }
 
+/// Context boundary limits for packaging issue context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextLimits {
+    /// Maximum number of matched symbols to include.
+    pub max_symbols: usize,
+    /// Maximum number of candidate files/dependencies to include.
+    pub max_files: usize,
+    /// Maximum cumulative snippet lines across generated changes.
+    pub max_diff_lines: usize,
+}
+
+impl Default for ContextLimits {
+    fn default() -> Self {
+        Self {
+            max_symbols: 20,
+            max_files: 10,
+            max_diff_lines: 500,
+        }
+    }
+}
+
 /// The complete context package for an issue.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IssueContextPackage {
@@ -396,7 +417,7 @@ pub fn generate_changes(
     Ok(changes)
 }
 
-/// Assemble the full IssueContextPackage.
+/// Assemble the full IssueContextPackage with default boundary limits.
 pub fn assemble_package(
     issue_id: &str,
     title: &str,
@@ -405,6 +426,29 @@ pub fn assemble_package(
     code_graph_db: &CodeGraphDB,
     snapshot_manager: &SnapshotManager,
     repo_root: &Path,
+) -> Result<IssueContextPackage> {
+    assemble_package_with_limits(
+        issue_id,
+        title,
+        repo,
+        body,
+        code_graph_db,
+        snapshot_manager,
+        repo_root,
+        ContextLimits::default(),
+    )
+}
+
+/// Assemble the full IssueContextPackage with custom boundary limits.
+pub fn assemble_package_with_limits(
+    issue_id: &str,
+    title: &str,
+    repo: &str,
+    body: &str,
+    code_graph_db: &CodeGraphDB,
+    snapshot_manager: &SnapshotManager,
+    repo_root: &Path,
+    limits: ContextLimits,
 ) -> Result<IssueContextPackage> {
     let issue_type = detect_issue_type(title, body);
     let entities = parse_issue_entities(title, body);
@@ -416,13 +460,51 @@ pub fn assemble_package(
         repo_root,
         title,
     )?;
+
+    // Enforce limits on mapped entities: max_symbols and max_files
+    let mut limited_mapped = Vec::new();
+    let mut symbol_count = 0;
+    let mut file_count = 0;
+
+    for m in mapped {
+        if m.entity.kind == "symbol" {
+            if symbol_count < limits.max_symbols {
+                symbol_count += 1;
+                limited_mapped.push(m);
+            }
+        } else if m.entity.kind == "file" {
+            if file_count < limits.max_files {
+                file_count += 1;
+                limited_mapped.push(m);
+            }
+        } else {
+            limited_mapped.push(m);
+        }
+    }
+    let mapped = limited_mapped;
+
     let changes = generate_changes(&mapped, snapshot_manager, repo, repo_root)?;
 
-    // Extract deps from file entities
+    // Enforce max_diff_lines limit on generated changes
+    let mut truncated_changes = Vec::new();
+    let mut current_diff_lines = 0;
+    for c in changes {
+        let snippet_lines = c.before_snippet.lines().count().max(1);
+        if truncated_changes.is_empty() || current_diff_lines + snippet_lines <= limits.max_diff_lines {
+            current_diff_lines += snippet_lines;
+            truncated_changes.push(c);
+        } else {
+            break;
+        }
+    }
+    let changes = truncated_changes;
+
+    // Extract deps from file entities (bounded by max_files)
     let deps: Vec<String> = mapped
         .iter()
         .filter(|m| m.entity.kind == "file" && m.found)
         .filter_map(|m| m.file.clone())
+        .take(limits.max_files)
         .collect();
 
     // Suggest test files based on changed files
@@ -593,5 +675,90 @@ mod tests {
         // assemble_package requires real DB instances — test parse_issue_entities directly
         let entities = parse_issue_entities("Test issue", "");
         assert!(entities.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_issue_context_package_oversized_diff_budget() {
+        use tempfile::tempdir;
+        use code_graph::indexer::Indexer;
+        use std::sync::Arc;
+
+        let temp_dir = tempdir().expect("failed to create temp dir");
+        let temp_path = temp_dir.path();
+        std::fs::create_dir_all(temp_path.join(".git")).expect("mock .git");
+
+        let src_dir = temp_path.join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir");
+
+        // Create 25 files with symbols and multi-line content
+        let mut body = String::from("Fix issues across candidate files:\n");
+        for i in 0..25 {
+            let file_name = format!("mod_{}.rs", i);
+            let rel_path = format!("src/{}", file_name);
+            let content = format!(
+                "pub fn fn_{}() -> usize {{\n    let x = {};\n    x + 10\n}}\n",
+                i, i
+            );
+            std::fs::write(src_dir.join(&file_name), content).expect("write file");
+
+            body.push_str(&format!("- Check `{}` for `fn_{}`\n", rel_path, i));
+        }
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("CodeGraphDB"));
+        let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
+        indexer.index(temp_path, true).await.expect("index repo");
+        let snapshot = SnapshotManager::new(temp_path);
+
+        let limits = ContextLimits {
+            max_symbols: 5,
+            max_files: 5,
+            max_diff_lines: 10,
+        };
+
+        let package = assemble_package_with_limits(
+            "101",
+            "Oversized diff budget test issue",
+            "test/repo",
+            &body,
+            &db,
+            &snapshot,
+            temp_path,
+            limits.clone(),
+        )
+        .expect("assemble_package_with_limits");
+
+        let mapped_symbols = package.mapped.iter().filter(|m| m.entity.kind == "symbol").count();
+        let mapped_files = package.mapped.iter().filter(|m| m.entity.kind == "file").count();
+
+        assert!(
+            mapped_symbols <= limits.max_symbols,
+            "Mapped symbols ({}) should be capped at max_symbols ({})",
+            mapped_symbols,
+            limits.max_symbols
+        );
+        assert!(
+            mapped_files <= limits.max_files,
+            "Mapped files ({}) should be capped at max_files ({})",
+            mapped_files,
+            limits.max_files
+        );
+        assert!(
+            package.deps.len() <= limits.max_files,
+            "Deps ({}) should be capped at max_files ({})",
+            package.deps.len(),
+            limits.max_files
+        );
+
+        let total_diff_lines: usize = package
+            .changes
+            .iter()
+            .map(|c| c.before_snippet.lines().count())
+            .sum();
+        assert!(
+            total_diff_lines <= limits.max_diff_lines,
+            "Total snippet lines ({}) should not exceed max_diff_lines ({})",
+            total_diff_lines,
+            limits.max_diff_lines
+        );
     }
 }
