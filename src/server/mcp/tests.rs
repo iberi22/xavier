@@ -453,16 +453,33 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    let search_text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(search_text.contains("fragment content"));
-
-    // Extract ID from search text (Id: <ulid>)
-    let id = search_text
-        .split('\n')
-        .next()
-        .unwrap()
-        .strip_prefix("Id: ")
-        .unwrap();
+    // search_fragments now returns structuredContent.candidates plus optional text.
+    // Prefer the structured id; fall back to the legacy "Id: <ulid>" text line.
+    let structured_id = body["result"]["structuredContent"]["candidates"][0]["id"]
+        .as_str()
+        .map(String::from);
+    let text_opt = body["result"]["content"][0]["text"]
+        .as_str()
+        .map(String::from);
+    let id: String = if let Some(cid) = structured_id {
+        // verify fragment text is present somewhere in the payload
+        let all =
+            body["result"]["structuredContent"].to_string() + &text_opt.clone().unwrap_or_default();
+        assert!(all.contains("fragment content"));
+        cid
+    } else {
+        let search_text = text_opt
+            .as_deref()
+            .expect("search_fragments returned neither structured nor legacy text");
+        assert!(search_text.contains("fragment content"));
+        search_text
+            .split('\n')
+            .next()
+            .expect("missing Id line")
+            .strip_prefix("Id: ")
+            .expect("missing Id: prefix")
+            .to_string()
+    };
 
     // get_recent_fragments
     let response = post_json(
