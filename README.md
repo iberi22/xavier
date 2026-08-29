@@ -247,6 +247,7 @@ PRAGMA foreign_keys = ON;
 ## 📂 Documentation Manifest
 
 - [Agent Rules (AGENTS.md)](AGENTS.md) — Mandatory guidelines for memory formatting and agent behavior.
+- [Agent Integration Guide](docs/guides/agent-integration.md) — Connect autonomous agents (Hermes, Gestalt, Jules) to Xavier.
 - [Feature Status](docs/FEATURE_STATUS.md) — Comprehensive surface verification checklist.
 - [CLI Reference Guide](docs/guides/CLI_REFERENCE.md) — Extended CLI command arguments and usage examples.
 - [MCP Integration Guide](docs/guides/MCP_INTEGRATION.md) — Cursor and Claude Desktop MCP setup guide.

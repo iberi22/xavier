@@ -693,6 +693,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             post(xavier::server::v1_api::v1_context_assemble),
         )
         .route(
+            "/v1/context/package",
+            post(xavier::server::v1_api::v1_context_package),
+        )
+        .route(
             "/v1/memory/recall-eval",
             post(xavier::server::v1_api::v1_memory_recall_eval),
         )

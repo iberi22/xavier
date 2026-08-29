@@ -1314,6 +1314,147 @@ pub async fn v1_context_assemble(
     .into_response()
 }
 
+/// Request for POST /v1/context/package (XW10.03 #1636).
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct V1ContextPackageRequest {
+    pub query: String,
+    pub max_tokens_budget: Option<usize>,
+    pub limit: Option<usize>,
+    pub kinds: Option<Vec<String>>,
+    pub path_prefix: Option<String>,
+    pub namespace: Option<MemoryNamespace>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1ContextPackageResponse {
+    pub snippets: Vec<V1ContextPackageSnippet>,
+    pub total_tokens_estimate: usize,
+    pub truncated: bool,
+    pub ranking_meta: V1ContextPackageRankingMeta,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1ContextPackageSnippet {
+    pub id: String,
+    pub path: String,
+    pub kind: String,
+    pub score: f32,
+    pub snippet: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1ContextPackageRankingMeta {
+    pub total_candidates: usize,
+    pub included_count: usize,
+}
+
+/// POST /v1/context/package endpoint
+///
+/// One-shot fat-search to ranked-snippet context for agents (XW10.03 #1636).
+pub async fn v1_context_package(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<V1ContextPackageRequest>,
+) -> impl IntoResponse {
+    let query = payload.query.trim();
+    if query.is_empty() {
+        return crate::error::ApiError::validation("query is required").into_ok_response();
+    }
+
+    let limit = payload.limit.unwrap_or(10).clamp(1, 50);
+    let token_budget = payload.max_tokens_budget.unwrap_or(2048);
+    // Char budget via 4 chars per token heuristic
+    let char_budget = token_budget.saturating_mul(4);
+
+    let mut filters = MemoryQueryFilters::default();
+    if let Some(ns) = payload.namespace {
+        filters.project = ns.project;
+        filters.user_id = ns.user_id;
+        filters.agent_id = ns.agent_id;
+        filters.session_id = ns.session_id;
+        filters.scope = ns.scope;
+    }
+    if let Some(prefix) = payload.path_prefix.as_ref() {
+        filters.path_prefix = Some(prefix.clone());
+    }
+
+    let raw_docs = query_with_embedding_filtered(
+        &workspace.workspace.memory,
+        query,
+        limit * 3,
+        Some(&filters),
+    )
+    .await
+    .map(|r| r.documents)
+    .unwrap_or_default();
+
+    let filtered_docs = raw_docs
+        .into_iter()
+        .filter(|doc| {
+            if let Some(ref kinds) = payload.kinds {
+                let doc_kind = doc
+                    .metadata
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("generic");
+                kinds.iter().any(|k| k == doc_kind)
+            } else {
+                true
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let total_candidates = filtered_docs.len();
+    let budget = crate::memory::snippet::SnippetBudget {
+        title: 100,
+        snippet: 200,
+    };
+
+    let mut snippets = Vec::new();
+    let mut total_chars = 0usize;
+    let mut truncated = false;
+
+    for doc in filtered_docs.into_iter().take(limit) {
+        let excerpt = crate::memory::snippet::extract(&doc.content, &doc.metadata, query, budget);
+        let snippet_len = excerpt.snippet.len();
+
+        if total_chars + snippet_len > char_budget && !snippets.is_empty() {
+            truncated = true;
+            break;
+        }
+
+        let kind = doc
+            .metadata
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("generic")
+            .to_string();
+
+        snippets.push(V1ContextPackageSnippet {
+            id: doc.id.unwrap_or_default(),
+            path: doc.path,
+            kind,
+            score: doc.score,
+            snippet: excerpt.snippet,
+        });
+
+        total_chars += snippet_len;
+    }
+
+    let total_tokens_estimate = total_chars.div_ceil(4);
+    let included_count = snippets.len();
+
+    Json(V1ContextPackageResponse {
+        snippets,
+        total_tokens_estimate,
+        truncated,
+        ranking_meta: V1ContextPackageRankingMeta {
+            total_candidates,
+            included_count,
+        },
+    })
+    .into_response()
+}
+
 /// POST /v1/memory/recall-eval endpoint
 ///
 /// Evaluates retrieval quality over test queries/cases, reporting rank deviation σ,
@@ -2093,6 +2234,7 @@ mod tests {
             .route("/v1/memories/search", post(v1_memories_search))
             .route("/v1/memories/prune", post(v1_memories_prune))
             .route("/v1/context/assemble", post(v1_context_assemble))
+            .route("/v1/context/package", post(v1_context_package))
             .route("/v1/memory/recall-eval", post(v1_memory_recall_eval))
             .route("/v1/memory/recall/stats", get(v1_memory_recall_stats))
             .route("/v1/mesh/health", get(v1_mesh_health))
@@ -2765,6 +2907,98 @@ mod tests {
             "context/assemble response too large: {}",
             body.len()
         );
+    }
+
+    #[tokio::test]
+    async fn test_v1_context_package_under_budget_and_truncation() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // Store 3 memories
+        for i in 1..=3 {
+            let add_req = Request::builder()
+                .method("POST")
+                .uri("/v1/memories")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "text": format!("Document {} contains detailed agent information regarding rust architecture and state machines", i),
+                        "user_id": format!("docs/system/doc{}", i),
+                        "kind": "document",
+                    })
+                    .to_string(),
+                ))
+                .expect("failed to build add request");
+            let resp = app
+                .clone()
+                .oneshot(add_req)
+                .await
+                .expect("failed to execute add request");
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+
+        // Test normal package request
+        let pkg_req = Request::builder()
+            .method("POST")
+            .uri("/v1/context/package")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "rust architecture",
+                    "max_tokens_budget": 1000,
+                    "limit": 10,
+                })
+                .to_string(),
+            ))
+            .expect("failed to build package request");
+        let resp = app
+            .clone()
+            .oneshot(pkg_req)
+            .await
+            .expect("failed to execute package request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("failed to read body");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("failed to parse JSON");
+
+        let snippets = payload["snippets"]
+            .as_array()
+            .expect("snippets should be array");
+        assert_eq!(snippets.len(), 3);
+        assert_eq!(payload["truncated"], false);
+        assert!(payload["total_tokens_estimate"].as_u64().unwrap_or(0) > 0);
+
+        // Test truncation with tight token budget
+        let tight_pkg_req = Request::builder()
+            .method("POST")
+            .uri("/v1/context/package")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "rust architecture",
+                    "max_tokens_budget": 10,
+                    "limit": 10,
+                })
+                .to_string(),
+            ))
+            .expect("failed to build tight package request");
+        let resp = app
+            .clone()
+            .oneshot(tight_pkg_req)
+            .await
+            .expect("failed to execute tight package request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("failed to read body");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("failed to parse JSON");
+
+        assert_eq!(payload["truncated"], true);
     }
 
     #[tokio::test]
