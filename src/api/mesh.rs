@@ -91,7 +91,12 @@ pub fn mesh_routes(state: Arc<RwLock<MeshState>>) -> Router {
 async fn list_peers(State(state): State<Arc<RwLock<MeshState>>>) -> Json<PeersResponse> {
     let state = state.read().await;
     let registry = state.registry.read().await;
-    let peers: Vec<PeerView> = registry.all_peers().iter().map(PeerView::from).collect();
+    let peers: Vec<PeerView> = registry
+        .all_peers()
+        .iter()
+        .cloned()
+        .map(PeerView::from)
+        .collect();
     let healthy = peers.iter().filter(|p| p.healthy).count();
     let total = peers.len();
     Json(PeersResponse {
@@ -126,7 +131,7 @@ async fn add_peer(
     };
     let state = state.read().await;
     let mut registry = state.registry.write().await;
-    registry.add_peer(peer.clone());
+    let _ = registry.add_peer(peer.clone());
     registry
         .save()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Save: {e}")))?;
@@ -139,10 +144,12 @@ async fn remove_peer(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let state = state.read().await;
     let mut registry = state.registry.write().await;
-    let removed = registry.remove_peer(&NodeId(node_id.clone()));
-    if !removed {
+    if registry.get_peer(&NodeId(node_id.clone())).is_none() {
         return Err((StatusCode::NOT_FOUND, format!("Peer {node_id} not found")));
     }
+    registry
+        .remove_peer(&NodeId(node_id.clone()))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Remove: {e}")))?;
     registry
         .save()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Save: {e}")))?;
