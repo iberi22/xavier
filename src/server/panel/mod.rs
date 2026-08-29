@@ -120,6 +120,11 @@ mod tests {
                         name TEXT NOT NULL,
                         data TEXT NOT NULL DEFAULT '{{}}',
                         created_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS entity_graph_snapshots (
+                        workspace_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
                     );",
                     TABLE_PANEL_BOOKMARKS, TABLE_PANEL_WIDGETS, TABLE_PANEL_GRAPHS
                 ))?;
@@ -421,5 +426,206 @@ mod tests {
         let result: GraphData = serde_json::from_slice(&body).expect("test assertion");
         assert_eq!(result.id, "graph-1");
         assert_eq!(result.name, "Workspace roadmap");
+    }
+
+    #[tokio::test]
+    async fn test_panel_graph_multi_layer_durability() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace.clone());
+
+        // 1. Serialization of multi-layer graph data via HTTP API
+        let multi_layer_graph = GraphData {
+            id: "multi-layer-graph-1".to_string(),
+            name: "Multi-Layer Architecture Graph".to_string(),
+            data: serde_json::json!({
+                "nodes": [
+                    { "id": "node-roadmap-1", "layer": "roadmap", "label": "Wave 15 Hardening" },
+                    { "id": "node-kg-1", "layer": "memory_kg", "label": "EntityGraph Snapshot" },
+                    { "id": "node-code-1", "layer": "code_graph", "label": "AST Code View" }
+                ],
+                "links": [
+                    { "source": "node-roadmap-1", "target": "node-kg-1", "type": "depends_on" },
+                    { "source": "node-kg-1", "target": "node-code-1", "type": "implements" }
+                ]
+            }),
+            created_at: Utc::now(),
+        };
+
+        // Save multi-layer graph
+        let save_req = Request::builder()
+            .method("POST")
+            .uri("/panel/api/graph")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&multi_layer_graph).unwrap()))
+            .expect("test assertion");
+        let save_res = app.clone().oneshot(save_req).await.expect("test assertion");
+        assert_eq!(save_res.status(), StatusCode::OK);
+
+        // Retrieve and verify multi-layer graph serialization in SQLite
+        let get_req = Request::builder()
+            .method("GET")
+            .uri("/panel/api/graph")
+            .body(Body::empty())
+            .expect("test assertion");
+        let get_res = app.clone().oneshot(get_req).await.expect("test assertion");
+        assert_eq!(get_res.status(), StatusCode::OK);
+        let get_body = to_bytes(get_res.into_body(), usize::MAX)
+            .await
+            .expect("test assertion");
+        let fetched_graph: GraphData = serde_json::from_slice(&get_body).expect("test assertion");
+        assert_eq!(fetched_graph.id, "multi-layer-graph-1");
+        assert_eq!(fetched_graph.name, "Multi-Layer Architecture Graph");
+        assert_eq!(
+            fetched_graph.data["nodes"].as_array().map(|a| a.len()),
+            Some(3)
+        );
+        assert_eq!(
+            fetched_graph.data["links"].as_array().map(|a| a.len()),
+            Some(2)
+        );
+
+        // 2. View filtering validation
+        // Valid structure with { "nodes": [], "links": [] } succeeds
+        let valid_payload = GraphData {
+            id: "multi-layer-graph-1".to_string(),
+            name: "Valid view".to_string(),
+            data: serde_json::json!({ "nodes": [], "links": [] }),
+            created_at: Utc::now(),
+        };
+        let valid_req = Request::builder()
+            .method("POST")
+            .uri("/panel/api/graph")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&valid_payload).unwrap()))
+            .expect("test assertion");
+        let valid_res = app.clone().oneshot(valid_req).await.expect("test assertion");
+        assert_eq!(valid_res.status(), StatusCode::OK);
+
+        // Invalid structure with legacy "edges" instead of "links" is filtered/rejected
+        let invalid_edges_payload = GraphData {
+            id: "invalid-edges".to_string(),
+            name: "Invalid legacy edges".to_string(),
+            data: serde_json::json!({ "nodes": [], "edges": [] }),
+            created_at: Utc::now(),
+        };
+        let invalid_edges_req = Request::builder()
+            .method("POST")
+            .uri("/panel/api/graph")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&invalid_edges_payload).unwrap()))
+            .expect("test assertion");
+        let invalid_edges_res = app
+            .clone()
+            .oneshot(invalid_edges_req)
+            .await
+            .expect("test assertion");
+        assert_eq!(invalid_edges_res.status(), StatusCode::BAD_REQUEST);
+
+        // Invalid structure where "nodes" is not an array is filtered/rejected
+        let invalid_nodes_payload = GraphData {
+            id: "invalid-nodes".to_string(),
+            name: "Invalid non-array nodes".to_string(),
+            data: serde_json::json!({ "nodes": "not-an-array", "links": [] }),
+            created_at: Utc::now(),
+        };
+        let invalid_nodes_req = Request::builder()
+            .method("POST")
+            .uri("/panel/api/graph")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&invalid_nodes_payload).unwrap()))
+            .expect("test assertion");
+        let invalid_nodes_res = app
+            .clone()
+            .oneshot(invalid_nodes_req)
+            .await
+            .expect("test assertion");
+        assert_eq!(invalid_nodes_res.status(), StatusCode::BAD_REQUEST);
+
+        // 3. Corruption recovery
+        // Inject corrupted non-JSON data directly into SQLite panel_graphs table
+        let project_id = storage::resolve_panel_project_id(&workspace);
+        let workspace_id = workspace.workspace.config().id.clone();
+        ConnectionManager::global()
+            .with_conn(&project_id, move |conn| {
+                conn.execute(
+                    &format!(
+                        "INSERT OR REPLACE INTO {} (id, workspace_id, name, data, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        TABLE_PANEL_GRAPHS
+                    ),
+                    rusqlite::params![
+                        "corrupted-graph-id",
+                        workspace_id,
+                        "Corrupted Graph",
+                        "INVALID_JSON_{{corrupt",
+                        Utc::now().to_rfc3339(),
+                    ],
+                )?;
+                Ok(())
+            })
+            .await
+            .expect("test assertion");
+
+        // GET /panel/api/graph should recover gracefully to empty default graph when corrupted
+        let recover_get_req = Request::builder()
+            .method("GET")
+            .uri("/panel/api/graph")
+            .body(Body::empty())
+            .expect("test assertion");
+        let recover_get_res = app.clone().oneshot(recover_get_req).await.expect("test assertion");
+        assert_eq!(recover_get_res.status(), StatusCode::OK);
+        let recover_body = to_bytes(recover_get_res.into_body(), usize::MAX)
+            .await
+            .expect("test assertion");
+        let recovered_graph: GraphData = serde_json::from_slice(&recover_body).expect("test assertion");
+        assert_eq!(
+            recovered_graph.data["nodes"].as_array().map(|a| a.len()),
+            Some(0)
+        );
+        assert_eq!(
+            recovered_graph.data["links"].as_array().map(|a| a.len()),
+            Some(0)
+        );
+
+        // Saving a valid graph overwrites corrupted state successfully
+        let recovery_save = GraphData {
+            id: "recovered-graph-1".to_string(),
+            name: "Recovered Roadmap".to_string(),
+            data: serde_json::json!({
+                "nodes": [{ "id": "rec-1", "label": "Recovered Node" }],
+                "links": []
+            }),
+            created_at: Utc::now(),
+        };
+        let recovery_save_req = Request::builder()
+            .method("POST")
+            .uri("/panel/api/graph")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&recovery_save).unwrap()))
+            .expect("test assertion");
+        let recovery_save_res = app.clone().oneshot(recovery_save_req).await.expect("test assertion");
+        assert_eq!(recovery_save_res.status(), StatusCode::OK);
+
+        // 4. Memory KG (EntityGraph) snapshot durability & corruption recovery
+        let entity_graph = crate::memory::entity_graph::EntityGraph::new();
+        entity_graph
+            .upsert_memory("mem-layer-1", "Panel graph explorer persistence test", None)
+            .await
+            .expect("test assertion");
+        let snapshot_json = entity_graph.export_json().await.expect("test assertion");
+        assert!(!snapshot_json.is_empty());
+
+        let restored_graph = crate::memory::entity_graph::EntityGraph::new();
+        restored_graph
+            .import_json(&snapshot_json)
+            .await
+            .expect("test assertion");
+        assert_eq!(
+            restored_graph.all_entities().await.len(),
+            entity_graph.all_entities().await.len()
+        );
+
+        // Verify corrupted snapshot import failure
+        let corrupt_snapshot_res = restored_graph.import_json("{invalid_snapshot_data").await;
+        assert!(corrupt_snapshot_res.is_err());
     }
 }
