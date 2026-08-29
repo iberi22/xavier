@@ -1126,7 +1126,8 @@
         "test_derive_wallet_id",
         "test_is_same_wallet",
         "test_isolation_cross_wallet",
-        "test_load_nonexistent_file"
+        "test_load_nonexistent_file",
+        "test_wallet_ephemeral_challenge_signature_verification"
       ],
       "req_ids": [
         "REQ-025"
