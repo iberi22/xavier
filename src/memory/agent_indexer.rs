@@ -51,9 +51,7 @@ impl AgentIndexer {
             let source_stem = std::path::Path::new(&session.source_file)
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| {
-                    format!("x-{}", uuid::Uuid::new_v4().to_string())
-                });
+                .unwrap_or_else(|| format!("x-{}", uuid::Uuid::new_v4()));
             let virtual_path = format!("agent_memory://{}/{}", session.ide, source_stem);
 
             let indexed_file = IndexedFile {

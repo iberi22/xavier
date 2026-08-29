@@ -233,37 +233,35 @@ pub async fn search_handler(
         ..Default::default()
     };
 
-    let search_results: Vec<serde_json::Value> = match engine
-        .search(&state.qmd_memory, query_req)
-        .await
-    {
-        Ok(res) => res
-            .results
-            .into_iter()
-            .map(|item| {
-                serde_json::json!({
-                    "id": item.id,
-                    "path": item.path,
-                    "content": item.content,
-                    "metadata": item.metadata,
-                    "score": item.score,
-                    "vector_score": item.vector_score,
-                    "lexical_score": item.lexical_score,
-                    "embedding": item.embedding,
+    let search_results: Vec<serde_json::Value> =
+        match engine.search(&state.qmd_memory, query_req).await {
+            Ok(res) => res
+                .results
+                .into_iter()
+                .map(|item| {
+                    serde_json::json!({
+                        "id": item.id,
+                        "path": item.path,
+                        "content": item.content,
+                        "metadata": item.metadata,
+                        "score": item.score,
+                        "vector_score": item.vector_score,
+                        "lexical_score": item.lexical_score,
+                        "embedding": item.embedding,
+                    })
                 })
-            })
-            .collect(),
-        Err(e) => {
-            info!("Search error: {}", e);
-            return axum::Json(serde_json::json!({
-                "results": [],
-                "query": payload.query,
-                "count": 0,
-                "error": e.to_string(),
-                "workspace_id": state.workspace_id,
-            }));
-        }
-    };
+                .collect(),
+            Err(e) => {
+                info!("Search error: {}", e);
+                return axum::Json(serde_json::json!({
+                    "results": [],
+                    "query": payload.query,
+                    "count": 0,
+                    "error": e.to_string(),
+                    "workspace_id": state.workspace_id,
+                }));
+            }
+        };
 
     axum::Json(serde_json::json!({
         "results": search_results,

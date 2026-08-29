@@ -43,7 +43,7 @@ cargo clippy --all-targets -- -D warnings      # warnings are errors
 
 ## 4. Feature verification
 
-- `docs/features/features.json` is the source of truth (status, tests, files).
+- `.gitcore/features.json` is the source of truth (status, tests, files).
 - Run `scripts/verify-pipeline.sh` to see the real state — it EXECUTES the
   declared tests. The pipeline is the judge; status is never hand-promoted.
 - CI runs the same pipeline on every PR.

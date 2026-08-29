@@ -299,8 +299,13 @@ pub async fn handle_memory_tool(
     arguments: Value,
 ) -> anyhow::Result<Value> {
     match name {
-        "mem_search" | "search_memory" | "memory_search" | "search_fragments"
-        | "memoryfragment_search" | "get_recent_fragments" | "memoryfragment_recent" => {
+        "mem_search"
+        | "search_memory"
+        | "memory_search"
+        | "search_fragments"
+        | "memoryfragment_search"
+        | "get_recent_fragments"
+        | "memoryfragment_recent" => {
             handle_memory_search(&state, &workspace, name, &arguments).await
         }
         "create_memory" | "save_fragment" | "memoryfragment_save" | "memory_save" => {
@@ -417,8 +422,7 @@ async fn handle_mem_search(
     let candidates: Vec<Value> = results
         .into_iter()
         .map(|doc| {
-            let snippet: String =
-                crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
+            let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
             let kind = doc
                 .metadata
                 .get("kind")
@@ -444,6 +448,49 @@ async fn handle_mem_search(
     let payload = json!({
         "query": query,
         "include_content": include_content,
+        "count": candidates.len(),
+        "candidates": candidates,
+    });
+
+    Ok(serde_json::to_value(MCPToolResult::structured(
+        payload, false,
+    ))?)
+}
+
+async fn handle_get_recent_fragments(
+    workspace: &WorkspaceContext,
+    arguments: &Value,
+) -> anyhow::Result<Value> {
+    let limit = arguments
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10)
+        .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+
+    let records = workspace
+        .workspace
+        .memory
+        .export(false)
+        .await?
+        .into_iter()
+        .take(limit)
+        .collect::<Vec<_>>();
+
+    let candidates: Vec<Value> = records
+        .into_iter()
+        .map(|doc| {
+            let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 200).to_string();
+            json!({
+                "id": doc.id,
+                "path": doc.path,
+                "snippet": snippet,
+                "content": doc.content,
+                "metadata": doc.metadata,
+            })
+        })
+        .collect();
+
+    let payload = json!({
         "count": candidates.len(),
         "candidates": candidates,
     });
@@ -506,51 +553,30 @@ async fn handle_search_fragments(
         })
         .collect();
 
-            let has_filters = filters.project.is_some()
-                || filters.agent_id.is_some()
-                || filters.scope.is_some()
-                || filters.session_id.is_some()
-                || filters.user_id.is_some()
-                || filters.kinds.is_some()
-                || filters.path_prefix.is_some();
-            let filters_opt = if has_filters { Some(filters) } else { None };
+    let candidates: Vec<Value> = filtered
+        .into_iter()
+        .map(|doc| {
+            let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 200).to_string();
+            json!({
+                "id": doc.id,
+                "path": doc.path,
+                "score": 1.0,
+                "snippet": snippet,
+                "content": doc.content,
+                "metadata": doc.metadata,
+            })
+        })
+        .collect();
 
-            let engine = crate::memory::query_engine::MemoryQueryEngine::new();
-            let search_req = crate::memory::query_engine::SearchQuery {
-                query: query.to_string(),
-                limit,
-                depth,
-                filters: filters_opt,
-                include_content: Some(include_content),
-                ..Default::default()
-            };
+    let payload = json!({
+        "query": query,
+        "count": candidates.len(),
+        "candidates": candidates,
+    });
 
-            let search_res = engine.search(&workspace.workspace.memory, search_req).await?;
-
-            let candidates: Vec<Value> = search_res
-                .results
-                .into_iter()
-                .map(|item| {
-                    let mut obj = json!({
-                        "id": item.id,
-                        "path": item.path,
-                        "score": item.score,
-                        "snippet": item.snippet,
-                        "kind": item.kind,
-                    });
-                    if include_content {
-                        obj.as_object_mut()
-                            .expect("object")
-                            .insert("content".to_string(), json!(item.content));
-                    }
-                    obj
-                })
-                .collect();
-
-    Ok(serde_json::to_value(MCPToolResult {
-        content,
-        is_error: Some(false),
-    })?)
+    Ok(serde_json::to_value(MCPToolResult::structured(
+        payload, false,
+    ))?)
 }
 
 /// Handles create/put memory operations.
@@ -640,8 +666,7 @@ async fn handle_save_fragment(
         .get("content")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
-    let content = match secure_mcp_external_input(state, "memoryfragment content", content).await?
-    {
+    let content = match secure_mcp_external_input(state, "memoryfragment content", content).await? {
         Ok(content) => content,
         Err(blocked) => return Ok(blocked),
     };
@@ -837,41 +862,14 @@ pub async fn handle_memory_delete(
             let id = arguments
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing text"))?;
-            let metadata = arguments
-                .get("metadata")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
-            let namespace = parse_namespace_arg(&arguments)?;
-
-            let unique_id = Ulid::new().to_string();
-            let path = match &namespace {
-                Some(ns) if ns.project.is_some() => {
-                    format!("mcp/{}/{}", ns.project.as_ref().unwrap(), unique_id)
-                }
-                Some(ns) if ns.agent_id.is_some() => {
-                    format!("mcp/agent/{}/{}", ns.agent_id.as_ref().unwrap(), unique_id)
-                }
-                _ => format!("mcp/save/{unique_id}"),
+                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
+            let record = workspace.workspace.delete_memory_record(id).await?;
+            let message = if let Some(r) = record {
+                format!("Deleted memory fragment: {} (path: {})", r.id, r.path)
+            } else {
+                format!("Memory fragment not found: {}", id)
             };
-
-            let typed = Some(TypedMemoryPayload {
-                kind: Some(MemoryKind::Document),
-                evidence_kind: Some(EvidenceKind::Observation),
-                namespace: namespace.clone(),
-                provenance: Some(MemoryProvenance {
-                    source_app: Some("mcp".to_string()),
-                    source_type: Some("tool:memory_save".to_string()),
-                    ..MemoryProvenance::default()
-                }),
-                ..Default::default()
-            });
-
-            let doc_id = workspace
-                .workspace
-                .ingest_typed(path, text.to_string(), metadata, typed, None, false)
-                .await?;
-            super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
+            super::server::mcp_text_result(message, false)
         }
         "memory_context" | "mem_context" => {
             let query = arguments.get("query").and_then(|v| v.as_str());

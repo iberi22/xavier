@@ -14,8 +14,10 @@ import DraggableWidget from "./components/DraggableWidget";
 import InputArea from "./components/InputArea";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
+import ThemeToggle from "./components/ThemeToggle";
 import TopStatusBar from "./components/TopStatusBar";
 import { initialBookmarks } from "./data";
+import { ThemeProvider } from "./lib/theme/theme-provider";
 import { MalocaView } from "./maloca";
 import type {
   BackendGraphData,
@@ -49,7 +51,7 @@ const getApiUrl = (path: string) => {
   return isTauri ? `http://127.0.0.1:8006${path}` : path;
 };
 
-export default function App() {
+function AppContent() {
   const { token, isAuthenticated } = useAuthStore();
   const [hash, setHash] = useState(window.location.hash);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
@@ -421,18 +423,18 @@ export default function App() {
 
   if (health === "offline") {
     return (
-      <div className="w-full h-screen bg-black flex items-center justify-center text-[#39ff14] font-mono">
+      <div className="w-full h-screen bg-white dark:bg-black flex items-center justify-center text-emerald-600 dark:text-[#39ff14] font-mono p-4 sm:p-6 md:p-8">
         <div className="text-center">
-          <h1 className="text-2xl mb-4 uppercase tracking-widest border-b border-[#39ff14]/30 pb-2">
+          <h1 className="text-xl sm:text-2xl mb-4 uppercase tracking-widest border-b border-emerald-500/30 dark:border-[#39ff14]/30 pb-2">
             Xavier Offline
           </h1>
-          <p className="opacity-70 text-sm">
+          <p className="opacity-70 text-xs sm:text-sm">
             Cannot reach local backend at 127.0.0.1:8006.
           </p>
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="mt-8 px-6 py-2 border border-[#39ff14] hover:bg-[#39ff14]/10 transition-colors uppercase text-xs tracking-widest rounded-lg"
+            className="mt-8 px-6 py-2 border border-emerald-600 dark:border-[#39ff14] hover:bg-emerald-500/10 dark:hover:bg-[#39ff14]/10 transition-colors uppercase text-xs tracking-widest rounded-lg"
           >
             Retry
           </button>
@@ -461,9 +463,14 @@ export default function App() {
   }
 
   return (
-    <div className="relative w-full h-screen font-sans bg-[#050505] flex flex-col overflow-hidden text-white">
+    <div className="relative w-full h-screen font-sans bg-slate-50 dark:bg-[#050505] flex flex-col overflow-hidden text-slate-900 dark:text-white transition-colors duration-200">
       <ParticleBackground />
       <TopStatusBar isModalOpen={isConfigOpen} />
+
+      {/* Floating Header Controls with Theme Toggle */}
+      <header className="absolute top-6 right-2 sm:right-4 md:right-6 z-[70] flex items-center gap-2 pointer-events-auto">
+        <ThemeToggle />
+      </header>
 
       {/* Pinned Widgets Layer */}
       <div className="absolute inset-0 pointer-events-none z-20">
@@ -480,14 +487,14 @@ export default function App() {
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full flex items-center justify-center relative pb-24 z-10">
+      <main className="flex-1 w-full flex items-center justify-center relative pb-20 sm:pb-24 z-10 px-2 sm:px-4 md:px-8 lg:px-12">
         <AnimatePresence mode="wait">
           {isConfigOpen && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+              className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm p-2 sm:p-4 md:p-6"
             >
               <ConfigModal
                 key="modal"
@@ -529,5 +536,13 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+      <AppContent />
+    </ThemeProvider>
   );
 }

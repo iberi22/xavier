@@ -141,9 +141,7 @@ pub fn detect_issue_type(title: &str, body: &str) -> IssueType {
     {
         return IssueType::Feature;
     }
-    if t_lower.contains("refactor")
-        || t_lower.contains("clean")
-        || t_lower.contains("restructure")
+    if t_lower.contains("refactor") || t_lower.contains("clean") || t_lower.contains("restructure")
     {
         return IssueType::Refactor;
     }
@@ -410,8 +408,14 @@ pub fn assemble_package(
 ) -> Result<IssueContextPackage> {
     let issue_type = detect_issue_type(title, body);
     let entities = parse_issue_entities(title, body);
-    let mapped =
-        map_entities_to_codegraph(&entities, code_graph_db, snapshot_manager, repo, repo_root, title)?;
+    let mapped = map_entities_to_codegraph(
+        &entities,
+        code_graph_db,
+        snapshot_manager,
+        repo,
+        repo_root,
+        title,
+    )?;
     let changes = generate_changes(&mapped, snapshot_manager, repo, repo_root)?;
 
     // Extract deps from file entities
@@ -474,17 +478,41 @@ mod tests {
 
     #[test]
     fn test_detect_issue_type() {
-        assert_eq!(detect_issue_type("[bug] Fix crash in server", ""), IssueType::Bug);
-        assert_eq!(detect_issue_type("feat: add new CLI command", ""), IssueType::Feature);
-        assert_eq!(detect_issue_type("refactor: split issue_context into modules", ""), IssueType::Refactor);
-        assert_eq!(detect_issue_type("Update README", "documentation update"), IssueType::Other);
+        assert_eq!(
+            detect_issue_type("[bug] Fix crash in server", ""),
+            IssueType::Bug
+        );
+        assert_eq!(
+            detect_issue_type("feat: add new CLI command", ""),
+            IssueType::Feature
+        );
+        assert_eq!(
+            detect_issue_type("refactor: split issue_context into modules", ""),
+            IssueType::Refactor
+        );
+        assert_eq!(
+            detect_issue_type("Update README", "documentation update"),
+            IssueType::Other
+        );
     }
 
     #[test]
     fn test_calculate_relevance() {
-        let entity_sym = ExtractedEntity { kind: "symbol".to_string(), value: "search_code".to_string(), offset: 0 };
-        let rel_sym = calculate_relevance(&entity_sym, true, "Fix search_code in db", Some("src/db.rs"));
-        assert!(rel_sym > 0.8, "Symbol matched in title should have high relevance");
+        let entity_sym = ExtractedEntity {
+            kind: "symbol".to_string(),
+            value: "search_code".to_string(),
+            offset: 0,
+        };
+        let rel_sym = calculate_relevance(
+            &entity_sym,
+            true,
+            "Fix search_code in db",
+            Some("src/db.rs"),
+        );
+        assert!(
+            rel_sym > 0.8,
+            "Symbol matched in title should have high relevance"
+        );
 
         let rel_unfound = calculate_relevance(&entity_sym, false, "Fix search_code", None);
         assert_eq!(rel_unfound, 0.0, "Unfound entity must have relevance 0.0");

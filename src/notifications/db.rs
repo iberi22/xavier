@@ -78,6 +78,5 @@ pub async fn init_notifications_schema() -> Result<()> {
         cm.connect("memory", &root)?;
     }
 
-    cm.with_conn("memory", |conn| init_notifications_schema_conn(conn))
-        .await
+    cm.with_conn("memory", init_notifications_schema_conn).await
 }

@@ -588,4 +588,52 @@ mod tests_inner {
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "require_permission");
     }
+
+    #[test]
+    fn test_search_narrow_returns_only_matching_names() {
+        let db = CodeGraphDB::in_memory().expect("in-memory db");
+
+        let sym1 = Symbol {
+            name: "useXavierMemory".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::TypeScript,
+            file_path: "src/hooks/useXavierMemory.ts".to_string(),
+            start_line: 1,
+            end_line: 20,
+            ..Default::default()
+        };
+        let sym2 = Symbol {
+            name: "useAuth".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::TypeScript,
+            file_path: "src/hooks/useAuth.ts".to_string(),
+            start_line: 1,
+            end_line: 15,
+            ..Default::default()
+        };
+        let sym3 = Symbol {
+            name: "fs/promises".to_string(),
+            kind: SymbolKind::Import,
+            lang: Language::TypeScript,
+            file_path: "src/file.ts".to_string(),
+            start_line: 1,
+            end_line: 1,
+            ..Default::default()
+        };
+
+        db.insert_symbol(&sym1).expect("insert sym1");
+        db.insert_symbol(&sym2).expect("insert sym2");
+        db.insert_symbol(&sym3).expect("insert sym3");
+
+        let query = QueryEngine::new(Arc::new(db));
+        let res = query.search("useXavier", 10).expect("search useXavier");
+
+        assert_eq!(res.symbols.len(), 1);
+        assert_eq!(res.symbols[0].name, "useXavierMemory");
+
+        let lang_res = query
+            .by_language(Language::TypeScript, 10)
+            .expect("by_language");
+        assert_eq!(lang_res.len(), 3);
+    }
 }

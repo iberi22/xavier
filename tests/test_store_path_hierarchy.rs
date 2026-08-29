@@ -124,7 +124,7 @@ async fn test_path_stored_verbatim() {
     assert_eq!(res_json["path"], canonical_path);
 
     // Verify stored in QmdMemory domain & store verbatim
-    let doc = state.qmd_memory.get(&canonical_path).await.unwrap();
+    let doc = state.qmd_memory.get(canonical_path).await.unwrap();
     assert!(
         doc.is_some(),
         "Document with verbatim canonical path should be persisted in QmdMemory"
@@ -302,8 +302,10 @@ async fn test_path_hierarchy_queries() {
     }
 
     // 1. Verify path_prefix filtering via schema query filters on QmdMemory search
-    let mut filters = xavier::memory::schema::MemoryQueryFilters::default();
-    filters.path_prefix = Some("projects/alpha".to_string());
+    let filters = xavier::memory::schema::MemoryQueryFilters {
+        path_prefix: Some("projects/alpha".to_string()),
+        ..Default::default()
+    };
 
     let results = state
         .qmd_memory
@@ -311,7 +313,11 @@ async fn test_path_hierarchy_queries() {
         .await
         .unwrap();
 
-    assert_eq!(results.len(), 2, "Should return 2 files under projects/alpha");
+    assert_eq!(
+        results.len(),
+        2,
+        "Should return 2 files under projects/alpha"
+    );
     let paths: Vec<String> = results.into_iter().map(|r| r.path).collect();
     assert!(paths.contains(&"projects/alpha/readme.md".to_string()));
     assert!(paths.contains(&"projects/alpha/src/main.rs".to_string()));
@@ -319,5 +325,8 @@ async fn test_path_hierarchy_queries() {
 
     // 2. Verify QmdMemory `ls` parent/child hierarchy navigation
     let nav_entries = state.qmd_memory.ls("projects/alpha/").await.unwrap();
-    assert!(!nav_entries.is_empty(), "ls on parent directory should return entries");
+    assert!(
+        !nav_entries.is_empty(),
+        "ls on parent directory should return entries"
+    );
 }

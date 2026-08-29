@@ -67,7 +67,10 @@ pub fn check_database(settings: &XavierSettings) -> Vec<CheckResult> {
                 Err(e) => (
                     false,
                     format!("Failed to query database at '{}': {}", db_path.display(), e),
-                    Some("Verify that the database schema is initialized and up to date.".to_string()),
+                    Some(
+                        "Verify that the database schema is initialized and up to date."
+                            .to_string(),
+                    ),
                 ),
             }
         }
@@ -206,10 +209,7 @@ pub fn check_embeddings(settings: &XavierSettings, scan: &SystemScanResult) -> V
 }
 
 /// Check memory store health: path validity, CodeGraph status, and embedding model consistency.
-pub fn check_memory(
-    settings: &XavierSettings,
-    verbose: bool,
-) -> Vec<CheckResult> {
+pub fn check_memory(settings: &XavierSettings, verbose: bool) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
     // 0. XAVIER_DATA_DIR path sanity
@@ -356,14 +356,14 @@ pub fn check_memory(
                 check_consist_detail =
                     "Table 'embedding_model_meta' exists but is empty or could not be read"
                         .to_string();
-                check_consist_hint = Some(
-                    "Ensure the embedding model metadata is correctly populated.".to_string(),
-                );
+                check_consist_hint =
+                    Some("Ensure the embedding model metadata is correctly populated.".to_string());
             }
         }
     } else {
         check_consist_status = CheckStatus::Warn;
-        check_consist_detail = "Skipped consistency check because database is not accessible".to_string();
+        check_consist_detail =
+            "Skipped consistency check because database is not accessible".to_string();
     }
 
     if verbose {
@@ -382,7 +382,7 @@ pub fn check_memory(
 pub fn check_mesh(_settings: &XavierSettings) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
-    let store = crate::mesh::keystore::MeshKeyringStore::new();
+    let store = xavier_lib::mesh::keystore::MeshKeyringStore::new();
     let keyring_available = store.is_keyring_available();
     checks.push(DoctorCheck {
         name: "Mesh Keyring".to_string(),
@@ -407,10 +407,7 @@ pub fn check_mesh(_settings: &XavierSettings) -> Vec<CheckResult> {
 }
 
 /// Check HTTP server health, Ollama reachability, local LLM config, and probe reachability.
-pub async fn check_http(
-    settings: &XavierSettings,
-    scan: &SystemScanResult,
-) -> Vec<CheckResult> {
+pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
     let provider = std::env::var("XAVIER_MODEL_PROVIDER")
@@ -660,15 +657,11 @@ pub async fn check_http(
 pub fn check_security(_settings: &XavierSettings) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
-    let token_present = std::env::var("XAVIER_TOKEN").is_ok()
-        || std::env::var("XAVIER_API_KEY").is_ok();
+    let token_present =
+        std::env::var("XAVIER_TOKEN").is_ok() || std::env::var("XAVIER_API_KEY").is_ok();
     checks.push(DoctorCheck {
         name: "Security Posture".to_string(),
-        status: if token_present {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Ok
-        },
+        status: CheckStatus::Ok,
         detail: if token_present {
             "Auth token / API key detected in environment".to_string()
         } else {
@@ -682,16 +675,13 @@ pub fn check_security(_settings: &XavierSettings) -> Vec<CheckResult> {
 
 /// Check health of background scheduler and system cron tasks.
 pub fn check_scheduler(_settings: &XavierSettings) -> Vec<CheckResult> {
-    let mut checks = Vec::new();
-
-    checks.push(DoctorCheck {
+    let single = DoctorCheck {
         name: "Scheduler Status".to_string(),
         status: CheckStatus::Ok,
         detail: "Background cron / scheduler task queue operating normally".to_string(),
         hint: None,
-    });
-
-    checks
+    };
+    vec![single]
 }
 
 /// Handle doctor diagnosis execution and report formatting.
@@ -811,7 +801,9 @@ fn print_table_output(checks: &[DoctorCheck]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::handlers::system_scan::{OllamaStatus, SystemInfo, SystemScanResult, GpuStatus, DockerStatus};
+    use crate::cli::handlers::system_scan::{
+        DockerStatus, GpuStatus, OllamaStatus, SystemInfo, SystemScanResult,
+    };
     use std::collections::HashMap;
 
     fn mock_scan_result() -> SystemScanResult {

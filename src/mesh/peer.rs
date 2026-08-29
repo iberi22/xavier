@@ -47,6 +47,11 @@ impl PeerInfo {
             None => false,
         }
     }
+
+    /// Check if peer has the required fields to be considered valid.
+    pub fn is_valid(&self) -> bool {
+        !self.node_id.0.is_empty() && !self.endpoint_url.is_empty()
+    }
 }
 
 /// A persistent, file-backed registry of trusted peers.
@@ -121,9 +126,19 @@ impl PeerRegistry {
         self.peers.values().collect()
     }
 
+    /// Return all peers as a slice.
+    pub fn all_peers(&self) -> Vec<&PeerInfo> {
+        self.peers.values().collect()
+    }
+
     /// Get information about a specific peer.
     pub fn get_peer(&self, node_id: &NodeId) -> Option<&PeerInfo> {
         self.peers.get(node_id)
+    }
+
+    /// Get a mutable reference to a specific peer.
+    pub fn get_peer_mut(&mut self, node_id: &NodeId) -> Option<&mut PeerInfo> {
+        self.peers.get_mut(node_id)
     }
 
     /// Get all peers that are currently unhealthy (not seen in the last 90 seconds)

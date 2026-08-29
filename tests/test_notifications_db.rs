@@ -3,6 +3,13 @@
 #[path = "../src/notifications/db.rs"]
 mod db;
 
+#[path = "../src/storage/pragma.rs"]
+mod pragma;
+
+mod storage {
+    pub use super::pragma::apply_pragmas;
+}
+
 use rusqlite::Connection;
 
 #[test]
@@ -47,7 +54,11 @@ fn test_init_notifications_schema_fresh_db() {
     .expect("failed to insert notification");
 
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM notifications WHERE id = 'test-1'", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM notifications WHERE id = 'test-1'",
+            [],
+            |r| r.get(0),
+        )
         .expect("query failed");
     assert_eq!(count, 1);
 }
@@ -113,5 +124,9 @@ fn test_init_notifications_schema_auto_migration() {
 #[tokio::test]
 async fn test_init_notifications_schema_async() {
     let result = db::init_notifications_schema().await;
-    assert!(result.is_ok(), "async schema initialization failed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "async schema initialization failed: {:?}",
+        result
+    );
 }

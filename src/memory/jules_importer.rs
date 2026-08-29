@@ -237,13 +237,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_jules_api_key_from_env_file() -> Result<()> {
+        // isolate from the real host env leaking a Google token that starts with AQ.
+        let saved = std::env::var("JULES_API_KEY").ok();
+        unsafe {
+            std::env::remove_var("JULES_API_KEY");
+        }
         let dir = tempdir()?;
         let env_file = dir.path().join("jules.env");
         fs::write(&env_file, "JULES_API_KEY=secret_key_12345\n").await?;
 
         let importer = JulesImporter::with_dir(dir.path());
         let key = importer.get_api_key().await;
-        assert_eq!(key, Some("secret_key_12345".to_string()));
+        let ok = key == Some("secret_key_12345".to_string());
+        if let Some(v) = saved {
+            unsafe {
+                std::env::set_var("JULES_API_KEY", v);
+            }
+        }
+        assert!(ok, "expected secret_key_12345, got {:?}", key);
 
         Ok(())
     }
