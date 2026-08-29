@@ -862,41 +862,14 @@ pub async fn handle_memory_delete(
             let id = arguments
                 .get("id")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing text"))?;
-            let metadata = arguments
-                .get("metadata")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
-            let namespace = parse_namespace_arg(&arguments)?;
-
-            let unique_id = Ulid::new().to_string();
-            let path = match &namespace {
-                Some(ns) if ns.project.is_some() => {
-                    format!("mcp/{}/{}", ns.project.as_ref().unwrap(), unique_id)
-                }
-                Some(ns) if ns.agent_id.is_some() => {
-                    format!("mcp/agent/{}/{}", ns.agent_id.as_ref().unwrap(), unique_id)
-                }
-                _ => format!("mcp/save/{unique_id}"),
+                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
+            let record = workspace.workspace.delete_memory_record(id).await?;
+            let message = if let Some(r) = record {
+                format!("Deleted memory fragment: {} (path: {})", r.id, r.path)
+            } else {
+                format!("Memory fragment not found: {}", id)
             };
-
-            let typed = Some(TypedMemoryPayload {
-                kind: Some(MemoryKind::Document),
-                evidence_kind: Some(EvidenceKind::Observation),
-                namespace: namespace.clone(),
-                provenance: Some(MemoryProvenance {
-                    source_app: Some("mcp".to_string()),
-                    source_type: Some("tool:memory_save".to_string()),
-                    ..MemoryProvenance::default()
-                }),
-                ..Default::default()
-            });
-
-            let doc_id = workspace
-                .workspace
-                .ingest_typed(path, id.to_string(), metadata, typed, None, false)
-                .await?;
-            super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
+            super::server::mcp_text_result(message, false)
         }
         "memory_context" | "mem_context" => {
             let query = arguments.get("query").and_then(|v| v.as_str());
