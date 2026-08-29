@@ -1133,6 +1133,7 @@ pub async fn v1_memories_search(
             |r, len| r.results.truncate(len),
             |r, t| r.truncated = Some(t),
         );
+        crate::observability::token_accounting::SEARCH_STATS.record_search("ids", 0);
         axum::response::IntoResponse::into_response(Json(response))
     } else if mode == "snippet" {
         let budget = crate::memory::snippet::SnippetBudget {
@@ -1166,6 +1167,10 @@ pub async fn v1_memories_search(
             .collect::<Vec<_>>();
 
         let count = results.len();
+        let total_snippet_bytes: usize = results.iter().map(|r| r.snippet.len()).sum();
+        crate::observability::token_accounting::SEARCH_STATS
+            .record_search("snippet", total_snippet_bytes);
+
         let response = V1MemorySearchSnippetResponse {
             count,
             results,
@@ -1195,6 +1200,10 @@ pub async fn v1_memories_search(
                 metadata: doc.metadata,
             })
             .collect::<Vec<_>>();
+
+        let total_full_bytes: usize = results.iter().map(|r| r.memory.len()).sum();
+        crate::observability::token_accounting::SEARCH_STATS
+            .record_search("full", total_full_bytes);
 
         let response = V1MemorySearchResponse {
             status: "ok".to_string(),
@@ -1583,12 +1592,14 @@ pub async fn v1_memory_recall_stats(
 
     let settings = crate::settings::XavierSettings::current();
     let embedding_coverage = crate::health::gather_embedding_coverage(&settings);
+    let token_savings = crate::observability::token_accounting::SEARCH_STATS.snapshot();
 
     Json(serde_json::json!({
         "status": "ok",
         "total_documents": primary_docs.len(),
         "sources_by_namespace": sources_by_namespace,
         "embedding_coverage": embedding_coverage,
+        "token_savings": token_savings,
     }))
     .into_response()
 }
@@ -2999,6 +3010,97 @@ mod tests {
             serde_json::from_slice(&body).expect("failed to parse JSON");
 
         assert_eq!(payload["truncated"], true);
+    }
+
+    #[tokio::test]
+    async fn test_v1_memory_recall_stats_includes_token_savings() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // Seed 1 memory
+        let add_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": "Detailed long architecture memory content for testing token accounting snippet savings.",
+                    "user_id": "docs/stats/test1",
+                })
+                .to_string(),
+            ))
+            .expect("failed to build add request");
+        let resp = app
+            .clone()
+            .oneshot(add_req)
+            .await
+            .expect("failed to execute add request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Perform 1 snippet search and 1 full search
+        let snippet_search_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/search")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "architecture memory",
+                    "mode": "snippet"
+                })
+                .to_string(),
+            ))
+            .expect("failed to build snippet search request");
+        let resp = app
+            .clone()
+            .oneshot(snippet_search_req)
+            .await
+            .expect("failed to execute snippet search request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let full_search_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/search")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "architecture memory",
+                    "mode": "full"
+                })
+                .to_string(),
+            ))
+            .expect("failed to build full search request");
+        let resp = app
+            .clone()
+            .oneshot(full_search_req)
+            .await
+            .expect("failed to execute full search request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Verify stats
+        let stats_req = Request::builder()
+            .method("GET")
+            .uri("/v1/memory/recall/stats")
+            .body(Body::empty())
+            .expect("failed to build stats request");
+        let resp = app
+            .clone()
+            .oneshot(stats_req)
+            .await
+            .expect("failed to execute stats request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("failed to read body");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("failed to parse JSON");
+
+        assert_eq!(payload["status"], "ok");
+        let token_savings = &payload["token_savings"];
+        assert!(token_savings["searches_total"].as_u64().unwrap_or(0) >= 2);
+        assert!(token_savings["by_mode"]["snippet"].as_u64().unwrap_or(0) >= 1);
+        assert!(token_savings["by_mode"]["full"].as_u64().unwrap_or(0) >= 1);
+        assert!(token_savings["saved_ratio"].as_f64().unwrap_or(0.0) >= 0.0);
     }
 
     #[tokio::test]

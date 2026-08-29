@@ -192,6 +192,50 @@ async fn initialize_returns_current_protocol_version() {
 }
 
 #[tokio::test]
+async fn server_discover_returns_tool_catalog() {
+    let (state, workspace) = test_state().await;
+    let response = post_json(
+        test_router(state, workspace),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "server/discover",
+            "params": {}
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().contains_key("mcp-session-id"));
+    let body = get_json_body(response).await;
+    assert_eq!(body["result"]["serverInfo"]["name"], "xavier-memory");
+    let tools_count = body["result"]["capabilities"]["tools"]["count"]
+        .as_u64()
+        .unwrap_or(0);
+    assert!(tools_count >= 16);
+}
+
+#[tokio::test]
+async fn initialize_sets_session_id_header() {
+    let (state, workspace) = test_state().await;
+    let response = post_json(
+        test_router(state, workspace),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2026-07-28",
+                "capabilities": { "tools": {} },
+                "clientInfo": { "name": "test", "version": "1.0" }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().contains_key("mcp-session-id"));
+}
+
+#[tokio::test]
 async fn list_tools_returns_all_tools() {
     let (state, workspace) = test_state().await;
     let response = post_json(
