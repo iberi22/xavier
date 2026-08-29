@@ -217,27 +217,81 @@ mod tests {
         assert_eq!(role_clearance(UserRole::Readonly), ClearanceLevel::Internal);
 
         // Admin (TopSecret) can access all levels
-        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Unclassified));
-        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Internal));
-        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Restricted));
-        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Confidential));
-        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::Secret));
-        assert!(can_access_clearance(UserRole::Admin, ClearanceLevel::TopSecret));
+        assert!(can_access_clearance(
+            UserRole::Admin,
+            ClearanceLevel::Unclassified
+        ));
+        assert!(can_access_clearance(
+            UserRole::Admin,
+            ClearanceLevel::Internal
+        ));
+        assert!(can_access_clearance(
+            UserRole::Admin,
+            ClearanceLevel::Restricted
+        ));
+        assert!(can_access_clearance(
+            UserRole::Admin,
+            ClearanceLevel::Confidential
+        ));
+        assert!(can_access_clearance(
+            UserRole::Admin,
+            ClearanceLevel::Secret
+        ));
+        assert!(can_access_clearance(
+            UserRole::Admin,
+            ClearanceLevel::TopSecret
+        ));
 
         // User (Confidential) can access up to Confidential, cannot access Secret or TopSecret
-        assert!(can_access_clearance(UserRole::User, ClearanceLevel::Unclassified));
-        assert!(can_access_clearance(UserRole::User, ClearanceLevel::Internal));
-        assert!(can_access_clearance(UserRole::User, ClearanceLevel::Restricted));
-        assert!(can_access_clearance(UserRole::User, ClearanceLevel::Confidential));
-        assert!(!can_access_clearance(UserRole::User, ClearanceLevel::Secret));
-        assert!(!can_access_clearance(UserRole::User, ClearanceLevel::TopSecret));
+        assert!(can_access_clearance(
+            UserRole::User,
+            ClearanceLevel::Unclassified
+        ));
+        assert!(can_access_clearance(
+            UserRole::User,
+            ClearanceLevel::Internal
+        ));
+        assert!(can_access_clearance(
+            UserRole::User,
+            ClearanceLevel::Restricted
+        ));
+        assert!(can_access_clearance(
+            UserRole::User,
+            ClearanceLevel::Confidential
+        ));
+        assert!(!can_access_clearance(
+            UserRole::User,
+            ClearanceLevel::Secret
+        ));
+        assert!(!can_access_clearance(
+            UserRole::User,
+            ClearanceLevel::TopSecret
+        ));
 
         // Readonly (Internal) can access Unclassified and Internal, cannot access Restricted+
-        assert!(can_access_clearance(UserRole::Readonly, ClearanceLevel::Unclassified));
-        assert!(can_access_clearance(UserRole::Readonly, ClearanceLevel::Internal));
-        assert!(!can_access_clearance(UserRole::Readonly, ClearanceLevel::Restricted));
-        assert!(!can_access_clearance(UserRole::Readonly, ClearanceLevel::Confidential));
-        assert!(!can_access_clearance(UserRole::Readonly, ClearanceLevel::Secret));
-        assert!(!can_access_clearance(UserRole::Readonly, ClearanceLevel::TopSecret));
+        assert!(can_access_clearance(
+            UserRole::Readonly,
+            ClearanceLevel::Unclassified
+        ));
+        assert!(can_access_clearance(
+            UserRole::Readonly,
+            ClearanceLevel::Internal
+        ));
+        assert!(!can_access_clearance(
+            UserRole::Readonly,
+            ClearanceLevel::Restricted
+        ));
+        assert!(!can_access_clearance(
+            UserRole::Readonly,
+            ClearanceLevel::Confidential
+        ));
+        assert!(!can_access_clearance(
+            UserRole::Readonly,
+            ClearanceLevel::Secret
+        ));
+        assert!(!can_access_clearance(
+            UserRole::Readonly,
+            ClearanceLevel::TopSecret
+        ));
     }
 }
