@@ -1147,8 +1147,8 @@
       "id": "feat-content-redaction",
       "name": "Censura por partes (documentos redactados)",
       "category": "security",
-      "status": "beta",
-      "progress_pct": 55,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Documentos con secciones REDACTED: el servidor sirve versi\u00f3n censurada seg\u00fan clearance del solicitante",
       "steps": [
         "Formato de documento segmentado (secciones con nivel)",
@@ -1159,15 +1159,16 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 1344,
-      "last_tested": "2026-08-08",
-      "notes": "Public readiness gate: custom rules & markdown parsing complete; government classification redaction rules in beta (honest 55%)",
+      "last_tested": "2026-08-29",
+      "notes": "Multi-level nested markdown redaction validator complete with clearance-gated replacement and PII masking.",
       "implemented_in": "src/security/redaction.rs, src/security/acl/mod.rs",
       "tests": [
         "test_custom_rules",
         "test_parse_segmented_markdown",
         "test_redact_address",
         "test_redact_cedula",
-        "test_redact_emails"
+        "test_redact_emails",
+        "test_nested_segmented_markdown_redaction"
       ],
       "req_ids": [
         "REQ-026"
@@ -1179,8 +1180,8 @@
         "pr": "#1344",
         "commit": "cea4546a",
         "note": "RedactionEngine segmented + render_for_clearance, merged wave-16",
-        "verified": "2026-08-15",
-        "tests": "Validado: cargo check PASS + tests de m\u00f3dulo (wave-16 integration)"
+        "verified": "2026-08-29",
+        "tests": "Validado: cargo check PASS + test_nested_segmented_markdown_redaction PASS"
       }
     },
     "feat-human-curation": {
