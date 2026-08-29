@@ -46,6 +46,7 @@ pub enum GpudHealthStatus {
 
 /// Detected GPU device details.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub struct GpuDeviceInfo {
     pub detected: bool,
     pub vendor: Option<String>,
@@ -56,19 +57,6 @@ pub struct GpuDeviceInfo {
     pub cuda_available: bool,
 }
 
-impl Default for GpuDeviceInfo {
-    fn default() -> Self {
-        Self {
-            detected: false,
-            vendor: None,
-            model: None,
-            vram_total_mb: 0,
-            vram_free_mb: 0,
-            driver_version: None,
-            cuda_available: false,
-        }
-    }
-}
 
 /// Policy governing GPU vs CPU execution selection and dynamic fallback rules.
 #[derive(Debug, Clone, Serialize, Deserialize)]

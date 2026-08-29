@@ -158,7 +158,7 @@ impl MeshKeyringStore {
         } else {
             let mut s = [0u8; 16];
             rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut s);
-            std::fs::write(&salt_path, &s)?;
+            std::fs::write(&salt_path, s)?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
