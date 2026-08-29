@@ -19,8 +19,66 @@ use crate::mesh::protocol::{MeshHandshakeResponse, MeshManifest};
 use crate::mesh::transport::MeshTransport;
 use crate::session::sharing::SessionBundle;
 use anyhow::Result;
+use rand::Rng;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+
+/// Configuration for mesh P2P reconnection backoff policies.
+#[derive(Debug, Clone, Copy)]
+pub struct ReconnectBackoffConfig {
+    /// Initial base backoff duration.
+    pub base: Duration,
+    /// Upper ceiling bound for backoff duration.
+    pub max: Duration,
+    /// Jitter randomization factor between 0.0 and 1.0.
+    pub jitter_factor: f64,
+}
+
+impl Default for ReconnectBackoffConfig {
+    fn default() -> Self {
+        Self {
+            base: Duration::from_millis(500),
+            max: Duration::from_secs(30),
+            jitter_factor: 0.5,
+        }
+    }
+}
+
+impl ReconnectBackoffConfig {
+    /// Calculate backoff duration for a given attempt number.
+    pub fn calculate_backoff(&self, attempt: u32) -> Duration {
+        calculate_reconnect_backoff(attempt, self.base, self.max, self.jitter_factor)
+    }
+}
+
+/// Calculate reconnect backoff duration with exponential increase and randomized full jitter.
+///
+/// Avoids thundering herd problems when remote peers reconnect simultaneously after a disconnect.
+pub fn calculate_reconnect_backoff(
+    attempt: u32,
+    base: Duration,
+    max: Duration,
+    jitter_factor: f64,
+) -> Duration {
+    let base_ms = base.as_millis() as f64;
+    let max_ms = max.as_millis() as f64;
+
+    // Exponential delay capped at max: base * 2^attempt
+    let exp_ms = (base_ms * 2.0_f64.powi(attempt.min(30) as i32)).min(max_ms);
+
+    if jitter_factor <= 0.0 {
+        return Duration::from_millis(exp_ms as u64);
+    }
+
+    let clamped_jitter = jitter_factor.clamp(0.0, 1.0);
+    let min_ms = exp_ms * (1.0 - clamped_jitter);
+
+    let mut rng = rand::thread_rng();
+    let jittered_ms = rng.gen_range(min_ms..=exp_ms);
+
+    Duration::from_millis(jittered_ms as u64)
+}
 
 pub enum SyncTransport {
     P2P(MeshTransport),
@@ -149,6 +207,16 @@ impl SyncTransport {
             #[cfg(feature = "mesh")]
             Self::P2pIroh(t) => t.share_session(peer, token, bundle).await,
         }
+    }
+
+    /// Calculate reconnect backoff duration for P2P sync retry attempts.
+    pub fn reconnect_backoff(
+        attempt: u32,
+        base: Duration,
+        max: Duration,
+        jitter_factor: f64,
+    ) -> Duration {
+        calculate_reconnect_backoff(attempt, base, max, jitter_factor)
     }
 }
 
@@ -355,5 +423,55 @@ mod tests {
         {
             assert!(matches!(transport, SyncTransport::P2P(_)));
         }
+    }
+
+    #[test]
+    fn test_mesh_transport_reconnect_backoff_jitter() {
+        let base = Duration::from_millis(100);
+        let max = Duration::from_millis(1000);
+
+        // 1. Zero jitter: deterministic exponential progression
+        let b0 = calculate_reconnect_backoff(0, base, max, 0.0);
+        let b1 = calculate_reconnect_backoff(1, base, max, 0.0);
+        let b2 = calculate_reconnect_backoff(2, base, max, 0.0);
+        let b_high = calculate_reconnect_backoff(10, base, max, 0.0);
+
+        assert_eq!(b0, Duration::from_millis(100));
+        assert_eq!(b1, Duration::from_millis(200));
+        assert_eq!(b2, Duration::from_millis(400));
+        assert_eq!(b_high, max);
+
+        // 2. Full jitter (factor 0.5): samples within range [exp * 0.5, exp] and non-static
+        let attempt = 3; // exp_ms = 800ms, range = [400ms, 800ms]
+        let mut samples = Vec::new();
+
+        for _ in 0..50 {
+            let backoff = calculate_reconnect_backoff(attempt, base, max, 0.5);
+            assert!(backoff >= Duration::from_millis(400));
+            assert!(backoff <= Duration::from_millis(800));
+            assert!(backoff <= max);
+            samples.push(backoff.as_millis());
+        }
+
+        // Verify randomization jitter produced distinct values
+        let first = samples[0];
+        let has_variation = samples.iter().any(|&val| val != first);
+        assert!(
+            has_variation,
+            "randomized jitter should generate varying backoff durations"
+        );
+
+        // 3. ReconnectBackoffConfig & SyncTransport helper methods
+        let config = ReconnectBackoffConfig {
+            base,
+            max,
+            jitter_factor: 0.2,
+        };
+        let cfg_backoff = config.calculate_backoff(1);
+        assert!(cfg_backoff >= Duration::from_millis(160));
+        assert!(cfg_backoff <= Duration::from_millis(200));
+
+        let transport_backoff = SyncTransport::reconnect_backoff(2, base, max, 0.0);
+        assert_eq!(transport_backoff, Duration::from_millis(400));
     }
 }
