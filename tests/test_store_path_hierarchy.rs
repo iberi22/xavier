@@ -302,8 +302,10 @@ async fn test_path_hierarchy_queries() {
     }
 
     // 1. Verify path_prefix filtering via schema query filters on QmdMemory search
-    let mut filters = xavier::memory::schema::MemoryQueryFilters::default();
-    filters.path_prefix = Some("projects/alpha".to_string());
+    let filters = xavier::memory::schema::MemoryQueryFilters {
+        path_prefix: Some("projects/alpha".to_string()),
+        ..Default::default()
+    };
 
     let results = state
         .qmd_memory
