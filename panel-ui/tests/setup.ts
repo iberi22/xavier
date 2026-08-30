@@ -30,3 +30,6 @@ vi.mock("../src/theme", () => ({
 }));
 
 import "@testing-library/jest-dom";
+
+// Global define for Vitest environment
+(globalThis as any).__APP_VERSION__ = "0.10.0";
