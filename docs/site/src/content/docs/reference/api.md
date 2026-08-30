@@ -184,6 +184,25 @@ Response:
 }
 ```
 
+## Model Context Protocol (MCP)
+
+Xavier provides native MCP over STDIO and HTTP SSE at port `8100` (`/mcp`):
+
+### JSON-RPC `server/discover`
+
+Returns the full server capabilities, tool counts, and prompt catalog for standard MCP clients:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "server/discover",
+  "params": {}
+}
+```
+
+Response headers emit `mcp-session-id: <ulid>` for streamable-HTTP protocol compatibility.
+
 ## Public Dataset
 
 The `/v1/public/*` surface exposes the generated `xavier-dataset/` export as read-only, cacheable project context. These endpoints are intended for agents and public documentation tooling that need repository intelligence without cloning, indexing, or authenticating against the private memory API.

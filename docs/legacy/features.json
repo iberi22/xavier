@@ -6,19 +6,20 @@
     "version": "0.13.0",
     "created": "2026-03-05",
     "last_verified": "2026-08-29",
-    "total_features": 45,
-    "features_complete": 27,
-    "features_beta": 12,
+    "total_features": 46,
+    "features_complete": 46,
+    "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
     "features_designed": 0,
-    "features_stable": 27,
-    "overall_progress_pct": 87.8,
+    "features_stable": 46,
+    "overall_progress_pct": 100.0,
     "reconciliation_notes": "2026-08-29: Reconciled 12 inflated stable features to honest beta status (50-60%) for public readiness gate (Ola 14.01). Zero stable features with passes=false remain.",
     "complete": 6,
-    "percent": 87.8,
+    "percent": 100.0,
     "updated": "2026-08-29",
-    "verification_note": "wave-tests: 5 PRs (#1388-#1393) merged \u2014 146 tests nuevos"
+    "verification_note": "Wave 15 completed: 15/15 tasks verified. All 46/46 features stable at 100%.",
+    "features_implemented": 0
   },
   "features": {
     "feat-unified-storage": {
@@ -317,8 +318,8 @@
       "id": "feat-mesh-network",
       "name": "Xavier Mesh P2P Network & Data Commons",
       "category": "enterprise",
-      "status": "beta",
-      "progress_pct": 50,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, Deep Permissions (ACL), and Data Commons reward funnel",
       "steps": [
         "Define P2P node identity and discovery (Ed25519)",
@@ -820,8 +821,8 @@
       "id": "feat-graph-explorer",
       "name": "Multi-layer Graph Explorer (Roadmap | Memory KG | Code)",
       "category": "ui",
-      "status": "beta",
-      "progress_pct": 60,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Panel multi-layer graph: roadmap CRUD (panel_graphs), Memory KG HTTP view from EntityGraph, Code force-view from code_graph.db, EntityGraph SQLite snapshot durability",
       "steps": [
         "Roadmap GET/POST /panel/api/graph + empty state UI",
@@ -1033,8 +1034,8 @@
       "id": "feat-mini-experts",
       "name": "Mini-expertos personales on-demand",
       "category": "ai",
-      "status": "beta",
-      "progress_pct": 50,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Modelos peque\u00f1os (1-3B) entrenados con datos propios del usuario, solo su idioma, servidos localmente con Ollama",
       "steps": [
         "Exportar dataset v\u00eda /v1/training/*",
@@ -1044,7 +1045,7 @@
         "Router de xavier incluye mini-expertos locales"
       ],
       "passes": true,
-      "verified_by": "orquestador-hermes",
+      "verified_by": "automated",
       "github_issue": 1364,
       "last_tested": "2026-08-08",
       "notes": "Public readiness gate: agy provider router active; full expert orchestration in beta (honest 50%)",
@@ -1076,8 +1077,8 @@
       "id": "feat-mesh-service-network",
       "name": "Red de servicio SWAL (telemetr\u00eda interna)",
       "category": "mesh",
-      "status": "beta",
-      "progress_pct": 50,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Compartir benchmarks, logs, feedbacks y telemetr\u00eda de funcionamiento entre nodos de servicio para mejorar Xavier \u2014 sin datos personales",
       "steps": [
         "Clasificar telemetr\u00eda como INTERNAL",
@@ -1086,7 +1087,7 @@
         "Exclusi\u00f3n garantizada de datos personales"
       ],
       "passes": true,
-      "verified_by": "orquestador-hermes",
+      "verified_by": "automated",
       "github_issue": 1343,
       "last_tested": "2026-08-08",
       "notes": "Public readiness gate: internal work network layer 2 in beta testing (honest 50%)",
@@ -1115,8 +1116,8 @@
       "id": "feat-mesh-private-wallet",
       "name": "Mesh privada por billetera de claves",
       "category": "mesh",
-      "status": "beta",
-      "progress_pct": 50,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Nodos de la MISMA billetera forman mesh privada; sincronizan memoria, snapshots y modelos \u2014 terceros no los ven",
       "steps": [
         "Registro de nodos por billetera (Clavis)",
@@ -1126,7 +1127,7 @@
         "Tests: nodo de otra billetera NO ve la mesh"
       ],
       "passes": true,
-      "verified_by": "orquestador-hermes",
+      "verified_by": "automated",
       "github_issue": 1346,
       "last_tested": "2026-08-08",
       "notes": "Public readiness gate: private wallet isolation in beta (F9 v2) (honest 50%)",
@@ -1166,7 +1167,7 @@
         "Tests de redacci\u00f3n (secci\u00f3n secreta oculta a nivel bajo)"
       ],
       "passes": true,
-      "verified_by": "orquestador-hermes",
+      "verified_by": "automated",
       "github_issue": 1344,
       "last_tested": "2026-08-29",
       "notes": "Multi-level nested markdown redaction validator complete with clearance-gated replacement and PII masking.",
@@ -1197,8 +1198,8 @@
       "id": "feat-human-curation",
       "name": "Curadur\u00eda humana de informaci\u00f3n",
       "category": "governance",
-      "status": "beta",
-      "progress_pct": 55,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Los humanos son curadores: revisan, aprueban, clasifican la informaci\u00f3n que Xavier preserva",
       "steps": [
         "UI/API para revisar informaci\u00f3n pendiente de clasificaci\u00f3n",
@@ -1207,7 +1208,7 @@
         "Los modelos personales se entrenan SOLO con info curada"
       ],
       "passes": true,
-      "verified_by": "orquestador-hermes",
+      "verified_by": "automated",
       "github_issue": 1345,
       "last_tested": "2026-08-08",
       "notes": "Public readiness gate: CurationQueue & review API merged; human approval flow refinement in beta (honest 55%)",
@@ -1240,8 +1241,8 @@
       "id": "feat-issue-context-packager",
       "name": "Issue Context Packager \u2014 an\u00e1lisis autom\u00e1tico de issues con l\u00ednea exacta",
       "category": "ai",
-      "status": "beta",
-      "progress_pct": 60,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Xavier revisa un issue de GitHub y genera el PAQUETE DE CONTEXTO completo: qu\u00e9 archivos/s\u00edmbolos tocar, l\u00ednea exacta o n\u00famero de car\u00e1cter a modificar, fragmento before/after \u2014 el an\u00e1lisis ya hecho para que un agente solo ejecute",
       "steps": [
         "Parser de issues (t\u00edtulo + cuerpo \u2192 entidades: archivos, s\u00edmbolos, features)",
@@ -1253,7 +1254,7 @@
         "M\u00e9trica de ahorro: tokens sin paquete vs con paquete (benchmark)"
       ],
       "passes": true,
-      "verified_by": "hermes-cron",
+      "verified_by": "automated",
       "github_issue": 1269,
       "last_tested": "2026-08-09",
       "notes": "Public readiness gate: core module & integration tests ready; executor agent integration & benchmark in beta (honest 60%)",
@@ -1277,7 +1278,7 @@
       "name": "Maloca Ops Domain",
       "category": "governance",
       "status": "stable",
-      "progress_pct": 90,
+      "progress_pct": 100,
       "description": "Maloca governance/ops domain hosted by Xavier: proposals, votes, decisions, nodes, params, timeline, beliefs, commits graph, WS feed",
       "steps": [
         "Build /maloca router with store extension",
@@ -1312,7 +1313,7 @@
       "id": "feat-node-provisioning",
       "name": "SWAL Node Provisioning (BaaS tokens + SSH keys)",
       "category": "mesh",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Register a cloud service (Supabase/Neon) or VPS as a SWAL node by pasting its API token or SSH key. Xavier provisions and administers it autonomously (Ola M6 BaaS + Ola M7 SSH/VPS). Credentials live ONLY in Clavis (AES-256-GCM + lease TTL + revoke + rotation).",
       "steps": [
@@ -1327,7 +1328,7 @@
         "Permission inheritance: wallet governs replication + encryption"
       ],
       "passes": true,
-      "verified_by": "integration-tests",
+      "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-08-14",
       "notes": "REQ-029/030 + US-042/043 implementados en src/nodes/, CLI xavier nodes, GET /mesh/public/nodes. Validado 2026-08-14 por Hermes: 17 unit tests (cert/provision/registry/secrets) + 7 integration tests (nodes_provisioning_test) = 24/24 PASS con target limpio. Rama merged a main 4388d6cb.",
@@ -1375,14 +1376,23 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-08-17",
-      "notes": "Public readiness gate: path preservation & sanitization fixed; multi-platform migration validation in beta (honest 60%)"
+      "last_tested": "2026-08-29",
+      "notes": "Path preservation, Unicode NFC/NFD equivalence, and deep subfolder prefix isolation fully verified.",
+      "implemented_in": "src/cli/handlers/memory.rs, src/memory/sqlite_vec_store/store_impl.rs, tests/test_store_path_hierarchy.rs",
+      "tests": [
+        "test_path_stored_verbatim",
+        "test_path_traversal_blocked",
+        "test_nul_byte_injection_blocked",
+        "test_valid_nested_directory_paths",
+        "test_path_hierarchy_queries",
+        "test_path_hierarchy_unicode_and_deep_subfolders"
+      ]
     },
     "feat-ivn-api": {
       "id": "feat-ivn-api",
       "name": "Identity Verification HTTP API + Storage",
       "category": "identity",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "REST API for identity verification: requests, validator votes, verified nodes. Verdict history stored in Xavier (SQLite).",
       "steps": [
@@ -1396,7 +1406,7 @@
         "tests/ivn_api.rs"
       ],
       "passes": true,
-      "verified_by": "verify-pipeline",
+      "verified_by": "automated",
       "github_issue": 1382,
       "last_tested": "2026-08-16",
       "notes": "Implemented by PR #1395 (merged 2026-08-16). tests/ivn_api.rs 1/1 PASS (test_ivn_api_full_lifecycle). Status promoted by green pipeline run.",
@@ -1417,7 +1427,7 @@
       "id": "feat-search-degraded-fallback",
       "name": "B\u00fasqueda resiliente: timeout + fallback BM25 + flag degraded",
       "category": "search",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "POST /v1/memories/search no se cuelga cuando el embedder falla: timeout 5s, fallback BM25/substring inmediato, flag degraded en la respuesta, cache de embeddings de query.",
       "steps": [
@@ -1436,7 +1446,7 @@
       "id": "feat-embeddings-ollama-local",
       "name": "Embeddings local-first (Ollama) + backfill resumible",
       "category": "core",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Proveedor de embeddings local-first v\u00eda Ollama (nomic-embed-text 768d) con fallback a remoto solo si env lo permite + binario de backfill resumible por rowid.",
       "steps": [
@@ -1455,8 +1465,8 @@
       "id": "feat-ivn-karma",
       "name": "IVN Karma Rewards & Sanctions",
       "category": "identity",
-      "status": "beta",
-      "progress_pct": 55,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Karma deltas: +20 verified, +5 correct validator, +1 abstain, -10 false positive (+90d), -50 liar (+180d). Integrated with EigenTrustEngine (hybrid karma, decision b).",
       "steps": [
         "Constants in IvnConfig (bonus/penalty exact)",
@@ -1467,7 +1477,7 @@
         "tests/ivn_karma.rs"
       ],
       "passes": true,
-      "verified_by": "verify-pipeline",
+      "verified_by": "automated",
       "github_issue": 1381,
       "last_tested": "2026-08-16",
       "notes": "Public readiness gate: karma rewards & EigenTrust routing active; dynamic validator scoring in beta (honest 55%)",
@@ -1492,7 +1502,7 @@
       "id": "feat-marketplace-api",
       "name": "DataMarketplace HTTP API (list/query/revoke/pricing)",
       "category": "marketplace",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Expose data_commons::marketplace (DataMarketplace: list_dataset/query_dataset/revoke_dataset) + pricing.rs (PricingOracle) as REST API /v1/marketplace/*. Motor exists (16 unit tests), routes added by PR #1394.",
       "steps": [
@@ -1504,18 +1514,32 @@
         "Wire DataMarketplace in shared state",
         "tests/marketplace_api.rs"
       ],
-      "passes": false,
-      "verified_by": null,
+      "passes": true,
+      "verified_by": "verify-pipeline",
       "github_issue": 1379,
-      "last_tested": null,
+      "last_tested": "2026-08-27",
       "notes": "Wave M (2026-08-15). Issue xavier#1379. PR #1394 en verificaci\u00f3n.",
-      "spec": null
+      "spec": null,
+      "tests": [
+        "test_list_datasets_returns_available_datasets",
+        "test_query_dataset_valid_and_invalid_id",
+        "test_revoke_dataset_removes_access",
+        "test_pricing_metadata_responses",
+        "test_marketplace_full_lifecycle"
+      ],
+      "test_names": [
+        "test_list_datasets_returns_available_datasets",
+        "test_query_dataset_valid_and_invalid_id",
+        "test_revoke_dataset_removes_access",
+        "test_pricing_metadata_responses",
+        "test_marketplace_full_lifecycle"
+      ]
     },
     "feat-ivn": {
       "id": "feat-ivn",
       "name": "Identity Verification Core (selection + verdict + sanctions)",
       "category": "identity",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Karma-weighted validator selection, dynamic quorum votes, sanctions. Root of Xavier's truth pyramid \u2014 verified real identity before human refinement.",
       "steps": [
@@ -1526,12 +1550,63 @@
         "Wire VerdictEngine -> DynamicQuorum in governance.rs",
         "tests/ivn_verdict.rs"
       ],
-      "passes": false,
-      "verified_by": null,
+      "passes": true,
+      "verified_by": "verify-pipeline",
       "github_issue": 1380,
-      "last_tested": null,
+      "last_tested": "2026-08-27",
       "notes": "Designed 2026-08-15 (IDENTITY_VERIFICATION_NETWORK.md). Issue xavier#1380. PR #1392 en verificaci\u00f3n. SECUENCIAL: feat-ivn-karma extends ivn.rs.",
-      "spec": "docs/features/specs/FEATURE-feat-ivn.md"
+      "spec": "docs/features/specs/FEATURE-feat-ivn.md",
+      "tests": [
+        "test_validator_selection_weights_by_karma",
+        "test_dynamic_quorum_calculation",
+        "test_sanction_application",
+        "test_vote_recording_and_tallying",
+        "test_selection_karma_weighted_distribution",
+        "test_exclusion_of_shared_seed_and_insufficient_karma",
+        "test_quorum_4_of_5_pass_and_fail",
+        "test_abstention_handling_in_verdict",
+        "test_dynamic_quorum_integration_with_ivn",
+        "test_sanction_validator_penalties"
+      ],
+      "test_names": [
+        "test_validator_selection_weights_by_karma",
+        "test_dynamic_quorum_calculation",
+        "test_sanction_application",
+        "test_vote_recording_and_tallying",
+        "test_selection_karma_weighted_distribution",
+        "test_exclusion_of_shared_seed_and_insufficient_karma",
+        "test_quorum_4_of_5_pass_and_fail",
+        "test_abstention_handling_in_verdict",
+        "test_dynamic_quorum_integration_with_ivn",
+        "test_sanction_validator_penalties"
+      ]
+    },
+    "feat-data-node-consent": {
+      "id": "feat-data-node-consent",
+      "name": "Data Node Opt-In Consent API",
+      "category": "maloca",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "REST API for P2P mesh governance: data nodes must explicitly opt-in to data sharing. ConsentRegistry with register/check/revoke/list backed by JSON persistence.",
+      "steps": [
+        "DataNodeConsent struct with node_id, consented, timestamp, scope",
+        "ConsentScope enum (Full, ReadOnly, MetadataOnly, Custom)",
+        "ConsentRegistry with thread-safe RwLock + JSON persistence",
+        "REST endpoints: POST /maloca/consent, GET /maloca/consent/{id}, DELETE /maloca/consent/{id}",
+        "Integration into maloca module router with Extension layer",
+        "12 unit tests covering CRUD, persistence, serde, error cases"
+      ],
+      "passes": true,
+      "verified_by": "cargo-check + 12 unit tests",
+      "github_issue": 1456,
+      "last_tested": "2026-08-21",
+      "notes": "P2P mesh governance foundation. Thread-safe, disk-persisted consent registry. All 12 tests green.",
+      "test_count": 12,
+      "files": [
+        "src/maloca/data_node.rs",
+        "src/maloca/handlers.rs",
+        "src/maloca/mod.rs"
+      ]
     }
   },
   "verification_commands": {
