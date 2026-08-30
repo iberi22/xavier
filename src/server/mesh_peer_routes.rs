@@ -180,13 +180,8 @@ pub async fn revoke_peer_handler(
 
     let notice_id = format!("ksn-{}", ulid::Ulid::new());
     let revoked_by = state.root_host_id.clone();
-    let signature_hex = compute_notice_signature(
-        &notice_id,
-        &network_id,
-        &peer_id,
-        &revoked_by,
-        now_secs,
-    );
+    let signature_hex =
+        compute_notice_signature(&notice_id, &network_id, &peer_id, &revoked_by, now_secs);
 
     let notice = KillSwitchNotice {
         notice_id: notice_id.clone(),

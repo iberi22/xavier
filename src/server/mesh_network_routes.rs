@@ -149,7 +149,9 @@ impl MeshNetworkStore {
         if let Some(ref path) = self.file_path {
             if path.exists() {
                 if let Ok(data) = std::fs::read_to_string(path) {
-                    if let Ok(records) = serde_json::from_str::<HashMap<String, NetworkRecord>>(&data) {
+                    if let Ok(records) =
+                        serde_json::from_str::<HashMap<String, NetworkRecord>>(&data)
+                    {
                         if let Ok(mut lock) = self.networks.write() {
                             *lock = records;
                         }
@@ -284,7 +286,8 @@ pub async fn create_network(
 /// Handler for GET /v1/mesh/networks.
 pub async fn list_networks(State(state): State<MeshNetworkState>) -> impl IntoResponse {
     let records = state.store.list_networks();
-    let networks: Vec<MeshNetworkResponse> = records.iter().map(MeshNetworkResponse::from).collect();
+    let networks: Vec<MeshNetworkResponse> =
+        records.iter().map(MeshNetworkResponse::from).collect();
     let total = networks.len();
 
     (
@@ -460,7 +463,9 @@ mod tests {
         let invite_resp: NetworkInviteResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(invite_resp.network_id, "net-enterprise-01");
         assert_eq!(invite_resp.template, NetworkTemplate::Enterprise);
-        assert!(invite_resp.token.starts_with("xavier:invite:v1:net-enterprise-01:enterprise:"));
+        assert!(invite_resp
+            .token
+            .starts_with("xavier:invite:v1:net-enterprise-01:enterprise:"));
         assert!(!invite_resp.qr_code.is_empty());
 
         // 7. Generate invite for non-existent network returns 404

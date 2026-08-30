@@ -82,7 +82,15 @@ async fn start_test_server() -> (String, String, Arc<WorkspaceState>) {
 #[tokio::test]
 async fn test_mesh_permissions_and_pairing() {
     let temp_dir = tempdir().unwrap();
-    std::env::set_var("XAVIER_CONFIG_DIR", temp_dir.path());
+    let config_path = temp_dir.path().join("xavier-config.json");
+    let config_json = serde_json::json!({
+        "license": { "mesh_accepted": true, "license_type": "AGPL-3.0" }
+    });
+    std::fs::write(&config_path, serde_json::to_string(&config_json).unwrap()).unwrap();
+    unsafe {
+        std::env::set_var("XAVIER_CONFIG_PATH", config_path.as_os_str());
+        std::env::set_var("XAVIER_CONFIG_DIR", temp_dir.path());
+    }
 
     let (url_b, token_b, ws_b) = start_test_server().await;
 

@@ -12,18 +12,31 @@ use serde::{Deserialize, Serialize};
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
 )]
 pub enum ClearanceLevel {
-    #[serde(rename = "UNCLASSIFIED")]
+    #[serde(
+        rename = "UNCLASSIFIED",
+        alias = "unclassified",
+        alias = "Unclassified"
+    )]
     #[default]
     Unclassified = 0,
-    #[serde(rename = "INTERNAL")]
+    #[serde(rename = "INTERNAL", alias = "internal", alias = "Internal")]
     Internal = 1,
-    #[serde(rename = "RESTRICTED")]
+    #[serde(rename = "RESTRICTED", alias = "restricted", alias = "Restricted")]
     Restricted = 2,
-    #[serde(rename = "CONFIDENTIAL")]
+    #[serde(
+        rename = "CONFIDENTIAL",
+        alias = "confidential",
+        alias = "Confidential"
+    )]
     Confidential = 3,
-    #[serde(rename = "SECRET")]
+    #[serde(rename = "SECRET", alias = "secret", alias = "Secret")]
     Secret = 4,
-    #[serde(rename = "TOPSECRET")]
+    #[serde(
+        rename = "TOPSECRET",
+        alias = "top_secret",
+        alias = "TopSecret",
+        alias = "topsecret"
+    )]
     TopSecret = 5,
 }
 

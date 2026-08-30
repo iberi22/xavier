@@ -198,3 +198,9 @@ scripts/subagents/mcp/GENERATED/
 # Build artifacts & foreign lockfiles (wave 4 cleanup)
 /rust_out
 /bun.lock
+
+# Agent session scratch (never commit)
+.hermes/
+
+# Benchmark output (never commit)
+benchmark-results/

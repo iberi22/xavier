@@ -314,7 +314,10 @@ pub fn router(state: MeshHealthState) -> Router {
             "/v1/mesh/health/records/{id}/share-pass",
             post(create_share_pass_handler),
         )
-        .route("/v1/mesh/health/records/{id}/view", get(view_record_handler))
+        .route(
+            "/v1/mesh/health/records/{id}/view",
+            get(view_record_handler),
+        )
         .with_state(state)
 }
 

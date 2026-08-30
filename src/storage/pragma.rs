@@ -27,6 +27,25 @@ pub fn apply_pragmas(conn: &Connection) -> Result<()> {
     )
 }
 
+/// Checks current WAL size and executes `PRAGMA wal_checkpoint(TRUNCATE)` if threshold is exceeded.
+///
+/// Returns `Ok(true)` if checkpoint was executed, `Ok(false)` if below threshold.
+pub fn maybe_wal_checkpoint(conn: &Connection, threshold_bytes: u64) -> Result<bool> {
+    let wal_frames: i64 = conn
+        .query_row("PRAGMA wal_checkpoint(PASSIVE);", [], |r| r.get(1))
+        .unwrap_or(0);
+
+    // Approximate WAL size: frames * 4096 bytes per page
+    let approx_wal_bytes = (wal_frames.max(0) as u64) * 4096;
+
+    if approx_wal_bytes >= threshold_bytes || threshold_bytes == 0 {
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,24 +116,5 @@ mod tests {
         let not_checkpointed =
             maybe_wal_checkpoint(&conn, 100 * 1024 * 1024).expect("Failed to run checkpoint");
         assert!(!not_checkpointed);
-    }
-}
-
-/// Checks current WAL size and executes `PRAGMA wal_checkpoint(TRUNCATE)` if threshold is exceeded.
-///
-/// Returns `Ok(true)` if checkpoint was executed, `Ok(false)` if below threshold.
-pub fn maybe_wal_checkpoint(conn: &Connection, threshold_bytes: u64) -> Result<bool> {
-    let wal_frames: i64 = conn
-        .query_row("PRAGMA wal_checkpoint(PASSIVE);", [], |r| r.get(1))
-        .unwrap_or(0);
-
-    // Approximate WAL size: frames * 4096 bytes per page
-    let approx_wal_bytes = (wal_frames.max(0) as u64) * 4096;
-
-    if approx_wal_bytes >= threshold_bytes || threshold_bytes == 0 {
-        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
-        Ok(true)
-    } else {
-        Ok(false)
     }
 }
