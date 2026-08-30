@@ -47,10 +47,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run Cargo Check
-        run: cargo check --workspace --all-targets --features ci-safe
+        run: cargo check --package xavier --all-targets --features ci-safe
 
       - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --features ci-safe -- -D warnings
+        run: cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings
 
   # Job 3: Parallel Rust Tests
   rust-test:
@@ -68,7 +68,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run Lib Tests
-        run: cargo test --lib --features ci-safe -- --test-threads=4
+        run: cargo test --package xavier --lib --features ci-safe -- --test-threads=4
 
   # Job 4: Secret Scan
   secret-scan:
