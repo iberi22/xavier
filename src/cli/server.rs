@@ -586,6 +586,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             ))
             .with_state(()),
         )
+        .merge(
+            xavier::server::mesh_governance_routes::router(
+                xavier::server::mesh_governance_routes::MeshGovernanceState::new(),
+            )
+            .with_state(()),
+        )
         // ── Memory Sync endpoints ──────────────────────────────────────────
         .route(
             "/v1/memory/manifest",
