@@ -20,16 +20,27 @@ fn get_xavier_token() -> Result<String, String> {
         return Ok(token);
     }
 
-    // Read from config file
-    if let Some(mut home) = std::env::var_os("USERPROFILE")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(std::path::PathBuf::from))
-    {
-        home.push(".xavier");
-        home.push("config");
+    // Read from config file. XDG-aware: prefer XDG_CONFIG_HOME then HOME then USERPROFILE (Windows compat).
+    let config_path = if let Some(mut xdg) = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from) {
+        xdg.push("xavier");
+        xdg.push("xavier.config.json");
+        Some(xdg)
+    } else if let Some(mut home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        home.push(".config");
+        home.push("xavier");
         home.push("xavier.config.json");
+        Some(home)
+    } else if let Some(mut userprofile) = std::env::var_os("USERPROFILE").map(std::path::PathBuf::from) {
+        userprofile.push(".xavier");
+        userprofile.push("config");
+        userprofile.push("xavier.config.json");
+        Some(userprofile)
+    } else {
+        None
+    };
 
-        if let Ok(contents) = std::fs::read_to_string(home) {
+    if let Some(p) = config_path {
+        if let Ok(contents) = std::fs::read_to_string(&p) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) {
                 if let Some(token) = json
                     .get("security")
@@ -91,6 +102,25 @@ fn scan_system() -> Result<SystemInfo, String> {
         } else {
             false
         }
+    } else if cfg!(target_os = "linux") {
+        // Linux GPU detection: try lspci, fall back to /proc and /sys
+        let mut detected = false;
+        if let Ok(output) = StdCommand::new("sh")
+            .arg("-c")
+            .arg("lspci 2>/dev/null | grep -iE 'vga|3d|display' || true")
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            detected = stdout.contains("nvidia")
+                || stdout.contains("amd")
+                || stdout.contains("radeon")
+                || stdout.contains("intel");
+        }
+        if !detected {
+            detected = std::path::Path::new("/dev/dri/renderD128").exists()
+                || std::path::Path::new("/sys/class/drm").exists();
+        }
+        detected
     } else {
         false
     };
@@ -114,14 +144,22 @@ struct InitialConfig {
 
 #[tauri::command]
 fn save_initial_config(config: InitialConfig) -> Result<(), String> {
-    let mut home = std::env::var_os("USERPROFILE")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(std::path::PathBuf::from))
-        .ok_or("Home dir not found")?;
-    home.push(".xavier");
-    home.push("config");
+    // XDG-aware: XDG_CONFIG_HOME > $HOME/.config > USERPROFILE (Windows)
+    let mut config_dir = if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from) {
+        xdg
+    } else if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        let mut p = home;
+        p.push(".config");
+        p
+    } else if let Some(userprofile) = std::env::var_os("USERPROFILE").map(std::path::PathBuf::from) {
+        userprofile
+    } else {
+        return Err("Home dir not found".to_string());
+    };
+    config_dir.push("xavier");
 
-    std::fs::create_dir_all(&home).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+    let mut home = config_dir;
     home.push("xavier.config.json");
 
     let mut json = serde_json::json!({});
@@ -175,11 +213,28 @@ fn navigate_to_tab(app: &tauri::AppHandle, tab: &str) {
 // ── Single-instance lock ───────────────────────────────────────
 
 fn dirs_data_local_dir() -> std::path::PathBuf {
+    // Linux: XDG_DATA_HOME or $HOME/.local/share
+    if cfg!(target_os = "linux") {
+        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from) {
+            let mut p = xdg;
+            p.push("xavier");
+            return p;
+        }
+        if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+            let mut p = home;
+            p.push(".local");
+            p.push("share");
+            p.push("xavier");
+            return p;
+        }
+    }
+    // Windows: APPDATA\Xavier
     if let Some(app_data) = std::env::var_os("APPDATA") {
         let mut p = std::path::PathBuf::from(app_data);
         p.push("Xavier");
         return p;
     }
+    // Fallback: current directory
     std::path::PathBuf::from(".")
 }
 
@@ -196,37 +251,63 @@ fn single_instance_check() -> std::path::PathBuf {
     if let Ok(content) = std::fs::read_to_string(&lock_path) {
         if let Ok(pid) = content.trim().parse::<u32>() {
             if pid != self_pid {
-                if let Ok(output) = StdCommand::new("tasklist")
-                    .args(["/FI", &format!("PID eq {}", pid), "/NH"])
-                    .output()
-                {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    if stdout.contains(&pid.to_string()) {
-                        log::info!("Lock file says PID {} is alive — killing it", pid);
+                let alive = if cfg!(target_os = "windows") {
+                    StdCommand::new("tasklist")
+                        .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+                        .output()
+                        .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
+                        .unwrap_or(false)
+                } else {
+                    // Linux/macOS: check /proc/<pid> existence or use kill -0
+                    StdCommand::new("kill")
+                        .args(["-0", &pid.to_string()])
+                        .output()
+                        .map(|o| o.status.success())
+                        .unwrap_or(false)
+                };
+                if alive {
+                    log::info!("Lock file says PID {} is alive — killing it", pid);
+                    if cfg!(target_os = "windows") {
                         let _ = StdCommand::new("taskkill")
                             .args(["/F", "/PID", &pid.to_string()])
                             .output();
-                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    } else {
+                        let _ = StdCommand::new("kill")
+                            .args(["-9", &pid.to_string()])
+                            .output();
                     }
+                    std::thread::sleep(std::time::Duration::from_millis(500));
                 }
             }
         }
     }
 
-    // 2. Scan for existing app.exe processes (catch stray instances)
+    // 2. Scan for existing Tauri app processes (catch stray instances)
     let mut sys = System::new();
     sys.refresh_all();
+    let app_names = if cfg!(target_os = "windows") {
+        vec!["app.exe", "app"]
+    } else {
+        // Linux: process name is the tauri productName in lowercase
+        vec!["xavier"]
+    };
     for (proc_pid, proc) in sys.processes() {
         let pid_u32 = proc_pid.as_u32();
         if pid_u32 == self_pid {
             continue;
         }
         let name = proc.name().to_string_lossy().to_lowercase();
-        if name == "app.exe" || name == "app" {
-            log::info!("Found existing app.exe (PID {}) — killing it", pid_u32);
-            let _ = StdCommand::new("taskkill")
-                .args(["/F", "/PID", &pid_u32.to_string()])
-                .output();
+        if app_names.iter().any(|n| name == *n) {
+            log::info!("Found existing Xavier shell (PID {}) — killing it", pid_u32);
+            if cfg!(target_os = "windows") {
+                let _ = StdCommand::new("taskkill")
+                    .args(["/F", "/PID", &pid_u32.to_string()])
+                    .output();
+            } else {
+                let _ = StdCommand::new("kill")
+                    .args(["-9", &pid_u32.to_string()])
+                    .output();
+            }
             std::thread::sleep(std::time::Duration::from_millis(300));
         }
     }
@@ -389,10 +470,14 @@ pub fn run() {
             // ── Spawn Xavier sidecar ────────────────────────────────
             // Xavier stores its SQLite databases in ~/.xavier/, so we must
             // set the working directory to the user's home dir so it finds them.
-            let xavier_cwd = std::env::var_os("USERPROFILE")
-                .map(std::path::PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(std::path::PathBuf::from))
-                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            // XDG-aware: prefer HOME (Linux), fall back to USERPROFILE (Windows)
+            let xavier_cwd = if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+                home
+            } else if let Some(userprofile) = std::env::var_os("USERPROFILE").map(std::path::PathBuf::from) {
+                userprofile
+            } else {
+                std::path::PathBuf::from(".")
+            };
 
             let shell = app.shell();
             let sidecar_command = shell.sidecar("xavier").map_err(|e| {
@@ -430,15 +515,28 @@ pub fn run() {
             };
 
             // Resolve the data directory: prefer XAVIER_DATA_DIR env var,
-            // then fall back to %APPDATA%\xavier (standard install location).
+            // then XDG_DATA_HOME/xavier (Linux) or %APPDATA%\xavier (Windows).
             let data_dir = std::env::var_os("XAVIER_DATA_DIR")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| {
-                    let mut p = std::env::var_os("APPDATA")
-                        .map(std::path::PathBuf::from)
-                        .unwrap_or_else(|| xavier_cwd.clone());
-                    p.push("xavier");
-                    p
+                    if cfg!(target_os = "linux") {
+                        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from) {
+                            let mut p = xdg;
+                            p.push("xavier");
+                            return p;
+                        }
+                        let mut p = xavier_cwd.clone();
+                        p.push(".local");
+                        p.push("share");
+                        p.push("xavier");
+                        p
+                    } else {
+                        let mut p = std::env::var_os("APPDATA")
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|| xavier_cwd.clone());
+                        p.push("xavier");
+                        p
+                    }
                 });
             let _ = std::fs::create_dir_all(&data_dir);
             let vec_path = std::env::var_os("XAVIER_MEMORY_VEC_PATH")
@@ -447,9 +545,23 @@ pub fn run() {
             let xavier_home = std::env::var_os("XAVIER_HOME")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| {
-                    let mut p = xavier_cwd.clone();
-                    p.push(".xavier");
-                    p
+                    if cfg!(target_os = "linux") {
+                        // XDG_DATA_HOME on Linux
+                        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from) {
+                            let mut p = xdg;
+                            p.push("xavier");
+                            return p;
+                        }
+                        let mut p = xavier_cwd.clone();
+                        p.push(".local");
+                        p.push("share");
+                        p.push("xavier");
+                        p
+                    } else {
+                        let mut p = xavier_cwd.clone();
+                        p.push(".xavier");
+                        p
+                    }
                 });
 
             let (mut _rx, _child) = sidecar_command

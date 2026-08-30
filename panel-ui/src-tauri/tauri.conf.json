@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "xavier",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "com.swalsystems.xavier",
   "build": {
     "frontendDist": "../build",
     "devUrl": "http://127.0.0.1:4174",
-    "beforeDevCommand": "cd .. \u0026\u0026 cd panel-ui \u0026\u0026 pnpm run dev",
-    "beforeBuildCommand": "cd .. \u0026\u0026 cd panel-ui \u0026\u0026 pnpm run build"
+    "beforeDevCommand": "cd .. && cd panel-ui && pnpm run dev",
+    "beforeBuildCommand": "cd .. && cd panel-ui && pnpm run build"
   },
   "app": {
     "windows": [
@@ -25,8 +25,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "externalBin": ["binaries/xavier"],
+    "targets": [
+      "deb",
+      "appimage",
+      "rpm"
+    ],
+    "externalBin": [
+      "binaries/xavier"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,6 +44,27 @@
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": ""
+    },
+    "category": "Development",
+    "shortDescription": "Xavier — Cognitive Memory System for AI Agents",
+    "longDescription": "Xavier is a high-performance vector memory runtime for AI agents. Persistent, searchable, interpretable memory with native HTTP, CLI, and MCP entry points (SQLite + sqlite-vec, BM25, hybrid search). v1.0.0 pre-production.",
+    "publisher": "SWAL Systems",
+    "copyright": [
+      "AGPL-3.0"
+    ],
+    "homepage": "https://github.com/iberi22/xavier",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libsoup-3.0-0",
+          "libayatana-appindicator3-1"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
     }
   }
 }
