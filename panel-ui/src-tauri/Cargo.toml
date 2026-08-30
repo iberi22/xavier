@@ -1,8 +1,9 @@
 [package]
-name = "app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+name = "xavier"
+version = "1.0.0"
+description = "Xavier — Cognitive Memory System for AI Agents"
+authors = ["SWAL Systems <iberi22@gmail.com>"]
+license = "AGPL-3.0"
 license = ""
 repository = ""
 edition = "2021"
