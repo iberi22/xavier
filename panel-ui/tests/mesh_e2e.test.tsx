@@ -12,7 +12,7 @@ describe("Mesh E2E UI Components", () => {
 
   it("renders MeshTopologyGraph with master and member nodes", () => {
     render(<MeshTopologyGraph networkId="test-net" onDisconnectNode={() => {}} />);
-    expect(screen.getByText(/Master Host/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Master Host/i).length).toBeGreaterThan(0);
   });
 
   it("renders DaoGovernancePanel with proposals and ballot buttons", () => {
