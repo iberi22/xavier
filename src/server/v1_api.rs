@@ -557,6 +557,7 @@ pub async fn v1_mesh_handshake(
                         iroh_addr: None,
                         shared_workspace_ids: Vec::new(),
                         shared_workspace_tokens: std::collections::HashMap::new(),
+                        capabilities: Vec::new(),
                     }
                 };
 

@@ -152,6 +152,7 @@ mod tests {
             iroh_addr: None,
             shared_workspace_ids: Vec::new(),
             shared_workspace_tokens: HashMap::new(),
+            capabilities: Vec::new(),
         };
 
         adapter.register_peer_and_sync(peer).await.unwrap();

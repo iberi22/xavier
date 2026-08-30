@@ -26,6 +26,7 @@ fn test_peer_registry_with_workspace_federation_fields() {
         iroh_addr: None,
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: HashMap::new(),
+        capabilities: Vec::new(),
     };
 
     peer.shared_workspace_ids

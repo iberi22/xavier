@@ -35,6 +35,7 @@ async fn test_peer_registry_persistence_and_health_reporting() {
         iroh_addr: None,
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: HashMap::new(),
+        capabilities: Vec::new(),
     };
 
     registry.add_peer(peer_info.clone()).expect("add peer");
@@ -92,6 +93,7 @@ async fn test_e2e_multi_node_memory_flow_via_mesh() {
         iroh_addr: Some(addr_a.clone()),
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: HashMap::new(),
+        capabilities: Vec::new(),
     };
 
     // 5. Node B fetches manifest from Node A via mesh transport

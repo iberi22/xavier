@@ -45,6 +45,7 @@ pub struct AddPeerRequest {
     pub is_cloud: Option<bool>,
     pub sync_enabled: Option<bool>,
     pub iroh_addr: Option<String>,
+    pub capabilities: Option<Vec<String>>,
 }
 
 /// Add peer handler.
@@ -93,6 +94,7 @@ pub async fn add_peer_handler(Json(payload): Json<AddPeerRequest>) -> impl IntoR
         iroh_addr: payload.iroh_addr,
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: std::collections::HashMap::new(),
+        capabilities: payload.capabilities.unwrap_or_default(),
     };
 
     if let Err(e) = registry.add_peer(peer) {
@@ -337,6 +339,7 @@ pub async fn pair_peer_handler(Json(payload): Json<PairRequest>) -> impl IntoRes
         iroh_addr: None,
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: std::collections::HashMap::new(),
+        capabilities: Vec::new(),
     };
 
     if let Err(e) = registry.add_peer(peer) {
@@ -938,6 +941,7 @@ pub async fn join_workspace_handler(
             iroh_addr: None,
             shared_workspace_ids: Vec::new(),
             shared_workspace_tokens: std::collections::HashMap::new(),
+            capabilities: Vec::new(),
         },
     };
 
