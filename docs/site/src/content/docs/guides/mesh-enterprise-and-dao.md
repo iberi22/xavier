@@ -1,4 +1,7 @@
-# Enterprise Brain, DAOs, & P2P Mesh Networks Guide
+---
+title: Enterprise Brain, DAOs, & P2P Mesh Networks Guide
+description: Visual and operational manual for configuring enterprise knowledge meshes, DAO councils, and secure communications in Xavier Panel UI.
+---
 
 > Visual and operational manual for configuring enterprise knowledge meshes, DAO councils, and secure communications in Xavier Panel UI.
 
