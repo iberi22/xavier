@@ -34,6 +34,27 @@ pub struct PeerInfo {
     pub shared_workspace_ids: Vec<String>,
     #[serde(default)]
     pub shared_workspace_tokens: HashMap<String, String>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+impl Default for PeerInfo {
+    fn default() -> Self {
+        Self {
+            node_id: NodeId(String::new()),
+            alias: None,
+            endpoint_url: String::new(),
+            public_key_hex: String::new(),
+            added_at: chrono::Utc::now().timestamp(),
+            last_seen_at: None,
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: None,
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: HashMap::new(),
+            capabilities: Vec::new(),
+        }
+    }
 }
 
 impl PeerInfo {
@@ -166,6 +187,30 @@ impl PeerRegistry {
         }
         Ok(())
     }
+
+    /// Select a random healthy peer with the "maintenance" capability.
+    /// If no peer explicitly has "maintenance", any healthy peer can be considered if open.
+    pub fn select_random_maintainer(&self) -> Option<PeerInfo> {
+        use rand::seq::SliceRandom;
+
+        let maintainers: Vec<PeerInfo> = self
+            .peers
+            .values()
+            .filter(|p| {
+                p.is_healthy()
+                    && (p.capabilities.iter().any(|c| c == "maintenance")
+                        || p.capabilities.is_empty())
+            })
+            .cloned()
+            .collect();
+
+        if maintainers.is_empty() {
+            None
+        } else {
+            let mut rng = rand::thread_rng();
+            maintainers.choose(&mut rng).cloned()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -196,11 +241,21 @@ mod tests {
             iroh_addr: None,
             shared_workspace_ids: Vec::new(),
             shared_workspace_tokens: HashMap::new(),
+            capabilities: vec!["maintenance".to_string()],
         };
 
         registry.add_peer(peer).unwrap();
         assert_eq!(registry.list_peers().len(), 1);
         assert!(registry.get_peer(&node_id).is_some());
+
+        // Test random maintainer selection
+        let mut healthy_peer = registry.get_peer(&node_id).unwrap().clone();
+        healthy_peer.last_seen_at = Some(chrono::Utc::now().timestamp());
+        registry.add_peer(healthy_peer).unwrap();
+
+        let chosen = registry.select_random_maintainer();
+        assert!(chosen.is_some());
+        assert_eq!(chosen.unwrap().node_id, node_id);
 
         // Test persistence
         let _reloaded = PeerRegistry {

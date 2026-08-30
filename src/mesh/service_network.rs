@@ -431,6 +431,7 @@ mod tests {
             iroh_addr: None,
             shared_workspace_ids: Vec::new(),
             shared_workspace_tokens: HashMap::new(),
+            capabilities: Vec::new(),
         };
 
         // node2: unhealthy (last_seen_at is None or old)
@@ -446,6 +447,7 @@ mod tests {
             iroh_addr: None,
             shared_workspace_ids: Vec::new(),
             shared_workspace_tokens: HashMap::new(),
+            capabilities: Vec::new(),
         };
 
         peer_registry.add_peer(peer1).unwrap();

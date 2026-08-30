@@ -141,6 +141,7 @@ async fn test_mesh_handshake_and_sync() {
         iroh_addr: None,
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: std::collections::HashMap::new(),
+        capabilities: Vec::new(),
     };
 
     // Since we now enforce NodeID in manifest request, we must make sure Node A is in Node B's ACL
@@ -271,6 +272,7 @@ mod iroh_tests {
                 ),
                 shared_workspace_ids: Vec::new(),
                 shared_workspace_tokens: std::collections::HashMap::new(),
+                capabilities: Vec::new(),
             };
 
             // Peer without iroh_addr
@@ -286,6 +288,7 @@ mod iroh_tests {
                 iroh_addr: None,
                 shared_workspace_ids: Vec::new(),
                 shared_workspace_tokens: std::collections::HashMap::new(),
+                capabilities: Vec::new(),
             };
 
             let res_ok =

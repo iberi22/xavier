@@ -181,6 +181,7 @@ async fn test_mesh_permissions_and_pairing() {
         iroh_addr: None,
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: std::collections::HashMap::new(),
+        capabilities: Vec::new(),
     };
 
     let manifest_a = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();

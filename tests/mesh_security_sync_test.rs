@@ -126,6 +126,7 @@ fn make_test_peer(identity: &NodeIdentity, url: &str) -> PeerInfo {
         iroh_addr: None,
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: std::collections::HashMap::new(),
+        capabilities: Vec::new(),
     }
 }
 

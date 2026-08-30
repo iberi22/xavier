@@ -128,6 +128,7 @@ async fn add_peer(
         iroh_addr: None,
         shared_workspace_ids: vec![],
         shared_workspace_tokens: Default::default(),
+        capabilities: vec![],
     };
     let state = state.read().await;
     let mut registry = state.registry.write().await;

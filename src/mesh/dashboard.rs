@@ -126,6 +126,7 @@ mod tests {
             iroh_addr: None,
             shared_workspace_ids: Vec::new(),
             shared_workspace_tokens: HashMap::new(),
+            capabilities: Vec::new(),
         };
         registry.add_peer(peer).unwrap();
 

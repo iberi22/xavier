@@ -247,6 +247,7 @@ async fn test_multi_node_mesh_convergence_3_nodes() {
         iroh_addr: None,
         shared_workspace_ids: Vec::new(),
         shared_workspace_tokens: HashMap::new(),
+        capabilities: Vec::new(),
     };
 
     // 3. Alpha fetches manifest and chunk from Hub

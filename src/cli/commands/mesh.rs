@@ -49,6 +49,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 iroh_addr: None,
                 shared_workspace_ids: Vec::new(),
                 shared_workspace_tokens: std::collections::HashMap::new(),
+                capabilities: Vec::new(),
             };
 
             registry.add_peer(peer)?;
@@ -335,6 +336,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 iroh_addr: None,
                 shared_workspace_ids: Vec::new(),
                 shared_workspace_tokens: std::collections::HashMap::new(),
+                capabilities: Vec::new(),
             };
 
             registry.add_peer(peer)?;
