@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "xavier-memory": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8100/mcp",
+      "headers": {
+        "X-Xavier-Token": "REDACTED",
+        "Origin": "http://127.0.0.1:8100"
+      },
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "xavier-memory": {
+      "type": "local",
+      "command": [
+        "xavier",
+        "mcp"
+      ],
+      "env": {
+        "XAVIER_TOKEN": "YOUR_XAVIER_TOKEN",
+        "XAVIER_DATA_DIR": "data",
+        "XAVIER_EMBEDDING_PROVIDER_MODE": "cloud",
+        "XAVIER_TOKEN_SECRET": "swal-secret-2026"
+      },
+      "enabled": true
+    }
+  }
+}

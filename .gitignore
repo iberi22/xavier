@@ -4,8 +4,13 @@ target/
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite3-*
 *.log
 .env
+shell.nix
+build.sh
 node_modules/
 package-lock.json
 *.tsbuildinfo
@@ -51,156 +56,23 @@ optimization-result.json
 state/auth-profiles.json
 state/*.json
 
-# Notebooks output
-notebooks/.ipynb_checkpoints/
-
 # Python cache
 **/__pycache__/
 *.pyc
 *.pyo
 
-# Root-level scripts that belong in scripts/ (prevent accidental re-creation)
-/run_*.ps1
-/run_*.py
-/check_alerts.ps1
-/debug_alerts.ps1
-/dismiss_alerts*.ps1
-/verify_xavier.js
+# Local dev databases
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+metrics.db*
+xavier_memory.db*
 
-# Root-level docker variants that belong in docker/
-/docker-compose-*.yml
-/docker-compose.*.yml
-/Dockerfile.*
-/render-*.yaml
-
-# Root-level docs that belong in docs/
-/ARCHITECTURE_ANALYSIS.md
-/CHANGELOG-*.md
-/HEARTBEAT.md
-/IDENTITY.md
-/TOOLS.md
- 
-# Local development
+# Internal agent indexing caches & test results
 .xavier/
-scratch/
-check-errors.txt
-/target_local/
-/cargo_check_output.txt
-/diag.json
-# Test databases
-data/headless-*.db*
-data/health-test-*.db*
-data/memory_vec.db*
-
-# Backup and temp files
-# root-level backup dir only (src/storage/backup is real source code)
-/backup/
-panel-ui/scripts/
-scripts/fix_*.py
-
-# Xavier runtime state (SQLite databases)
-.xavier/
-# Playwright artifacts
-panel-ui/test-results/
-panel-ui/playwright-report/
-
-*.sqlite3*
-
-# Temporales
-.claude-task-*.md
-audit-*.ps1
-index-*.ps1
-issue-body.txt
-mem-work.txt
-
-# Backup files with credentials
-.env.backup
-
-# Token-bearing MCP configs (auto-generated)
-scripts/subagents/mcp/GENERATED/
-
-# Machine-local MCP configs (copy from .mcp.example.json; secrets via .env wrapper)
-.mcp.json
-.cursor/mcp.json
-
-# ==== Public launch purge (2026-08-13) — private/personal files ====
-# .gitcore: el LEDGER del protocolo (features.json, MANIFEST, AGENT_INDEX) ES público y trackeado;
-# solo se ignoran las partes privadas/operativas
-/.gitcore/features/
-/.gitcore/features-detailed.json.bak
-/.gitcore/scripts/
-/memory/
-/skills/
-/docs/agent-docs/
-/SOUL.md
-/USER.md
-/TASK.md
-/PLANNING.md
-/CLAUDE.md
-/.agent/
-/.agents/
-/.chronicle/
-/.claude/
-/.codegraph/
-/.issues/
-/.jules/
-/.Jules/
-/.kiro/
-/.openclaw/
-/.sidecars/
-/.xavier/
-/.zcode/
-/.git-atomize.yml
-/.git-core-protocol-version
-
-# Dev junk that never belonged in the repo
-/*.patch
-/*.diff
-/issue_*_body.txt
-/issues_raw.json
-/pr-*.md
-/temp_*.rs
-/test_oqs.rs
-/null
-/audit_report.txt
-/bench_output.txt
-/check_output.txt
-/tree.txt
-/premortem-*.md
-/premortem-*.html
-/server.err
-/patch_*.sh
-/tests_path_traversal.sh
-/update_sentinel_journal.sh
-/fix_tests.sh
-/benchmark-*-results.json
-/feedback_usage_report.json
-/.ola6_last_check.json
-/.xavier-jules-tracker-last-run.txt
-/fix_benchmark_low_pairs.py
-/check_docstrings.py
-/generate_docs.py
-/verify_xavier.js
-/xavier.sh
-/gara-g-state.json
-/bin/*.exe
-/bin/*-linux
-
-# Legacy license files (superseded by single LICENSE AGPL-3.0)
-/LICENSE-AGPL
-/LICENSE-MESH
-/COMMERCIAL_LICENSE.md
-
-# Auto-generated docs (regenerable via `xavier chronicle auto-docs`)
-/docs/auto-docs/
-/docs/auto-docs.bak/
-
-# Build artifacts & foreign lockfiles (wave 4 cleanup)
-/rust_out
-/bun.lock
-
-# Agent session scratch (never commit)
-.hermes/
-
-# Benchmark output (never commit)
-benchmark-results/
+**/.xavier/
+.chronicle/
+**/test-results/
+.cursor/
