@@ -49,9 +49,7 @@
     "shortDescription": "Xavier — Cognitive Memory System for AI Agents",
     "longDescription": "Xavier is a high-performance vector memory runtime for AI agents. Persistent, searchable, interpretable memory with native HTTP, CLI, and MCP entry points (SQLite + sqlite-vec, BM25, hybrid search). v1.0.0 pre-production.",
     "publisher": "SWAL Systems",
-    "copyright": [
-      "AGPL-3.0"
-    ],
+    "copyright": "AGPL-3.0",
     "homepage": "https://github.com/iberi22/xavier",
     "linux": {
       "deb": {
