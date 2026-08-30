@@ -14,6 +14,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useState } from "react";
 import { ApiClient } from "../api/client";
 import type { ClearanceLevel, MeshPeer, MeshRole } from "../types";
+import MeshTopologyGraph from "./Mesh/MeshTopologyGraph";
 
 interface MeshConfigProps {
   token: string;
@@ -239,6 +240,15 @@ export default function MeshConfig({ token }: MeshConfigProps) {
           </div>
         </section>
       </div>
+
+      {/* Visual Mesh Topology Graph */}
+      <section className="space-y-4">
+        <MeshTopologyGraph
+          localNodeId={localNodeId}
+          peers={peers}
+          onDisconnectPeer={handleRemovePeer}
+        />
+      </section>
 
       {/* Peers List */}
       <section className="space-y-4">
