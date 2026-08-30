@@ -17,6 +17,7 @@ import ParticleBackground from "./components/ParticleBackground";
 import ThemeToggle from "./components/ThemeToggle";
 import TopStatusBar from "./components/TopStatusBar";
 import { initialBookmarks } from "./data";
+import { MeshHubView } from "./components/Mesh/MeshHubView";
 import { ThemeProvider } from "./lib/theme/theme-provider";
 import { MalocaView } from "./maloca";
 import type {
@@ -355,6 +356,10 @@ function AppContent() {
     window.location.hash = "";
   }, []);
 
+  const handleCloseMesh = useCallback(() => {
+    window.location.hash = "";
+  }, []);
+
   const handleCompleteOnboarding = useCallback(() => {
     setShowOnboarding(false);
   }, []);
@@ -456,6 +461,10 @@ function AppContent() {
 
   if (hash === "#/maloca" || hash.startsWith("#/maloca/")) {
     return <MalocaView onClose={handleCloseMaloca} />;
+  }
+
+  if (hash === "#/mesh" || hash.startsWith("#/mesh/")) {
+    return <MeshHubView token={token || undefined} onClose={handleCloseMesh} />;
   }
 
   if (showOnboarding) {
