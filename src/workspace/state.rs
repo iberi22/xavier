@@ -222,13 +222,28 @@ impl WorkspaceState {
         {
             let wm = Arc::clone(&working_memory);
             let docs_clone = Arc::clone(&docs);
+            let store_clone = Arc::clone(&store);
+            let ws_id = config.id.clone();
             tokio::spawn(async move {
-                let docs_guard = docs_clone.read().await;
+                let initial_docs: Vec<crate::memory::qmd_memory::MemoryDocument> = {
+                    let docs_guard = docs_clone.read().await;
+                    if !docs_guard.is_empty() {
+                        docs_guard.clone()
+                    } else if let Ok(state) = store_clone.load_workspace_state(&ws_id).await {
+                        state
+                            .memories
+                            .into_iter()
+                            .map(|r| r.to_document())
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                };
                 let mut wm_guard = wm.write().await;
                 // Just take the last capacity items as initial working set
                 let capacity = wm_guard.capacity();
-                let start = docs_guard.len().saturating_sub(capacity);
-                for doc in &docs_guard[start..] {
+                let start = initial_docs.len().saturating_sub(capacity);
+                for doc in &initial_docs[start..] {
                     let item =
                         MemoryItem::new(doc.id.as_deref().unwrap_or(&doc.path), &doc.content)
                             .with_metadata(doc.metadata.clone());

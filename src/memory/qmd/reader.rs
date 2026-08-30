@@ -242,11 +242,23 @@ pub async fn init(memory: &QmdMemory) -> Result<()> {
 
 /// Get.
 pub async fn get(memory: &QmdMemory, path_or_id: &str) -> Result<Option<MemoryDocument>> {
-    let docs = memory.docs.read().await;
-    Ok(docs
-        .iter()
-        .find(|doc| doc.path == path_or_id || doc.id.as_deref() == Some(path_or_id))
-        .cloned())
+    {
+        let docs = memory.docs.read().await;
+        if let Some(doc) = docs
+            .iter()
+            .find(|doc| doc.path == path_or_id || doc.id.as_deref() == Some(path_or_id))
+        {
+            return Ok(Some(doc.clone()));
+        }
+    }
+
+    if let Some(store) = memory.store().await {
+        if let Ok(Some(record)) = store.get(&memory.workspace_id, path_or_id).await {
+            return Ok(Some(record.to_document()));
+        }
+    }
+
+    Ok(None)
 }
 
 /// Usage.

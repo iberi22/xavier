@@ -249,8 +249,10 @@ mod tests {
         let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
         let memory_port = Arc::new(QmdMemoryAdapter::new(Arc::clone(&qmd_memory)));
 
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("vec_store.db");
         let store_config = VecSqliteStoreConfig {
-            path: PathBuf::from(":memory:"),
+            path: db_path,
             embedding_dimensions: 1536,
         };
         let store = Arc::new(VecSqliteMemoryStore::new(store_config).await.unwrap());

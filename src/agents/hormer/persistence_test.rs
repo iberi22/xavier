@@ -11,6 +11,12 @@ mod persistence_tests {
     async fn test_hormer_persistence() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let config_path = temp_dir.path().join("test_hormer_config.json");
+        let default_settings = XavierSettings::default();
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&default_settings).unwrap(),
+        )
+        .unwrap();
         let prev_config = std::env::var("XAVIER_CONFIG_PATH").ok();
         std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
 
