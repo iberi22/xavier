@@ -9,6 +9,7 @@ pub mod http;
 pub mod maloca;
 pub mod mcp;
 pub mod mcp_stdio;
+pub mod mesh_governance_routes;
 pub mod mesh_network_routes;
 pub mod mesh_peer_routes;
 pub mod panel;
