@@ -1,15 +1,15 @@
 {
   "mcpServers": {
     "xavier-memory": {
-      "command": "/home/belal/proyectosSWAL/xavier/scripts/mcp/xavier-mcp-cursor.sh",
+      "command": "scripts/mcp/xavier-mcp-cursor.sh",
       "args": [],
       "env": {
-        "XAVIER_DATA_DIR_OVERRIDE": "/home/belal/proyectosSWAL/xavier/data"
+        "XAVIER_DATA_DIR_OVERRIDE": "data"
       },
       "disabled": false
     },
     "gestalt-mcp": {
-      "command": "/home/belal/.local/bin/gestalt-mcp",
+      "command": "gestalt-mcp",
       "args": ["--transport", "stdio"],
       "env": {},
       "disabled": false

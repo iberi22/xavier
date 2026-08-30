@@ -45,7 +45,7 @@ The `XAVIER_TOKEN` defined in `~/.hermes/.env` must match the token used when st
 ```bash
 # Verify matching token in environment
 grep "XAVIER_TOKEN" ~/.hermes/.env
-grep "XAVIER_TOKEN" /home/belal/proyectosSWAL/apps/xavier/.env
+grep "XAVIER_TOKEN" .env
 ```
 
 ---
