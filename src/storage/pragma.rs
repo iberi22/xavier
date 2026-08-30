@@ -67,4 +67,54 @@ mod tests {
             .expect("Failed to query foreign_keys");
         assert_eq!(foreign_keys, 1);
     }
+
+    #[test]
+    fn test_wal_auto_checkpoint_threshold() {
+        let dir = tempfile::tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_wal.db");
+        let conn = Connection::open(&db_path).expect("Failed to open database");
+        apply_pragmas(&conn).expect("Failed to apply pragmas");
+
+        // Create table and insert some data to generate WAL frames
+        conn.execute(
+            "CREATE TABLE test_data (id INTEGER PRIMARY KEY, val TEXT);",
+            [],
+        )
+        .expect("Failed to create table");
+        for i in 0..100 {
+            conn.execute(
+                "INSERT INTO test_data (val) VALUES (?);",
+                [format!("value_{i}")],
+            )
+            .expect("Failed to insert");
+        }
+
+        // Run checkpoint with small threshold (1 byte)
+        let checkpointed = maybe_wal_checkpoint(&conn, 1).expect("Failed to run checkpoint");
+        assert!(checkpointed);
+
+        // Run checkpoint with huge threshold (100MB) -> should not trigger
+        let not_checkpointed =
+            maybe_wal_checkpoint(&conn, 100 * 1024 * 1024).expect("Failed to run checkpoint");
+        assert!(!not_checkpointed);
+    }
+}
+
+/// Checks current WAL size and executes `PRAGMA wal_checkpoint(TRUNCATE)` if threshold is exceeded.
+///
+/// Returns `Ok(true)` if checkpoint was executed, `Ok(false)` if below threshold.
+pub fn maybe_wal_checkpoint(conn: &Connection, threshold_bytes: u64) -> Result<bool> {
+    let wal_frames: i64 = conn
+        .query_row("PRAGMA wal_checkpoint(PASSIVE);", [], |r| r.get(1))
+        .unwrap_or(0);
+
+    // Approximate WAL size: frames * 4096 bytes per page
+    let approx_wal_bytes = (wal_frames.max(0) as u64) * 4096;
+
+    if approx_wal_bytes >= threshold_bytes || threshold_bytes == 0 {
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }
