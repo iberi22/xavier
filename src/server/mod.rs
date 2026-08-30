@@ -10,5 +10,6 @@ pub mod maloca;
 pub mod mcp;
 pub mod mcp_stdio;
 pub mod panel;
+pub mod mesh_chat_routes;
 pub mod training_routes;
 pub mod v1_api;
