@@ -14,7 +14,7 @@ echo "==> Secret scan on tracked files ($(git ls-files | wc -l) files)"
 
 # ---- gitleaks (preferred) ----
 if command -v gitleaks >/dev/null 2>&1; then
-  gitleaks detect --source "$ROOT" --config "$ROOT/gitleaks.toml" --no-banner
+  gitleaks detect --source "$ROOT" --config "$ROOT/.gitleaks.toml" --no-banner
   exit $?
 fi
 
