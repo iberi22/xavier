@@ -40,7 +40,7 @@ jobs:
           version: 11.24.0
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true
 
       - name: Build Docs Site
         run: pnpm --filter xavier-docs-site run build
