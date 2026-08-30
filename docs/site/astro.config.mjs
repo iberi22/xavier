@@ -22,6 +22,10 @@ export default defineConfig({
           ],
         },
         {
+          label: "User Manual",
+          items: [{ autogenerate: { directory: "manual" } }],
+        },
+        {
           label: "Architecture",
           items: [{ autogenerate: { directory: "architecture" } }],
         },
