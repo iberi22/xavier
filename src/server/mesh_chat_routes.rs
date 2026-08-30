@@ -105,7 +105,9 @@ impl MeshChatStore {
     pub async fn store_message(&self, envelope: ChatMessageEnvelope) {
         let mut hist = self.history.write().await;
         let recipient_key = envelope.recipient.clone();
-        hist.entry(recipient_key).or_default().push(envelope.clone());
+        hist.entry(recipient_key)
+            .or_default()
+            .push(envelope.clone());
 
         if let Some(ref room) = envelope.room_id {
             if room != &envelope.recipient {
@@ -159,9 +161,7 @@ pub fn router() -> Router {
 /// POST `/v1/mesh/chat/send`
 ///
 /// Stores and forwards an encrypted chat envelope to a target peer or group room.
-pub async fn v1_mesh_chat_send(
-    Json(payload): Json<ChatSendRequest>,
-) -> impl IntoResponse {
+pub async fn v1_mesh_chat_send(Json(payload): Json<ChatSendRequest>) -> impl IntoResponse {
     let recipient = payload.recipient.trim();
     if recipient.is_empty() {
         return (
@@ -227,9 +227,7 @@ pub async fn v1_mesh_chat_send(
 /// GET `/v1/mesh/chat/history/{room_or_peer}`
 ///
 /// Retrieves persistent encrypted message logs for a given room or peer.
-pub async fn v1_mesh_chat_history(
-    Path(room_or_peer): Path<String>,
-) -> impl IntoResponse {
+pub async fn v1_mesh_chat_history(Path(room_or_peer): Path<String>) -> impl IntoResponse {
     if !room_or_peer
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
@@ -267,9 +265,7 @@ pub async fn v1_mesh_chat_history(
 /// POST `/v1/mesh/chat/signal`
 ///
 /// Relays WebRTC SDP offer/answer/ICE candidates for P2P voice calls.
-pub async fn v1_mesh_chat_signal(
-    Json(payload): Json<ChatSignalRequest>,
-) -> impl IntoResponse {
+pub async fn v1_mesh_chat_signal(Json(payload): Json<ChatSignalRequest>) -> impl IntoResponse {
     if payload.target_peer_id.trim().is_empty()
         || payload.sender_node_id.trim().is_empty()
         || payload.call_id.trim().is_empty()

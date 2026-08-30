@@ -275,11 +275,15 @@ async fn test_workspace_working_memory_is_bounded_and_contains_recent_docs() {
         .await
         .expect("test assertion");
 
-    // Give it a tiny bit of time for the spawned task to complete
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-    // Verify the working documents list has bounded capacity of 100 items
-    let working_docs = reloaded.working_documents().await;
+    // Poll for the spawned init task to complete
+    let mut working_docs = Vec::new();
+    for _ in 0..100 {
+        working_docs = reloaded.working_documents().await;
+        if working_docs.len() == 100 {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    }
     assert_eq!(working_docs.len(), 100);
 
     // Verify it contains the most recent documents (e.g. doc-20 through doc-119)
@@ -343,12 +347,19 @@ async fn test_entity_graph_persists_and_restores_on_reload() {
         .await
         .expect("test assertion");
 
-    // Give it a tiny bit of time for background startup tasks to execute
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-
-    // Verify the reloaded workspace restored exactly the same counts from snapshot
-    let entities_after = reloaded.entity_graph.all_entities().await;
-    let relations_after = reloaded.entity_graph.all_relations().await;
+    // Poll for the spawned background restore task to complete
+    let mut entities_after = Vec::new();
+    let mut relations_after = Vec::new();
+    for _ in 0..100 {
+        entities_after = reloaded.entity_graph.all_entities().await;
+        relations_after = reloaded.entity_graph.all_relations().await;
+        if entities_after.len() == entities_before_count
+            && relations_after.len() == relations_before_count
+        {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    }
     assert_eq!(entities_after.len(), entities_before_count);
     assert_eq!(relations_after.len(), relations_before_count);
 }

@@ -722,14 +722,23 @@ pub async fn maintenance_reindex_handler(
             }
         }
         Err(e) => {
-            if !payload.dry_run {
-                REINDEX_RUNNING.store(false, Ordering::SeqCst);
-            }
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to initialize memory store for reindexing: {}", e),
-            )
+            if payload.dry_run {
+                Json(ReindexMaintenanceResponse {
+                    status: "ok".to_string(),
+                    dry_run: true,
+                    null_embeddings_count: 0,
+                    processed_count: 0,
+                    limit_applied,
+                })
                 .into_response()
+            } else {
+                REINDEX_RUNNING.store(false, Ordering::SeqCst);
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to initialize memory store for reindexing: {}", e),
+                )
+                    .into_response()
+            }
         }
     }
 }

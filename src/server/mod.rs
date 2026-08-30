@@ -14,5 +14,6 @@ pub mod mesh_governance_routes;
 pub mod mesh_health_routes;
 pub mod mesh_network_routes;
 pub mod mesh_peer_routes;
+pub mod panel;
 pub mod training_routes;
 pub mod v1_api;

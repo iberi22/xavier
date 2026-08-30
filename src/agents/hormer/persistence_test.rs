@@ -9,11 +9,10 @@ mod persistence_tests {
 
     #[tokio::test]
     async fn test_hormer_persistence() {
-        let config_path = "config/test_hormer_config.json";
-        std::env::set_var("XAVIER_CONFIG_PATH", config_path);
-
-        // Ensure clean start
-        let _ = std::fs::remove_file(config_path);
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config_path = temp_dir.path().join("test_hormer_config.json");
+        let prev_config = std::env::var("XAVIER_CONFIG_PATH").ok();
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
 
         let initial_weights = LayerWeights::new(0.3, 0.3, 0.4);
         let policy = Arc::new(RwLock::new(NavigationPolicy::new(
@@ -66,6 +65,9 @@ mod persistence_tests {
                 || settings.retrieval.learned_policy.update_count > 0
         );
 
-        std::fs::remove_file(config_path).unwrap();
+        match prev_config {
+            Some(p) => std::env::set_var("XAVIER_CONFIG_PATH", p),
+            None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+        }
     }
 }

@@ -16,18 +16,26 @@ HTTP_TIMEOUT_SECONDS = 60
 
 
 def get_required_xavier_token() -> str:
-    for env_var in ("XAVIER_TOKEN", "XAVIER_API_KEY", "XAVIER_TOKEN"):
+    for env_var in ("XAVIER_TOKEN", "XAVIER_API_KEY", "AUTH_TOKEN"):
         token = os.environ.get(env_var, "").strip()
         if token:
             return token
-    raise RuntimeError("Missing Xavier token. Set XAVIER_TOKEN, XAVIER_API_KEY, or XAVIER_TOKEN.")
+    dotenv_path = ROOT / ".env"
+    if dotenv_path.exists():
+        for line in dotenv_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if line.startswith("XAVIER_TOKEN=") or line.startswith("XAVIER_TOKEN_SECRET="):
+                val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if val:
+                    return val
+    raise RuntimeError("Missing Xavier token. Set XAVIER_TOKEN, XAVIER_API_KEY, or configure .env.")
 
 
 TOKEN = get_required_xavier_token()
 
 
-def http_json(url: str, payload: dict, method: str = "POST") -> dict:
-    data = json.dumps(payload).encode("utf-8")
+def http_json(url: str, payload: dict = None, method: str = "POST") -> dict:
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(
         url,
         data=data,
@@ -35,6 +43,7 @@ def http_json(url: str, payload: dict, method: str = "POST") -> dict:
         headers={
             "Content-Type": "application/json",
             "X-Xavier-Token": TOKEN,
+            "Authorization": f"Bearer {TOKEN}",
         },
     )
     with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
@@ -52,8 +61,8 @@ def wait_for_health(base_url: str) -> None:
     raise RuntimeError("Xavier did not become healthy in time")
 
 
-def add_documents(base_url: str, dataset: dict) -> None:
-    http_json(f"{base_url}/memory/reset", {})
+def add_documents(base_url: str, dataset: dict) -> list:
+    latencies = []
     for document in dataset["documents"]:
         payload = {
             "path": document["path"],
@@ -64,7 +73,10 @@ def add_documents(base_url: str, dataset: dict) -> None:
             "namespace": document.get("namespace"),
             "provenance": document.get("provenance"),
         }
-        http_json(f"{base_url}/memory/add", payload)
+        t0 = time.perf_counter()
+        http_json(f"{base_url}/v1/memories", payload)
+        latencies.append((time.perf_counter() - t0) * 1000.0)
+    return latencies
 
 
 def reserve_base_url(base_url: str) -> str:
@@ -94,21 +106,38 @@ def evaluate_case(base_url: str, case: dict) -> dict:
     }
     if "system3_mode" in case:
         payload["system3_mode"] = case["system3_mode"]
+
+    t0 = time.perf_counter()
     if endpoint == "search":
-        response = http_json(f"{base_url}/memory/search", payload)
+        try:
+            response = http_json(f"{base_url}/v1/memories/search", payload)
+        except Exception:
+            response = http_json(f"{base_url}/memory/search", payload)
+        latency_ms = (time.perf_counter() - t0) * 1000.0
         top_path = None
-        if response.get("results"):
-            top_path = response["results"][0].get("path")
+        results = response.get("results", [])
+        if results:
+            first = results[0]
+            top_path = (
+                first.get("path")
+                or first.get("user_id")
+                or (first.get("metadata", {}).get("path") if isinstance(first.get("metadata"), dict) else None)
+            )
         return {
             "id": case["id"],
             "endpoint": endpoint,
             "success": top_path == case["expected_path"],
             "expected_path": case["expected_path"],
             "actual_path": top_path,
+            "latency_ms": round(latency_ms, 2),
         }
 
     route = "/memory/query" if endpoint == "query" else "/agents/run"
-    response = http_json(f"{base_url}{route}", payload)
+    try:
+        response = http_json(f"{base_url}{route}", payload)
+    except Exception:
+        response = {}
+    latency_ms = (time.perf_counter() - t0) * 1000.0
     answer = response.get("response", "")
     expected = case["expected_substring"]
     return {
@@ -117,6 +146,7 @@ def evaluate_case(base_url: str, case: dict) -> dict:
         "success": expected.lower() in answer.lower(),
         "expected_substring": expected,
         "actual_response": answer,
+        "latency_ms": round(latency_ms, 2),
     }
 
 
@@ -146,9 +176,19 @@ def main() -> None:
             env["XAVIER_PORT"] = str(parsed.port)
         # Keep the internal suite deterministic and evidence-first.
         env["XAVIER_DISABLE_HYDE"] = "1"
-        env["XAVIER_MODEL_PROVIDER"] = "disabled"
+        xavier_bin = os.environ.get("XAVIER_BIN")
+        if not xavier_bin:
+            candidate = Path.home() / ".local/bin/xavier-real"
+            if candidate.exists():
+                xavier_bin = str(candidate)
+            else:
+                xavier_bin = "xavier"
+
+        env["XAVIER_TOKEN"] = TOKEN
+
+        cmd = [xavier_bin, "http"]
         child = subprocess.Popen(
-            ["cargo", "run", "--bin", "xavier"],
+            cmd,
             cwd=ROOT,
             env=env,
             stdout=(output_dir / "xavier.stdout.log").open("wb"),
@@ -157,15 +197,20 @@ def main() -> None:
 
     try:
         wait_for_health(base_url)
-        add_documents(base_url, dataset)
+        ingest_latencies = add_documents(base_url, dataset)
         records = [evaluate_case(base_url, case) for case in dataset["cases"]]
+        passed_count = sum(1 for record in records if record["success"])
+        eval_latencies = [r["latency_ms"] for r in records]
         summary = {
             "benchmark": "internal_swal_openclaw_memory",
             "dataset": str(Path(args.dataset)),
             "base_url": base_url,
             "cases": len(records),
-            "passed": sum(1 for record in records if record["success"]),
-            "accuracy": sum(1 for record in records if record["success"]) / len(records),
+            "passed": passed_count,
+            "accuracy": passed_count / len(records) if records else 0.0,
+            "avg_ingest_latency_ms": round(sum(ingest_latencies) / len(ingest_latencies), 2) if ingest_latencies else 0.0,
+            "avg_eval_latency_ms": round(sum(eval_latencies) / len(eval_latencies), 2) if eval_latencies else 0.0,
+            "p95_eval_latency_ms": round(sorted(eval_latencies)[int(len(eval_latencies) * 0.95)] if eval_latencies else 0.0, 2),
         }
         (output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
         (output_dir / "records.json").write_text(json.dumps(records, indent=2), encoding="utf-8")

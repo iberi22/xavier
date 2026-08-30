@@ -143,10 +143,7 @@ pub fn router(state: MeshGovernanceState) -> Router {
     Router::new()
         .route("/v1/mesh/dao/proposals", post(create_proposal_handler))
         .route("/v1/mesh/dao/proposals", get(list_proposals_handler))
-        .route(
-            "/v1/mesh/dao/proposals/{id}/vote",
-            post(cast_vote_handler),
-        )
+        .route("/v1/mesh/dao/proposals/{id}/vote", post(cast_vote_handler))
         .route(
             "/v1/mesh/dao/endorsements",
             get(list_endorsements_handler).post(register_endorsement_handler),
@@ -198,9 +195,7 @@ pub async fn create_proposal_handler(
 
 /// GET /v1/mesh/dao/proposals
 /// Lists active proposals with vote tallies and quorum status.
-pub async fn list_proposals_handler(
-    State(state): State<MeshGovernanceState>,
-) -> impl IntoResponse {
+pub async fn list_proposals_handler(State(state): State<MeshGovernanceState>) -> impl IntoResponse {
     let store = state.inner.read().unwrap();
     let active_proposals: Vec<ProposalResponse> = store
         .proposals

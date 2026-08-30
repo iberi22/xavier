@@ -28,6 +28,7 @@ async fn start_test_server() -> (String, String, Arc<WorkspaceState>) {
     std::fs::write(&config_path, serde_json::to_string(&config_json).unwrap()).unwrap();
     unsafe {
         std::env::set_var("XAVIER_CONFIG_PATH", config_path.as_os_str());
+        std::env::set_var("XAVIER_CONFIG_DIR", config_dir.path());
     }
 
     let port = {
