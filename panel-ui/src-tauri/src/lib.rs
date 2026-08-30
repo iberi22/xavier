@@ -21,23 +21,26 @@ fn get_xavier_token() -> Result<String, String> {
     }
 
     // Read from config file. XDG-aware: prefer XDG_CONFIG_HOME then HOME then USERPROFILE (Windows compat).
-    let config_path = if let Some(mut xdg) = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from) {
-        xdg.push("xavier");
-        xdg.push("xavier.config.json");
-        Some(xdg)
-    } else if let Some(mut home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
-        home.push(".config");
-        home.push("xavier");
-        home.push("xavier.config.json");
-        Some(home)
-    } else if let Some(mut userprofile) = std::env::var_os("USERPROFILE").map(std::path::PathBuf::from) {
-        userprofile.push(".xavier");
-        userprofile.push("config");
-        userprofile.push("xavier.config.json");
-        Some(userprofile)
-    } else {
-        None
-    };
+    let config_path =
+        if let Some(mut xdg) = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from) {
+            xdg.push("xavier");
+            xdg.push("xavier.config.json");
+            Some(xdg)
+        } else if let Some(mut home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+            home.push(".config");
+            home.push("xavier");
+            home.push("xavier.config.json");
+            Some(home)
+        } else if let Some(mut userprofile) =
+            std::env::var_os("USERPROFILE").map(std::path::PathBuf::from)
+        {
+            userprofile.push(".xavier");
+            userprofile.push("config");
+            userprofile.push("xavier.config.json");
+            Some(userprofile)
+        } else {
+            None
+        };
 
     if let Some(p) = config_path {
         if let Ok(contents) = std::fs::read_to_string(&p) {
@@ -145,13 +148,16 @@ struct InitialConfig {
 #[tauri::command]
 fn save_initial_config(config: InitialConfig) -> Result<(), String> {
     // XDG-aware: XDG_CONFIG_HOME > $HOME/.config > USERPROFILE (Windows)
-    let mut config_dir = if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from) {
+    let mut config_dir = if let Some(xdg) =
+        std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from)
+    {
         xdg
     } else if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
         let mut p = home;
         p.push(".config");
         p
-    } else if let Some(userprofile) = std::env::var_os("USERPROFILE").map(std::path::PathBuf::from) {
+    } else if let Some(userprofile) = std::env::var_os("USERPROFILE").map(std::path::PathBuf::from)
+    {
         userprofile
     } else {
         return Err("Home dir not found".to_string());
@@ -471,13 +477,16 @@ pub fn run() {
             // Xavier stores its SQLite databases in ~/.xavier/, so we must
             // set the working directory to the user's home dir so it finds them.
             // XDG-aware: prefer HOME (Linux), fall back to USERPROFILE (Windows)
-            let xavier_cwd = if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
-                home
-            } else if let Some(userprofile) = std::env::var_os("USERPROFILE").map(std::path::PathBuf::from) {
-                userprofile
-            } else {
-                std::path::PathBuf::from(".")
-            };
+            let xavier_cwd =
+                if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+                    home
+                } else if let Some(userprofile) =
+                    std::env::var_os("USERPROFILE").map(std::path::PathBuf::from)
+                {
+                    userprofile
+                } else {
+                    std::path::PathBuf::from(".")
+                };
 
             let shell = app.shell();
             let sidecar_command = shell.sidecar("xavier").map_err(|e| {
@@ -520,7 +529,9 @@ pub fn run() {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| {
                     if cfg!(target_os = "linux") {
-                        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from) {
+                        if let Some(xdg) =
+                            std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from)
+                        {
                             let mut p = xdg;
                             p.push("xavier");
                             return p;
@@ -547,7 +558,9 @@ pub fn run() {
                 .unwrap_or_else(|| {
                     if cfg!(target_os = "linux") {
                         // XDG_DATA_HOME on Linux
-                        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from) {
+                        if let Some(xdg) =
+                            std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from)
+                        {
                             let mut p = xdg;
                             p.push("xavier");
                             return p;

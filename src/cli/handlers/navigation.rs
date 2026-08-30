@@ -318,14 +318,16 @@ mod tests {
         let docs = Arc::new(AsyncRwLock::new(Vec::new()));
         let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
         let memory_port = Arc::new(QmdMemoryAdapter::new(Arc::clone(&qmd_memory)));
-
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("vec_store.db");
+        let cg_path = temp_dir.path().join("code_graph.db");
         let config = VecSqliteStoreConfig {
-            path: PathBuf::from(":memory:"),
+            path: db_path,
             embedding_dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
         };
         let store = Arc::new(VecSqliteMemoryStore::new(config).await.unwrap());
 
-        let cg_db = Arc::new(code_graph::db::CodeGraphDB::new(&PathBuf::from(":memory:")).unwrap());
+        let cg_db = Arc::new(code_graph::db::CodeGraphDB::new(&cg_path).unwrap());
         let cg_state = Arc::new(tokio::sync::RwLock::new(CodeGraphState {
             db: cg_db.clone(),
             indexer: Arc::new(code_graph::indexer::Indexer::new(cg_db.clone())),
