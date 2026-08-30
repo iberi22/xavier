@@ -1,7 +1,7 @@
 {
   "name": "xavier-panel-ui",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,8 +17,8 @@
     "test:e2e:generative": "playwright test"
   },
   "dependencies": {
-    "@swal/maloca-embed": "file:../../maloca/packages/swal-maloca-embed",
-    "@swal/ui": "file:../../maloca/packages/swal-ui",
+    "@swal/maloca-embed": "file:../../../maloca/packages/swal-maloca-embed",
+    "@swal/ui": "file:../../../maloca/packages/swal-ui",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "2.7.1",
