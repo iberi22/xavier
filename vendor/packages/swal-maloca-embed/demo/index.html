@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maloca Embed Custom Element Demo</title>
+  <!-- Load the Custom Element bundle -->
+  <script type="module" src="../dist/maloca-embed.js"></script>
+  <style>
+    body {
+      background-color: #020617;
+      color: #f8fafc;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      padding: 2rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #38bdf8;
+    }
+    .demo-container {
+      margin-top: 2rem;
+      background-color: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+    }
+    .logs-container {
+      margin-top: 1.5rem;
+      background-color: #1e293b;
+      border-radius: 0.25rem;
+      padding: 1rem;
+      font-family: monospace;
+      font-size: 0.875rem;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .log-item {
+      margin-bottom: 0.5rem;
+    }
+    .log-ready { color: #4ade80; }
+    .log-error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>Maloca Custom Element Demo</h1>
+  <p>This demo uses the compiled custom element <code>&lt;swal-maloca-panel&gt;</code> without any framework.</p>
+
+  <div class="demo-container">
+    <swal-maloca-panel app-id="xavier" xavier-url="http://localhost:8006"></swal-maloca-panel>
+  </div>
+
+  <h2>Event Logs</h2>
+  <div id="logs" class="logs-container">
+    <div class="log-item">Listening for events...</div>
+  </div>
+
+  <script>
+    const panel = document.querySelector('swal-maloca-panel');
+    const logs = document.getElementById('logs');
+
+    function addLog(message, type) {
+      const div = document.createElement('div');
+      div.className = `log-item ${type ? 'log-' + type : ''}`;
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logs.appendChild(div);
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    if (panel) {
+      panel.addEventListener('maloca-ready', (e) => {
+        addLog(`Event 'maloca-ready' received! Detail: ${JSON.stringify(e.detail)}`, 'ready');
+      });
+
+      panel.addEventListener('maloca-error', (e) => {
+        addLog(`Event 'maloca-error' received! Detail: ${JSON.stringify(e.detail)}`, 'error');
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
 packages:
   - 'panel-ui'
   - 'docs/site'
-  - '../maloca/packages/*'
+  - 'vendor/packages/*'

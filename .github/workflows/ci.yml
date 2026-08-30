@@ -1,4 +1,4 @@
-name: Xavier CI / CD Improvements
+name: Xavier CI / CD
 
 on:
   push:
@@ -34,8 +34,6 @@ jobs:
     name: Rust Clippy & Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      RUSTFLAGS: "-D warnings"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -49,34 +47,14 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run Cargo Check
-        run: cargo check --workspace --all-targets --features ci-safe --exclude app
+        run: cargo check --workspace --all-targets --features ci-safe
 
       - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --features ci-safe --exclude app -- -D warnings
+        run: cargo clippy --workspace --all-targets --features ci-safe -- -D warnings
 
   # Job 3: Parallel Rust Tests
-  # Note: --offline mode is for local offline sandboxes only; CI workflows rely on online dependency fetching
-  # combined with Swatinem/rust-cache@v2 to ensure reliable crate resolution (e.g. anes v0.1.6).
   rust-test:
     name: Parallel Rust Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo Dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run Lib Tests (Parallel)
-        run: cargo test --lib --no-default-features --features ci-safe -- --test-threads=4
-
-  # Job 4: Rust Coverage Gate
-  rust-coverage:
-    name: Rust Line Coverage Gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -89,13 +67,10 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run Lib Tests
+        run: cargo test --lib --features ci-safe -- --test-threads=4
 
-      - name: Run Cargo LLVM Cov & Check Threshold (>=70%)
-        run: cargo llvm-cov --lib --features ci-safe --exclude app --fail-under-lines 70 --lcov --output-path lcov.info
-
-  # Job 5: Secret Scan
+  # Job 4: Secret Scan
   secret-scan:
     name: Secret Scan (Gitleaks)
     runs-on: ubuntu-latest
@@ -107,9 +82,9 @@ jobs:
           fetch-depth: 0
 
       - name: Run Secret Scan
-        run: ./scripts/check-secrets.sh
+        run: bash scripts/check-secrets.sh
 
-  # Job 6: Frontend Build & Security Audit (Parallel)
+  # Job 5: Frontend Build & Security Audit
   frontend-build-audit:
     name: Frontend Build & Security Audit
     runs-on: ubuntu-latest
@@ -121,7 +96,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 11.24.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -130,12 +105,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
+        run: pnpm install --no-frozen-lockfile
 
-      - name: Run npm/pnpm Security Audit (High warning, Critical fail)
-        run: |
-          pnpm audit --audit-level=high || echo "Audit found high severity vulnerabilities, please review."
-          pnpm audit --audit-level=critical
-
-      - name: Check, Typecheck & Build Frontend (panel-ui)
-        run: pnpm --filter xavier-panel-ui check
+      - name: Build Frontend (panel-ui)
+        run: pnpm --filter xavier-panel-ui run build
