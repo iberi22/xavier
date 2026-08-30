@@ -1129,6 +1129,18 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             get(crate::cli::handlers::mesh::v1_mesh_status_handler),
         )
         .route(
+            "/v1/mesh/chat/send",
+            post(xavier::server::mesh_chat_routes::v1_mesh_chat_send),
+        )
+        .route(
+            "/v1/mesh/chat/history/{room_or_peer}",
+            get(xavier::server::mesh_chat_routes::v1_mesh_chat_history),
+        )
+        .route(
+            "/v1/mesh/chat/signal",
+            post(xavier::server::mesh_chat_routes::v1_mesh_chat_signal),
+        )
+        .route(
             "/mesh/public/nodes",
             get(crate::cli::handlers::nodes::list_public_nodes_handler),
         )
