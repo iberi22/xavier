@@ -52,7 +52,8 @@ impl SegmentedDoc {
 
         for section in &self.sections {
             if requester_level >= section.clearance_level {
-                let clean_content = engine.redact_nested_markdown(&section.content, requester_level);
+                let clean_content =
+                    engine.redact_nested_markdown(&section.content, requester_level);
                 if !section.title.is_empty() {
                     rendered.push(format!("## {}\n{}", section.title, clean_content));
                 } else {
