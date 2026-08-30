@@ -60,7 +60,7 @@ def migrate(db_path: str, dry_run: bool) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default="/home/belal/proyectosSWAL/apps/xavier/data/vec-store.sqlite3")
+    ap.add_argument("--db", default="data/vec-store.sqlite3")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 

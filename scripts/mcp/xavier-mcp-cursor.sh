@@ -7,8 +7,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${XAVIER_ENV_FILE:-$REPO_ROOT/.env}"
 
 # Prefer the systemd-backed env if the workspace .env cannot auth to :8006
-# and a sibling install exists (common on this machine).
-FALLBACK_ENV="/home/belal/projects/xavier/.env"
+# and a config install exists.
+FALLBACK_ENV="${HOME}/.config/xavier/.env"
 
 if [[ -f "$ENV_FILE" ]]; then
   set -a

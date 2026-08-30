@@ -54,7 +54,7 @@ RUN strip -s /app/target/release/xavier
 # Minimal Debian-based runtime with only essential libs
 FROM debian:bookworm-slim
 
-ARG XAVIER_VERSION=1.0.0
+ARG XAVIER_VERSION=0.0.1
 LABEL org.opencontainers.image.version=$XAVIER_VERSION
 
 # Runtime dependencies:

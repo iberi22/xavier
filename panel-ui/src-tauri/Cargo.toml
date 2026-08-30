@@ -1,8 +1,8 @@
 [package]
 name = "app"
-version = "1.0.0"
+version = "0.0.1"
 description = "Xavier — Cognitive Memory System for AI Agents"
-authors = ["SWAL Systems <iberi22@gmail.com>"]
+authors = ["SWAL Systems <dev@swal.dev>"]
 license = "AGPL-3.0"
 repository = "https://github.com/iberi22/xavier"
 edition = "2021"

@@ -9,15 +9,15 @@
 #   bash scripts/health-watch.sh --json-only
 #
 # Cron de ejemplo (cada día 08:00):
-#   0 8 * * *  bash /home/belal/proyectosSWAL/xavier/scripts/health-watch.sh >> /var/log/xavier-health.log 2>&1
+#   0 8 * * *  xavier health-watch >> /var/log/xavier-health.log 2>&1
 #
 # Dependencias: curl, sqlite3, jq (opcional; sin jq usa python3).
 
 set -uo pipefail
 
 XAVIER_URL="${XAVIER_URL:-http://localhost:8006}"
-TOKEN_FILE="${XAVIER_TOKEN_FILE:-/home/belal/proyectosSWAL/xavier/.env}"
-VEC_DB="${VEC_DB:-/home/belal/proyectosSWAL/xavier/data/vec-store.sqlite3}"
+TOKEN_FILE="${XAVIER_TOKEN_FILE:-.env}"
+VEC_DB="${VEC_DB:-data/vec-store.sqlite3}"
 WINDOW_HOURS="${WINDOW_HOURS:-48}"
 MIN_EMBED_PCT="${MIN_EMBED_PCT:-90}"
 JSON_ONLY="${1:-}"

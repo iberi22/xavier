@@ -42,7 +42,7 @@ graph TD
 - **Nodes**: Source files, functions, structs, traits, methods, constants, modules.
 - **Edges**: `calls`, `imports`, `implements`, `defines`, `referenced_by`.
 - **Deduplication**: Hash-based deduplication preventing symbol bloat across multiple file versions.
-- **Integration**: Mapped directly to [`MemoryDocument`](file:///home/belal/proyectosSWAL/apps/xavier/src/memory/qmd_memory/types.rs) records with `kind: "code_symbol"`.
+- **Integration**: Mapped directly to [`MemoryDocument`](../src/memory/qmd_memory/types.rs) records with `kind: "code_symbol"`.
 
 ### B. Epistemic Belief & Entity Graphs (`src/workspace/`, `src/memory/`)
 - **Entity Nodes**: Real-world actors, systems, tools, projects, and concepts identified during agent conversations.
@@ -60,9 +60,9 @@ graph TD
 ### D. Verification & Test Coverage Matrix
 - **Unit Tests**: 1,994 tests validating micro-behaviors across stores, PRAGMAs, migrations, and encryption.
 - **Integration Test Suites**:
-  - [`tests/mesh_full_simulation_test.rs`](file:///home/belal/proyectosSWAL/apps/xavier/tests/mesh_full_simulation_test.rs): 3-node mesh convergence, wallet gating, P2P/ICE, ephemeral passes, DAO governance.
-  - [`tests/mesh_security_sync_test.rs`](file:///home/belal/proyectosSWAL/apps/xavier/tests/mesh_security_sync_test.rs): ACL clearance matrix, tamper detection, replay attack resistance.
-  - [`tests/mesh_permissions_test.rs`](file:///home/belal/proyectosSWAL/apps/xavier/tests/mesh_permissions_test.rs): Pairing secret exchange and auto-registration.
+  - [`tests/mesh_full_simulation_test.rs`](../tests/mesh_full_simulation_test.rs): 3-node mesh convergence, wallet gating, P2P/ICE, ephemeral passes, DAO governance.
+  - [`tests/mesh_security_sync_test.rs`](../tests/mesh_security_sync_test.rs): ACL clearance matrix, tamper detection, replay attack resistance.
+  - [`tests/mesh_permissions_test.rs`](../tests/mesh_permissions_test.rs): Pairing secret exchange and auto-registration.
 
 ---
 
