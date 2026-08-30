@@ -1221,7 +1221,7 @@ impl VecSqliteMemoryStore {
     pub fn put_index(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
         conn.execute("DELETE FROM memory_fts WHERE id = ?", params![record.id])?;
         let code_tokens =
-            super::fts::code_tokens(&format!("{} {}", &record.path, &record.content)).join(" ");
+            super::fts::code_tokens(&format!("{} {}", record.path, record.content)).join(" ");
         conn.execute(
             "INSERT INTO memory_fts(id, path, content, code_tokens) VALUES (?, ?, ?, ?)",
             params![record.id, record.path, record.content, code_tokens],
