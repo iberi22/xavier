@@ -35,6 +35,7 @@ path = "src/lib.rs"
 members = [
     "code-graph",
     "crates/xavier-core-logic",
+    "crates/xavier-wasm",
     "panel-ui/src-tauri",
     "code-graph/parsers/parser-rust",
     "code-graph/parsers/parser-ts",
@@ -74,6 +75,7 @@ dev-mode = []
 # Enterprise features: Cortex Enterprise Cloud integration
 enterprise = []
 mesh = ["dep:iroh"]
+libp2p = []
 dao-evm = ["dep:alloy"]
 
 [[test]]

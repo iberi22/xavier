@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Groups/permissions ACL + audit trail (WAVE-3.03)
 /// Permissions configuration for an Information Group.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GroupAcl {
@@ -27,6 +28,17 @@ pub struct InfoGroup {
 pub struct GroupRegistry {
     groups: HashMap<String, InfoGroup>,
     storage_path: PathBuf,
+    audit_log: Vec<GroupAuditEntry>,
+}
+
+/// Audit trail entry for groups/permissions (WAVE-3.03)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupAuditEntry {
+    pub timestamp: String,
+    pub group_id: String,
+    pub member_id: String,
+    pub action: String,
+    pub allowed: bool,
 }
 
 impl GroupRegistry {
@@ -46,6 +58,7 @@ impl GroupRegistry {
             return Ok(Self {
                 groups: HashMap::new(),
                 storage_path: path,
+                audit_log: Vec::new(),
             });
         }
 
@@ -60,6 +73,7 @@ impl GroupRegistry {
         Ok(Self {
             groups,
             storage_path: path,
+            audit_log: Vec::new(),
         })
     }
 
@@ -128,6 +142,36 @@ impl GroupRegistry {
             "audit" => group.acl.audit,
             _ => false,
         }
+    }
+
+    /// Enforcement with audit trail — logs every check
+    pub fn check_access_audited(&mut self, group_id: &str, member_id: &str, action: &str) -> bool {
+        let allowed = self.check_access(group_id, member_id, action);
+        self.audit_log.push(GroupAuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            group_id: group_id.to_string(),
+            member_id: member_id.to_string(),
+            action: action.to_string(),
+            allowed,
+        });
+        allowed
+    }
+
+    /// Enforce on all reads — returns audit trail
+    pub fn audit_trail(&self) -> &[GroupAuditEntry] {
+        &self.audit_log
+    }
+
+    /// Number of audit entries
+    pub fn audit_len(&self) -> usize {
+        self.audit_log.len()
+    }
+
+    /// Bypass-attempt test helper: returns true if non-member tried to access
+    pub fn was_bypass_attempt(&self, group_id: &str, member_id: &str) -> bool {
+        self.audit_log
+            .iter()
+            .any(|e| e.group_id == group_id && e.member_id == member_id && !e.allowed)
     }
 }
 

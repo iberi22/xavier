@@ -1,0 +1,22 @@
+[package]
+name = "xavier-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "Xavier WASM crate — browser IndexedDB memory + XenBench (WAVE-3.09) — no rusqlite"
+license = "MIT"
+repository = "https://github.com/southwest-ai-labs/xavier"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = { version = "0.2", optional = true }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+xavier-core-logic = { path = "../xavier-core-logic" }
+
+[features]
+default = []
+wasm = ["wasm-bindgen"]
