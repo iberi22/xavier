@@ -1,0 +1,12 @@
+[package]
+name = "xavier-core-logic"
+version = "0.0.1"
+authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
+edition = "2021"
+description = "Pure domain logic for Xavier (BM25, RRF, scoring, snippet clipping) without IO - WASM ready"
+license = "AGPL-3.0"
+
+[dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+chrono = { version = "0.4", features = ["serde"] }

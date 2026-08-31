@@ -693,8 +693,21 @@ async fn probe_ollama_async(url: &str) -> Option<Vec<String>> {
     }
 }
 
+pub fn local_model() -> String {
+    std::env::var("XAVIER_EMBEDDING_LOCAL_MODEL")
+        .or_else(|_| std::env::var("XAVIER_EMBEDDING_MODEL"))
+        .unwrap_or_else(|_| DEFAULT_LOCAL_EMBEDDING_MODEL.to_string())
+}
+
+pub fn cloud_model() -> String {
+    std::env::var("XAVIER_EMBEDDING_CLOUD_MODEL")
+        .or_else(|_| std::env::var("XAVIER_EMBEDDING_MODEL"))
+        .unwrap_or_else(|_| DEFAULT_CLOUD_EMBEDDING_MODEL.to_string())
+}
+
 fn local_embedding_signal_present() -> bool {
     std::env::var("XAVIER_EMBEDDING_LOCAL_URL").is_ok()
+        || std::env::var("XAVIER_EMBEDDING_LOCAL_MODEL").is_ok()
         || std::env::var("XAVIER_EMBEDDING_MODEL").is_ok()
         || std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .map(|value| value.eq_ignore_ascii_case("local"))
@@ -711,6 +724,7 @@ fn local_embedding_signal_present() -> bool {
 
 fn cloud_embedding_signal_present() -> bool {
     std::env::var("OPENAI_API_KEY").is_ok()
+        || std::env::var("XAVIER_EMBEDDING_CLOUD_MODEL").is_ok()
         || crate::settings::XavierSettings::current()
             .embedding
             .api_key
@@ -800,8 +814,7 @@ fn local_config() -> OpenAICompatibleConfig {
             }
         });
 
-    let model = std::env::var("XAVIER_EMBEDDING_MODEL")
-        .unwrap_or_else(|_| DEFAULT_LOCAL_EMBEDDING_MODEL.to_string());
+    let model = local_model();
 
     OpenAICompatibleConfig {
         api_key: settings
@@ -827,8 +840,7 @@ fn cloud_config() -> OpenAICompatibleConfig {
             }
         });
 
-    let model = std::env::var("XAVIER_EMBEDDING_MODEL")
-        .unwrap_or_else(|_| DEFAULT_CLOUD_EMBEDDING_MODEL.to_string());
+    let model = cloud_model();
 
     OpenAICompatibleConfig {
         api_key: settings
@@ -875,6 +887,35 @@ fn embedding_dimension_for_model(model: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_local_model_and_cloud_model_resolution() {
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        std::env::remove_var("XAVIER_EMBEDDING_LOCAL_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_CLOUD_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+
+        // 1. Defaults when no env set
+        assert_eq!(local_model(), DEFAULT_LOCAL_EMBEDDING_MODEL);
+        assert_eq!(cloud_model(), DEFAULT_CLOUD_EMBEDDING_MODEL);
+
+        // 2. Fallback to XAVIER_EMBEDDING_MODEL
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "nomic-embed-text");
+        assert_eq!(local_model(), "nomic-embed-text");
+        assert_eq!(cloud_model(), "nomic-embed-text");
+
+        // 3. Specific local / cloud model overrides
+        std::env::set_var("XAVIER_EMBEDDING_LOCAL_MODEL", "nomic-local-v1");
+        std::env::set_var("XAVIER_EMBEDDING_CLOUD_MODEL", "text-embedding-3-large");
+
+        assert_eq!(local_model(), "nomic-local-v1");
+        assert_eq!(cloud_model(), "text-embedding-3-large");
+
+        std::env::remove_var("XAVIER_EMBEDDING_LOCAL_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_CLOUD_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+    }
 
     #[test]
     fn provider_mode_accepts_gllm_and_auto_aliases() {

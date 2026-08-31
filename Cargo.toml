@@ -34,6 +34,7 @@ path = "src/lib.rs"
 [workspace]
 members = [
     "code-graph",
+    "crates/xavier-core-logic",
     "panel-ui/src-tauri",
     "code-graph/parsers/parser-rust",
     "code-graph/parsers/parser-ts",
@@ -172,6 +173,7 @@ name = "xtsp"
 path = "tests/xtsp/mod.rs"
 
 [dependencies]
+xavier-core-logic = { path = "crates/xavier-core-logic" }
 code-graph = { path = "./code-graph" }
 maloca-core = { path = "vendor/maloca-core" }
 anyhow = "1.0.102"
@@ -303,6 +305,7 @@ ciborium = "0.2.2"
 zstd = "0.13.3"
 
 [dev-dependencies]
+serial_test = "3.2"
 mockito = "1.6"
 image = "0.25"
 proptest = "1.11.0"

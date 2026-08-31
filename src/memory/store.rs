@@ -36,6 +36,7 @@ pub enum MemoryBackend {
     Vec, // SQLite + sqlite-vec vector search
     Supabase,
     Postgres,
+    Fallback,
 }
 
 impl MemoryBackend {
@@ -49,6 +50,7 @@ impl MemoryBackend {
             "supabase" => Self::Supabase,
             "postgres" | "neon" => Self::Postgres,
             "file" => Self::File,
+            "fallback" | "chain" => Self::Fallback,
             _ => Self::File,
         }
     }
@@ -63,6 +65,7 @@ impl MemoryBackend {
             Self::Vec => "vec",
             Self::Supabase => "supabase",
             Self::Postgres => "postgres",
+            Self::Fallback => "fallback",
         }
     }
 }

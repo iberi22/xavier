@@ -44,8 +44,54 @@ pub fn baseline_migrations() -> Vec<Migration> {
     ]
 }
 
+/// Threshold in bytes for automatic startup WAL checkpointing (50MB).
+pub const WAL_CHECKPOINT_THRESHOLD_BYTES: u64 = 50 * 1024 * 1024;
+
+/// Runs WAL checkpoint (`TRUNCATE`) and `VACUUM` on SQLite database files in data_dir
+/// if their WAL file size exceeds 50MB.
+pub fn checkpoint() -> Result<()> {
+    let data_dir = crate::settings::XavierSettings::resolve_data_dir();
+    checkpoint_dir(&data_dir, WAL_CHECKPOINT_THRESHOLD_BYTES)
+}
+
+/// Runs WAL checkpoint (`TRUNCATE`) and `VACUUM` on databases in `dir` whose WAL exceeds `threshold_bytes`.
+pub fn checkpoint_dir(dir: &std::path::Path, threshold_bytes: u64) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if filename.ends_with(".db") || filename.ends_with(".sqlite3") {
+                let wal_path = path.with_file_name(format!("{}-wal", filename));
+                let wal_size = std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
+                if wal_size >= threshold_bytes {
+                    if let Ok(conn) = rusqlite::Connection::open(&path) {
+                        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Run the full baseline migration set on a connection. Convenience wrapper.
 pub fn run(conn: &Connection) -> Result<()> {
+    let _ = checkpoint();
+    let wal_frames: i64 = conn
+        .query_row("PRAGMA wal_checkpoint(PASSIVE);", [], |r| r.get(1))
+        .unwrap_or(0);
+    let approx_wal_bytes = (wal_frames.max(0) as u64) * 4096;
+    if approx_wal_bytes >= WAL_CHECKPOINT_THRESHOLD_BYTES {
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
+    }
     MigrationRunner::new(baseline_migrations()).run(conn)
 }
 
@@ -714,6 +760,30 @@ mod tests {
             actual, expected,
             "expected schema version {}, got {}",
             expected, actual
+        );
+    }
+
+    #[test]
+    fn test_startup_checkpoint_if_wal_exceeds_threshold() {
+        let temp_dir = tempfile::tempdir().expect("tempdir failed");
+        let db_path = temp_dir.path().join("test_checkpoint.db");
+        let wal_path = temp_dir.path().join("test_checkpoint.db-wal");
+
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE t (x TEXT);")
+                .unwrap();
+        }
+
+        // Create a mock dummy WAL file exceeding threshold
+        std::fs::write(&wal_path, vec![0u8; 100 * 1024]).unwrap(); // 100KB for test
+
+        checkpoint_dir(temp_dir.path(), 50 * 1024).expect("checkpoint_dir failed");
+
+        let wal_size_after = std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
+        assert!(
+            wal_size_after < 100 * 1024,
+            "WAL should be truncated by checkpoint"
         );
     }
 

@@ -14,6 +14,7 @@ pub mod migrations;
 pub mod multi_db;
 pub mod pragma;
 
+pub use migrations::{checkpoint, checkpoint_dir, WAL_CHECKPOINT_THRESHOLD_BYTES};
 pub use pragma::apply_pragmas;
 
 use anyhow::{Context, Result};
