@@ -132,28 +132,7 @@ impl RetrievalScope {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[derive(Default)]
-pub enum MemoryLevel {
-    #[default]
-    Raw, // Original raw memory
-    Processed, // Cleaned/standardized
-    Extracted, // Entity/relationship extracted
-    Belief,    // Validated belief
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[derive(Default)]
-pub enum ContextZone {
-    #[default]
-    Atomic, // Raw fragments, atomic facts
-    Cluster,    // Summaries of groups of related memories
-    Global,     // High-level strategic summaries
-    Relational, // Beliefs and knowledge graph relations
-}
-
+pub use xavier_core_logic::{ContextZone, MemoryLevel, RelationKind};
 pub use crate::security::clearance::ClearanceLevel;
 
 /// Parse zones from prompt.
@@ -185,66 +164,6 @@ pub fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
     }
 
     zones
-}
-
-impl ContextZone {
-    /// As str.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Atomic => "atomic",
-            Self::Cluster => "cluster",
-            Self::Global => "global",
-            Self::Relational => "relational",
-        }
-    }
-
-    /// Parse.
-    pub fn parse(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "cluster" => Self::Cluster,
-            "global" => Self::Global,
-            "relational" => Self::Relational,
-            _ => Self::Atomic,
-        }
-    }
-}
-
-impl MemoryLevel {
-    /// As str.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Raw => "raw",
-            Self::Processed => "processed",
-            Self::Extracted => "extracted",
-            Self::Belief => "belief",
-        }
-    }
-
-    /// Parse.
-    pub fn parse(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "processed" => Self::Processed,
-            "extracted" => Self::Extracted,
-            "belief" => Self::Belief,
-            _ => Self::Raw,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RelationKind {
-    pub name: String,
-    pub inverse: Option<String>,
-}
-
-impl RelationKind {
-    /// New.
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            inverse: None,
-        }
-    }
 }
 
 impl EvidenceKind {

@@ -1115,24 +1115,7 @@ fn query_procedural_score(query: &str) -> f32 {
     score.min(1.0)
 }
 
-/// Session summary for episodic memory layer
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionSummary {
-    pub session_id: String,
-    pub start_time: chrono::DateTime<chrono::Utc>,
-    pub summary: String,
-    pub key_events: Vec<Event>,
-    #[serde(default)]
-    pub sentiment_timeline: Vec<f32>,
-}
-
-/// Key event within a session
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Event {
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-    pub description: String,
-    pub event_type: String,
-}
+pub use xavier_core_logic::{Event, SessionSummary};
 
 /// Layer statistics for monitoring
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

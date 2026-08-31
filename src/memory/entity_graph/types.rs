@@ -7,59 +7,13 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum EntityType {
-    Person,
-    Organization,
-    Location,
-    Product,
-    Concept,
-    Unknown,
-}
-
-impl EntityType {
-    /// As str.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Person => "person",
-            Self::Organization => "organization",
-            Self::Location => "location",
-            Self::Product => "product",
-            Self::Concept => "concept",
-            Self::Unknown => "unknown",
-        }
-    }
-}
+pub use xavier_core_logic::{EntityRecord, EntityType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedEntity {
     pub name: String,
     pub entity_type: EntityType,
     pub span: (usize, usize),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EntityRecord {
-    pub id: String,
-    pub name: String,
-    pub normalized_name: String,
-    pub entity_type: EntityType,
-    #[serde(default)]
-    pub aliases: Vec<String>,
-    pub description: Option<String>,
-    pub occurrence_count: usize,
-    pub memory_count: usize,
-    pub first_seen: DateTime<Utc>,
-    pub last_seen: DateTime<Utc>,
-    #[serde(default)]
-    pub merged_from: Vec<String>,
-    /// Trust score [0.0, 1.0] based on confirmation count (default 0.5)
-    #[serde(default)]
-    pub trust_score: f32,
-    /// Trust rank for ordering (higher = more trusted)
-    #[serde(default)]
-    pub trust_rank: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

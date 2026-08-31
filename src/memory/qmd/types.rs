@@ -7,93 +7,14 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 
+pub use xavier_core_logic::MemoryDocument;
+
 /// Type definitions for the QMD memory system.
 
 #[derive(Debug, Clone)]
 pub struct EmbeddingCacheEntry {
     pub vector: Vec<f32>,
     pub cached_at: Instant,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct MemoryDocument {
-    pub id: Option<String>,
-    pub path: String,
-    pub content: String,
-    pub metadata: serde_json::Value,
-    #[serde(default)]
-    pub content_vector: Option<Vec<f32>>,
-    pub embedding: Vec<f32>,
-    #[serde(default)]
-    pub cluster_id: Option<String>,
-    pub parent_id: Option<String>,
-    #[serde(default)]
-    pub level: crate::memory::schema::MemoryLevel,
-    #[serde(default)]
-    pub relation: Option<crate::memory::schema::RelationKind>,
-    #[serde(default)]
-    pub clearance: crate::security::clearance::ClearanceLevel,
-    #[serde(default)]
-    pub minhash: Option<Vec<u64>>,
-    #[serde(default)]
-    pub score: f32,
-    #[serde(default)]
-    pub source_node_id: Option<String>,
-    #[serde(default)]
-    pub source_db_id: Option<String>,
-}
-
-impl Default for MemoryDocument {
-    fn default() -> Self {
-        Self {
-            id: None,
-            path: String::new(),
-            content: String::new(),
-            metadata: serde_json::json!({}),
-            content_vector: None,
-            embedding: Vec::new(),
-            cluster_id: None,
-            parent_id: None,
-            level: crate::memory::schema::MemoryLevel::Raw,
-            relation: None,
-            clearance: crate::security::clearance::ClearanceLevel::Unclassified,
-            minhash: None,
-            score: 0.0,
-            source_node_id: None,
-            source_db_id: None,
-        }
-    }
-}
-
-impl MemoryDocument {
-    /// Estimated bytes.
-    pub fn estimated_bytes(&self) -> u64 {
-        self.id
-            .as_ref()
-            .map(|value| value.len())
-            .unwrap_or_default() as u64
-            + self.path.len() as u64
-            + self.content.len() as u64
-            + self.metadata.to_string().len() as u64
-            + self
-                .content_vector
-                .as_ref()
-                .map(|value| value.len() * std::mem::size_of::<f32>())
-                .unwrap_or_default() as u64
-            + (self.embedding.len() * std::mem::size_of::<f32>()) as u64
-            + self.cluster_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
-            + self.parent_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
-            + 1 // level enum size estimate
-            + self.relation.as_ref().map(|r| r.name.len()).unwrap_or(0) as u64
-            + self
-                .minhash
-                .as_ref()
-                .map(|m| m.len() * std::mem::size_of::<u64>())
-                .unwrap_or(0) as u64
-            + 4 // score f32
-            + self.source_node_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
-            + self.source_db_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
-    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
