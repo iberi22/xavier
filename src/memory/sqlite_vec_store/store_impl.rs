@@ -1477,7 +1477,9 @@ mod tests {
         let store = VecSqliteMemoryStore {
             config,
             project_id: "test_project".to_string(),
-            conn_provider: std::sync::Arc::new(crate::memory::connection_provider::GlobalConnectionProvider::new()),
+            conn_provider: std::sync::Arc::new(
+                crate::memory::connection_provider::GlobalConnectionProvider::new(),
+            ),
             event_tx: None,
             dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
         };

@@ -81,7 +81,8 @@ impl VecSqliteMemoryStore {
 
         // Retrieve the old model name from the database (if any) before the change
         let project_id_c = self.project_id.clone();
-        let old_model = self.conn_provider
+        let old_model = self
+            .conn_provider
             .with_conn(&project_id_c, move |conn| {
                 let mut stmt =
                     conn.prepare("SELECT value FROM embedding_model_meta WHERE key = 'active'")?;
@@ -103,7 +104,8 @@ impl VecSqliteMemoryStore {
 
         let active_model_c = active_model.clone();
         let project_id_c2 = self.project_id.clone();
-        let reindex_action = self.conn_provider
+        let reindex_action = self
+            .conn_provider
             .with_conn(&project_id_c2, move |conn| {
                 let rt = tokio::runtime::Handle::current();
                 rt.block_on(Self::check_and_handle_embedding_model_change(
@@ -754,7 +756,8 @@ mod tests {
             .unwrap();
 
         // Verify that embedding is NULL before background reindexing
-        let is_null = store.conn_provider
+        let is_null = store
+            .conn_provider
             .with_conn(&store.project_id, |conn| {
                 let embedding: Option<Vec<u8>> = conn
                     .query_row(
@@ -790,7 +793,8 @@ mod tests {
         );
 
         // Verify that embedding was successfully updated
-        let (updated_embedding, has_vector_row) = store.conn_provider
+        let (updated_embedding, has_vector_row) = store
+            .conn_provider
             .with_conn(&store.project_id, |conn| {
                 let embedding_blob: Option<Vec<u8>> = conn
                     .query_row(

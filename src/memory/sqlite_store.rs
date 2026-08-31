@@ -500,7 +500,8 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     async fn list_workspaces(&self) -> Result<Vec<String>> {
-        let records = self.conn_provider
+        let records = self
+            .conn_provider
             .with_conn(&self.project_id, |conn| {
                 let mut stmt = conn.prepare(&format!(
                     "SELECT DISTINCT workspace_id FROM {}",

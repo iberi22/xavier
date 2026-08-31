@@ -89,7 +89,10 @@ impl FallbackMemoryStore {
                     match FileMemoryStore::new(file_path).await {
                         Ok(store) => stores.push(Arc::new(store)),
                         Err(e) => {
-                            tracing::warn!("FallbackMemoryStore: failed to init File backend: {}", e)
+                            tracing::warn!(
+                                "FallbackMemoryStore: failed to init File backend: {}",
+                                e
+                            )
                         }
                     }
                 }
@@ -97,7 +100,9 @@ impl FallbackMemoryStore {
                     stores.push(Arc::new(InMemoryMemoryStore::new()));
                 }
                 MemoryBackend::Auto | MemoryBackend::Fallback => {
-                    tracing::warn!("FallbackMemoryStore: skipping recursive auto/fallback backend in chain");
+                    tracing::warn!(
+                        "FallbackMemoryStore: skipping recursive auto/fallback backend in chain"
+                    );
                 }
             }
         }
@@ -316,7 +321,10 @@ impl MemoryStore for FallbackMemoryStore {
     ) -> Result<GraphHopResult> {
         let mut last_err = None;
         for store in &self.stores {
-            match store.graph_hops(workspace_id, path_or_id, hops, query).await {
+            match store
+                .graph_hops(workspace_id, path_or_id, hops, query)
+                .await
+            {
                 Ok(res) => return Ok(res),
                 Err(e) => last_err = Some(e),
             }
@@ -388,10 +396,7 @@ impl MemoryStore for FallbackMemoryStore {
     ) -> Result<()> {
         let mut last_err = None;
         for store in &self.stores {
-            match store
-                .save_session_token(workspace_id, token.clone())
-                .await
-            {
+            match store.save_session_token(workspace_id, token.clone()).await {
                 Ok(()) => return Ok(()),
                 Err(e) => last_err = Some(e),
             }
@@ -597,10 +602,7 @@ impl MemoryStore for FallbackMemoryStore {
     async fn save_entity_graph_snapshot(&self, workspace_id: &str, data: &str) -> Result<()> {
         let mut last_err = None;
         for store in &self.stores {
-            match store
-                .save_entity_graph_snapshot(workspace_id, data)
-                .await
-            {
+            match store.save_entity_graph_snapshot(workspace_id, data).await {
                 Ok(()) => return Ok(()),
                 Err(e) => last_err = Some(e),
             }
@@ -646,7 +648,11 @@ mod tests {
         async fn put(&self, _record: MemoryRecord) -> Result<()> {
             anyhow::bail!("store unavailable")
         }
-        async fn get(&self, _workspace_id: &str, _id_or_path: &str) -> Result<Option<MemoryRecord>> {
+        async fn get(
+            &self,
+            _workspace_id: &str,
+            _id_or_path: &str,
+        ) -> Result<Option<MemoryRecord>> {
             anyhow::bail!("store unavailable")
         }
         async fn update(&self, _record: MemoryRecord) -> Result<()> {
@@ -683,14 +689,14 @@ mod tests {
         ) -> Result<()> {
             anyhow::bail!("store unavailable")
         }
-        async fn is_session_token_valid(
-            &self,
-            _workspace_id: &str,
-            _token: &str,
-        ) -> Result<bool> {
+        async fn is_session_token_valid(&self, _workspace_id: &str, _token: &str) -> Result<bool> {
             anyhow::bail!("store unavailable")
         }
-        async fn save_checkpoint(&self, _workspace_id: &str, _checkpoint: Checkpoint) -> Result<()> {
+        async fn save_checkpoint(
+            &self,
+            _workspace_id: &str,
+            _checkpoint: Checkpoint,
+        ) -> Result<()> {
             anyhow::bail!("store unavailable")
         }
         async fn load_checkpoint(
@@ -701,7 +707,11 @@ mod tests {
         ) -> Result<Option<Checkpoint>> {
             anyhow::bail!("store unavailable")
         }
-        async fn list_checkpoints(&self, _workspace_id: &str, _task_id: &str) -> Result<Vec<Checkpoint>> {
+        async fn list_checkpoints(
+            &self,
+            _workspace_id: &str,
+            _task_id: &str,
+        ) -> Result<Vec<Checkpoint>> {
             anyhow::bail!("store unavailable")
         }
         async fn delete_checkpoint(

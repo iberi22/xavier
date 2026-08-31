@@ -21,7 +21,11 @@ pub struct FallbackHealthReport {
 
 impl FallbackHealthReport {
     /// Evaluate status based on primary/fallback state.
-    pub fn new(primary_healthy: bool, fallback_success: bool, active_backend: impl Into<String>) -> Self {
+    pub fn new(
+        primary_healthy: bool,
+        fallback_success: bool,
+        active_backend: impl Into<String>,
+    ) -> Self {
         let active_backend = active_backend.into();
         let primary_failed = !primary_healthy;
         let status = eval_fallback_status(primary_healthy, fallback_success);
