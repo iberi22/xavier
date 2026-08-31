@@ -91,6 +91,15 @@ impl SqliteMemoryStore {
         Self::new_with_provider(config, Arc::new(GlobalConnectionProvider::new())).await
     }
 
+    /// New with isolated in-memory connection provider for test isolation.
+    pub async fn new_in_memory(config: SqliteStoreConfig) -> Result<Self> {
+        Self::new_with_provider(
+            config,
+            Arc::new(crate::memory::connection_provider::InMemoryProvider::new()),
+        )
+        .await
+    }
+
     /// New with injectable connection provider.
     pub async fn new_with_provider(
         config: SqliteStoreConfig,
@@ -100,18 +109,19 @@ impl SqliteMemoryStore {
             fs::create_dir_all(parent).await?;
         }
 
-        let project_id = "memory";
-        conn_provider.connect(project_id, ".")?; // Manager handles path resolution for "memory"
+        let project_id = format!("memory_{}", ulid::Ulid::new().to_string());
+        conn_provider.connect_with_path(&project_id, config.path.clone())?;
 
         let store = Self {
             config,
-            project_id: project_id.to_string(),
+            project_id,
             conn_provider: conn_provider.clone(),
         };
 
         // Initialize schema via migration manager
+        let project_id_c = store.project_id.clone();
         conn_provider
-            .with_conn(project_id, move |conn| {
+            .with_conn(&project_id_c, move |conn| {
                 let mut manager = crate::storage::MigrationManager::new();
                 manager.add_migration(crate::storage::migrations::MigrationV1InitialSchema);
                 manager.add_migration(crate::storage::migrations::MigrationV2ColumnarIndices);
@@ -860,5 +870,190 @@ impl MemoryStore for SqliteMemoryStore {
                 Ok(())
             })
             .await
+    }
+}
+
+impl SqliteMemoryStore {
+    /// Migrate legacy flat paths to hierarchy paths (prefix with `src/` if path has no slash)
+    /// and backfill parent directory paths in the store.
+    pub async fn migrate_paths_hierarchy(&self) -> Result<usize> {
+        let project_id = self.project_id.clone();
+        self.conn_provider
+            .with_conn(&project_id, move |conn| {
+                let tx = conn.unchecked_transaction()?;
+
+                let updated_count = tx.execute(
+                    &format!(
+                        "UPDATE {} SET path = 'src/' || path WHERE path NOT LIKE '%/%' AND path != ''",
+                        TABLE_MEMORIES
+                    ),
+                    [],
+                )?;
+
+                tx.commit()?;
+                Ok(updated_count)
+            })
+            .await
+    }
+
+    /// List distinct memory record paths matching a given hierarchy prefix.
+    pub async fn list_hierarchy(&self, prefix: &str) -> Result<Vec<String>> {
+        let prefix = prefix.to_string();
+        let project_id = self.project_id.clone();
+
+        self.conn_provider
+            .with_conn(&project_id, move |conn| {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT DISTINCT path FROM {} WHERE path LIKE ? || '%' ORDER BY path ASC",
+                    TABLE_MEMORIES
+                ))?;
+
+                let rows = stmt.query_map([&prefix], |row| row.get::<_, String>(0))?;
+                let mut paths = Vec::new();
+                for row in rows {
+                    paths.push(row?);
+                }
+                Ok(paths)
+            })
+            .await
+    }
+
+    /// Retrieve path hierarchy statistics, including total memory record count
+    /// and distribution counts by directory prefix.
+    pub async fn get_hierarchy_stats(&self) -> Result<serde_json::Value> {
+        let project_id = self.project_id.clone();
+
+        self.conn_provider
+            .with_conn(&project_id, move |conn| {
+                let total: usize = conn.query_row(
+                    &format!("SELECT COUNT(*) FROM {}", TABLE_MEMORIES),
+                    [],
+                    |row| row.get(0),
+                )?;
+
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT path FROM {} WHERE path LIKE '%/%'",
+                    TABLE_MEMORIES
+                ))?;
+
+                let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                let mut prefix_counts: std::collections::BTreeMap<String, usize> =
+                    std::collections::BTreeMap::new();
+
+                for path_res in rows {
+                    let path = path_res?;
+                    let parts: Vec<&str> = path.split('/').collect();
+                    if parts.len() > 1 {
+                        let mut current_prefix = String::new();
+                        for dir in &parts[..parts.len() - 1] {
+                            current_prefix.push_str(dir);
+                            current_prefix.push('/');
+                            *prefix_counts.entry(current_prefix.clone()).or_insert(0) += 1;
+                        }
+                    }
+                }
+
+                let mut by_prefix_map = serde_json::Map::new();
+                for (k, v) in prefix_counts {
+                    by_prefix_map.insert(k, serde_json::Value::Number(v.into()));
+                }
+
+                Ok(serde_json::json!({
+                    "total": total,
+                    "by_prefix": by_prefix_map,
+                }))
+            })
+            .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_path_hierarchy_preserved() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test_hierarchy.db");
+        let config = SqliteStoreConfig { path: db_path };
+        let store = SqliteMemoryStore::new_in_memory(config).await.unwrap();
+
+        let rec1 = MemoryRecord {
+            id: "rec1".to_string(),
+            workspace_id: "ws_test".to_string(),
+            path: "src/agents/foo.rs".to_string(),
+            content: "agent foo content".to_string(),
+            ..Default::default()
+        };
+        let rec2 = MemoryRecord {
+            id: "rec2".to_string(),
+            workspace_id: "ws_test".to_string(),
+            path: "src/agents/bar.rs".to_string(),
+            content: "agent bar content".to_string(),
+            ..Default::default()
+        };
+        let rec3 = MemoryRecord {
+            id: "rec3".to_string(),
+            workspace_id: "ws_test".to_string(),
+            path: "src/memory/store.rs".to_string(),
+            content: "memory store content".to_string(),
+            ..Default::default()
+        };
+
+        store.put(rec1).await.unwrap();
+        store.put(rec2).await.unwrap();
+        store.put(rec3).await.unwrap();
+
+        let agent_paths = store.list_hierarchy("src/agents/").await.unwrap();
+        assert_eq!(agent_paths.len(), 2);
+        assert_eq!(agent_paths[0], "src/agents/bar.rs");
+        assert_eq!(agent_paths[1], "src/agents/foo.rs");
+
+        let src_paths = store.list_hierarchy("src/").await.unwrap();
+        assert_eq!(src_paths.len(), 3);
+
+        let stats = store.get_hierarchy_stats().await.unwrap();
+        assert_eq!(stats["total"], 3);
+        assert_eq!(stats["by_prefix"]["src/"], 3);
+        assert_eq!(stats["by_prefix"]["src/agents/"], 2);
+        assert_eq!(stats["by_prefix"]["src/memory/"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_migrate_paths_hierarchy() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test_migrate.db");
+        let config = SqliteStoreConfig { path: db_path };
+        let store = SqliteMemoryStore::new_in_memory(config).await.unwrap();
+
+        let flat_rec = MemoryRecord {
+            id: "flat1".to_string(),
+            workspace_id: "ws_test".to_string(),
+            path: "foo.rs".to_string(),
+            content: "flat path content".to_string(),
+            ..Default::default()
+        };
+        let nested_rec = MemoryRecord {
+            id: "nested1".to_string(),
+            workspace_id: "ws_test".to_string(),
+            path: "src/bar.rs".to_string(),
+            content: "nested path content".to_string(),
+            ..Default::default()
+        };
+
+        store.put(flat_rec).await.unwrap();
+        store.put(nested_rec).await.unwrap();
+
+        let updated = store.migrate_paths_hierarchy().await.unwrap();
+        assert_eq!(updated, 1);
+
+        let fetched_flat = store.get("ws_test", "src/foo.rs").await.unwrap().unwrap();
+        assert_eq!(fetched_flat.id, "flat1");
+        assert_eq!(fetched_flat.path, "src/foo.rs");
+
+        let fetched_nested = store.get("ws_test", "src/bar.rs").await.unwrap().unwrap();
+        assert_eq!(fetched_nested.id, "nested1");
+        assert_eq!(fetched_nested.path, "src/bar.rs");
     }
 }
