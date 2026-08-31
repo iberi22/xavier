@@ -14,9 +14,63 @@ pub enum MemoryHierarchyNode {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HierarchyStats {
+    pub total_files: usize,
+    pub total_directories: usize,
+    pub max_depth: usize,
+    pub root_nodes: usize,
+}
+
 pub struct MemoryTree;
 
 impl MemoryTree {
+    /// Calculate hierarchy statistics across a set of memory records.
+    pub fn calculate_stats(records: &[MemoryRecord]) -> HierarchyStats {
+        let mut dirs = std::collections::HashSet::new();
+        let mut total_files = 0;
+        let mut max_depth = 0;
+
+        for record in records {
+            let path = record.path.trim_matches('/');
+            if path.is_empty() {
+                continue;
+            }
+
+            let is_dir = record
+                .metadata
+                .get("is_directory")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let components: Vec<&str> = path.split('/').collect();
+            let depth = components.len();
+            if depth > max_depth {
+                max_depth = depth;
+            }
+
+            if is_dir {
+                dirs.insert(path.to_string());
+            } else {
+                total_files += 1;
+            }
+
+            for i in 1..components.len() {
+                let dir_path = components[..i].join("/");
+                dirs.insert(dir_path);
+            }
+        }
+
+        let root_nodes = Self::build_ls(records.to_vec(), "").len();
+
+        HierarchyStats {
+            total_files,
+            total_directories: dirs.len(),
+            max_depth,
+            root_nodes,
+        }
+    }
+
     /// Build a list of hierarchical nodes representing the children of `parent_path`.
     pub fn build_ls(records: Vec<MemoryRecord>, parent_path: &str) -> Vec<MemoryHierarchyNode> {
         let parent_path = parent_path.trim_matches('/');
@@ -40,7 +94,17 @@ impl MemoryTree {
                         .or_insert((dir_name.to_string(), 0));
                     entry.1 += 1;
                 } else if !record_path.is_empty() {
-                    files.push(MemoryHierarchyNode::File(record));
+                    let is_dir = record
+                        .metadata
+                        .get("is_directory")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if is_dir {
+                        dirs.entry(record_path.to_string())
+                            .or_insert((record_path.to_string(), 0));
+                    } else {
+                        files.push(MemoryHierarchyNode::File(record));
+                    }
                 }
             } else if let Some(remainder) = record_path.strip_prefix(parent_path) {
                 // Check if it's a direct child or in a sub-sub directory
@@ -53,7 +117,18 @@ impl MemoryTree {
                             .or_insert((full_dir_path, 0));
                         entry.1 += 1;
                     } else if !remainder.is_empty() {
-                        files.push(MemoryHierarchyNode::File(record));
+                        let is_dir = record
+                            .metadata
+                            .get("is_directory")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        if is_dir {
+                            let full_dir_path = format!("{}/{}", parent_path, remainder);
+                            dirs.entry(remainder.to_string())
+                                .or_insert((full_dir_path, 0));
+                        } else {
+                            files.push(MemoryHierarchyNode::File(record));
+                        }
                     }
                 }
             }

@@ -100,18 +100,18 @@ impl SqliteMemoryStore {
             fs::create_dir_all(parent).await?;
         }
 
-        let project_id = "memory";
-        conn_provider.connect(project_id, ".")?; // Manager handles path resolution for "memory"
+        let project_id = stable_key("sqlite_store", &[&config.path.display().to_string()]);
+        conn_provider.connect_with_path(&project_id, config.path.clone())?;
 
         let store = Self {
             config,
-            project_id: project_id.to_string(),
+            project_id: project_id.clone(),
             conn_provider: conn_provider.clone(),
         };
 
         // Initialize schema via migration manager
         conn_provider
-            .with_conn(project_id, move |conn| {
+            .with_conn(&project_id, move |conn| {
                 let mut manager = crate::storage::MigrationManager::new();
                 manager.add_migration(crate::storage::migrations::MigrationV1InitialSchema);
                 manager.add_migration(crate::storage::migrations::MigrationV2ColumnarIndices);
@@ -122,7 +122,9 @@ impl SqliteMemoryStore {
                 manager.add_migration(
                     crate::storage::migrations::MigrationV11CleanupMemorySymbolLinks,
                 );
-                manager.run_migrations(conn)
+                manager.run_migrations(conn)?;
+                Self::migrate_paths_hierarchy_conn(conn)?;
+                Ok(())
             })
             .await?;
 
@@ -241,6 +243,147 @@ impl SqliteMemoryStore {
             }
         }
         Ok(())
+    }
+
+    /// Migrates flat or unindexed paths in `TABLE_MEMORIES` to full hierarchical paths
+    /// and backfills missing parent directory records.
+    pub async fn migrate_paths_hierarchy(&self) -> Result<usize> {
+        let project_id = self.project_id.clone();
+        self.conn_provider
+            .with_conn(&project_id, move |conn| {
+                Self::migrate_paths_hierarchy_conn(conn)
+            })
+            .await
+    }
+
+    /// Synchronous helper for path hierarchy migration on a database connection.
+    pub fn migrate_paths_hierarchy_conn(conn: &rusqlite::Connection) -> Result<usize> {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, workspace_id, path, metadata FROM {}",
+            TABLE_MEMORIES
+        ))?;
+
+        struct RecordPathInfo {
+            id: String,
+            workspace_id: String,
+            path: String,
+            metadata: String,
+        }
+
+        let rows = stmt.query_map([], |row| {
+            Ok(RecordPathInfo {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                path: row.get(2)?,
+                metadata: row.get::<_, String>(3).unwrap_or_default(),
+            })
+        })?;
+
+        let mut records = Vec::new();
+        for r in rows {
+            records.push(r?);
+        }
+        drop(stmt);
+
+        let mut backfilled_count = 0;
+        let mut existing_paths: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
+
+        for r in &records {
+            let mut current_path = r.path.trim_matches('/').to_string();
+
+            if !current_path.contains('/') {
+                if let Ok(meta_json) = serde_json::from_str::<serde_json::Value>(&r.metadata) {
+                    if let Some(full_p) = meta_json
+                        .get("original_path")
+                        .or_else(|| meta_json.get("full_path"))
+                        .and_then(|v| v.as_str())
+                    {
+                        let full_p_clean = full_p.trim_matches('/').to_string();
+                        if full_p_clean.contains('/') {
+                            conn.execute(
+                                &format!("UPDATE {} SET path = ? WHERE id = ?", TABLE_MEMORIES),
+                                params![full_p_clean, r.id],
+                            )?;
+                            current_path = full_p_clean;
+                        }
+                    }
+                }
+            }
+
+            existing_paths.insert((r.workspace_id.clone(), current_path));
+        }
+
+        let now = Utc::now().to_rfc3339();
+        let current_existing: Vec<(String, String)> = existing_paths.iter().cloned().collect();
+
+        for (ws_id, path) in current_existing {
+            let components: Vec<&str> = path.split('/').collect();
+            if components.len() <= 1 {
+                continue;
+            }
+
+            for i in 1..components.len() {
+                let dir_path = components[..i].join("/");
+                if !existing_paths.contains(&(ws_id.clone(), dir_path.clone())) {
+                    let dir_id = stable_key("sqlite_mem", &[&ws_id, &dir_path]);
+                    let metadata = serde_json::json!({
+                        "is_directory": true,
+                        "auto_generated": true
+                    })
+                    .to_string();
+                    let content = format!("Directory: {}", dir_path);
+                    let parent_dir = if i > 1 {
+                        Some(components[..i - 1].join("/"))
+                    } else {
+                        None
+                    };
+
+                    conn.execute(
+                        &format!(
+                            "INSERT OR IGNORE INTO {} (id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, level, embedding_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, 0, ?9, 'raw', 'completed')",
+                            TABLE_MEMORIES
+                        ),
+                        params![
+                            dir_id,
+                            ws_id,
+                            dir_path,
+                            content,
+                            metadata,
+                            Vec::<u8>::new(),
+                            now,
+                            now,
+                            parent_dir,
+                        ],
+                    )?;
+
+                    existing_paths.insert((ws_id.clone(), dir_path));
+                    backfilled_count += 1;
+                }
+            }
+        }
+
+        Ok(backfilled_count)
+    }
+
+    /// List hierarchy tree nodes under a given path prefix for a workspace.
+    pub async fn list_hierarchy(
+        &self,
+        workspace_id: &str,
+        prefix: &str,
+    ) -> Result<Vec<crate::memory::hierarchy::MemoryHierarchyNode>> {
+        self.ls(workspace_id, prefix).await
+    }
+
+    /// Calculate hierarchy tree statistics for a workspace.
+    pub async fn get_hierarchy_stats(
+        &self,
+        workspace_id: &str,
+    ) -> Result<crate::memory::hierarchy::HierarchyStats> {
+        let records = self.list(workspace_id).await?;
+        Ok(crate::memory::hierarchy::MemoryTree::calculate_stats(
+            &records,
+        ))
     }
 }
 
@@ -384,14 +527,14 @@ impl MemoryStore for SqliteMemoryStore {
         let id_or_path = id_or_path.to_string();
 
         let record = self.conn_provider.with_conn(&self.project_id, move |conn| {
-            // Try by id first (O(1) lookup)
+            // Try by id first (O(1) lookup: raw id or hashed row key)
             let key = Self::row_key(&workspace_id, &id_or_path);
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE id = ?",
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE id = ? OR id = ?",
                 TABLE_MEMORIES
             ))?;
 
-            let mut rows = stmt.query([&key])?;
+            let mut rows = stmt.query(params![id_or_path, key])?;
             if let Some(row) = rows.next()? {
                 return Ok(Some(Self::deserialize_record(row)?));
             }
@@ -858,5 +1001,121 @@ impl MemoryStore for SqliteMemoryStore {
                 Ok(())
             })
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::connection_provider::InMemoryProvider;
+    use crate::memory::hierarchy::MemoryHierarchyNode;
+
+    #[tokio::test]
+    async fn test_path_hierarchy_preserved() {
+        let temp_dir = tempfile::tempdir().expect("tempdir creation failed");
+        let db_file = temp_dir.path().join("test_hierarchy.db");
+        let config = SqliteStoreConfig { path: db_file };
+        let store = SqliteMemoryStore::new(config)
+            .await
+            .expect("store initialization failed");
+
+        let ws = "ws_hierarchy_test";
+
+        // 1. Put records with full hierarchical paths
+        let rec1 = MemoryRecord {
+            id: "rec1".to_string(),
+            workspace_id: ws.to_string(),
+            path: "src/agents/foo.rs".to_string(),
+            content: "fn foo() {}".to_string(),
+            ..Default::default()
+        };
+        let rec2 = MemoryRecord {
+            id: "rec2".to_string(),
+            workspace_id: ws.to_string(),
+            path: "src/agents/bar.rs".to_string(),
+            content: "fn bar() {}".to_string(),
+            ..Default::default()
+        };
+        let rec3 = MemoryRecord {
+            id: "rec3".to_string(),
+            workspace_id: ws.to_string(),
+            path: "docs/readme.md".to_string(),
+            content: "# Readme".to_string(),
+            ..Default::default()
+        };
+        let rec4 = MemoryRecord {
+            id: "rec4".to_string(),
+            workspace_id: ws.to_string(),
+            path: "root.txt".to_string(),
+            content: "Root file".to_string(),
+            ..Default::default()
+        };
+
+        store.put(rec1).await.unwrap();
+        store.put(rec2).await.unwrap();
+        store.put(rec3).await.unwrap();
+        store.put(rec4).await.unwrap();
+
+        // 2. Verify path hierarchy is preserved verbatim on get
+        let fetched = store
+            .get(ws, "rec1")
+            .await
+            .unwrap()
+            .expect("record missing");
+        assert_eq!(fetched.path, "src/agents/foo.rs");
+
+        let fetched_by_path = store
+            .get(ws, "src/agents/foo.rs")
+            .await
+            .unwrap()
+            .expect("record missing by path");
+        assert_eq!(fetched_by_path.id, "rec1");
+
+        // 3. Test migration migrate_paths_hierarchy backfills parent directory records
+        let backfilled = store.migrate_paths_hierarchy().await.unwrap();
+        assert!(
+            backfilled >= 3,
+            "Expected at least 3 parent directories backfilled (src, src/agents, docs), got {}",
+            backfilled
+        );
+
+        // Running migration again should backfill 0 new dirs
+        let backfilled_again = store.migrate_paths_hierarchy().await.unwrap();
+        assert_eq!(backfilled_again, 0);
+
+        // 4. Test list_hierarchy tree query with prefix
+        let src_nodes = store.list_hierarchy(ws, "src").await.unwrap();
+        assert_eq!(src_nodes.len(), 1);
+        if let MemoryHierarchyNode::Directory {
+            name,
+            path,
+            child_count,
+        } = &src_nodes[0]
+        {
+            assert_eq!(name, "agents");
+            assert_eq!(path, "src/agents");
+            assert_eq!(*child_count, 2);
+        } else {
+            panic!("Expected Directory node for agents under src/");
+        }
+
+        let agents_nodes = store.list_hierarchy(ws, "src/agents").await.unwrap();
+        assert_eq!(agents_nodes.len(), 2);
+        let paths: Vec<String> = agents_nodes
+            .into_iter()
+            .filter_map(|n| match n {
+                MemoryHierarchyNode::File(r) => Some(r.path),
+                _ => None,
+            })
+            .collect();
+        assert!(paths.contains(&"src/agents/foo.rs".to_string()));
+        assert!(paths.contains(&"src/agents/bar.rs".to_string()));
+
+        // 5. Test get_hierarchy_stats tree statistics calculation
+        let stats = store.get_hierarchy_stats(ws).await.unwrap();
+        assert_eq!(stats.total_files, 4);
+        assert_eq!(stats.total_directories, 3); // src, src/agents, docs
+        assert_eq!(stats.max_depth, 3); // src/agents/foo.rs
+        assert_eq!(stats.root_nodes, 3); // src (dir), docs (dir), root.txt (file)
     }
 }
