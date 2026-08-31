@@ -76,6 +76,19 @@ pub struct BulkCurateResponse {
     pub items: Vec<crate::curation::CurationItem>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ApproveCurateRequest {
+    pub curator: String,
+    pub classification: Option<String>,
+    pub clearance: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RejectCurateRequest {
+    pub curator: String,
+    pub reason: String,
+}
+
 pub fn router(state: TrainingState) -> Router {
     Router::new()
         .route("/v1/training/datasets", get(list_datasets_handler))
@@ -94,7 +107,73 @@ pub fn router(state: TrainingState) -> Router {
         .route("/v1/training/bundles", post(generate_bundle_handler))
         .route("/v1/training/export", post(export_handler))
         .route("/v1/training/curate/bulk", post(bulk_curate_handler))
+        .route("/v1/curation/pending", get(get_pending_curation_handler))
+        .route(
+            "/v1/curation/{id}/approve",
+            post(approve_curation_item_handler),
+        )
+        .route(
+            "/v1/curation/{id}/reject",
+            post(reject_curation_item_handler),
+        )
         .layer(Extension(state))
+}
+
+pub async fn get_pending_curation_handler(
+    Extension(state): Extension<TrainingState>,
+) -> impl IntoResponse {
+    let queue = load_curation_queue(&state);
+    Json(queue.list_pending()).into_response()
+}
+
+pub async fn approve_curation_item_handler(
+    Extension(state): Extension<TrainingState>,
+    Path(id): Path<String>,
+    Json(payload): Json<ApproveCurateRequest>,
+) -> impl IntoResponse {
+    let mut queue = load_curation_queue(&state);
+    match queue.approve(&id, payload.curator, payload.classification, payload.clearance) {
+        Ok(item) => {
+            if let Err(e) = queue.save() {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to save curation queue: {}", e),
+                )
+                    .into_response();
+            }
+            Json(serde_json::json!({
+                "status": "ok",
+                "item": item,
+            }))
+            .into_response()
+        }
+        Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
+    }
+}
+
+pub async fn reject_curation_item_handler(
+    Extension(state): Extension<TrainingState>,
+    Path(id): Path<String>,
+    Json(payload): Json<RejectCurateRequest>,
+) -> impl IntoResponse {
+    let mut queue = load_curation_queue(&state);
+    match queue.reject(&id, payload.curator, payload.reason) {
+        Ok(item) => {
+            if let Err(e) = queue.save() {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to save curation queue: {}", e),
+                )
+                    .into_response();
+            }
+            Json(serde_json::json!({
+                "status": "ok",
+                "item": item,
+            }))
+            .into_response()
+        }
+        Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
+    }
 }
 
 pub async fn list_datasets_handler(
@@ -1009,6 +1088,90 @@ mod tests {
             .find(|i| i.id == item3.id)
             .unwrap();
         assert_eq!(q_item3.status, crate::curation::CurationStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn test_curation_pending_approve_reject_endpoints() {
+        let (db_file, data_dir) = setup_test_env();
+        let curation_dir = data_dir.path().join("curation");
+        std::fs::create_dir_all(&curation_dir).unwrap();
+        let queue_file = curation_dir.join("queue.json");
+        let history_file = curation_dir.join("history.json");
+
+        let mut queue = CurationQueue::new_with_path(queue_file.clone());
+        let item1 = queue.submit_for_curation(
+            "Item A for approval".to_string(),
+            "CONFIDENTIAL".to_string(),
+            Some("agent".to_string()),
+        );
+        let item2 = queue.submit_for_curation(
+            "Item B for rejection".to_string(),
+            "SECRET".to_string(),
+            Some("user".to_string()),
+        );
+        queue.save().unwrap();
+
+        let state = TrainingState {
+            db_path: db_file.path().to_path_buf(),
+            data_dir: data_dir.path().join("datasets"),
+        };
+        let app = router(state);
+
+        // 1. GET /v1/curation/pending
+        let req_pending = Request::builder()
+            .method("GET")
+            .uri("/v1/curation/pending")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp_pending = app.clone().oneshot(req_pending).await.unwrap();
+        assert_eq!(resp_pending.status(), StatusCode::OK);
+        let body_bytes = to_bytes(resp_pending.into_body(), usize::MAX).await.unwrap();
+        let pending_items: Vec<crate::curation::CurationItem> =
+            serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(pending_items.len(), 2);
+
+        // 2. POST /v1/curation/{id}/approve
+        let req_approve = Request::builder()
+            .method("POST")
+            .uri(format!("/v1/curation/{}/approve", item1.id))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "curator": "admin_eve",
+                    "classification": "verified",
+                    "clearance": "PUBLIC"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp_approve = app.clone().oneshot(req_approve).await.unwrap();
+        assert_eq!(resp_approve.status(), StatusCode::OK);
+
+        // 3. POST /v1/curation/{id}/reject
+        let req_reject = Request::builder()
+            .method("POST")
+            .uri(format!("/v1/curation/{}/reject", item2.id))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "curator": "admin_eve",
+                    "reason": "Invalid sample"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let resp_reject = app.clone().oneshot(req_reject).await.unwrap();
+        assert_eq!(resp_reject.status(), StatusCode::OK);
+
+        // Verify history file was written
+        let history = CurationQueue::load_history_from_path(&history_file).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].who, "admin_eve");
+        assert!(history[0].what.contains(&item1.id));
+        assert!(history[1].what.contains(&item2.id));
     }
 }
 
