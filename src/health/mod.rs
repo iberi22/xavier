@@ -1523,3 +1523,19 @@ mod tests {
         assert_eq!(prioritize_status(&warn_checks), "warn");
     }
 }
+
+/// Freetier quota guard 500MB DB / 5GB egress per Supabase guard per project (2x shards) — WAVE-2.08
+pub fn check_freetier_quota(db_bytes: u64, egress_bytes: u64) -> &'static str {
+    const DB_LIMIT: u64 = 500 * 1024 * 1024;
+    const EGRESS_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
+    if db_bytes > DB_LIMIT || egress_bytes > EGRESS_LIMIT {
+        "over_quota"
+    } else if db_bytes > (DB_LIMIT * 8 / 10) || egress_bytes > (EGRESS_LIMIT * 8 / 10) {
+        "warning"
+    } else {
+        "ok"
+    }
+}
+pub fn shard_for_quota(id: &str) -> u8 {
+    crate::crypto::envelope::shard_for_id(id)
+}

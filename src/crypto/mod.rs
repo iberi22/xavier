@@ -25,6 +25,7 @@
 //! ```
 
 pub mod encryption;
+pub mod envelope;
 pub mod hmac;
 pub mod keys;
 pub mod password;

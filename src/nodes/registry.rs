@@ -462,3 +462,10 @@ mod tests {
         assert_eq!(public_only[0].node_id, "xv1-public-1");
     }
 }
+
+pub fn shard_for_node(id: &str) -> u8 {
+    crate::crypto::envelope::shard_for_id(id)
+}
+pub fn validate_shard(shard: u8) -> bool {
+    shard <= 1
+}

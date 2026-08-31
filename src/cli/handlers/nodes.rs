@@ -47,3 +47,20 @@ pub async fn list_public_nodes_handler() -> Response {
         serde_json::to_value(public_nodes).unwrap_or_default(),
     )
 }
+
+/// Cloudflare Tunnel auto-register shard helper (WAVE-2.04)
+pub fn shard_for_tunnel(id: &str) -> u8 {
+    xavier_lib::crypto::envelope::shard_for_id(id)
+}
+pub fn tunnel_url_for_id(id: &str) -> String {
+    format!(
+        "https://xavier-{}.trycloudflare.com",
+        &id[..8.min(id.len())]
+    )
+}
+pub fn cloudflared_cmd(id: &str) -> String {
+    format!(
+        "cloudflared tunnel --url http://localhost:8006 --hostname {}",
+        tunnel_url_for_id(id)
+    )
+}
