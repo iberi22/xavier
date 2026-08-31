@@ -546,7 +546,8 @@ async fn collect_health_impl(
                     {
                         Ok(Ok(lat)) => {
                             let total_errors = crate::embedding::get_embedding_error_count();
-                            let fallback_succ = total_errors > 0 || settings.embedding.embedder.contains("fallback");
+                            let fallback_succ = total_errors > 0
+                                || settings.embedding.embedder.contains("fallback");
                             (true, lat, 0.0, Some(now_secs), fallback_succ)
                         }
                         Ok(Err(_err)) => {
@@ -735,14 +736,15 @@ async fn collect_health_impl(
     } else {
         "healthy"
     };
-    let emb_status_str =
-        if settings.embedding.embedder == "disabled" || settings.embedding.embedder == "noop" {
-            "disabled"
-        } else if !embedding.connected || embedding.error_rate_pct > 0.0 || embedding.fallback_success {
-            "degraded"
-        } else {
-            "healthy"
-        };
+    let emb_status_str = if settings.embedding.embedder == "disabled"
+        || settings.embedding.embedder == "noop"
+    {
+        "disabled"
+    } else if !embedding.connected || embedding.error_rate_pct > 0.0 || embedding.fallback_success {
+        "degraded"
+    } else {
+        "healthy"
+    };
     let mesh_status_str = if mesh.connectivity == "online" || mesh.connectivity == "no peers" {
         "healthy"
     } else {

@@ -132,8 +132,8 @@ impl RetrievalScope {
     }
 }
 
-pub use xavier_core_logic::{ContextZone, MemoryLevel, RelationKind};
 pub use crate::security::clearance::ClearanceLevel;
+pub use xavier_core_logic::{ContextZone, MemoryLevel, RelationKind};
 
 /// Parse zones from prompt.
 pub fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
