@@ -96,6 +96,8 @@ pub struct EmbeddingHealth {
     pub latency_ms: f64,
     pub error_rate_pct: f64,
     pub last_success: Option<u64>,
+    #[serde(default)]
+    pub fallback_success: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,6 +256,7 @@ impl Default for HealthState {
                 latency_ms: 0.0,
                 error_rate_pct: 0.0,
                 last_success: None,
+                fallback_success: false,
             },
             mesh: MeshHealth {
                 peers_count: 0,
@@ -529,11 +532,11 @@ async fn collect_health_impl(
 
     // --- Embedding health ---
     let probe_start = std::time::Instant::now();
-    let (connected, latency_ms, error_rate_pct, last_success) =
+    let (connected, latency_ms, error_rate_pct, last_success, fallback_success) =
         match crate::embedding::build_embedder_from_env().await {
             Ok(embedder) => {
                 if embedder.dimension() == 0 {
-                    (false, 0.0, 0.0, None)
+                    (false, 0.0, 0.0, None, false)
                 } else {
                     match tokio::time::timeout(
                         std::time::Duration::from_secs(2),
@@ -541,7 +544,11 @@ async fn collect_health_impl(
                     )
                     .await
                     {
-                        Ok(Ok(lat)) => (true, lat, 0.0, Some(now_secs)),
+                        Ok(Ok(lat)) => {
+                            let total_errors = crate::embedding::get_embedding_error_count();
+                            let fallback_succ = total_errors > 0 || settings.embedding.embedder.contains("fallback");
+                            (true, lat, 0.0, Some(now_secs), fallback_succ)
+                        }
                         Ok(Err(_err)) => {
                             let total_errors = crate::embedding::get_embedding_error_count().max(1);
                             (
@@ -549,18 +556,19 @@ async fn collect_health_impl(
                                 probe_start.elapsed().as_secs_f64() * 1000.0,
                                 (total_errors as f64).min(100.0),
                                 None,
+                                false,
                             )
                         }
                         Err(_timeout) => {
                             let total_errors = crate::embedding::get_embedding_error_count().max(1);
-                            (false, 2000.0, (total_errors as f64).min(100.0), None)
+                            (false, 2000.0, (total_errors as f64).min(100.0), None, false)
                         }
                     }
                 }
             }
             Err(_) => {
                 let total_errors = crate::embedding::get_embedding_error_count().max(1);
-                (false, 0.0, (total_errors as f64).min(100.0), None)
+                (false, 0.0, (total_errors as f64).min(100.0), None, false)
             }
         };
 
@@ -570,6 +578,7 @@ async fn collect_health_impl(
         latency_ms,
         error_rate_pct,
         last_success,
+        fallback_success,
     };
 
     // Fan an unhealthy embedding out to the SYSTEM_ALERTS channel so operators
@@ -729,7 +738,7 @@ async fn collect_health_impl(
     let emb_status_str =
         if settings.embedding.embedder == "disabled" || settings.embedding.embedder == "noop" {
             "disabled"
-        } else if !embedding.connected || embedding.error_rate_pct > 0.0 {
+        } else if !embedding.connected || embedding.error_rate_pct > 0.0 || embedding.fallback_success {
             "degraded"
         } else {
             "healthy"
@@ -783,13 +792,23 @@ async fn collect_health_impl(
     }
 
     // 4. Embedding check
-    if !embedding.connected || embedding.error_rate_pct > 10.0 {
+    if (!embedding.connected && !embedding.fallback_success) || embedding.error_rate_pct > 10.0 {
         checks.push(HealthCheck {
             name: "embedding".into(),
             status: CheckStatus::Fail,
             detail: format!(
                 "Embedding provider '{}' unhealthy (connected={}, error_rate={:.1}%)",
                 embedding.provider, embedding.connected, embedding.error_rate_pct
+            ),
+            timestamp_secs: now_secs,
+        });
+    } else if embedding.fallback_success {
+        checks.push(HealthCheck {
+            name: "embedding".into(),
+            status: CheckStatus::Warn,
+            detail: format!(
+                "Embedding provider '{}' degraded (fallback succeeded via secondary backend)",
+                embedding.provider
             ),
             timestamp_secs: now_secs,
         });
@@ -1114,6 +1133,7 @@ fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
     }
 }
 
+pub mod fallback;
 pub mod history;
 pub mod mesh_telemetry;
 pub mod repair;
@@ -1310,6 +1330,7 @@ mod tests {
             latency_ms: 0.0,
             error_rate_pct: 0.0,
             last_success: None,
+            fallback_success: false,
         };
         let pushed = push_embedding_alert_if_unhealthy(&embedding);
         assert!(pushed, "disconnected embedding should trigger an alert");
@@ -1333,6 +1354,7 @@ mod tests {
             latency_ms: 200.0,
             error_rate_pct: 42.0,
             last_success: None,
+            fallback_success: false,
         };
         assert!(push_embedding_alert_if_unhealthy(&embedding));
         assert!(
@@ -1355,6 +1377,7 @@ mod tests {
             latency_ms: 120.0,
             error_rate_pct: 0.0,
             last_success: Some(0),
+            fallback_success: false,
         };
         let pushed = push_embedding_alert_if_unhealthy(&embedding);
         assert!(!pushed, "healthy embedding should not trigger an alert");
@@ -1364,6 +1387,23 @@ mod tests {
                 .iter()
                 .all(|a| a.component != "embedding"),
             "no embedding alert should exist"
+        );
+    }
+
+    #[test]
+    fn test_embedding_fallback_success_surfaces_as_degraded() {
+        let embedding = EmbeddingHealth {
+            provider: "nomic".to_string(),
+            connected: true,
+            latency_ms: 150.0,
+            error_rate_pct: 0.0,
+            last_success: Some(100),
+            fallback_success: true,
+        };
+        assert!(!push_embedding_alert_if_unhealthy(&embedding));
+        assert_eq!(
+            fallback::eval_fallback_status(false, embedding.fallback_success),
+            "degraded"
         );
     }
 
