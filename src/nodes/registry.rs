@@ -380,90 +380,89 @@ impl NodeRegistry {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    fn sample_record(node_id: &str, visibility: NodeVisibility) -> NodeRecord {
-        NodeRecord {
-            node_id: node_id.to_string(),
-            provider: Provider::Supabase,
-            visibility,
-            status: NodeStatus::Active,
-            pubkey: "0123456789abcdef".to_string(),
-            cert: None,
-            host_key_fingerprint: None,
-            lease_id: Some("lease-1234-uuid".to_string()),
-            created_at: 1700000000,
-            last_heartbeat: Some(1700000500),
-        }
-    }
-
-    #[test]
-    fn test_registry_crud_in_memory() {
-        let registry = NodeRegistry::open_in_memory().unwrap();
-
-        let rec = sample_record("xv1-node-alpha", NodeVisibility::Private);
-        registry.register(&rec).unwrap();
-
-        let fetched = registry.get("xv1-node-alpha").unwrap().unwrap();
-        assert_eq!(fetched.node_id, "xv1-node-alpha");
-        assert_eq!(fetched.provider, Provider::Supabase);
-        assert_eq!(fetched.visibility, NodeVisibility::Private);
-        assert_eq!(fetched.status, NodeStatus::Active);
-
-        // Update status
-        registry
-            .update_status("xv1-node-alpha", NodeStatus::Degraded)
-            .unwrap();
-        let updated = registry.get("xv1-node-alpha").unwrap().unwrap();
-        assert_eq!(updated.status, NodeStatus::Degraded);
-
-        // Remove
-        registry.remove("xv1-node-alpha").unwrap();
-        assert!(registry.get("xv1-node-alpha").unwrap().is_none());
-    }
-
-    #[test]
-    fn test_registry_disk_persistence_reopen() {
-        let tmp = tempdir().unwrap();
-        let db_path = tmp.path().join("test_registry.db");
-
-        {
-            let registry = NodeRegistry::open_path(&db_path).unwrap();
-            let rec = sample_record("xv1-persist-node", NodeVisibility::Public);
-            registry.register(&rec).unwrap();
-        }
-
-        // Reopen database from disk
-        {
-            let registry_reopened = NodeRegistry::open_path(&db_path).unwrap();
-            let loaded = registry_reopened.get("xv1-persist-node").unwrap().unwrap();
-            assert_eq!(loaded.node_id, "xv1-persist-node");
-            assert_eq!(loaded.visibility, NodeVisibility::Public);
-        }
-    }
-
-    #[test]
-    fn test_list_public_filters_correctly() {
-        let registry = NodeRegistry::open_in_memory().unwrap();
-
-        let public_node = sample_record("xv1-public-1", NodeVisibility::Public);
-        let private_node = sample_record("xv1-private-1", NodeVisibility::Private);
-
-        registry.register(&public_node).unwrap();
-        registry.register(&private_node).unwrap();
-
-        let all = registry.list().unwrap();
-        assert_eq!(all.len(), 2);
-
-        let public_only = registry.list_public().unwrap();
-        assert_eq!(public_only.len(), 1);
-        assert_eq!(public_only[0].node_id, "xv1-public-1");
-    }
-}
-
 pub fn shard_for_node(id: &str) -> u8 {
+    mod tests {
+        use super::*;
+        use tempfile::tempdir;
+
+        fn sample_record(node_id: &str, visibility: NodeVisibility) -> NodeRecord {
+            NodeRecord {
+                node_id: node_id.to_string(),
+                provider: Provider::Supabase,
+                visibility,
+                status: NodeStatus::Active,
+                pubkey: "0123456789abcdef".to_string(),
+                cert: None,
+                host_key_fingerprint: None,
+                lease_id: Some("lease-1234-uuid".to_string()),
+                created_at: 1700000000,
+                last_heartbeat: Some(1700000500),
+            }
+        }
+
+        #[test]
+        fn test_registry_crud_in_memory() {
+            let registry = NodeRegistry::open_in_memory().unwrap();
+
+            let rec = sample_record("xv1-node-alpha", NodeVisibility::Private);
+            registry.register(&rec).unwrap();
+
+            let fetched = registry.get("xv1-node-alpha").unwrap().unwrap();
+            assert_eq!(fetched.node_id, "xv1-node-alpha");
+            assert_eq!(fetched.provider, Provider::Supabase);
+            assert_eq!(fetched.visibility, NodeVisibility::Private);
+            assert_eq!(fetched.status, NodeStatus::Active);
+
+            // Update status
+            registry
+                .update_status("xv1-node-alpha", NodeStatus::Degraded)
+                .unwrap();
+            let updated = registry.get("xv1-node-alpha").unwrap().unwrap();
+            assert_eq!(updated.status, NodeStatus::Degraded);
+
+            // Remove
+            registry.remove("xv1-node-alpha").unwrap();
+            assert!(registry.get("xv1-node-alpha").unwrap().is_none());
+        }
+
+        #[test]
+        fn test_registry_disk_persistence_reopen() {
+            let tmp = tempdir().unwrap();
+            let db_path = tmp.path().join("test_registry.db");
+
+            {
+                let registry = NodeRegistry::open_path(&db_path).unwrap();
+                let rec = sample_record("xv1-persist-node", NodeVisibility::Public);
+                registry.register(&rec).unwrap();
+            }
+
+            // Reopen database from disk
+            {
+                let registry_reopened = NodeRegistry::open_path(&db_path).unwrap();
+                let loaded = registry_reopened.get("xv1-persist-node").unwrap().unwrap();
+                assert_eq!(loaded.node_id, "xv1-persist-node");
+                assert_eq!(loaded.visibility, NodeVisibility::Public);
+            }
+        }
+
+        #[test]
+        fn test_list_public_filters_correctly() {
+            let registry = NodeRegistry::open_in_memory().unwrap();
+
+            let public_node = sample_record("xv1-public-1", NodeVisibility::Public);
+            let private_node = sample_record("xv1-private-1", NodeVisibility::Private);
+
+            registry.register(&public_node).unwrap();
+            registry.register(&private_node).unwrap();
+
+            let all = registry.list().unwrap();
+            assert_eq!(all.len(), 2);
+
+            let public_only = registry.list_public().unwrap();
+            assert_eq!(public_only.len(), 1);
+            assert_eq!(public_only[0].node_id, "xv1-public-1");
+        }
+    }
     crate::crypto::envelope::shard_for_id(id)
 }
 pub fn validate_shard(shard: u8) -> bool {
