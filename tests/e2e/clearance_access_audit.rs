@@ -95,3 +95,93 @@ fn e2e_clearance_boundary_and_matrix() {
     assert!(m2.can_access(AclRole::Colaborador, ClearanceLevel::TopSecret));
     assert!(m2.can_access(AclRole::Colaborador, ClearanceLevel::Secret));
 }
+
+#[tokio::test]
+async fn test_http_redaction_e2e() {
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        routing::get,
+        Json, Router,
+    };
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+    use xavier::adapters::inbound::http::middleware::clearance::{
+        clearance_middleware, X_CLEARANCE_HEADER, X_REQUIRED_CLEARANCE_HEADER,
+    };
+    use xavier::security::clearance::{
+        ClearanceEnforcer, ClearanceLevel as SecurityClearanceLevel,
+    };
+
+    let app = Router::new()
+        .route(
+            "/api/v1/documents/classified",
+            get(|req: Request<Body>| async move {
+                let enforcer = req
+                    .extensions()
+                    .get::<ClearanceEnforcer>()
+                    .expect("enforcer present");
+                let doc_content = "Project Xavier Core Blueprint";
+                let content = enforcer.redact(SecurityClearanceLevel::TopSecret, doc_content);
+                Json(json!({ "document": content }))
+            }),
+        )
+        .route(
+            "/api/v1/documents/topsecret_only",
+            get(|| async { Json(json!({ "status": "access granted" })) }),
+        )
+        .layer(axum::middleware::from_fn(clearance_middleware));
+
+    // 1. E2E Redaction Test: Requester with INTERNAL clearance receives redacted content
+    let req = Request::builder()
+        .uri("/api/v1/documents/classified")
+        .header(X_CLEARANCE_HEADER, "INTERNAL")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let json_res: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let doc_str = json_res["document"].as_str().unwrap();
+    assert!(
+        doc_str.contains("REDACTED"),
+        "Content for lower clearance user must be redacted, got: {doc_str}"
+    );
+
+    // 2. E2E Clearance Pass Test: Requester with TOP_SECRET clearance receives unredacted content
+    let req_ts = Request::builder()
+        .uri("/api/v1/documents/classified")
+        .header(X_CLEARANCE_HEADER, "TOP_SECRET")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp_ts = app.clone().oneshot(req_ts).await.unwrap();
+    assert_eq!(resp_ts.status(), StatusCode::OK);
+    let body_bytes_ts = resp_ts.into_body().collect().await.unwrap().to_bytes();
+    let json_res_ts: Value = serde_json::from_slice(&body_bytes_ts).unwrap();
+    assert_eq!(json_res_ts["document"], "Project Xavier Core Blueprint");
+
+    // 3. E2E Required Clearance Enforcement: Route requiring TOP_SECRET clearance yields 403 for CONFIDENTIAL user
+    let req_gate_deny = Request::builder()
+        .uri("/api/v1/documents/topsecret_only")
+        .header(X_CLEARANCE_HEADER, "CONFIDENTIAL")
+        .header(X_REQUIRED_CLEARANCE_HEADER, "TOP_SECRET")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp_deny = app.clone().oneshot(req_gate_deny).await.unwrap();
+    assert_eq!(resp_deny.status(), StatusCode::FORBIDDEN);
+
+    // 4. E2E Required Clearance Grant: Route requiring TOP_SECRET clearance yields 200 for TOP_SECRET user
+    let req_gate_grant = Request::builder()
+        .uri("/api/v1/documents/topsecret_only")
+        .header(X_CLEARANCE_HEADER, "TOP_SECRET")
+        .header(X_REQUIRED_CLEARANCE_HEADER, "TOP_SECRET")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp_grant = app.oneshot(req_gate_grant).await.unwrap();
+    assert_eq!(resp_grant.status(), StatusCode::OK);
+}
