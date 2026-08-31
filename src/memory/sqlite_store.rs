@@ -2,7 +2,7 @@
 //!
 //! Provides a persistent, ACID-compliant storage layer using SQLite.
 
-use std::{any::Any, path::PathBuf};
+use std::{any::Any, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -11,8 +11,8 @@ use rusqlite::params;
 use tokio::fs;
 
 use crate::checkpoint::Checkpoint;
-use crate::codebase::connection_manager::ConnectionManager;
 use crate::domain::memory::belief::BeliefEdge;
+use crate::memory::connection_provider::{ConnectionProvider, GlobalConnectionProvider};
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::store::{
     filter_records, revisioned_record, stable_key, DurableWorkspaceState, MemoryBackend,
@@ -77,6 +77,7 @@ impl SqliteStoreConfig {
 pub struct SqliteMemoryStore {
     config: SqliteStoreConfig,
     project_id: String,
+    conn_provider: Arc<dyn ConnectionProvider>,
 }
 
 impl SqliteMemoryStore {
@@ -85,22 +86,31 @@ impl SqliteMemoryStore {
         Self::new(SqliteStoreConfig::from_env()).await
     }
 
-    /// New.
+    /// New with default global provider.
     pub async fn new(config: SqliteStoreConfig) -> Result<Self> {
+        Self::new_with_provider(config, Arc::new(GlobalConnectionProvider::new())).await
+    }
+
+    /// New with injectable connection provider.
+    pub async fn new_with_provider(
+        config: SqliteStoreConfig,
+        conn_provider: Arc<dyn ConnectionProvider>,
+    ) -> Result<Self> {
         if let Some(parent) = config.path.parent() {
             fs::create_dir_all(parent).await?;
         }
 
         let project_id = "memory";
-        ConnectionManager::global().connect(project_id, ".")?; // Manager handles path resolution for "memory"
+        conn_provider.connect(project_id, ".")?; // Manager handles path resolution for "memory"
 
         let store = Self {
             config,
             project_id: project_id.to_string(),
+            conn_provider: conn_provider.clone(),
         };
 
         // Initialize schema via migration manager
-        ConnectionManager::global()
+        conn_provider
             .with_conn(project_id, move |conn| {
                 let mut manager = crate::storage::MigrationManager::new();
                 manager.add_migration(crate::storage::migrations::MigrationV1InitialSchema);
@@ -246,7 +256,7 @@ impl MemoryStore for SqliteMemoryStore {
 
     async fn compact(&self) -> Result<()> {
         let project_id = self.project_id.clone();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&project_id, move |conn| {
                 conn.execute_batch("VACUUM;")?;
                 Ok(())
@@ -265,7 +275,7 @@ impl MemoryStore for SqliteMemoryStore {
 
     async fn health(&self) -> Result<String> {
         let detail = self.config.detail();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 conn.query_row("SELECT 1", [], |_row| Ok(()))?;
                 Ok(format!("sqlite {}", detail))
@@ -283,7 +293,7 @@ impl MemoryStore for SqliteMemoryStore {
             // Get or create salt for this workspace
             let workspace_id = record.workspace_id.clone();
             let project_id = self.project_id.clone();
-            let _salt_bytes = ConnectionManager::global()
+            let _salt_bytes = self.conn_provider
                 .with_conn(&project_id, move |conn| {
                     let mut stmt = conn.prepare(
                         "SELECT salt FROM encryption_metadata WHERE workspace_id = ?",
@@ -338,7 +348,7 @@ impl MemoryStore for SqliteMemoryStore {
             record.metadata_iv = Some(metadata_nonce.as_bytes().to_vec());
         }
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             conn.execute(
                 &format!(
                     "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, encrypted_dek, content_iv, metadata_iv, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
@@ -373,7 +383,7 @@ impl MemoryStore for SqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let id_or_path = id_or_path.to_string();
 
-        let record = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        let record = self.conn_provider.with_conn(&self.project_id, move |conn| {
             // Try by id first (O(1) lookup)
             let key = Self::row_key(&workspace_id, &id_or_path);
             let mut stmt = conn.prepare(&format!(
@@ -428,7 +438,7 @@ impl MemoryStore for SqliteMemoryStore {
             let workspace_id = workspace_id.to_string();
             let record_id = record.id.clone();
 
-            ConnectionManager::global()
+            self.conn_provider
                 .with_conn(&self.project_id, move |conn| {
                     conn.execute(
                         &format!("DELETE FROM {} WHERE id = ?", TABLE_MEMORIES),
@@ -452,7 +462,7 @@ impl MemoryStore for SqliteMemoryStore {
 
     async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
         let workspace_id = workspace_id.to_string();
-        let records = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        let records = self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE workspace_id = ?",
                 TABLE_MEMORIES
@@ -490,7 +500,8 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     async fn list_workspaces(&self) -> Result<Vec<String>> {
-        let records = ConnectionManager::global()
+        let records = self
+            .conn_provider
             .with_conn(&self.project_id, |conn| {
                 let mut stmt = conn.prepare(&format!(
                     "SELECT DISTINCT workspace_id FROM {}",
@@ -520,7 +531,7 @@ impl MemoryStore for SqliteMemoryStore {
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState> {
         let workspace_id_c = workspace_id.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             // Load memories
             let mut memories = Vec::new();
             {
@@ -628,7 +639,7 @@ impl MemoryStore for SqliteMemoryStore {
         let belief_key = stable_key("belief_row", &[&workspace_id]);
         let beliefs_blob = crate::utils::compression::compress_payload(&beliefs)?;
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             conn.execute(
                 &format!(
                     "INSERT OR REPLACE INTO {} (id, workspace_id, beliefs, updated_at) VALUES (?, ?, ?, ?)",
@@ -651,7 +662,7 @@ impl MemoryStore for SqliteMemoryStore {
         let created_at = token.created_at.to_rfc3339();
         let expires_at = token.expires_at.to_rfc3339();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             // Delete expired tokens first
             conn.execute(
                 &format!(
@@ -683,7 +694,7 @@ impl MemoryStore for SqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let token = token.to_string();
 
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 let token_key = stable_key("session_token_row", &[&workspace_id, &token]);
                 let now = Utc::now().to_rfc3339();
@@ -712,7 +723,7 @@ impl MemoryStore for SqliteMemoryStore {
         let name = checkpoint.name;
         let data_blob = crate::utils::compression::compress_payload(&checkpoint.data)?;
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             conn.execute(
                 &format!(
                     "INSERT OR REPLACE INTO {} (id, workspace_id, task_id, name, data) VALUES (?, ?, ?, ?, ?)",
@@ -734,7 +745,7 @@ impl MemoryStore for SqliteMemoryStore {
         let task_id = task_id.to_string();
         let name = name.to_string();
 
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 let mut stmt = conn.prepare(&format!(
                     "SELECT data FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
@@ -770,7 +781,7 @@ impl MemoryStore for SqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let task_id = task_id.to_string();
 
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 let mut stmt = conn.prepare(&format!(
                     "SELECT task_id, name, data FROM {} WHERE workspace_id = ? AND task_id = ?",
@@ -806,7 +817,7 @@ impl MemoryStore for SqliteMemoryStore {
         let task_id = task_id.to_string();
         let name = name.to_string();
 
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 let checkpoint_key =
                     stable_key("checkpoint_row", &[&workspace_id, &task_id, &name]);
@@ -821,7 +832,7 @@ impl MemoryStore for SqliteMemoryStore {
 
     async fn load_entity_graph_snapshot(&self, workspace_id: &str) -> Result<Option<String>> {
         let workspace_id = workspace_id.to_string();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 let mut stmt =
                     conn.prepare("SELECT data FROM entity_graph_snapshots WHERE workspace_id = ?")?;
@@ -838,7 +849,7 @@ impl MemoryStore for SqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let data = data.to_string();
         let now = Utc::now().to_rfc3339();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 conn.execute(
                     "INSERT OR REPLACE INTO entity_graph_snapshots (workspace_id, data, updated_at) VALUES (?, ?, ?)",

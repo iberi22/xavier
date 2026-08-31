@@ -23,6 +23,7 @@ use crate::codebase::conversations_db::ConversationsDb;
 use crate::memory::{
     belief_graph::{BeliefGraph, SharedBeliefGraph},
     entity_graph::{EntityGraph, SharedEntityGraph},
+    fallback_store::FallbackMemoryStore,
     postgres_store::PostgresMemoryStore,
     qmd_memory::{estimate_document_bytes, MemoryUsage, QmdMemory},
     schema::MemoryQueryFilters,
@@ -181,6 +182,10 @@ impl WorkspaceState {
             MemoryBackend::Supabase => {
                 let store: Arc<dyn MemoryStore> = Arc::new(SupabaseMemoryStore::from_env().await?);
                 (store, false, "supabase backend".to_string())
+            }
+            MemoryBackend::Fallback => {
+                let store: Arc<dyn MemoryStore> = Arc::new(FallbackMemoryStore::from_env().await?);
+                (store, false, "fallback chain backend".to_string())
             }
         };
         store.set_dedup_settings(config.dedup.clone()).await;

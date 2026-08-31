@@ -2,7 +2,6 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::schema::MemoryQueryFilters;
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::memory::store::{
@@ -37,7 +36,7 @@ impl VecSqliteMemoryStore {
             table_name
         );
 
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 conn.execute(&sql, params![memory_id, workspace_id, embedding_json])
                     .context("failed to upsert vector row")?;
@@ -65,7 +64,7 @@ impl VecSqliteMemoryStore {
         let filters_c = filters.cloned();
         let trimmed_query_c = trimmed_query.clone();
 
-        let scored = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        let scored = self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut internal_scored: HashMap<String, HybridSearchResult> = HashMap::new();
 
             let dataset_size = {
@@ -267,7 +266,7 @@ impl VecSqliteMemoryStore {
         let query_c = query.to_string();
         let source_c = source.clone();
 
-        let paths = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        let paths = self.conn_provider.with_conn(&self.project_id, move |conn| {
             let seed_ids = graph::resolve_graph_seed_entities(conn, &workspace_id_c, &source_c, &query_c)?;
 
             if seed_ids.is_empty() {

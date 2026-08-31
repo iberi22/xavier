@@ -4,13 +4,14 @@
 //! for semantic similarity matching on memory embeddings.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use anyhow::Result;
 use rusqlite::params;
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 
-use crate::codebase::connection_manager::ConnectionManager;
+use crate::memory::connection_provider::{ConnectionProvider, GlobalConnectionProvider};
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::memory::store::{stable_key, HybridSearchMode, HybridSearchResult, MemoryRecord};
@@ -36,6 +37,7 @@ pub use types::*;
 pub struct VecSqliteMemoryStore {
     pub(crate) project_id: String,
     pub(crate) config: VecSqliteStoreConfig,
+    pub(crate) conn_provider: Arc<dyn ConnectionProvider>,
     pub(crate) event_tx: Option<broadcast::Sender<crate::server::events::RealtimeEvent>>,
     pub(crate) dedup_config:
         std::sync::Arc<tokio::sync::RwLock<crate::settings::types::DedupSettings>>,
@@ -74,17 +76,26 @@ impl VecSqliteMemoryStore {
         &self.project_id
     }
 
-    /// New.
+    /// New with default global provider.
     pub async fn new(config: VecSqliteStoreConfig) -> Result<Self> {
+        Self::new_with_provider(config, Arc::new(GlobalConnectionProvider::new())).await
+    }
+
+    /// New with injectable connection provider.
+    pub async fn new_with_provider(
+        config: VecSqliteStoreConfig,
+        conn_provider: Arc<dyn ConnectionProvider>,
+    ) -> Result<Self> {
         db::ensure_dir(&config.path).await?;
         vector::register_sqlite_vec_extension()?;
 
         let project_id = project_id_for_path(&config.path);
-        ConnectionManager::global().connect_with_path(&project_id, config.path.clone())?;
+        conn_provider.connect_with_path(&project_id, config.path.clone())?;
 
         let store = Self {
             project_id,
             config,
+            conn_provider,
             event_tx: None,
             dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(
                 crate::settings::types::DedupSettings::default(),
@@ -240,7 +251,7 @@ impl VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let memory_id = memory_id.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ? AND workspace_id = ?",
                 TABLE_MEMORIES
@@ -265,7 +276,7 @@ impl VecSqliteMemoryStore {
     ) -> Result<()> {
         let workspace_id = workspace_id.to_string();
         let record = record.clone();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 graph::sync_memory_entities(conn, &workspace_id, &record)
             })
@@ -283,7 +294,7 @@ impl VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let source = source.clone();
         let query = query.to_string();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 graph::resolve_graph_seed_entities(conn, &workspace_id, &source, &query)
             })
@@ -313,7 +324,7 @@ impl VecSqliteMemoryStore {
     /// Health probe reporting embedding integrity statistics.
     pub async fn embedding_integrity_stats(&self) -> Result<EmbeddingIntegrityStats> {
         let project_id = self.project_id.clone();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&project_id, move |conn| {
                 Self::embedding_integrity_stats_conn(conn)
             })
