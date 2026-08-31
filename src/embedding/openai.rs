@@ -131,13 +131,14 @@ impl Embedder for OpenAICompatibleEmbedder {
                             format!("{}/v1/embeddings", normalized_local)
                         };
 
+                        let local_model = crate::embedding::local_model();
                         let fallback_req = self
                             .client
                             .post(&local_endpoint)
                             .header("Content-Type", "application/json")
                             .json(&EmbeddingRequest {
                                 input: text,
-                                model: &self.model,
+                                model: &local_model,
                             });
 
                         if let Ok(fallback_resp) = fallback_req.send().await {
