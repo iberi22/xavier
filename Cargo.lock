@@ -16242,9 +16242,19 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "x25519-dalek",
+ "xavier-core-logic",
  "xxhash-rust",
  "zerocopy 0.8.55",
  "zstd",
+]
+
+[[package]]
+name = "xavier-core-logic"
+version = "0.0.1"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
