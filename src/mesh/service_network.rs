@@ -6,6 +6,7 @@
 
 use crate::mesh::node::NodeId;
 use crate::mesh::peer::PeerRegistry;
+use crate::security::clearance::ClearanceLevel;
 use crate::security::redaction::{RedactionEngine, RedactionRule};
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +70,7 @@ use std::collections::HashMap;
 
 /// Telemetry sample published across the service network.
 /// Must always be classified as INTERNAL and contain no personal data (PII).
+/// INTERNAL|Telemetry classification
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TelemetrySample {
     pub node_id: NodeId,
@@ -175,13 +177,14 @@ impl ServiceRegistry {
     }
 
     /// Publish a telemetry sample to the service network.
+    /// INTERNAL|Telemetry classification enforcement
     ///
     /// The payload is automatically scrubbed for sensitive workspace paths, IP subnets,
-    /// hostnames, and PII via `TelemetrySanitizer`, and `classification` is enforced to be "INTERNAL".
+    /// hostnames, and PII via `TelemetrySanitizer`, and `classification` is enforced to be `ClearanceLevel::Internal` ("INTERNAL").
     pub fn publish_telemetry(&mut self, mut sample: TelemetrySample) -> TelemetrySample {
         let sanitizer = TelemetrySanitizer::default();
         sample.payload = sanitizer.sanitize(&sample.payload);
-        sample.classification = "INTERNAL".to_string();
+        sample.classification = ClearanceLevel::Internal.as_str().to_uppercase();
         if sample.ts == 0 {
             sample.ts = chrono::Utc::now().timestamp();
         }
@@ -190,6 +193,7 @@ impl ServiceRegistry {
     }
 
     /// Consume telemetry samples recorded since the given timestamp (`since`).
+    /// INTERNAL|Telemetry consume handler
     pub fn consume_telemetry(&self, since: i64) -> Vec<TelemetrySample> {
         self.telemetry
             .iter()
@@ -216,7 +220,7 @@ impl ServiceRegistry {
             kind: ServiceKind::Custom("health_snapshot".to_string()),
             payload,
             ts: health.timestamp.timestamp(),
-            classification: "INTERNAL".to_string(),
+            classification: ClearanceLevel::Internal.as_str().to_uppercase(),
         };
         self.publish_telemetry(sample)
     }
@@ -349,6 +353,43 @@ mod tests {
         // PII scrubbed
         assert!(!published.payload.contains("john.doe@example.com"));
         assert!(published.payload.contains("[EMAIL]"));
+    }
+
+    /// Test personal data exclusion guarantee asserting PII and sensitive fields are redacted.
+    /// personal exclusion|PII
+    #[test]
+    fn test_personal_data_exclusion() {
+        let mut registry = ServiceRegistry::new();
+        let node_id = NodeId("xv1-pii-exclusion-node".to_string());
+
+        let raw_sample = TelemetrySample {
+            node_id: node_id.clone(),
+            kind: ServiceKind::Memory,
+            payload: "User personal data exclusion check: contact user@domain.com or call +1-800-555-0199, path /home/user/secret.txt, subnet 10.0.0.0/16, host=node1.local".to_string(),
+            ts: 12345,
+            classification: "CONFIDENTIAL".to_string(),
+        };
+
+        let published = registry.publish_telemetry(raw_sample);
+
+        // Assert INTERNAL clearance level classification
+        assert_eq!(
+            published.classification,
+            ClearanceLevel::Internal.as_str().to_uppercase()
+        );
+
+        // Assert personal data (PII) and sensitive data exclusion
+        assert!(!published.payload.contains("user@domain.com"));
+        assert!(!published.payload.contains("+1-800-555-0199"));
+        assert!(!published.payload.contains("/home/user/secret.txt"));
+        assert!(!published.payload.contains("10.0.0.0/16"));
+        assert!(!published.payload.contains("node1.local"));
+
+        assert!(published.payload.contains("[EMAIL]"));
+        assert!(published.payload.contains("[PHONE]"));
+        assert!(published.payload.contains("[PATH]"));
+        assert!(published.payload.contains("[IP_SUBNET]"));
+        assert!(published.payload.contains("[HOSTNAME]"));
     }
 
     #[test]
