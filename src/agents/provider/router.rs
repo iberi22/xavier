@@ -372,6 +372,23 @@ impl ProviderRouter {
     pub fn fallback_chain(&self) -> &[ProviderKind] {
         &self.fallback_chain
     }
+
+    /// Resolves the local Ollama endpoint for a mini_expert route (e.g., `mini_expert:<id>`).
+    pub fn resolve_mini_expert_endpoint(&self, model_or_expert: &str) -> String {
+        let name = model_or_expert
+            .strip_prefix("mini_expert:")
+            .or_else(|| model_or_expert.strip_prefix("mini_experts:"))
+            .unwrap_or(model_or_expert);
+
+        let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
+        if let Some(entry) = registry.get(name) {
+            if !entry.endpoint.is_empty() {
+                return entry.endpoint.clone();
+            }
+        }
+
+        "http://localhost:11434".to_string()
+    }
 }
 
 #[cfg(test)]
@@ -600,6 +617,13 @@ mod tests {
         } else {
             std::env::remove_var("XAVIER_LOCAL_LLM_URL");
         }
+    }
+
+    #[test]
+    fn test_mini_expert_route_resolution() {
+        let router = ProviderRouter::new(ProviderKind::Local);
+        let endpoint = router.resolve_mini_expert_endpoint("mini_expert:f12");
+        assert_eq!(endpoint, "http://localhost:11434");
     }
 
     #[test]
