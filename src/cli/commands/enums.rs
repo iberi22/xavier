@@ -137,6 +137,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: CodeCommand,
     },
+    /// Package GitHub issue context
+    Issue {
+        #[command(subcommand)]
+        cmd: IssueCommand,
+    },
     /// Save current session context to Xavier
     SessionSave { session_id: String, content: String },
     /// Spawn multiple agents with provider routing
@@ -689,6 +694,19 @@ pub enum VerifyCommand {
         /// Output format: table, json
         #[arg(short, long, default_value = "table")]
         format: String,
+    },
+}
+
+/// Issue subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum IssueCommand {
+    /// Package context for a GitHub issue
+    Pack {
+        /// Issue ID / number
+        id: String,
+        /// Repository (owner/repo or repo name)
+        #[arg(short, long)]
+        repo: Option<String>,
     },
 }
 

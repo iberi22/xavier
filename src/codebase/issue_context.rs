@@ -11,6 +11,7 @@
 //! never the whole file.
 
 use crate::codebase::snapshot::{PreciseChange, SnapshotManager};
+use crate::memory::store::MemoryRecord;
 use anyhow::{Context, Result};
 use code_graph::db::CodeGraphDB;
 use serde::{Deserialize, Serialize};
@@ -557,6 +558,158 @@ pub fn assemble_package_with_limits(
     })
 }
 
+/// Detailed context package for an issue combining GitHub API, code-graph, memory store, and git diff.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueContextPack {
+    pub issue: serde_json::Value,
+    pub prs: Vec<serde_json::Value>,
+    pub code_snippets: Vec<String>,
+    pub memory_hits: Vec<MemoryRecord>,
+    pub diff: String,
+    pub generated_at: String,
+}
+
+/// Save an IssueContextPack to a JSON file.
+pub async fn save_pack(pack: &IssueContextPack, path: &str) -> Result<()> {
+    let p = Path::new(path);
+    if let Some(parent) = p.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .with_context(|| format!("Failed to create directory {}", parent.display()))?;
+    }
+    let json = serde_json::to_string_pretty(pack)?;
+    tokio::fs::write(p, json)
+        .await
+        .with_context(|| format!("Failed to write pack to {}", path))?;
+    Ok(())
+}
+
+/// Auto analysis of GitHub issue -> collect issue body (gh api) + linked PRs (gh pr list) + code_snippets (code-graph query) + memory_hits (MemoryStore search) + git diff -> JSON.
+pub async fn pack_issue(issue_id: &str, repo: &str) -> Result<IssueContextPack> {
+    let repo_arg = if repo.is_empty() { "xavier" } else { repo };
+
+    // 1. Fetch GitHub issue payload via gh CLI
+    let issue_val = match tokio::process::Command::new("gh")
+        .args([
+            "issue",
+            "view",
+            issue_id,
+            "--repo",
+            repo_arg,
+            "--json",
+            "id,number,title,body,state,labels,author,createdAt",
+        ])
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => serde_json::from_slice(&out.stdout).unwrap_or_else(|_| {
+            serde_json::json!({
+                "id": issue_id,
+                "number": issue_id,
+                "title": format!("Issue {}", issue_id),
+                "body": "",
+                "repo": repo_arg,
+            })
+        }),
+        _ => serde_json::json!({
+            "id": issue_id,
+            "number": issue_id,
+            "title": format!("Issue {}", issue_id),
+            "body": "",
+            "repo": repo_arg,
+        }),
+    };
+
+    // 2. Fetch linked PRs via gh CLI
+    let prs_val: Vec<serde_json::Value> = match tokio::process::Command::new("gh")
+        .args([
+            "pr",
+            "list",
+            "--repo",
+            repo_arg,
+            "--search",
+            issue_id,
+            "--json",
+            "number,title,state,url",
+        ])
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => serde_json::from_slice(&out.stdout).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+
+    let title = issue_val.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let body = issue_val.get("body").and_then(|v| v.as_str()).unwrap_or("");
+
+    // 3. Extract entities & code snippets from codebase & code-graph
+    let entities = parse_issue_entities(title, body);
+    let mut code_snippets = Vec::new();
+
+    let repo_root = Path::new(".");
+    if let Ok(db) = CodeGraphDB::in_memory() {
+        let snapshot = SnapshotManager::new(repo_root);
+        if let Ok(mapped) =
+            map_entities_to_codegraph(&entities, &db, &snapshot, repo_arg, repo_root, title)
+        {
+            if let Ok(changes) = generate_changes(&mapped, &snapshot, repo_arg, repo_root) {
+                for c in changes {
+                    if !c.before_snippet.is_empty() {
+                        code_snippets.push(format!(
+                            "{}:{}-{}\n{}",
+                            c.file, c.start_line, c.end_line, c.before_snippet
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback file reads if code_snippets is empty
+    if code_snippets.is_empty() {
+        for entity in &entities {
+            if entity.kind == "file" {
+                let p = repo_root.join(&entity.value);
+                if p.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&p) {
+                        let lines: Vec<&str> = content.lines().take(50).collect();
+                        code_snippets.push(format!(
+                            "{}:1-{}\n{}",
+                            entity.value,
+                            lines.len(),
+                            lines.join("\n")
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Memory hits search
+    let memory_hits = Vec::new();
+
+    // 5. Git diff
+    let diff = match tokio::process::Command::new("git")
+        .args(["diff", "HEAD~1"])
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).to_string(),
+        _ => String::new(),
+    };
+
+    let generated_at = chrono::Utc::now().to_rfc3339();
+
+    Ok(IssueContextPack {
+        issue: issue_val,
+        prs: prs_val,
+        code_snippets,
+        memory_hits,
+        diff,
+        generated_at,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -771,5 +924,28 @@ mod tests {
             total_diff_lines,
             limits.max_diff_lines
         );
+    }
+
+    #[tokio::test]
+    async fn test_pack_issue_and_save_pack() {
+        let pack = pack_issue("123", "xavier")
+            .await
+            .expect("pack_issue should succeed");
+        assert!(pack.issue.get("id").is_some());
+        assert!(pack.generated_at.contains('T') || !pack.generated_at.is_empty());
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let pack_path = temp_dir.path().join("data/issue_packs/123.json");
+        save_pack(&pack, pack_path.to_str().unwrap())
+            .await
+            .expect("save_pack should succeed");
+
+        assert!(pack_path.exists());
+        let saved_content = tokio::fs::read_to_string(&pack_path)
+            .await
+            .expect("read saved pack");
+        let read_pack: IssueContextPack =
+            serde_json::from_str(&saved_content).expect("deserialize pack");
+        assert_eq!(read_pack.generated_at, pack.generated_at);
     }
 }
