@@ -161,6 +161,11 @@ impl Cli {
                 http::reindex_memories().await
             }
             Command::Code { cmd } => code::handle_code_command(cmd.clone()).await,
+            Command::Issue { cmd } => match cmd {
+                IssueCommand::Pack { id, repo } => {
+                    crate::cli::handlers::issue::handle_issue_pack(id, repo.clone()).await
+                }
+            },
             Command::Ls { path } => navigation::handle_ls(path.clone()).await,
             Command::Cd { path } => navigation::handle_cd(path.clone()).await,
             Command::Pwd => navigation::handle_pwd().await,
