@@ -137,10 +137,12 @@ mod tests {
     }
 }
 
+#[allow(clippy::items_after_test_module)]
 /// MLS RFC9420 private family groups shard routing (WAVE-2.09)
 pub fn shard_for_group(group_id: &str) -> u8 {
     crate::crypto::envelope::shard_for_id(group_id)
 }
+#[allow(clippy::items_after_test_module)]
 pub fn visibility_for_shard(shard: u8) -> &'static str {
     if shard == 0 {
         "private"
