@@ -25,6 +25,54 @@ pub fn can_access_clearance(role: UserRole, required_level: ClearanceLevel) -> b
     role_clearance(role) >= required_level
 }
 
+/// Read-middleware: redact content if requester clearance is insufficient.
+/// Returns `REDACTED` placeholder when access is denied, otherwise original content.
+pub fn redact_if_needed(
+    requester: ClearanceLevel,
+    doc_level: ClearanceLevel,
+    content: &str,
+) -> String {
+    if can_access(requester, doc_level) {
+        content.to_string()
+    } else {
+        format!("[REDACTED: requires {}]", doc_level.as_str().to_uppercase())
+    }
+}
+
+/// Filter a list of (id, clearance, content) tuples by requester clearance.
+/// Returns only accessible entries with redacted content for denied ones excluded.
+pub fn filter_by_clearance(
+    requester: ClearanceLevel,
+    docs: Vec<(String, ClearanceLevel, String)>,
+) -> Vec<(String, ClearanceLevel, String)> {
+    docs.into_iter()
+        .filter(|(_, lvl, _)| can_access(requester, *lvl))
+        .collect()
+}
+
+/// Clearance enforcer middleware — wraps read paths.
+pub struct ClearanceEnforcer {
+    pub requester_level: ClearanceLevel,
+}
+
+impl ClearanceEnforcer {
+    pub fn new(requester_level: ClearanceLevel) -> Self {
+        Self { requester_level }
+    }
+
+    pub fn from_role(role: UserRole) -> Self {
+        Self::new(role_clearance(role))
+    }
+
+    pub fn can_read(&self, doc_level: ClearanceLevel) -> bool {
+        can_access(self.requester_level, doc_level)
+    }
+
+    pub fn redact(&self, doc_level: ClearanceLevel, content: &str) -> String {
+        redact_if_needed(self.requester_level, doc_level, content)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +257,38 @@ mod tests {
             UserRole::Readonly,
             ClearanceLevel::TopSecret
         ));
+    }
+
+    #[test]
+    fn test_redact_middleware() {
+        let enforcer = ClearanceEnforcer::new(ClearanceLevel::Confidential);
+        // Can read its own level
+        assert_eq!(
+            enforcer.redact(ClearanceLevel::Confidential, "secret data"),
+            "secret data"
+        );
+        // Cannot read higher level -> REDACTED
+        let redacted = enforcer.redact(ClearanceLevel::TopSecret, "top secret");
+        assert!(redacted.contains("REDACTED"));
+        assert!(redacted.contains("TOP_SECRET"));
+        // standalone helpers
+        assert_eq!(
+            redact_if_needed(ClearanceLevel::Internal, ClearanceLevel::Unclassified, "ok"),
+            "ok"
+        );
+        assert!(
+            redact_if_needed(ClearanceLevel::Unclassified, ClearanceLevel::Secret, "x")
+                .contains("REDACTED")
+        );
+        // filter_by_clearance
+        let docs = vec![
+            ("a".into(), ClearanceLevel::Unclassified, "a".into()),
+            ("b".into(), ClearanceLevel::TopSecret, "b".into()),
+            ("c".into(), ClearanceLevel::Confidential, "c".into()),
+        ];
+        let filtered = filter_by_clearance(ClearanceLevel::Confidential, docs);
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().any(|(id, _, _)| id == "a"));
+        assert!(filtered.iter().any(|(id, _, _)| id == "c"));
     }
 }

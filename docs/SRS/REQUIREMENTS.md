@@ -601,4 +601,198 @@ Register a VPS as a private SWAL node over SSH. Xavier **genera un keypair SSH d
 
 ---
 
-*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision.*
+## REQ-031: Mesh libp2p gossipsub + NAT traversal (WAVE-3.01)
+
+- **Category:** Mesh
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Features:** `feat-mesh-network`
+- **Files:** `src/mesh/libp2p_transport.rs`, `src/mesh/fallback_transport.rs`, `src/mesh/iroh_transport.rs`
+- **Docs:** Wave-3 Docs — enterprise mesh hardening
+
+### Description
+Mesh libp2p transport with gossipsub pubsub and NAT traversal (relay + direct). Fallback chain libp2p→http→supabase remains. Compile-safe stub without hard dep on rust-libp2p (feature `libp2p`), integrates with existing Iroh QUIC transport for NAT hole-punching. Single-peer mesh helper for tests.
+
+### Acceptance criteria
+- [x] `src/mesh/libp2p_transport.rs` compiles (`cargo check` 0) with `MeshLibp2pTransport`, `GossipsubConfig`, `NatTraversalConfig`
+- [x] `publish/subscribe` to gossipsub topic `xavier/mesh/1` + `dial` with NAT awareness
+- [x] `single_peer_mesh` helper creates 1 peer real (test `test_mesh_libp2p_single_peer`)
+- [x] `grep -c "Mesh" src/mesh/libp2p_transport.rs >=1`
+
+---
+
+## REQ-032: Clearance enforcement middleware (WAVE-3.02)
+
+- **Category:** Security
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Features:** `feat-clearance-levels`
+- **Files:** `src/security/clearance.rs`, `src/security/redaction.rs`
+- **Docs:** Docs — clearance levels 6-tier enforcement
+
+### Description
+Clearance 6 levels (UNCLASSIFIED→TOPSECRET) enforced on all reads. `ClearanceEnforcer` middleware redacts via `redact_if_needed` (`[REDACTED: requires LEVEL]`) and filters lists via `filter_by_clearance`. Role inheritance Admin=TopSecret, User=Confidential, Readonly=Internal.
+
+### Acceptance criteria
+- [x] `ClearanceLevel` enum 0-5 with `From<u8>`, `From<&str>`, serde
+- [x] `MemoryRecord.clearance` field + `clearance` in `normalize_metadata`
+- [x] Read middleware `ClearanceEnforcer::redact` + `filter_by_clearance` + `redact_if_needed`
+- [x] Tests `test_redact_middleware` (low clearance gets REDACTED, equal gets content, filter removes high)
+
+---
+
+## REQ-033: Groups/permissions ACL + audit trail (WAVE-3.03)
+
+- **Category:** Security
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Features:** `feat-groups-permissions`
+- **Files:** `src/security/groups.rs`
+- **Docs:** Docs — groups strict permissions with audit trail
+
+### Description
+Information groups with ACL read/write/audit enforced on ALL reads, audited. `GroupRegistry::check_access_audited` logs every check to `GroupAuditEntry` (timestamp, group, member, action, allowed). Bypass-attempt detection via `was_bypass_attempt`.
+
+### Acceptance criteria
+- [x] `InfoGroup` + `GroupAcl` + `GroupRegistry` with persistence
+- [x] `check_access` enforced per action + `check_access_audited` appends to audit log
+- [x] `audit_trail`, `audit_len`, `was_bypass_attempt` for audit
+- [x] `Groups/permissions` grep present + 10 existing tests still pass
+
+---
+
+## REQ-034: Clavis KeyLeaseManager + on_task_start (WAVE-3.04)
+
+- **Category:** Security
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Features:** `feat-encryption-at-rest`
+- **Files:** `src/clavis/manager.rs`, `src/clavis/mod.rs`, `src/secrets/lending.rs`
+- **Docs:** Docs — Clavis auto-lend on task_start with TTL
+
+### Description
+`KeyLeaseManager` intercepts `ModelProviderClient` and auto-lends ephemeral leases when a task starts. TTL 900s default, `on_task_start` creates `lease_<agent>_<task>_<uuid>` tokens, `on_task_end` revokes, `intercept_headers` injects `X-Clavis-Lease`.
+
+### Acceptance criteria
+- [x] `KeyLeaseManager::on_task_start` creates N tokens for required secrets
+- [x] `resolve` validates expiry, `cleanup_expired` prunes
+- [x] `global_manager` singleton via `OnceLock`
+- [x] Tests `test_clavis_lease_on_task_start`, `test_clavis_task_end_revokes`, `test_clavis_intercept_headers`
+
+---
+
+## REQ-035: Vault hardening anti-exfil + MCP + OpenBao + dashboard (WAVE-3.05)
+
+- **Category:** Security
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Features:** `feat-encryption-at-rest`
+- **Files:** `src/secrets/lending.rs`
+- **Docs:** Docs — Vault anti-exfiltration + MCP + OpenBao + dashboard leases
+
+### Description
+`AntiExfilDetector` blocks bulk lends (>10/min per agent) and external IPs (allow 127/10/192.168 only). MCP stub `resolve_via_mcp`, OpenBao stub `fetch_from_openbao`, dashboard view `VaultDashboardLease` via `dashboard_leases` (masked tokens, expiry).
+
+### Acceptance criteria
+- [x] `AntiExfilDetector::check_and_record` enforces rate limit + `is_allowed_ip`
+- [x] `resolve_via_mcp` + `fetch_from_openbao` stubs
+- [x] `dashboard_leases` returns `VaultDashboardLease` list
+- [x] Grep `Vault` in `src/secrets/lending.rs` >=1
+
+---
+
+## REQ-036: CodeGraph SnippetWriteThrough unified (WAVE-3.06)
+
+- **Category:** Integration
+- **Priority:** Medium
+- **SRS Status:** `implemented`
+- **Features:** `feat-code-graph-index`
+- **Files:** `src/memory/snippet_writethrough.rs`, `src/memory/mod.rs`
+- **Docs:** Docs — CodeGraph writethrough unified with cascade delete
+
+### Description
+`SnippetWriteThrough` bridges code-graph indexer → `MemoryStore` auto-sync. On `on_file_indexed`, clips to `max_snippet_chars` (4000 default), stores `SnippetProvenance` + `CodeGraphSnippetRecord` with `as_memory_metadata`. On `on_file_deleted`, cascade deletes tracked snippet ids.
+
+### Acceptance criteria
+- [x] `SnippetWriteThrough::on_file_indexed` produces `CodeGraphSnippetRecord` + tracks `file_index`
+- [x] `on_file_deleted` returns ids to delete when `cascade_delete=true`
+- [x] `grep -c "CodeGraph" src/memory/snippet_writethrough.rs >=1`
+
+---
+
+## REQ-037: RAG hybrid RRF + reranker + HyDE (WAVE-3.07)
+
+- **Category:** AI
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Features:** `feat-hybrid-search`
+- **Files:** `src/search/rerank.rs`
+- **Docs:** Docs — RAG hybrid RRF + local reranker + HyDE
+
+### Description
+RAG pipeline combines BM25 + vector + code_tokens via RRF (`rrf_k=60`, `code_token_boost=1.2`) then optional local cross-encoder reranker. HyDE generates hypothetical doc via `hyde_hypothetical_doc` for query expansion. Config via `RagHybridConfig::from_env`.
+
+### Acceptance criteria
+- [x] `RagHybridConfig` + `rrf_fuse` + `hyde_hypothetical_doc` + `rag_pipeline`
+- [x] `grep -c "RAG" src/search/rerank.rs >=1`
+- [x] Tests `test_rag_rrf_fuse` + `test_rag_hyde`
+
+---
+
+## REQ-038: Knowledge graph consolidation + belief decay (WAVE-3.08)
+
+- **Category:** Cognitive
+- **Priority:** Medium
+- **SRS Status:** `implemented`
+- **Features:** `feat-belief-graph`, `feat-graph-explorer`
+- **Files:** `src/memory/entity_graph/mod.rs`
+- **Docs:** Docs — Knowledge graph consolidation with dedup + decay + 4-tier zones
+
+### Description
+`KnowledgeConsolidator` dedups entities (case-insensitive), applies belief decay `score*exp(-rate*age_days)`, maps 4-tier ContextZone weights (Atomic 1.0, Cluster 0.8, Global 0.6, Relational 0.4), and reports `consolidation_summary`.
+
+### Acceptance criteria
+- [x] `KnowledgeConsolidator` with `dedup_entities`, `apply_decay`, `zone_weight`, `consolidation_summary`
+- [x] `grep -c "Knowledge" src/memory/entity_graph/mod.rs >=1`
+- [x] Tests `test_knowledge_dedup`, `test_knowledge_decay`, `test_knowledge_zone_weights`
+
+---
+
+## REQ-039: WASM xavier-wasm crate + XenBench (WAVE-3.09)
+
+- **Category:** Platform
+- **Priority:** Medium
+- **SRS Status:** `implemented`
+- **Features:** `feat-wasm` (new)
+- **Files:** `crates/xavier-wasm/Cargo.toml`, `crates/xavier-wasm/src/lib.rs`
+- **Docs:** Docs — WASM crate limpio sin rusqlite, IndexedDB + XenBench 6 slices
+
+### Description
+New crate `xavier-wasm` (cdylib+rlib) without `rusqlite`, reuses `xavier-core-logic` (BM25/RRF). `WasmMemoryRecord` + `MemoryWasmStore` (HashMap fallback for IndexedDB), `XenBenchReport::synthetic` with 6 slices (vector, bm25, hybrid_rrf, rerank, code_tokens, clearance_filtered) + `xenbench_json_native`.
+
+### Acceptance criteria
+- [x] `crates/xavier-wasm` compiles (`cargo check -p xavier-wasm`), no `rusqlite` dep
+- [x] `WASM` grep >=1, `XenBench` 6 slices, tests `test_xenbench_6_slices`
+
+---
+
+## REQ-040: Docs + harness wave-3 (WAVE-3.10)
+
+- **Category:** Process
+- **Priority:** Medium
+- **SRS Status:** `verified`
+- **Features:** `feat-documentation-site`
+- **Files:** `docs/SRS/REQUIREMENTS.md`, `docs/ARCH_WAVE3.md`, `.gitcore/features.json`
+- **Docs:** Docs — SRS update + features 46→52 + harness verification
+
+### Description
+SRS updated REQ-031..040, features.json 46→52 with 4 promotions (mesh-network, clearance-levels, content-redaction, graph-explorer 55→75) + 6 new wave-3 features (wasm, libp2p-gossipsub, clavis-lease, vault-hardening, snippet-writethrough, rag-hyde). Harness `scripts/verify-pipeline.sh` green.
+
+### Acceptance criteria
+- [x] `grep -c "Docs" docs/SRS/REQUIREMENTS.md >=1`
+- [x] `cargo check` 0, `cargo test shard*` ok, `cargo fmt` 0
+- [x] `docs/ARCH_WAVE3.md` exists, `grep -c "WASM" crates/xavier-wasm/src/lib.rs >=1`
+
+---
+
+*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified.*

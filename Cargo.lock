@@ -16284,6 +16284,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "xavier-wasm"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
+ "wasm-bindgen",
+ "xavier-core-logic",
+]
+
+[[package]]
 name = "xml-rs"
 version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"

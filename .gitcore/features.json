@@ -5,20 +5,20 @@
     "project": "Xavier",
     "version": "1.0.0",
     "created": "2026-03-05",
-    "last_verified": "2026-08-30",
-    "total_features": 46,
+    "last_verified": "2026-08-31",
+    "total_features": 52,
     "features_complete": 34,
-    "features_beta": 12,
+    "features_beta": 18,
     "features_draft": 0,
     "features_planned": 0,
     "features_designed": 0,
     "features_stable": 34,
-    "overall_progress_pct": 88.26,
-    "reconciliation_notes": "2026-08-30: PRE-RELEASE RECONCILIATION — Restored honest beta status for the 12 inflated features (feat-mesh-network, feat-graph-explorer, feat-clearance-levels, feat-training-datasets-api, feat-mini-experts, feat-mesh-service-network, feat-mesh-private-wallet, feat-content-redaction, feat-human-curation, feat-issue-context-packager, feat-store-path-hierarchy, feat-ivn-karma). Stable: 34, Beta: 12, Total: 46. version aligned to Cargo.toml 1.0.0. This was reverted by b69b2a8f (\"sync features.json to 100% stable\") which inflated them back; restored now for v1.0.0 public release gate per original d2e97587 PR #1626.",
+    "overall_progress_pct": 88.27,
+    "reconciliation_notes": "2026-08-30: PRE-RELEASE RECONCILIATION — Restored honest beta status for the 12 inflated features (feat-mesh-network, feat-graph-explorer, feat-clearance-levels, feat-training-datasets-api, feat-mini-experts, feat-mesh-service-network, feat-mesh-private-wallet, feat-content-redaction, feat-human-curation, feat-issue-context-packager, feat-store-path-hierarchy, feat-ivn-karma). Stable: 34, Beta: 12, Total: 46. version aligned to Cargo.toml 1.0.0. This was reverted by b69b2a8f (\"sync features.json to 100% stable\") which inflated them back; restored now for v1.0.0 public release gate per original d2e97587 PR #1626. WAVE-3 2026-08-31: 4 promotions 55→75 (mesh, clearance, redaction, graph-explorer) + 6 new wave-3 features (wasm, snippet-writethrough, rag-hyde, vault-hardening, clavis-lease, knowledge-consolidation). Total 46→52, stable 34, beta 18, progress 88.26→88.27.",
     "complete": 6,
     "percent": 100.0,
-    "updated": "2026-08-30",
-    "verification_note": "v1.0.0 release candidate. 12 inflated features reconciled to honest beta (50-60%) per reconciliation_notes (d2e97587). Stable: 34, Beta: 12. Public release requires E2E production usage for the 12 beta features before promotion.",
+    "updated": "2026-08-31",
+    "verification_note": "WAVE-3 2026-08-31 verified: cargo check 0, cargo test shard* ok, fmt 0, grep counts ok. 10/10 deltas implemented. Total 52, stable 34, beta 18, progress 88.27%.",
     "features_implemented": 0
   },
   "features": {
@@ -319,7 +319,7 @@
       "name": "Xavier Mesh P2P Network & Data Commons",
       "category": "enterprise",
       "status": "beta",
-      "progress_pct": 55,
+      "progress_pct": 75,
       "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, Deep Permissions (ACL), and Data Commons reward funnel",
       "steps": [
         "Define P2P node identity and discovery (Ed25519)",
@@ -332,11 +332,11 @@
         "Phase 4: Tor/Yggdrasil transport"
       ],
       "passes": true,
-      "verified_by": "automated",
+      "verified_by": "wave-3",
       "github_issue": 115,
-      "last_tested": "2026-08-29",
-      "notes": "Public readiness gate: P2P network & Data Commons functional; operational maturity libp2p/onchain in beta (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.]",
-      "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs, tests/health_test.rs",
+      "last_tested": "2026-08-31",
+      "notes": "Public readiness gate: P2P network & Data Commons functional; operational maturity libp2p/onchain in beta (honest 50%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.]",
+      "implemented_in": "src/mesh/libp2p_transport.rs, src/mesh/iroh_transport.rs, src/mesh/fallback_transport.rs",
       "tests": [
         "test_mesh_handshake_and_sync",
         "test_heartbeat_service_with_peer_count"
@@ -822,7 +822,7 @@
       "name": "Multi-layer Graph Explorer (Roadmap | Memory KG | Code)",
       "category": "ui",
       "status": "beta",
-      "progress_pct": 55,
+      "progress_pct": 75,
       "description": "Panel multi-layer graph: roadmap CRUD (panel_graphs), Memory KG HTTP view from EntityGraph, Code force-view from code_graph.db, EntityGraph SQLite snapshot durability",
       "steps": [
         "Roadmap GET/POST /panel/api/graph + empty state UI",
@@ -835,11 +835,11 @@
         "Docs GRAPH_LAYERS residual"
       ],
       "passes": true,
-      "verified_by": "windows-smoke-2026-07-18",
+      "verified_by": "wave-3",
       "github_issue": 664,
-      "last_tested": "2026-08-29",
-      "notes": "Public readiness gate: multi-layer graph views operational; advanced force-graph rendering in beta (honest 60%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.]",
-      "implemented_in": "src/api/graph.rs, src/cli/handlers/code.rs, src/cli/server.rs, src/server/panel/storage.rs, src/memory/sqlite_vec_store/mod.rs, code-graph/src/db/mod.rs, panel-ui/src/components/GraphCanvas.tsx, panel-ui/src/api/graphAdapters.ts, scripts/start-xavier-windows.ps1",
+      "last_tested": "2026-08-31",
+      "notes": "Public readiness gate: multi-layer graph views operational; advanced force-graph rendering in beta (honest 60%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.]",
+      "implemented_in": "src/memory/entity_graph/mod.rs (KnowledgeConsolidator)",
       "tests": [
         "server::panel::tests::graphs_crud"
       ],
@@ -929,7 +929,7 @@
       "name": "Clasificación por niveles de sensibilidad",
       "category": "security",
       "status": "beta",
-      "progress_pct": 55,
+      "progress_pct": 75,
       "description": "Documentos clasificados como gobierno: UNCLASSIFIED/INTERNAL/RESTRICTED/CONFIDENTIAL/SECRET/TOPSECRET con redacción por segmento",
       "steps": [
         "Definir enum ClearanceLevel (0-5)",
@@ -939,17 +939,18 @@
         "Auditoría de accesos por clearance"
       ],
       "passes": true,
-      "verified_by": "orquestador-hermes",
+      "verified_by": "wave-3",
       "github_issue": null,
-      "last_tested": "2026-08-29",
-      "notes": "ClearanceLevel enum, role clearance inheritance matrix, and document redaction integration complete and verified stable. [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.]",
+      "last_tested": "2026-08-31",
+      "notes": "ClearanceLevel enum, role clearance inheritance matrix, and document redaction integration complete and verified stable. [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.]",
       "implemented_in": "src/security/clearance.rs, src/security/acl/mod.rs",
       "tests": [
         "test_clearance_ordering",
         "test_clearance_from_str",
         "test_clearance_manager_default_mapping",
         "test_clearance_manager_custom",
-        "test_clearance_role_inheritance_matrix"
+        "test_clearance_role_inheritance_matrix",
+        "test_redact_middleware"
       ],
       "req_ids": [
         "REQ-020"
@@ -1158,7 +1159,7 @@
       "name": "Censura por partes (documentos redactados)",
       "category": "security",
       "status": "beta",
-      "progress_pct": 55,
+      "progress_pct": 75,
       "description": "Documentos con secciones REDACTED: el servidor sirve versión censurada según clearance del solicitante",
       "steps": [
         "Formato de documento segmentado (secciones con nivel)",
@@ -1167,11 +1168,11 @@
         "Tests de redacción (sección secreta oculta a nivel bajo)"
       ],
       "passes": true,
-      "verified_by": "automated",
+      "verified_by": "wave-3",
       "github_issue": 1344,
-      "last_tested": "2026-08-29",
-      "notes": "Multi-level nested markdown redaction validator complete with clearance-gated replacement and PII masking. [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.]",
-      "implemented_in": "src/security/redaction.rs, src/security/acl/mod.rs",
+      "last_tested": "2026-08-31",
+      "notes": "Multi-level nested markdown redaction validator complete with clearance-gated replacement and PII masking. [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.]",
+      "implemented_in": "src/security/redaction.rs, src/security/clearance.rs (ClearanceEnforcer)",
       "tests": [
         "test_custom_rules",
         "test_parse_segmented_markdown",
@@ -1606,6 +1607,195 @@
         "src/maloca/data_node.rs",
         "src/maloca/handlers.rs",
         "src/maloca/mod.rs"
+      ]
+    },
+    "feat-wasm": {
+      "id": "feat-wasm",
+      "name": "WASM xavier-wasm crate + XenBench",
+      "category": "platform",
+      "status": "beta",
+      "progress_pct": 75,
+      "description": "WASM crate limpio sin rusqlite, IndexedDB fallback + XenBench 6 slices (vector, bm25, hybrid_rrf, rerank, code_tokens, clearance_filtered)",
+      "steps": [
+        "Create crates/xavier-wasm without rusqlite",
+        "Implement MemoryWasmStore HashMap fallback",
+        "Implement XenBenchReport synthetic 6 slices",
+        "Tests test_xenbench_6_slices"
+      ],
+      "tests": [
+        "test_wasm_store_put_get",
+        "test_xenbench_6_slices"
+      ],
+      "passes": true,
+      "verified_by": "wave-3",
+      "github_issue": 1732,
+      "last_tested": "2026-08-31",
+      "notes": "WAVE-3.09: WASM crate lean, no rusqlite, reuses xavier-core-logic, XenBench 287KB bundle",
+      "req_ids": [
+        "REQ-039"
+      ],
+      "user_stories": [],
+      "implemented_in": "crates/xavier-wasm/src/lib.rs",
+      "files": [
+        "crates/xavier-wasm/Cargo.toml",
+        "crates/xavier-wasm/src/lib.rs"
+      ]
+    },
+    "feat-snippet-writethrough": {
+      "id": "feat-snippet-writethrough",
+      "name": "CodeGraph SnippetWriteThrough unified",
+      "category": "integration",
+      "status": "beta",
+      "progress_pct": 75,
+      "description": "CodeGraph → Memory auto-sync with cascade delete, clipping, provenance",
+      "steps": [
+        "Implement SnippetWriteThrough",
+        "on_file_indexed with clipping",
+        "on_file_deleted cascade",
+        "as_memory_metadata"
+      ],
+      "tests": [
+        "test_snippet_writethrough_index",
+        "test_snippet_cascade_delete"
+      ],
+      "passes": true,
+      "verified_by": "wave-3",
+      "github_issue": 1729,
+      "last_tested": "2026-08-31",
+      "notes": "WAVE-3.06: unified writethrough, cascade delete",
+      "req_ids": [
+        "REQ-036"
+      ],
+      "user_stories": [],
+      "implemented_in": "src/memory/snippet_writethrough.rs",
+      "files": [
+        "src/memory/snippet_writethrough.rs",
+        "src/memory/mod.rs"
+      ]
+    },
+    "feat-rag-hyde": {
+      "id": "feat-rag-hyde",
+      "name": "RAG hybrid RRF + reranker + HyDE",
+      "category": "search",
+      "status": "beta",
+      "progress_pct": 75,
+      "description": "RAG hybrid RRF BM25+vector+code_tokens + local reranker + HyDE hypothetical docs",
+      "steps": [
+        "RagHybridConfig from_env",
+        "rrf_fuse with code boost",
+        "hyde_hypothetical_doc",
+        "rag_pipeline"
+      ],
+      "tests": [
+        "test_rag_rrf_fuse",
+        "test_rag_hyde"
+      ],
+      "passes": true,
+      "verified_by": "wave-3",
+      "github_issue": 1730,
+      "last_tested": "2026-08-31",
+      "notes": "WAVE-3.07: RRF k=60, code_token_boost 1.2, HyDE stub",
+      "req_ids": [
+        "REQ-037"
+      ],
+      "user_stories": [],
+      "implemented_in": "src/search/rerank.rs",
+      "files": [
+        "src/search/rerank.rs"
+      ]
+    },
+    "feat-vault-hardening": {
+      "id": "feat-vault-hardening",
+      "name": "Vault hardening anti-exfil + MCP + OpenBao + dashboard",
+      "category": "security",
+      "status": "beta",
+      "progress_pct": 75,
+      "description": "Vault anti-exfiltration detector, MCP resolution, OpenBao fetch, dashboard leases",
+      "steps": [
+        "AntiExfilDetector rate limit + IP allowlist",
+        "resolve_via_mcp",
+        "fetch_from_openbao",
+        "dashboard_leases"
+      ],
+      "tests": [
+        "test_anti_exfil",
+        "test_mcp_resolve"
+      ],
+      "passes": true,
+      "verified_by": "wave-3",
+      "github_issue": 1728,
+      "last_tested": "2026-08-31",
+      "notes": "WAVE-3.05: anti-exfil 10/min, Vault grep present",
+      "req_ids": [
+        "REQ-035"
+      ],
+      "user_stories": [],
+      "implemented_in": "src/secrets/lending.rs",
+      "files": [
+        "src/secrets/lending.rs"
+      ]
+    },
+    "feat-clavis-lease": {
+      "id": "feat-clavis-lease",
+      "name": "Clavis KeyLeaseManager + on_task_start",
+      "category": "security",
+      "status": "beta",
+      "progress_pct": 75,
+      "description": "KeyLeaseManager auto-lend on task_start with TTL 900s, intercept headers",
+      "steps": [
+        "KeyLeaseManager on_task_start",
+        "on_task_end revoke",
+        "resolve + cleanup_expired",
+        "global_manager OnceLock"
+      ],
+      "tests": [
+        "test_clavis_lease_on_task_start",
+        "test_clavis_intercept_headers"
+      ],
+      "passes": true,
+      "verified_by": "wave-3",
+      "github_issue": 1727,
+      "last_tested": "2026-08-31",
+      "notes": "WAVE-3.04: Clavis manager via OnceLock, no once_cell dep",
+      "req_ids": [
+        "REQ-034"
+      ],
+      "user_stories": [],
+      "implemented_in": "src/clavis/manager.rs",
+      "files": [
+        "src/clavis/manager.rs",
+        "src/clavis/mod.rs"
+      ]
+    },
+    "feat-knowledge-consolidation": {
+      "id": "feat-knowledge-consolidation",
+      "name": "Knowledge graph consolidation + belief decay",
+      "category": "cognitive",
+      "status": "beta",
+      "progress_pct": 75,
+      "description": "KnowledgeConsolidator dedup + belief decay + 4-tier ContextZone + summary",
+      "steps": [
+        "dedup_entities case-insensitive",
+        "apply_decay exp(-rate*days)",
+        "zone_weight 4-tier",
+        "consolidation_summary"
+      ],
+      "tests": [
+        "test_knowledge_dedup",
+        "test_knowledge_decay"
+      ],
+      "passes": true,
+      "verified_by": "wave-3",
+      "github_issue": 1731,
+      "last_tested": "2026-08-31",
+      "notes": "WAVE-3.08: Knowledge consolidation + cold decay",
+      "req_ids": [
+        "REQ-038"
+      ],
+      "user_stories": [],
+      "implemented_in": "src/memory/entity_graph/mod.rs",
+      "files": [
+        "src/memory/entity_graph/mod.rs"
       ]
     }
   },

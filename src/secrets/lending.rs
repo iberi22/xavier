@@ -3,6 +3,7 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use super::SecretError;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, SystemTime};
@@ -142,4 +143,113 @@ impl<A: AuditLogger> KeyLendingEngine<A> {
             }
         }
     }
+
+    /// Active lease count
+    pub fn lease_count(&self) -> usize {
+        self.leases.len()
+    }
+}
+
+/// Vault anti-exfiltration detector + MCP + OpenBao stub (WAVE-3.05)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AntiExfilDetector {
+    pub max_lends_per_minute: u32,
+    pub block_external_ips: bool,
+    pub recent_lends: Vec<(String, SystemTime)>,
+}
+
+impl Default for AntiExfilDetector {
+    fn default() -> Self {
+        Self {
+            max_lends_per_minute: 10,
+            block_external_ips: true,
+            recent_lends: Vec::new(),
+        }
+    }
+}
+
+impl AntiExfilDetector {
+    pub fn new(max_per_min: u32) -> Self {
+        Self {
+            max_lends_per_minute: max_per_min,
+            block_external_ips: true,
+            recent_lends: Vec::new(),
+        }
+    }
+
+    pub fn check_and_record(&mut self, agent_id: &str) -> Result<(), SecretError> {
+        let now = SystemTime::now();
+        self.recent_lends.retain(|(_, t)| {
+            now.duration_since(*t)
+                .unwrap_or(Duration::from_secs(999))
+                .as_secs()
+                < 60
+        });
+        let count = self
+            .recent_lends
+            .iter()
+            .filter(|(a, _)| a == agent_id)
+            .count();
+        if count as u32 >= self.max_lends_per_minute {
+            return Err(SecretError::ApprovalDenied(format!(
+                "Vault anti-exfil: agent {} exceeded {} lends/min",
+                agent_id, self.max_lends_per_minute
+            )));
+        }
+        self.recent_lends.push((agent_id.to_string(), now));
+        Ok(())
+    }
+
+    pub fn is_allowed_ip(&self, ip: &str) -> bool {
+        if !self.block_external_ips {
+            return true;
+        }
+        ip.starts_with("127.") || ip.starts_with("10.") || ip.starts_with("192.168.") || ip == "::1"
+    }
+}
+
+pub fn resolve_via_mcp(secret_id: &str, mcp_endpoint: &str) -> Result<String, SecretError> {
+    if mcp_endpoint.is_empty() {
+        return Err(SecretError::NotFound("MCP endpoint empty".into()));
+    }
+    Ok(format!("mcp_resolved:{secret_id}"))
+}
+
+pub fn fetch_from_openbao(secret_id: &str, openbao_url: &str) -> Result<String, SecretError> {
+    if openbao_url.is_empty() {
+        return Err(SecretError::NotFound("OpenBao URL empty".into()));
+    }
+    Ok(format!("openbao:{secret_id}"))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultDashboardLease {
+    pub session_token_masked: String,
+    pub agent_id: String,
+    pub expires_in_secs: u64,
+    pub is_expired: bool,
+}
+
+pub fn dashboard_leases<A: AuditLogger>(engine: &KeyLendingEngine<A>) -> Vec<VaultDashboardLease> {
+    engine
+        .leases
+        .values()
+        .map(|l| {
+            let is_expired = SystemTime::now() > l.expires_at;
+            let expires_in_secs = l
+                .expires_at
+                .duration_since(SystemTime::now())
+                .unwrap_or(Duration::from_secs(0))
+                .as_secs();
+            VaultDashboardLease {
+                session_token_masked: format!(
+                    "{}...",
+                    &l.session_token[..4.min(l.session_token.len())]
+                ),
+                agent_id: l.agent_id.clone(),
+                expires_in_secs,
+                is_expired,
+            }
+        })
+        .collect()
 }

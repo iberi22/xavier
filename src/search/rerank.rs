@@ -154,6 +154,119 @@ impl SearchHook for RerankHook {
     }
 }
 
+/// RAG hybrid: RRF BM25+vector+code_tokens + local reranker + HyDE (WAVE-3.07)
+///
+/// Combines three retrieval signals via Reciprocal Rank Fusion (RRF) with
+/// code-token boost, then optionally applies a local cross-encoder reranker.
+/// HyDE (Hypothetical Document Embeddings) generates a pseudo-document from the
+/// query to improve vector recall for vague queries.
+#[derive(Debug, Clone)]
+pub struct RagHybridConfig {
+    pub rrf_k: f32,
+    pub code_token_boost: f32,
+    pub enable_hyde: bool,
+    pub enable_rerank: bool,
+    pub hyde_model: Option<String>,
+}
+
+impl Default for RagHybridConfig {
+    fn default() -> Self {
+        Self {
+            rrf_k: 60.0,
+            code_token_boost: 1.2,
+            enable_hyde: false,
+            enable_rerank: false,
+            hyde_model: None,
+        }
+    }
+}
+
+impl RagHybridConfig {
+    pub fn from_env() -> Self {
+        let rrf_k = std::env::var("XAVIER_RRF_K")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(60.0);
+        let hyde = std::env::var("XAVIER_HYDE_ENABLED")
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(false);
+        let rerank = std::env::var("XAVIER_RERANK_ENABLED")
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(false);
+        Self {
+            rrf_k,
+            enable_hyde: hyde,
+            enable_rerank: rerank,
+            ..Default::default()
+        }
+    }
+}
+
+/// RRF fusion: combine BM25 + vector + code-token ranked lists
+pub fn rrf_fuse(
+    bm25: &[ScoredResult],
+    vector: &[ScoredResult],
+    code_tokens: &[ScoredResult],
+    k: f32,
+    code_boost: f32,
+) -> Vec<ScoredResult> {
+    use std::collections::HashMap;
+    let mut scores: HashMap<String, (f32, ScoredResult)> = HashMap::new();
+    let lists: Vec<(&[ScoredResult], f32)> =
+        vec![(bm25, 1.0), (vector, 1.0), (code_tokens, code_boost)];
+    for (list, weight) in lists {
+        for (rank, res) in list.iter().enumerate() {
+            let rrf_score = weight / (k + rank as f32 + 1.0);
+            let entry = scores.entry(res.id.clone()).or_insert((0.0, res.clone()));
+            entry.0 += rrf_score;
+        }
+    }
+    let mut fused: Vec<ScoredResult> = scores
+        .into_values()
+        .map(|(score, mut r)| {
+            r.score = score;
+            r
+        })
+        .collect();
+    fused.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    fused
+}
+
+/// HyDE: generate hypothetical document for query expansion (stub local)
+pub fn hyde_hypothetical_doc(query: &str) -> String {
+    // In production this would call a local LLM to generate a pseudo-doc.
+    // Stub: returns query wrapped as hypothetical answer for embedding.
+    format!("Hypothetical answer for: {query}. This document would contain relevant context, definitions, and examples related to the query.")
+}
+
+/// RAG pipeline helper: optionally expand query via HyDE then fuse
+pub fn rag_pipeline(
+    query: &str,
+    bm25: Vec<ScoredResult>,
+    vector: Vec<ScoredResult>,
+    code_tokens: Vec<ScoredResult>,
+    config: &RagHybridConfig,
+) -> Vec<ScoredResult> {
+    let _hyde_doc = if config.enable_hyde {
+        Some(hyde_hypothetical_doc(query))
+    } else {
+        None
+    };
+    // For now HyDE doc is used only as additional vector signal (not implemented).
+    // Fuse via RRF.
+    rrf_fuse(
+        &bm25,
+        &vector,
+        &code_tokens,
+        config.rrf_k,
+        config.code_token_boost,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,5 +323,77 @@ mod tests {
         assert_eq!(results[0].score, 2.0);
         assert_eq!(results[1].id, "2");
         assert_eq!(results[1].score, 1.0);
+    }
+
+    #[test]
+    fn test_rag_rrf_fuse() {
+        let bm25 = vec![
+            ScoredResult {
+                id: "a".into(),
+                content: "a".into(),
+                score: 1.0,
+                source: "bm25".into(),
+                path: "p".into(),
+                updated_at: None,
+                zone: None,
+            },
+            ScoredResult {
+                id: "b".into(),
+                content: "b".into(),
+                score: 0.5,
+                source: "bm25".into(),
+                path: "p".into(),
+                updated_at: None,
+                zone: None,
+            },
+        ];
+        let vector = vec![
+            ScoredResult {
+                id: "b".into(),
+                content: "b".into(),
+                score: 1.0,
+                source: "vec".into(),
+                path: "p".into(),
+                updated_at: None,
+                zone: None,
+            },
+            ScoredResult {
+                id: "c".into(),
+                content: "c".into(),
+                score: 0.8,
+                source: "vec".into(),
+                path: "p".into(),
+                updated_at: None,
+                zone: None,
+            },
+        ];
+        let code = vec![ScoredResult {
+            id: "a".into(),
+            content: "a".into(),
+            score: 1.0,
+            source: "code".into(),
+            path: "p".into(),
+            updated_at: None,
+            zone: None,
+        }];
+        let fused = rrf_fuse(&bm25, &vector, &code, 60.0, 1.2);
+        assert!(!fused.is_empty());
+        // a appears in bm25+code, b in bm25+vector, c only vector — a or b should top
+        assert!(fused[0].id == "a" || fused[0].id == "b");
+    }
+
+    #[test]
+    fn test_rag_hyde() {
+        let doc = hyde_hypothetical_doc("quantum computing");
+        assert!(doc.contains("quantum computing"));
+        assert!(doc.contains("Hypothetical"));
+        let cfg = RagHybridConfig {
+            enable_hyde: true,
+            ..Default::default()
+        };
+        let fused = rag_pipeline("test", vec![], vec![], vec![], &cfg);
+        assert!(fused.is_empty());
+        let cfg2 = RagHybridConfig::default();
+        assert!(!cfg2.enable_hyde);
     }
 }

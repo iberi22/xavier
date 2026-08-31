@@ -51,6 +51,7 @@ pub mod heartbeat;
 #[cfg(feature = "mesh")]
 pub mod iroh_transport;
 pub mod keystore;
+pub mod libp2p_transport;
 pub mod maturity;
 pub mod namespace;
 pub mod network;

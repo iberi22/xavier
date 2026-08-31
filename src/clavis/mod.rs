@@ -9,6 +9,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock, RwLock};
 use uuid::Uuid;
 
+pub mod manager;
+
 /// Mask a key safely showing only the first 4 and last 4 characters.
 /// If the key is shorter than or equal to 8 characters, it handles masking gracefully.
 pub fn mask_key(key: &str) -> String {

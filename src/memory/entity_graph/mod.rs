@@ -914,3 +914,105 @@ mod tests {
         );
     }
 }
+
+// ── WAVE-3.08 Knowledge graph consolidation + belief decay + 4-tier Context Zone + dedup ──
+
+/// Knowledge graph consolidation helper (WAVE-3.08)
+/// Consolidates duplicate entities, applies belief decay, and maps to 4-tier ContextZone.
+#[derive(Debug, Clone)]
+pub struct KnowledgeConsolidator {
+    pub dedup_threshold: f32,
+    pub decay_rate: f32,
+    pub zone_weights: [f32; 4],
+}
+
+impl Default for KnowledgeConsolidator {
+    fn default() -> Self {
+        Self {
+            dedup_threshold: 0.85,
+            decay_rate: 0.02,
+            zone_weights: [1.0, 0.8, 0.6, 0.4], // Atomic, Cluster, Global, Relational
+        }
+    }
+}
+
+impl KnowledgeConsolidator {
+    pub fn new(dedup_threshold: f32, decay_rate: f32) -> Self {
+        Self {
+            dedup_threshold,
+            decay_rate,
+            zone_weights: [1.0, 0.8, 0.6, 0.4],
+        }
+    }
+
+    /// Deduplicate entities by name similarity (stub: exact + case-insensitive)
+    pub fn dedup_entities(&self, names: Vec<String>) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for n in names {
+            let key = n.to_lowercase();
+            if seen.insert(key) {
+                out.push(n);
+            }
+        }
+        out
+    }
+
+    /// Apply belief decay to a score
+    pub fn apply_decay(&self, score: f32, age_days: f32) -> f32 {
+        score * (-self.decay_rate * age_days).exp()
+    }
+
+    /// Map to 4-tier ContextZone weight
+    pub fn zone_weight(&self, zone: &str) -> f32 {
+        match zone {
+            "atomic" => self.zone_weights[0],
+            "cluster" => self.zone_weights[1],
+            "global" => self.zone_weights[2],
+            "relational" => self.zone_weights[3],
+            _ => 0.5,
+        }
+    }
+
+    /// Consolidation: returns summary of Knowledge graph state
+    pub fn consolidation_summary(&self, entity_count: usize, relation_count: usize) -> String {
+        format!(
+            "Knowledge graph: {} entities, {} relations, dedup_threshold={}, decay_rate={}, zones=Atomic/Cluster/Global/Relational",
+            entity_count, relation_count, self.dedup_threshold, self.decay_rate
+        )
+    }
+}
+
+#[cfg(test)]
+mod knowledge_tests {
+    use super::KnowledgeConsolidator;
+
+    #[test]
+    fn test_knowledge_dedup() {
+        let k = KnowledgeConsolidator::default();
+        let names = vec![
+            "Alice".into(),
+            "alice".into(),
+            "Bob".into(),
+            "BOB".into(),
+            "Carol".into(),
+        ];
+        let deduped = k.dedup_entities(names);
+        assert_eq!(deduped.len(), 3);
+    }
+
+    #[test]
+    fn test_knowledge_decay() {
+        let k = KnowledgeConsolidator::default();
+        let decayed = k.apply_decay(1.0, 10.0);
+        assert!(decayed < 1.0 && decayed > 0.0);
+        assert!(k.apply_decay(1.0, 0.0) == 1.0);
+    }
+
+    #[test]
+    fn test_knowledge_zone_weights() {
+        let k = KnowledgeConsolidator::default();
+        assert!(k.zone_weight("atomic") > k.zone_weight("relational"));
+        assert!(k.consolidation_summary(10, 5).contains("Knowledge graph"));
+    }
+}
