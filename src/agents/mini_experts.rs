@@ -28,6 +28,26 @@ pub struct MiniExpertEntry {
 }
 
 impl MiniExpertEntry {
+    /// Returns the unique identifier for the mini-expert (maps to name).
+    pub fn id(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the source dataset ID.
+    pub fn dataset_id(&self) -> &str {
+        &self.source_dataset
+    }
+
+    /// Returns the GGUF model path.
+    pub fn gguf_path(&self) -> &str {
+        &self.model_gguf_path
+    }
+
+    /// Returns the Ollama model name (maps to name).
+    pub fn ollama_model(&self) -> &str {
+        &self.name
+    }
+
     /// Converts a MiniExpertEntry to MiniExpertConfig for use in ProviderRouter.
     pub fn to_config(&self) -> MiniExpertConfig {
         MiniExpertConfig {
@@ -52,6 +72,11 @@ impl MiniExpertRegistry {
         PathBuf::from(".xavier/mini_experts.json")
     }
 
+    /// Returns the data storage path (`data/mini_experts.json`).
+    pub fn data_path() -> PathBuf {
+        PathBuf::from("data/mini_experts.json")
+    }
+
     /// Creates a new MiniExpertRegistry backed by the given path and loads any existing records.
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
         let storage_path = path.as_ref().to_path_buf();
@@ -66,6 +91,11 @@ impl MiniExpertRegistry {
     /// Loads or creates the default registry at `.xavier/mini_experts.json`.
     pub fn load_default() -> Self {
         Self::new(Self::default_path())
+    }
+
+    /// Loads or creates the registry at `data/mini_experts.json`.
+    pub fn load_data_path() -> Self {
+        Self::new(Self::data_path())
     }
 
     /// Reloads entries from disk.
@@ -205,5 +235,33 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_mini_expert_entry_accessors() {
+        let entry = MiniExpertEntry {
+            name: "accessors-expert".to_string(),
+            segment: "security".to_string(),
+            language: "en".to_string(),
+            clearance: 2,
+            source_dataset: "sec-ds".to_string(),
+            model_gguf_path: "/path/sec.gguf".to_string(),
+            provider: "local".to_string(),
+            endpoint: "http://localhost:11434".to_string(),
+            api_key: None,
+        };
+
+        assert_eq!(entry.id(), "accessors-expert");
+        assert_eq!(entry.dataset_id(), "sec-ds");
+        assert_eq!(entry.gguf_path(), "/path/sec.gguf");
+        assert_eq!(entry.ollama_model(), "accessors-expert");
+    }
+
+    #[test]
+    fn test_data_path_registry() {
+        assert_eq!(
+            MiniExpertRegistry::data_path(),
+            PathBuf::from("data/mini_experts.json")
+        );
     }
 }

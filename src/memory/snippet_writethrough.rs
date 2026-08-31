@@ -61,8 +61,10 @@ impl SnippetWriteThrough {
     }
 
     pub fn with_defaults(workspace: &str) -> Self {
-        let mut cfg = SnippetWriteThroughConfig::default();
-        cfg.workspace = workspace.to_string();
+        let cfg = SnippetWriteThroughConfig {
+            workspace: workspace.to_string(),
+            ..Default::default()
+        };
         Self::new(cfg)
     }
 
@@ -220,8 +222,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_snippet_clipping() {
-        let mut cfg = SnippetWriteThroughConfig::default();
-        cfg.max_snippet_chars = 10;
+        let cfg = SnippetWriteThroughConfig {
+            max_snippet_chars: 10,
+            ..Default::default()
+        };
         let swt = SnippetWriteThrough::new(cfg);
         let recs = swt
             .on_file_indexed(
