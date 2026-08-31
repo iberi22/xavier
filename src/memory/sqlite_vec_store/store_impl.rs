@@ -9,7 +9,6 @@ use sha2::{Digest, Sha256};
 use std::any::Any;
 
 use crate::checkpoint::Checkpoint;
-use crate::codebase::connection_manager::ConnectionManager;
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::schema::MemoryQueryFilters;
 use crate::memory::sqlite_store::{TABLE_CHECKPOINTS, TABLE_MEMORIES};
@@ -66,7 +65,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn compact(&self) -> Result<()> {
         let project_id = self.project_id.clone();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&project_id, move |conn| {
                 conn.execute_batch("VACUUM;")?;
                 Ok(())
@@ -85,7 +84,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn health(&self) -> Result<String> {
         let detail = self.config.detail();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 conn.query_row("SELECT 1", [], |_row| Ok(()))?;
                 Ok(format!("vecsqlite {}", detail))
@@ -101,7 +100,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let store = self.clone();
         let record_c = record.clone();
 
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&project_id, move |conn| {
                 store.put_store(conn, &record_c)?;
                 store.put_index(conn, &record_c)?;
@@ -111,7 +110,7 @@ impl MemoryStore for VecSqliteMemoryStore {
             .await?;
 
         let store_clone = self.clone();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 store_clone.append_timeline_event(conn, &record.workspace_id, &record)
             })
@@ -122,7 +121,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let id_or_path = id_or_path.to_string();
 
-        let record = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        let record = self.conn_provider.with_conn(&self.project_id, move |conn| {
             // Try by id first (O(1) lookup)
             let key = crate::memory::store::stable_key("sqlite_mem", &[&workspace_id, &id_or_path]);
             let mut stmt = conn.prepare(&format!(
@@ -184,7 +183,7 @@ impl MemoryStore for VecSqliteMemoryStore {
             let workspace_id = workspace_id.to_string();
             let record_id = record.id.clone();
 
-            ConnectionManager::global()
+            self.conn_provider
                 .with_conn(&self.project_id, move |conn| {
                     let tx = conn.unchecked_transaction()?;
 
@@ -277,7 +276,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
         let workspace_id = workspace_id.to_string();
-        let records = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        let records = self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE workspace_id = ?",
                 TABLE_MEMORIES
@@ -336,7 +335,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let memories = self.list(workspace_id).await?;
         let workspace_id_c = workspace_id.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             // Load beliefs
             let mut stmt = conn.prepare("SELECT id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, is_inferred, source_language, target_language, created_at, updated_at FROM relations WHERE workspace_id = ?")?;
             let mut rows = stmt.query(params![workspace_id_c])?;
@@ -427,7 +426,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn save_beliefs(&self, workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()> {
         let workspace_id = workspace_id.to_string();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             for belief in &beliefs {
                 super::graph::ensure_seed_entities(
                     conn,
@@ -472,7 +471,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let created_at = token.created_at.to_rfc3339();
         let expires_at = token.expires_at.to_rfc3339();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             conn.execute(
                 "INSERT OR REPLACE INTO session_tokens (id, workspace_id, token, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
                 params![
@@ -491,7 +490,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let token = token.to_string();
 
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 let token_key =
                     crate::memory::store::stable_key("session_token_row", &[&workspace_id, &token]);
@@ -518,7 +517,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let name = checkpoint.name;
         let data_json = serde_json::to_string(&checkpoint.data)?;
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             conn.execute(
                 &format!(
                     "INSERT OR REPLACE INTO {} (id, workspace_id, task_id, name, data, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -547,7 +546,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let task_id = task_id.to_string();
         let name = name.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, task_id, name, data, created_at FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
                 TABLE_CHECKPOINTS
@@ -572,7 +571,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let task_id = task_id.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, task_id, name, data, created_at FROM {} WHERE workspace_id = ? AND task_id = ?",
                 TABLE_CHECKPOINTS
@@ -598,7 +597,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let task_id = task_id.to_string();
         let name = name.to_string();
 
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 conn.execute(
                     &format!(
@@ -621,7 +620,7 @@ impl MemoryStore for VecSqliteMemoryStore {
     }
 
     async fn cleanup_orphans(&self) -> Result<usize> {
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 let tx = conn.unchecked_transaction()?;
 
@@ -660,7 +659,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn load_entity_graph_snapshot(&self, workspace_id: &str) -> Result<Option<String>> {
         let workspace_id = workspace_id.to_string();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 let mut stmt =
                     conn.prepare("SELECT data FROM entity_graph_snapshots WHERE workspace_id = ?")?;
@@ -677,7 +676,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let data = data.to_string();
         let now = chrono::Utc::now().to_rfc3339();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 conn.execute(
                     "INSERT OR REPLACE INTO entity_graph_snapshots (workspace_id, data, updated_at) VALUES (?, ?, ?)",
@@ -690,7 +689,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
         let memory_id = memory_id.to_string();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 // Delete stale links older than 30 days
                 let _ = conn.execute(
@@ -802,7 +801,7 @@ impl VecSqliteMemoryStore {
             let project_id = self.project_id.clone();
             let path_c = record.path.clone();
             let ws_c = record.workspace_id.clone();
-            let existing: Option<String> = ConnectionManager::global()
+            let existing: Option<String> = self.conn_provider
                 .with_conn(&project_id, move |conn| {
                     let mut stmt = conn.prepare(
                         "SELECT id FROM memory_records WHERE workspace_id = ?1 AND path = ?2 LIMIT 1",
@@ -859,7 +858,7 @@ impl VecSqliteMemoryStore {
                     && ns1.scope == ns2.scope
             };
 
-            let query_res = ConnectionManager::global().with_conn(&project_id_c, move |conn| {
+            let query_res = self.conn_provider.with_conn(&project_id_c, move |conn| {
                 let mut best_cand: Option<(MemoryRecord, f32)> = None;
 
                 // 1. Try sqlite-vec cosine distance query (vector_distance equivalent)
@@ -1091,7 +1090,7 @@ impl VecSqliteMemoryStore {
 
             let workspace_id = record.workspace_id.clone();
             let project_id = self.project_id.clone();
-            let _salt_bytes = ConnectionManager::global()
+            let _salt_bytes = self.conn_provider
                 .with_conn(&project_id, move |conn| {
                     let mut stmt = conn.prepare(
                         "SELECT salt FROM encryption_metadata WHERE workspace_id = ?",
@@ -1309,7 +1308,7 @@ impl VecSqliteMemoryStore {
     /// and ensures valid embeddings (length(embedding) > 100) have status 'completed'.
     pub async fn reconcile_embedding_status(&self) -> Result<usize> {
         let project_id = self.project_id.clone();
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&project_id, move |conn| {
                 Self::reconcile_embedding_status_conn(conn)
             })
@@ -1478,6 +1477,7 @@ mod tests {
         let store = VecSqliteMemoryStore {
             config,
             project_id: "test_project".to_string(),
+            conn_provider: std::sync::Arc::new(crate::memory::connection_provider::GlobalConnectionProvider::new()),
             event_tx: None,
             dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
         };
