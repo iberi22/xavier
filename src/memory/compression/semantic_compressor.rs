@@ -367,7 +367,7 @@ impl SemanticCompressor {
         summary_lines.push("**Key Statements:**".to_string());
         for turn in cluster {
             let snippet = if turn.content.len() > 100 {
-                format!("{}...", &turn.content[..100].trim())
+                format!("{}...", turn.content[..100].trim())
             } else {
                 turn.content.trim().to_string()
             };
