@@ -150,7 +150,7 @@ impl SearchHook for RagHook {
     ) -> anyhow::Result<()> {
         if self.config.enable_hyde {
             let hypo = hyde_hypothetical_doc(query);
-            query.push_str(" ");
+            query.push(' ');
             query.push_str(&hypo);
         }
         Ok(())

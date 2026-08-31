@@ -91,7 +91,9 @@ impl WasmIndexedDbStore {
                     web_sys::IdbTransactionMode::Readwrite,
                 )
                 .map_err(|e| format!("{:?}", e))?;
-            let store = tx.object_store(&self.store_name).map_err(|e| format!("{:?}", e))?;
+            let store = tx
+                .object_store(&self.store_name)
+                .map_err(|e| format!("{:?}", e))?;
             let val = serde_json::to_string(rec).map_err(|e| e.to_string())?;
             let js_val = wasm_bindgen::JsValue::from_str(&val);
             let _ = store.put(&js_val).map_err(|e| format!("{:?}", e))?;
