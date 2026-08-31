@@ -183,6 +183,10 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route(
             "/v1/identity/verified",
             get(crate::adapters::inbound::http::handlers::list_verified_nodes_handler),
+        )
+        .route(
+            "/v1/ivn/karma/{agent}",
+            get(crate::adapters::inbound::http::handlers::ivn::get_ivn_karma_handler),
         );
 
     // Add enterprise plugin routes if feature is enabled

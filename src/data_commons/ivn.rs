@@ -5,6 +5,7 @@
 
 use crate::data_commons::governance::DynamicQuorum;
 use crate::data_commons::reputation::EigenTrustEngine;
+pub use crate::data_commons::reputation::{KarmaEngine, ReputationTier};
 use crate::data_commons::types::*;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;

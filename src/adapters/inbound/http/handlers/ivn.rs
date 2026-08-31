@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::data_commons::ivn::{
-    IvnConfig, ValidatorCandidate, ValidatorSelection, Verdict, VerdictEngine, VerdictStatus, Vote,
+    IvnConfig, KarmaEngine, ValidatorCandidate, ValidatorSelection, Verdict, VerdictEngine, VerdictStatus, Vote,
 };
 use crate::data_commons::types::WalletAddress;
 
@@ -73,9 +73,19 @@ impl From<&Verdict> for VerdictDto {
 }
 
 /// In-memory engine store for IVN state management.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct IvnEngineStore {
     pub requests: HashMap<String, IdentityRequestRecord>,
+    pub karma_engine: KarmaEngine,
+}
+
+impl Default for IvnEngineStore {
+    fn default() -> Self {
+        Self {
+            requests: HashMap::new(),
+            karma_engine: KarmaEngine::new(),
+        }
+    }
 }
 
 static IVN_STORE: LazyLock<RwLock<IvnEngineStore>> =
@@ -278,6 +288,30 @@ pub async fn create_identity_request_handler(
         Json(json!({
             "status": "ok",
             "request": record
+        })),
+    )
+        .into_response()
+}
+
+/// `GET /v1/ivn/karma/{agent}` — Query agent karma, tier, and history log.
+pub async fn get_ivn_karma_handler(Path(agent): Path<String>) -> impl IntoResponse {
+    let store = current_ivn_store();
+    let karma = store.karma_engine.get_karma(&agent);
+    let tier = store.karma_engine.get_tier(&agent);
+    let history = store
+        .karma_engine
+        .get_record(&agent)
+        .map(|r| r.history.clone())
+        .unwrap_or_default();
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "status": "ok",
+            "agent": agent,
+            "karma": karma,
+            "tier": tier,
+            "history": history
         })),
     )
         .into_response()
