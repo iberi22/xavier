@@ -67,7 +67,7 @@ pub fn hex_decode(hex_str: &str) -> anyhow::Result<Vec<u8>> {
     }
     let bytes = hex_str.as_bytes();
     let mut out = Vec::with_capacity(bytes.len() / 2);
-    for chunk in bytes.chunks_exact(2) {
+    for chunk in bytes.as_chunks::<2>().0 {
         let hi = hex_val(chunk[0])
             .ok_or_else(|| anyhow::anyhow!("invalid hex char '{}'", chunk[0] as char))?;
         let lo = hex_val(chunk[1])
