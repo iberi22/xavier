@@ -2,7 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use crate::codebase::connection_manager::ConnectionManager;
+use crate::memory::connection_provider::{ConnectionProvider, GlobalConnectionProvider};
 use anyhow::Result;
 use rusqlite::Connection;
 use std::path::Path;
@@ -12,7 +12,7 @@ use tokio::fs;
 /// Open pool.
 pub(crate) async fn open_pool(path: &Path) -> Result<()> {
     let project_id = super::project_id_for_path(path);
-    ConnectionManager::global().connect_with_path(&project_id, path.to_path_buf())?;
+    GlobalConnectionProvider::new().connect_with_path(&project_id, path.to_path_buf())?;
     Ok(())
 }
 

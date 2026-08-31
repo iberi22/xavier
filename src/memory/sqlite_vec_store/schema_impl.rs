@@ -2,7 +2,6 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use crate::codebase::connection_manager::ConnectionManager;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use anyhow::Result;
 use rusqlite::{params, Connection};
@@ -54,7 +53,7 @@ impl VecSqliteMemoryStore {
     pub async fn init_schema_async(&self) -> Result<()> {
         let project_id = self.project_id.clone();
 
-        ConnectionManager::global()
+        self.conn_provider
             .with_conn(&project_id, move |conn| {
                 // Run unified migrations
                 let mut manager = crate::storage::MigrationManager::new();
@@ -82,7 +81,7 @@ impl VecSqliteMemoryStore {
 
         // Retrieve the old model name from the database (if any) before the change
         let project_id_c = self.project_id.clone();
-        let old_model = ConnectionManager::global()
+        let old_model = self.conn_provider
             .with_conn(&project_id_c, move |conn| {
                 let mut stmt =
                     conn.prepare("SELECT value FROM embedding_model_meta WHERE key = 'active'")?;
@@ -104,7 +103,7 @@ impl VecSqliteMemoryStore {
 
         let active_model_c = active_model.clone();
         let project_id_c2 = self.project_id.clone();
-        let reindex_action = ConnectionManager::global()
+        let reindex_action = self.conn_provider
             .with_conn(&project_id_c2, move |conn| {
                 let rt = tokio::runtime::Handle::current();
                 rt.block_on(Self::check_and_handle_embedding_model_change(
@@ -165,7 +164,7 @@ impl VecSqliteMemoryStore {
         };
 
         let project_id_c = self.project_id.clone();
-        let records = ConnectionManager::global()
+        let records = self.conn_provider
             .with_conn(&project_id_c, move |conn| {
                 let sql = if let Some(lim) = limit {
                     format!(
@@ -250,7 +249,7 @@ impl VecSqliteMemoryStore {
             let project_id_c = self.project_id.clone();
             let chunk_vec: Vec<_> = chunk.to_vec();
 
-            let (b_success, b_fail) = ConnectionManager::global()
+            let (b_success, b_fail) = self.conn_provider
                 .with_conn(&project_id_c, move |conn| {
                     let tx = conn.unchecked_transaction()?;
                     let mut s_cnt = 0;
@@ -739,7 +738,7 @@ mod tests {
             .await;
 
         // Manually update to set embedding = NULL in the DB to simulate model change invalidation
-        ConnectionManager::global()
+        store.conn_provider
             .with_conn(&store.project_id, |conn| {
                 conn.execute(
                     "UPDATE memory_records SET embedding = NULL, embedding_status = 'pending', embedding_attempts = 0",
@@ -753,7 +752,7 @@ mod tests {
             .unwrap();
 
         // Verify that embedding is NULL before background reindexing
-        let is_null = ConnectionManager::global()
+        let is_null = store.conn_provider
             .with_conn(&store.project_id, |conn| {
                 let embedding: Option<Vec<u8>> = conn
                     .query_row(
@@ -789,7 +788,7 @@ mod tests {
         );
 
         // Verify that embedding was successfully updated
-        let (updated_embedding, has_vector_row) = ConnectionManager::global()
+        let (updated_embedding, has_vector_row) = store.conn_provider
             .with_conn(&store.project_id, |conn| {
                 let embedding_blob: Option<Vec<u8>> = conn
                     .query_row(
@@ -899,7 +898,7 @@ mod tests {
             .await;
 
         // Force embeddings to NULL
-        ConnectionManager::global()
+        store.conn_provider
             .with_conn(&store.project_id, |conn| {
                 conn.execute(
                     "UPDATE memory_records SET embedding = NULL, embedding_status = 'pending', embedding_attempts = 0",
@@ -1007,7 +1006,7 @@ mod tests {
             .create_async()
             .await;
 
-        ConnectionManager::global()
+        store.conn_provider
             .with_conn(&store.project_id, |conn| {
                 conn.execute(
                     "UPDATE memory_records SET embedding = NULL, embedding_status = 'pending', embedding_attempts = 0",
@@ -1028,7 +1027,7 @@ mod tests {
         );
 
         // Verify that embedding_attempts was incremented and status set to 'retry'
-        let (status, attempts): (String, u32) = ConnectionManager::global()
+        let (status, attempts): (String, u32) = store.conn_provider
             .with_conn(&store.project_id, |conn| {
                 let row = conn.query_row(
                     "SELECT embedding_status, embedding_attempts FROM memory_records WHERE id = 'test_mem_err_1'",
@@ -1107,7 +1106,7 @@ mod tests {
             .create_async()
             .await;
 
-        ConnectionManager::global()
+        store.conn_provider
             .with_conn(&store.project_id, |conn| {
                 conn.execute(
                     "UPDATE memory_records SET embedding = NULL, embedding_status = 'pending', embedding_attempts = 0",
@@ -1125,7 +1124,7 @@ mod tests {
             let _ = store.reindex_null_embeddings_background().await;
         }
 
-        let (status, attempts): (String, u32) = ConnectionManager::global()
+        let (status, attempts): (String, u32) = store.conn_provider
             .with_conn(&store.project_id, |conn| {
                 let row = conn.query_row(
                     "SELECT embedding_status, embedding_attempts FROM memory_records WHERE id = 'test_dead_letter_1'",

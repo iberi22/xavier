@@ -121,7 +121,7 @@ impl VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let since = since.to_string();
 
-        crate::codebase::connection_manager::ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, memory_id, sequence, timestamp, operation, summary, details, agent_id FROM timeline_events
                  WHERE workspace_id = ? AND timestamp > ? ORDER BY sequence ASC",
