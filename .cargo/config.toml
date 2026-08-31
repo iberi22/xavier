@@ -7,3 +7,4 @@ target-dir = "/build/rust-target/xavier"
 
 [env]
 RUST_MIN_STACK = "16777216"
+RUST_TEST_THREADS = "1"

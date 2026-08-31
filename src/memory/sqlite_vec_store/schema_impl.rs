@@ -484,6 +484,7 @@ impl VecSqliteMemoryStore {
 mod tests {
     use super::*;
     use rusqlite::Connection;
+    use serial_test::serial;
 
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -662,6 +663,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     #[allow(clippy::await_holding_lock)]
     async fn test_reindex_null_embeddings_background() {
         use crate::memory::store::MemoryStore;
@@ -827,6 +829,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     #[allow(clippy::await_holding_lock)]
     async fn test_reindex_null_embeddings_background_with_limit_batches() {
         use crate::memory::store::MemoryStore;
@@ -947,6 +950,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     #[allow(clippy::await_holding_lock)]
     async fn test_reindex_null_embeddings_background_with_errors() {
         use crate::memory::store::MemoryStore;
@@ -1050,6 +1054,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     #[allow(clippy::await_holding_lock)]
     async fn test_dead_letter_isolation_after_max_attempts() {
         use crate::memory::store::MemoryStore;
@@ -1282,6 +1287,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     #[allow(clippy::await_holding_lock)]
     async fn test_put_record_without_embedding_succeeds() {
         use crate::memory::store::MemoryStore;
