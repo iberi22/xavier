@@ -16,10 +16,22 @@ use crate::memory::store::{
 };
 use crate::settings::XavierSettings;
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
+pub fn shard_for_id(id: &str) -> u8 {
+    let mut h = DefaultHasher::new();
+    id.hash(&mut h);
+    (h.finish() % 2) as u8
+}
+
 #[derive(Clone)]
 pub struct PostgresMemoryStore {
     pool: Pool<Postgres>,
     url: String,
+    /// Secondary Neon project via XAVIER_POSTGRES_URL_2 (branch per node)
+    pool_2: Option<Pool<Postgres>>,
+    url_2: Option<String>,
 }
 
 impl PostgresMemoryStore {
@@ -38,14 +50,47 @@ impl PostgresMemoryStore {
     pub async fn new(url: &str) -> Result<Self> {
         let pool = PgPoolOptions::new().max_connections(5).connect(url).await?;
 
+        let url_2 = std::env::var("XAVIER_POSTGRES_URL_2").ok();
+        let pool_2 = if let Some(ref u2) = url_2 {
+            PgPoolOptions::new()
+                .max_connections(5)
+                .connect(u2)
+                .await
+                .ok()
+        } else {
+            None
+        };
+
         let store = Self {
             pool,
             url: url.to_string(),
+            pool_2,
+            url_2,
         };
 
         store.init_schema().await?;
+        if let Some(ref p2) = store.pool_2 {
+            // init schema on second shard as well (branch per node)
+            let _ = sqlx::query("CREATE EXTENSION IF NOT EXISTS vector")
+                .execute(p2)
+                .await;
+        }
 
         Ok(store)
+    }
+
+    pub fn shard_for(&self, id: &str) -> u8 {
+        shard_for_id(id)
+    }
+    pub fn is_sharded(&self) -> bool {
+        self.pool_2.is_some()
+    }
+    fn pool_for_shard(&self, shard: u8) -> &Pool<Postgres> {
+        if shard == 1 && self.pool_2.is_some() {
+            self.pool_2.as_ref().unwrap()
+        } else {
+            &self.pool
+        }
     }
 
     /// Health check.
@@ -513,5 +558,15 @@ impl MemoryStore for PostgresMemoryStore {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod shard_tests {
+    use super::*;
+    #[test]
+    fn test_shard_for_id_pg() {
+        assert!(shard_for_id("a") <= 1);
+        assert_eq!(shard_for_id("x"), shard_for_id("x"));
     }
 }

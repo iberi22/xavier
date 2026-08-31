@@ -136,3 +136,15 @@ mod tests {
         assert!(service.validate_access(&req3).is_err());
     }
 }
+
+/// MLS RFC9420 private family groups shard routing (WAVE-2.09)
+pub fn shard_for_group(group_id: &str) -> u8 {
+    crate::crypto::envelope::shard_for_id(group_id)
+}
+pub fn visibility_for_shard(shard: u8) -> &'static str {
+    if shard == 0 {
+        "private"
+    } else {
+        "public"
+    }
+}

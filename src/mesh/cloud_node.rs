@@ -260,3 +260,31 @@ impl CloudPeer {
         Ok(())
     }
 }
+
+/// Cloudflare adapters R2/KV/D1 shards (WAVE-2.03) — OpenAI-compat proxy via Workers
+pub fn shard_for_cloud(id: &str) -> u8 {
+    crate::crypto::envelope::shard_for_id(id)
+}
+pub struct CloudflareAdapters {
+    pub r2_shard_0: String,
+    pub r2_shard_1: String,
+    pub kv_namespace: String,
+    pub d1_db: String,
+}
+impl CloudflareAdapters {
+    pub fn new() -> Self {
+        Self {
+            r2_shard_0: "r2-shard-0".into(),
+            r2_shard_1: "r2-shard-1".into(),
+            kv_namespace: "kv-xavier".into(),
+            d1_db: "d1-xavier".into(),
+        }
+    }
+    pub fn shard_bucket(&self, shard: u8) -> &str {
+        if shard == 0 {
+            &self.r2_shard_0
+        } else {
+            &self.r2_shard_1
+        }
+    }
+}

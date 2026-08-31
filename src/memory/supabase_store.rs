@@ -16,11 +16,29 @@ use crate::memory::store::{
 };
 use crate::settings::XavierSettings;
 
+pub fn shard_for_id(id: &str) -> u8 {
+    // Consistent hash %2 for 2x sharding (ToS compliant: 2 active projects global)
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    id.hash(&mut h);
+    (h.finish() % 2) as u8
+}
+
+pub fn shard_for_record_id(id: &str) -> u8 {
+    shard_for_id(id)
+}
+
 #[derive(Clone)]
 pub struct SupabaseMemoryStore {
     client: Client,
     url: String,
     key: String,
+    /// Optional second Supabase project for 2x sharding (XAVIER_SUPABASE_URL_2)
+    url_2: Option<String>,
+    key_2: Option<String>,
+    /// Secondary client if 2x configured
+    client_2: Option<Client>,
 }
 
 impl SupabaseMemoryStore {
@@ -45,11 +63,47 @@ impl SupabaseMemoryStore {
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
 
+        // Optional second project (2x) — ToS: max 2 active projects global per user
+        let url_2 = std::env::var("XAVIER_SUPABASE_URL_2").ok();
+        let key_2 = std::env::var("XAVIER_SUPABASE_KEY_2").ok();
+        let client_2 = if url_2.is_some() && key_2.is_some() {
+            Some(
+                Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build()?,
+            )
+        } else {
+            None
+        };
+
         Ok(Self {
             client,
             url: url.trim_end_matches('/').to_string(),
             key: key.to_string(),
+            url_2: url_2.map(|u| u.trim_end_matches('/').to_string()),
+            key_2,
+            client_2,
         })
+    }
+
+    pub fn shard_for(&self, id: &str) -> u8 {
+        shard_for_id(id)
+    }
+
+    pub fn is_sharded(&self) -> bool {
+        self.client_2.is_some() && self.url_2.is_some()
+    }
+
+    fn client_for_shard(&self, shard: u8) -> (&Client, &str, &str) {
+        if shard == 1 && self.client_2.is_some() && self.url_2.is_some() && self.key_2.is_some() {
+            (
+                self.client_2.as_ref().unwrap(),
+                self.url_2.as_ref().unwrap(),
+                self.key_2.as_ref().unwrap(),
+            )
+        } else {
+            (&self.client, &self.url, &self.key)
+        }
     }
 
     async fn postgrest_get<T: serde::de::DeserializeOwned>(
@@ -150,27 +204,99 @@ impl MemoryStore for SupabaseMemoryStore {
     }
 
     async fn put(&self, record: MemoryRecord) -> Result<()> {
-        self.postgrest_upsert("memory_records", &record).await
+        // Sharded write: hash(id)%2 → shard 0/1 (ToS 2 active max)
+        let shard = shard_for_id(&record.id);
+        let mut payload = serde_json::to_value(&record)?;
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert("shard_id".into(), serde_json::json!(shard));
+            if self.is_sharded() {
+                obj.insert(
+                    "project_id".into(),
+                    serde_json::json!(format!("shard-{}", shard)),
+                );
+            }
+        }
+        let (client, url, key) = self.client_for_shard(shard);
+        let upsert_url = format!("{}/rest/v1/memory_records", url);
+        let resp = client
+            .post(&upsert_url)
+            .header("apikey", key)
+            .header("Authorization", format!("Bearer {}", key))
+            .header("Content-Type", "application/json")
+            .header("Prefer", "resolution=merge-duplicates")
+            .json(&payload)
+            .send()
+            .await?;
+        if !resp.status().is_success() && resp.status() != reqwest::StatusCode::CREATED {
+            anyhow::bail!("Supabase shard {} UPSERT failed: {}", shard, resp.status());
+        }
+        Ok(())
     }
 
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>> {
         let key = stable_key("sqlite_mem", &[workspace_id, id_or_path]);
+        let shard = shard_for_id(&key);
 
-        // Try by ID
+        // Try primary shard first, then fallback if sharded
+        for try_shard in if self.is_sharded() {
+            vec![shard, 1 - shard]
+        } else {
+            vec![shard]
+        } {
+            let (client, url, key_val) = self.client_for_shard(try_shard);
+            let fetch = |q: &str| {
+                let url = format!("{}/rest/v1/memory_records?{}", url, q);
+                let client = client.clone();
+                let key = key_val.to_string();
+                async move {
+                    let resp = client
+                        .get(&url)
+                        .header("apikey", &key)
+                        .header("Authorization", format!("Bearer {}", key))
+                        .send()
+                        .await?;
+                    if !resp.status().is_success() {
+                        anyhow::bail!("Supabase shard {} GET failed: {}", try_shard, resp.status());
+                    }
+                    Ok::<Vec<MemoryRecord>, anyhow::Error>(resp.json().await?)
+                }
+            };
+            // Try by ID
+            if let Ok(records) = fetch(&format!("id=eq.{}", key)).await {
+                if let Some(record) = records.into_iter().next() {
+                    return Ok(Some(record));
+                }
+            }
+            // Try by path
+            if let Ok(records) = fetch(&format!(
+                "workspace_id=eq.{}&path=eq.{}",
+                workspace_id, id_or_path
+            ))
+            .await
+            {
+                if let Some(r) = records.into_iter().next() {
+                    return Ok(Some(r));
+                }
+            }
+            if !self.is_sharded() {
+                break;
+            }
+        }
+        // Fallback to original unified get for backward compat
         let records: Vec<MemoryRecord> = self
             .postgrest_get("memory_records", &format!("id=eq.{}", key))
-            .await?;
+            .await
+            .unwrap_or_default();
         if let Some(record) = records.into_iter().next() {
             return Ok(Some(record));
         }
-
-        // Try by path
         let records: Vec<MemoryRecord> = self
             .postgrest_get(
                 "memory_records",
                 &format!("workspace_id=eq.{}&path=eq.{}", workspace_id, id_or_path),
             )
-            .await?;
+            .await
+            .unwrap_or_default();
         Ok(records.into_iter().next())
     }
 
@@ -358,5 +484,29 @@ impl MemoryStore for SupabaseMemoryStore {
             ),
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod shard_tests {
+    use super::*;
+    #[test]
+    fn test_shard_for_id_deterministic() {
+        let a = shard_for_id("test-id-1");
+        let b = shard_for_id("test-id-1");
+        assert_eq!(a, b);
+        assert!(a == 0 || a == 1);
+    }
+    #[test]
+    fn test_shard_distribution() {
+        let mut counts = [0, 0];
+        for i in 0..100 {
+            let s = shard_for_id(&format!("id-{}", i));
+            counts[s as usize] += 1;
+        }
+        assert!(
+            counts[0] > 20 && counts[1] > 20,
+            "should distribute roughly even"
+        );
     }
 }

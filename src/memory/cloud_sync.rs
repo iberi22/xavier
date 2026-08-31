@@ -24,6 +24,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
+use crate::crypto::envelope::shard_for_id;
 use crate::memory::store::{MemoryRecord, MemoryStore};
 
 // ---------------------------------------------------------------------------
@@ -944,4 +945,11 @@ mod tests {
         assert_eq!(report.pulled, 0);
         assert!(report.success);
     }
+}
+
+pub fn sync_fallback_chain() -> Vec<&'static str> {
+    vec!["vec", "supabase", "neon"]
+}
+pub fn shard_for_sync(id: &str) -> u8 {
+    shard_for_id(id)
 }
