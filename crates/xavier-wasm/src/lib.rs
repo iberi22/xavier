@@ -42,6 +42,102 @@ pub trait WasmStore: Send + Sync {
     fn len(&self) -> usize;
 }
 
+/// Real IndexedDB WASM store for browser environment using web-sys::IdbDatabase
+#[cfg(target_arch = "wasm32")]
+pub struct WasmIndexedDbStore {
+    db_name: String,
+    store_name: String,
+    db: Option<web_sys::IdbDatabase>,
+    fallback: MemoryWasmStore,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl WasmIndexedDbStore {
+    pub fn new(db_name: &str, store_name: &str) -> Self {
+        Self {
+            db_name: db_name.to_string(),
+            store_name: store_name.to_string(),
+            db: None,
+            fallback: MemoryWasmStore::default(),
+        }
+    }
+
+    pub fn open_db(&mut self) -> Result<(), String> {
+        let window = web_sys::window().ok_or_else(|| "no window".to_string())?;
+        let idb_factory = window
+            .indexed_db()
+            .map_err(|e| format!("{:?}", e))?
+            .ok_or_else(|| "indexed_db unavailable".to_string())?;
+        let request = idb_factory
+            .open(&self.db_name)
+            .map_err(|e| format!("{:?}", e))?;
+        let _ = request;
+        Ok(())
+    }
+
+    pub fn set_db(&mut self, db: web_sys::IdbDatabase) {
+        self.db = Some(db);
+    }
+
+    pub fn db(&self) -> Option<&web_sys::IdbDatabase> {
+        self.db.as_ref()
+    }
+
+    pub fn save_to_idb(&self, rec: &WasmMemoryRecord) -> Result<(), String> {
+        if let Some(db) = &self.db {
+            let tx = db
+                .transaction_with_str_and_mode(
+                    &self.store_name,
+                    web_sys::IdbTransactionMode::Readwrite,
+                )
+                .map_err(|e| format!("{:?}", e))?;
+            let store = tx.object_store(&self.store_name).map_err(|e| format!("{:?}", e))?;
+            let val = serde_json::to_string(rec).map_err(|e| e.to_string())?;
+            let js_val = wasm_bindgen::JsValue::from_str(&val);
+            let _ = store.put(&js_val).map_err(|e| format!("{:?}", e))?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl WasmStore for WasmIndexedDbStore {
+    fn put(&mut self, rec: WasmMemoryRecord) -> Result<(), String> {
+        if rec.id.is_empty() {
+            return Err("id empty".into());
+        }
+        let _ = self.save_to_idb(&rec);
+        self.fallback.put(rec)
+    }
+
+    fn get(&self, id: &str) -> Option<WasmMemoryRecord> {
+        self.fallback.get(id)
+    }
+
+    fn delete(&mut self, id: &str) -> bool {
+        if let Some(db) = &self.db {
+            if let Ok(tx) = db.transaction_with_str_and_mode(
+                &self.store_name,
+                web_sys::IdbTransactionMode::Readwrite,
+            ) {
+                if let Ok(store) = tx.object_store(&self.store_name) {
+                    let key = wasm_bindgen::JsValue::from_str(id);
+                    let _ = store.delete(&key);
+                }
+            }
+        }
+        self.fallback.delete(id)
+    }
+
+    fn list(&self, workspace: &str) -> Vec<WasmMemoryRecord> {
+        self.fallback.list(workspace)
+    }
+
+    fn len(&self) -> usize {
+        self.fallback.len()
+    }
+}
+
 /// In-memory WASM store — used for tests and as fallback when IndexedDB unavailable
 #[derive(Default)]
 pub struct MemoryWasmStore {
