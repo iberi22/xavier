@@ -95,15 +95,16 @@ impl SupabaseMemoryStore {
     }
 
     fn client_for_shard(&self, shard: u8) -> (&Client, &str, &str) {
-        if shard == 1 && self.client_2.is_some() && self.url_2.is_some() && self.key_2.is_some() {
-            (
-                self.client_2.as_ref().unwrap(),
-                self.url_2.as_ref().unwrap(),
-                self.key_2.as_ref().unwrap(),
-            )
-        } else {
-            (&self.client, &self.url, &self.key)
+        if shard == 1 {
+            if let (Some(c2), Some(u2), Some(k2)) = (
+                self.client_2.as_ref(),
+                self.url_2.as_ref(),
+                self.key_2.as_ref(),
+            ) {
+                return (c2, u2, k2);
+            }
         }
+        (&self.client, &self.url, &self.key)
     }
 
     async fn postgrest_get<T: serde::de::DeserializeOwned>(
