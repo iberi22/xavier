@@ -7,9 +7,6 @@
 #![allow(clippy::needless_borrow)]
 #![allow(clippy::manual_clamp)]
 #![allow(clippy::new_without_default)]
-#![allow(clippy::chunks_exact_to_as_chunks)]
-#![allow(clippy::useless_format_args)]
-#![allow(clippy::redundant_reference)]
 #![allow(clippy::redundant_clone)]
 //!
 //! A cognitive memory system with agent runtime, task management, and native UI.
