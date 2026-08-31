@@ -142,6 +142,16 @@ impl TrainingExporter {
         let result = hasher.finalize();
         crate::crypto::hex_encode(result)[0..16].to_string()
     }
+
+    /// List datasets stored in the given data directory.
+    pub fn list_datasets(&self, data_dir: &Path) -> Result<Vec<DatasetMetadata>, String> {
+        scan_datasets(data_dir)
+    }
+
+    /// Get the manifest for a dataset in the given data directory.
+    pub fn get_manifest(&self, data_dir: &Path, id: &str) -> Result<serde_json::Value, String> {
+        load_dataset_manifest(&data_dir.join(id))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -405,5 +415,64 @@ mod tests {
 
         // Different seed should produce different split (highly likely)
         assert_ne!(bundle1.train_split, bundle3.train_split);
+    }
+
+    #[test]
+    fn test_list_datasets_and_manifest_helpers() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_dir = temp_dir.path();
+        let exporter = TrainingExporter::new(Path::new("dummy.db"));
+
+        let bundle = TrainingBundle {
+            manifest: crate::data_commons::readiness::TrainingBundleManifest {
+                version: "1.0.0".to_string(),
+                usage_policy: "Test".to_string(),
+                reproducibility_seed: 42,
+                split_counts: [("train".to_string(), 3), ("eval".to_string(), 1)]
+                    .into_iter()
+                    .collect(),
+                data_files: vec!["train.jsonl".to_string(), "eval.jsonl".to_string()],
+            },
+            train_split: vec![
+                serde_json::json!({"a": 1}),
+                serde_json::json!({"a": 2}),
+                serde_json::json!({"a": 3}),
+            ],
+            eval_split: vec![serde_json::json!({"a": 4})],
+            audit_summary: AuditSummary {
+                total_records_found: 4,
+                included_records: 4,
+                excluded_records_no_consent: 0,
+                excluded_records_revoked: 0,
+            },
+        };
+
+        write_bundle_to_dir(
+            data_dir,
+            "dataset_101",
+            &bundle,
+            Some("CONFIDENTIAL".to_string()),
+            Some("en".to_string()),
+            Some("memory".to_string()),
+        )
+        .unwrap();
+
+        let datasets = exporter.list_datasets(data_dir).unwrap();
+        assert_eq!(datasets.len(), 1);
+        assert_eq!(datasets[0].id, "dataset_101");
+        assert_eq!(datasets[0].size, 4);
+        assert_eq!(datasets[0].clearance, "CONFIDENTIAL");
+        assert_eq!(datasets[0].language, "en");
+        assert_eq!(datasets[0].segment, "memory");
+
+        let manifest = exporter.get_manifest(data_dir, "dataset_101").unwrap();
+        assert_eq!(manifest["reproducibility_seed"], 42);
+        assert_eq!(manifest["clearance"], "CONFIDENTIAL");
+
+        let train_split = load_dataset_split(&data_dir.join("dataset_101"), "train").unwrap();
+        assert_eq!(train_split.lines().count(), 3);
+
+        let eval_split = load_dataset_split(&data_dir.join("dataset_101"), "eval").unwrap();
+        assert_eq!(eval_split.lines().count(), 1);
     }
 }

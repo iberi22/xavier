@@ -133,6 +133,26 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
                 )),
         )
         // ── Training Datasets API ─────────────────────────────────────────
+        .route(
+            "/v1/training/datasets",
+            get(crate::adapters::inbound::http::handlers::training::list_datasets_handler),
+        )
+        .route(
+            "/v1/training/datasets/{id}",
+            get(crate::adapters::inbound::http::handlers::training::get_dataset_manifest_handler),
+        )
+        .route(
+            "/v1/training/datasets/{id}/train",
+            get(crate::adapters::inbound::http::handlers::training::get_dataset_train_handler),
+        )
+        .route(
+            "/v1/training/datasets/{id}/eval",
+            get(crate::adapters::inbound::http::handlers::training::get_dataset_eval_handler),
+        )
+        .route(
+            "/v1/training/bundles",
+            post(crate::adapters::inbound::http::handlers::training::generate_bundle_handler),
+        )
         .route("/v1/training/export", post(training_export_handler))
         // ── Content Redaction API ─────────────────────────────────────────
         .route("/v1/memories/redact", post(memories_redact_handler))
