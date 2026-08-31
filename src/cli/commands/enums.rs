@@ -366,6 +366,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: PluginCommand,
     },
+    /// Manage mini-experts
+    #[command(name = "mini-expert", alias = "mini_expert")]
+    MiniExpert {
+        #[command(subcommand)]
+        cmd: MiniExpertCommand,
+    },
     /// Show system health status
     Health {
         /// Show cloud backends status
@@ -1260,4 +1266,37 @@ pub enum PluginCommand {
     Install { name: String },
     /// List plugins
     List,
+}
+
+/// Mini-expert subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum MiniExpertCommand {
+    /// Add a mini-expert to the registry
+    Add {
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "general")]
+        segment: String,
+        #[arg(long, default_value = "en")]
+        language: String,
+        #[arg(long, default_value_t = 0)]
+        clearance: u8,
+        #[arg(long, default_value = "default")]
+        source_dataset: String,
+        #[arg(long, default_value = "")]
+        model_gguf_path: String,
+        #[arg(long, default_value = "local")]
+        provider: String,
+        #[arg(long, default_value = "http://localhost:11434/v1")]
+        endpoint: String,
+    },
+    /// List registered mini-experts
+    List,
+    /// Serve a mini-expert GGUF model via local Ollama endpoint
+    Serve {
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, default_value_t = 11434)]
+        port: u16,
+    },
 }
