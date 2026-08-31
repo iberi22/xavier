@@ -15,6 +15,7 @@ pub mod embedder;
 pub mod entities;
 pub mod entity_graph;
 pub mod episodic;
+pub mod fallback_store;
 pub mod file_indexer;
 pub mod graph_store;
 pub mod graph_traversal;
@@ -44,6 +45,7 @@ pub mod sync;
 pub mod telemetry;
 pub mod virtual_memory;
 pub mod working;
+pub use fallback_store::*;
 pub use query_engine::*;
 pub use store::*;
 
