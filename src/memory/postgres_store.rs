@@ -86,11 +86,12 @@ impl PostgresMemoryStore {
         self.pool_2.is_some()
     }
     fn pool_for_shard(&self, shard: u8) -> &Pool<Postgres> {
-        if shard == 1 && self.pool_2.is_some() {
-            self.pool_2.as_ref().unwrap()
-        } else {
-            &self.pool
+        if shard == 1 {
+            if let Some(p2) = self.pool_2.as_ref() {
+                return p2;
+            }
         }
+        &self.pool
     }
 
     /// Health check.

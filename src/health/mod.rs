@@ -1525,6 +1525,7 @@ mod tests {
 }
 
 /// Freetier quota guard 500MB DB / 5GB egress per Supabase guard per project (2x shards) — WAVE-2.08
+#[allow(clippy::items_after_test_module)]
 pub fn check_freetier_quota(db_bytes: u64, egress_bytes: u64) -> &'static str {
     const DB_LIMIT: u64 = 500 * 1024 * 1024;
     const EGRESS_LIMIT: u64 = 5 * 1024 * 1024 * 1024;
@@ -1536,6 +1537,7 @@ pub fn check_freetier_quota(db_bytes: u64, egress_bytes: u64) -> &'static str {
         "ok"
     }
 }
+#[allow(clippy::items_after_test_module)]
 pub fn shard_for_quota(id: &str) -> u8 {
     crate::crypto::envelope::shard_for_id(id)
 }

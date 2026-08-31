@@ -276,6 +276,9 @@ impl Cli {
                 }
                 PluginCommand::List => crate::cli::handlers::plugins::list_plugins().await,
             },
+            Command::MiniExpert { cmd } => {
+                crate::cli::handlers::mini_experts::handle_mini_expert_command(cmd.clone()).await
+            }
             Command::Scan { cmd } => {
                 crate::cli::handlers::system_scan_cli::handle_scan_command(cmd.clone()).await
             }
