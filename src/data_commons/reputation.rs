@@ -744,10 +744,7 @@ mod tests {
         // Reload engine from disk to verify persistence
         let engine_reloaded = KarmaEngine::with_path(&file_path);
         assert_eq!(engine_reloaded.get_karma(agent), 396);
-        assert_eq!(
-            engine_reloaded.get_tier(agent),
-            ReputationTier::Contributor
-        );
+        assert_eq!(engine_reloaded.get_tier(agent), ReputationTier::Contributor);
 
         let _ = std::fs::remove_file(file_path);
     }
