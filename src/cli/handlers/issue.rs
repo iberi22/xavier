@@ -1,12 +1,15 @@
 //! Issue context packager CLI handler
 
-use xavier::codebase::issue_context::{pack_issue, save_pack};
 use anyhow::Result;
+use xavier::codebase::issue_context::{pack_issue, save_pack};
 
 /// Handle `xavier issue pack <id> [--repo <repo>]`
 pub async fn handle_issue_pack(id: &str, repo: Option<String>) -> Result<()> {
     let repo_name = repo.as_deref().unwrap_or("xavier");
-    println!("Packaging GitHub issue #{} from repository '{}'...", id, repo_name);
+    println!(
+        "Packaging GitHub issue #{} from repository '{}'...",
+        id, repo_name
+    );
 
     let pack = pack_issue(id, repo_name).await?;
 
