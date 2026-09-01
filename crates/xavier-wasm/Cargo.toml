@@ -13,10 +13,11 @@ crate-type = ["cdylib", "rlib"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wasm-bindgen = { version = "0.2", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["IdbDatabase", "IdbFactory", "IdbOpenDbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "Window"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 xavier-core-logic = { path = "../xavier-core-logic" }
 
 [features]
 default = []
-wasm = ["wasm-bindgen"]
+wasm = ["wasm-bindgen", "web-sys"]
