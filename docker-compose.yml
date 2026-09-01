@@ -61,7 +61,7 @@ services:
       retries: 3
       start_period: 15s
     labels:
-      - "xavier.version=${XAVIER_IMAGE_TAG:-0.4.1}"
+      - "xavier.version=${XAVIER_IMAGE_TAG:-0.1.0}"
       - "xavier.service=memory"
     logging:
       driver: json-file

@@ -17,7 +17,11 @@ fn test_manifests_sync_pass() {
         "{\n  \"name\": \"test-pkg\",\n  \"version\": \"0.0.1\"\n}\n",
     )
     .unwrap();
-    fs::write(dir_path.join("CHANGELOG.md"), "# Changelog\n\n## [Unreleased]\n").unwrap();
+    fs::write(
+        dir_path.join("CHANGELOG.md"),
+        "# Changelog\n\n## [Unreleased]\n",
+    )
+    .unwrap();
 
     let root_script = std::env::current_dir()
         .unwrap()
@@ -48,7 +52,11 @@ fn test_drift_cargo_vs_package_fail() {
         "{\n  \"name\": \"test-pkg\",\n  \"version\": \"0.0.1\"\n}\n",
     )
     .unwrap();
-    fs::write(dir_path.join("CHANGELOG.md"), "# Changelog\n\n## [Unreleased]\n").unwrap();
+    fs::write(
+        dir_path.join("CHANGELOG.md"),
+        "# Changelog\n\n## [Unreleased]\n",
+    )
+    .unwrap();
 
     let root_script = std::env::current_dir()
         .unwrap()
@@ -61,7 +69,10 @@ fn test_drift_cargo_vs_package_fail() {
         .status()
         .expect("Failed to execute check-version-sync.sh");
 
-    assert!(!status.success(), "Expected version sync check to fail on drift");
+    assert!(
+        !status.success(),
+        "Expected version sync check to fail on drift"
+    );
 }
 
 #[test]
@@ -96,7 +107,10 @@ fn test_changelog_missing_unreleased_fail() {
         .status()
         .expect("Failed to execute check-version-sync.sh");
 
-    assert!(!status.success(), "Expected check to fail when [Unreleased] is missing");
+    assert!(
+        !status.success(),
+        "Expected check to fail when [Unreleased] is missing"
+    );
 }
 
 #[test]
