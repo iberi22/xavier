@@ -14,9 +14,7 @@ use crate::memory::schema::{ContextZone, MemoryLevel, TypedMemoryPayload};
 use crate::memory::store::MemoryRecord;
 use std::sync::Arc;
 
-pub use crate::curation::{
-    CurationHistoryEntry, CurationItem, CurationQueue, CurationStatus,
-};
+pub use crate::curation::{CurationHistoryEntry, CurationItem, CurationQueue, CurationStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurationResult {

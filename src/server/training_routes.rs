@@ -132,7 +132,12 @@ pub async fn approve_curation_item_handler(
     Json(payload): Json<ApproveCurateRequest>,
 ) -> impl IntoResponse {
     let mut queue = load_curation_queue(&state);
-    match queue.approve(&id, payload.curator, payload.classification, payload.clearance) {
+    match queue.approve(
+        &id,
+        payload.curator,
+        payload.classification,
+        payload.clearance,
+    ) {
         Ok(item) => {
             if let Err(e) = queue.save() {
                 return (
@@ -1126,7 +1131,9 @@ mod tests {
 
         let resp_pending = app.clone().oneshot(req_pending).await.unwrap();
         assert_eq!(resp_pending.status(), StatusCode::OK);
-        let body_bytes = to_bytes(resp_pending.into_body(), usize::MAX).await.unwrap();
+        let body_bytes = to_bytes(resp_pending.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let pending_items: Vec<crate::curation::CurationItem> =
             serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(pending_items.len(), 2);

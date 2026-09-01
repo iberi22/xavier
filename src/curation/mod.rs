@@ -51,7 +51,10 @@ impl CurationQueue {
     }
 
     pub fn new_with_path(path: PathBuf) -> Self {
-        let history_path = path.parent().unwrap_or_else(|| Path::new("data/curation")).join("history.json");
+        let history_path = path
+            .parent()
+            .unwrap_or_else(|| Path::new("data/curation"))
+            .join("history.json");
         Self {
             items: Vec::new(),
             file_path: Some(path),
@@ -64,7 +67,10 @@ impl CurationQueue {
     }
 
     pub fn load_from_path(path: &Path) -> Result<Self, String> {
-        let history_path = path.parent().unwrap_or_else(|| Path::new("data/curation")).join("history.json");
+        let history_path = path
+            .parent()
+            .unwrap_or_else(|| Path::new("data/curation"))
+            .join("history.json");
         if !path.exists() {
             return Ok(Self {
                 items: Vec::new(),
@@ -123,7 +129,10 @@ impl CurationQueue {
         Self::record_history_entry_to_path(&path, entry)
     }
 
-    pub fn record_history_entry_to_path(path: &Path, entry: &CurationHistoryEntry) -> Result<(), String> {
+    pub fn record_history_entry_to_path(
+        path: &Path,
+        entry: &CurationHistoryEntry,
+    ) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -139,7 +148,8 @@ impl CurationQueue {
             return Ok(Vec::new());
         }
         let data = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let history: Vec<CurationHistoryEntry> = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+        let history: Vec<CurationHistoryEntry> =
+            serde_json::from_str(&data).map_err(|e| e.to_string())?;
         Ok(history)
     }
 
@@ -207,7 +217,9 @@ impl CurationQueue {
 
         if let Some(item) = self.items.iter_mut().find(|i| i.id == id) {
             let now = Utc::now();
-            item.status = CurationStatus::Rejected { reason: reason.clone() };
+            item.status = CurationStatus::Rejected {
+                reason: reason.clone(),
+            };
             item.curated_by = Some(curator.clone());
             item.curated_at = Some(now);
 
