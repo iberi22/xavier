@@ -602,15 +602,17 @@ pub async fn pack_issue(issue_id: &str, repo: &str) -> Result<IssueContextPack> 
         .output()
         .await
     {
-        Ok(out) if out.status.success() => serde_json::from_slice(&out.stdout).unwrap_or_else(|_| {
-            serde_json::json!({
-                "id": issue_id,
-                "number": issue_id,
-                "title": format!("Issue {}", issue_id),
-                "body": "",
-                "repo": repo_arg,
+        Ok(out) if out.status.success() => {
+            serde_json::from_slice(&out.stdout).unwrap_or_else(|_| {
+                serde_json::json!({
+                    "id": issue_id,
+                    "number": issue_id,
+                    "title": format!("Issue {}", issue_id),
+                    "body": "",
+                    "repo": repo_arg,
+                })
             })
-        }),
+        }
         _ => serde_json::json!({
             "id": issue_id,
             "number": issue_id,
@@ -639,7 +641,10 @@ pub async fn pack_issue(issue_id: &str, repo: &str) -> Result<IssueContextPack> 
         _ => Vec::new(),
     };
 
-    let title = issue_val.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let title = issue_val
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let body = issue_val.get("body").and_then(|v| v.as_str()).unwrap_or("");
 
     // 3. Extract entities & code snippets from codebase & code-graph
