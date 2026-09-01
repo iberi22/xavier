@@ -1,10 +1,10 @@
-# Guía Práctica de Xavier RAG para Agentes IA
+# Xavier RAG Practical Guide for AI Agents
 
-Esta guía explica cómo conectar cualquier agente de IA (Claude, OpenClaw, DeepSeek, etc.) a Xavier como backend de memoria y RAG en menos de 10 minutos.
+This guide explains how to connect any AI agent (Claude, OpenClaw, DeepSeek, etc.) to Xavier as a memory and RAG backend in under 10 minutes.
 
-## 1. Arranque Rápido
+## 1. Quick Start
 
-Xavier puede funcionar localmente o en un contenedor. La forma más rápida de empezar es:
+Xavier can run locally or in a container. The fastest way to start is:
 
 ### Windows (PowerShell)
 ```powershell
@@ -16,15 +16,14 @@ Xavier puede funcionar localmente o en un contenedor. La forma más rápida de e
 docker-compose up -d xavier
 ```
 
-## 2. Métodos de Integración
+## 2. Integration Methods
 
-### A. Conexión vía MCP (Model Context Protocol)
+### A. Connection via MCP (Model Context Protocol)
 
-Este es el estándar recomendado para agentes modernos.
+This is the recommended standard for modern agents.
 
-#### Configuración para Claude Desktop / Windsurf / Cursor:
-Añade esto a tu configuración de MCP (`mcp_config.json`):
-
+#### Configuration for Claude Desktop / Windsurf / Cursor:
+Add this to your MCP config (`mcp_config.json`):
 ```json
 {
   "mcpServers": {
@@ -32,29 +31,29 @@ Añade esto a tu configuración de MCP (`mcp_config.json`):
       "command": "xavier",
       "args": ["mcp"],
       "env": {
-        "XAVIER_TOKEN": "tu-token-aqui"
+        "XAVIER_TOKEN": "your-token-here"
       }
     }
   }
 }
 ```
 
-### B. Conexión vía HTTP API (Estándar OpenAI)
+### B. Connection via HTTP API (OpenAI Standard)
 
-Si tu agente usa peticiones HTTP, Xavier expone un endpoint compatible con la estructura de memorias estándar.
+If your agent uses HTTP requests, Xavier exposes an endpoint compatible with standard memory structures.
 
-- **Endpoint de búsqueda**: `POST http://localhost:8006/v1/memories/search`
-- **Endpoint de guardado**: `POST http://localhost:8006/v1/memories`
+- **Search endpoint**: `POST http://localhost:8006/v1/memories/search`
+- **Save endpoint**: `POST http://localhost:8006/v1/memories`
 
-#### Ejemplo en Python:
+#### Python Example:
 ```python
 import requests
 
 XAVIER_URL = "http://localhost:8006/v1/memories/search"
-headers = {"X-Xavier-Token": "tu-token-aqui"}
+headers = {"X-Xavier-Token": "your-token-here"}
 
 payload = {
-    "query": "¿Cuáles son las especificaciones del proyecto?",
+    "query": "What are the project specifications?",
     "limit": 5
 }
 
@@ -62,27 +61,27 @@ response = requests.post(XAVIER_URL, json=payload, headers=headers)
 print(response.json())
 ```
 
-## 3. Configuración de Embeddings
+## 3. Embedding Configuration
 
-Xavier soporta tres modos de embeddings:
+Xavier supports three embedding modes:
 
-1. **Local GLLM (Predeterminado)**: Privacidad total, sin coste, ejecutado en tu CPU/GPU.
+1. **Local GLLM (Default)**: Full privacy, no cost, runs on your CPU/GPU.
    - Env: `XAVIER_EMBEDDING_PROVIDER_MODE=local-gllm`
-2. **Cloud (OpenRouter/OpenAI)**: Máxima calidad, requiere API Key.
+2. **Cloud (OpenRouter/OpenAI)**: Highest quality, requires API Key.
    - Env: `XAVIER_EMBEDDING_PROVIDER_MODE=cloud`
    - Env: `XAVIER_EMBEDDING_URL=https://openrouter.ai/api/v1`
-3. **Local Ollama**: Si ya tienes Ollama corriendo.
+3. **Local Ollama**: If you already have Ollama running.
    - Env: `XAVIER_EMBEDDING_URL=http://localhost:11434/v1/embeddings`
 
-## 4. Verificación de Salud
+## 4. Health Check
 
-Para confirmar que Xavier está listo para ser usado por un agente:
+To confirm Xavier is ready for agent use:
 ```bash
 curl http://localhost:8006/v1/health/ready
 ```
 
-Si el campo `status` es `"ok"`, Xavier está listo para procesar RAG.
+If the `status` field is `"ok"`, Xavier is ready to process RAG.
 
-## 5. Panel Web (Dashboard)
+## 5. Web Panel (Dashboard)
 
-Visita [http://localhost:8006/panel](http://localhost:8006/panel) para visualizar tus memorias, grafos de conocimiento y el estado del sistema en tiempo real.
+Visit [http://localhost:8006/panel](http://localhost:8006/panel) to visualize your memories, knowledge graphs and system status in real time.

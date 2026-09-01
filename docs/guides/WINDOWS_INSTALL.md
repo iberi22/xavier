@@ -1,74 +1,74 @@
-# Xavier — Instalación en Windows
+# Xavier — Windows Installation
 
-## Requisitos
+## Requirements
 
 - Windows 10/11
-- Rust toolchain (solo para compilar) → https://rustup.rs
-- Opcional: Ollama (para embeddings locales) → https://ollama.com
+- Rust toolchain (only to compile) → https://rustup.rs
+- Optional: Ollama (for local embeddings) → https://ollama.com
 
-## Instalación rápida
+## Quick Install
 
 ```powershell
-# 1. Compilar (desde la raíz del proyecto)
+# 1. Build (from project root)
 cargo build --release --bin xavier -j 1
 
-# 2. Ejecutar el instalador (como Administrador)
+# 2. Run installer (as Administrator)
 .\install.ps1
 ```
 
-Esto:
-- Copia `xavier.exe` a `%LOCALAPPDATA%\Xavier\bin\`
-- Agrega esa carpeta al PATH de usuario
-- Genera un `XAVIER_TOKEN` aleatorio
-- Crea `%LOCALAPPDATA%\Xavier\data\` para la base de datos
-- Copia `.env.example` como configuración base
+This:
+- Copies `xavier.exe` to `%LOCALAPPDATA%\Xavier\bin\`
+- Adds that folder to the user PATH
+- Generates a random `XAVIER_TOKEN`
+- Creates `%LOCALAPPDATA%\Xavier\data\` for the database
+- Copies `.env.example` as base config
 
-> **Reinicia la terminal** después de instalar para que el PATH surta efecto.
+> **Restart your terminal** after installing for the PATH to take effect.
 
-## Uso
+## Usage
 
 ```powershell
-# Ver ayuda
+# Help
 xavier --help
 
-# Iniciar servidor
+# Start server
 xavier serve
 
-# Monitor en vivo
+# Live monitor
 xavier monitor
 
-# Ver estado
+# Check status
 xavier status
 ```
 
-## Configuración
+## Configuration
 
-Editar `%LOCALAPPDATA%\Xavier\config\.env` con tus valores:
+Edit `%LOCALAPPDATA%\Xavier\config\.env` with your values:
 
-| Variable | Descripción | Default |
+| Variable | Description | Default |
 |---|---|---|
-| `XAVIER_TOKEN` | Token de API (requerido) | (generado) |
-| `XAVIER_PORT` | Puerto del servidor | 8003 |
-| `XAVIER_MEMORY_BACKEND` | Backend: `vec` (SQLite) o `surreal` | `vec` |
-| `XAVIER_EMBEDDING_URL` | URL de embeddings (Ollama) | `http://localhost:11434/v1` |
-| `XAVIER_EMBEDDING_MODEL` | Modelo de embeddings | `nomic-embed-text` |
-| `XAVIER_MODEL_PROVIDER` | Proveedor LLM | `local` |
-| `RUST_LOG` | Nivel de logging | `info` |
+| `XAVIER_TOKEN` | API token (required) | (generated) |
+| `XAVIER_PORT` | Server port | 8003 |
+| `XAVIER_MEMORY_BACKEND` | Backend: `vec` (SQLite) or `surreal` | `vec` |
+| `XAVIER_EMBEDDING_URL` | Embeddings URL (Ollama) | `http://localhost:11434/v1` |
+| `XAVIER_EMBEDDING_MODEL` | Embeddings model | `nomic-embed-text` |
+| `XAVIER_MODEL_PROVIDER` | LLM provider | `local` |
+| `RUST_LOG` | Logging level | `info` |
 
-## Docker (alternativa)
+## Docker (alternative)
 
 ```powershell
 docker compose --profile core up -d
 ```
 
-## Desinstalación
+## Uninstall
 
 ```powershell
-# Remover del PATH
+# Remove from PATH
 $path = [Environment]::GetEnvironmentVariable("PATH", "User")
 $path = ($path.Split(';') | Where-Object { $_ -ne "$env:LOCALAPPDATA\Xavier\bin" }) -join ';'
 [Environment]::SetEnvironmentVariable("PATH", $path, "User")
 
-# Eliminar directorio
+# Delete directory
 Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Xavier"
 ```

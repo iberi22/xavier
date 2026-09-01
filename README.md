@@ -71,6 +71,79 @@ xavier doctor
 
 ---
 
+## 📦 Downloads
+
+Latest release: **[v0.0.1](https://github.com/iberi22/xavier/releases/latest)** — built via `.github/workflows/release.yml` (3 targets + SHA256).
+
+| OS | Arch | Artifact |
+|---|---|---|
+| Linux | x86_64 | `xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz` |
+| macOS | aarch64 (Apple Silicon) | `xavier-v0.0.1-aarch64-apple-darwin.tar.gz` |
+| Windows | x86_64 | `xavier-v0.0.1-x86_64-pc-windows-msvc.zip` |
+
+Each artifact has a `.sha256` sidecar.
+
+```bash
+# Linux example
+curl -L https://github.com/iberi22/xavier/releases/latest/download/xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz -o xavier.tar.gz
+curl -L https://github.com/iberi22/xavier/releases/latest/download/xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz.sha256 -o xavier.sha256
+sha256sum -c xavier.sha256
+tar -xzf xavier.tar.gz && ./xavier --help
+```
+
+Docker image (pending `ghcr` publish): `ghcr.io/iberi22/xavier:0.0.1` — also see [Downloads page](docs/site/src/content/docs/downloads.mdx) (Starlight).
+
+---
+
+## 🐳 Docker
+
+### Production (with local Ollama)
+
+```bash
+# 1. Set token
+cp .env.example .env  # edit XAVIER_TOKEN
+# 2. Up
+docker compose up -d
+# Xavier on http://localhost:8006, Ollama via host.docker.internal:11434
+```
+
+Healthcheck: `curl -fsS http://localhost:8006/health`
+
+### Development mode (no token, browser panel)
+
+```bash
+XAVIER_DEV_MODE=true docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# or
+XAVIER_DEV_MODE=true XAVIER_TOKEN=dummy docker compose up -d
+```
+
+`docker-compose.yml` respects `XAVIER_DEV_MODE=${XAVIER_DEV_MODE:-false}` — when `true`, the HTTP `X-Xavier-Token` gate is bypassed for local dev (do NOT use in production).
+
+---
+
+## 🖥️ UI Modes
+
+| Mode | How to run | URL | Notes |
+|---|---|---|---|
+| **Browser (prod)** | `xavier http` (serves `panel-ui/dist`) | `http://localhost:8006/` and `/panel` | No Tauri, uses `VITE_XAVIER_API_TOKEN` + polling fallback |
+| **Browser (dev)** | `pnpm --filter xavier-panel-ui dev` + `cargo run -- http` | `http://localhost:5173` (Vite) proxied to `:8006` | Hot-reload, `XAVIER_DEV_MODE=true` |
+| **Tauri Desktop** | `pnpm --filter xavier-panel-ui tauri dev` | Native window | Requires `__TAURI_INTERNALS__` guard + dynamic `invoke`/`listen` |
+| **Custom panel path** | `XAVIER_PANEL_UI_DIR=/path/to/dist xavier http` | Same as browser | Priority: `XAVIER_PANEL_UI_DIR` → `<exe_dir>/panel-ui/build` → `<cwd>/panel-ui/build` → `CARGO_MANIFEST_DIR/panel-ui/build` (see `src/server/panel/assets.rs`) |
+
+---
+
+## 🐛 Known Issues
+
+See **[docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)** for the full 15-item table (browser-compat, config inline-comment pitfall, panel `build` vs `dist` drift, etc.).
+
+Short summary:
+
+- Browser panel required `__TAURI_INTERNALS__` guards + `useApiToken` hook (fixed in WAVE-5, `4af11709`).
+- `XAVIER_TOKEN=foo # comment` inline — the `# comment` becomes part of the literal token; put comments on their own lines.
+- `XAVIER_PANEL_UI_DIR` priority list only in `assets.rs` — now documented in `docs/reference/ENV_VARS.md`.
+
+---
+
 ## 🏗️ Architecture Overview
 
 Xavier is organized into modular subsystems designed for autonomous agent contextual awareness and local-first execution:

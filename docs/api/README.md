@@ -1,118 +1,118 @@
 # Xavier REST API - User Guide & Documentation
 
-Bienvenido a la documentación oficial de la API REST de **Xavier**, el motor centralizado de contexto semántico, integración de memoria persistente y red mesh federada P2P.
+Welcome to the official REST API documentation for **Xavier**, the centralized semantic context engine, persistent memory integration and federated P2P mesh network.
 
-Este directorio contiene las especificaciones y guías necesarias para integrarse con Xavier:
-- [Especificación OpenAPI 3.1.0 (YAML)](./openapi.yaml)
+This directory contains the specifications and guides needed to integrate with Xavier:
+- [OpenAPI Specification 3.1.0 (YAML)](./openapi.yaml)
 - [Postman Collection v2.1.0](./xavier.postman_collection.json)
 
 ---
 
-## 1. Conceptos Globales
+## 1. Global Concepts
 
 ### Base URL
-Por defecto, el servidor HTTP de Xavier corre en:
+By default, the Xavier HTTP server runs at:
 ```http
 http://localhost:8006
 ```
-El puerto puede cambiarse al arrancar el servidor usando:
+The port can be changed when starting the server using:
 ```bash
-xavier http <puerto>
+xavier http <port>
 ```
 
-### Versionado de API
-Las rutas canónicas de Xavier utilizan el prefijo `/v1/` para garantizar la estabilidad y compatibilidad futura de las integraciones. Ejemplo: `/v1/memories`.
-Las rutas heredadas (legacy) como `/memory/add` siguen soportadas para compatibilidad con la CLI pero se recomienda migrar a `/v1/`.
+### API Versioning
+Canonical Xavier routes use the `/v1/` prefix to guarantee stability and future compatibility. Example: `/v1/memories`.
+Legacy routes like `/memory/add` remain supported for CLI compatibility but migrating to `/v1/` is recommended.
 
-### Variables de Entorno de Configuración
-- `XAVIER_PORT`: Puerto HTTP (por defecto `8006`).
-- `XAVIER_TOKEN`: Token estático para la protección básica de los endpoints.
-- `XAVIER_JWT_SECRET`: Clave secreta para la generación y validación de tokens JWT en el flujo de sesión de usuarios.
-- `XAVIER_STATE_DIR`: Directorio persistente donde se guardan las bases de datos `auth.db`, `auth_store.db` y `memory.db`.
-
----
-
-## 2. Protocolo de Autenticación
-
-Xavier soporta dos mecanismos de autenticación independientes dependiendo del caso de uso:
-
-### A. Autenticación Básica por Token de Servidor (`X-Xavier-Token`)
-Diseñado para integraciones directas entre agentes locales, CLI y scripts.
-- **Header Requerido:** `X-Xavier-Token: <token_estatico>`
-- **Comportamiento:** Si el header no coincide con la variable `XAVIER_TOKEN` configurada en el servidor, se denegará el acceso con un error `401 Unauthorized`.
-
-### B. Autenticación Completa basada en Sesiones JWT + 2FA
-Diseñado para interfaces de usuario avanzadas (como `panel-ui`) y usuarios finales. El flujo completo comprende:
-
-1. **Registro de Usuario (`POST /auth/register`)**
-   - Registra el correo y contraseña de manera segura. Las contraseñas se hashean usando algoritmos criptográficos robustos y se guardan de forma aislada en `auth.db`.
-2. **Inicio de Sesión (`POST /v1/auth/login`)**
-   - Retorna un estado inicial. Si el usuario tiene habilitado el segundo factor (MFA/TOTP), la respuesta indicará `totp_required: true` y no entregará el token final aún.
-3. **Verificación de 2FA TOTP (`POST /v1/auth/totp/verify`)**
-   - El cliente envía el código de un solo uso.
-   - **Nota de Compatibilidad (TOTP Double-Division Bug):** El servidor implementa una doble división por 30 de la marca de tiempo Unix (`timestamp / 30 / 30`) para validar códigos TOTP. Los clientes deben generar los códigos teniendo esto en cuenta para evitar fallos de sincronización horaria.
-   - Retorna el token JWT definitivo en caso de éxito.
-4. **Semilla de Recuperación y Códigos de Backup**
-   - En el setup inicial se exponen endpoints para ver y verificar la semilla criptográfica (`/auth/recovery/seed/show` y `/auth/recovery/seed/verify`) o generar códigos de backup de emergencia (`/auth/recovery/backup-codes`) para recuperar el acceso si se pierde el dispositivo 2FA.
-5. **Gestión de Sesiones Activas**
-   - `GET /v1/auth/sessions`: Lista los tokens y dispositivos con sesiones vigentes.
-   - `DELETE /v1/auth/sessions/{id}`: Revoca y destruye una sesión activa de forma inmediata.
+### Configuration Environment Variables
+- `XAVIER_PORT`: HTTP port (default `8006`).
+- `XAVIER_TOKEN`: Static token for basic endpoint protection.
+- `XAVIER_JWT_SECRET`: Secret key for generation and validation of JWT tokens in the user session flow.
+- `XAVIER_STATE_DIR`: Persistent directory where `auth.db`, `auth_store.db` and `memory.db` are stored.
 
 ---
 
-## 3. Rate Limiting (Control de Flujo)
+## 2. Authentication Protocol
 
-Para mitigar ataques de fuerza bruta y abusos de recursos, Xavier cuenta con un middleware dinámico de control de tasa de peticiones (Rate Limiting) y registro de auditoría en base de datos.
+Xavier supports two independent authentication mechanisms depending on the use case:
 
-### Control de Fuerza Bruta en Inicio de Sesión
-- **Ruta Protegida:** `/v1/auth/login`
-- **Regla:** Máximo de **5 intentos fallidos dentro de una ventana de 15 minutos**.
-- **Comportamiento al Exceder:** El servidor registra el evento `login_failed` en el log de auditoría interna, bloquea temporalmente la dirección IP solicitante y retorna un error `429 Too Many Requests`.
+### A. Server Token Basic Authentication (`X-Xavier-Token`)
+Designed for direct integrations between local agents, CLI and scripts.
+- **Required Header:** `X-Xavier-Token: <static_token>`
+- **Behavior:** If the header does not match the `XAVIER_TOKEN` configured on the server, access is denied with `401 Unauthorized`.
 
-### Headers de Respuesta de Tasa de Flujo
-Cuando una petición es procesada, el servidor añade los siguientes headers para ayudar a los clientes a regular su frecuencia:
-- `X-RateLimit-Limit`: Cantidad máxima de peticiones permitidas en la ventana de tiempo.
-- `X-RateLimit-Remaining`: Cantidad de peticiones disponibles restantes.
-- `X-RateLimit-Reset`: Tiempo Unix en segundos para el reinicio del límite.
+### B. Full Session-based Authentication with JWT + 2FA
+Designed for advanced user interfaces (like `panel-ui`) and end users. The full flow comprises:
+
+1. **User Registration (`POST /auth/register`)**
+   - Registers email and password securely. Passwords are hashed with robust cryptographic algorithms and stored isolated in `auth.db`.
+2. **Login (`POST /v1/auth/login`)**
+   - Returns initial state. If the user has second factor enabled (MFA/TOTP), the response will indicate `totp_required: true` and will not yet return the final token.
+3. **TOTP 2FA Verification (`POST /v1/auth/totp/verify`)**
+   - The client sends the one-time code.
+   - **Compatibility Note (TOTP Double-Division Bug):** The server implements a double division by 30 of the Unix timestamp (`timestamp / 30 / 30`) to validate TOTP codes. Clients must generate codes taking this into account to avoid time sync failures.
+   - Returns the final JWT token on success.
+4. **Recovery Seed and Backup Codes**
+   - During initial setup, endpoints are exposed to view and verify the cryptographic seed (`/auth/recovery/seed/show` and `/auth/recovery/seed/verify`) or generate emergency backup codes (`/auth/recovery/backup-codes`) to recover access if the 2FA device is lost.
+5. **Active Session Management**
+   - `GET /v1/auth/sessions`: Lists tokens and devices with active sessions.
+   - `DELETE /v1/auth/sessions/{id}`: Revokes and destroys an active session immediately.
 
 ---
 
-## 4. Estructura de Errores y Seguridad
+## 3. Rate Limiting
 
-Todos los errores retornados por la API REST de Xavier siguen un estándar estructurado en formato JSON:
+To mitigate brute-force attacks and resource abuse, Xavier includes dynamic rate-limiting middleware and database audit logging.
+
+### Brute-Force Protection on Login
+- **Protected Route:** `/v1/auth/login`
+- **Rule:** Maximum **5 failed attempts within a 15-minute window**.
+- **Behavior on Exceed:** Server logs `login_failed` in internal audit log, temporarily blocks requesting IP and returns `429 Too Many Requests`.
+
+### Rate-Limit Response Headers
+When a request is processed, the server adds the following headers to help clients regulate frequency:
+- `X-RateLimit-Limit`: Maximum requests allowed in time window.
+- `X-RateLimit-Remaining`: Remaining available requests.
+- `X-RateLimit-Reset`: Unix time in seconds for limit reset.
+
+---
+
+## 4. Error Structure & Security
+
+All errors returned by the Xavier REST API follow a structured JSON standard:
 
 ```json
 {
   "error": {
-    "code": <codigo_numerico>,
-    "message": "<descripcion_del_error>",
-    "details": "<informacion_tecnica_adicional_u_opcional>"
+    "code": <numeric_code>,
+    "message": "<error_description>",
+    "details": "<optional_technical_info>"
   }
 }
 ```
 
-### Códigos de Estado HTTP Comunes
-- `400 Bad Request`: Payload malformado o faltan parámetros requeridos.
-- `401 Unauthorized`: Token de acceso inválido, expirado o faltante.
-- `403 Forbidden`: Privilegios insuficientes para la operación (ACL del nodo mesh restrictiva).
-- `429 Too Many Requests`: Se excedió el límite de llamadas permitido.
-- `500 Internal Server Error`: Error inesperado en el backend o fallo en la base de datos de vectores.
+### Common HTTP Status Codes
+- `400 Bad Request`: Malformed payload or missing required parameters.
+- `401 Unauthorized`: Invalid, expired or missing access token.
+- `403 Forbidden`: Insufficient privileges for operation (restrictive mesh node ACL).
+- `429 Too Many Requests`: Rate limit exceeded.
+- `500 Internal Server Error`: Unexpected backend error or vector DB failure.
 
-### Mitigación de Prompt Injection (Código de Error Especial)
-Xavier cuenta con un detector interno de inyecciones de prompts maliciosas (`PromptInjectionDetector`).
-- Si se detecta un patrón sospechoso, evasión en español, leetspeak (ej. `1->i`, `3->e`), stripping de marcas de acento o codificación en Base64, la petición se bloquea de inmediato.
-- **Código de Error Devuelto:** `-32000` (`XAVIER_ERROR_SECURITY`) con estado HTTP `500` o `400`.
+### Prompt Injection Mitigation (Special Error Code)
+Xavier includes an internal malicious prompt injection detector (`PromptInjectionDetector`).
+- If a suspicious pattern, Spanish evasion, leetspeak (e.g. `1->i`, `3->e`), accent stripping or Base64 encoding is detected, the request is blocked immediately.
+- **Returned Error Code:** `-32000` (`XAVIER_ERROR_SECURITY`) with HTTP `500` or `400`.
 
 ---
 
-## 5. Cómo Usar las Herramientas Proporcionadas
+## 5. How To Use Provided Tools
 
-### Uso de la Colección de Postman
-1. Abre Postman e importa el archivo [xavier.postman_collection.json](./xavier.postman_collection.json).
-2. En las propiedades de la colección, ajusta las variables en la pestaña **Variables**:
-   - `baseUrl`: Por defecto `http://localhost:8006`.
-   - `token`: Tu clave secreta `XAVIER_TOKEN` (por defecto `change-me`).
-3. Ejecuta peticiones de prueba como **Get System Health** para verificar que tu servidor está en línea.
+### Using the Postman Collection
+1. Open Postman and import [xavier.postman_collection.json](./xavier.postman_collection.json).
+2. In collection properties, adjust variables in the **Variables** tab:
+   - `baseUrl`: Default `http://localhost:8006`.
+   - `token`: Your secret `XAVIER_TOKEN` (default `change-me`).
+3. Run test requests like **Get System Health** to verify your server is online.
 
-### Visualización de OpenAPI / Swagger Spec
-Puedes cargar [openapi.yaml](./openapi.yaml) en [Swagger Editor](https://editor.swagger.io/) o cualquier visor de OpenAPI integrado en tu IDE para visualizar la documentación interactiva y generar clientes automatizados en múltiples lenguajes de programación.
+### Viewing the OpenAPI / Swagger Spec
+You can load [openapi.yaml](./openapi.yaml) in [Swagger Editor](https://editor.swagger.io/) or any OpenAPI viewer integrated in your IDE to visualize interactive documentation and generate automated clients in multiple languages.
