@@ -76,3 +76,4 @@ xavier_memory.db*
 .chronicle/
 **/test-results/
 .cursor/
+.hermes/
