@@ -45,7 +45,7 @@ export default React.memo(function InputArea({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files && files.length > 0) {
-        const firstFile = files[0];
+        const firstFile = files[0] as File & { webkitRelativePath?: string };
         const folder = firstFile.webkitRelativePath
           ? firstFile.webkitRelativePath.split("/")[0]
           : "directorio";
@@ -98,6 +98,7 @@ export default React.memo(function InputArea({
       <input
         type="file"
         ref={fileInputRef}
+        // @ts-expect-error webkitdirectory is non-standard but supported by Chrome/Edge
         webkitdirectory=""
         style={{ display: "none" }}
         onChange={handleFileChange}

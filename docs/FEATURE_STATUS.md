@@ -1,8 +1,8 @@
 # Xavier Feature Status
 
-Current product label: `1.0.0` — **52/52 stable 100% verified (WAVE-4 2026-08-31)**
+Current product label: `0.0.1` — **52/52 stable 100% verified (WAVE-5 2026-09-01, browser-compat)**
 
-This matrix is the operational truth for the repository as of v1.0.0 stabilization.
+This matrix is the operational truth for the repository as of v0.0.1 stabilization.
 All features declared in `.gitcore/features.json` are `stable` with automated verification.
 
 ## Release Status (WAVE-4 verified)
