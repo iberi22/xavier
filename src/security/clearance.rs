@@ -51,6 +51,7 @@ pub fn filter_by_clearance(
 }
 
 /// Clearance enforcer middleware — wraps read paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClearanceEnforcer {
     pub requester_level: ClearanceLevel,
 }

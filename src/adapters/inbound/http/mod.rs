@@ -3,6 +3,7 @@
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
 pub mod dto;
+pub mod middleware;
 pub mod routes;
 pub mod state;
 pub mod time_metrics_adapter;

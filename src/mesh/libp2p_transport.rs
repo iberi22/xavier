@@ -64,6 +64,19 @@ impl Default for NatTraversalConfig {
     }
 }
 
+/// libp2p Network Behaviour combining gossipsub protocol and mDNS local peer discovery.
+///
+/// Wire Plan:
+/// - `gossipsub`: Handles topic subscription, message validation, and mesh broadcast across `xavier/mesh/*`.
+/// - `mdns`: Multicast DNS service discovery for local peer detection and automatic transport dial.
+/// - NAT Traversal: Relay nodes + direct WebRTC/QUIC hole punching via FallbackMeshTransport.
+#[cfg(feature = "libp2p")]
+#[derive(Debug, Clone)]
+pub struct Behaviour {
+    pub gossipsub: GossipsubConfig,
+    pub mdns: String,
+}
+
 /// Stub Mesh libp2p transport — compiles without libp2p deps
 pub struct MeshLibp2pTransport {
     config: GossipsubConfig,
