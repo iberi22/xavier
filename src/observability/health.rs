@@ -425,8 +425,13 @@ impl HealthMonitor {
         let mut status = HealthLevel::Healthy;
         if !integrity_ok || fragmentation_percent > 60.0 || wal_size_bytes > 1024 * 1024 * 1024 {
             status = HealthLevel::Unhealthy;
-        } else if fragmentation_percent > 30.0 || wal_size_bytes > 256 * 1024 * 1024 {
+        } else if fragmentation_percent > 30.0 || wal_size_bytes > 50 * 1024 * 1024 {
             status = HealthLevel::Degraded;
+        }
+
+        // Checkpoint WAL if threshold is exceeded using rate-limited logic or direct call if path exists
+        if wal_size_bytes > 50 * 1024 * 1024 {
+            let _ = crate::storage::pragma::checkpoint_if_needed(&config.path);
         }
 
         DbHealth {
