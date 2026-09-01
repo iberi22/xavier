@@ -77,3 +77,8 @@ xavier_memory.db*
 **/test-results/
 .cursor/
 .hermes/
+
+# SWAL preflight + skill registry (generated)
+.atl/
+.gitcore/skill-registry.json
+panel-ui/.env.local

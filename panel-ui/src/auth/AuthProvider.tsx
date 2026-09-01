@@ -19,9 +19,14 @@ import { create } from "zustand";
 import { authClient } from "../api/authClient";
 import type { AuthState, User } from "../types";
 
+// The panel uses the master API key (VITE_XAVIER_API_TOKEN) for X-Xavier-Token panel routes.
+// The operator JWT is stored separately in refreshToken for session management.
+const API_TOKEN =
+  (import.meta.env.VITE_XAVIER_API_TOKEN as string | undefined) ?? null;
+
 const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token: null,
+  token: API_TOKEN, // Master API key — used as X-Xavier-Token in panel/* calls
   refreshToken: null,
   isAuthenticated: false,
   requires2FA: false,
@@ -29,9 +34,13 @@ const useAuthStore = create<AuthState>((set) => ({
   login: async (email, password, totpCode) => {
     try {
       const response = await authClient.login(email, password, totpCode);
+      // access_token is the JWT; use it only if no env token is configured.
+      const jwtToken =
+        (response as unknown as { access_token?: string }).access_token ??
+        response.token;
       set({
         user: response.user,
-        token: response.token,
+        token: API_TOKEN ?? jwtToken ?? null,
         refreshToken: response.refresh_token,
         isAuthenticated: true,
         requires2FA: false,
@@ -43,6 +52,7 @@ const useAuthStore = create<AuthState>((set) => ({
       throw error;
     }
   },
+
 
   logout: async () => {
     await authClient.logout();

@@ -1,7 +1,53 @@
-import { invoke } from "@tauri-apps/api/core";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { SystemInfo } from "./OnboardingFlow";
+
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/** Detect GPU availability via WebGL (browser-only). */
+function detectGpu(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    return Boolean(
+      canvas.getContext("webgl") || canvas.getContext("experimental-webgl"),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Fetch system info from Xavier /health (no auth required). */
+async function fetchSystemInfoFromXavier(): Promise<SystemInfo> {
+  const base =
+    typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+      ? "http://127.0.0.1:8006"
+      : "";
+
+  const res = await fetch(`${base}/health`);
+  if (!res.ok) throw new Error(`Xavier /health HTTP ${res.status}`);
+  const data = await res.json();
+
+  // /health → system: { ram_usage_percent, cpu_usage, … }
+  // browser fallback for absolute values
+  const ramUsagePct: number = data?.system?.ram_usage_percent ?? 50;
+  const deviceMemoryGb: number =
+    (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 0;
+  const totalRamGb =
+    deviceMemoryGb > 0
+      ? deviceMemoryGb
+      : Math.round((100 / ramUsagePct) * 8) / 1; // rough estimate
+
+  return {
+    total_ram_gb: totalRamGb,
+    cpu_cores: navigator.hardwareConcurrency ?? data?.system?.cpus ?? 1,
+    has_gpu: detectGpu(),
+    // Process detection is not possible from the browser without native APIs.
+    openclaw_running: false,
+    hermes_running: false,
+  };
+}
 
 export function SystemScanStep({
   onNext,
@@ -29,7 +75,15 @@ export function SystemScanStep({
           "> Scanning process list for sibling nodes...",
         ]);
 
-        const info = await invoke<SystemInfo>("scan_system");
+        let info: SystemInfo;
+        if (isTauriRuntime()) {
+          // Tauri desktop: use native command for accurate readings.
+          const { invoke } = await import("@tauri-apps/api/core");
+          info = await invoke<SystemInfo>("scan_system");
+        } else {
+          // Browser /panel: derive info from Xavier HTTP API + browser APIs.
+          info = await fetchSystemInfoFromXavier();
+        }
 
         setLogs((prev) => [
           ...prev,

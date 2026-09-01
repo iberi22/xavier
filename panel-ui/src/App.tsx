@@ -52,6 +52,18 @@ const getApiUrl = (path: string) => {
 	return isTauri ? `http://127.0.0.1:8006${path}` : path;
 };
 
+/** Backend stores messages with a `content` field; the panel expects `plain_text`. */
+function normalizeMessage(msg: unknown): PanelMessage {
+	const m = msg as Record<string, unknown>;
+	return {
+		...(m as PanelMessage),
+		plain_text:
+			(m.plain_text as string | undefined) ??
+			(m.content as string | undefined) ??
+			"",
+	};
+}
+
 function AppContent() {
 	const { token, isAuthenticated } = useAuthStore();
 	const [hash, setHash] = useState(window.location.hash);
@@ -201,8 +213,9 @@ function AppContent() {
 				);
 				if (!response.ok) throw new Error("Failed to load thread");
 				const detail = (await response.json()) as ThreadDetail;
-				setSelectedThreadId(threadId);
-				setMessages(detail.messages);
+					setSelectedThreadId(threadId);
+				setMessages(detail.messages.map(normalizeMessage));
+
 			} catch (cause) {
 				setError(
 					cause instanceof Error ? cause.message : "Failed to open thread",
@@ -311,12 +324,14 @@ function AppContent() {
 				});
 
 				setSelectedThreadId(payload.thread.id);
-				setMessages(payload.messages);
+				const normalized = payload.messages.map(normalizeMessage);
+				setMessages(normalized);
 
-				const lastMessage = payload.messages[payload.messages.length - 1];
+				const lastMessage = normalized[normalized.length - 1];
 				if (lastMessage?.role === "assistant") {
 					setStreamingMessageId(lastMessage.id);
 				}
+
 
 				setThreads((current) => {
 					const next = [
