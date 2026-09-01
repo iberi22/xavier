@@ -28,7 +28,199 @@
 //! - **Replay:** Hash SHA-256 único por contexto
 
 use crate::data_commons::types::*;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
+
+/// Reputation tier derived from Karma threshold
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReputationTier {
+    Newcomer,
+    Contributor,
+    Trusted,
+    Elder,
+}
+
+impl ReputationTier {
+    /// Calculate tier from karma score:
+    /// - Newcomer: < 300
+    /// - Contributor: 300..600
+    /// - Trusted: 600..900
+    /// - Elder: >= 900
+    pub fn from_karma(karma: i64) -> Self {
+        if karma >= 900 {
+            Self::Elder
+        } else if karma >= 600 {
+            Self::Trusted
+        } else if karma >= 300 {
+            Self::Contributor
+        } else {
+            Self::Newcomer
+        }
+    }
+}
+
+impl std::fmt::Display for ReputationTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Newcomer => write!(f, "newcomer"),
+            Self::Contributor => write!(f, "contributor"),
+            Self::Trusted => write!(f, "trusted"),
+            Self::Elder => write!(f, "elder"),
+        }
+    }
+}
+
+/// Karma log entry recording individual reward / sanction event
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KarmaLogEntry {
+    pub timestamp: u64,
+    pub amount: i64,
+    pub reason: String,
+}
+
+/// Agent karma state tracking balance, log history, and last decay timestamp
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct AgentKarmaRecord {
+    pub karma: i64,
+    pub history: Vec<KarmaLogEntry>,
+    pub last_decay: u64,
+}
+
+/// Persistent Karma engine managing rewards, sanctions, tiers, decay, and persistence to `data/ivn/karma.json`.
+#[derive(Debug, Clone)]
+pub struct KarmaEngine {
+    storage_path: PathBuf,
+    records: HashMap<String, AgentKarmaRecord>,
+}
+
+impl Default for KarmaEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl KarmaEngine {
+    /// Create new KarmaEngine using default storage path `data/ivn/karma.json`
+    pub fn new() -> Self {
+        Self::with_path(PathBuf::from("data/ivn/karma.json"))
+    }
+
+    /// Create KarmaEngine with custom storage path
+    pub fn with_path<P: Into<PathBuf>>(path: P) -> Self {
+        let storage_path = path.into();
+        let mut engine = Self {
+            storage_path,
+            records: HashMap::new(),
+        };
+        let _ = engine.load();
+        engine
+    }
+
+    /// Load records from storage file if it exists
+    pub fn load(&mut self) -> Result<(), String> {
+        if !self.storage_path.exists() {
+            return Ok(());
+        }
+        let data = std::fs::read_to_string(&self.storage_path)
+            .map_err(|e| format!("Failed to read karma file: {}", e))?;
+        let records: HashMap<String, AgentKarmaRecord> = serde_json::from_str(&data)
+            .map_err(|e| format!("Failed to parse karma JSON: {}", e))?;
+        self.records = records;
+        Ok(())
+    }
+
+    /// Save records to storage file
+    pub fn save(&self) -> Result<(), String> {
+        if let Some(parent) = self.storage_path.parent() {
+            if !parent.exists() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+        let json = serde_json::to_string_pretty(&self.records)
+            .map_err(|e| format!("Failed to serialize karma records: {}", e))?;
+        std::fs::write(&self.storage_path, json)
+            .map_err(|e| format!("Failed to write karma file: {}", e))?;
+        Ok(())
+    }
+
+    /// Award karma to an agent for a specified reason
+    pub fn reward(&mut self, agent: &str, amount: i64, reason: &str) -> i64 {
+        let abs_amount = amount.abs();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let record = self.records.entry(agent.to_string()).or_default();
+        record.karma += abs_amount;
+        record.history.push(KarmaLogEntry {
+            timestamp: now,
+            amount: abs_amount,
+            reason: reason.to_string(),
+        });
+
+        let new_karma = record.karma;
+        let _ = self.save();
+        new_karma
+    }
+
+    /// Sanction karma of an agent (slash/deduct) for a specified reason
+    pub fn sanction(&mut self, agent: &str, amount: i64, reason: &str) -> i64 {
+        let abs_amount = amount.abs();
+        let penalty_amount = -abs_amount;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let record = self.records.entry(agent.to_string()).or_default();
+        record.karma += penalty_amount;
+        record.history.push(KarmaLogEntry {
+            timestamp: now,
+            amount: penalty_amount,
+            reason: reason.to_string(),
+        });
+
+        let new_karma = record.karma;
+        let _ = self.save();
+        new_karma
+    }
+
+    /// Get current karma balance of an agent
+    pub fn get_karma(&self, agent: &str) -> i64 {
+        self.records.get(agent).map(|r| r.karma).unwrap_or(0)
+    }
+
+    /// Get current reputation tier of an agent
+    pub fn get_tier(&self, agent: &str) -> ReputationTier {
+        ReputationTier::from_karma(self.get_karma(agent))
+    }
+
+    /// Get detailed karma record of an agent if present
+    pub fn get_record(&self, agent: &str) -> Option<&AgentKarmaRecord> {
+        self.records.get(agent)
+    }
+
+    /// Apply daily 1% decay to all recorded agent karma balances
+    pub fn decay(&mut self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        for record in self.records.values_mut() {
+            if record.karma > 0 {
+                let decayed = (record.karma as f64 * 0.99) as i64;
+                record.karma = decayed;
+            }
+            record.last_decay = now;
+        }
+
+        let _ = self.save();
+    }
+}
 
 /// Configuración del sistema de reputación
 #[derive(Debug, Clone)]
@@ -503,5 +695,57 @@ mod tests {
         let collusion = engine.detect_collusion();
         assert!(!collusion.is_empty());
         assert_eq!(collusion[0].2, 1.0); // 100% positive interaction
+    }
+
+    #[test]
+    fn test_reputation_tier() {
+        assert_eq!(ReputationTier::from_karma(0), ReputationTier::Newcomer);
+        assert_eq!(ReputationTier::from_karma(299), ReputationTier::Newcomer);
+        assert_eq!(ReputationTier::from_karma(300), ReputationTier::Contributor);
+        assert_eq!(ReputationTier::from_karma(599), ReputationTier::Contributor);
+        assert_eq!(ReputationTier::from_karma(600), ReputationTier::Trusted);
+        assert_eq!(ReputationTier::from_karma(899), ReputationTier::Trusted);
+        assert_eq!(ReputationTier::from_karma(900), ReputationTier::Elder);
+        assert_eq!(ReputationTier::from_karma(1500), ReputationTier::Elder);
+    }
+
+    #[test]
+    fn test_karma_reward_sanction_decay() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join(format!("karma_test_{}.json", ulid::Ulid::new()));
+        let mut engine = KarmaEngine::with_path(&file_path);
+
+        let agent = "agent_x";
+
+        assert_eq!(engine.get_karma(agent), 0);
+        assert_eq!(engine.get_tier(agent), ReputationTier::Newcomer);
+
+        // Reward +500 karma
+        let k1 = engine.reward(agent, 500, "verified identity proof");
+        assert_eq!(k1, 500);
+        assert_eq!(engine.get_karma(agent), 500);
+        assert_eq!(engine.get_tier(agent), ReputationTier::Contributor);
+
+        // Sanction -100 karma
+        let k2 = engine.sanction(agent, 100, "false positive vote");
+        assert_eq!(k2, 400);
+        assert_eq!(engine.get_karma(agent), 400);
+
+        // Check history log entries
+        let record = engine.get_record(agent).unwrap();
+        assert_eq!(record.history.len(), 2);
+        assert_eq!(record.history[0].amount, 500);
+        assert_eq!(record.history[1].amount, -100);
+
+        // Apply decay (1% decay: 400 * 0.99 = 396)
+        engine.decay();
+        assert_eq!(engine.get_karma(agent), 396);
+
+        // Reload engine from disk to verify persistence
+        let engine_reloaded = KarmaEngine::with_path(&file_path);
+        assert_eq!(engine_reloaded.get_karma(agent), 396);
+        assert_eq!(engine_reloaded.get_tier(agent), ReputationTier::Contributor);
+
+        let _ = std::fs::remove_file(file_path);
     }
 }
