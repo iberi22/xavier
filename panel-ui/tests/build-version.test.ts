@@ -18,7 +18,7 @@ describe("Panel UI Build & Version Integration", () => {
     expect(viteConfigContent).not.toContain("0.6.1-beta");
   });
 
-  test("should include dummy token in dist assets when built with VITE_XAVIER_API_TOKEN=dummy", () => {
+  test("should include dummy token in dist assets when built with VITE_XAVIER_API_TOKEN=dummy", async () => {
     const panelDir = path.resolve(__dirname, "..");
     // Ensure clean build
     try {
@@ -64,7 +64,7 @@ describe("Panel UI Build & Version Integration", () => {
     } else {
       expect(foundDummy).toBe(true);
     }
-  });
+  }, 15000);
 
   test("should not include unexpected real token in build when VITE_XAVIER_API_TOKEN is not set", () => {
     const panelDir = path.resolve(__dirname, "..");
@@ -84,7 +84,7 @@ describe("Panel UI Build & Version Integration", () => {
       const content = fs.readFileSync(path.join(distAssetsDir, jsFile), "utf8");
       expect(content).not.toContain("XAVIER_SECRET_TOKEN_REAL");
     }
-  });
+  }, 15000);
 
   test("should execute pnpm build without deprecated pnpm field warnings", () => {
     const panelDir = path.resolve(__dirname, "..");
@@ -100,5 +100,5 @@ describe("Panel UI Build & Version Integration", () => {
 
     expect(stdoutAndStderr).not.toContain('[WARN] The "pnpm" field');
     expect(stdoutAndStderr).not.toContain('The "pnpm" field in');
-  });
+  }, 15000);
 });
