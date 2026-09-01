@@ -34,6 +34,7 @@ impl WasmMemoryRecord {
 }
 
 /// WASM IndexedDB store interface (trait for browser + in-memory fallback)
+#[allow(clippy::len_without_is_empty)]
 pub trait WasmStore: Send + Sync {
     fn put(&mut self, rec: WasmMemoryRecord) -> Result<(), String>;
     fn get(&self, id: &str) -> Option<WasmMemoryRecord>;
