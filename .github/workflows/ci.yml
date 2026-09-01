@@ -120,3 +120,26 @@ jobs:
           pnpm --filter xavier-panel-ui run test
           npx playwright install --with-deps chromium
           npx --prefix panel-ui playwright test --project=chromium
+
+  version-gate:
+    name: Version Sync Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run swal-preflight check
+        run: |
+          npx --yes @swal/preflight check --cwd . || swal-preflight check --cwd . || bash scripts/check-version-sync.sh
+      - name: Run Version Preflight Gate
+        run: |
+          bash scripts/check-version-sync.sh
+          if command -v swal-preflight &> /dev/null || [ -f "periferia/swal-preflight/bin/swal-preflight.js" ]; then
+            (swal-preflight preflight --wave 10 --json > /tmp/preflight.json 2>/dev/null || node periferia/swal-preflight/bin/swal-preflight.js preflight --wave 10 --json > /tmp/preflight.json)
+            python3 -c "import json, sys; data=json.load(open('/tmp/preflight.json')); sys.exit(0 if data.get('ready') else 1)"
+          fi
+
