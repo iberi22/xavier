@@ -152,14 +152,17 @@ function NotificationItem({
 interface NotificationsDropdownProps {
 	onClose: () => void;
 	anchorRef?: React.RefObject<HTMLElement>;
+	isLoading?: boolean;
 }
 
 export default React.memo(function NotificationsDropdown({
 	onClose,
+	isLoading: propIsLoading,
 }: NotificationsDropdownProps) {
 	const [notifications, setNotifications] = useState<Notification[]>([]);
 	const [activeIsland, setActiveIsland] = useState<IslandId | "all">("all");
-	const [isLoading, setIsLoading] = useState<boolean>(true);
+	const [internalLoading, setInternalLoading] = useState<boolean>(true);
+	const isLoading = propIsLoading !== undefined ? propIsLoading : internalLoading;
 
 	useEffect(() => {
 		let isMounted = true;
@@ -173,7 +176,7 @@ export default React.memo(function NotificationsDropdown({
 				});
 				if (!response.ok) {
 					if (response.status === 401) {
-						if (isMounted) setIsLoading(false);
+						if (isMounted) setInternalLoading(false);
 						return;
 					}
 					throw new Error(`HTTP ${response.status}`);
@@ -187,7 +190,7 @@ export default React.memo(function NotificationsDropdown({
 			} catch (err) {
 				console.error("Failed to fetch notifications:", err);
 			} finally {
-				if (isMounted) setIsLoading(false);
+				if (isMounted) setInternalLoading(false);
 			}
 		};
 
@@ -386,7 +389,7 @@ export default React.memo(function NotificationsDropdown({
 				<div className="flex-1 overflow-y-auto p-2">
 					<AnimatePresence>
 						{isLoading ? (
-							<div className="space-y-2">
+							<div className="space-y-2" data-testid="notification-skeletons">
 								<div className="h-12 animate-pulse bg-white/5 rounded-lg" />
 								<div className="h-12 animate-pulse bg-white/5 rounded-lg" />
 								<div className="h-12 animate-pulse bg-white/5 rounded-lg" />
