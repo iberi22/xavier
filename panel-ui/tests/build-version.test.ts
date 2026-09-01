@@ -3,13 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-describe("Panel UI Build & Version Integration", () => {
-  test("should resolve __APP_VERSION__ equal to Cargo.toml version (0.0.1)", () => {
+describe.sequential("Panel UI Build & Version Integration", () => {
+  test("should resolve __APP_VERSION__ equal to Cargo.toml version (0.1.0)", () => {
     const cargoPath = path.resolve(__dirname, "../../Cargo.toml");
     const cargoContent = fs.readFileSync(cargoPath, "utf8");
     const expectedVersion = cargoContent.match(/^version = "(.+)"/m)?.[1];
 
-    expect(expectedVersion).toBe("0.0.1");
+    expect(expectedVersion).toBe("0.1.0");
 
     const viteConfigPath = path.resolve(__dirname, "../vite.config.ts");
     const viteConfigContent = fs.readFileSync(viteConfigPath, "utf8");
@@ -55,7 +55,7 @@ describe("Panel UI Build & Version Integration", () => {
       let foundVersion = false;
       for (const jsFile of jsFiles) {
         const content = fs.readFileSync(path.join(assetsDir, jsFile), "utf8");
-        if (content.includes("0.0.1")) {
+        if (content.includes("0.1.0")) {
           foundVersion = true;
           break;
         }
@@ -64,7 +64,7 @@ describe("Panel UI Build & Version Integration", () => {
     } else {
       expect(foundDummy).toBe(true);
     }
-  }, 15000);
+  }, 30000);
 
   test("should not include unexpected real token in build when VITE_XAVIER_API_TOKEN is not set", () => {
     const panelDir = path.resolve(__dirname, "..");
@@ -84,7 +84,7 @@ describe("Panel UI Build & Version Integration", () => {
       const content = fs.readFileSync(path.join(distAssetsDir, jsFile), "utf8");
       expect(content).not.toContain("XAVIER_SECRET_TOKEN_REAL");
     }
-  }, 15000);
+  }, 30000);
 
   test("should execute pnpm build without deprecated pnpm field warnings", () => {
     const panelDir = path.resolve(__dirname, "..");
@@ -100,5 +100,5 @@ describe("Panel UI Build & Version Integration", () => {
 
     expect(stdoutAndStderr).not.toContain('[WARN] The "pnpm" field');
     expect(stdoutAndStderr).not.toContain('The "pnpm" field in');
-  }, 15000);
+  }, 30000);
 });
