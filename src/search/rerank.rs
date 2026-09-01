@@ -119,6 +119,57 @@ impl Reranker for HttpReranker {
     }
 }
 
+/// RAG pipeline search hook combining RagHybridConfig + reranker
+pub struct RagHook {
+    config: RagHybridConfig,
+    reranker: Option<Arc<dyn Reranker>>,
+}
+
+impl RagHook {
+    pub fn new(config: RagHybridConfig, reranker: Option<Arc<dyn Reranker>>) -> Self {
+        Self { config, reranker }
+    }
+
+    pub fn from_env() -> Self {
+        let config = RagHybridConfig::from_env();
+        let reranker = HttpReranker::from_env().map(|r| Arc::new(r) as Arc<dyn Reranker>);
+        Self::new(config, reranker)
+    }
+}
+
+#[async_trait]
+impl SearchHook for RagHook {
+    fn name(&self) -> &str {
+        "rag_hybrid"
+    }
+
+    async fn pre_query(
+        &self,
+        query: &mut String,
+        _filters: &mut Option<MemoryQueryFilters>,
+    ) -> anyhow::Result<()> {
+        if self.config.enable_hyde {
+            let hypo = hyde_hypothetical_doc(query);
+            query.push(' ');
+            query.push_str(&hypo);
+        }
+        Ok(())
+    }
+
+    async fn post_query(&self, query: &str, results: &mut Vec<ScoredResult>) -> anyhow::Result<()> {
+        let fused = rag_pipeline(query, results.clone(), vec![], vec![], &self.config);
+        if !fused.is_empty() {
+            *results = fused;
+        }
+        if self.config.enable_rerank {
+            if let Some(reranker) = &self.reranker {
+                reranker.rerank(query, results).await?;
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct RerankHook {
     reranker: Arc<dyn Reranker>,
 }
@@ -395,5 +446,89 @@ mod tests {
         assert!(fused.is_empty());
         let cfg2 = RagHybridConfig::default();
         assert!(!cfg2.enable_hyde);
+    }
+
+    #[tokio::test]
+    async fn test_rag_e2e() {
+        let bm25 = vec![
+            ScoredResult {
+                id: "doc_a".into(),
+                content: "fn calculate_hash()".into(),
+                score: 0.9,
+                source: "bm25".into(),
+                path: "src/hash.rs".into(),
+                updated_at: None,
+                zone: None,
+            },
+            ScoredResult {
+                id: "doc_b".into(),
+                content: "struct HashConfig".into(),
+                score: 0.7,
+                source: "bm25".into(),
+                path: "src/config.rs".into(),
+                updated_at: None,
+                zone: None,
+            },
+        ];
+
+        let vector = vec![
+            ScoredResult {
+                id: "doc_b".into(),
+                content: "struct HashConfig".into(),
+                score: 0.85,
+                source: "vector".into(),
+                path: "src/config.rs".into(),
+                updated_at: None,
+                zone: None,
+            },
+            ScoredResult {
+                id: "doc_c".into(),
+                content: "impl Digest for Hasher".into(),
+                score: 0.6,
+                source: "vector".into(),
+                path: "src/digest.rs".into(),
+                updated_at: None,
+                zone: None,
+            },
+        ];
+
+        let code_tokens = vec![ScoredResult {
+            id: "doc_a".into(),
+            content: "fn calculate_hash()".into(),
+            score: 0.95,
+            source: "code_tokens".into(),
+            path: "src/hash.rs".into(),
+            updated_at: None,
+            zone: None,
+        }];
+
+        let query = "calculate hash digest";
+        let config = RagHybridConfig {
+            rrf_k: 60.0,
+            code_token_boost: 1.5,
+            enable_hyde: true,
+            enable_rerank: true,
+            hyde_model: Some("mxbai-rerank-base".into()),
+        };
+
+        // 1. Pipeline fusion
+        let fused = rag_pipeline(query, bm25, vector, code_tokens, &config);
+        assert_eq!(fused.len(), 3);
+        // doc_a appears in BM25 + Code tokens (with 1.5 boost), doc_b in BM25 + Vector
+        assert_eq!(fused[0].id, "doc_a");
+
+        // 2. SearchHook E2E invocation with MockReranker
+        let hook = RagHook::new(config, Some(Arc::new(MockReranker)));
+        let mut hook_results = fused.clone();
+
+        hook.post_query(query, &mut hook_results).await.unwrap();
+        assert_eq!(hook_results.len(), 3);
+        assert_eq!(hook.name(), "rag_hybrid");
+
+        // Verify recall for all 3 expected items
+        let ids: Vec<&str> = hook_results.iter().map(|r| r.id.as_str()).collect();
+        assert!(ids.contains(&"doc_a"));
+        assert!(ids.contains(&"doc_b"));
+        assert!(ids.contains(&"doc_c"));
     }
 }
