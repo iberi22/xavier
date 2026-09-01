@@ -20,7 +20,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LEDGER="$ROOT/docs/features/features.json"
+LEDGER="$ROOT/.gitcore/features.json"
+# Fallback for legacy layout (docs/features)
+if [ ! -f "$LEDGER" ] && [ -f "$ROOT/docs/features/features.json" ]; then
+  LEDGER="$ROOT/docs/features/features.json"
+fi
 MODE="full"
 STRICT=0
 
