@@ -55,6 +55,9 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build Release Binary
+        env:
+          # Ensure portable target dir (overrides local .cargo/config if present)
+          CARGO_TARGET_DIR: target
         run: cargo build --release --target ${{ matrix.target }} --features ci-safe
         shell: bash
 
@@ -62,7 +65,9 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          BIN_PATH="target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+          BIN_PATH="$TARGET_DIR/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          if [ ! -f "$BIN_PATH" ]; then echo "Binary not found at $BIN_PATH (TARGET_DIR=$TARGET_DIR)"; ls -R "$TARGET_DIR" | head -50; exit 1; fi
           ARCHIVE_NAME="xavier-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
           tar -czf "dist/${ARCHIVE_NAME}" -C "$(dirname "$BIN_PATH")" "${{ matrix.binary_name }}"
           cd dist && sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
@@ -72,7 +77,9 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          $BinPath = "target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          $TargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { "target" }
+          $BinPath = "$TargetDir/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          if (-not (Test-Path $BinPath)) { Write-Error "Binary not found at $BinPath (TargetDir=$TargetDir)"; Get-ChildItem -Recurse $TargetDir | Select-Object -First 20 | Out-String | Write-Host; exit 1 }
           $ArchiveName = "xavier-${{ github.ref_name }}-${{ matrix.target }}.zip"
           Compress-Archive -Path $BinPath -DestinationPath "dist/$ArchiveName"
           $Hash = (Get-FileHash "dist/$ArchiveName" -Algorithm SHA256).Hash.ToLower()

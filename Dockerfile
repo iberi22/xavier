@@ -7,11 +7,13 @@
 
 # Stage 0: Frontend Builder
 FROM node:20-bookworm-slim AS frontend-builder
-WORKDIR /app/panel-ui
-COPY panel-ui/package.json panel-ui/package-lock.json* ./
-RUN npm install
-COPY panel-ui/ ./
-RUN npm run build
+WORKDIR /app
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY panel-ui/package.json panel-ui/package.json
+RUN corepack enable && corepack prepare pnpm@9.12.3 --activate && pnpm install --frozen-lockfile
+COPY panel-ui/ panel-ui/
+COPY Cargo.toml Cargo.toml
+RUN pnpm --filter xavier-panel-ui run build
 
 # Stage 1: Builder
 # Using slim variant to keep final image small (~500MB vs ~800MB for full)
