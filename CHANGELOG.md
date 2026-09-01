@@ -4,6 +4,8 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-09-01
+
 ## [0.0.1] — 2026-08-30 (Initial Public Release)
 
 ### Added

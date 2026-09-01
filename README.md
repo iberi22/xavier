@@ -1,7 +1,7 @@
 # Xavier — Fast Vector Memory & Communal Context Runtime for AI Agents
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
-[![Version](https://img.shields.io/badge/version-0.0.1-brightgreen.svg)](https://github.com/iberi22/xavier)
+[![Version](https://img.shields.io/badge/version-0.1.0-brightgreen.svg)](https://github.com/iberi22/xavier)
 [![CI Build Status](https://github.com/iberi22/xavier/actions/workflows/ci.yml/badge.svg)](https://github.com/iberi22/xavier/actions/workflows/ci.yml)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 
