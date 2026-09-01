@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "./auth/AuthProvider";
@@ -196,6 +195,7 @@ function AppContent() {
 		const checkNativeConfig = async () => {
 			if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
 				try {
+					const { invoke } = await import("@tauri-apps/api/core");
 					const configState = (await invoke("get_current_config_state")) as {
 						has_openai: boolean;
 						has_gemini: boolean;
@@ -204,10 +204,25 @@ function AppContent() {
 				} catch (e) {
 					console.warn("Could not retrieve Xavier config", e);
 				}
+			} else {
+				try {
+					const currentToken = token ?? "";
+					const res = await fetch(getApiUrl("/v1/config/providers"), {
+						headers: { "X-Xavier-Token": currentToken },
+					});
+					if (res.ok) {
+						const _cfg = await res.json();
+						setHasConfig(true);
+					} else {
+						setHasConfig(true);
+					}
+				} catch {
+					setHasConfig(true);
+				}
 			}
 		};
 		void checkNativeConfig();
-	}, []);
+	}, [token]);
 
 	useEffect(() => {
 		const handleHashChange = () => setHash(window.location.hash);
@@ -228,9 +243,8 @@ function AppContent() {
 				);
 				if (!response.ok) throw new Error("Failed to load thread");
 				const detail = (await response.json()) as ThreadDetail;
-					setSelectedThreadId(threadId);
+				setSelectedThreadId(threadId);
 				setMessages(detail.messages.map(normalizeMessage));
-
 			} catch (cause) {
 				setError(
 					cause instanceof Error ? cause.message : "Failed to open thread",
@@ -346,7 +360,6 @@ function AppContent() {
 				if (lastMessage?.role === "assistant") {
 					setStreamingMessageId(lastMessage.id);
 				}
-
 
 				setThreads((current) => {
 					const next = [
