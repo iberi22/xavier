@@ -1,7 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { BrainCircuit, FolderPlus, Mic, Send } from "lucide-react";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 
 interface InputAreaProps {
   onSendMessage: (text: string) => void;
@@ -24,6 +22,7 @@ export default React.memo(function InputArea({
   const [inputText, setInputText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleMicClick = useCallback(() => {
     if (isRecording) {
@@ -42,21 +41,49 @@ export default React.memo(function InputArea({
     }
   }, [isRecording]);
 
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        const firstFile = files[0];
+        const folder = firstFile.webkitRelativePath
+          ? firstFile.webkitRelativePath.split("/")[0]
+          : "directorio";
+        onSystemMessage?.(
+          `Carpeta seleccionada: ${folder} (${files.length} archivos)`,
+        );
+      }
+      e.target.value = "";
+    },
+    [onSystemMessage],
+  );
+
   const handleFolderClick = useCallback(async () => {
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-      });
-      if (selected && onSystemMessage) {
-        onSystemMessage(`Iniciando escaneo del proyecto en: ${selected}...`);
-        const result = await invoke("scan_project_folder", { path: selected });
-        onSystemMessage(`✅ ${result}`);
+    const isTauri =
+      typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+    if (isTauri) {
+      try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const { invoke } = await import("@tauri-apps/api/core");
+
+        const selected = await open({
+          directory: true,
+          multiple: false,
+        });
+
+        if (selected && typeof selected === "string") {
+          onSystemMessage?.(`Iniciando escaneo del proyecto en: ${selected}...`);
+          const result = await invoke<string>("scan_project_folder", {
+            path: selected,
+          });
+          onSystemMessage?.(`✅ ${result}`);
+        }
+      } catch (err) {
+        onSystemMessage?.(`❌ Error al escanear: ${err}`);
       }
-    } catch (err) {
-      if (onSystemMessage) {
-        onSystemMessage(`❌ Error al escanear: ${err}`);
-      }
+    } else {
+      fileInputRef.current?.click();
     }
   }, [onSystemMessage]);
 
@@ -68,6 +95,14 @@ export default React.memo(function InputArea({
 
   return (
     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 pointer-events-auto z-10">
+      <input
+        type="file"
+        ref={fileInputRef}
+        webkitdirectory=""
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+        aria-hidden="true"
+      />
       <div className="glass rounded-[24px] p-2 flex items-center gap-2 relative overflow-hidden transition-all duration-300 focus-within:shadow-[0_0_20px_rgba(57,255,20,0.15)] focus-within:border-white/20">
         {/* Animated background when recording */}
         {isRecording && (
@@ -197,4 +232,4 @@ export default React.memo(function InputArea({
       </div>
     </div>
   );
-})
+});

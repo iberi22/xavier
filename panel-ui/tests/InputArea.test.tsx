@@ -21,10 +21,17 @@ describe("InputArea component unit tests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    // Enable Tauri mode for existing tests in this file
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      writable: true,
+      configurable: true,
+    });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
   it("calls onOpenConfig when config button is clicked", () => {
