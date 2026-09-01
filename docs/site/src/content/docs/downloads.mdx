@@ -1,0 +1,27 @@
+---
+title: Downloads
+description: Download Xavier binaries and verify checksums
+---
+
+# Downloads
+
+Latest release: **v0.0.1** — [GitHub Releases](https://github.com/iberi22/xavier/releases/latest)
+
+| OS | Arch | Artifact | SHA256 |
+|---|---|---|---|
+| Linux | x86_64 | `xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz` | `xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz.sha256` |
+| macOS | arm64 (Apple Silicon) | `xavier-v0.0.1-aarch64-apple-darwin.tar.gz` | same `.sha256` |
+| Windows | x86_64 | `xavier-v0.0.1-x86_64-pc-windows-msvc.zip` | same `.sha256` |
+
+```bash
+# Example Linux
+curl -L https://github.com/iberi22/xavier/releases/latest/download/xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz -o xavier.tar.gz
+curl -L https://github.com/iberi22/xavier/releases/latest/download/xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz.sha256 -o xavier.sha256
+sha256sum -c xavier.sha256
+tar -xzf xavier.tar.gz
+./xavier --help
+```
+
+Docker: `ghcr.io/iberi22/xavier:0.0.1` (pending release workflow `docker-publish`).
+
+See also `README.md` 📦 Downloads.

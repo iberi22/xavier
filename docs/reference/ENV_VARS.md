@@ -404,3 +404,18 @@ export XAVIER_MODEL_PROVIDER="local"
 export XAVIER_LOCAL_LLM_URL="http://localhost:11434/v1"
 export XAVIER_LOCAL_LLM_MODEL="llama3"
 ```
+
+
+## Notes
+
+### XAVIER_TOKEN inline comments
+Do NOT write `XAVIER_TOKEN=foo # comment` — the `# comment` becomes part of the token value. Put comments on their own line.
+
+### XAVIER_PANEL_UI_DIR priority
+1. `XAVIER_PANEL_UI_DIR` env var
+2. `<exe_dir>/panel-ui/build`
+3. `<exe_dir>/panel-ui` (if index.html at root)
+4. `<cwd>/panel-ui/build`
+5. `CARGO_MANIFEST_DIR/panel-ui/build` (dev checkout)
+
+Source: `src/server/panel/assets.rs` `panel_ui_root()`.

@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * @file useApiToken.ts
  * @description Centralized browser-safe hook and utility for retrieving the Xavier API token.

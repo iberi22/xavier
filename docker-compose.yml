@@ -14,6 +14,7 @@ services:
       - XAVIER_HOST=0.0.0.0
       - XAVIER_CODE_GRAPH_DB_PATH=/data/code_graph.db
       - XAVIER_TOKEN=${XAVIER_TOKEN:?Set XAVIER_TOKEN in .env before starting Docker}
+      - XAVIER_DEV_MODE=${XAVIER_DEV_MODE:-false}
       - XAVIER_MEMORY_BACKEND=${XAVIER_MEMORY_BACKEND:-vec}
       - XAVIER_WORKSPACE_DIR=/data/workspaces
       - RUST_LOG=${RUST_LOG:-info}
