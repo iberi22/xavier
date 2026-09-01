@@ -1,0 +1,21 @@
+# Xavier — Development Compose Override
+# Usage:
+#   XAVIER_DEV_MODE=true docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   or: docker compose --profile dev up -d
+
+services:
+  xavier:
+    environment:
+      - XAVIER_DEV_MODE=true
+      - XAVIER_TOKEN=${XAVIER_TOKEN:-dummy-dev-token}
+      - RUST_LOG=${RUST_LOG:-debug}
+      - XAVIER_PANEL_UI_DIR=/app/panel-ui/dist
+      - XAVIER_LOG_LEVEL=${XAVIER_LOG_LEVEL:-debug}
+    volumes:
+      - .:/app
+      - xavier_data:/data
+      - xavier_logs:/logs
+    command: cargo run -- http --mcp-port 0
+    ports:
+      - "8006:8006"
+      - "5173:5173" # Vite dev if running separately
