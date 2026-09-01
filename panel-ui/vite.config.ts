@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -6,14 +7,28 @@ import { defineConfig } from "vite";
 const xavierTarget =
   process.env.XAVIER_WEB_PROXY_TARGET ?? "http://127.0.0.1:8006";
 
+const cargoContent = (() => {
+  try {
+    return fs.readFileSync(path.resolve(__dirname, "../Cargo.toml"), "utf8");
+  } catch {
+    try {
+      return fs.readFileSync("../../Cargo.toml", "utf8");
+    } catch {
+      return "";
+    }
+  }
+})();
+const appVersion =
+  cargoContent.match(/^version = "(.+)"/m)?.[1] ??
+  process.env.npm_package_version ??
+  "0.0.1";
+
 export default defineConfig(({ command }) => {
   const _isBuild = command === "build";
 
   return {
     define: {
-      __APP_VERSION__: JSON.stringify(
-        process.env.npm_package_version || "0.6.1-beta",
-      ),
+      __APP_VERSION__: JSON.stringify(appVersion),
     },
     base: "/",
     assetsInclude: ["**/*.wasm"],

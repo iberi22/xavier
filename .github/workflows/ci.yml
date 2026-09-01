@@ -109,3 +109,14 @@ jobs:
 
       - name: Build Frontend (panel-ui)
         run: pnpm --filter xavier-panel-ui run build
+
+      - name: panel-browser-smoke
+        env:
+          VITE_XAVIER_API_TOKEN: dummy
+          PANEL_UI_BASE_URL: http://127.0.0.1:4174
+        run: |
+          VITE_XAVIER_API_TOKEN=dummy pnpm --filter xavier-panel-ui run build
+          grep -c "dummy\|VITE" panel-ui/dist/assets/*.js
+          pnpm --filter xavier-panel-ui run test
+          npx playwright install --with-deps chromium
+          npx --prefix panel-ui playwright test --project=chromium
