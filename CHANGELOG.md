@@ -2,6 +2,8 @@
 
 All notable changes to **Xavier** are documented in this file in adherence to [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) standards and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
 ## [0.0.1] — 2026-08-30 (Initial Public Release)
 
 ### Added
