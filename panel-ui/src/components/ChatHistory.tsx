@@ -1,10 +1,12 @@
 import { AnimatePresence, motion } from "motion/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelMessage } from "../types";
+import LoadingSpinner from "./ui/LoadingSpinner";
 
 interface ChatHistoryProps {
   messages: PanelMessage[];
   streamingMessageId: string | null;
+  isLoading?: boolean;
 }
 
 function formatConfidence(value?: number) {
@@ -53,7 +55,12 @@ function StreamingMessageRenderer({
     <div className="flex flex-col gap-4 w-full">
       <p className="text-sm leading-relaxed font-mono whitespace-pre-wrap">
         {streamedText}
-        {isStreaming && <span className="animate-pulse opacity-70">▊</span>}
+        {isStreaming && (
+          <span className="inline-flex items-center gap-1.5 ml-1">
+            <span className="animate-pulse opacity-70">▊</span>
+            <LoadingSpinner size={12} className="text-[#39ff14]" />
+          </span>
+        )}
       </p>
     </div>
   );
@@ -186,6 +193,7 @@ const ChatMessageItem = memo(function ChatMessageItem({
 export default memo(function ChatHistory({
   messages,
   streamingMessageId,
+  isLoading = false,
 }: ChatHistoryProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -221,6 +229,18 @@ export default memo(function ChatHistory({
               isStreamingActive={msg.id === streamingMessageId}
             />
           ))}
+          {isLoading && !streamingMessageId && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              className="flex items-center gap-3 p-3 rounded-xl bg-[#39ff14]/[0.025] border border-[#39ff14]/[0.09] text-[#39ff14] text-xs font-mono"
+              data-testid="chat-loading-indicator"
+            >
+              <LoadingSpinner size={16} className="text-[#39ff14]" />
+              <span>Xavier is thinking...</span>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
       <style>{`
