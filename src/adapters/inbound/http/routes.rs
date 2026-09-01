@@ -133,6 +133,26 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
                 )),
         )
         // ── Training Datasets API ─────────────────────────────────────────
+        .route(
+            "/v1/training/datasets",
+            get(crate::adapters::inbound::http::handlers::training::list_datasets_handler),
+        )
+        .route(
+            "/v1/training/datasets/{id}",
+            get(crate::adapters::inbound::http::handlers::training::get_manifest_handler),
+        )
+        .route(
+            "/v1/training/datasets/{id}/train",
+            get(crate::adapters::inbound::http::handlers::training::get_train_split_handler),
+        )
+        .route(
+            "/v1/training/datasets/{id}/eval",
+            get(crate::adapters::inbound::http::handlers::training::get_eval_split_handler),
+        )
+        .route(
+            "/v1/training/bundles",
+            post(crate::adapters::inbound::http::handlers::training::create_bundle_handler),
+        )
         .route("/v1/training/export", post(training_export_handler))
         // ── Content Redaction API ─────────────────────────────────────────
         .route("/v1/memories/redact", post(memories_redact_handler))
@@ -1366,6 +1386,51 @@ mod route_tests {
 
         assert_eq!(parsed["service"], "xavier");
         assert!(parsed.get("version").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_route_training_datasets_list() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/training/datasets")
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse list response");
+        assert!(parsed.is_array());
+    }
+
+    #[tokio::test]
+    async fn test_route_training_dataset_manifest_not_found() {
+        use axum::response::Response;
+        use tower::ServiceExt;
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/training/datasets/nonexistent_dataset_id")
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
