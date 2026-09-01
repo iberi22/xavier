@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import {
 	Activity,
 	AlertTriangle,
@@ -72,12 +70,17 @@ const ISLANDS: Island[] = [
 	},
 ];
 
-async function getAuthToken(): Promise<string> {
-	try {
-		return await invoke<string>("get_xavier_token");
-	} catch {
-		return localStorage.getItem("XAVIER_TOKEN") || "";
-	}
+function isTauriRuntime(): boolean {
+	return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function getToken(): string {
+	return (
+		(import.meta.env.VITE_XAVIER_API_TOKEN as string | undefined) ||
+		(typeof localStorage !== "undefined"
+			? localStorage.getItem("XAVIER_TOKEN") || ""
+			: "")
+	);
 }
 
 function formatRelativeTime(dateInput: Date | string): string {
@@ -160,36 +163,66 @@ export default React.memo(function NotificationsDropdown({
 }: NotificationsDropdownProps) {
 	const [notifications, setNotifications] = useState<Notification[]>([]);
 	const [activeIsland, setActiveIsland] = useState<IslandId | "all">("all");
+	const [isLoading, setIsLoading] = useState<boolean>(true);
 
 	useEffect(() => {
-		// 1. Fetch initial notifications
+		let isMounted = true;
+
+		// 1. Fetch notifications
 		const fetchNotifications = async () => {
 			try {
-				const token = await getAuthToken();
+				const token = getToken();
 				const response = await fetch(getApiUrl("/notifications"), {
 					headers: { "X-Xavier-Token": token },
 				});
-				if (response.ok) {
+				if (!response.ok) {
+					if (response.status === 401) {
+						if (isMounted) setIsLoading(false);
+						return;
+					}
+					throw new Error(`HTTP ${response.status}`);
+				}
+				if (isMounted) {
 					const data = await response.json();
-					setNotifications(data);
+					if (Array.isArray(data)) {
+						setNotifications(data);
+					}
 				}
 			} catch (err) {
 				console.error("Failed to fetch notifications:", err);
+			} finally {
+				if (isMounted) setIsLoading(false);
 			}
 		};
 
 		fetchNotifications();
 
-		// 2. Listen for real-time notifications via Tauri
-		const unlistenPromise = listen<Notification>(
-			"new-notification",
-			(event) => {
-				setNotifications((prev) => [event.payload, ...prev]);
-			},
-		);
+		let unlistenFn: (() => void) | null = null;
+		let intervalId: ReturnType<typeof setInterval> | null = null;
+
+		if (isTauriRuntime()) {
+			import("@tauri-apps/api/event")
+				.then(({ listen }) => {
+					return listen<Notification>("new-notification", (event) => {
+						if (!isMounted) return;
+						setNotifications((prev) => [event.payload, ...prev]);
+					});
+				})
+				.then((unlisten) => {
+					if (isMounted) unlistenFn = unlisten;
+					else unlisten();
+				})
+				.catch(() => {
+					// Ignore non-Tauri environment errors
+				});
+		} else {
+			intervalId = setInterval(fetchNotifications, 30_000);
+		}
 
 		return () => {
-			unlistenPromise.then((unlisten) => unlisten());
+			isMounted = false;
+			if (unlistenFn) unlistenFn();
+			if (intervalId) clearInterval(intervalId);
 		};
 	}, []);
 
@@ -212,7 +245,7 @@ export default React.memo(function NotificationsDropdown({
 		);
 
 		try {
-			const token = await getAuthToken();
+			const token = getToken();
 			await fetch(getApiUrl(`/notifications/${id}/read`), {
 				method: "PATCH",
 				headers: { "X-Xavier-Token": token },
@@ -226,7 +259,7 @@ export default React.memo(function NotificationsDropdown({
 		setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
 
 		try {
-			const token = await getAuthToken();
+			const token = getToken();
 			await fetch(getApiUrl("/notifications/read-all"), {
 				method: "PATCH",
 				headers: { "X-Xavier-Token": token },
@@ -356,7 +389,13 @@ export default React.memo(function NotificationsDropdown({
 				{/* Notifications list */}
 				<div className="flex-1 overflow-y-auto p-2">
 					<AnimatePresence>
-						{filtered.length === 0 ? (
+						{isLoading ? (
+							<div className="space-y-2">
+								<div className="h-12 animate-pulse bg-white/5 rounded-lg" />
+								<div className="h-12 animate-pulse bg-white/5 rounded-lg" />
+								<div className="h-12 animate-pulse bg-white/5 rounded-lg" />
+							</div>
+						) : filtered.length === 0 ? (
 							<motion.div
 								initial={{ opacity: 0 }}
 								animate={{ opacity: 1 }}
