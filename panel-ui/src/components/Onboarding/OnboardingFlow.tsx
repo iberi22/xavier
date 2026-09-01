@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 import { AuthStep } from "./AuthStep";
 import { HardwareStep } from "./HardwareStep";
@@ -38,6 +37,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     try {
       setIsSaving(true);
       if (isTauriRuntime()) {
+        const { invoke } = await import("@tauri-apps/api/core");
         await invoke("save_initial_config", { config });
       } else {
         // Browser /panel: persist locally; auth already handled via HTTP in AuthStep.
