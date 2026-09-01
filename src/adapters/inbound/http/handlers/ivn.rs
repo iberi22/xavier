@@ -74,19 +74,10 @@ impl From<&Verdict> for VerdictDto {
 }
 
 /// In-memory engine store for IVN state management.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct IvnEngineStore {
     pub requests: HashMap<String, IdentityRequestRecord>,
     pub karma_engine: KarmaEngine,
-}
-
-impl Default for IvnEngineStore {
-    fn default() -> Self {
-        Self {
-            requests: HashMap::new(),
-            karma_engine: KarmaEngine::new(),
-        }
-    }
 }
 
 static IVN_STORE: LazyLock<RwLock<IvnEngineStore>> =

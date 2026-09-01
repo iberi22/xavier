@@ -839,7 +839,7 @@
       "github_issue": 664,
       "last_tested": "2026-08-31",
       "notes": "Public readiness gate: multi-layer graph views operational; advanced force-graph rendering in beta (honest 60%) [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767]",
-      "implemented_in": "src/memory/entity_graph/mod.rs (KnowledgeConsolidator)",
+      "implemented_in": "src/memory/entity_graph/mod.rs",
       "tests": [
         "server::panel::tests::graphs_crud"
       ],
@@ -1172,7 +1172,7 @@
       "github_issue": 1344,
       "last_tested": "2026-08-31",
       "notes": "Multi-level nested markdown redaction validator complete with clearance-gated replacement and PII masking. [Reconciled 2026-08-29: 50-60% honest beta for v1.0.0 public release gate. Stable after E2E production usage.] [WAVE-3 2026-08-31: enforcement/mesh/gossipsub/knowledge consolidation implemented, promoted 55→75.] [WAVE-4 2026-08-31: promoted to stable 100% via PRs 1753-1759,1765-1767]",
-      "implemented_in": "src/security/redaction.rs, src/security/clearance.rs (ClearanceEnforcer)",
+      "implemented_in": "src/security/redaction.rs, src/security/clearance.rs",
       "tests": [
         "test_custom_rules",
         "test_parse_segmented_markdown",
