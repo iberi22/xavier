@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 //! Vector operations for SQLite vector store
 //!
 //! Provides the implementation and data structures for this module's

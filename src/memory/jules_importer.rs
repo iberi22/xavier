@@ -229,6 +229,7 @@ impl JulesImporter {
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
     use crate::embedding::NoopEmbedder;
