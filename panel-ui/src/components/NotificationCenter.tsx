@@ -1,4 +1,3 @@
-import { listen } from "@tauri-apps/api/event";
 import {
 	Activity,
 	AlertTriangle,
@@ -15,7 +14,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import React, { useEffect, useMemo, useState } from "react";
 import { getApiUrl } from "../api/client";
-import { getApiTokenSync, useApiToken } from "../hooks/useApiToken";
+import { getApiTokenSync } from "../hooks/useApiToken";
 
 export interface Notification {
 	id: string;
@@ -73,6 +72,14 @@ export const ISLANDS: Island[] = [
 		borderColor: "border-red-500/20",
 	},
 ];
+
+function isTauriRuntime(): boolean {
+	return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function getToken(): string {
+	return getApiTokenSync();
+}
 
 function formatRelativeTime(dateInput: Date | string): string {
 	const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
@@ -221,16 +228,17 @@ export function NotificationCenter({
 	enableWebSocket = true,
 	wsUrl,
 }: NotificationCenterProps) {
-	const apiToken = useApiToken();
 	const [notifications, setNotifications] = useState<Notification[]>(
 		initialNotifications,
 	);
 	const [toasts, setToasts] = useState<Notification[]>([]);
 	const [activeIsland, setActiveIsland] = useState<IslandId | "all">("all");
+	const [isLoading, setIsLoading] = useState<boolean>(initialNotifications.length === 0);
 
 	useEffect(() => {
 		if (initialNotifications.length > 0) {
 			setNotifications(initialNotifications);
+			setIsLoading(false);
 		}
 	}, [initialNotifications]);
 
@@ -239,11 +247,18 @@ export function NotificationCenter({
 
 		const fetchNotifications = async () => {
 			try {
-				const token = getApiTokenSync();
+				const token = getToken();
 				const response = await fetch(getApiUrl("/notifications"), {
 					headers: { "X-Xavier-Token": token },
 				});
-				if (response.ok && isMounted) {
+				if (!response.ok) {
+					if (response.status === 401) {
+						if (isMounted) setIsLoading(false);
+						return;
+					}
+					throw new Error(`HTTP ${response.status}`);
+				}
+				if (isMounted) {
 					const data = await response.json();
 					if (Array.isArray(data)) {
 						setNotifications((prev) => {
@@ -256,25 +271,36 @@ export function NotificationCenter({
 				}
 			} catch (err) {
 				console.error("Failed to fetch notifications from API:", err);
+			} finally {
+				if (isMounted) setIsLoading(false);
 			}
 		};
 
 		fetchNotifications();
 
-		// Tauri live event listener
 		let unlistenFn: (() => void) | null = null;
-		listen<Notification>("new-notification", (event) => {
-			if (!isMounted) return;
-			const newNotif = event.payload;
-			setNotifications((prev) => [newNotif, ...prev]);
-			setToasts((prev) => [newNotif, ...prev.slice(0, 4)]);
-		})
-			.then((unlisten) => {
-				unlistenFn = unlisten;
-			})
-			.catch(() => {
-				// Ignore non-Tauri environment errors
-			});
+		let intervalId: ReturnType<typeof setInterval> | null = null;
+
+		if (isTauriRuntime()) {
+			import("@tauri-apps/api/event")
+				.then(({ listen }) => {
+					return listen<Notification>("new-notification", (event) => {
+						if (!isMounted) return;
+						const newNotif = event.payload;
+						setNotifications((prev) => [newNotif, ...prev]);
+						setToasts((prev) => [newNotif, ...prev.slice(0, 4)]);
+					});
+				})
+				.then((unlisten) => {
+					if (isMounted) unlistenFn = unlisten;
+					else unlisten();
+				})
+				.catch(() => {
+					// Ignore non-Tauri environment errors
+				});
+		} else {
+			intervalId = setInterval(fetchNotifications, 30_000);
+		}
 
 		// Real-time WebSocket Feed
 		let ws: WebSocket | null = null;
@@ -314,6 +340,7 @@ export function NotificationCenter({
 		return () => {
 			isMounted = false;
 			if (unlistenFn) unlistenFn();
+			if (intervalId) clearInterval(intervalId);
 			if (ws && ws.readyState === WebSocket.OPEN) {
 				ws.close();
 			}
@@ -331,7 +358,7 @@ export function NotificationCenter({
 		);
 
 		try {
-			const token = getApiTokenSync();
+			const token = getToken();
 			await fetch(getApiUrl(`/notifications/${id}/read`), {
 				method: "PATCH",
 				headers: { "X-Xavier-Token": token },
@@ -345,7 +372,7 @@ export function NotificationCenter({
 		setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
 
 		try {
-			const token = getApiTokenSync();
+			const token = getToken();
 			await fetch(getApiUrl("/notifications/read-all"), {
 				method: "PATCH",
 				headers: { "X-Xavier-Token": token },
@@ -359,7 +386,7 @@ export function NotificationCenter({
 		setNotifications([]);
 
 		try {
-			const token = getApiTokenSync();
+			const token = getToken();
 			await fetch(getApiUrl("/notifications"), {
 				method: "DELETE",
 				headers: { "X-Xavier-Token": token },
@@ -526,7 +553,13 @@ export function NotificationCenter({
 							{/* Notifications Feed */}
 							<div className="flex-1 overflow-y-auto p-4 space-y-2.5">
 								<AnimatePresence>
-									{filteredNotifications.length === 0 ? (
+									{isLoading ? (
+										<div className="space-y-2">
+											<div className="h-12 animate-pulse bg-white/5 rounded-lg" />
+											<div className="h-12 animate-pulse bg-white/5 rounded-lg" />
+											<div className="h-12 animate-pulse bg-white/5 rounded-lg" />
+										</div>
+									) : filteredNotifications.length === 0 ? (
 										<motion.div
 											initial={{ opacity: 0 }}
 											animate={{ opacity: 1 }}
