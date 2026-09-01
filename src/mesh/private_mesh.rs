@@ -459,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn test_isolation_cross_wallet() {
+    fn test_cross_wallet_isolation() {
         let file = NamedTempFile::new().unwrap();
         let path = file.path().to_path_buf();
 
@@ -489,6 +489,19 @@ mod tests {
         // Wallet A nodes should NOT contain Wallet B nodes and vice-versa
         assert!(!nodes_a.iter().any(|n| n.wallet_id == wallet_b));
         assert!(!nodes_b.iter().any(|n| n.wallet_id == wallet_a));
+
+        // Cross-wallet sync delta must be rejected
+        let payload = PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "fact/secret_1".to_string(),
+                content: "Secret content".to_string(),
+                metadata: serde_json::json!({}),
+                created_at: Utc::now().timestamp(),
+            }],
+            snapshots: vec![],
+        };
+        let sync_res = registry.sync_deltas(wallet_a, wallet_b, payload);
+        assert!(sync_res.is_err());
     }
 
     #[test]
