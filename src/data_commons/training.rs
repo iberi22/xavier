@@ -28,6 +28,7 @@ pub struct AuditSummary {
 pub struct TrainingExporter {
     db_path: std::path::PathBuf,
     schema_version: String,
+    pub is_curated: bool,
 }
 
 impl TrainingExporter {
@@ -36,7 +37,14 @@ impl TrainingExporter {
         Self {
             db_path: db_path.to_path_buf(),
             schema_version: "1.0.0".to_string(),
+            is_curated: false,
         }
+    }
+
+    /// Set whether personal models or exports train ONLY on curated data.
+    pub fn with_curated_only(mut self, curated_only: bool) -> Self {
+        self.is_curated = curated_only;
+        self
     }
 
     /// Generate bundle.

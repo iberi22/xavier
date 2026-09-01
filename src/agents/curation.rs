@@ -14,6 +14,8 @@ use crate::memory::schema::{ContextZone, MemoryLevel, TypedMemoryPayload};
 use crate::memory::store::MemoryRecord;
 use std::sync::Arc;
 
+pub use crate::curation::{CurationHistoryEntry, CurationItem, CurationQueue, CurationStatus};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurationResult {
     pub domain: String,
@@ -41,6 +43,29 @@ impl CurationAgent {
     pub fn with_memory(mut self, memory: Arc<QmdMemory>) -> Self {
         self.memory = Some(memory);
         self
+    }
+
+    /// Approve pending curation queue item.
+    pub fn approve_item(
+        &self,
+        queue: &mut CurationQueue,
+        id: &str,
+        curator: String,
+        classification: Option<String>,
+        clearance: Option<String>,
+    ) -> std::result::Result<CurationItem, String> {
+        queue.approve(id, curator, classification, clearance)
+    }
+
+    /// Reject pending curation queue item.
+    pub fn reject_item(
+        &self,
+        queue: &mut CurationQueue,
+        id: &str,
+        curator: String,
+        reason: String,
+    ) -> std::result::Result<CurationItem, String> {
+        queue.reject(id, curator, reason)
     }
 
     /// Curate.

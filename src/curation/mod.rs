@@ -24,11 +24,21 @@ pub struct CurationItem {
     pub classification: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CurationHistoryEntry {
+    pub who: String,
+    pub what: String,
+    pub when: DateTime<Utc>,
+    pub classification: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CurationQueue {
     pub items: Vec<CurationItem>,
     #[serde(skip)]
     pub file_path: Option<PathBuf>,
+    #[serde(skip)]
+    pub history_path: Option<PathBuf>,
 }
 
 impl CurationQueue {
@@ -36,13 +46,19 @@ impl CurationQueue {
         Self {
             items: Vec::new(),
             file_path: Some(PathBuf::from("data/curation/queue.json")),
+            history_path: Some(PathBuf::from("data/curation/history.json")),
         }
     }
 
     pub fn new_with_path(path: PathBuf) -> Self {
+        let history_path = path
+            .parent()
+            .unwrap_or_else(|| Path::new("data/curation"))
+            .join("history.json");
         Self {
             items: Vec::new(),
             file_path: Some(path),
+            history_path: Some(history_path),
         }
     }
 
@@ -51,10 +67,15 @@ impl CurationQueue {
     }
 
     pub fn load_from_path(path: &Path) -> Result<Self, String> {
+        let history_path = path
+            .parent()
+            .unwrap_or_else(|| Path::new("data/curation"))
+            .join("history.json");
         if !path.exists() {
             return Ok(Self {
                 items: Vec::new(),
                 file_path: Some(path.to_path_buf()),
+                history_path: Some(history_path),
             });
         }
         let data = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
@@ -62,6 +83,7 @@ impl CurationQueue {
         Ok(Self {
             items,
             file_path: Some(path.to_path_buf()),
+            history_path: Some(history_path),
         })
     }
 
@@ -99,6 +121,50 @@ impl CurationQueue {
         item
     }
 
+    pub fn record_history_entry(&self, entry: &CurationHistoryEntry) -> Result<(), String> {
+        let path = self
+            .history_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("data/curation/history.json"));
+        Self::record_history_entry_to_path(&path, entry)
+    }
+
+    pub fn record_history_entry_to_path(
+        path: &Path,
+        entry: &CurationHistoryEntry,
+    ) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut history = Self::load_history_from_path(path).unwrap_or_default();
+        history.push(entry.clone());
+        let data = serde_json::to_string_pretty(&history).map_err(|e| e.to_string())?;
+        std::fs::write(path, data).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn load_history_from_path(path: &Path) -> Result<Vec<CurationHistoryEntry>, String> {
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let data = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let history: Vec<CurationHistoryEntry> =
+            serde_json::from_str(&data).map_err(|e| e.to_string())?;
+        Ok(history)
+    }
+
+    pub fn load_history(&self) -> Result<Vec<CurationHistoryEntry>, String> {
+        let path = self
+            .history_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("data/curation/history.json"));
+        Self::load_history_from_path(&path)
+    }
+
+    pub fn list_pending(&self) -> Vec<CurationItem> {
+        self.pending_items()
+    }
+
     pub fn approve(
         &mut self,
         id: &str,
@@ -106,17 +172,33 @@ impl CurationQueue {
         classification: Option<String>,
         clearance: Option<String>,
     ) -> Result<CurationItem, String> {
+        let history_path = self
+            .history_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("data/curation/history.json"));
+
         if let Some(item) = self.items.iter_mut().find(|i| i.id == id) {
+            let now = Utc::now();
             item.status = CurationStatus::Approved;
-            item.curated_by = Some(curator);
-            item.curated_at = Some(Utc::now());
+            item.curated_by = Some(curator.clone());
+            item.curated_at = Some(now);
             if let Some(cls) = classification {
                 item.classification = Some(cls);
             }
             if let Some(clr) = clearance {
                 item.proposed_clearance = clr;
             }
-            Ok(item.clone())
+
+            let entry = CurationHistoryEntry {
+                who: curator,
+                what: format!("Approved item {}", id),
+                when: now,
+                classification: item.classification.clone(),
+            };
+            let ret = item.clone();
+            let _ = Self::record_history_entry_to_path(&history_path, &entry);
+
+            Ok(ret)
         } else {
             Err(format!("Item with id {} not found", id))
         }
@@ -128,11 +210,29 @@ impl CurationQueue {
         curator: String,
         reason: String,
     ) -> Result<CurationItem, String> {
+        let history_path = self
+            .history_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("data/curation/history.json"));
+
         if let Some(item) = self.items.iter_mut().find(|i| i.id == id) {
-            item.status = CurationStatus::Rejected { reason };
-            item.curated_by = Some(curator);
-            item.curated_at = Some(Utc::now());
-            Ok(item.clone())
+            let now = Utc::now();
+            item.status = CurationStatus::Rejected {
+                reason: reason.clone(),
+            };
+            item.curated_by = Some(curator.clone());
+            item.curated_at = Some(now);
+
+            let entry = CurationHistoryEntry {
+                who: curator,
+                what: format!("Rejected item {}: {}", id, reason),
+                when: now,
+                classification: item.classification.clone(),
+            };
+            let ret = item.clone();
+            let _ = Self::record_history_entry_to_path(&history_path, &entry);
+
+            Ok(ret)
         } else {
             Err(format!("Item with id {} not found", id))
         }
