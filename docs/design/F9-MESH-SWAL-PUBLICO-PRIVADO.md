@@ -296,7 +296,7 @@ usuario. Xavier instala el agente de nodo y lo registra en la billetera.
 ### Ola M7 — SSH/VPS private nodes (REQ-030, US-043)
 - CLI `xavier nodes add --provider vps --ssh user@host --key ~/.ssh/id_ed25519`
 - Clave SSH → Clavis (AES-256-GCM + lease TTL + rotación); nunca en disco plano
-- Instalación del agente de nodo (edge-hive lite) vía SSH
+- Node agent installation (edge-hive lite) via SSH
 - Registro en la billetera con challenge Ed25519 (protocolo M3);
   visibility default `private`
 - Nodo privado persiste info del mesh interno (memoria + snapshots)
