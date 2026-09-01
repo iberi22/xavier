@@ -804,4 +804,24 @@ SRS updated REQ-031..040, features.json 46→52 with 4 promotions (mesh-network,
 
 ---
 
-*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0.*
+## REQ-044: Panel browser compat (WAVE-5.10)
+
+- **Category:** Functional / Frontend
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Features:** `feat-panel-browser-compat`
+- **Files:** `panel-ui/src/`
+- **Docs:** `docs/adr/ADR-030-panel-browser-compat.md`
+
+### Description
+El panel-ui DEBE funcionar en browser sin Tauri: sin TypeError invoke/transformCallback, métricas via /health, auth via VITE_XAVIER_API_TOKEN, notifs polling 30s, file picker File API, skeletons/spinners, ErrorToast.
+
+### Acceptance criteria
+- [x] `pnpm build` PASS sin errores de bundler
+- [x] Static imports de `@tauri-apps/api` removidos (`rg invoke` static == 0)
+- [x] Token inyectado en assets (`grep VITE_XAVIER_API_TOKEN dist/assets/*.js >= 1`)
+- [x] Standalone browser smoke test PASS
+
+---
+
+*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat.*
