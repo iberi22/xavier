@@ -8,12 +8,13 @@ interface LoadingSpinnerProps {
 export function LoadingSpinner({
   size = 16,
   className = "",
-}: LoadingSpinnerProps) {
+}: LoadingSpinnerProps & { "data-testid"?: string }) {
   return (
     <Loader2
       size={size}
       className={`animate-spin text-emerald-400 ${className}`}
       aria-label="Loading..."
+      data-testid="loading-spinner"
     />
   );
 }

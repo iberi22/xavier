@@ -33,6 +33,7 @@ type MessagingPlatform =
 
 interface TopStatusBarProps {
   isModalOpen?: boolean;
+  isLoading?: boolean;
 }
 
 // Declare the vite define constant
@@ -55,11 +56,13 @@ function getToken(): string {
  */
 export default React.memo(function TopStatusBar({
   isModalOpen = false,
+  isLoading: propIsLoading,
 }: TopStatusBarProps) {
   const [time, setTime] = useState(new Date());
   const [memoryCount, setMemoryCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [internalLoading, setInternalLoading] = useState(true);
+  const isLoading = propIsLoading !== undefined ? propIsLoading : internalLoading;
   const [metrics, setMetrics] = useState({
     cpu_percent: 0,
     ram_used_gb: 0,
@@ -196,7 +199,7 @@ export default React.memo(function TopStatusBar({
         console.debug("Error fetching notifications unread count:", err);
         setUnreadCount(0);
       } finally {
-        setIsLoading(false);
+        setInternalLoading(false);
       }
     };
 
