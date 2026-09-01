@@ -20,6 +20,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import React, { useEffect, useRef, useState } from "react";
 import { getApiUrl } from "../api/client";
+import { getApiTokenSync, useApiToken } from "../hooks/useApiToken";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
@@ -38,14 +39,6 @@ interface TopStatusBarProps {
 // Declare the vite define constant
 declare const __APP_VERSION__: string;
 
-async function getAuthToken(): Promise<string> {
-  try {
-    return await invoke<string>("get_xavier_token");
-  } catch {
-    return localStorage.getItem("XAVIER_TOKEN") || "";
-  }
-}
-
 /**
  * ⚡ Bolt Performance Optimization
  *
@@ -58,6 +51,7 @@ async function getAuthToken(): Promise<string> {
 export default React.memo(function TopStatusBar({
   isModalOpen = false,
 }: TopStatusBarProps) {
+  const apiToken = useApiToken();
   const [time, setTime] = useState(new Date());
   const [memoryCount, setMemoryCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -105,9 +99,10 @@ export default React.memo(function TopStatusBar({
         console.debug("Error fetching realtime metrics:", err);
       }
 
+      const token = getApiTokenSync();
+
       // 2. Fetch memory count from REST API
       try {
-        const token = await getAuthToken();
         const res = await fetch(getApiUrl("/v1/memories?limit=1"), {
           headers: { "X-Xavier-Token": token },
         });
@@ -123,7 +118,6 @@ export default React.memo(function TopStatusBar({
 
       // 3. Fetch notifications unread count from REST API
       try {
-        const token = await getAuthToken();
         const res = await fetch(getApiUrl("/notifications"), {
           headers: { "X-Xavier-Token": token },
         });
