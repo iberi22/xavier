@@ -17,7 +17,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::data_commons::ivn::{
-    IvnConfig, KarmaEngine, ValidatorCandidate, ValidatorSelection, Verdict, VerdictEngine, VerdictStatus, Vote,
+    IvnConfig, KarmaEngine, ValidatorCandidate, ValidatorSelection, Verdict, VerdictEngine,
+    VerdictStatus, Vote,
 };
 use crate::data_commons::types::WalletAddress;
 
