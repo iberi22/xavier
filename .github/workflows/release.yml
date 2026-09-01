@@ -70,7 +70,7 @@ jobs:
           if [ ! -f "$BIN_PATH" ]; then echo "Binary not found at $BIN_PATH (TARGET_DIR=$TARGET_DIR)"; ls -R "$TARGET_DIR" | head -50; exit 1; fi
           ARCHIVE_NAME="xavier-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
           tar -czf "dist/${ARCHIVE_NAME}" -C "$(dirname "$BIN_PATH")" "${{ matrix.binary_name }}"
-          cd dist && sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+          cd dist && (sha256sum "${ARCHIVE_NAME}" 2>/dev/null || shasum -a 256 "${ARCHIVE_NAME}") > "${ARCHIVE_NAME}.sha256"
         shell: bash
 
       - name: Package Binary Artifacts (Windows)
