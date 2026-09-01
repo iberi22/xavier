@@ -27,7 +27,7 @@ Revisa cada archivo existente y clasifícalo:
 | `GUIDE.md` | Tutorial paso a paso | → `tutorials/` o `how-to/` |
 | `REFERENCE.md` | Sintaxis, API | → `reference/` |
 | `ABOUT_X.md` | Explicación de diseño | → `explanation/` |
-| `SETUP.md` | Instalación | → `setup/` o `how-to/` |
+| `SETUP.md` | Installation | → `setup/` o `how-to/` |
 
 ### Fase 2: Migrar Contenido Valioso (10-20 minutos)
 
@@ -308,7 +308,7 @@ mv OLD_FILE.md docs/archive/2025-12/
 ```
 my-app/
 ├── TODO.md               # 30 tareas
-├── SETUP_GUIDE.md        # Instalación
+├── SETUP_GUIDE.md        # Installation
 ├── USAGE.md              # Cómo usar
 ├── API_REFERENCE.md      # Referencia de API
 ├── ARCHITECTURE.md       # Explicación de diseño

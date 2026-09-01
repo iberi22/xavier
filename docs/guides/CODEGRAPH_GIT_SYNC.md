@@ -1,87 +1,87 @@
 # CodeGraph git sync
 
-Xavier puede actualizar el grafo de código de forma incremental a partir de
-`git diff`, sin re-escanear todo el árbol archivo por archivo.
+Xavier can incrementally update the code graph from
+`git diff` without re-scanning the entire tree file by file.
 
-## Flujo
+## Flow
 
 ```
-git diff --name-status → paths afectadas → AST reparse → patch símbolos/edges → dump JSON
-         └─ (opcional --memory) → upsert cards en /memory/add  path=code/{repo}/{stable_id}
+git diff --name-status → affected paths → AST reparse → patch symbols/edges → dump JSON
+         └─ (optional --memory) → upsert cards in /memory/add  path=code/{repo}/{stable_id}
 ```
 
-No usa embeddings por carácter: solo AST + edges (igual que `xavier code scan`).
-Los `stable_id` son **estructurales (v2)**: `project|file|name|kind|parent|signature`
-(sin `start_line`), así un move intra-archivo no rompe edges ni memoria.
+It does not use per-character embeddings: only AST + edges (same as `xavier code scan`).
+`stable_id` are **structural (v2)**: `project|file|name|kind|parent|signature`
+(without `start_line`), so an intra-file move does not break edges or memory.
 
-## Uso
+## Usage
 
 ```bash
-# Primera vez / grafo vacío: hace un full scan de `.` y guarda checkpoint HEAD
+# First time / empty graph: does a full scan of `.` and saves checkpoint HEAD
 xavier code sync --git
 
-# Incremental vs último checkpoint (.xavier/codegraph-sync-commit)
+# Incremental vs last checkpoint (.xavier/codegraph-sync-commit)
 xavier code sync --git
 
-# Base explícita
+# Explicit base
 xavier code sync --git --base HEAD~3
 
-# Solo staged
+# Staged only
 xavier code sync --git --staged
 
-# También publicar resúmenes de símbolos en memoria Xavier (cap 80)
+# Also publish symbol summaries to Xavier memory (cap 80)
 xavier code sync --git --memory
 ```
 
-También vía HTTP (servidor en marcha): `POST /code/sync` con
+Also via HTTP (server running): `POST /code/sync` with
 `{"git":true,"base":null,"staged":false,"memory":false}`.
 
 ## Checkpoint
 
-Archivo: `.xavier/codegraph-sync-commit`  
-Contiene el SHA de `HEAD` tras un sync exitoso. Si no existe y el grafo ya
-tiene símbolos, el default es `HEAD~1`.
+File: `.xavier/codegraph-sync-commit`  
+Contains the SHA of `HEAD` after a successful sync. If it does not exist and the graph already
+has symbols, the default is `HEAD~1`.
 
-## Hook opcional (post-commit)
+## Optional hook (post-commit)
 
-No se instala automáticamente. Instalación idempotente:
+Not installed automatically. Idempotent installation:
 
 ```bash
 bash scripts/hooks/install-post-commit-codegraph.sh
 ```
 
-O manualmente:
+Or manually:
 
 ```bash
 ln -sf ../../scripts/hooks/post-commit-codegraph.sh .git/hooks/post-commit
 ```
 
-El hook hace soft-fail: un error de sync no bloquea el commit.
+The hook soft-fails: a sync error does not block the commit.
 
 ## Doctor
 
-`xavier doctor` incluye un check soft **CodeGraph Index**:
-`total_symbols == 0` → Warn (exit code sigue siendo 0 si el resto está OK).
+`xavier doctor` includes a soft **CodeGraph Index** check:
+`total_symbols == 0` → Warn (exit code remains 0 if the rest is OK).
 
-`GET /code/stats` también marca `"degraded": true` cuando el grafo está vacío.
+`GET /code/stats` also marks `"degraded": true` when the graph is empty.
 
-## Limitaciones conocidas
+## Known limitations
 
-- Tras actualizar a stable_id v2, conviene un `xavier code scan .` (o sync full
-  con grafo vacío) para regenerar ids; deltas mezclan ids viejos/nuevos hasta
-  reparsear cada archivo tocado.
-- Renombrar archivo cambia el path → cambia `stable_id` (esperado).
-- Callers fuera del delta sin edge previa pueden quedar stale hasta el próximo
-  sync que los toque o un scan completo.
-- `file_metadata` sigue usando mtime; `apply_paths` ignora mtime porque la
-  lista de paths viene del caller (git).
-- Colby sidecar no participa en sync (native CodeGraph only).
-- Si `xavier http` tiene abierta `data/code_graph.db`, un `code sync --git`
-  local puede esperar el lock SQLite (busy_timeout ~15s). Preferí
-  `POST /code/sync` contra el servidor o sincronizar sin el daemon.
-- El dump soft de grafos muy grandes (`total_symbols` ≫ 10k) puede tardar.
-- `--memory` requiere servidor HTTP alcanzable + `XAVIER_TOKEN`; falla en soft
-  (no aborta el sync del grafo).
-- Sync **omite** el soft-dump cuando `total_symbols > 25000` (umbral
-  `DUMP_SOFT_SKIP_SYMBOLS`); usa `xavier code dump .` explícitamente.
-- `POST /code/sync` usa el `workspace_dir` del servidor (no `cwd` del proceso).
+- After upgrading to stable_id v2, a `xavier code scan .` (or full sync
+  with empty graph) is recommended to regenerate ids; deltas mix old/new ids until
+  each touched file is reparsed.
+- Renaming a file changes the path → changes `stable_id` (expected).
+- Callers outside the delta without prior edge may remain stale until the next
+  sync that touches them or a full scan.
+- `file_metadata` still uses mtime; `apply_paths` ignores mtime because the
+  path list comes from the caller (git).
+- Colby sidecar does not participate in sync (native CodeGraph only).
+- If `xavier http` has `data/code_graph.db` open, a local `code sync --git`
+  may wait for the SQLite lock (busy_timeout ~15s). Prefer
+  `POST /code/sync` against the server or sync without the daemon.
+- Soft dump of very large graphs (`total_symbols` ≫ 10k) may take time.
+- `--memory` requires reachable HTTP server + `XAVIER_TOKEN`; soft-fails
+  (does not abort the graph sync).
+- Sync **skips** the soft-dump when `total_symbols > 25000` threshold
+  (`DUMP_SOFT_SKIP_SYMBOLS`); use `xavier code dump .` explicitly.
+- `POST /code/sync` uses the server's `workspace_dir` (not the process `cwd`).

@@ -280,7 +280,7 @@ pub fn get_metrics(provider: Option<ProviderKind>, period: TimePeriod) -> Provid
 
 ---
 
-# FASE 4: Frontend — Panel de Configuración + Dashboard (React/Tauri)
+# PHASE 4: Frontend — Configuration Panel + Dashboard (React/Tauri)
 
 ## ISSUE 4.1: ProviderConfigPage — UI de configuración de proveedores
 **Type**: feature
