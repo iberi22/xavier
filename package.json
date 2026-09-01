@@ -11,7 +11,7 @@
     "build": "npm run build --workspace panel-ui && npm run build --workspace docs/site",
     "build:panel": "npm run build --workspace panel-ui",
     "build:docs": "npm run build --workspace docs/site",
-    "lint": "eslint src/",
+    "lint": "pnpm --filter xavier-panel-ui run biome:check && pnpm --filter xavier-panel-ui run typecheck",
     "prepare": "husky"
   },
   "engines": {
