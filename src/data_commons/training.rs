@@ -235,6 +235,42 @@ pub fn load_dataset_metadata(dataset_dir: &Path) -> Result<DatasetMetadata, Stri
     })
 }
 
+/// List datasets from `data_dir` as TrainingBundleManifest list.
+pub fn list_datasets(
+    data_dir: &Path,
+) -> Result<Vec<crate::data_commons::readiness::TrainingBundleManifest>, String> {
+    let mut manifests = Vec::new();
+    if !data_dir.exists() {
+        return Ok(manifests);
+    }
+
+    let entries = std::fs::read_dir(data_dir).map_err(|e| e.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.is_dir() {
+            let manifest_path = path.join("bundle_manifest.json");
+            if manifest_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                    if let Ok(m) = serde_json::from_str::<
+                        crate::data_commons::readiness::TrainingBundleManifest,
+                    >(&content)
+                    {
+                        manifests.push(m);
+                    }
+                }
+            }
+        }
+    }
+    Ok(manifests)
+}
+
+/// Get manifest by dataset ID.
+pub fn get_manifest(data_dir: &Path, id: &str) -> Result<serde_json::Value, String> {
+    let dataset_dir = data_dir.join(id);
+    load_dataset_manifest(&dataset_dir)
+}
+
 /// Load a dataset's manifest.
 pub fn load_dataset_manifest(dataset_dir: &Path) -> Result<serde_json::Value, String> {
     let manifest_path = dataset_dir.join("bundle_manifest.json");
@@ -413,5 +449,48 @@ mod tests {
 
         // Different seed should produce different split (highly likely)
         assert_ne!(bundle1.train_split, bundle3.train_split);
+    }
+
+    #[test]
+    fn test_list_datasets_and_get_manifest_helpers() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_dir = temp_dir.path();
+
+        let _exporter = TrainingExporter::new(Path::new("dummy.db"));
+        let bundle = TrainingBundle {
+            manifest: crate::data_commons::readiness::TrainingBundleManifest {
+                version: "1.0.0".to_string(),
+                usage_policy: "Test policy".to_string(),
+                reproducibility_seed: 42,
+                split_counts: std::collections::HashMap::new(),
+                data_files: vec!["train.jsonl".to_string()],
+            },
+            train_split: vec![],
+            eval_split: vec![],
+            audit_summary: AuditSummary {
+                total_records_found: 0,
+                included_records: 0,
+                excluded_records_no_consent: 0,
+                excluded_records_revoked: 0,
+            },
+        };
+
+        write_bundle_to_dir(
+            data_dir,
+            "test_ds_1",
+            &bundle,
+            Some("INTERNAL".to_string()),
+            Some("en".to_string()),
+            Some("test".to_string()),
+        )
+        .unwrap();
+
+        let manifests = list_datasets(data_dir).unwrap();
+        assert_eq!(manifests.len(), 1);
+        assert_eq!(manifests[0].reproducibility_seed, 42);
+
+        let manifest_val = get_manifest(data_dir, "test_ds_1").unwrap();
+        assert_eq!(manifest_val["reproducibility_seed"], 42);
+        assert_eq!(manifest_val["clearance"], "INTERNAL");
     }
 }
