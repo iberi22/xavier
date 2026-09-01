@@ -1,191 +1,190 @@
-# Guía Xavier Local-First (Ollama)
+# Xavier Local-First Guide (Ollama)
 
-Esta guía explica cómo configurar Xavier para funcionar de manera 100% local utilizando [Ollama](https://ollama.com/), tras las mejoras implementadas en la Ola 2 del proyecto.
+This guide explains how to configure Xavier to run 100% locally using [Ollama](https://ollama.com/), after the improvements introduced in Wave 2.
 
-Xavier ahora implementa una arquitectura local-first nativa donde el chat del panel utiliza automáticamente el LLM y los embeddings locales, gestionando de forma fluida la redundancia y el modo de operación degradado.
+Xavier now implements a native local-first architecture where the panel chat automatically uses the local LLM and embeddings, handling redundancy and degraded mode gracefully.
 
 ---
 
-## 🚀 Post-Ola 2: Operación 100% Local (Quickstart)
+## 🚀 Post-Wave 2: 100% Local Operation (Quickstart)
 
-El flujo de inicio rápido para tener a Xavier operando de manera offline y local se resume en instalar Ollama, descargar los modelos optimizados y arrancar el servicio.
+The quickstart to get Xavier running offline and locally involves installing Ollama, downloading the optimized models and starting the service.
 
-### Prerrequisitos
+### Prerequisites
 
-*   **Ollama**: Descarga e instala Ollama desde [ollama.com](https://ollama.com/).
-*   **Servicio Activo**: Asegúrate de que el daemon de Ollama esté corriendo (`ollama serve`). Puedes verificarlo abriendo `http://localhost:11434` en tu navegador o mediante curl.
+*   **Ollama**: Download and install Ollama from [ollama.com](https://ollama.com/).
+*   **Running Service**: Ensure the Ollama daemon is running (`ollama serve`). You can verify by opening `http://localhost:11434` in your browser or via curl.
 
-### Setup de 3 Pasos
+### 3-Step Setup
 
-Ejecuta los siguientes comandos en tu terminal para preparar los modelos y arrancar Xavier:
+Run the following commands in your terminal to prepare models and start Xavier:
 
-1.  **Descargar el modelo LLM local para chat y razonamiento:**
+1.  **Download the local LLM for chat and reasoning:**
     ```bash
     ollama pull qwen3-coder
     ```
 
-2.  **Descargar el modelo local para embeddings semánticos:**
+2.  **Download the local model for semantic embeddings:**
     ```bash
     ollama pull embeddinggemma
     ```
 
-3.  **Iniciar el servidor de Xavier:**
+3.  **Start the Xavier server:**
     ```bash
     xavier serve
     ```
-    *(Nota: Si estás en un entorno de desarrollo, puedes usar `cargo run -- serve`)*
+    *(Note: In a development environment, you can use `cargo run -- serve`)*
 
 ---
 
-## 🐳 Docker (todo en un comando)
+## 🐳 Docker (one command)
 
-Para simplificar al máximo el despliegue de Xavier con Ollama de forma 100% local, puedes utilizar Docker Compose. Esto permite levantar Xavier y Ollama juntos con los modelos pre-descargados automáticamente con un único comando.
+To simplify Xavier + Ollama deployment 100% locally, you can use Docker Compose. This lets you bring up Xavier and Ollama together with pre-downloaded models in a single command.
 
-### Prerrequisitos
+### Prerequisites
 
-*   **Docker** y **Docker Compose** (V2 recomendado) instalados en tu sistema.
+*   **Docker** and **Docker Compose** (V2 recommended) installed.
 
-### Instrucciones de Despliegue
+### Deployment Instructions
 
-1.  **Copiar la configuración de ejemplo:**
-    Crea tu archivo `.env` a partir de la plantilla provista para Docker:
+1.  **Copy the example configuration:**
+    Create your `.env` file from the Docker template:
     ```bash
     cp docker/.env.docker.example docker/.env
     ```
-    *(Nota: Asegúrate de editar `docker/.env` para definir tu `XAVIER_TOKEN` o cambiar opciones como `XAVIER_LOG_LEVEL` si es necesario).*
+    *(Note: Be sure to edit `docker/.env` to set your `XAVIER_TOKEN` or change options like `XAVIER_LOG_LEVEL` if needed).*
 
-2.  **Descargar los modelos locales (Solo la primera vez):**
-    Utiliza el perfil `init` para levantar Ollama y descargar automáticamente los modelos de LLM (`qwen3-coder`) y embeddings (`embeddinggemma`) necesarios:
+2.  **Download local models (first time only):**
+    Use the `init` profile to bring up Ollama and automatically download the required LLM (`qwen3-coder`) and embeddings (`embeddinggemma`) models:
     ```bash
     docker compose -f docker/docker-compose.local.yml --env-file docker/.env --profile init up --build
     ```
-    Este comando compilará la imagen de Xavier, levantará Ollama, esperará a que esté saludable y luego el contenedor `ollama-init` descargará los modelos directamente en el volumen persistente compartido. Una vez que termine la descarga, el contenedor de inicialización se detendrá.
+    This will build the Xavier image, start Ollama, wait until healthy and then the `ollama-init` container will download models directly into the shared persistent volume. Once done, the init container stops.
 
-3.  **Iniciar el entorno completo en segundo plano:**
-    Para arrancar Xavier y Ollama listos para producción:
+3.  **Start the full environment in background:**
+    To start Xavier and Ollama ready for production:
     ```bash
     docker compose -f docker/docker-compose.local.yml --env-file docker/.env up -d
     ```
-    Xavier estará disponible en `http://localhost:8006`, comunicándose de forma nativa e interna con el servicio `ollama` dentro de la red de Docker.
+    Xavier will be available at `http://localhost:8006`, communicating natively with the `ollama` service inside the Docker network.
 
-### Soporte de GPU (Opcional)
+### GPU Support (Optional)
 
-Si cuentas con una tarjeta gráfica NVIDIA y tienes instalado el **NVIDIA Container Toolkit**, puedes acelerar la inferencia descomentando la sección de recursos GPU en `docker/docker-compose.local.yml`:
+If you have an NVIDIA GPU and the **NVIDIA Container Toolkit** installed, you can accelerate inference by uncommenting the GPU resources section in `docker/docker-compose.local.yml`:
 
 ```yaml
-    # Para habilitar soporte de GPU NVIDIA, descomenta la siguiente sección:
+    # To enable NVIDIA GPU support, uncomment:
     deploy: resources: reservations: devices: [{driver: nvidia, capabilities: [gpu]}]
 ```
 
 ---
 
-## 🔍 Verificación del Sistema
+## 🔍 System Verification
 
-### 1. Boot Log (Consola)
-Al arrancar el servidor, Xavier realiza un escaneo de capacidades del sistema (incluyendo la detección de Ollama y sus modelos). El log de inicialización en la consola debe confirmar el correcto funcionamiento mostrando un banner similar al siguiente:
+### 1. Boot Log (Console)
+On startup, Xavier scans system capabilities (including Ollama and its models). The console init log should confirm correct operation with a banner like:
 
 ```text
-🟢 Xavier iniciado — modo: LOCAL
+🟢 Xavier started — mode: LOCAL
    LLM:        ollama/qwen3-coder @ http://localhost:11434/v1 [reachable]
    Embeddings: ollama/embeddinggemma @ localhost:11434 [reachable]
    Vector DB:  sqlite_vec (vec-store.sqlite3)
 ```
 
-Este log indica que ambos servicios locales están en estado `[reachable]` y listos para procesar inferencias.
+This log indicates both local services are `[reachable]` and ready to process inference.
 
 ### 2. Panel UI Badge
-Una vez iniciado el servidor, accede a la interfaz gráfica. En el selector de proveedores o estado del sistema, deberías observar el siguiente indicador visual:
+Once the server is started, open the graphical interface. In the provider selector or system status, you should see:
 
-*   **Badge**: `🦙 Local` (en verde, indicando que se está utilizando la inferencia local saludable).
-
----
-
-## 🔄 Resiliencia y Fallback Automático
-
-Xavier ha sido diseñado para no interrumpir el flujo de trabajo del usuario ante caídas de proveedores.
-
-1.  **Cadena de Fallbacks con Cloud (Prioridad Mixta):**
-    Si decides configurar tanto proveedores cloud (como OpenAI o Anthropic) como locales, la cadena de fallbacks interna los organiza de manera que los servicios cloud se evalúen primero y el local sirva como respaldo último (o viceversa si forces modo local estricto).
-2.  **Transición Transparente:**
-    Si el proveedor principal configurado (ej. OpenAI) experimenta una interrupción o agota su cuota de peticiones, Xavier redirige la petición de chat de forma completamente automática y transparente al backend local de Ollama (`qwen3-coder`).
+*   **Badge**: `🦙 Local` (green, indicating healthy local inference).
 
 ---
 
-## 💾 Degradación Gradual (Modo Degradado)
+## 🔄 Resilience & Automatic Fallback
 
-¿Qué pasa si incluso Ollama o el hardware local fallan? Xavier implementa una degradación elegante y robusta para evitar respuestas en blanco o bloqueos:
+Xavier is designed not to interrupt user workflow on provider outages.
 
-1.  **Transición a Local Degradado:**
-    Si los endpoints de Ollama dejan de responder tras varios intentos, el monitor de salud (`HealthMonitor`) cambia el estado operacional de la aplicación a `local-degraded`.
-2.  **Badge Visual en la UI:**
-    El indicador del panel se actualiza para mostrar el estado:
-    *   **Badge**: `⚠️ Degradado` (en amarillo, alertando de la indisponibilidad del motor de inferencia local).
-3.  **Respuestas desde Memoria:**
-    En este estado, el chat no fallará con errores de conexión. En su lugar, el orquestador activará el fallback de memoria profunda. Generará una respuesta contextualizada directamente desde los documentos calientes, resúmenes episódicos y engramas de la base de datos de vectores local (`sqlite-vec`), acompañando la respuesta con un distintivo visual claro:
-    *   **Nota en UI**: `💾` (indicador de que la respuesta ha sido recuperada de la base de datos de memoria persistente offline).
+1.  **Mixed-Priority Fallback Chain:**
+    If you configure both cloud providers (like OpenAI or Anthropic) and local, the internal fallback chain evaluates cloud first and local as last resort (or vice versa if you force strict local mode).
+2.  **Transparent Transition:**
+    If the primary configured provider (e.g. OpenAI) experiences an outage or quota exhaustion, Xavier automatically and transparently redirects the chat request to the local Ollama backend (`qwen3-coder`).
 
 ---
 
-## ⚙️ Referencia de Configuración (Variables de Entorno)
+## 💾 Graceful Degradation (Degraded Mode)
 
-La configuración de Xavier se gestiona a través de variables de entorno (definidas en tu archivo `.env`). Asegúrate de que coincidan exactamente con la especificación de configuración local:
+What happens if even Ollama or the local hardware fails? Xavier implements elegant degradation to avoid blank responses or hangs:
+
+1.  **Transition to Local Degraded:**
+    If Ollama endpoints stop responding after several retries, the health monitor (`HealthMonitor`) switches the operational state to `local-degraded`.
+2.  **UI Visual Badge:**
+    The panel indicator updates to show:
+    *   **Badge**: `⚠️ Degraded` (yellow, alerting local inference engine unavailability).
+3.  **Memory-based Responses:**
+    In this state, chat will not fail with connection errors. Instead, the orchestrator activates deep memory fallback. It generates a contextualized response directly from hot documents, episodic summaries and engrams in the local vector DB (`sqlite-vec`), accompanied by a clear visual indicator:
+    *   **UI Note**: `💾` (indicator that the response was recovered from the offline persistent memory database).
+
+---
+
+## ⚙️ Configuration Reference (Environment Variables)
+
+Xavier configuration is managed via environment variables (defined in your `.env` file). Ensure they match the local configuration spec exactly:
 
 ```env
-# Proveedor principal de inferencia (valores: local, cloud, opencode, etc.)
+# Primary inference provider (values: local, cloud, opencode, etc.)
 XAVIER_MODEL_PROVIDER=local
 
-# URL del endpoint de LLM local (Ollama expone un API compatible con OpenAI en /v1)
+# Local LLM endpoint URL (Ollama exposes OpenAI-compatible API at /v1)
 XAVIER_LOCAL_LLM_URL=http://localhost:11434/v1
 
-# Nombre exacto del modelo de lenguaje descargado en Ollama
+# Exact language model name downloaded in Ollama
 XAVIER_LOCAL_LLM_MODEL=qwen3-coder
 
-# Modo de proveedor de embeddings (valores: local para Ollama, local-gllm para nativo Candle, cloud)
+# Embedding provider mode (values: local for Ollama, local-gllm for native Candle, cloud)
 XAVIER_EMBEDDING_PROVIDER_MODE=local
 
-# URL del endpoint de embeddings de Ollama
+# Ollama embeddings endpoint URL
 XAVIER_EMBEDDING_URL=http://localhost:11434/api/embeddings
 
-# Nombre exacto del modelo de embeddings descargado en Ollama
+# Exact embeddings model name downloaded in Ollama
 XAVIER_EMBEDDING_MODEL=embeddinggemma
 ```
 
 ---
 
-## 🛠️ Solución de Problemas (Troubleshooting)
+## 🛠️ Troubleshooting
 
-### Validar Estado de Ollama mediante API
-Si sospechas que Ollama no responde, ejecuta el siguiente comando en tu terminal para listar los modelos que tiene cargados la instancia local:
+### Validate Ollama Status via API
+If you suspect Ollama is not responding, run the following in your terminal to list loaded local models:
 ```bash
 curl http://localhost:11434/api/tags
 ```
-Deberías recibir una respuesta en formato JSON que contenga los modelos `qwen3-coder` and `embeddinggemma`.
+You should receive a JSON response containing `qwen3-coder` and `embeddinggemma`.
 
-### El Badge de la UI indica `⚠️ Degradado`
-1.  Verifica que el servicio de Ollama esté ejecutándose en segundo plano (`lsof -i :11434` o `Get-Process ollama` en Windows).
-2.  Asegúrate de que no haya un problema de puerto ocupado por otra instancia o base de datos.
-3.  Confirma que has descargado exactamente los nombres de los modelos correspondientes en las variables de entorno de tu archivo `.env`.
+### UI Badge Shows `⚠️ Degraded`
+1.  Verify Ollama is running in background (`lsof -i :11434` or `Get-Process ollama` on Windows).
+2.  Ensure no port conflict from another instance or database.
+3.  Confirm you downloaded the exact model names corresponding to your `.env` variables.
 
-### Cambiar de Proveedor en Caliente (Hot-Swapping)
-Puedes forzar el cambio de proveedor de inferencia de Xavier en cualquier momento de dos formas:
+### Hot-Swapping Provider
+You can force Xavier inference provider switch at any time in two ways:
 
-1.  **Vía CLI de Xavier:**
+1.  **Via Xavier CLI:**
     ```bash
     xavier provider set local
     ```
-2.  **Vía HTTP API Endpoint:**
-    Realiza una petición POST al endpoint del servidor Xavier para cambiar el proveedor activo:
+2.  **Via HTTP API Endpoint:**
+    Send a POST request to the Xavier server to change the active provider:
     ```bash
     curl -X POST http://localhost:8006/v1/provider/set \
       -H "Content-Type: application/json" \
-      -H "X-Xavier-Token: TU_TOKEN_DE_AUTORIZACION" \
+      -H "X-Xavier-Token: YOUR_AUTH_TOKEN" \
       -d '{"provider": "local"}'
     ```
 
 ---
 
-## 🔗 Enlaces Relacionados
-
-*   **Embeddings Locales:** Para más detalles sobre el funcionamiento de los embeddings locales, la comparativa entre Ollama y el modo nativo GLLM (Candle), consulta la [Guía de Embeddings Locales](LOCAL_EMBEDDINGS.md).
-*   **Puentes de LLM Locales:** Si deseas usar alternativas como LM Studio o el bridge opencode CLI, consulta la [Guía de Puentes LLM](LOCAL_LLM_BRIDGES.md).
-*   **Roadmap de Desarrollo:** Explora la visión a largo plazo para una infraestructura offline en el [Roadmap Local-First](ROADMAP_LOCAL_FIRST.md).
+## 🔗 Related Links
+*   **Local Embeddings:** For details on local embeddings, comparison between Ollama and native GLLM (Candle) mode, see the [Local Embeddings Guide](LOCAL_EMBEDDINGS.md).
+*   **Local LLM Bridges:** If you want to use alternatives like LM Studio or the opencode CLI bridge, see the [LLM Bridges Guide](LOCAL_LLM_BRIDGES.md).
+*   **Development Roadmap:** Explore the long-term vision for offline infrastructure in the [Local-First Roadmap](ROADMAP_LOCAL_FIRST.md).
