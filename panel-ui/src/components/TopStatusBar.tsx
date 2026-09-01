@@ -23,6 +23,7 @@ import { getApiUrl } from "../api/client";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
+import LoadingSpinner from "./ui/LoadingSpinner";
 
 type MessagingPlatform =
   | "telegram"
@@ -33,6 +34,7 @@ type MessagingPlatform =
 
 interface TopStatusBarProps {
   isModalOpen?: boolean;
+  isLoading?: boolean;
 }
 
 // Declare the vite define constant
@@ -57,8 +59,10 @@ async function getAuthToken(): Promise<string> {
  */
 export default React.memo(function TopStatusBar({
   isModalOpen = false,
+  isLoading = false,
 }: TopStatusBarProps) {
   const [time, setTime] = useState(new Date());
+  const [isFetching, setIsFetching] = useState(false);
   const [memoryCount, setMemoryCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
   const [metrics, setMetrics] = useState({
@@ -97,6 +101,7 @@ export default React.memo(function TopStatusBar({
       .catch(console.error);
 
     const fetchMetrics = async () => {
+      setIsFetching(true);
       // 1. Fetch realtime metrics from Tauri
       try {
         const met = await invoke("get_realtime_metrics");
@@ -141,6 +146,8 @@ export default React.memo(function TopStatusBar({
       } catch (err) {
         console.debug("Error fetching notifications unread count:", err);
         setUnreadCount(0);
+      } finally {
+        setIsFetching(false);
       }
     };
 
@@ -201,6 +208,17 @@ export default React.memo(function TopStatusBar({
           )}
 
           <OperationModeBadge />
+
+          {(isLoading || isFetching) && (
+            <motion.div
+              layout
+              transition={spring}
+              className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2 py-1 flex items-center justify-center h-7 shrink-0"
+              title="Updating metrics..."
+            >
+              <LoadingSpinner size={12} className="text-emerald-400" />
+            </motion.div>
+          )}
 
           {/* System Resources Pill */}
           {modules.resources && (

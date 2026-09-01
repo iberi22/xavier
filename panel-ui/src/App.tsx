@@ -18,6 +18,7 @@ import ParticleBackground from "./components/ParticleBackground";
 import SystemAlertBanner from "./components/SystemAlertBanner";
 import ThemeToggle from "./components/ThemeToggle";
 import TopStatusBar from "./components/TopStatusBar";
+import ErrorToast from "./components/ui/ErrorToast";
 import { initialBookmarks } from "./data";
 import { ThemeProvider } from "./lib/theme/theme-provider";
 import { MalocaView } from "./maloca";
@@ -504,12 +505,13 @@ function AppContent() {
 	return (
 		<div className="relative w-full h-screen font-sans bg-slate-50 dark:bg-[#050505] flex flex-col overflow-hidden text-slate-900 dark:text-white transition-colors duration-200">
 			<ParticleBackground />
-			<TopStatusBar isModalOpen={isConfigOpen} />
+			<TopStatusBar isModalOpen={isConfigOpen} isLoading={_isLoading} />
 			<SystemAlertBanner
 				alerts={errorAlerts}
 				onDismiss={() => setError(null)}
 				onOpenConfig={handleOpenConfig}
 			/>
+			<ErrorToast message={error} onClose={() => setError(null)} />
 
 			{/* Floating Header Controls with Theme Toggle */}
 			<header className="absolute top-6 right-2 sm:right-4 md:right-6 z-[70] flex items-center gap-2 pointer-events-auto">
@@ -562,6 +564,7 @@ function AppContent() {
 			<ChatHistory
 				messages={messages}
 				streamingMessageId={streamingMessageId}
+				isLoading={_isLoading}
 			/>
 
 			<AnimatePresence>

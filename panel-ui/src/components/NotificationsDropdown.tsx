@@ -14,6 +14,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import React, { useEffect, useMemo, useState } from "react";
 import { getApiUrl } from "../api/client";
+import LoadingSpinner from "./ui/LoadingSpinner";
 
 export interface Notification {
 	id: string;
@@ -153,17 +154,21 @@ function NotificationItem({
 interface NotificationsDropdownProps {
 	onClose: () => void;
 	anchorRef?: React.RefObject<HTMLElement>;
+	isLoading?: boolean;
 }
 
 export default React.memo(function NotificationsDropdown({
 	onClose,
+	isLoading: externalLoading = false,
 }: NotificationsDropdownProps) {
 	const [notifications, setNotifications] = useState<Notification[]>([]);
 	const [activeIsland, setActiveIsland] = useState<IslandId | "all">("all");
+	const [isFetching, setIsFetching] = useState(false);
 
 	useEffect(() => {
 		// 1. Fetch initial notifications
 		const fetchNotifications = async () => {
+			setIsFetching(true);
 			try {
 				const token = await getAuthToken();
 				const response = await fetch(getApiUrl("/notifications"), {
@@ -175,6 +180,8 @@ export default React.memo(function NotificationsDropdown({
 				}
 			} catch (err) {
 				console.error("Failed to fetch notifications:", err);
+			} finally {
+				setIsFetching(false);
 			}
 		};
 
@@ -355,22 +362,43 @@ export default React.memo(function NotificationsDropdown({
 
 				{/* Notifications list */}
 				<div className="flex-1 overflow-y-auto p-2">
-					<AnimatePresence>
-						{filtered.length === 0 ? (
-							<motion.div
-								initial={{ opacity: 0 }}
-								animate={{ opacity: 1 }}
-								className="flex flex-col items-center justify-center py-8 text-white/20"
-							>
-								<Zap className="w-6 h-6 mb-2 opacity-30" />
-								<p className="text-[11px]">No notifications</p>
-							</motion.div>
-						) : (
-							filtered.map((n) => (
-								<NotificationItem key={n.id} notif={n} onRead={markRead} />
-							))
-						)}
-					</AnimatePresence>
+					{externalLoading || isFetching ? (
+						<div className="flex flex-col gap-2 p-1" data-testid="notification-skeletons">
+							<div className="flex items-center gap-2 px-2 py-1 text-xs text-emerald-400">
+								<LoadingSpinner size={12} />
+								<span className="text-[10px]">Loading notifications...</span>
+							</div>
+							{[1, 2, 3].map((key) => (
+								<div
+									key={key}
+									className="animate-pulse flex items-center gap-3 p-2.5 rounded-lg bg-white/[0.03] border border-white/[0.05]"
+								>
+									<div className="w-2 h-2 rounded-full bg-white/20 shrink-0" />
+									<div className="flex-1 space-y-1.5 min-w-0">
+										<div className="h-3 bg-white/20 rounded w-3/4" />
+										<div className="h-2 bg-white/10 rounded w-1/2" />
+									</div>
+								</div>
+							))}
+						</div>
+					) : (
+						<AnimatePresence>
+							{filtered.length === 0 ? (
+								<motion.div
+									initial={{ opacity: 0 }}
+									animate={{ opacity: 1 }}
+									className="flex flex-col items-center justify-center py-8 text-white/20"
+								>
+									<Zap className="w-6 h-6 mb-2 opacity-30" />
+									<p className="text-[11px]">No notifications</p>
+								</motion.div>
+							) : (
+								filtered.map((n) => (
+									<NotificationItem key={n.id} notif={n} onRead={markRead} />
+								))
+							)}
+						</AnimatePresence>
+					)}
 				</div>
 
 				{/* Footer */}
