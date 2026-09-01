@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
   Bell,
@@ -20,10 +18,11 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import React, { useEffect, useRef, useState } from "react";
 import { getApiUrl } from "../api/client";
-import { getApiTokenSync, useApiToken } from "../hooks/useApiToken";
+import { getApiTokenSync } from "../hooks/useApiToken";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
+import LoadingSpinner from "./ui/LoadingSpinner";
 
 type MessagingPlatform =
   | "telegram"
@@ -39,6 +38,12 @@ interface TopStatusBarProps {
 // Declare the vite define constant
 declare const __APP_VERSION__: string;
 
+const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+function getToken(): string {
+  return getApiTokenSync();
+}
+
 /**
  * ⚡ Bolt Performance Optimization
  *
@@ -51,10 +56,10 @@ declare const __APP_VERSION__: string;
 export default React.memo(function TopStatusBar({
   isModalOpen = false,
 }: TopStatusBarProps) {
-  const apiToken = useApiToken();
   const [time, setTime] = useState(new Date());
   const [memoryCount, setMemoryCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
   const [metrics, setMetrics] = useState({
     cpu_percent: 0,
     ram_used_gb: 0,
@@ -86,23 +91,77 @@ export default React.memo(function TopStatusBar({
   };
 
   useEffect(() => {
-    invoke("get_current_config_state")
-      .then((res: any) => setConfig(res))
-      .catch(console.error);
+    const fetchConfig = async () => {
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const res = await invoke<any>("get_current_config_state");
+          if (res) setConfig(res);
+        } catch (err) {
+          console.debug("Error fetching config state via Tauri:", err);
+        }
+      } else {
+        try {
+          const token = getToken();
+          const res = await fetch(getApiUrl("/v1/config/providers"), {
+            headers: { "X-Xavier-Token": token },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const providers = data.providers || [];
+            const has_openai = providers.some(
+              (p: any) => p.provider === "openai" && (p.api_key || p.model),
+            );
+            const has_gemini = providers.some(
+              (p: any) => p.provider === "gemini" && (p.api_key || p.model),
+            );
+            setConfig((prev) => ({ ...prev, has_openai, has_gemini }));
+          }
+        } catch (err) {
+          console.debug("Error fetching config fallback:", err);
+        }
+      }
+    };
+
+    fetchConfig();
 
     const fetchMetrics = async () => {
-      // 1. Fetch realtime metrics from Tauri
-      try {
-        const met = await invoke("get_realtime_metrics");
-        setMetrics(met as any);
-      } catch (err) {
-        console.debug("Error fetching realtime metrics:", err);
+      // 1. Fetch realtime metrics from Tauri or HTTP /health
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const met = await invoke<any>("get_realtime_metrics");
+          if (met) setMetrics(met);
+        } catch (err) {
+          console.debug("Error fetching realtime metrics:", err);
+        }
+      } else {
+        try {
+          const res = await fetch(getApiUrl("/health"));
+          if (res.ok) {
+            const data = await res.json();
+            if (data.system) {
+              const cpu_percent = data.system.cpu_usage ?? 0;
+              const ram_percent = data.system.ram_usage_percent ?? 0;
+              const deviceMemory =
+                (navigator as unknown as { deviceMemory?: number })
+                  .deviceMemory || 8;
+              const ram_used_gb = (ram_percent / 100) * deviceMemory;
+              setMetrics({
+                cpu_percent,
+                ram_used_gb,
+                ram_total_gb: deviceMemory,
+              });
+            }
+          }
+        } catch (err) {
+          console.debug("Error fetching metrics from /health:", err);
+        }
       }
-
-      const token = getApiTokenSync();
 
       // 2. Fetch memory count from REST API
       try {
+        const token = getToken();
         const res = await fetch(getApiUrl("/v1/memories?limit=1"), {
           headers: { "X-Xavier-Token": token },
         });
@@ -118,6 +177,7 @@ export default React.memo(function TopStatusBar({
 
       // 3. Fetch notifications unread count from REST API
       try {
+        const token = getToken();
         const res = await fetch(getApiUrl("/notifications"), {
           headers: { "X-Xavier-Token": token },
         });
@@ -135,6 +195,8 @@ export default React.memo(function TopStatusBar({
       } catch (err) {
         console.debug("Error fetching notifications unread count:", err);
         setUnreadCount(0);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -142,15 +204,28 @@ export default React.memo(function TopStatusBar({
     const metricsInterval = setInterval(fetchMetrics, 3000);
     const timeInterval = setInterval(() => setTime(new Date()), 1000);
 
-    // Listen for real-time notifications via Tauri
-    const unlistenPromise = listen<any>("new-notification", () => {
-      fetchMetrics();
-    });
+    let unlisten: (() => void) | undefined;
+    let notifyInterval: ReturnType<typeof setInterval> | undefined;
+
+    if (isTauri) {
+      import("@tauri-apps/api/event")
+        .then(({ listen }) => {
+          listen<any>("new-notification", () => {
+            fetchMetrics();
+          }).then((fn) => {
+            unlisten = fn;
+          });
+        })
+        .catch((err) => console.debug("Error listening for events:", err));
+    } else {
+      notifyInterval = setInterval(fetchMetrics, 30000);
+    }
 
     return () => {
       clearInterval(metricsInterval);
       clearInterval(timeInterval);
-      unlistenPromise.then((unlisten) => unlisten());
+      if (notifyInterval) clearInterval(notifyInterval);
+      if (unlisten) unlisten();
     };
   }, []);
 
@@ -203,30 +278,41 @@ export default React.memo(function TopStatusBar({
               transition={spring}
               className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-3 py-1 flex items-center gap-3 h-7 shrink-0 hidden lg:flex"
             >
-              <div
-                className="flex items-center gap-1 text-[10px] text-white/70"
-                title={`Memory: ${metrics.ram_used_gb.toFixed(1)}GB / ${metrics.ram_total_gb.toFixed(1)}GB`}
-              >
-                <Database className="w-3 h-3 text-blue-400" />
-                <span className="font-mono">
-                  {Math.round(metrics.ram_used_gb)}G
-                </span>
-              </div>
-              <div
-                className="flex items-center gap-1 text-[10px] text-white/70"
-                title={`CPU: ${Math.round(metrics.cpu_percent)}%`}
-              >
-                <Activity className="w-3 h-3 text-red-400" />
-                <span className="font-mono">
-                  {Math.round(metrics.cpu_percent)}%
-                </span>
-              </div>
-              <div
-                className="flex items-center gap-1 text-[10px] text-[#39ff14]"
-                title="GPU: ON"
-              >
-                <Zap className="w-3 h-3 fill-[#39ff14]/20" />
-              </div>
+              {isLoading ? (
+                <div className="flex items-center gap-1.5 px-1">
+                  <LoadingSpinner size={12} />
+                  <span className="font-mono text-[10px] text-white/50">
+                    Loading...
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="flex items-center gap-1 text-[10px] text-white/70"
+                    title={`Memory: ${metrics.ram_used_gb.toFixed(1)}GB / ${metrics.ram_total_gb.toFixed(1)}GB`}
+                  >
+                    <Database className="w-3 h-3 text-blue-400" />
+                    <span className="font-mono">
+                      {Math.round(metrics.ram_used_gb)}G
+                    </span>
+                  </div>
+                  <div
+                    className="flex items-center gap-1 text-[10px] text-white/70"
+                    title={`CPU: ${Math.round(metrics.cpu_percent)}%`}
+                  >
+                    <Activity className="w-3 h-3 text-red-400" />
+                    <span className="font-mono">
+                      {Math.round(metrics.cpu_percent)}%
+                    </span>
+                  </div>
+                  <div
+                    className="flex items-center gap-1 text-[10px] text-[#39ff14]"
+                    title="GPU: ON"
+                  >
+                    <Zap className="w-3 h-3 fill-[#39ff14]/20" />
+                  </div>
+                </>
+              )}
             </motion.div>
           )}
 
