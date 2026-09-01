@@ -30,7 +30,7 @@
     "supabase_key": null,
     "postgres_url": null,
     "dedup": {
-      "enabled": false,
+      "enabled": true,
       "threshold": 0.92,
       "scope": "path_exact",
       "max_revisions": 5
