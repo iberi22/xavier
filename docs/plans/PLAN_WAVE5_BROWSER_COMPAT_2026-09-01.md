@@ -143,8 +143,8 @@ Formato: cada issue `feat-`/fix con template canonico 11 secciones Rust (skill x
 - Docs: `docs/SWAL_VERSIONING.md` ya canon, agregar badge version en README que lee Cargo
 
 **#10 — docs(adr): ADRs browser-safe + versioning gate + SRS REQ-044**
-- `docs/adr/ADR-XXX-panel-browser-compat.md` (contexto Tauri→browser, decision guard+polling, consecuencias)
-- `docs/adr/ADR-XXX-swal-versioning.md` (semver 0.y.z gate, conventional commits)
+- [`docs/adr/ADR-030-panel-browser-compat.md`](../adr/ADR-030-panel-browser-compat.md) (contexto Tauri→browser, decision guard+polling, consecuencias)
+- [`docs/adr/ADR-031-swal-versioning-gate.md`](../adr/ADR-031-swal-versioning-gate.md) (semver 0.y.z gate, conventional commits, swal-preflight gate)
 - `docs/SRS/REQUIREMENTS.md`: nuevo `REQ-044: Panel browser compat` con criterios (no invoke sin guard, /health fallback, polling)
 - `docs/plans/PLAN_WAVE5_BROWSER_COMPAT_2026-09-01.md` (este archivo) como referencia
 
