@@ -15,6 +15,7 @@ import InputArea from "./components/InputArea";
 import { MeshHubView } from "./components/Mesh/MeshHubView";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
+import SystemAlertBanner from "./components/SystemAlertBanner";
 import ThemeToggle from "./components/ThemeToggle";
 import TopStatusBar from "./components/TopStatusBar";
 import { initialBookmarks } from "./data";
@@ -60,7 +61,21 @@ function AppContent() {
 	const [messages, setMessages] = useState<PanelMessage[]>([]);
 	const [health, setHealth] = useState("checking");
 	const [_isLoading, setIsLoading] = useState(false);
-	const [_error, setError] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
+
+	const errorAlerts = useMemo(() => {
+		if (!error) return [];
+		return [
+			{
+				id: "global-error",
+				level: "error",
+				message: error,
+				component: "System",
+				created_at: new Date().toISOString(),
+			},
+		];
+	}, [error]);
+
 	const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
 		null,
 	);
@@ -475,6 +490,11 @@ function AppContent() {
 		<div className="relative w-full h-screen font-sans bg-slate-50 dark:bg-[#050505] flex flex-col overflow-hidden text-slate-900 dark:text-white transition-colors duration-200">
 			<ParticleBackground />
 			<TopStatusBar isModalOpen={isConfigOpen} />
+			<SystemAlertBanner
+				alerts={errorAlerts}
+				onDismiss={() => setError(null)}
+				onOpenConfig={handleOpenConfig}
+			/>
 
 			{/* Floating Header Controls with Theme Toggle */}
 			<header className="absolute top-6 right-2 sm:right-4 md:right-6 z-[70] flex items-center gap-2 pointer-events-auto">
