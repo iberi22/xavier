@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
 	Activity,
@@ -14,6 +13,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import React, { useEffect, useMemo, useState } from "react";
 import { getApiUrl } from "../api/client";
+import { getApiTokenSync, useApiToken } from "../hooks/useApiToken";
 
 export interface Notification {
 	id: string;
@@ -71,14 +71,6 @@ const ISLANDS: Island[] = [
 		borderColor: "border-red-500/20",
 	},
 ];
-
-async function getAuthToken(): Promise<string> {
-	try {
-		return await invoke<string>("get_xavier_token");
-	} catch {
-		return localStorage.getItem("XAVIER_TOKEN") || "";
-	}
-}
 
 function formatRelativeTime(dateInput: Date | string): string {
 	const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
@@ -158,6 +150,7 @@ interface NotificationsDropdownProps {
 export default React.memo(function NotificationsDropdown({
 	onClose,
 }: NotificationsDropdownProps) {
+	const apiToken = useApiToken();
 	const [notifications, setNotifications] = useState<Notification[]>([]);
 	const [activeIsland, setActiveIsland] = useState<IslandId | "all">("all");
 
@@ -165,7 +158,7 @@ export default React.memo(function NotificationsDropdown({
 		// 1. Fetch initial notifications
 		const fetchNotifications = async () => {
 			try {
-				const token = await getAuthToken();
+				const token = getApiTokenSync();
 				const response = await fetch(getApiUrl("/notifications"), {
 					headers: { "X-Xavier-Token": token },
 				});
@@ -212,7 +205,7 @@ export default React.memo(function NotificationsDropdown({
 		);
 
 		try {
-			const token = await getAuthToken();
+			const token = getApiTokenSync();
 			await fetch(getApiUrl(`/notifications/${id}/read`), {
 				method: "PATCH",
 				headers: { "X-Xavier-Token": token },
@@ -226,7 +219,7 @@ export default React.memo(function NotificationsDropdown({
 		setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
 
 		try {
-			const token = await getAuthToken();
+			const token = getApiTokenSync();
 			await fetch(getApiUrl("/notifications/read-all"), {
 				method: "PATCH",
 				headers: { "X-Xavier-Token": token },
