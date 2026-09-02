@@ -35,6 +35,7 @@ pub mod data_commons;
 pub mod embedding;
 pub mod enterprise;
 pub mod error;
+pub mod espacio;
 pub mod governance;
 pub mod health;
 pub mod humanchallenge;

@@ -1,0 +1,22 @@
+[routing]
+strategy = "CapabilityMatch"
+
+[[agents]]
+name = "hermes"
+provider = "local"
+model = "muse-spark-1.2-contributor"
+type = "Assistant"
+capabilities = ["code", "orchestration"]
+
+[[agents]]
+name = "jules"
+provider = "local"
+model = "gemini"
+type = "Api"
+capabilities = ["code", "test"]
+
+[providers.local]
+base_url = "http://localhost:8081"
+[providers.local.rate_limit]
+rpm = 60
+tpm = 100000
