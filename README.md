@@ -69,6 +69,21 @@ xavier recall "vector memory" --limit 5
 xavier doctor
 ```
 
+### 5. Preflight Verification
+
+Before committing changes or triggering releases, verify manifest version sync and readiness using the SWAL preflight runner:
+
+```bash
+# Run preflight check using local repo path
+node ~/proyectosSWAL/periferia/swal-preflight/bin/swal-preflight.js check --cwd .
+
+# Recommended shell alias
+alias swal-preflight="node $HOME/proyectosSWAL/periferia/swal-preflight/bin/swal-preflight.js"
+swal-preflight check --cwd .
+
+# npm i -g @swal/preflight # when published
+```
+
 ---
 
 ## 📦 Downloads
