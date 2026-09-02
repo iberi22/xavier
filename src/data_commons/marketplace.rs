@@ -67,8 +67,10 @@ impl DataMarketplace {
     /// * `metadata` - The metadata and rows of the dataset to list.
     pub fn list_dataset(&mut self, mut metadata: DatasetMetadata) -> DatasetId {
         // Wire pricing: calculate the price dynamically using size, tier, and reputation
+        // Conversion bound: usize vector length is guaranteed <= u64::MAX on 32-bit and 64-bit platforms
+        let row_count = u64::try_from(metadata.rows.len()).unwrap_or(u64::MAX);
         metadata.price = crate::data_commons::pricing::calculate_price(
-            metadata.rows.len() as u64,
+            row_count,
             metadata.tier,
             metadata.reputation,
         )
@@ -253,5 +255,51 @@ mod tests {
         // Re-revoking must fail
         let double_revoke = marketplace.revoke_dataset(&id);
         assert!(double_revoke.is_err());
+    }
+
+    #[test]
+    fn test_marketplace_list_dataset_empty_rows_try_into() {
+        use crate::data_commons::pricing::PricingTier;
+        let mut marketplace = DataMarketplace::new();
+
+        let metadata = DatasetMetadata {
+            name: "Empty Dataset".to_string(),
+            description: "No rows".to_string(),
+            category: "Test".to_string(),
+            price: 0,
+            publisher: "xv1_publisher_wallet_address_xyz_1234567890abcdef".to_string(),
+            rows: vec![],
+            tier: PricingTier::Free,
+            reputation: 0.0,
+        };
+
+        let id = marketplace.list_dataset(metadata);
+        assert!(id.0.starts_with("ds_"));
+        let query_res = marketplace.query_dataset(&id, "", 0);
+        assert!(query_res.is_ok());
+        assert_eq!(query_res.unwrap().records.len(), 0);
+    }
+
+    #[test]
+    fn test_marketplace_list_dataset_large_rows_try_into() {
+        use crate::data_commons::pricing::PricingTier;
+        let mut marketplace = DataMarketplace::new();
+
+        let rows: Vec<serde_json::Value> =
+            (0..1000).map(|i| serde_json::json!({ "id": i })).collect();
+
+        let metadata = DatasetMetadata {
+            name: "Large Dataset".to_string(),
+            description: "1000 rows".to_string(),
+            category: "Test".to_string(),
+            price: 0,
+            publisher: "xv1_publisher_wallet_address_xyz_1234567890abcdef".to_string(),
+            rows,
+            tier: PricingTier::Colaborador,
+            reputation: 0.0,
+        };
+
+        let id = marketplace.list_dataset(metadata);
+        assert!(id.0.starts_with("ds_"));
     }
 }
