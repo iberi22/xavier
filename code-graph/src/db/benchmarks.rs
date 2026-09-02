@@ -105,4 +105,51 @@ mod benchmarks_inner {
         println!("Find by kind (100 queries): {:?}", elapsed);
         assert!(elapsed.as_millis() < 1000);
     }
+
+    #[test]
+    fn benchmark_batch_insert_wal_guard() {
+        let temp_dir = tempfile::tempdir().expect("benchmark tempdir");
+        let db_path = temp_dir.path().join("bench_wal.db");
+        let db = CodeGraphDB::new(&db_path).expect("open file db");
+
+        let symbols: Vec<Symbol> = (0..500)
+            .map(|i| Symbol {
+                id: None,
+                stable_id: None,
+                name: format!("bench_sym_{}", i),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: format!("/src/file_{}.rs", i % 10),
+                start_line: i as u32,
+                end_line: (i + 1) as u32,
+                start_col: 0,
+                end_col: 0,
+                signature: Some("fn bench()".to_string()),
+                parent: None,
+                complexity: None,
+            })
+            .collect();
+
+        // Verify journal_size_limit PRAGMA setting directly on CodeGraphDB connection
+        {
+            let conn = db.conn.lock().expect("lock db conn");
+            let pragma_value: i64 = conn
+                .query_row("PRAGMA journal_size_limit;", [], |row| row.get(0))
+                .expect("query pragma journal_size_limit");
+            assert_eq!(pragma_value, 67108864);
+        }
+
+        db.insert_symbols(&symbols).expect("batch insert");
+        db.checkpoint_wal().expect("checkpoint wal");
+
+        let wal_path = db_path.with_extension("db-wal");
+        if wal_path.exists() {
+            let wal_size = std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
+            assert!(
+                wal_size < 64 * 1024 * 1024,
+                "WAL file size {} exceeds 64MB limit",
+                wal_size
+            );
+        }
+    }
 }
