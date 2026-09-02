@@ -1,25 +1,25 @@
 # Software Requirements Specification (SRC)
 
-**Proyecto:** Xavier
-**Versión:** 1.0
-**Fecha:** 2026-03-13
-**Estado:** Draft
+**Project:** Xavier
+**Version:** 1.0
+**Date:** 2026-03-13
+**Status:** Draft
 
 ---
 
-## Tabla de Contenidos
+## Table of Contents
 
-1. [REQUIREMENTS.md](REQUIREMENTS.md) - Requisitos Funcionales
-2. [NON-FUNCTIONAL.md](NON-FUNCTIONAL.md) - Requisitos No Funcionales
-3. [INTERFACES.md](INTERFACES.md) - Interfaces de Sistema
-4. [DATABASE.md](DATABASE.md) - Modelo de Datos
-5. [GLOSSARY.md](GLOSSARY.md) - Glosario de Términos
+1. [REQUIREMENTS.md](REQUIREMENTS.md) - Functional Requirements
+2. [NON-FUNCTIONAL.md](NON-FUNCTIONAL.md) - Non-Functional Requirements
+3. [INTERFACES.md](INTERFACES.md) - System Interfaces
+4. [DATABASE.md](DATABASE.md) - Data Model
+5. [GLOSSARY.md](GLOSSARY.md) - Glossary of Terms
 
 ---
 
-## Resumen Ejecutivo
+## Executive Summary
 
-*Por completar*
+*To be completed*
 
 ## Metadata
 
@@ -32,4 +32,4 @@ status: "draft"
 
 ---
 
-*Documento generado automáticamente - SWAL*
+*Automatically generated document - SWAL*

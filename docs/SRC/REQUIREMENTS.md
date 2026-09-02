@@ -1,36 +1,36 @@
-# Requisitos Funcionales
+# Functional Requirements
 
-**Proyecto:** Xavier
-**Fecha:** 2026-03-13
-
----
-
-## Requisitos Funcionales
-
-| ID | Descripción | Prioridad | Estado |
-|----|-------------|-----------|--------|
-| SRC-FUN-001 | *Por definir* | Alta | Pendiente |
-| SRC-FUN-002 | *Por definir* | Media | Pendiente |
+**Project:** Xavier
+**Date:** 2026-03-13
 
 ---
 
-## Casos de Uso
+## Functional Requirements
 
-### UC-001: *Nombre del Caso de Uso*
+| ID | Description | Priority | Status |
+|----|-------------|----------|--------|
+| SRC-FUN-001 | *To be defined* | High | Pending |
+| SRC-FUN-002 | *To be defined* | Medium | Pending |
+
+---
+
+## Use Cases
+
+### UC-001: *Use Case Name*
 
 **Actor:**
-**Descripción:**
-**Precondiciones:**
-**Flujo Principal:**
-**Postcondiciones:**
+**Description:**
+**Preconditions:**
+**Main Flow:**
+**Postconditions:**
 
 ---
 
-## Reglas de Negocio
+## Business Rules
 
-- *Regla 1 por definir*
-- *Regla 2 por definir*
+- *Rule 1 to be defined*
+- *Rule 2 to be defined*
 
 ---
 
-*Actualizado: 2026-03-13*
+*Updated: 2026-03-13*

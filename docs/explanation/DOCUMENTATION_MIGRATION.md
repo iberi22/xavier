@@ -99,7 +99,7 @@ grep -r "](./OLD_FILE.md)" . --include="*.md"
 | **Explica diseño o filosofía** | `explanation/` | "Por qué GitHub Issues y no archivos" |
 | **Es una lista de tareas** | **GitHub Issues** | Crear issues individuales |
 | **Son notas temporales** | **Eliminar** o → issue comments | N/A |
-| **Es configuración inicial** | `setup/` | "Guía de instalación" |
+| **Es configuración inicial** | `setup/` | "Installation guide" |
 | **Es para agentes AI** | `agent-docs/` | "Especificación de protocolo" |
 
 ---
