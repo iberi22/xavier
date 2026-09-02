@@ -128,6 +128,11 @@ name = "mcp_benchmark"
 path = "benches/mcp_benchmark.rs"
 harness = false
 
+[[bench]]
+name = "embedding_bench"
+path = "benches/embedding_bench.rs"
+harness = false
+
 [[test]]
 name = "auth_full_flow_test"
 path = "tests/integration/auth_full_flow_test.rs"
