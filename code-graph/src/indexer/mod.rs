@@ -388,6 +388,7 @@ impl Indexer {
                 let _ = db.insert_symbol_embeddings_batch(&batch_refs);
             }
             db.batch_upsert_file_metadata(files_to_mtime)?;
+            db.checkpoint_wal()?;
             db.stats()
         })
         .await

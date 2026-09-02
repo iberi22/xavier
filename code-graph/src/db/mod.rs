@@ -30,12 +30,18 @@ fn normalize_path(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// Checkpoint the WAL file for a connection and attempt truncation.
+pub fn checkpoint_wal(conn: &Connection) {
+    let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    debug!("Executed WAL checkpoint (TRUNCATE) for CodeGraphDB connection");
+}
+
 /// Flush and checkpoint all cached CodeGraphDB connections gracefully (wal_checkpoint(TRUNCATE)).
 pub fn flush_and_close_cache() {
     let mut cache = db_cache().write();
     for (path, conn_arc) in cache.drain() {
         if let Ok(conn) = conn_arc.lock() {
-            let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+            checkpoint_wal(&conn);
             debug!(
                 "Flushed WAL checkpoint for cached CodeGraphDB at {:?}",
                 path
@@ -153,7 +159,9 @@ impl CodeGraphDB {
         let conn = Connection::open(path).map_err(|e| GraphError::Database(e.to_string()))?;
         // Allow concurrent access with `xavier http` / local CLI sync.
         let _ = conn.busy_timeout(std::time::Duration::from_secs(15));
-        let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+        let _ = conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA journal_size_limit=67108864;",
+        );
 
         let conn_arc = Arc::new(Mutex::new(conn));
         let db = Self {
@@ -179,6 +187,10 @@ impl CodeGraphDB {
         }
 
         let conn = Connection::open(path).map_err(|e| GraphError::Database(e.to_string()))?;
+        let _ = conn.busy_timeout(std::time::Duration::from_secs(15));
+        let _ = conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA journal_size_limit=67108864;",
+        );
 
         let conn_arc = Arc::new(Mutex::new(conn));
         let db = Self {
@@ -1858,6 +1870,16 @@ impl CodeGraphDB {
         Ok(())
     }
 
+    /// Checkpoint the WAL file (TRUNCATE) to limit WAL log file growth.
+    pub fn checkpoint_wal(&self) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        checkpoint_wal(&conn);
+        Ok(())
+    }
+
     /// Clear all data
     pub fn clear(&self) -> Result<()> {
         let conn = self
@@ -2139,5 +2161,42 @@ mod tests {
         let remaining = db.list_projects().expect("list remaining");
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].0, "/app/service-b");
+    }
+
+    #[test]
+    fn test_wal_checkpoint_and_journal_size_limit() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let db_path = temp_dir.path().join("wal_test.db");
+
+        let db = CodeGraphDB::new(&db_path).expect("open db");
+
+        let symbol = Symbol {
+            id: None,
+            stable_id: None,
+            name: "wal_test_fn".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/wal.rs".to_string(),
+            start_line: 1,
+            end_line: 5,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            parent: None,
+            complexity: None,
+        };
+
+        db.insert_symbol(&symbol).expect("insert symbol");
+        db.checkpoint_wal().expect("checkpoint_wal");
+
+        let wal_path = temp_dir.path().join("wal_test.db-wal");
+        if wal_path.exists() {
+            let wal_size = std::fs::metadata(&wal_path).expect("wal metadata").len();
+            assert!(
+                wal_size < 64 * 1024 * 1024,
+                "WAL file size {} exceeds 64MB limit",
+                wal_size
+            );
+        }
     }
 }
