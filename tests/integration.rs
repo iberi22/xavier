@@ -22,6 +22,8 @@ mod codegraph_dump_test;
 mod context_regen_test;
 #[path = "integration/coordination_test.rs"]
 mod coordination_test;
+#[path = "integration/espacio_lifecycle_test.rs"]
+mod espacio_lifecycle_test;
 #[path = "integration/governance_integration_test.rs"]
 mod governance_integration_test;
 #[path = "integration/hierarchical_curation_test.rs"]
