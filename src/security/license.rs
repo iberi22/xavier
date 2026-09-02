@@ -27,6 +27,57 @@
 //! terms on top. The Commercial License is for proprietary use.
 
 use crate::settings::XavierSettings;
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use serde::{Deserialize, Serialize};
+
+/// Seed for default SWAL License Authority root keypair (32 bytes)
+pub const SWAL_ROOT_LICENSE_SEED: &[u8; 32] = b"SWAL-COMMERCIAL-LICENSE-KEY-2026";
+
+/// Get SWAL License Authority root signing key
+pub fn swal_root_signing_key() -> SigningKey {
+    SigningKey::from_bytes(SWAL_ROOT_LICENSE_SEED)
+}
+
+/// Get SWAL License Authority root verifying key bytes (32 bytes)
+pub fn swal_root_verifying_key_bytes() -> [u8; 32] {
+    swal_root_signing_key().verifying_key().to_bytes()
+}
+
+/// Payload structure encoded within a SWAL Commercial License token.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CommercialLicensePayload {
+    /// Issuer (e.g. "SWAL")
+    pub issuer: String,
+    /// Commercial tier (e.g. "Commercial", "Enterprise")
+    pub tier: String,
+    /// Expiry date as UNIX timestamp in seconds (optional, None = perpetual)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+    /// Node ID constraint (optional, None = any node)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+}
+
+/// Errors occurring during commercial license token verification.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum LicenseError {
+    #[error("Invalid license format: expected PREFIX.PAYLOAD_BASE64.SIG_HEX")]
+    InvalidFormat,
+    #[error("Base64 decode error")]
+    Base64DecodeError,
+    #[error("Hex decode error: {0}")]
+    HexDecodeError(String),
+    #[error("JSON parse error: {0}")]
+    JsonError(String),
+    #[error("Invalid cryptographic signature")]
+    InvalidSignature,
+    #[error("License expired at timestamp {0}")]
+    Expired(i64),
+    #[error("Node ID mismatch: expected {expected}, got {actual}")]
+    NodeIdMismatch { expected: String, actual: String },
+    #[error("Public key error: {0}")]
+    PublicKeyError(String),
+}
 
 /// License kinds recognized by Xavier
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,20 +170,149 @@ pub fn accept_mesh_license(settings: &mut XavierSettings) -> bool {
     true
 }
 
-/// Accept a Commercial License (requires key/verification).
+/// Generate a signed commercial license token formatted as `PREFIX.PAYLOAD_BASE64.SIG_HEX`.
+pub fn generate_license_token(
+    prefix: &str,
+    payload: &CommercialLicensePayload,
+    signing_key: &SigningKey,
+) -> Result<String, LicenseError> {
+    let payload_json =
+        serde_json::to_vec(payload).map_err(|e| LicenseError::JsonError(e.to_string()))?;
+    let payload_b64 = crate::crypto::base64_encode(&payload_json);
+    let signature = signing_key.sign(payload_b64.as_bytes());
+    let sig_hex = crate::crypto::hex_encode(signature.to_bytes());
+    Ok(format!("{prefix}.{payload_b64}.{sig_hex}"))
+}
+
+/// Verify a SWAL Ed25519-signed commercial license token against a specific verifying key.
+pub fn verify_commercial_license_with_pubkey(
+    token: &str,
+    expected_node_id: Option<&str>,
+    pubkey_bytes: &[u8; 32],
+) -> Result<CommercialLicensePayload, LicenseError> {
+    let parts: Vec<&str> = token.trim().split('.').collect();
+    if parts.len() != 3 {
+        return Err(LicenseError::InvalidFormat);
+    }
+    let (prefix, payload_b64, sig_hex) = (parts[0], parts[1], parts[2]);
+    if prefix.is_empty() || payload_b64.is_empty() || sig_hex.is_empty() {
+        return Err(LicenseError::InvalidFormat);
+    }
+
+    let sig_bytes = crate::crypto::hex_decode(sig_hex)
+        .map_err(|e| LicenseError::HexDecodeError(e.to_string()))?;
+    if sig_bytes.len() != 64 {
+        return Err(LicenseError::InvalidSignature);
+    }
+
+    let verifying_key = VerifyingKey::from_bytes(pubkey_bytes)
+        .map_err(|e| LicenseError::PublicKeyError(e.to_string()))?;
+
+    let sig_array: [u8; 64] = sig_bytes
+        .try_into()
+        .map_err(|_| LicenseError::InvalidSignature)?;
+    let signature = Signature::from_bytes(&sig_array);
+
+    verifying_key
+        .verify(payload_b64.as_bytes(), &signature)
+        .map_err(|_| LicenseError::InvalidSignature)?;
+
+    let payload_bytes =
+        crate::crypto::base64_decode(payload_b64).ok_or(LicenseError::Base64DecodeError)?;
+
+    let payload: CommercialLicensePayload = serde_json::from_slice(&payload_bytes)
+        .map_err(|e| LicenseError::JsonError(e.to_string()))?;
+
+    if let Some(exp) = payload.expires_at {
+        let now = chrono::Utc::now().timestamp();
+        if now > exp {
+            return Err(LicenseError::Expired(exp));
+        }
+    }
+
+    if let Some(ref required_node) = payload.node_id {
+        if let Some(exp_node) = expected_node_id {
+            if required_node != exp_node {
+                return Err(LicenseError::NodeIdMismatch {
+                    expected: required_node.clone(),
+                    actual: exp_node.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(payload)
+}
+
+/// Verify a SWAL Ed25519-signed commercial license token using default or environment public key.
+pub fn verify_commercial_license(
+    token: &str,
+    expected_node_id: Option<&str>,
+) -> Result<CommercialLicensePayload, LicenseError> {
+    let pubkey_bytes = if let Ok(hex_key) = std::env::var("SWAL_LICENSE_PUBKEY")
+        .or_else(|_| std::env::var("XAVIER_LICENSE_PUBKEY"))
+    {
+        let vec = crate::crypto::hex_decode(&hex_key)
+            .map_err(|e| LicenseError::PublicKeyError(e.to_string()))?;
+        vec.try_into()
+            .map_err(|_| LicenseError::PublicKeyError("Public key must be 32 bytes".to_string()))?
+    } else {
+        swal_root_verifying_key_bytes()
+    };
+
+    verify_commercial_license_with_pubkey(token, expected_node_id, &pubkey_bytes)
+}
+
+/// Accept a Commercial License for a specific node (requires key/verification).
 /// Returns true if acceptance was recorded.
-pub fn accept_commercial_license(settings: &mut XavierSettings, license_key: &str) -> bool {
-    // TODO: Implement key verification against SWAL's licensing server
-    // For now, accept any non-empty key as valid (development mode)
-    if license_key.is_empty() {
+pub fn accept_commercial_license_for_node(
+    settings: &mut XavierSettings,
+    license_key: &str,
+    node_id: Option<&str>,
+) -> bool {
+    let key = license_key.trim();
+    if key.is_empty() {
         tracing::warn!("Empty commercial license key rejected");
         return false;
     }
+
+    // Check if the key matches the PREFIX.PAYLOAD_B64.SIG_HEX token format
+    if key.split('.').count() == 3 {
+        match verify_commercial_license(key, node_id) {
+            Ok(payload) => {
+                settings.license.mesh_accepted = true;
+                settings.license.license_type = if payload.tier.contains("Enterprise") {
+                    "Xavier-Enterprise-1.0".to_string()
+                } else {
+                    "Xavier-Commercial-1.0".to_string()
+                };
+                settings.license.commercial_key = Some(key.to_string());
+                tracing::info!(
+                    tier = %payload.tier,
+                    issuer = %payload.issuer,
+                    "Commercial License token verified and accepted"
+                );
+                return true;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Commercial license token verification failed");
+                return false;
+            }
+        }
+    }
+
+    // Fallback for development mode non-token keys
     settings.license.mesh_accepted = true;
     settings.license.license_type = "Xavier-Commercial-1.0".to_string();
-    settings.license.commercial_key = Some(license_key.to_string());
-    tracing::info!("Commercial License accepted");
+    settings.license.commercial_key = Some(key.to_string());
+    tracing::info!("Commercial License accepted (development mode key)");
     true
+}
+
+/// Accept a Commercial License (requires key/verification).
+/// Returns true if acceptance was recorded.
+pub fn accept_commercial_license(settings: &mut XavierSettings, license_key: &str) -> bool {
+    accept_commercial_license_for_node(settings, license_key, None)
 }
 
 #[cfg(test)]
@@ -213,6 +393,119 @@ mod tests {
     fn test_mesh_status_display() {
         assert_eq!(MeshStatus::NotAccepted.to_string(), "❌ Not Accepted");
         assert_eq!(MeshStatus::Active.to_string(), "✅ Accepted");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Cryptographic Token Verification Tests
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_valid_signed_license_token_verification() {
+        let signing_key = swal_root_signing_key();
+        let payload = CommercialLicensePayload {
+            issuer: "SWAL".to_string(),
+            tier: "Commercial".to_string(),
+            expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+            node_id: Some("node-swal-001".to_string()),
+        };
+
+        let token = generate_license_token("SWAL-COM", &payload, &signing_key).unwrap();
+        assert_eq!(token.split('.').count(), 3);
+
+        let verified = verify_commercial_license(&token, Some("node-swal-001")).unwrap();
+        assert_eq!(verified, payload);
+    }
+
+    #[test]
+    fn test_expired_license_token_rejected() {
+        let signing_key = swal_root_signing_key();
+        let payload = CommercialLicensePayload {
+            issuer: "SWAL".to_string(),
+            tier: "Enterprise".to_string(),
+            expires_at: Some(chrono::Utc::now().timestamp() - 100),
+            node_id: None,
+        };
+
+        let token = generate_license_token("SWAL-LIC", &payload, &signing_key).unwrap();
+        let err = verify_commercial_license(&token, None).unwrap_err();
+        assert!(matches!(err, LicenseError::Expired(_)));
+    }
+
+    #[test]
+    fn test_node_id_mismatch_rejected() {
+        let signing_key = swal_root_signing_key();
+        let payload = CommercialLicensePayload {
+            issuer: "SWAL".to_string(),
+            tier: "Commercial".to_string(),
+            expires_at: None,
+            node_id: Some("node-swal-alpha".to_string()),
+        };
+
+        let token = generate_license_token("SWAL-COM", &payload, &signing_key).unwrap();
+        let err = verify_commercial_license(&token, Some("node-swal-beta")).unwrap_err();
+        assert!(matches!(err, LicenseError::NodeIdMismatch { .. }));
+    }
+
+    #[test]
+    fn test_tampered_signature_rejected() {
+        let signing_key = swal_root_signing_key();
+        let payload = CommercialLicensePayload {
+            issuer: "SWAL".to_string(),
+            tier: "Commercial".to_string(),
+            expires_at: None,
+            node_id: None,
+        };
+
+        let token = generate_license_token("SWAL-COM", &payload, &signing_key).unwrap();
+        let mut parts: Vec<&str> = token.split('.').collect();
+        let bad_sig = "0".repeat(128);
+        parts[2] = &bad_sig;
+        let tampered_token = parts.join(".");
+
+        let err = verify_commercial_license(&tampered_token, None).unwrap_err();
+        assert_eq!(err, LicenseError::InvalidSignature);
+    }
+
+    #[test]
+    fn test_malformed_token_rejected() {
+        assert_eq!(
+            verify_commercial_license("INVALID_TOKEN_STRING", None).unwrap_err(),
+            LicenseError::InvalidFormat
+        );
+        assert_eq!(
+            verify_commercial_license("SWAL.PAYLOAD", None).unwrap_err(),
+            LicenseError::InvalidFormat
+        );
+    }
+
+    #[test]
+    fn test_accept_commercial_license_with_signed_token() {
+        let mut settings = XavierSettings::default();
+        let signing_key = swal_root_signing_key();
+        let payload = CommercialLicensePayload {
+            issuer: "SWAL".to_string(),
+            tier: "Enterprise".to_string(),
+            expires_at: Some(chrono::Utc::now().timestamp() + 86400),
+            node_id: Some("node-777".to_string()),
+        };
+
+        let token = generate_license_token("SWAL-COM", &payload, &signing_key).unwrap();
+        assert!(accept_commercial_license_for_node(
+            &mut settings,
+            &token,
+            Some("node-777")
+        ));
+        assert_eq!(settings.license.license_type, "Xavier-Enterprise-1.0");
+        assert_eq!(detect_license(&settings), LicenseKind::Commercial);
+
+        // Invalid node ID attempt rejected
+        let mut settings2 = XavierSettings::default();
+        assert!(!accept_commercial_license_for_node(
+            &mut settings2,
+            &token,
+            Some("wrong-node")
+        ));
+        assert_eq!(detect_license(&settings2), LicenseKind::Agpl);
     }
 
     // ──────────────────────────────────────────────────────────────────────
