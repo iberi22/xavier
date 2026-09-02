@@ -19,6 +19,72 @@ use crate::settings::XavierSettings;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+pub fn parse_vector_text(s: &str) -> Vec<f32> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let inner = trimmed
+        .strip_prefix('[')
+        .unwrap_or(trimmed)
+        .strip_suffix(']')
+        .unwrap_or(trimmed)
+        .trim();
+    if inner.is_empty() {
+        return Vec::new();
+    }
+    inner
+        .split(',')
+        .filter_map(|part| part.trim().parse::<f32>().ok())
+        .collect()
+}
+
+pub fn parse_vector_binary(bytes: &[u8]) -> Vec<f32> {
+    if bytes.is_empty() {
+        return Vec::new();
+    }
+
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        if text.trim().starts_with('[') || text.contains(',') {
+            return parse_vector_text(text);
+        }
+    }
+
+    if bytes.len() >= 4 {
+        let dim = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
+        let expected_len = 4 + dim * 4;
+        if dim > 0 && bytes.len() == expected_len {
+            let mut result = Vec::with_capacity(dim);
+            for chunk in bytes[4..].chunks_exact(4) {
+                let val = f32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                result.push(val);
+            }
+            return result;
+        }
+    }
+
+    if bytes.len() % 4 == 0 {
+        let mut result = Vec::with_capacity(bytes.len() / 4);
+        for chunk in bytes.chunks_exact(4) {
+            let val = f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            result.push(val);
+        }
+        return result;
+    }
+
+    Vec::new()
+}
+
+fn parse_vector_from_row(row: &sqlx::postgres::PgRow) -> Vec<f32> {
+    if let Ok(s) = row.try_get::<String, _>("embedding") {
+        return parse_vector_text(&s);
+    }
+    if let Ok(bytes) = row.try_get::<Vec<u8>, _>("embedding") {
+        return parse_vector_binary(&bytes);
+    }
+    Vec::new()
+}
+
 pub fn shard_for_id(id: &str) -> u8 {
     let mut h = DefaultHasher::new();
     id.hash(&mut h);
@@ -186,10 +252,7 @@ impl PostgresMemoryStore {
         let metadata: serde_json::Value = row.try_get("metadata")?;
         let relation: serde_json::Value = row.try_get("relation")?;
         let revisions: serde_json::Value = row.try_get("revisions")?;
-
-        // Handling VECTOR is tricky without a specific crate, but Neon/pgvector returns it as a string or binary.
-        // For now, let's assume it's stored/retrieved as a slice or we can use a simpler approach.
-        // If the query doesn't select embedding, we might need to handle it.
+        let embedding = parse_vector_from_row(&row);
 
         Ok(MemoryRecord {
             id: row.try_get("id")?,
@@ -197,7 +260,7 @@ impl PostgresMemoryStore {
             path: row.try_get("path")?,
             content: row.try_get("content")?,
             metadata,
-            embedding: Vec::new(), // TODO: Implement vector retrieval
+            embedding,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
             revision: row.try_get::<i64, _>("revision")? as u64,
@@ -242,19 +305,33 @@ impl MemoryStore for PostgresMemoryStore {
     async fn put(&self, record: MemoryRecord) -> Result<()> {
         let relation = serde_json::to_value(&record.relation)?;
         let revisions = serde_json::to_value(&record.revisions)?;
+        let embedding_str = if record.embedding.is_empty() {
+            None
+        } else {
+            Some(format!(
+                "[{}]",
+                record
+                    .embedding
+                    .iter()
+                    .map(|f| f.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ))
+        };
 
         sqlx::query(
             r#"
             INSERT INTO memory_records (
-                id, workspace_id, path, content, metadata, created_at, updated_at,
+                id, workspace_id, path, content, metadata, embedding, created_at, updated_at,
                 revision, primary_flag, parent_id, cluster_id, level, relation,
                 revisions, encrypted_dek, content_iv, metadata_iv
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            ) VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             ON CONFLICT (id) DO UPDATE SET
                 workspace_id = EXCLUDED.workspace_id,
                 path = EXCLUDED.path,
                 content = EXCLUDED.content,
                 metadata = EXCLUDED.metadata,
+                embedding = EXCLUDED.embedding,
                 updated_at = EXCLUDED.updated_at,
                 revision = EXCLUDED.revision,
                 primary_flag = EXCLUDED.primary_flag,
@@ -273,6 +350,7 @@ impl MemoryStore for PostgresMemoryStore {
         .bind(&record.path)
         .bind(&record.content)
         .bind(&record.metadata)
+        .bind(embedding_str)
         .bind(record.created_at)
         .bind(record.updated_at)
         .bind(record.revision as i64)
@@ -565,9 +643,55 @@ impl MemoryStore for PostgresMemoryStore {
 #[cfg(test)]
 mod shard_tests {
     use super::*;
+
     #[test]
     fn test_shard_for_id_pg() {
         assert!(shard_for_id("a") <= 1);
         assert_eq!(shard_for_id("x"), shard_for_id("x"));
+    }
+
+    #[test]
+    fn test_parse_vector_text() {
+        assert_eq!(parse_vector_text("[0.1, 0.2, 0.3]"), vec![0.1, 0.2, 0.3]);
+        assert_eq!(parse_vector_text(" 0.5, -1.2, 3.14 "), vec![0.5, -1.2, 3.14]);
+        assert_eq!(parse_vector_text("[]"), Vec::<f32>::new());
+        assert_eq!(parse_vector_text(""), Vec::<f32>::new());
+        assert_eq!(parse_vector_text("[invalid, 1.0]"), vec![1.0]);
+    }
+
+    #[test]
+    fn test_parse_vector_binary_utf8_string() {
+        let text_bytes = b"[0.15, -0.25, 0.35]";
+        assert_eq!(parse_vector_binary(text_bytes), vec![0.15, -0.25, 0.35]);
+    }
+
+    #[test]
+    fn test_parse_vector_binary_pgvector_wire_format() {
+        let dim: u16 = 3;
+        let mut wire_bytes = Vec::new();
+        wire_bytes.extend_from_slice(&dim.to_be_bytes());
+        wire_bytes.extend_from_slice(&0u16.to_be_bytes()); // unused/reserved 2 bytes
+        for val in &[0.1f32, 0.2f32, 0.3f32] {
+            wire_bytes.extend_from_slice(&val.to_be_bytes());
+        }
+
+        assert_eq!(parse_vector_binary(&wire_bytes), vec![0.1, 0.2, 0.3]);
+    }
+
+    #[test]
+    fn test_parse_vector_binary_raw_floats() {
+        let floats = vec![1.0f32, 2.0f32, 3.0f32];
+        let mut raw_bytes = Vec::new();
+        for f in &floats {
+            raw_bytes.extend_from_slice(&f.to_ne_bytes());
+        }
+
+        assert_eq!(parse_vector_binary(&raw_bytes), vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_parse_vector_binary_empty_and_invalid() {
+        assert_eq!(parse_vector_binary(&[]), Vec::<f32>::new());
+        assert_eq!(parse_vector_binary(&[1, 2, 3]), Vec::<f32>::new());
     }
 }
