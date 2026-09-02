@@ -95,20 +95,32 @@ pub fn check_database(settings: &XavierSettings) -> Vec<CheckResult> {
     checks
 }
 
+/// Helper to resolve the configured embedding model using hierarchy:
+/// XAVIER_EMBEDDING_MODEL -> settings.models.embedding_model -> active systemd override -> fallback
+fn resolve_expected_embedding_model(settings: &XavierSettings) -> String {
+    std::env::var("XAVIER_EMBEDDING_MODEL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            if !settings.models.embedding_model.trim().is_empty() {
+                Some(settings.models.embedding_model.clone())
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            std::env::var("XAVIER_SYSTEMD_EMBEDDING_MODEL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+        })
+        .unwrap_or_else(|| "embeddinggemma".to_string())
+}
+
 /// Check embedding provider connectivity, model availability, and local/cloud setup.
 pub fn check_embeddings(settings: &XavierSettings, scan: &SystemScanResult) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
-    let expected_embed = std::env::var("XAVIER_EMBEDDING_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            if !settings.models.embedding_model.trim().is_empty() {
-                settings.models.embedding_model.clone()
-            } else {
-                "embeddinggemma".to_string()
-            }
-        });
+    let expected_embed = resolve_expected_embedding_model(settings);
     let embedding_url = std::env::var("XAVIER_EMBEDDING_URL")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -283,16 +295,7 @@ pub fn check_memory(settings: &XavierSettings, verbose: bool) -> Vec<CheckResult
     });
 
     // Embedding Model Consistency Check (Verbose / Soft)
-    let expected_embed = std::env::var("XAVIER_EMBEDDING_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            if !settings.models.embedding_model.trim().is_empty() {
-                settings.models.embedding_model.clone()
-            } else {
-                "embeddinggemma".to_string()
-            }
-        });
+    let expected_embed = resolve_expected_embedding_model(settings);
 
     let db_path = std::env::var("XAVIER_MEMORY_VEC_PATH")
         .map(std::path::PathBuf::from)
@@ -417,16 +420,7 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
     let provider_is_local =
         provider.eq_ignore_ascii_case("local") || provider.eq_ignore_ascii_case("ollama");
 
-    let expected_embed = std::env::var("XAVIER_EMBEDDING_MODEL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| {
-            if !settings.models.embedding_model.trim().is_empty() {
-                settings.models.embedding_model.clone()
-            } else {
-                "embeddinggemma".to_string()
-            }
-        });
+    let expected_embed = resolve_expected_embedding_model(settings);
     let embedding_url = std::env::var("XAVIER_EMBEDDING_URL")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -882,6 +876,41 @@ mod tests {
         let scan = mock_scan_result();
         let checks = check_embeddings(&settings, &scan);
         assert!(!checks.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_expected_embedding_model_hierarchy() {
+        let mut settings = XavierSettings::current();
+        settings.models.embedding_model = "settings-embed-model".to_string();
+
+        // 1. When XAVIER_EMBEDDING_MODEL is set
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "env-embed-model");
+        assert_eq!(
+            resolve_expected_embedding_model(&settings),
+            "env-embed-model"
+        );
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+
+        // 2. When settings.models.embedding_model is present
+        assert_eq!(
+            resolve_expected_embedding_model(&settings),
+            "settings-embed-model"
+        );
+
+        // 3. When settings embedding_model is empty, fallback to systemd override if present
+        settings.models.embedding_model = "".to_string();
+        std::env::set_var("XAVIER_SYSTEMD_EMBEDDING_MODEL", "systemd-embed-model");
+        assert_eq!(
+            resolve_expected_embedding_model(&settings),
+            "systemd-embed-model"
+        );
+        std::env::remove_var("XAVIER_SYSTEMD_EMBEDDING_MODEL");
+
+        // 4. Fallback default
+        assert_eq!(
+            resolve_expected_embedding_model(&settings),
+            "embeddinggemma"
+        );
     }
 
     #[test]
