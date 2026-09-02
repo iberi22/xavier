@@ -1,34 +1,34 @@
-# Requisitos No Funcionales
+# Non-Functional Requirements
 
-**Proyecto:** Xavier
-**Fecha:** 2026-03-13
-
----
-
-## Rendimiento
-
-| Métrica | Requisito | Prioridad |
-|---------|-----------|-----------|
-| Tiempo de respuesta | < 200ms | Alta |
-| Usuarios concurrentes | 1000 | Media |
-
-## Seguridad
-
-| Requisito | Descripción | Prioridad |
-|-----------|-------------|-----------|
-| Autenticación | JWT/OAuth2 | Alta |
-| Encriptación | TLS 1.3 | Alta |
-
-## Disponibilidad
-
-- **Uptime objetivo:** 99.9%
-- **RTO:** 1 hora
-- **RPO:** 15 minutos
-
-## Escalabilidad
-
-*Por definir estrategia de escalabilidad*
+**Project:** Xavier
+**Date:** 2026-03-13
 
 ---
 
-*Actualizado: 2026-03-13*
+## Performance
+
+| Metric | Requirement | Priority |
+|--------|-------------|----------|
+| Response time | < 200ms | High |
+| Concurrent users | 1000 | Medium |
+
+## Security
+
+| Requirement | Description | Priority |
+|-------------|-------------|----------|
+| Authentication | JWT/OAuth2 | High |
+| Encryption | TLS 1.3 | High |
+
+## Availability
+
+- **Target Uptime:** 99.9%
+- **RTO:** 1 hour
+- **RPO:** 15 minutes
+
+## Scalability
+
+*Scalability strategy to be defined*
+
+---
+
+*Updated: 2026-03-13*
