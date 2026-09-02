@@ -10,7 +10,6 @@ use crate::cli::code_dump::{perform_dump, perform_load};
 use xavier::codebase::codegraph_sidecar::{
     ensure_codegraph_sidecar_soft, maybe_sync_colby_project, EnsureOutcome,
 };
-// TODO: Re-implement code_find_symbols and filter_symbols_by_query via code_graph::query::QueryEngine
 use crate::cli::security::secure_optional_request_field;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
