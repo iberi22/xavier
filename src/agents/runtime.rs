@@ -338,7 +338,7 @@ impl AgentRuntime {
         system3_mode: System3Mode,
     ) -> Result<AgentRunTrace> {
         match self
-            .run_inner(query, session_id.clone(), category, filters, system3_mode)
+            .run_inner(query, session_id.clone(), category, filters.clone(), system3_mode)
             .await
         {
             Ok(trace) => Ok(trace),
@@ -357,9 +357,10 @@ impl AgentRuntime {
                     let sid = session_id
                         .clone()
                         .unwrap_or_else(|| ulid::Ulid::new().to_string());
+                    let agent_id = extract_agent_id(filters.as_ref());
                     crate::coordination::agents::publish_task_failure(
                         bus,
-                        "default-agent".to_string(),
+                        agent_id,
                         sid,
                         e.to_string(),
                     );
@@ -380,12 +381,13 @@ impl AgentRuntime {
     ) -> Result<AgentRunTrace> {
         let start = std::time::Instant::now();
         let session_id = session_id.unwrap_or_else(|| ulid::Ulid::new().to_string());
+        let agent_id = extract_agent_id(filters.as_ref());
 
         // Emit task start event
         if let Some(ref bus) = self.event_bus {
             crate::coordination::agents::publish_task_start(
                 bus,
-                "default-agent".to_string(), // TODO: Get agent ID from context if available
+                agent_id.clone(),
                 session_id.clone(),
             );
         }
@@ -488,7 +490,7 @@ impl AgentRuntime {
             if let Some(ref bus) = self.event_bus {
                 crate::coordination::agents::publish_task_complete(
                     bus,
-                    "default-agent".to_string(),
+                    agent_id.clone(),
                     session_id,
                 );
             }
@@ -565,7 +567,7 @@ impl AgentRuntime {
             if let Some(ref bus) = self.event_bus {
                 crate::coordination::agents::publish_task_complete(
                     bus,
-                    "default-agent".to_string(),
+                    agent_id.clone(),
                     session_id,
                 );
             }
@@ -866,7 +868,7 @@ impl AgentRuntime {
         if let Some(ref bus) = self.event_bus {
             crate::coordination::agents::publish_task_complete(
                 bus,
-                "default-agent".to_string(),
+                agent_id.clone(),
                 session_id.clone(),
             );
         }
@@ -969,6 +971,15 @@ impl AgentRuntime {
         }
         Ok(Vec::new())
     }
+}
+
+fn extract_agent_id(filters: Option<&MemoryQueryFilters>) -> String {
+    filters
+        .and_then(|f| f.agent_id.as_deref())
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .unwrap_or("default-agent")
+        .to_string()
 }
 
 fn query_fingerprint(query: &str) -> String {
@@ -1138,5 +1149,95 @@ mod tests {
             config.model_url.as_deref(),
             Some("http://localhost:1234/v1")
         );
+    }
+
+    #[test]
+    fn test_extract_agent_id_helper() {
+        let mut filters = MemoryQueryFilters::default();
+        filters.agent_id = Some("agent-777".to_string());
+        assert_eq!(extract_agent_id(Some(&filters)), "agent-777");
+
+        let mut whitespace_filters = MemoryQueryFilters::default();
+        whitespace_filters.agent_id = Some("   ".to_string());
+        assert_eq!(extract_agent_id(Some(&whitespace_filters)), "default-agent");
+
+        assert_eq!(extract_agent_id(None), "default-agent");
+    }
+
+    #[tokio::test]
+    async fn test_task_events_propagate_custom_agent_id() {
+        use crate::coordination::events::{XavierEvent, XavierEventBus};
+
+        let event_bus = Arc::new(XavierEventBus::new(16));
+        let mut rx = event_bus.subscribe();
+
+        let runtime = AgentRuntime::new_test().with_event_bus(event_bus);
+
+        let mut filters = MemoryQueryFilters::default();
+        filters.agent_id = Some("agent-custom-42".to_string());
+
+        let trace = runtime
+            .run_with_trace_filtered(
+                "hello",
+                Some("sess-1".to_string()),
+                None,
+                Some(filters),
+                System3Mode::Disabled,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(trace.agent.session_id, "sess-1");
+
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+
+        assert!(events.iter().any(|ev| matches!(
+            ev,
+            XavierEvent::AgentTaskStarted { agent_id, .. } if agent_id == "agent-custom-42"
+        )));
+        assert!(events.iter().any(|ev| matches!(
+            ev,
+            XavierEvent::AgentTaskCompleted { agent_id, .. } if agent_id == "agent-custom-42"
+        )));
+    }
+
+    #[tokio::test]
+    async fn test_task_events_fallback_default_agent_id() {
+        use crate::coordination::events::{XavierEvent, XavierEventBus};
+
+        let event_bus = Arc::new(XavierEventBus::new(16));
+        let mut rx = event_bus.subscribe();
+
+        let runtime = AgentRuntime::new_test().with_event_bus(event_bus);
+
+        let trace = runtime
+            .run_with_trace_filtered(
+                "hello",
+                Some("sess-2".to_string()),
+                None,
+                None,
+                System3Mode::Disabled,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(trace.agent.session_id, "sess-2");
+
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+
+        assert!(events.iter().any(|ev| matches!(
+            ev,
+            XavierEvent::AgentTaskStarted { agent_id, .. } if agent_id == "default-agent"
+        )));
+        assert!(events.iter().any(|ev| matches!(
+            ev,
+            XavierEvent::AgentTaskCompleted { agent_id, .. } if agent_id == "default-agent"
+        )));
     }
 }
