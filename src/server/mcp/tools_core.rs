@@ -7,6 +7,7 @@
 //! which is serialized to the MCP-compliant `inputSchema` camelCase field via Serde.
 use super::types::*;
 use crate::coordination::KeyLendingEngine;
+use crate::espacio::{ChannelManager, ChannelMessage};
 use crate::memory::schema::{
     EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, MemoryQueryFilters,
     TypedMemoryPayload,
@@ -230,6 +231,38 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                 "required": ["symbol"]
             }),
         },
+        MCPTool {
+            name: "espacio_channel_list".to_string(),
+            description: "List channels/messages for a specified space".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "space_id": {
+                        "type": "string",
+                        "description": "Space identifier"
+                    }
+                },
+                "required": ["space_id"]
+            }),
+        },
+        MCPTool {
+            name: "espacio_channel_create".to_string(),
+            description: "Create a channel within a space".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "space_id": {
+                        "type": "string",
+                        "description": "Space identifier"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Channel name"
+                    }
+                },
+                "required": ["space_id", "name"]
+            }),
+        },
     ]
 }
 
@@ -249,6 +282,8 @@ pub fn is_core_tool(name: &str) -> bool {
             | "xavier_local_status"
             | "codegraph_explore"
             | "trace_path"
+            | "espacio_channel_list"
+            | "espacio_channel_create"
     )
 }
 
@@ -807,6 +842,51 @@ pub async fn handle_core_tool(
                 "symbol": symbol,
                 "direction": direction,
                 "edges": edges,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
+        }
+        "espacio_channel_list" => {
+            let space_id = arguments
+                .get("space_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
+
+            let channel_mgr = ChannelManager::new();
+            let messages: Vec<ChannelMessage> = channel_mgr.list_all(space_id).await;
+
+            let val = json!({
+                "space_id": space_id,
+                "messages": messages,
+                "count": messages.len(),
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
+        }
+        "espacio_channel_create" => {
+            let space_id = arguments
+                .get("space_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
+            let name = arguments
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing name"))?;
+
+            let channel_mgr = ChannelManager::new();
+            let msg: ChannelMessage = channel_mgr
+                .post(
+                    space_id.to_string(),
+                    "mcp_operator".to_string(),
+                    name.to_string(),
+                )
+                .await;
+
+            let val = json!({
+                "space_id": space_id,
+                "channel_name": name,
+                "status": "created",
+                "message": msg,
             });
 
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)

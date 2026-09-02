@@ -1957,3 +1957,74 @@ async fn tool_call_non_object_arguments_fails() {
         .unwrap()
         .contains("arguments must be a JSON object"));
 }
+
+#[tokio::test]
+async fn espacio_channel_mcp_tools_schema_and_dispatch() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // 1. Verify tools present in tools/list
+    let response = post_json(
+        router.clone(),
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    let tools = body["result"]["tools"].as_array().expect("tools array");
+    let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"espacio_channel_list"));
+    assert!(names.contains(&"espacio_channel_create"));
+
+    // 2. Dispatch espacio_channel_create
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "espacio_channel_create",
+                "arguments": {
+                    "space_id": "test_space_123",
+                    "name": "general"
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    let content = &body["result"]["content"][0];
+    assert_eq!(content["type"], "structuredContent");
+    let sc = &content["structuredContent"];
+    assert_eq!(sc["space_id"], "test_space_123");
+    assert_eq!(sc["channel_name"], "general");
+    assert_eq!(sc["status"], "created");
+
+    // 3. Dispatch espacio_channel_list
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "espacio_channel_list",
+                "arguments": {
+                    "space_id": "test_space_123"
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    let content = &body["result"]["content"][0];
+    assert_eq!(content["type"], "structuredContent");
+    let sc = &content["structuredContent"];
+    assert_eq!(sc["space_id"], "test_space_123");
+    assert_eq!(sc["count"], 0);
+    let msgs = sc["messages"].as_array().expect("messages array");
+    assert_eq!(msgs.len(), 0);
+}
