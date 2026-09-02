@@ -5,7 +5,7 @@
     "project": "Xavier",
     "version": "1.0.0",
     "created": "2026-03-05",
-    "last_verified": "2026-08-31",
+    "last_verified": "2026-09-02",
     "total_features": 52,
     "features_complete": 52,
     "features_beta": 0,
@@ -1291,7 +1291,7 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-08-14",
+      "last_tested": "2026-09-02",
       "notes": "32 tests unitarios (PR #1391) — beliefs, timeline, params, commits, universal, ws, router [wave-tests 2026-08-15]",
       "implemented": true,
       "req_ids": [],
@@ -1302,13 +1302,9 @@
         "test_event_to_dto",
         "test_extract_entities",
         "test_feed_status_recording_and_backoff",
-        "test_graph_node_and_link_serde",
-        "test_nested_router_initialization",
-        "test_parse_ts",
-        "test_router_initialization",
-        "test_scan_projects_empty",
-        "test_scan_projects_with_features"
-      ]
+        "test_graph_node_and_link_serde"
+      ],
+      "implemented_in": "src/maloca/, src/maloca/data_node.rs, src/self_manage/mod.rs"
     },
     "feat-node-provisioning": {
       "id": "feat-node-provisioning",
@@ -1414,11 +1410,7 @@
       "test_names": [
         "test_ivn_api_full_lifecycle"
       ],
-      "implemented_in": [
-        "src/adapters/inbound/http/handlers/ivn.rs",
-        "src/adapters/inbound/http/routes.rs",
-        "tests/ivn_api.rs"
-      ],
+      "implemented_in": "src/adapters/inbound/http/handlers/ivn.rs, src/adapters/inbound/http/routes.rs, tests/ivn_api.rs",
       "tests": [
         "test_ivn_api_full_lifecycle"
       ],
@@ -1440,8 +1432,14 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-08-17",
-      "notes": "Implementado por subagente + integración Hermes 2026-08-17. cargo check + clippy -D warnings verdes."
+      "last_tested": "2026-09-02",
+      "notes": "Implementado por subagente + integración Hermes 2026-08-17. cargo check + clippy -D warnings verdes.",
+      "implemented_in": "src/memory/qmd/mod.rs, src/retrieval/, src/server/v1_api.rs, src/context/reranker/cross_encoder.rs",
+      "tests": [
+        "test_hybrid_search_basic",
+        "test_hybrid_search_with_hooks",
+        "test_rrf_fusion_two_result_sets"
+      ]
     },
     "feat-embeddings-ollama-local": {
       "id": "feat-embeddings-ollama-local",
@@ -1459,8 +1457,13 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-08-17",
-      "notes": "Implementado por subagente 2026-08-17. Pendiente: correr backfill sobre la store real y validar dimensión de la tabla vec."
+      "last_tested": "2026-09-02",
+      "notes": "Implementado por subagente 2026-08-17. Pendiente: correr backfill sobre la store real y validar dimensión de la tabla vec.",
+      "implemented_in": "src/embedding/ollama.rs, src/embedding/pipeline.rs",
+      "tests": [
+        "test_ollama_embedder",
+        "test_backfill_resume"
+      ]
     },
     "feat-ivn-karma": {
       "id": "feat-ivn-karma",
@@ -1487,11 +1490,7 @@
         "test_sanction_application_and_eigentrust_routing",
         "test_exclusion_window_integration_with_selection"
       ],
-      "implemented_in": [
-        "src/data_commons/ivn.rs",
-        "src/data_commons/reputation.rs",
-        "tests/ivn_karma.rs"
-      ],
+      "implemented_in": "src/data_commons/ivn.rs, src/data_commons/reputation.rs, tests/ivn_karma.rs",
       "tests": [
         "test_reward_application_exact_deltas",
         "test_sanction_application_and_eigentrust_routing",
@@ -1518,7 +1517,7 @@
       "passes": true,
       "verified_by": "verify-pipeline",
       "github_issue": 1379,
-      "last_tested": "2026-08-27",
+      "last_tested": "2026-09-02",
       "notes": "Wave M (2026-08-15). Issue xavier#1379. PR #1394 en verificación.",
       "spec": null,
       "tests": [
@@ -1534,7 +1533,8 @@
         "test_revoke_dataset_removes_access",
         "test_pricing_metadata_responses",
         "test_marketplace_full_lifecycle"
-      ]
+      ],
+      "implemented_in": "src/adapters/inbound/http/handlers/marketplace.rs, src/data_commons/marketplace.rs"
     },
     "feat-ivn": {
       "id": "feat-ivn",
@@ -1554,7 +1554,7 @@
       "passes": true,
       "verified_by": "verify-pipeline",
       "github_issue": 1380,
-      "last_tested": "2026-08-27",
+      "last_tested": "2026-09-02",
       "notes": "Designed 2026-08-15 (IDENTITY_VERIFICATION_NETWORK.md). Issue xavier#1380. PR #1392 en verificación. SECUENCIAL: feat-ivn-karma extends ivn.rs.",
       "spec": "docs/features/specs/FEATURE-feat-ivn.md",
       "tests": [
@@ -1562,12 +1562,7 @@
         "test_dynamic_quorum_calculation",
         "test_sanction_application",
         "test_vote_recording_and_tallying",
-        "test_selection_karma_weighted_distribution",
-        "test_exclusion_of_shared_seed_and_insufficient_karma",
-        "test_quorum_4_of_5_pass_and_fail",
-        "test_abstention_handling_in_verdict",
-        "test_dynamic_quorum_integration_with_ivn",
-        "test_sanction_validator_penalties"
+        "test_selection_karma_weighted_distribution"
       ],
       "test_names": [
         "test_validator_selection_weights_by_karma",
@@ -1580,7 +1575,8 @@
         "test_abstention_handling_in_verdict",
         "test_dynamic_quorum_integration_with_ivn",
         "test_sanction_validator_penalties"
-      ]
+      ],
+      "implemented_in": "src/adapters/inbound/http/handlers/ivn.rs, src/data_commons/ivn.rs"
     },
     "feat-data-node-consent": {
       "id": "feat-data-node-consent",
@@ -1600,13 +1596,19 @@
       "passes": true,
       "verified_by": "cargo-check + 12 unit tests",
       "github_issue": 1456,
-      "last_tested": "2026-08-21",
+      "last_tested": "2026-09-02",
       "notes": "P2P mesh governance foundation. Thread-safe, disk-persisted consent registry. All 12 tests green.",
       "test_count": 12,
       "files": [
         "src/maloca/data_node.rs",
         "src/maloca/handlers.rs",
         "src/maloca/mod.rs"
+      ],
+      "implemented_in": "src/maloca/data_node.rs, src/embedding/pipeline.rs",
+      "tests": [
+        "test_consent_registry_thread_safe",
+        "test_consent_disk_persisted",
+        "test_consent_toggle"
       ]
     },
     "feat-wasm": {

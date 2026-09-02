@@ -14,10 +14,33 @@ use std::time::SystemTime;
 
 // ── GitCore Feature JSON Schema ────────────────────────────────────────────
 
+fn deserialize_features<'de, D>(deserializer: D) -> Result<Vec<FeatureEntry>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error as _;
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if let Some(arr) = value.as_array() {
+        serde_json::from_value::<Vec<FeatureEntry>>(serde_json::Value::Array(arr.clone()))
+            .map_err(D::Error::custom)
+    } else if let Some(map) = value.as_object() {
+        let mut vec = Vec::with_capacity(map.len());
+        for (_k, v) in map {
+            let entry =
+                serde_json::from_value::<FeatureEntry>(v.clone()).map_err(D::Error::custom)?;
+            vec.push(entry);
+        }
+        Ok(vec)
+    } else {
+        Err(D::Error::custom("features must be array or map"))
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct FeaturesFile {
     protocol: Option<String>,
     metadata: Option<Metadata>,
+    #[serde(deserialize_with = "deserialize_features")]
     features: Vec<FeatureEntry>,
 }
 
