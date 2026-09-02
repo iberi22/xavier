@@ -119,7 +119,13 @@ mod tests {
         assert_eq!(m.node_id, m2.node_id);
         assert_eq!(m.role, m2.role);
         // timestamp roundtrip should be within microseconds
-        assert!((m.joined_at - m2.joined_at).num_microseconds().unwrap().abs() < 1000);
+        assert!(
+            (m.joined_at - m2.joined_at)
+                .num_microseconds()
+                .unwrap()
+                .abs()
+                < 1000
+        );
     }
 
     #[test]
@@ -161,5 +167,4 @@ mod tests {
             assert!(!can(role, SpaceAction::Admin));
         }
     }
-
 }
