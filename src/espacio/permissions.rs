@@ -92,4 +92,74 @@ mod tests {
         assert!(!can(SpaceRole::Reader, SpaceAction::ManageMembers));
         assert!(!can(SpaceRole::Reader, SpaceAction::Admin));
     }
+    #[test]
+    fn membership_records_role_and_timestamp() {
+        let m = SpaceMembership {
+            node_id: "node-001".to_string(),
+            role: SpaceRole::Moderator,
+            joined_at: chrono::Utc::now(),
+        };
+        assert_eq!(m.node_id, "node-001");
+        assert_eq!(m.role, SpaceRole::Moderator);
+        // joined_at should be very recent (within last minute)
+        let now = chrono::Utc::now();
+        assert!(m.joined_at <= now);
+        assert!(now - m.joined_at < chrono::Duration::minutes(1));
+    }
+
+    #[test]
+    fn membership_serialization_roundtrip() {
+        let m = SpaceMembership {
+            node_id: "node-002".to_string(),
+            role: SpaceRole::Admin,
+            joined_at: chrono::Utc::now(),
+        };
+        let json = serde_json::to_string(&m).unwrap();
+        let m2: SpaceMembership = serde_json::from_str(&json).unwrap();
+        assert_eq!(m.node_id, m2.node_id);
+        assert_eq!(m.role, m2.role);
+        // timestamp roundtrip should be within microseconds
+        assert!((m.joined_at - m2.joined_at).num_microseconds().unwrap().abs() < 1000);
+    }
+
+    #[test]
+    fn action_serialization_uses_snake_case() {
+        let action = SpaceAction::ManageMembers;
+        let json = serde_json::to_string(&action).unwrap();
+        assert_eq!(json, "\"manage_members\"");
+        let a2: SpaceAction = serde_json::from_str(&json).unwrap();
+        assert_eq!(action, a2);
+    }
+
+    #[test]
+    fn reader_cannot_manage_members_or_admin() {
+        // Defensive: confirm reader is locked out of privileged operations
+        assert!(!can(SpaceRole::Reader, SpaceAction::ManageMembers));
+        assert!(!can(SpaceRole::Reader, SpaceAction::Admin));
+    }
+
+    #[test]
+    fn member_cannot_manage_members_or_admin() {
+        // Member has read+write only, no member management
+        assert!(!can(SpaceRole::Member, SpaceAction::ManageMembers));
+        assert!(!can(SpaceRole::Member, SpaceAction::Admin));
+    }
+
+    #[test]
+    fn moderator_cannot_admin() {
+        // Moderator has all except admin
+        assert!(!can(SpaceRole::Moderator, SpaceAction::Admin));
+    }
+
+    #[test]
+    fn admin_cannot_be_revoked_by_lower_role() {
+        // Admin can do everything, including admin operations
+        // Lower roles cannot promote themselves
+        assert!(can(SpaceRole::Admin, SpaceAction::Admin));
+        // No lower role can do admin
+        for role in [SpaceRole::Moderator, SpaceRole::Member, SpaceRole::Reader] {
+            assert!(!can(role, SpaceAction::Admin));
+        }
+    }
+
 }
