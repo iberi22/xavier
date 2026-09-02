@@ -36,6 +36,14 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
+/// Get current UNIX timestamp in milliseconds.
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 /// Configuration settings for [`WalStreamer`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalStreamerConfig {
@@ -97,6 +105,9 @@ pub struct SnapshotMetadata {
     pub created_at: String,
     /// UNIX timestamp in seconds.
     pub timestamp_secs: u64,
+    /// UNIX timestamp in milliseconds.
+    #[serde(default)]
+    pub timestamp_millis: u64,
 }
 
 /// Metadata for an incremental WAL segment.
@@ -120,6 +131,9 @@ pub struct WalSegmentMetadata {
     pub created_at: String,
     /// UNIX timestamp in seconds.
     pub timestamp_secs: u64,
+    /// UNIX timestamp in milliseconds.
+    #[serde(default)]
+    pub timestamp_millis: u64,
 }
 
 /// Persistent manifest indexing all snapshots and WAL segments in a backup repository.
@@ -254,6 +268,7 @@ impl WalStreamer {
         let now = SystemTime::now();
         let timestamp_str = system_time_to_rfc3339(now);
         let timestamp_secs = now_secs();
+        let timestamp_millis = now_millis();
 
         // Checkpoint source database if it exists and checkpointing is enabled
         if self.config.db_path.exists() {
@@ -295,6 +310,7 @@ impl WalStreamer {
             file_size,
             created_at: timestamp_str,
             timestamp_secs,
+            timestamp_millis,
         };
 
         self.manifest.current_snapshot_seq = seq;
@@ -367,6 +383,7 @@ impl WalStreamer {
         let now = SystemTime::now();
         let timestamp_str = system_time_to_rfc3339(now);
         let timestamp_secs = now_secs();
+        let timestamp_millis = now_millis();
 
         let parent_snapshot_seq = self
             .manifest
@@ -395,6 +412,7 @@ impl WalStreamer {
             file_size: bytes_to_read as u64,
             created_at: timestamp_str,
             timestamp_secs,
+            timestamp_millis,
         };
 
         self.manifest.current_wal_seq = seq;
@@ -461,19 +479,27 @@ impl WalStreamer {
             return Err(anyhow!("No snapshots found in backup manifest"));
         }
 
-        let cutoff_secs = point_in_time
-            .map(|t| t.duration_since(UNIX_EPOCH).unwrap().as_secs())
+        let cutoff_millis = point_in_time
+            .map(|t| t.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64)
             .unwrap_or(u64::MAX);
+
+        let get_snap_millis = |s: &SnapshotMetadata| {
+            if s.timestamp_millis > 0 {
+                s.timestamp_millis
+            } else {
+                s.timestamp_secs * 1000
+            }
+        };
 
         let base_snapshot = manifest
             .snapshots
             .iter()
-            .filter(|s| s.timestamp_secs <= cutoff_secs)
+            .filter(|s| get_snap_millis(s) <= cutoff_millis)
             .max_by_key(|s| s.sequence)
             .ok_or_else(|| {
                 anyhow!(
-                    "No snapshot found created at or before requested cutoff_secs ({})",
-                    cutoff_secs
+                    "No snapshot found created at or before requested cutoff_millis ({})",
+                    cutoff_millis
                 )
             })?;
 
@@ -489,13 +515,24 @@ impl WalStreamer {
             )
         })?;
 
+        let get_seg_millis = |s: &WalSegmentMetadata| {
+            if s.timestamp_millis > 0 {
+                s.timestamp_millis
+            } else {
+                s.timestamp_secs * 1000
+            }
+        };
+
+        let base_snap_millis = get_snap_millis(base_snapshot);
+
         let mut applicable_segments: Vec<&WalSegmentMetadata> = manifest
             .wal_segments
             .iter()
             .filter(|seg| {
+                let seg_m = get_seg_millis(seg);
                 (seg.parent_snapshot_seq == base_snapshot.sequence
-                    || seg.timestamp_secs >= base_snapshot.timestamp_secs)
-                    && seg.timestamp_secs <= cutoff_secs
+                    || seg_m >= base_snap_millis)
+                    && seg_m <= cutoff_millis
             })
             .collect();
 
@@ -880,7 +917,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: fix PIT recovery timing edge case — core WAL streamer works (14/16 tests pass)
     fn test_point_in_time_recovery() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("main.db");
