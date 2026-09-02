@@ -2,17 +2,22 @@ use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
+use crate::agents::provider::router::ProviderRouter;
+use crate::agents::registry::AgentRegistry;
 use crate::embedding::Embedder;
 use crate::memory::schema::ClearanceLevel;
 use crate::memory::store::MemoryStore;
 use crate::settings::XavierSettings;
 
 /// Local embeddings pipeline for authorized memories.
+#[allow(dead_code)]
 pub struct LocalEmbeddingPipeline {
     embedder: Arc<dyn Embedder>,
     store: Arc<dyn MemoryStore>,
     max_clearance: ClearanceLevel,
     consent_given: bool,
+    registry: Option<AgentRegistry>,
+    router: Option<ProviderRouter>,
 }
 
 impl LocalEmbeddingPipeline {
@@ -33,12 +38,39 @@ impl LocalEmbeddingPipeline {
         max_clearance: ClearanceLevel,
         consent_given: bool,
     ) -> Self {
+        let registry = crate::agents::registry::load_default().ok();
+        let router = registry
+            .as_ref()
+            .and_then(|reg| reg.agents.first())
+            .map(ProviderRouter::from_registry);
+
         Self {
             embedder,
             store,
             max_clearance,
             consent_given,
+            registry,
+            router,
         }
+    }
+
+    /// Sets an explicit agent registry and configures provider router if available.
+    pub fn with_registry(mut self, registry: AgentRegistry) -> Self {
+        if let Some(first_agent) = registry.agents.first() {
+            self.router = Some(ProviderRouter::from_registry(first_agent));
+        }
+        self.registry = Some(registry);
+        self
+    }
+
+    /// Returns reference to loaded agent registry, if available.
+    pub fn registry(&self) -> Option<&AgentRegistry> {
+        self.registry.as_ref()
+    }
+
+    /// Returns reference to provider router, if available.
+    pub fn router(&self) -> Option<&ProviderRouter> {
+        self.router.as_ref()
     }
 
     /// From env.

@@ -181,6 +181,12 @@ impl ProviderRouter {
         chain
     }
 
+    /// Creates a new ProviderRouter configured from an `AgentEntry` from the registry.
+    pub fn from_registry(entry: &crate::agents::registry::AgentEntry) -> Self {
+        let kind = ProviderKind::from_str(&entry.provider).unwrap_or(ProviderKind::Local);
+        Self::new(kind)
+    }
+
     /// Creates a new ProviderRouter with the given initial provider.
     pub fn new(initial: ProviderKind) -> Self {
         let router = Self {
@@ -394,6 +400,29 @@ impl ProviderRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_from_registry() {
+        let entry = crate::agents::registry::AgentEntry {
+            name: "hermes".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            r#type: Some("Assistant".to_string()),
+            capabilities: vec!["code".to_string()],
+        };
+        let router = ProviderRouter::from_registry(&entry);
+        assert_eq!(router.current_provider(), ProviderKind::OpenAI);
+
+        let unknown_entry = crate::agents::registry::AgentEntry {
+            name: "custom".to_string(),
+            provider: "unknown-provider".to_string(),
+            model: "model-x".to_string(),
+            r#type: None,
+            capabilities: vec![],
+        };
+        let fallback_router = ProviderRouter::from_registry(&unknown_entry);
+        assert_eq!(fallback_router.current_provider(), ProviderKind::Local);
+    }
 
     #[test]
     fn test_router_initialization() {

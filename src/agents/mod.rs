@@ -13,6 +13,7 @@ pub mod mini_experts;
 pub mod provider;
 pub mod provider_router;
 pub mod rate_limit;
+pub mod registry;
 pub mod router;
 pub mod runtime;
 pub mod self_harness_coordinator;
