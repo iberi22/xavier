@@ -14,11 +14,17 @@ async function enterPanel(page: Page) {
 	await page.goto(appPath);
 
 	await expect(
-		page.getByText("OpenUI cockpit for the internal agent"),
+		page.getByRole("heading", { name: "XAVIER LOGIN" }),
+	).toBeVisible();
+	await expect(
+		page.getByText("Connect to the secure cognitive core"),
 	).toBeVisible();
 
-	await page.getByPlaceholder("XAVIER_TOKEN").fill(testToken);
-	await page.getByRole("button", { name: "Enter panel" }).click();
+	await page
+		.getByPlaceholder("operator@xavier.local")
+		.fill("operator@xavier.local");
+	await page.getByLabel("Password").fill(testToken);
+	await page.getByRole("button", { name: "INITIALIZE SESSION" }).click();
 
 	await expect(page.getByRole("button", { name: "New thread" })).toBeVisible();
 }
