@@ -4,6 +4,15 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-09-02
+
+### Fixed
+- **WAL health pragmas** (#1793, #1801): `wal_autocheckpoint=1000` + `journal_size_limit=10485760` + opportunistic checkpoint on open if WAL ≥ 50MB.
+- **Documentation i18n** (#1797): translated remaining Spanish to English across `docs/SRC/` and `docs/explanation/`.
+- **Playwright E2E** (#1799): fixed `generative-ui.spec.ts` drift from OpenUI cockpit to XAVIER LOGIN flow.
+- **Preflight docs** (#1798): updated README + QUICKSTART with `periferia/swal-preflight` repo-only usage (no npm).
+- **KNOWN_ISSUES** (#1796): documented WAL 55MB remediation and verification steps.
+
 ## [0.1.0] — 2026-09-01
 
 ## [0.0.1] — 2026-08-30 (Initial Public Release)
