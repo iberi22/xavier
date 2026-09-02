@@ -73,6 +73,10 @@ impl MemoryStore for VecSqliteMemoryStore {
             .await
     }
 
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
     async fn db_size(&self) -> Result<Option<u64>> {
         if self.config.path.exists() {
             if let Ok(metadata) = std::fs::metadata(&self.config.path) {

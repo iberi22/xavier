@@ -9,6 +9,10 @@ use std::path::Path;
 use tokio::fs;
 
 #[expect(dead_code, reason = "Utility para abrir pool desde fuera del modulo")]
+#[allow(
+    clippy::unused_async,
+    reason = "Utility kept async for interface consistency with async pool openers"
+)]
 /// Open pool.
 pub(crate) async fn open_pool(path: &Path) -> Result<()> {
     let project_id = super::project_id_for_path(path);
