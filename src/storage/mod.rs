@@ -38,12 +38,28 @@ pub struct Migration {
 
 impl Migration {
     /// Convenience constructor.
+    #[allow(clippy::missing_const_for_fn)] // Generic `Into<String>` conversion requires runtime execution.
     pub fn new(version: u32, name: impl Into<String>, up: &'static str) -> Self {
         Self {
             version,
             name: name.into(),
             up,
         }
+    }
+
+    /// Get migration version.
+    pub const fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// Get migration name as a string slice.
+    pub const fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    /// Get raw SQL for the migration.
+    pub const fn up(&self) -> &'static str {
+        self.up
     }
 }
 
@@ -71,6 +87,7 @@ pub struct MigrationRunner {
 impl MigrationRunner {
     /// Build a runner from the given migrations. They will be sorted by version
     /// and applied in ascending order.
+    #[allow(clippy::missing_const_for_fn)] // Sorting `Vec<Migration>` requires runtime execution.
     pub fn new(migrations: Vec<Migration>) -> Self {
         let mut migrations = migrations;
         migrations.sort_by_key(|m| m.version);
@@ -278,7 +295,7 @@ pub struct MigrationManager {
 
 impl MigrationManager {
     /// New.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { legacy: Vec::new() }
     }
 
