@@ -43,6 +43,7 @@ pub mod context_bridge;
 pub mod crypto_gating;
 pub mod dashboard;
 pub mod data_consent;
+pub mod discovery;
 pub mod data_sanitizer;
 pub mod fallback_transport;
 pub mod governance;
