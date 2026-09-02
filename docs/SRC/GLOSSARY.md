@@ -1,23 +1,23 @@
-# Glosario de Términos
+# Glossary of Terms
 
-**Proyecto:** Xavier
-**Fecha:** 2026-03-13
+**Project:** Xavier
+**Date:** 2026-03-13
 
 ---
 
-## Términos
+## Terms
 
-| Término | Definición |
-|---------|------------|
-| *Término* | *Definición* |
+| Term | Definition |
+|------|------------|
+| *Term* | *Definition* |
 
-## Acrónimos
+## Acronyms
 
-| Acrónimo | Significado |
-|----------|-------------|
+| Acronym | Meaning |
+|---------|---------|
 | *SRC* | Software Requirements Specification |
 | *API* | Application Programming Interface |
 
 ---
 
-*Actualizado: 2026-03-13*
+*Updated: 2026-03-13*
