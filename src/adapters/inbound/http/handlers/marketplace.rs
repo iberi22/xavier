@@ -2,6 +2,7 @@
 //!
 //! Exposes dataset listing, query with payment, revocation, and pricing oracle previews over REST.
 
+use super::error_response;
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
@@ -118,11 +119,7 @@ pub async fn list_active_datasets_handler() -> impl IntoResponse {
     let serialized = match serde_json::to_value(&*marketplace) {
         Ok(v) => v,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "status": "error", "message": e.to_string() })),
-            )
-                .into_response();
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
         }
     };
 
@@ -174,14 +171,7 @@ pub async fn query_dataset_handler(
             })),
         )
             .into_response(),
-        Err(err) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "status": "error",
-                "message": err
-            })),
-        )
-            .into_response(),
+        Err(err) => error_response(StatusCode::BAD_REQUEST, err).into_response(),
     }
 }
 
@@ -200,14 +190,7 @@ pub async fn revoke_dataset_handler(Path(id): Path<String>) -> impl IntoResponse
             })),
         )
             .into_response(),
-        Err(err) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "status": "error",
-                "message": err
-            })),
-        )
-            .into_response(),
+        Err(err) => error_response(StatusCode::BAD_REQUEST, err).into_response(),
     }
 }
 

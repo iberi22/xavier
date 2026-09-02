@@ -19,3 +19,21 @@ pub use nodes::*;
 pub use security::*;
 pub use sync::*;
 pub use training::*;
+
+use axum::{http::StatusCode, Json};
+
+/// Helper function to create a standardized error JSON response body.
+pub fn error_json(message: impl std::fmt::Display) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "status": "error",
+        "message": message.to_string(),
+    }))
+}
+
+/// Helper function to create a standardized error response with status code and JSON body.
+pub fn error_response(
+    status: StatusCode,
+    message: impl std::fmt::Display,
+) -> (StatusCode, Json<serde_json::Value>) {
+    (status, error_json(message))
+}

@@ -2,6 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use super::error_json;
 use crate::adapters::inbound::http::state::check_auth;
 use crate::adapters::inbound::http::AppState;
 use crate::domain::memory::{MemoryQueryFilters, MemoryRecord as DomainMemoryRecord};
@@ -24,10 +25,8 @@ fn sanitize_unicode(input: &str) -> String {
             // Remove surrogate pairs (U+D800-U=DFFF) using numeric comparison
             let code = *c as u32;
             match code {
-                0x09 | 0x0A | 0x0D => true, // tab, newline, carriage return
-                0x00..=0x08 | 0x0B | 0x0C | 0x0E..=0x1F | 0x7F => false, // control chars
-                0xD800..=0xDFFF => false,   // surrogate pairs
-                _ => true,
+                0x00..=0x08 | 0x0B | 0x0C | 0x0E..=0x1F | 0x7F | 0xD800..=0xDFFF => false, // control chars & surrogate pairs
+                _ => true, // printable ASCII/Unicode including tab (0x09), newline (0x0A), carriage return (0x0D)
             }
         })
         .collect()
@@ -198,10 +197,7 @@ pub async fn search_handler(
         }
         Err(e) => {
             info!("Search error: {}", e);
-            Ok(Json(serde_json::json!({
-                "status": "error",
-                "message": e.to_string(),
-            })))
+            Ok(error_json(e))
         }
     }
 }
@@ -264,10 +260,7 @@ pub async fn add_handler(
             "path": sanitized_path,
             "workspace_id": state.workspace_id,
         }))),
-        Err(e) => Ok(Json(serde_json::json!({
-            "status": "error",
-            "message": e.to_string(),
-        }))),
+        Err(e) => Ok(error_json(e)),
     }
 }
 
@@ -322,10 +315,7 @@ pub async fn update_handler(
             "path": updated_record.path,
             "workspace_id": state.workspace_id,
         }))),
-        Err(e) => Ok(Json(serde_json::json!({
-            "status": "error",
-            "message": e.to_string(),
-        }))),
+        Err(e) => Ok(error_json(e)),
     }
 }
 
@@ -349,10 +339,7 @@ pub async fn delete_handler(
             "deleted": false,
             "id": payload.id,
         }))),
-        Err(e) => Ok(Json(serde_json::json!({
-            "status": "error",
-            "message": e.to_string(),
-        }))),
+        Err(e) => Ok(error_json(e)),
     }
 }
 
@@ -426,10 +413,7 @@ pub async fn memory_query_handler(
         }
         Err(e) => {
             info!("Memory query error: {}", e);
-            Json(serde_json::json!({
-                "status": "error",
-                "message": e.to_string(),
-            }))
+            error_json(e)
         }
     }
 }
