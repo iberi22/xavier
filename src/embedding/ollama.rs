@@ -32,6 +32,7 @@ impl fmt::Debug for OllamaEmbedder {
 
 impl OllamaEmbedder {
     /// Create a new OllamaEmbedder instance.
+    #[allow(clippy::missing_const_for_fn)] // Client creation and string formatting require runtime execution.
     pub fn new(
         model: String,
         endpoint: String,
@@ -52,6 +53,7 @@ impl OllamaEmbedder {
     }
 
     /// Construct OllamaEmbedder from environment variables with defaults.
+    #[allow(clippy::missing_const_for_fn)] // Environment variable retrieval requires runtime execution.
     pub fn from_env() -> Result<Self, EmbeddingError> {
         let endpoint = std::env::var("XAVIER_OLLAMA_URL")
             .unwrap_or_else(|_| "http://localhost:11434/api/embed".to_string());
@@ -75,13 +77,18 @@ impl OllamaEmbedder {
     }
 
     /// Get active model name.
-    pub fn model(&self) -> &str {
-        &self.model
+    pub const fn model(&self) -> &str {
+        self.model.as_str()
     }
 
     /// Get endpoint URL.
-    pub fn endpoint(&self) -> &str {
-        &self.endpoint
+    pub const fn endpoint(&self) -> &str {
+        self.endpoint.as_str()
+    }
+
+    /// Get configured vector dimension.
+    pub const fn dimension(&self) -> usize {
+        self.dimension
     }
 }
 
@@ -89,6 +96,13 @@ impl OllamaEmbedder {
 struct OllamaEmbedRequest<'a> {
     model: &'a str,
     input: &'a str,
+}
+
+impl<'a> OllamaEmbedRequest<'a> {
+    /// Create a new request payload.
+    pub const fn new(model: &'a str, input: &'a str) -> Self {
+        Self { model, input }
+    }
 }
 
 #[derive(Debug, Deserialize)]
