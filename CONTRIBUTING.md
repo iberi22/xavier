@@ -19,7 +19,7 @@ Xavier is an open-source core application of the SWAL ecosystem.
 
 ### Prerequisites
 
-- **Rust 1.75+** (with `cargo` and `rustup`)
+- **Rust 1.91+** (MSRV, with `cargo` and `rustup`)
 - **cargo-nextest** (for faster, parallel test execution)
 - **SQLite** (bundled via `rusqlite`, no system install needed)
 - **OpenSSL** development headers (for `git2` vendored-openssl)
@@ -95,6 +95,14 @@ key at runtime. The only required secret is `XAVIER_TOKEN`.
 | `XAVIER_TOKEN`     | API token (required)               | —                  |
 | `XAVIER_CONFIG_PATH` | Path to config file             | `config/xavier.config.json` |
 | `RUST_LOG`         | Log level (tracing)                | `info`             |
+
+## Minimum Supported Rust Version (MSRV)
+
+Xavier maintains a strict Minimum Supported Rust Version policy:
+
+- **Current Pin**: Rust **1.91** (specified via `rust-version = "1.91"` in `Cargo.toml`).
+- **Bump Policy**: Bumping MSRV requires an explicit policy decision adhering to `stable-minus-2`. MSRV bumps are documented in `CHANGELOG.md` and announced in the corresponding patch release.
+- **Scope**: The MSRV guarantee covers core crate dependencies, library compilation, and CLI binary builds. Development sidecars or optional features may require a newer toolchain.
 
 ## Code Style
 

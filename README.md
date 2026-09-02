@@ -13,7 +13,7 @@ Xavier is a **high-performance, Rust-based vector memory runtime for AI agents**
 
 ### 1. Build & Installation
 
-Ensure you have Rust (1.80+) installed.
+Ensure you have Rust (1.91+) installed.
 
 ```bash
 # Clone repository
@@ -341,6 +341,16 @@ PRAGMA foreign_keys = ON;
 - [MCP Integration Guide](docs/guides/MCP_INTEGRATION.md) — Cursor and Claude Desktop MCP setup guide.
 - [Quickstart Guide](docs/guides/QUICKSTART.md) — Quick start walkthrough.
 - [System Architecture](docs/ARCHITECTURE.md) — Domain layout and hexagonal design documentation.
+
+---
+
+## 🦀 Minimum Supported Rust Version (MSRV)
+
+Xavier guarantees compilation on Rust **1.91** or higher.
+
+- **Current Pin**: Defined via `rust-version = "1.91"` in `Cargo.toml`.
+- **Bump Policy**: MSRV bumps follow a `stable-minus-2` policy (never exceeding `stable - 2` releases at the time of bump) when required by upstream dependency updates. Any MSRV bump is explicitly announced in a patch release.
+- **Scope**: Applies to standard crate library and binary builds. Development tooling, UI runtimes, or optional feature sidecars may require newer toolchain versions.
 
 ---
 
