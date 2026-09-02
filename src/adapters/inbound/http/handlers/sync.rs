@@ -17,6 +17,7 @@
 use std::sync::{Arc, LazyLock, RwLock};
 use std::time::{Duration, SystemTime};
 
+use super::{error_json, error_response};
 use axum::{extract::Path, http::StatusCode, Json};
 use serde::Deserialize;
 use serde_json::json;
@@ -168,18 +169,38 @@ pub async fn sync_status_handler() -> impl IntoResponse {
     })
 }
 
+fn sync_uninitialized_response() -> (StatusCode, Json<SyncErrorResponse>) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(SyncErrorResponse {
+            status: "error",
+            message: "memory sync not initialized".to_string(),
+            peer_url: None,
+        }),
+    )
+}
+
+fn sync_error_response(e: SyncError, peer_url: String) -> (StatusCode, Json<SyncErrorResponse>) {
+    let status_code = match &e {
+        SyncError::Http { status, .. } => {
+            StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY)
+        }
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (
+        status_code,
+        Json(SyncErrorResponse {
+            status: "error",
+            message: e.to_string(),
+            peer_url: Some(peer_url),
+        }),
+    )
+}
+
 /// `POST /api/v1/memory/sync/push` — push local changes to a remote peer.
 pub async fn sync_push_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(SyncErrorResponse {
-                status: "error",
-                message: "memory sync not initialized".to_string(),
-                peer_url: None,
-            }),
-        )
-            .into_response();
+        return sync_uninitialized_response().into_response();
     };
 
     let workspace_id = req
@@ -199,38 +220,14 @@ pub async fn sync_push_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoRes
             )
                 .into_response()
         }
-        Err(e) => {
-            let status_code = match &e {
-                SyncError::Http { status, .. } => {
-                    StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY)
-                }
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            (
-                status_code,
-                Json(SyncErrorResponse {
-                    status: "error",
-                    message: e.to_string(),
-                    peer_url: Some(req.peer_url),
-                }),
-            )
-                .into_response()
-        }
+        Err(e) => sync_error_response(e, req.peer_url).into_response(),
     }
 }
 
 /// `POST /api/v1/memory/sync/pull` — pull changes from a remote peer.
 pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(SyncErrorResponse {
-                status: "error",
-                message: "memory sync not initialized".to_string(),
-                peer_url: None,
-            }),
-        )
-            .into_response();
+        return sync_uninitialized_response().into_response();
     };
 
     let workspace_id = req
@@ -250,23 +247,7 @@ pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoRes
             )
                 .into_response()
         }
-        Err(e) => {
-            let status_code = match &e {
-                SyncError::Http { status, .. } => {
-                    StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY)
-                }
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            (
-                status_code,
-                Json(SyncErrorResponse {
-                    status: "error",
-                    message: e.to_string(),
-                    peer_url: Some(req.peer_url),
-                }),
-            )
-                .into_response()
-        }
+        Err(e) => sync_error_response(e, req.peer_url).into_response(),
     }
 }
 
@@ -377,25 +358,25 @@ fn parse_since(since: &Option<String>) -> SystemTime {
 /// This is the legacy data-plane endpoint used by `PeerMemorySync` clients
 /// to pull the manifest from a remote peer. Delegates to the same
 /// underlying store logic as the control-plane.
+fn legacy_uninitialized_response() -> (StatusCode, Json<serde_json::Value>) {
+    error_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "memory sync not initialized",
+    )
+}
+
 pub async fn legacy_manifest_handler() -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"status": "error", "message": "memory sync not initialized"})),
-        )
-            .into_response();
+        return legacy_uninitialized_response().into_response();
     };
 
     match crate::memory::sync::manifest::build_manifest(sync.store().as_ref()).await {
         Ok(manifest) => (StatusCode::OK, Json(manifest)).into_response(),
-        Err(e) => (
+        Err(e) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "error",
-                "message": format!("Failed to build manifest: {}", e)
-            })),
+            format!("Failed to build manifest: {}", e),
         )
-            .into_response(),
+        .into_response(),
     }
 }
 
@@ -407,11 +388,7 @@ pub async fn legacy_push_handler(
     Json(diffs): Json<Vec<crate::memory::sync::ChunkDiff>>,
 ) -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"status": "error", "message": "memory sync not initialized"})),
-        )
-            .into_response();
+        return legacy_uninitialized_response().into_response();
     };
 
     let mut conflicts = 0u64;
@@ -431,14 +408,11 @@ pub async fn legacy_push_handler(
             })),
         )
             .into_response(),
-        Err(e) => (
+        Err(e) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "error",
-                "message": format!("Failed to apply changes: {}", e)
-            })),
+            format!("Failed to apply changes: {}", e),
         )
-            .into_response(),
+        .into_response(),
     }
 }
 
@@ -450,24 +424,17 @@ pub async fn legacy_pull_handler(
     Json(want): Json<Vec<crate::memory::sync::ManifestEntry>>,
 ) -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"status": "error", "message": "memory sync not initialized"})),
-        )
-            .into_response();
+        return legacy_uninitialized_response().into_response();
     };
 
     match crate::memory::sync::push_pull::entries_as_push_diffs(sync.store().as_ref(), &want).await
     {
         Ok(diffs) => (StatusCode::OK, Json(diffs)).into_response(),
-        Err(e) => (
+        Err(e) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "error",
-                "message": format!("Failed to build push diffs: {}", e)
-            })),
+            format!("Failed to build push diffs: {}", e),
         )
-            .into_response(),
+        .into_response(),
     }
 }
 
@@ -478,11 +445,7 @@ pub async fn legacy_pull_since_handler(
     Path((workspace_id, since_secs)): Path<(String, u64)>,
 ) -> impl IntoResponse {
     let Some(sync) = current_sync() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"status": "error", "message": "memory sync not initialized"})),
-        )
-            .into_response();
+        return legacy_uninitialized_response().into_response();
     };
 
     let since = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(since_secs);
@@ -494,14 +457,11 @@ pub async fn legacy_pull_since_handler(
     .await
     {
         Ok(diffs) => (StatusCode::OK, Json(diffs)).into_response(),
-        Err(e) => (
+        Err(e) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "error",
-                "message": format!("Failed to collect changes: {}", e)
-            })),
+            format!("Failed to collect changes: {}", e),
         )
-            .into_response(),
+        .into_response(),
     }
 }
 
