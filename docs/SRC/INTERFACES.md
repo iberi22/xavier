@@ -1,30 +1,30 @@
-# Interfaces del Sistema
+# System Interfaces
 
-**Proyecto:** Xavier
-**Fecha:** 2026-03-13
+**Project:** Xavier
+**Date:** 2026-03-13
 
 ---
 
-## Interfaces de Usuario
+## User Interfaces
 
-| Pantalla | Descripción | Estado |
-|----------|-------------|--------|
-| *Pantalla 1* | *Descripción* | Por hacer |
+| Screen | Description | Status |
+|--------|-------------|--------|
+| *Screen 1* | *Description* | To do |
 
-## Interfaces de API
+## API Interfaces
 
-### Endpoints Principales
+### Main Endpoints
 
-| Método | Endpoint | Descripción | Estado |
+| Method | Endpoint | Description | Status |
 |--------|----------|-------------|--------|
-| GET | /api/v1/... | *Descripción* | Por hacer |
+| GET | /api/v1/... | *Description* | To do |
 
-## Integraciones Externas
+## External Integrations
 
-| Sistema | Tipo | Datos | Estado |
-|---------|------|-------|--------|
-| *Sistema* | API | *Datos* | Por hacer |
+| System | Type | Data | Status |
+|--------|------|------|--------|
+| *System* | API | *Data* | To do |
 
 ---
 
-*Actualizado: 2026-03-13*
+*Updated: 2026-03-13*

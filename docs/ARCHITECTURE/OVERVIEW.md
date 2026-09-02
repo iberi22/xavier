@@ -1,25 +1,25 @@
-# Visión General de Arquitectura
+# Architecture Overview
 
-**Proyecto:** Xavier
-**Fecha:** 2026-03-13 (actualizado: 2026-04-13)
+**Project:** Xavier
+**Date:** 2026-03-13 (updated: 2026-04-13)
 
 ---
 
-## Arquitectura
+## Architecture
 
-*Diagrama de arquitectura por definir*
+*Architecture diagram TBD*
 
-## Componentes
+## Components
 
-| Componente | Responsabilidad | Tecnología |
-|------------|-----------------|------------|
-| *Frontend* | Interfaz de usuario | *TBD* |
-| *Backend* | Lógica de negocio | *TBD* |
-| *Database* | Almacenamiento | *TBD* |
+| Component | Responsibility | Technology |
+|-----------|----------------|------------|
+| *Frontend* | User interface | *TBD* |
+| *Backend* | Business logic | *TBD* |
+| *Database* | Storage | *TBD* |
 
-## Flujo de Datos
+## Data Flow
 
-*Diagrama de flujo por definir*
+*Data flow diagram TBD*
 
 ---
 
@@ -67,4 +67,4 @@ This configuration (identical to prior SurrealDB optimization notes) provides:
 
 ---
 
-*Actualizado: 2026-04-13*
+*Updated: 2026-04-13*

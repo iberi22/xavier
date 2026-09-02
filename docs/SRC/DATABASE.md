@@ -1,27 +1,27 @@
-# Modelo de Datos
+# Data Model
 
-**Proyecto:** Xavier
-**Fecha:** 2026-03-13
+**Project:** Xavier
+**Date:** 2026-03-13
 
 ---
 
-## Entidades Principales
+## Main Entities
 
-### Entidad 1
+### Entity 1
 
-| Atributo | Tipo | Descripción |
+| Attribute | Type | Description |
 |-----------|------|-------------|
-| id | UUID | Identificador único |
-| created_at | Timestamp | Fecha de creación |
+| id | UUID | Unique identifier |
+| created_at | Timestamp | Creation timestamp |
 
-## Relaciones
+## Relationships
 
-*Por definir diagrama de relaciones*
+*Relationship diagram to be defined*
 
-## Volumen Estimado
+## Estimated Volume
 
-*Por definir volumen de datos esperado*
+*Expected data volume to be defined*
 
 ---
 
-*Actualizado: 2026-03-13*
+*Updated: 2026-03-13*
