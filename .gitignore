@@ -82,3 +82,10 @@ xavier_memory.db*
 .atl/
 .gitcore/skill-registry.json
 panel-ui/.env.local
+
+# ===== WAVE-8.09: data hygiene (WAL/SHM/bak quarantine) =====
+data/*.db.bak
+data/*.db-shm
+data/*.db-wal
+data/*.sqlite3-shm
+data/*.sqlite3-wal
