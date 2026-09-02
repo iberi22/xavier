@@ -23,6 +23,7 @@ pub struct AppState {
     pub verification: Arc<dyn VerificationPort>,
     pub session_sync: Arc<dyn SessionSyncPort>,
     pub session: Arc<dyn SessionPort>,
+    pub espacio: Arc<crate::espacio::SpaceManager>,
     pub workspace_id: String,
     pub auth_token: String,
     pub secrets_engine: Option<Arc<crate::coordination::KeyLendingEngine>>,
