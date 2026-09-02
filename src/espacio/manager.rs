@@ -15,6 +15,23 @@ use tokio::sync::RwLock;
 use crate::workspace::config::{PlanTier, WorkspaceConfig};
 use crate::workspace::state::WorkspaceState;
 
+/// Payload for creating a new Space
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSpaceRequest {
+    /// Unique space identifier (e.g., esp_01H...)
+    pub id: String,
+    /// Human-readable name
+    pub name: String,
+    /// Description
+    #[serde(default)]
+    pub description: String,
+    /// Owner node id (admin)
+    pub owner_node: String,
+    /// Whether the space is public
+    #[serde(default)]
+    pub is_public: bool,
+}
+
 /// Information about a Space (Telegram-like group)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpaceInfo {

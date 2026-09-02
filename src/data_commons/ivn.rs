@@ -401,7 +401,7 @@ pub fn apply_sanctions_with_config(
         let duration_secs = u64::from(sanction.exclusion_days)
             .checked_mul(86_400)
             .expect("exclusion_days duration in seconds exceeds u64 range");
-        let until = current_time.checked_add(duration_secs).unwrap_or(u64::MAX);
+        let until = current_time.saturating_add(duration_secs);
         record_exclusion(val, until);
         fp_validator_sanctions.push((val.clone(), sanction));
     }
@@ -417,7 +417,7 @@ pub fn apply_sanctions_with_config(
         let duration_secs = u64::from(sanction.exclusion_days)
             .checked_mul(86_400)
             .expect("exclusion_days duration in seconds exceeds u64 range");
-        let until = current_time.checked_add(duration_secs).unwrap_or(u64::MAX);
+        let until = current_time.saturating_add(duration_secs);
         record_exclusion(applicant, until);
         liar_sanction = Some((applicant.clone(), sanction));
     }
@@ -586,15 +586,17 @@ mod tests {
         let mut engine = EigenTrustEngine::new(ReputationConfig::default(), Vec::new());
         let val = WalletAddress("xv1_node_max_excl".into());
         let liar = WalletAddress("xv1_liar_max_excl".into());
-        let mut config = IvnConfig::default();
-        config.exclusion_days = u32::MAX;
-        config.retry_days = u32::MAX;
+        let config = IvnConfig {
+            exclusion_days: u32::MAX,
+            retry_days: u32::MAX,
+            ..Default::default()
+        };
 
         let current_time = 1_700_000_000u64;
         let summary = apply_sanctions_with_config(
             &config,
             &mut engine,
-            &[val.clone()],
+            std::slice::from_ref(&val),
             Some(&liar),
             current_time,
         );

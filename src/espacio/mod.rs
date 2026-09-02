@@ -20,7 +20,7 @@ pub use channel::{ChannelManager, ChannelMessage};
 pub use context::{ContextBridge, ContextEntry, ContextKind};
 pub use graph::{GraphEdge, GraphManager, GraphNode, GraphSnippet};
 pub use invite::{InviteManager, SpaceInvite, SpaceRole};
-pub use manager::{SpaceError, SpaceInfo, SpaceManager};
+pub use manager::{CreateSpaceRequest, SpaceError, SpaceInfo, SpaceManager};
 pub use marketplace::{folder_dataset, list_folder_pack, query_folder_pack, FolderEntry};
 pub use p2p::{ClosedNetwork, ClosedNetworkManager, EncryptedEnvelope};
 pub use pack::{Pack, PackManifest, PackMemory};

@@ -41,6 +41,10 @@ static TIME_STORE: std::sync::OnceLock<Arc<dyn TimeMetricsPort>> = std::sync::On
 /// Module-level HttpHealthAdapter (initialized by CLI)
 static HEALTH_PORT: std::sync::OnceLock<Arc<HttpHealthAdapter>> = std::sync::OnceLock::new();
 
+/// Module-level SpaceManager (initialized by CLI or lazily)
+static SPACE_MANAGER: std::sync::OnceLock<Arc<crate::espacio::SpaceManager>> =
+    std::sync::OnceLock::new();
+
 /// Initialize the global time metrics port (call once at startup)
 pub fn init_time_store(port: Arc<dyn TimeMetricsPort>) {
     if TIME_STORE.set(port).is_err() {
@@ -53,6 +57,22 @@ pub fn init_health_port(port: Arc<HttpHealthAdapter>) {
     if HEALTH_PORT.set(port).is_err() {
         tracing::error!("HEALTH_PORT global already initialized (called init_health_port twice)");
     }
+}
+
+/// Initialize the global space manager (call once at startup)
+pub fn init_space_manager(manager: Arc<crate::espacio::SpaceManager>) {
+    if SPACE_MANAGER.set(manager).is_err() {
+        tracing::error!(
+            "SPACE_MANAGER global already initialized (called init_space_manager twice)"
+        );
+    }
+}
+
+/// Get the global space manager, initializing with default path if needed
+pub fn get_space_manager() -> Arc<crate::espacio::SpaceManager> {
+    SPACE_MANAGER
+        .get_or_init(|| Arc::new(crate::espacio::SpaceManager::new("data/spaces")))
+        .clone()
 }
 
 // ─── Router ─────────────────────────────────────────────────────────────────
@@ -207,7 +227,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route(
             "/v1/ivn/karma/{agent}",
             get(crate::adapters::inbound::http::handlers::ivn::get_ivn_karma_handler),
-        );
+        )
+        // ── Espacio Runtime API ───────────────────────────────────────────
+        .nest("/api/v1/espacio", espacio_routes());
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
@@ -888,6 +910,181 @@ pub async fn training_export_handler(
         },
     })
     .into_response()
+}
+
+// ─── Espacio Runtime Endpoints ──────────────────────────────────────────────
+
+/// Sub-router for Espacio runtime space operations (/api/v1/espacio/*)
+pub fn espacio_routes<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    Router::new()
+        .route(
+            "/spaces",
+            post(espacio_create_handler).get(espacio_list_handler),
+        )
+        .route(
+            "/spaces/{id}",
+            get(espacio_get_handler).delete(espacio_delete_handler),
+        )
+        .route(
+            "/spaces/{id}/isolation/{other}",
+            get(espacio_isolation_handler),
+        )
+}
+
+/// POST /api/v1/espacio/spaces - create a new space
+pub async fn espacio_create_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    Json(payload): Json<crate::espacio::CreateSpaceRequest>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    match manager
+        .create(
+            payload.id,
+            payload.name,
+            payload.description,
+            payload.owner_node,
+            payload.is_public,
+        )
+        .await
+    {
+        Ok(info) => (
+            StatusCode::CREATED,
+            Json(serde_json::to_value(info).unwrap_or_default()),
+        )
+            .into_response(),
+        Err(err) => {
+            if let Some(space_err) = err.downcast_ref::<crate::espacio::SpaceError>() {
+                match space_err {
+                    crate::espacio::SpaceError::AlreadyExists(_) => (
+                        StatusCode::CONFLICT,
+                        crate::adapters::inbound::http::handlers::error_json(space_err),
+                    )
+                        .into_response(),
+                    crate::espacio::SpaceError::InvalidId(_) => (
+                        StatusCode::BAD_REQUEST,
+                        crate::adapters::inbound::http::handlers::error_json(space_err),
+                    )
+                        .into_response(),
+                    crate::espacio::SpaceError::NotFound(_) => (
+                        StatusCode::NOT_FOUND,
+                        crate::adapters::inbound::http::handlers::error_json(space_err),
+                    )
+                        .into_response(),
+                    crate::espacio::SpaceError::Storage(_) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        crate::adapters::inbound::http::handlers::error_json(space_err),
+                    )
+                        .into_response(),
+                }
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::adapters::inbound::http::handlers::error_json(err),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
+
+/// GET /api/v1/espacio/spaces - list all spaces
+pub async fn espacio_list_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+) -> impl axum::response::IntoResponse {
+    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    let spaces = manager.list().await;
+    Json(spaces)
+}
+
+/// GET /api/v1/espacio/spaces/{id} - get space details by ID
+pub async fn espacio_get_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    match manager.get(&id).await {
+        Ok(info) => Json(serde_json::to_value(info).unwrap_or_default()).into_response(),
+        Err(err) => {
+            if let Some(space_err) = err.downcast_ref::<crate::espacio::SpaceError>() {
+                match space_err {
+                    crate::espacio::SpaceError::NotFound(_) => (
+                        StatusCode::NOT_FOUND,
+                        crate::adapters::inbound::http::handlers::error_json(space_err),
+                    )
+                        .into_response(),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        crate::adapters::inbound::http::handlers::error_json(space_err),
+                    )
+                        .into_response(),
+                }
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::adapters::inbound::http::handlers::error_json(err),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
+
+/// DELETE /api/v1/espacio/spaces/{id} - delete space by ID
+pub async fn espacio_delete_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    match manager.delete(&id).await {
+        Ok(()) => Json(serde_json::json!({
+            "status": "ok",
+            "message": format!("Space {} deleted", id),
+            "id": id,
+        }))
+        .into_response(),
+        Err(err) => {
+            if let Some(space_err) = err.downcast_ref::<crate::espacio::SpaceError>() {
+                match space_err {
+                    crate::espacio::SpaceError::NotFound(_) => (
+                        StatusCode::NOT_FOUND,
+                        crate::adapters::inbound::http::handlers::error_json(space_err),
+                    )
+                        .into_response(),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        crate::adapters::inbound::http::handlers::error_json(space_err),
+                    )
+                        .into_response(),
+                }
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    crate::adapters::inbound::http::handlers::error_json(err),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
+
+/// GET /api/v1/espacio/spaces/{id}/isolation/{other} - check if two spaces are isolated
+pub async fn espacio_isolation_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    axum::extract::Path((id, other)): axum::extract::Path<(String, String)>,
+) -> impl axum::response::IntoResponse {
+    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    let isolated = manager.are_isolated(&id, &other).await;
+    Json(serde_json::json!({
+        "space_a": id,
+        "space_b": other,
+        "isolated": isolated,
+    }))
 }
 
 // ─── Content Redaction API ─────────────────────────────────────────────────
@@ -1673,6 +1870,218 @@ mod route_tests {
         assert_eq!(parsed["status"], "ok");
         assert!(parsed.get("is_running").is_some());
         assert!(parsed.get("processed_count").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_route_espacio_create_get_list() {
+        use axum::response::Response;
+        use axum::Extension;
+        use http_body_util::BodyExt;
+        use std::sync::Arc;
+        use tower::ServiceExt;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("xavier_spaces_test1_{}", ulid::Ulid::new()));
+        let mgr = Arc::new(crate::espacio::SpaceManager::new(&temp_dir));
+
+        let req_body = serde_json::json!({
+            "id": "esp_rt_1",
+            "name": "Runtime Space 1",
+            "description": "Test Desc 1",
+            "owner_node": "node_1",
+            "is_public": true
+        });
+
+        let mut req = Request::builder()
+            .uri("/api/v1/espacio/spaces")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+            .unwrap();
+        req.extensions_mut().insert(mgr.clone());
+
+        let response: Response = create_router().oneshot(req).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(created["id"], "esp_rt_1");
+        assert_eq!(created["name"], "Runtime Space 1");
+
+        // GET single space
+        let mut req_get = Request::builder()
+            .uri("/api/v1/espacio/spaces/esp_rt_1")
+            .method(Method::GET)
+            .body(Body::empty())
+            .unwrap();
+        req_get.extensions_mut().insert(mgr.clone());
+
+        let response: Response = create_router().oneshot(req_get).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let fetched: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(fetched["id"], "esp_rt_1");
+
+        // GET list spaces
+        let mut req_list = Request::builder()
+            .uri("/api/v1/espacio/spaces")
+            .method(Method::GET)
+            .body(Body::empty())
+            .unwrap();
+        req_list.extensions_mut().insert(mgr.clone());
+
+        let response: Response = create_router().oneshot(req_list).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let list: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert!(list.iter().any(|s| s["id"] == "esp_rt_1"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_route_espacio_isolation_delete_not_found() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use std::sync::Arc;
+        use tower::ServiceExt;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("xavier_spaces_test2_{}", ulid::Ulid::new()));
+        let mgr = Arc::new(crate::espacio::SpaceManager::new(&temp_dir));
+
+        // Create space A
+        let req_a_body = serde_json::json!({
+            "id": "esp_rt_2a",
+            "name": "Space 2A",
+            "description": "Desc 2A",
+            "owner_node": "node_1",
+            "is_public": false
+        });
+        let mut req_a = Request::builder()
+            .uri("/api/v1/espacio/spaces")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_a_body).unwrap()))
+            .unwrap();
+        req_a.extensions_mut().insert(mgr.clone());
+        let res_a: Response = create_router().oneshot(req_a).await.unwrap();
+        assert_eq!(res_a.status(), StatusCode::CREATED);
+
+        // Create space B
+        let req_b_body = serde_json::json!({
+            "id": "esp_rt_2b",
+            "name": "Space 2B",
+            "description": "Desc 2B",
+            "owner_node": "node_2",
+            "is_public": false
+        });
+        let mut req_b = Request::builder()
+            .uri("/api/v1/espacio/spaces")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_b_body).unwrap()))
+            .unwrap();
+        req_b.extensions_mut().insert(mgr.clone());
+        let res_b: Response = create_router().oneshot(req_b).await.unwrap();
+        assert_eq!(res_b.status(), StatusCode::CREATED);
+
+        // GET isolation check
+        let mut req_iso = Request::builder()
+            .uri("/api/v1/espacio/spaces/esp_rt_2a/isolation/esp_rt_2b")
+            .method(Method::GET)
+            .body(Body::empty())
+            .unwrap();
+        req_iso.extensions_mut().insert(mgr.clone());
+        let res_iso: Response = create_router().oneshot(req_iso).await.unwrap();
+        assert_eq!(res_iso.status(), StatusCode::OK);
+        let body_iso = res_iso.into_body().collect().await.unwrap().to_bytes();
+        let parsed_iso: serde_json::Value = serde_json::from_slice(&body_iso).unwrap();
+        assert_eq!(parsed_iso["isolated"], true);
+
+        // DELETE space 2a
+        let mut req_del = Request::builder()
+            .uri("/api/v1/espacio/spaces/esp_rt_2a")
+            .method(Method::DELETE)
+            .body(Body::empty())
+            .unwrap();
+        req_del.extensions_mut().insert(mgr.clone());
+        let res_del: Response = create_router().oneshot(req_del).await.unwrap();
+        assert_eq!(res_del.status(), StatusCode::OK);
+
+        // GET deleted space 2a -> 404
+        let mut req_get_del = Request::builder()
+            .uri("/api/v1/espacio/spaces/esp_rt_2a")
+            .method(Method::GET)
+            .body(Body::empty())
+            .unwrap();
+        req_get_del.extensions_mut().insert(mgr.clone());
+        let res_get_del: Response = create_router().oneshot(req_get_del).await.unwrap();
+        assert_eq!(res_get_del.status(), StatusCode::NOT_FOUND);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_route_espacio_create_invalid_and_duplicate() {
+        use axum::response::Response;
+        use std::sync::Arc;
+        use tower::ServiceExt;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("xavier_spaces_test3_{}", ulid::Ulid::new()));
+        let mgr = Arc::new(crate::espacio::SpaceManager::new(&temp_dir));
+
+        // Create initial space
+        let req_valid_body = serde_json::json!({
+            "id": "esp_rt_dup",
+            "name": "Dup Space",
+            "description": "Desc",
+            "owner_node": "node_1",
+            "is_public": false
+        });
+        let mut req_valid = Request::builder()
+            .uri("/api/v1/espacio/spaces")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_valid_body).unwrap()))
+            .unwrap();
+        req_valid.extensions_mut().insert(mgr.clone());
+        let res_valid: Response = create_router().oneshot(req_valid).await.unwrap();
+        assert_eq!(res_valid.status(), StatusCode::CREATED);
+
+        // Duplicate space -> 409 CONFLICT
+        let mut req_dup = Request::builder()
+            .uri("/api/v1/espacio/spaces")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_valid_body).unwrap()))
+            .unwrap();
+        req_dup.extensions_mut().insert(mgr.clone());
+        let res_dup: Response = create_router().oneshot(req_dup).await.unwrap();
+        assert_eq!(res_dup.status(), StatusCode::CONFLICT);
+
+        // Invalid space ID -> 400 BAD REQUEST
+        let req_invalid_body = serde_json::json!({
+            "id": "invalid/space/id",
+            "name": "Bad Space",
+            "description": "Desc",
+            "owner_node": "node_1",
+            "is_public": false
+        });
+        let mut req_invalid = Request::builder()
+            .uri("/api/v1/espacio/spaces")
+            .method(Method::POST)
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&req_invalid_body).unwrap()))
+            .unwrap();
+        req_invalid.extensions_mut().insert(mgr.clone());
+        let res_invalid: Response = create_router().oneshot(req_invalid).await.unwrap();
+        assert_eq!(res_invalid.status(), StatusCode::BAD_REQUEST);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[tokio::test]
