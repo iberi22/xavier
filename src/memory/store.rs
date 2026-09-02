@@ -489,10 +489,22 @@ pub trait MemoryStore: Send + Sync {
     fn backend(&self) -> MemoryBackend;
     fn as_any(&self) -> &dyn StdAny;
     async fn health(&self) -> Result<String>;
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
     async fn set_dedup_settings(&self, _settings: crate::settings::types::DedupSettings) {}
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
     async fn compact(&self) -> Result<()> {
         Ok(())
     }
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
     async fn db_size(&self) -> Result<Option<u64>> {
         Ok(None)
     }
@@ -586,6 +598,10 @@ pub trait MemoryStore: Send + Sync {
     }
 
     /// Clean up orphaned vectors or internal resources. Returns the number of cleaned items.
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
     async fn cleanup_orphans(&self) -> Result<usize> {
         Ok(0)
     }
@@ -595,6 +611,10 @@ pub trait MemoryStore: Send + Sync {
     /// Used by the sync manifest builder to discover every workspace
     /// without guessing.  Backends that cannot enumerate workspaces
     /// return an empty list (the manifest will simply be empty).
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
     async fn list_workspaces(&self) -> Result<Vec<String>> {
         Ok(Vec::new())
     }
@@ -636,15 +656,27 @@ pub trait MemoryStore: Send + Sync {
         )
     }
 
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
     async fn load_entity_graph_snapshot(&self, _workspace_id: &str) -> Result<Option<String>> {
         Ok(None)
     }
 
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
     async fn save_entity_graph_snapshot(&self, _workspace_id: &str, _data: &str) -> Result<()> {
         Ok(())
     }
 
     /// Return code symbols linked to a given memory_id.
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
     async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
         let _ = memory_id;
         Ok(Vec::new())
