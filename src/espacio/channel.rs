@@ -150,4 +150,44 @@ mod tests {
         assert_eq!(mgr.list_all("unknown").await.len(), 0);
         assert_eq!(mgr.list_since("unknown", 0).await.len(), 0);
     }
+
+    #[tokio::test]
+    async fn list_since_boundary_equals_seq() {
+        let mgr = ChannelManager::new();
+        mgr.post("esp_boundary".into(), "author1".into(), "msg0".into())
+            .await;
+        mgr.post("esp_boundary".into(), "author2".into(), "msg1".into())
+            .await;
+
+        // since_seq == 1 (max_seq) must return empty
+        let since_max = mgr.list_since("esp_boundary", 1).await;
+        assert!(since_max.is_empty());
+
+        // since_seq == 0 must return seq 1 only
+        let since_zero = mgr.list_since("esp_boundary", 0).await;
+        assert_eq!(since_zero.len(), 1);
+        assert_eq!(since_zero[0].seq, 1);
+    }
+
+    #[tokio::test]
+    async fn multi_space_seq_isolation() {
+        let mgr = ChannelManager::new();
+        let m0_s1 = mgr
+            .post("space_1".into(), "n1".into(), "s1_m0".into())
+            .await;
+        let m0_s2 = mgr
+            .post("space_2".into(), "n2".into(), "s2_m0".into())
+            .await;
+
+        assert_eq!(m0_s1.seq, 0);
+        assert_eq!(m0_s2.seq, 0);
+
+        let m1_s1 = mgr
+            .post("space_1".into(), "n1".into(), "s1_m1".into())
+            .await;
+        assert_eq!(m1_s1.seq, 1);
+
+        assert_eq!(mgr.len("space_1").await, 2);
+        assert_eq!(mgr.len("space_2").await, 1);
+    }
 }
