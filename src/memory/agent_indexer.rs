@@ -13,6 +13,7 @@ use crate::memory::file_indexer::{FileChunk, FileIndexer, IndexedFile};
 pub struct AgentIndexer {
     scanner: AgentScanner,
     // Podríamos usar el FileIndexer subyacente para reusar la logica de chunking
+    #[allow(dead_code)] // Held for underlying chunking logic reuse
     _file_indexer: FileIndexer,
 }
 
