@@ -28,7 +28,7 @@ pub struct RankedResult {
 }
 
 /// Score a dataset for a query: keyword match + karma + reputation
-fn score_dataset(
+pub(crate) fn score_dataset(
     query: &str,
     name: &str,
     description: &str,

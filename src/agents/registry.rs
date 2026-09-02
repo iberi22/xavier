@@ -197,7 +197,10 @@ tpm = 100000
         assert_eq!(jules.model, "gemini");
 
         let local_provider = registry.providers.get("local").unwrap();
-        assert_eq!(local_provider.base_url.as_deref(), Some("http://localhost:8081"));
+        assert_eq!(
+            local_provider.base_url.as_deref(),
+            Some("http://localhost:8081")
+        );
         let rate_limit = local_provider.rate_limit.as_ref().unwrap();
         assert_eq!(rate_limit.rpm, Some(60));
         assert_eq!(rate_limit.tpm, Some(100000));
