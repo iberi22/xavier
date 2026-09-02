@@ -12,6 +12,7 @@ pub mod hormer;
 pub mod mini_experts;
 pub mod provider;
 pub mod provider_router;
+pub mod registry;
 pub mod rate_limit;
 pub mod router;
 pub mod runtime;

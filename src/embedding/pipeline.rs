@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
+use crate::agents::registry::AgentRegistry;
 use crate::embedding::Embedder;
 use crate::memory::schema::ClearanceLevel;
 use crate::memory::store::MemoryStore;
@@ -13,6 +14,7 @@ pub struct LocalEmbeddingPipeline {
     store: Arc<dyn MemoryStore>,
     max_clearance: ClearanceLevel,
     consent_given: bool,
+    registry: Option<AgentRegistry>,
 }
 
 impl LocalEmbeddingPipeline {
@@ -33,12 +35,25 @@ impl LocalEmbeddingPipeline {
         max_clearance: ClearanceLevel,
         consent_given: bool,
     ) -> Self {
+        let registry = AgentRegistry::resolve_and_load().ok();
         Self {
             embedder,
             store,
             max_clearance,
             consent_given,
+            registry,
         }
+    }
+
+    /// With agent registry explicitly attached.
+    pub fn with_registry(mut self, registry: AgentRegistry) -> Self {
+        self.registry = Some(registry);
+        self
+    }
+
+    /// Returns reference to the attached agent registry, if loaded.
+    pub fn registry(&self) -> Option<&AgentRegistry> {
+        self.registry.as_ref()
     }
 
     /// From env.
