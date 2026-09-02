@@ -15,7 +15,7 @@ use crate::cli::security::secure_optional_request_field;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
 use crate::cli::utils::estimate_tokens;
-use code_graph::types::{CodeEdge, EdgeType, Symbol, SymbolKind};
+use code_graph::types::{CodeEdge, Symbol, SymbolKind};
 
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 

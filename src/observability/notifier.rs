@@ -349,6 +349,7 @@ impl Default for Notifier {
 ///
 /// Intended to be called at the fixer call site after `result.success` is true.
 #[cfg(feature = "telegram")]
+#[allow(dead_code)] // Reserved for Telegram fixer notification dispatch
 pub fn maybe_notify_telegram_fix(action: &super::fixer::FixerAction) {
     tracing::trace!("maybe_notify_telegram_fix called with action: {action:?}");
     // TODO: once the Notifier can produce a FixerAction::TelegramNotified
@@ -357,6 +358,7 @@ pub fn maybe_notify_telegram_fix(action: &super::fixer::FixerAction) {
 
 /// Fallback: no-op when the telegram feature is disabled.
 #[cfg(not(feature = "telegram"))]
+#[allow(dead_code)] // Reserved for Telegram fixer notification dispatch
 pub fn maybe_notify_telegram_fix(action: &super::fixer::FixerAction) {
     tracing::trace!("maybe_notify_telegram_fix (telegram disabled): {action:?}");
 }
