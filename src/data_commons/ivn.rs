@@ -397,7 +397,11 @@ pub fn apply_sanctions_with_config(
     for val in fp_validators {
         let sanction = sanction_validator_with_config(config, 1, false);
         engine.adjust_karma(val, sanction.karma_penalty); // -10 karma
-        let until = current_time + (sanction.exclusion_days as u64 * 86_400);
+                                                          // Lossless conversion & checked arithmetic: exclusion_days (u32) converted via u64::from to prevent wrap
+        let duration_secs = u64::from(sanction.exclusion_days)
+            .checked_mul(86_400)
+            .expect("exclusion_days duration in seconds exceeds u64 range");
+        let until = current_time.checked_add(duration_secs).unwrap_or(u64::MAX);
         record_exclusion(val, until);
         fp_validator_sanctions.push((val.clone(), sanction));
     }
@@ -409,7 +413,11 @@ pub fn apply_sanctions_with_config(
             exclusion_days: config.retry_days,       // 180d
         };
         engine.adjust_karma(applicant, sanction.karma_penalty); // -50 karma
-        let until = current_time + (sanction.exclusion_days as u64 * 86_400);
+                                                                // Lossless conversion & checked arithmetic: retry_days (u32) converted via u64::from to prevent wrap
+        let duration_secs = u64::from(sanction.exclusion_days)
+            .checked_mul(86_400)
+            .expect("exclusion_days duration in seconds exceeds u64 range");
+        let until = current_time.checked_add(duration_secs).unwrap_or(u64::MAX);
         record_exclusion(applicant, until);
         liar_sanction = Some((applicant.clone(), sanction));
     }
@@ -439,9 +447,14 @@ pub fn sanction_validator_with_config(
     fp_count: u32,
     is_lie: bool,
 ) -> SanctionResult {
-    let fp_penalty = config.penalty_false_positive * (fp_count as i64);
+    // Lossless conversion: u32 fp_count fits in i64 without truncation or sign loss
+    let fp_count_i64 = i64::from(fp_count);
+    let fp_penalty = config
+        .penalty_false_positive
+        .checked_mul(fp_count_i64)
+        .unwrap_or(i64::MIN);
     let lie_penalty = if is_lie { config.penalty_lie } else { 0 };
-    let total_penalty = fp_penalty + lie_penalty;
+    let total_penalty = fp_penalty.saturating_add(lie_penalty);
 
     SanctionResult {
         karma_penalty: total_penalty,
@@ -565,5 +578,40 @@ mod tests {
         let config = IvnConfig::default();
         let sanction_lie = sanction_validator_with_config(&config, 1, true);
         assert_eq!(sanction_lie.karma_penalty, -60);
+    }
+
+    #[test]
+    fn test_sanction_exclusion_days_max() {
+        use crate::data_commons::reputation::ReputationConfig;
+        let mut engine = EigenTrustEngine::new(ReputationConfig::default(), Vec::new());
+        let val = WalletAddress("xv1_node_max_excl".into());
+        let liar = WalletAddress("xv1_liar_max_excl".into());
+        let mut config = IvnConfig::default();
+        config.exclusion_days = u32::MAX;
+        config.retry_days = u32::MAX;
+
+        let current_time = 1_700_000_000u64;
+        let summary = apply_sanctions_with_config(
+            &config,
+            &mut engine,
+            &[val.clone()],
+            Some(&liar),
+            current_time,
+        );
+
+        assert_eq!(summary.fp_validator_sanctions.len(), 1);
+        assert!(summary.liar_sanction.is_some());
+        assert!(is_excluded_at(&val, current_time + 100));
+        assert!(is_excluded_at(&liar, current_time + 100));
+    }
+
+    #[test]
+    fn test_sanction_validator_try_into() {
+        let config = IvnConfig::default();
+        let sanction_zero = sanction_validator_with_config(&config, 0, false);
+        assert_eq!(sanction_zero.karma_penalty, 0);
+
+        let sanction_max = sanction_validator_with_config(&config, u32::MAX, false);
+        assert!(sanction_max.karma_penalty < 0);
     }
 }
