@@ -388,10 +388,13 @@ impl Indexer {
                 let _ = db.insert_symbol_embeddings_batch(&batch_refs);
             }
             db.batch_upsert_file_metadata(files_to_mtime)?;
+            db.checkpoint_wal()?;
             db.stats()
         })
         .await
         .map_err(|e| GraphError::Io(std::io::Error::other(e)))??;
+
+        debug!("Flushed WAL checkpoint via wal_checkpoint(TRUNCATE) after indexer batch");
 
         info!(
             "Indexed batch: {} symbols, {} edges (db totals: {} files / {} symbols)",
