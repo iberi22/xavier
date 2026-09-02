@@ -156,3 +156,50 @@ async fn test_plugin_fallback() {
         .iter()
         .any(|s| s.name == "Config" && s.kind == SymbolKind::Struct));
 }
+
+#[tokio::test]
+async fn wal_stays_under_64mb_during_batch_writes() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("code_graph.db");
+    let db = Arc::new(CodeGraphDB::new(&db_path).unwrap());
+
+    // Generate WAL pressure exceeding 64 MB (67108864 bytes) bound using large symbol payloads
+    let large_signature = "a".repeat(100_000); // 100 KB payload per symbol
+    let symbols_per_batch = 700; // 700 * 100 KB = ~70 MB raw write volume
+    let num_batches = 3;
+
+    for batch in 0..num_batches {
+        let symbols: Vec<code_graph::types::Symbol> = (0..symbols_per_batch)
+            .map(|i| code_graph::types::Symbol {
+                id: None,
+                stable_id: None,
+                name: format!("batch_{}_sym_{}", batch, i),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: format!("src/batch_{}/file_{}.rs", batch, i % 10),
+                start_line: i as u32,
+                end_line: (i + 1) as u32,
+                start_col: 0,
+                end_col: 0,
+                signature: Some(large_signature.clone()),
+                parent: None,
+                complexity: Some(1.0),
+            })
+            .collect();
+
+        db.insert_symbols(&symbols).unwrap();
+        db.checkpoint_wal().unwrap();
+
+        // Assert journal_size_limit bounds WAL file size under 64 MB (67108864 bytes / 64 * 1024 * 1024)
+        let wal_path = db_path.with_extension("db-wal");
+        if wal_path.exists() {
+            let wal_size = std::fs::metadata(&wal_path).unwrap().len();
+            assert!(
+                wal_size < 64 * 1024 * 1024,
+                "WAL size {} bytes exceeded 64 MB bound (journal_size_limit = 67108864) at batch {}",
+                wal_size,
+                batch
+            );
+        }
+    }
+}
