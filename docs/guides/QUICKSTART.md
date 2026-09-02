@@ -21,6 +21,18 @@ Download from GitHub Releases for your platform.
 docker run -p 8006:8006 ghcr.io/iberi22/xavier:latest
 ```
 
+## Preflight Check
+
+Before working on tasks or creating releases, run the SWAL preflight runner using the repo-only path (or shell alias):
+
+```bash
+# Check version manifest synchronization across repositories
+node ~/proyectosSWAL/periferia/swal-preflight/bin/swal-preflight.js check --cwd .
+
+# Run wave preflight scan with JSON output
+node ~/proyectosSWAL/periferia/swal-preflight/bin/swal-preflight.js preflight --wave 10 --json
+```
+
 ## First Steps
 
 1. **Start the server:**
