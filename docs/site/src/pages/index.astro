@@ -55,6 +55,9 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
             body: ["Inter", "sans-serif"],
             code: ["JetBrains Mono", "monospace"],
           },
+          fontSize: {
+            "display": ["72px", { "lineHeight": "1.05", "letterSpacing": "-0.04em", "fontWeight": "800" }],
+          },
           spacing: {
             "container-max": "1280px",
             "section-gap": "96px",
@@ -96,32 +99,21 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       -webkit-text-fill-color: transparent;
     }
 
-    /* Chromatic Aberration TikTok-Style Effect */
+    /* Chromatic Aberration Effect (Exact stitch edition matching) */
     .glitch-text {
       color: #ffffff;
-      text-shadow: 
-        -3.5px 0px 0px #22d3ee,
-        3.5px 0px 0px #ff007f;
-      font-weight: 900;
-      letter-spacing: -0.04em;
+      text-shadow: -2.5px 0px 0px #22d3ee, 2.5px 0px 0px #ff00ff;
     }
 
     .glitch-text-hero {
       color: #ffffff;
-      text-shadow: 
-        -4.5px 0px 0px #22d3ee,
-        4.5px 0px 0px #ff007f;
-      font-weight: 900;
+      text-shadow: -3px 0px 0px #22d3ee, 3px 0px 0px #ff00ff;
       letter-spacing: -0.04em;
-      line-height: 1.05;
     }
 
     .glitch-text-primary {
       color: #bf7af0;
-      text-shadow: 
-        -3px 0px 0px #22d3ee,
-        3px 0px 0px #ff007f;
-      font-weight: 800;
+      text-shadow: -2.5px 0px 0px #22d3ee, 2.5px 0px 0px #ff00ff;
     }
 
     .bg-grid {
@@ -205,7 +197,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           SWAL Ecosystem · GitCore 3.8.0 Compliant
         </div>
 
-        <h1 class="font-display text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight glitch-text-hero pb-2">
+        <h1 class="font-display text-4xl sm:text-6xl lg:text-[72px] font-extrabold glitch-text-hero pb-2 leading-[1.08]">
           High-Performance Cognitive Architecture
         </h1>
         <p class="font-display text-lg sm:text-xl font-bold text-primary-light">
