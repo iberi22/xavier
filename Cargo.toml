@@ -189,6 +189,10 @@ path = "tests/xtsp/mod.rs"
 name = "ci_version_gate"
 path = "tests/ci_version_gate.test.rs"
 
+[[test]]
+name = "embedding_fallback_resilience"
+path = "tests/embedding_fallback_resilience_test.rs"
+
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 code-graph = { path = "./code-graph" }
