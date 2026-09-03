@@ -530,8 +530,7 @@ impl WalStreamer {
             .iter()
             .filter(|seg| {
                 let seg_m = get_seg_millis(seg);
-                (seg.parent_snapshot_seq == base_snapshot.sequence
-                    || seg_m >= base_snap_millis)
+                (seg.parent_snapshot_seq == base_snapshot.sequence || seg_m >= base_snap_millis)
                     && seg_m <= cutoff_millis
             })
             .collect();
