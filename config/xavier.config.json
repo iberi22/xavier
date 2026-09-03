@@ -56,7 +56,7 @@
     "local_llm_url": "http://localhost:11434/v1",
     "local_llm_model": "qwen3-coder",
     "embedding_url": "http://localhost:11434/v1",
-    "embedding_model": "embeddinggemma",
+    "embedding_model": "nomic-embed-text",
     "router_retrieved_model": "",
     "router_complex_model": "",
     "router_fast_model": "",
@@ -111,7 +111,7 @@
   "embedding": {
     "endpoint": "http://localhost:11434/api/embeddings",
     "embedder": "local",
-    "gllm_model": "embeddinggemma",
+    "gllm_model": "nomic-embed-text",
     "api_flavor": "openai-compatible",
     "api_key": null,
     "gllm_dimension": null,
