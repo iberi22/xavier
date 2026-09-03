@@ -96,15 +96,32 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       -webkit-text-fill-color: transparent;
     }
 
-    /* Chromatic Aberration Effect */
+    /* Chromatic Aberration TikTok-Style Effect */
     .glitch-text {
       color: #ffffff;
-      text-shadow: -2px 0px 0px #22d3ee, 2px 0px 0px #ff00ff;
+      text-shadow: 
+        -3.5px 0px 0px #22d3ee,
+        3.5px 0px 0px #ff007f;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+    }
+
+    .glitch-text-hero {
+      color: #ffffff;
+      text-shadow: 
+        -4.5px 0px 0px #22d3ee,
+        4.5px 0px 0px #ff007f;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
     }
 
     .glitch-text-primary {
       color: #bf7af0;
-      text-shadow: -2px 0px 0px #22d3ee, 2px 0px 0px #ff00ff;
+      text-shadow: 
+        -3px 0px 0px #22d3ee,
+        3px 0px 0px #ff007f;
+      font-weight: 800;
     }
 
     .bg-grid {
@@ -151,11 +168,9 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
   <nav class="bg-surface/60 backdrop-blur-xl border-b border-glass-stroke shadow-2xl fixed top-0 w-full z-50 transition-all duration-300">
     <div class="flex justify-between items-center w-full px-6 py-4 max-w-container-max mx-auto">
       <div class="flex items-center gap-3">
-        <a href={`${baseUrl}/`} class="font-display text-2xl font-extrabold tracking-tighter text-white hover:opacity-90 transition-opacity flex items-center gap-2">
-          <span class="w-8 h-8 rounded-lg bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-white shadow-lg">
-            <span class="material-symbols-outlined text-xl">psychology</span>
-          </span>
-          <span class="glitch-text">Xavier</span>
+        <a href={`${baseUrl}/`} class="font-display text-2xl font-black tracking-tight text-white hover:opacity-90 transition-opacity flex items-center gap-2.5">
+          <img src={`${baseUrl}/xavier-icon.png`} alt="Xavier Logo" class="w-8 h-8 rounded-lg object-contain shadow-lg border border-white/10" />
+          <span class="glitch-text text-2xl font-black tracking-tighter">Xavier</span>
         </a>
         <span class="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary-light border border-primary/30 font-code">v0.0.1</span>
       </div>
@@ -190,7 +205,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           SWAL Ecosystem · GitCore 3.8.0 Compliant
         </div>
 
-        <h1 class="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight glitch-text">
+        <h1 class="font-display text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight glitch-text-hero pb-2">
           High-Performance Cognitive Architecture
         </h1>
         <p class="font-display text-lg sm:text-xl font-bold text-primary-light">
@@ -662,9 +677,9 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
   <footer class="bg-background-deep w-full py-12 border-t border-glass-stroke">
     <div class="max-w-container-max mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
       <div class="flex flex-col items-center md:items-start gap-2">
-        <div class="font-display text-2xl font-bold text-white flex items-center gap-2">
-          <span class="w-6 h-6 rounded bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-white text-xs font-bold">X</span>
-          Xavier
+        <div class="font-display text-2xl font-black text-white flex items-center gap-2.5">
+          <img src={`${baseUrl}/xavier-icon.png`} alt="Xavier Logo" class="w-7 h-7 rounded-lg object-contain border border-white/10" />
+          <span class="glitch-text font-black">Xavier</span>
         </div>
         <p class="font-body text-xs text-text-muted">Cognitive memory runtime for the age of autonomous AI agents.</p>
       </div>
