@@ -1,6 +1,16 @@
 ---
-// Xavier Landing Page - Astro Static Generation
+// Xavier Landing Page - Configurable Global Variables
 const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// Global Static Properties (easy to update via CI/CD tags or scripts)
+const siteConfig = {
+	version: "0.1.+",
+	repoUrl: "https://github.com/iberi22/xavier",
+	recallLatency: "< 1ms",
+	astLanguages: "6+",
+	coreInterfaces: "3",
+	protocolVersion: "3.8.0",
+};
 ---
 
 <!DOCTYPE html>
@@ -17,6 +27,11 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+
+  <!-- Xavier Config Variables Script Tag -->
+  <script is:inline define:vars={{ siteConfig }}>
+    window.XAVIER_CONFIG = siteConfig;
+  </script>
 
   <!-- Tailwind CSS CDN -->
   <script is:inline src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -99,16 +114,29 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       -webkit-text-fill-color: transparent;
     }
 
-    /* Chromatic Aberration Effect (SWAL/Lumina Colors, 10% softer) */
+    /* Chromatic Aberration Effect (Responsive mobile calibrated) */
     .glitch-text {
       color: #ffffff;
-      text-shadow: -2.2px 0px 0px #22d3ee, 2.2px 0px 0px #bf7af0;
+      text-shadow: -1.5px 0px 0px #22d3ee, 1.5px 0px 0px #bf7af0;
+    }
+    @media (min-width: 640px) {
+      .glitch-text {
+        text-shadow: -2.2px 0px 0px #22d3ee, 2.2px 0px 0px #bf7af0;
+      }
     }
 
     .glitch-text-hero {
       color: #ffffff;
-      text-shadow: -2.7px 0px 0px #22d3ee, 2.7px 0px 0px #bf7af0;
-      letter-spacing: -0.04em;
+      text-shadow: -1.8px 0px 0px #22d3ee, 1.8px 0px 0px #bf7af0;
+      letter-spacing: -0.03em;
+      word-break: break-word;
+      hyphens: auto;
+    }
+    @media (min-width: 640px) {
+      .glitch-text-hero {
+        text-shadow: -2.7px 0px 0px #22d3ee, 2.7px 0px 0px #bf7af0;
+        letter-spacing: -0.04em;
+      }
     }
 
     .glitch-text-primary {
@@ -157,17 +185,17 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
   <div class="fixed inset-0 bg-grid z-[-1] pointer-events-none"></div>
 
   <!-- Top Navigation Bar -->
-  <nav class="bg-surface/60 backdrop-blur-xl border-b border-glass-stroke shadow-2xl fixed top-0 w-full z-50 transition-all duration-300">
-    <div class="flex justify-between items-center w-full px-6 py-4 max-w-container-max mx-auto">
-      <div class="flex items-center gap-3">
-        <a href={`${baseUrl}/`} class="font-display text-2xl font-black tracking-tight text-white hover:opacity-90 transition-opacity flex items-center gap-2.5">
-          <img src={`${baseUrl}/xavier-icon.png`} alt="Xavier Logo" class="w-8 h-8 rounded-lg object-contain shadow-lg border border-white/10" />
-          <span class="glitch-text text-2xl font-black tracking-tighter">Xavier</span>
+  <nav class="bg-surface/75 backdrop-blur-xl border-b border-glass-stroke shadow-2xl fixed top-0 w-full z-50 transition-all duration-300">
+    <div class="flex justify-between items-center w-full px-4 sm:px-6 py-3 sm:py-4 max-w-container-max mx-auto">
+      <div class="flex items-center gap-2 sm:gap-3">
+        <a href={`${baseUrl}/`} class="font-display text-xl sm:text-2xl font-black tracking-tight text-white hover:opacity-90 transition-opacity flex items-center gap-2">
+          <img src={`${baseUrl}/xavier-icon.png`} alt="Xavier Logo" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-contain shadow-lg border border-white/10" />
+          <span class="glitch-text text-xl sm:text-2xl font-black tracking-tighter">Xavier</span>
         </a>
-        <span class="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary-light border border-primary/30 font-code">v0.0.1</span>
+        <span id="version-badge" class="text-[11px] sm:text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary-light border border-primary/30 font-code font-medium">{siteConfig.version}</span>
       </div>
 
-      <div class="hidden md:flex gap-6 items-center font-medium text-sm">
+      <div class="hidden lg:flex gap-6 items-center font-medium text-sm">
         <a class="text-on-surface-variant hover:text-white transition-colors" href="#how-it-works">How It Works</a>
         <a class="text-on-surface-variant hover:text-white transition-colors" href="#features">Features</a>
         <a class="text-on-surface-variant hover:text-white transition-colors" href="#terminal-demo">Interactive CLI</a>
@@ -176,12 +204,12 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         <a class="text-secondary hover:text-white transition-colors font-semibold" href={`${baseUrl}/guides/intro/`}>Documentation →</a>
       </div>
 
-      <div class="flex gap-3 items-center">
-        <a href="https://github.com/iberi22/xavier" target="_blank" rel="noreferrer" class="px-4 py-2 rounded-lg glass-panel text-sm text-on-surface font-code hover:bg-white/10 transition-colors flex items-center gap-2">
+      <div class="flex gap-2 sm:gap-3 items-center">
+        <a href={siteConfig.repoUrl} target="_blank" rel="noreferrer" class="hidden sm:flex px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg glass-panel text-xs sm:text-sm text-on-surface font-code hover:bg-white/10 transition-colors items-center gap-1.5 sm:gap-2">
           <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
           GitHub
         </a>
-        <a href={`${baseUrl}/guides/quick-start/`} class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold neon-glow hover:bg-primary-container transition-colors shadow-lg">
+        <a href={`${baseUrl}/guides/quick-start/`} class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-primary text-white text-xs sm:text-sm font-semibold neon-glow hover:bg-primary-container transition-colors shadow-lg whitespace-nowrap">
           Get Started
         </a>
       </div>
@@ -190,54 +218,54 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 
   <main class="flex-grow pt-28 w-full flex flex-col items-center">
     <!-- SECTION 1: HERO -->
-    <section class="reveal w-full max-w-container-max px-6 mb-section-gap pt-10 flex flex-col lg:flex-row items-center gap-12 min-h-[640px]">
-      <div class="w-full lg:w-1/2 flex flex-col gap-6">
-        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-xs font-code text-primary-light w-max">
+    <section class="reveal w-full max-w-container-max px-4 sm:px-6 mb-section-gap pt-6 sm:pt-10 flex flex-col lg:flex-row items-center gap-8 sm:gap-12 min-h-[580px] sm:min-h-[640px]">
+      <div class="w-full lg:w-1/2 flex flex-col gap-4 sm:gap-6">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-[11px] sm:text-xs font-code text-primary-light w-max">
           <span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
-          SWAL Ecosystem · GitCore 3.8.0 Compliant
+          SWAL Ecosystem · GitCore {siteConfig.protocolVersion} Compliant
         </div>
 
-        <h1 class="font-display text-4xl sm:text-6xl lg:text-[72px] font-extrabold glitch-text-hero pb-2 leading-[1.08]">
-          High-Performance Cognitive Architecture
+        <h1 class="font-display text-[26px] xs:text-3xl sm:text-5xl lg:text-[72px] font-extrabold glitch-text-hero pb-1 leading-[1.18] sm:leading-[1.08] tracking-tight">
+          High-Performance<br class="hidden xs:inline sm:hidden" /> Cognitive Architecture
         </h1>
-        <p class="font-display text-lg sm:text-xl font-bold text-primary-light">
+        <p class="font-display text-base sm:text-xl font-bold text-primary-light leading-snug">
           The Cognitive Memory Brain for AI Agents
         </p>
 
-        <p class="font-body text-lg text-on-surface-variant max-w-xl leading-relaxed">
+        <p class="font-body text-sm sm:text-lg text-on-surface-variant max-w-xl leading-relaxed">
           High-performance vector memory runtime written in Rust. Sub-millisecond contextual recall, local-first privacy, and native HTTP, CLI, and MCP interfaces.
         </p>
 
-        <div class="flex flex-wrap gap-4 pt-2">
-          <a href={`${baseUrl}/guides/installation/`} class="px-6 py-3.5 rounded-xl bg-primary text-white font-semibold flex items-center gap-2 neon-glow hover:bg-primary-container transition-all hover:scale-[1.02]">
+        <div class="flex flex-row flex-wrap sm:flex-nowrap gap-3 pt-2">
+          <a href={`${baseUrl}/guides/installation/`} class="flex-1 sm:flex-none justify-center px-5 sm:px-6 py-3 sm:py-3.5 rounded-xl bg-primary text-white font-semibold flex items-center gap-2 neon-glow hover:bg-primary-container transition-all text-sm sm:text-base">
             <span>Deploy Now</span>
-            <span class="material-symbols-outlined text-lg">bolt</span>
+            <span class="material-symbols-outlined text-base sm:text-lg">bolt</span>
           </a>
-          <a href="https://github.com/iberi22/xavier" target="_blank" rel="noreferrer" class="px-6 py-3.5 rounded-xl glass-panel text-white font-semibold flex items-center gap-2 hover:bg-white/10 transition-all">
+          <a href={siteConfig.repoUrl} target="_blank" rel="noreferrer" class="flex-1 sm:flex-none justify-center px-5 sm:px-6 py-3 sm:py-3.5 rounded-xl glass-panel text-white font-semibold flex items-center gap-2 hover:bg-white/10 transition-all text-sm sm:text-base">
             <span>View Source</span>
-            <span class="material-symbols-outlined text-lg">code</span>
+            <span class="material-symbols-outlined text-base sm:text-lg">code</span>
           </a>
         </div>
 
-        <!-- 3 Stats Counter -->
-        <div class="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-glass-stroke">
-          <div class="glass-panel p-4 rounded-xl flex flex-col">
-            <span class="font-display text-2xl lg:text-3xl font-bold text-tertiary flex items-center">&lt;&nbsp;<span class="stat-counter" data-target="1">0</span>ms</span>
-            <span class="font-code text-xs text-text-muted mt-1 uppercase tracking-wider">Recall Latency</span>
+        <!-- 3 Stats Counter Responsive Grid -->
+        <div class="grid grid-cols-3 gap-2 sm:gap-4 mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-glass-stroke">
+          <div class="glass-panel p-2.5 sm:p-4 rounded-xl flex flex-col">
+            <span class="font-display text-lg sm:text-2xl lg:text-3xl font-bold text-tertiary flex items-center">&lt;&nbsp;<span class="stat-counter" data-target="1">1</span>ms</span>
+            <span class="font-code text-[10px] sm:text-xs text-text-muted mt-1 uppercase tracking-wider">Recall</span>
           </div>
-          <div class="glass-panel p-4 rounded-xl flex flex-col">
-            <span class="font-display text-2xl lg:text-3xl font-bold text-secondary"><span class="stat-counter" data-target="6">0</span>+</span>
-            <span class="font-code text-xs text-text-muted mt-1 uppercase tracking-wider">AST Languages</span>
+          <div class="glass-panel p-2.5 sm:p-4 rounded-xl flex flex-col">
+            <span class="font-display text-lg sm:text-2xl lg:text-3xl font-bold text-secondary"><span class="stat-counter" data-target="6">6</span>+</span>
+            <span class="font-code text-[10px] sm:text-xs text-text-muted mt-1 uppercase tracking-wider">Languages</span>
           </div>
-          <div class="glass-panel p-4 rounded-xl flex flex-col">
-            <span class="font-display text-2xl lg:text-3xl font-bold text-primary-light"><span class="stat-counter" data-target="3">0</span></span>
-            <span class="font-code text-xs text-text-muted mt-1 uppercase tracking-wider">Core Interfaces</span>
+          <div class="glass-panel p-2.5 sm:p-4 rounded-xl flex flex-col">
+            <span class="font-display text-lg sm:text-2xl lg:text-3xl font-bold text-primary-light"><span class="stat-counter" data-target="3">3</span></span>
+            <span class="font-code text-[10px] sm:text-xs text-text-muted mt-1 uppercase tracking-wider">Interfaces</span>
           </div>
         </div>
       </div>
 
       <!-- Right Side: Terminal Simulation + Neural Visualizer Overlay -->
-      <div class="w-full lg:w-1/2 relative h-[420px] sm:h-[480px] flex items-center justify-center">
+      <div class="w-full lg:w-1/2 relative h-[380px] sm:h-[460px] flex items-center justify-center">
         <div class="absolute inset-0 glass-panel rounded-2xl overflow-hidden flex flex-col shadow-2xl border border-primary/20">
           <div class="bg-surface-container-high h-11 w-full flex items-center px-4 gap-2 border-b border-glass-stroke">
             <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
@@ -977,6 +1005,12 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
     });
 
     loadTab('memory');
+
+    // Dynamic sync from window.XAVIER_CONFIG (allows script-tag runtime overrides)
+    if (window.XAVIER_CONFIG && window.XAVIER_CONFIG.version) {
+      const b = document.getElementById('version-badge');
+      if (b) b.textContent = window.XAVIER_CONFIG.version;
+    }
 
     // 3. Scroll-Driven Reveals & Counter Animations
     const revealObserver = new IntersectionObserver((entries) => {
