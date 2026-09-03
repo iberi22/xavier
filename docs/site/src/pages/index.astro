@@ -153,7 +153,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 <body class="antialiased min-h-screen flex flex-col relative selection:bg-primary/30 selection:text-white">
   <!-- Interactive WebGL Neural Graph & Ambient Grid Background -->
-  <div class="fixed inset-0 z-[-2] pointer-events-none opacity-40" id="bg-canvas-container"></div>
+  <div class="fixed inset-0 z-[-2] pointer-events-none opacity-85" id="bg-canvas-container"></div>
   <div class="fixed inset-0 bg-grid z-[-1] pointer-events-none"></div>
 
   <!-- Top Navigation Bar -->
@@ -693,7 +693,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 
   <!-- Scripts: Interactive WebGL Background, Terminal Tabs, Counters, Reveals -->
   <script is:inline>
-    // 1. Interactive Three.js Neural Mesh Background
+    // 1. Interactive Three.js Neural Mesh Background (Communicative Pulsing Particles)
     (function initWebGLBackground() {
       const container = document.getElementById('bg-canvas-container');
       if (!container || typeof THREE === 'undefined') return;
@@ -714,39 +714,185 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       scene.add(group);
 
       const nodes = [];
-      const nodeCount = 45;
-      const geometry = new THREE.SphereGeometry(0.04, 16, 16);
-      const indigoMat = new THREE.MeshBasicMaterial({ color: 0xbf7af0 });
-      const cyanMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee });
+      const nodeCount = 65;
+      // Particles are made smaller (radius 0.022 instead of 0.04)
+      const baseGeometry = new THREE.SphereGeometry(0.022, 16, 16);
+
+      // Colors from our palette: Lumina Primary (#bf7af0) and Cyan (#22d3ee)
+      const colorPurple = new THREE.Color(0xbf7af0);
+      const colorCyan = new THREE.Color(0x22d3ee);
 
       for (let i = 0; i < nodeCount; i++) {
-        const mesh = new THREE.Mesh(geometry, i % 3 === 0 ? cyanMat : indigoMat);
+        const isCyan = i % 3 === 0;
+        const mat = new THREE.MeshBasicMaterial({
+          color: isCyan ? colorCyan : colorPurple,
+          transparent: true,
+          opacity: 0.45 + Math.random() * 0.30
+        });
+        const mesh = new THREE.Mesh(baseGeometry, mat);
         mesh.position.set(
-          (Math.random() - 0.5) * 12,
-          (Math.random() - 0.5) * 8,
-          (Math.random() - 0.5) * 6
+          (Math.random() - 0.5) * 13,
+          (Math.random() - 0.5) * 8.5,
+          (Math.random() - 0.5) * 5
         );
+
+        // Simulation attributes for organic communication & soft twinkling
         mesh.userData = {
+          baseColor: isCyan ? colorCyan : colorPurple,
           velocity: new THREE.Vector3(
-            (Math.random() - 0.5) * 0.006,
-            (Math.random() - 0.5) * 0.006,
-            (Math.random() - 0.5) * 0.006
-          )
+            (Math.random() - 0.5) * 0.0035,
+            (Math.random() - 0.5) * 0.0035,
+            (Math.random() - 0.5) * 0.0035
+          ),
+          pulsePhase: Math.random() * Math.PI * 2,
+          pulseSpeed: 1.2 + Math.random() * 1.8,
+          isTransmitting: false,
+          partnerIndex: -1,
+          transmitProgress: 0,
+          transmitCooldown: Math.random() * 180
         };
+
         group.add(mesh);
         nodes.push(mesh);
       }
 
+      // Dynamic Synapse Connection Lines
+      const maxLines = 45;
+      const linePositions = new Float32Array(maxLines * 6);
+      const lineColors = new Float32Array(maxLines * 6);
+      const lineGeometry = new THREE.BufferGeometry();
+      lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+      lineGeometry.setAttribute('color', new THREE.BufferAttribute(lineColors, 3));
+
+      const lineMaterial = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.65,
+        blending: THREE.AdditiveBlending
+      });
+      const linesMesh = new THREE.LineSegments(lineGeometry, lineMaterial);
+      group.add(linesMesh);
+
+      let clock = new THREE.Clock();
+
       function animate() {
         requestAnimationFrame(animate);
-        nodes.forEach(node => {
+        const delta = clock.getDelta();
+        const time = clock.getElapsedTime();
+
+        // 1. Update each particle twinkling & random communication
+        nodes.forEach((node, idx) => {
           node.position.add(node.userData.velocity);
-          if (Math.abs(node.position.x) > 6) node.userData.velocity.x *= -1;
-          if (Math.abs(node.position.y) > 4) node.userData.velocity.y *= -1;
-          if (Math.abs(node.position.z) > 3) node.userData.velocity.z *= -1;
+
+          // Soft bounds bounce
+          if (Math.abs(node.position.x) > 6.5) node.userData.velocity.x *= -1;
+          if (Math.abs(node.position.y) > 4.2) node.userData.velocity.y *= -1;
+          if (Math.abs(node.position.z) > 2.8) node.userData.velocity.z *= -1;
+
+          // Soft twinkle (sine wave shimmer)
+          node.userData.pulsePhase += node.userData.pulseSpeed * delta;
+          const twinkle = (Math.sin(node.userData.pulsePhase) + 1) * 0.5; // 0 to 1
+          
+          if (!node.userData.isTransmitting) {
+            node.material.opacity = 0.35 + twinkle * 0.50;
+            const scale = 0.85 + twinkle * 0.35;
+            node.scale.set(scale, scale, scale);
+
+            // Random trigger to talk to a nearby particle
+            node.userData.transmitCooldown -= 1;
+            if (node.userData.transmitCooldown <= 0 && Math.random() < 0.04) {
+              // Pick closest neighboring particle to talk with
+              let closestDist = 2.4;
+              let closestIdx = -1;
+              for (let j = 0; j < nodes.length; j++) {
+                if (j !== idx) {
+                  const d = node.position.distanceTo(nodes[j].position);
+                  if (d < closestDist && !nodes[j].userData.isTransmitting) {
+                    closestDist = d;
+                    closestIdx = j;
+                  }
+                }
+              }
+              if (closestIdx !== -1) {
+                node.userData.isTransmitting = true;
+                node.userData.partnerIndex = closestIdx;
+                node.userData.transmitProgress = 0;
+                nodes[closestIdx].userData.isTransmitting = true;
+                nodes[closestIdx].userData.partnerIndex = idx;
+                nodes[closestIdx].userData.transmitProgress = 0;
+              }
+              node.userData.transmitCooldown = 120 + Math.random() * 240;
+            }
+          } else {
+            // Synchronized transmission glow between the two particles
+            node.userData.transmitProgress += delta * 2.2;
+            const burst = Math.sin(node.userData.transmitProgress * Math.PI);
+            if (burst > 0) {
+              node.material.opacity = 0.8 + burst * 0.2;
+              const scale = 1.2 + burst * 0.6;
+              node.scale.set(scale, scale, scale);
+            } else {
+              // Transmission finished
+              node.userData.isTransmitting = false;
+              node.userData.partnerIndex = -1;
+              node.userData.transmitCooldown = 150 + Math.random() * 200;
+            }
+          }
         });
-        group.rotation.y += 0.001;
-        group.rotation.x += 0.0005;
+
+        // 2. Render connecting synapse lines when particles are communicating or close
+        let lineIdx = 0;
+        const posAttr = lineGeometry.attributes.position;
+        const colAttr = lineGeometry.attributes.color;
+
+        for (let i = 0; i < nodes.length && lineIdx < maxLines; i++) {
+          const a = nodes[i];
+
+          // If transmitting with partner, draw an active communicating beam
+          if (a.userData.isTransmitting && a.userData.partnerIndex > i) {
+            const b = nodes[a.userData.partnerIndex];
+            const burst = Math.sin(a.userData.transmitProgress * Math.PI);
+            const lineOffset = lineIdx * 6;
+
+            posAttr.setXYZ(lineOffset, a.position.x, a.position.y, a.position.z);
+            posAttr.setXYZ(lineOffset + 1, b.position.x, b.position.y, b.position.z);
+
+            // Shimmer color blending
+            colAttr.setXYZ(lineOffset, 0.75, 0.48, 0.94); // #bf7af0
+            colAttr.setXYZ(lineOffset + 1, 0.13, 0.83, 0.93); // #22d3ee
+            lineIdx++;
+          }
+          // Ambient delicate proximity links
+          for (let j = i + 1; j < nodes.length && lineIdx < maxLines; j++) {
+            const b = nodes[j];
+            const dist = a.position.distanceTo(b.position);
+            if (dist < 1.35) {
+              const alpha = Math.max(0, (1.35 - dist) / 1.35) * 0.3;
+              const lineOffset = lineIdx * 6;
+              posAttr.setXYZ(lineOffset, a.position.x, a.position.y, a.position.z);
+              posAttr.setXYZ(lineOffset + 1, b.position.x, b.position.y, b.position.z);
+
+              colAttr.setXYZ(lineOffset, 0.75 * alpha, 0.48 * alpha, 0.94 * alpha);
+              colAttr.setXYZ(lineOffset + 1, 0.13 * alpha, 0.83 * alpha, 0.93 * alpha);
+              lineIdx++;
+            }
+          }
+        }
+
+        // Zero out unused lines
+        for (let k = lineIdx; k < maxLines; k++) {
+          const offset = k * 6;
+          posAttr.setXYZ(offset, 0, 0, 0);
+          posAttr.setXYZ(offset + 1, 0, 0, 0);
+        }
+
+        posAttr.needsUpdate = true;
+        colAttr.needsUpdate = true;
+        lineGeometry.setDrawRange(0, lineIdx * 2);
+
+        // Slow ambient orbital drift
+        group.rotation.y += 0.0006;
+        group.rotation.x += 0.0003;
         renderer.render(scene, camera);
       }
       animate();
