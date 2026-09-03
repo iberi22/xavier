@@ -14,9 +14,7 @@ use tokio::sync::RwLock;
 pub const MDNS_SERVICE_TYPE: &str = "_xavier-mesh._tcp.local.";
 
 /// Discover local network peers via mDNS.
-pub async fn discover_mdns_peers(
-    registry: Arc<RwLock<PeerRegistry>>,
-) -> Result<Vec<PeerInfo>> {
+pub async fn discover_mdns_peers(registry: Arc<RwLock<PeerRegistry>>) -> Result<Vec<PeerInfo>> {
     let daemon = ServiceDaemon::new()?;
     let receiver = daemon.browse(MDNS_SERVICE_TYPE)?;
     let mut peers = Vec::new();
@@ -53,23 +51,14 @@ pub async fn discover_mdns_peers(
 }
 
 /// Register this node as an mDNS service.
-pub async fn register_mdns_service(
-    node_id: &str,
-    port: u16,
-) -> Result<ServiceDaemon> {
+pub async fn register_mdns_service(node_id: &str, port: u16) -> Result<ServiceDaemon> {
     let daemon = ServiceDaemon::new()?;
     let mut properties = std::collections::HashMap::new();
     properties.insert("node_id".to_string(), node_id.to_string());
 
     let host_name = format!("{}.local.", node_id);
-    let service_info = ServiceInfo::new(
-        MDNS_SERVICE_TYPE,
-        node_id,
-        &host_name,
-        "",
-        port,
-        properties,
-    )?;
+    let service_info =
+        ServiceInfo::new(MDNS_SERVICE_TYPE, node_id, &host_name, "", port, properties)?;
 
     daemon.register(service_info)?;
     Ok(daemon)
@@ -95,9 +84,7 @@ mod tests {
     async fn test_discover_mdns_peers_empty() {
         let dir = tempdir().unwrap();
         let registry_path = dir.path().join("peers.json");
-        let registry = Arc::new(RwLock::new(
-            PeerRegistry::load_from(registry_path).unwrap(),
-        ));
+        let registry = Arc::new(RwLock::new(PeerRegistry::load_from(registry_path).unwrap()));
 
         let peers_res = discover_mdns_peers(registry).await;
         assert!(peers_res.is_ok());
@@ -107,9 +94,7 @@ mod tests {
     async fn test_register_and_discover() {
         let dir = tempdir().unwrap();
         let registry_path = dir.path().join("peers.json");
-        let registry = Arc::new(RwLock::new(
-            PeerRegistry::load_from(registry_path).unwrap(),
-        ));
+        let registry = Arc::new(RwLock::new(PeerRegistry::load_from(registry_path).unwrap()));
 
         let daemon = register_mdns_service("xv1-loopback-test", 9090).await;
         assert!(daemon.is_ok());

@@ -7,14 +7,14 @@ use std::path::PathBuf;
 use tracing::{info, warn};
 
 use crate::cli::code_dump::{perform_dump, perform_load};
-use xavier::codebase::codegraph_sidecar::{
-    ensure_codegraph_sidecar_soft, maybe_sync_colby_project, EnsureOutcome,
-};
 use crate::cli::security::secure_optional_request_field;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
 use crate::cli::utils::estimate_tokens;
 use code_graph::types::{CodeEdge, Symbol, SymbolKind};
+use xavier::codebase::codegraph_sidecar::{
+    ensure_codegraph_sidecar_soft, maybe_sync_colby_project, EnsureOutcome,
+};
 
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 

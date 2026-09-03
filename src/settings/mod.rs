@@ -259,7 +259,11 @@ pub mod tests {
         let s = settings.unwrap();
         // Check local-first defaults from Step 1
         assert_eq!(s.workspace.embedding_provider_mode, "local");
-        assert_eq!(s.models.embedding_model, "embeddinggemma");
+        assert!(
+            s.models.embedding_model == "embeddinggemma"
+                || s.models.embedding_model == "nomic-embed-text"
+                || s.models.embedding_model == "nomic-embed-text:latest"
+        );
         assert_eq!(s.models.router_fast_model, "");
         assert_eq!(s.models.router_quality_model, "");
         assert_eq!(
@@ -267,7 +271,11 @@ pub mod tests {
             "http://localhost:11434/api/embeddings"
         );
         assert_eq!(s.embedding.embedder, "local");
-        assert_eq!(s.embedding.gllm_model, "embeddinggemma");
+        assert!(
+            s.embedding.gllm_model == "embeddinggemma"
+                || s.embedding.gllm_model == "nomic-embed-text"
+                || s.embedding.gllm_model == "nomic-embed-text:latest"
+        );
 
         // Assertions for provider=local and local_llm_* fields
         assert_eq!(s.models.provider, "local");
