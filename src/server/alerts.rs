@@ -1,6 +1,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::sync::RwLock;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, RwLock};
+use std::time::Instant;
+
+#[derive(Debug, Clone)]
+struct SuppressionRecord {
+    last_seen: Instant,
+    count: u64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
@@ -23,6 +32,8 @@ pub struct SystemAlert {
 pub struct SystemAlertStore {
     alerts: RwLock<Vec<SystemAlert>>,
     last_email_sent: RwLock<std::collections::HashMap<String, DateTime<Utc>>>,
+    suppression_map: Mutex<HashMap<(String, String), SuppressionRecord>>,
+    total_suppressed_count: AtomicU64,
 }
 
 impl SystemAlertStore {
@@ -31,15 +42,45 @@ impl SystemAlertStore {
         Self {
             alerts: RwLock::new(Vec::new()),
             last_email_sent: RwLock::new(std::collections::HashMap::new()),
+            suppression_map: Mutex::new(HashMap::new()),
+            total_suppressed_count: AtomicU64::new(0),
         }
     }
 
     /// Push alert.
     pub fn push_alert(&self, level: &str, message: &str, component: &str) {
+        let key = (component.to_string(), message.to_string());
+        let now = Instant::now();
+        let mut formatted_message = message.to_string();
+
+        if let Ok(mut map) = self.suppression_map.lock() {
+            if let Some(record) = map.get_mut(&key) {
+                if now.duration_since(record.last_seen) < std::time::Duration::from_secs(60) {
+                    record.count += 1;
+                    self.total_suppressed_count.fetch_add(1, Ordering::Relaxed);
+                    return;
+                } else {
+                    if record.count > 0 {
+                        formatted_message = format!("[suppressed {}x] {}", record.count, message);
+                    }
+                    record.last_seen = now;
+                    record.count = 0;
+                }
+            } else {
+                map.insert(
+                    key,
+                    SuppressionRecord {
+                        last_seen: now,
+                        count: 0,
+                    },
+                );
+            }
+        }
+
         let alert = SystemAlert {
             id: uuid::Uuid::new_v4().to_string(),
             level: level.to_string(),
-            message: message.to_string(),
+            message: formatted_message,
             component: component.to_string(),
             created_at: Utc::now(),
         };
@@ -70,6 +111,10 @@ impl SystemAlertStore {
         if let Ok(mut emails) = self.last_email_sent.write() {
             emails.clear();
         }
+        if let Ok(mut map) = self.suppression_map.lock() {
+            map.clear();
+        }
+        self.total_suppressed_count.store(0, Ordering::Relaxed);
     }
 
     /// Check if an email notification for the given key should be sent based on deduplication window.
@@ -153,6 +198,16 @@ impl SystemAlertStore {
 
         Self::derive_operational_mode(!has_llm_error, !has_embedding_error, &provider)
     }
+
+    /// Returns the total cumulative count of suppressed alerts.
+    pub fn suppressed_count(&self) -> u64 {
+        self.total_suppressed_count.load(Ordering::Relaxed)
+    }
+}
+
+/// Returns the total cumulative count of suppressed alerts from the global store.
+pub fn suppressed_count() -> u64 {
+    SYSTEM_ALERTS.suppressed_count()
 }
 
 impl Default for SystemAlertStore {
@@ -168,6 +223,61 @@ pub static SYSTEM_ALERTS: std::sync::LazyLock<SystemAlertStore> =
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_alert_suppression_window() {
+        let store = SystemAlertStore::new();
+
+        // 1st alert: recorded immediately
+        store.push_alert("ERROR", "Connection failed", "embedding");
+        let alerts = store.get_alerts();
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].message, "Connection failed");
+        assert_eq!(store.suppressed_count(), 0);
+
+        // 2nd alert within 60s: suppressed
+        store.push_alert("ERROR", "Connection failed", "embedding");
+        assert_eq!(store.get_alerts().len(), 1);
+        assert_eq!(store.suppressed_count(), 1);
+
+        // 3rd alert within 60s: suppressed again
+        store.push_alert("ERROR", "Connection failed", "embedding");
+        assert_eq!(store.get_alerts().len(), 1);
+        assert_eq!(store.suppressed_count(), 2);
+
+        // Different component/message pair within 60s: recorded independently
+        store.push_alert("ERROR", "Connection failed", "health");
+        let alerts_after_diff = store.get_alerts();
+        assert_eq!(alerts_after_diff.len(), 2);
+        assert_eq!(alerts_after_diff[1].message, "Connection failed");
+        assert_eq!(alerts_after_diff[1].component, "health");
+        assert_eq!(store.suppressed_count(), 2);
+
+        // Simulate passage of time (>60 seconds) for ("embedding", "Connection failed")
+        {
+            let mut map = store.suppression_map.lock().unwrap();
+            let key = ("embedding".to_string(), "Connection failed".to_string());
+            if let Some(record) = map.get_mut(&key) {
+                record.last_seen = Instant::now() - std::time::Duration::from_secs(61);
+            }
+        }
+
+        // Push alert after 60s window: recorded with [suppressed 2x] prefix
+        store.push_alert("ERROR", "Connection failed", "embedding");
+        let alerts_after_window = store.get_alerts();
+        assert_eq!(alerts_after_window.len(), 3);
+        assert_eq!(
+            alerts_after_window[2].message,
+            "[suppressed 2x] Connection failed"
+        );
+        // Total suppressed count remains cumulative (2)
+        assert_eq!(store.suppressed_count(), 2);
+
+        // Clearing store resets alerts and suppressed count
+        store.clear();
+        assert_eq!(store.get_alerts().len(), 0);
+        assert_eq!(store.suppressed_count(), 0);
+    }
 
     #[test]
     fn test_mode_derivation() {

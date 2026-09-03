@@ -225,19 +225,79 @@ pub(crate) fn extract_relative_date_answer(text: &str, session_time: &str) -> Op
     None
 }
 
-/// Checks if text contains temporal signals (date references, relative time keywords).
-/// Used by time-aware retrieval reranking when temporal filtering is enabled.
-/// Currently reserved for future integration with temporal query expansion.
+/// Temporal score containing exponential decay and recency boost factors for time-aware retrieval reranking.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TemporalScore {
+    /// Decay factor (0.0 to 1.0) calculated via exponential decay `exp(-age_hours / 72.0)`.
+    pub decay: f32,
+    /// Recency boost factor derived from temporal signals in text (e.g. 1.5 when present, 1.0 otherwise).
+    pub recency_boost: f32,
+}
+
+/// Computes a [`TemporalScore`] containing decay factor and recency boost for text and optional document age.
 ///
-/// TODO: Wire into reranking pipeline when temporal signals are needed.
-#[expect(dead_code, reason = "reserved for temporal reranking pipeline")]
-pub(crate) fn has_temporal_signal(text: &str) -> bool {
+/// # Temporal Decay Formula
+/// The temporal decay factor is calculated using exponential decay with a 72-hour half-life:
+/// ```text
+/// decay = exp(-age_hours / 72.0)
+/// ```
+/// where `age_hours` represents the age of the document or memory in hours (defaulting to 0.0 if not provided).
+///
+/// If temporal signals (such as explicit date formats or keywords like "yesterday", "last year",
+/// "last month", or "last week") are present in `text`, a `recency_boost` of `1.5` is assigned;
+/// otherwise `1.0`.
+pub(crate) fn compute_temporal_score(text: &str, age_hours: Option<f32>) -> TemporalScore {
     let lowered = text.to_lowercase();
-    extract_date_answer(text).is_some()
+    let has_signal = extract_date_answer(text).is_some()
         || lowered.contains("yesterday")
         || lowered.contains("last year")
         || lowered.contains("last month")
-        || lowered.contains("last week")
+        || lowered.contains("last week");
+
+    let age = age_hours.unwrap_or(0.0).max(0.0);
+    let half_life_hours = 72.0f32;
+    let decay = (-age / half_life_hours).exp();
+    let recency_boost = if has_signal { 1.5 } else { 1.0 };
+
+    TemporalScore {
+        decay,
+        recency_boost,
+    }
+}
+
+/// Computes temporal signals and decay score from text input.
+///
+/// Returns a structured [`TemporalScore`] containing decay factor and recency boost multiplier.
+/// See [`compute_temporal_score`] for details on the decay formula used.
+#[allow(dead_code, reason = "reserved for temporal reranking pipeline")]
+pub(crate) fn has_temporal_signal(text: &str) -> TemporalScore {
+    compute_temporal_score(text, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_temporal_score_with_signals() {
+        let score = has_temporal_signal("The incident occurred yesterday.");
+        assert_eq!(score.decay, 1.0);
+        assert_eq!(score.recency_boost, 1.5);
+    }
+
+    #[test]
+    fn test_temporal_score_without_signals() {
+        let score = has_temporal_signal("The system operates normally.");
+        assert_eq!(score.decay, 1.0);
+        assert_eq!(score.recency_boost, 1.0);
+    }
+
+    #[test]
+    fn test_compute_temporal_score_decay_formula() {
+        let score = compute_temporal_score("meeting last week", Some(72.0));
+        assert!((score.decay - (-1.0f32).exp()).abs() < 1e-4);
+        assert_eq!(score.recency_boost, 1.5);
+    }
 }
 
 /// Term overlap in content.

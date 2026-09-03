@@ -1,11 +1,13 @@
 [build]
-# target-dir removed: was "/build/rust-target/xavier" (broke GH Actions: /build read-only).
-# NixOS devs: export CARGO_TARGET_DIR=/build/rust-target/xavier via direnv/shell.nix if you need RAM-disk.
-# Default "target/" is used in CI and local unless CARGO_TARGET_DIR is set.
-# rustflags = ["-C", "link-arg=-fuse-ld=mold"] # Commented out (causes Bus error in CI runners)
+target-dir = "/home/belal/.cargo/xavier-target"
 
 # [target.x86_64-unknown-linux-gnu]
 # rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[net]
+# Allow online fetching by default so CI on fresh checkout does not fail,
+# while caching registry crates locally on metered connections.
+offline = false
 
 [env]
 RUST_MIN_STACK = "16777216"
