@@ -7,7 +7,7 @@
 //! - Alerts if lag > 30s or save_ok_rate < 95%
 //!
 //! Also provides on-demand sync check via POST /xavier/sync/check
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::LazyLock;
 use std::sync::{Arc, RwLock as StdRwLock};
 use std::time::{Duration, Instant};
@@ -26,6 +26,29 @@ use crate::settings::XavierSettings;
 pub(crate) static LAST_CHECK_RESULT: LazyLock<StdRwLock<SyncCheckResult>> =
     LazyLock::new(|| StdRwLock::new(SyncCheckResult::default()));
 static SYNC_CRON_STARTED: AtomicBool = AtomicBool::new(false);
+static LAST_WARN_HASH: AtomicU64 = AtomicU64::new(0);
+
+#[allow(clippy::missing_const_for_fn)]
+fn fnv1a_hash_64(data: &[u8]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0100_0000_01b3;
+
+    let mut hash = FNV_OFFSET;
+    for &byte in data {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+fn get_backoff_duration(attempt: u32) -> Duration {
+    match attempt {
+        0 => Duration::from_secs(5),
+        1 => Duration::from_secs(15),
+        2 => Duration::from_secs(60),
+        _ => Duration::from_secs(300),
+    }
+}
 
 /// Handle used by the HTTP server to request a graceful cron shutdown.
 pub struct SessionSyncShutdown {
@@ -53,6 +76,7 @@ impl SessionSyncShutdown {
                     tracing::info!("SessionSyncTask cron exited cleanly");
                 }
                 _ = tokio::time::sleep(timeout_dur) => {
+                    // BACKOFF: Wait up to shutdown timeout_dur for background cron loop to exit cleanly
                     tracing::warn!(
                         timeout_ms = timeout_dur.as_millis() as u64,
                         "SessionSyncTask shutdown timed out, forcing"
@@ -224,7 +248,8 @@ impl SessionSyncTask {
             }
 
             if attempt < self.max_retries {
-                sleep(Duration::from_millis(self.min_health_interval_ms)).await;
+                // BACKOFF: Exponential backoff delay (5s -> 15s -> 60s -> 300s cap) between health check retries
+                sleep(get_backoff_duration(attempt)).await;
             }
         }
 
@@ -336,6 +361,7 @@ impl SessionSyncTask {
 
                     // Log result
                     if result.alerts.is_empty() {
+                        LAST_WARN_HASH.store(0, Ordering::Relaxed);
                         info!(
                             status = %result.status,
                             lag_ms = result.lag_ms,
@@ -345,13 +371,20 @@ impl SessionSyncTask {
                             "SessionSyncTask check passed"
                         );
                     } else {
-                        warn!(
-                            status = %result.status,
-                            lag_ms = result.lag_ms,
-                            save_ok_rate = "%.1",
-                            alerts = ?result.alerts,
-                            "SessionSyncTask check with alerts"
+                        let warn_msg = format!(
+                            "status={}, lag_ms={}, save_ok_rate={}, alerts={:?}",
+                            result.status, result.lag_ms, result.save_ok_rate, result.alerts
                         );
+                        let hash = fnv1a_hash_64(warn_msg.as_bytes());
+                        if LAST_WARN_HASH.swap(hash, Ordering::Relaxed) != hash {
+                            warn!(
+                                status = %result.status,
+                                lag_ms = result.lag_ms,
+                                save_ok_rate = "%.1",
+                                alerts = ?result.alerts,
+                                "SessionSyncTask check with alerts"
+                            );
+                        }
                     }
                 }
                 changed = shutdown_rx.changed() => {
@@ -365,6 +398,7 @@ impl SessionSyncTask {
                                 info!("SessionSyncTask final check completed");
                             }
                             _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                                // BACKOFF: Cap final sync check timeout to 5s during graceful task shutdown
                                 tracing::warn!("SessionSyncTask final check timed out during shutdown");
                             }
                         }
