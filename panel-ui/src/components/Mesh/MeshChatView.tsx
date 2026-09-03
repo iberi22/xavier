@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   Lock,
   Paperclip,
@@ -145,6 +145,70 @@ const DEFAULT_MESSAGES: ChatMessage[] = [
 ];
 
 /**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted message row into ChatMessageItem and wrapped in React.memo()
+ * 🎯 Why: When user typed in the message box, inputText changed causing full re-render of MeshChatView
+ *         and ALL message items because they were rendered inline inside a .map().
+ * 📊 Impact: Prevents O(N) re-renders of all chat messages during typing interaction.
+ */
+const ChatMessageItem = React.memo(function ChatMessageItem({ msg }: { msg: ChatMessage }) {
+  return (
+    <div className={`flex flex-col ${msg.isSelf ? "items-end" : "items-start"}`}>
+      {/* Sender Node Alias & Timestamp Header */}
+      <div className="flex items-center gap-2 mb-1 px-1">
+        <span className="text-[10px] font-mono font-medium text-zinc-400">
+          {msg.senderAlias}
+        </span>
+        <span className="text-[9px] font-mono text-zinc-600">
+          ({msg.senderNodeId})
+        </span>
+        <span className="text-[9px] text-zinc-600">{msg.timestamp}</span>
+        {msg.encrypted && (
+          <Lock
+            className="w-2.5 h-2.5 text-emerald-400/80"
+            title="End-to-End Encrypted"
+          />
+        )}
+      </div>
+
+      {/* Message Bubble */}
+      <div
+        className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm ${
+          msg.isSelf
+            ? "bg-emerald-600/20 border border-emerald-500/30 text-emerald-100 rounded-br-none"
+            : "bg-zinc-800/80 border border-zinc-700/60 text-zinc-200 rounded-bl-none"
+        }`}
+      >
+        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+
+        {/* Attachment Indicator / Details */}
+        {msg.attachment && (
+          <div className="mt-2 pt-2 border-t border-white/10 flex items-center gap-2 text-[11px]">
+            <FileText className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <div className="truncate">
+              <span className="font-mono truncate block">{msg.attachment.name}</span>
+              {msg.attachment.size && (
+                <span className="text-[9px] opacity-70 block">
+                  {msg.attachment.size}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Delivery / Encryption confirmation icon for self */}
+        {msg.isSelf && (
+          <div className="flex items-center justify-end gap-1 mt-1 text-[9px] text-emerald-400/70">
+            <CheckCheck className="w-3 h-3" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+/**
  * MeshChatView component provides an encrypted P2P chat view with channel switcher
  * (Direct Peer Chats & Network Rooms), message stream, and attachment indicator.
  */
@@ -238,17 +302,25 @@ export const MeshChatView: React.FC<MeshChatViewProps> = ({
     }
   };
 
-  // Filter channels based on search query
-  const filteredChannels = channelList.filter(
-    (c) =>
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.alias && c.alias.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (c.nodeId && c.nodeId.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  /**
+   * ⚡ Bolt Performance Optimization
+   * 💡 What: Wrapped filteredChannels, networkRooms, directPeers, and activeMessages in useMemo()
+   * 🎯 Why: Without useMemo, these arrays were being re-filtered on every keystroke in the input text box
+   * 📊 Impact: O(1) rendering during typing, avoiding N string allocations and N iteration filters.
+   */
+  const filteredChannels = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return channelList.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.alias && c.alias.toLowerCase().includes(q)) ||
+        (c.nodeId && c.nodeId.toLowerCase().includes(q))
+    );
+  }, [channelList, searchQuery]);
 
-  const networkRooms = filteredChannels.filter((c) => c.type === "room");
-  const directPeers = filteredChannels.filter((c) => c.type === "direct");
-  const activeMessages = messageList.filter((m) => m.channelId === activeChannelId);
+  const networkRooms = useMemo(() => filteredChannels.filter((c) => c.type === "room"), [filteredChannels]);
+  const directPeers = useMemo(() => filteredChannels.filter((c) => c.type === "direct"), [filteredChannels]);
+  const activeMessages = useMemo(() => messageList.filter((m) => m.channelId === activeChannelId), [messageList, activeChannelId]);
 
   return (
     <div
@@ -465,60 +537,7 @@ export const MeshChatView: React.FC<MeshChatViewProps> = ({
             </div>
           ) : (
             activeMessages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex flex-col ${msg.isSelf ? "items-end" : "items-start"}`}
-              >
-                {/* Sender Node Alias & Timestamp Header */}
-                <div className="flex items-center gap-2 mb-1 px-1">
-                  <span className="text-[10px] font-mono font-medium text-zinc-400">
-                    {msg.senderAlias}
-                  </span>
-                  <span className="text-[9px] font-mono text-zinc-600">
-                    ({msg.senderNodeId})
-                  </span>
-                  <span className="text-[9px] text-zinc-600">{msg.timestamp}</span>
-                  {msg.encrypted && (
-                    <Lock
-                      className="w-2.5 h-2.5 text-emerald-400/80"
-                      title="End-to-End Encrypted"
-                    />
-                  )}
-                </div>
-
-                {/* Message Bubble */}
-                <div
-                  className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm ${
-                    msg.isSelf
-                      ? "bg-emerald-600/20 border border-emerald-500/30 text-emerald-100 rounded-br-none"
-                      : "bg-zinc-800/80 border border-zinc-700/60 text-zinc-200 rounded-bl-none"
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-
-                  {/* Attachment Indicator / Details */}
-                  {msg.attachment && (
-                    <div className="mt-2 pt-2 border-t border-white/10 flex items-center gap-2 text-[11px]">
-                      <FileText className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <div className="truncate">
-                        <span className="font-mono truncate block">{msg.attachment.name}</span>
-                        {msg.attachment.size && (
-                          <span className="text-[9px] opacity-70 block">
-                            {msg.attachment.size}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Delivery / Encryption confirmation icon for self */}
-                  {msg.isSelf && (
-                    <div className="flex items-center justify-end gap-1 mt-1 text-[9px] text-emerald-400/70">
-                      <CheckCheck className="w-3 h-3" />
-                    </div>
-                  )}
-                </div>
-              </div>
+              <ChatMessageItem key={msg.id} msg={msg} />
             ))
           )}
           <div ref={messagesEndRef} />
