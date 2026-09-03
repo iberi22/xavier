@@ -824,4 +824,42 @@ El panel-ui DEBE funcionar en browser sin Tauri: sin TypeError invoke/transformC
 
 ---
 
-*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat.*
+## REQ-045: Desktop multi-target bundle (WAVE-6.01)
+
+- **Category:** Packaging / Distribution
+- **Priority:** High
+- **SRS Status:** `in_progress`
+- **Features:** `feat-desktop-bundle`
+- **Files:** `panel-ui/src-tauri/tauri.conf.json`, `panel-ui/src-tauri/src/lib.rs`
+- **Docs:** Issue #1891, Issue #1893
+
+### Description
+Xavier desktop app DEBE ofrecer instaladores one-click para usuarios no técnicos en macOS (`.dmg`, `.app`) y Windows (`.msi`, NSIS `.exe`) con auto-arranque del sidecar daemon Xavier HTTP (`:8006`), soporte de bandeja del sistema (System Tray) y detección automática de credenciales.
+
+### Acceptance criteria
+- [ ] `tauri.conf.json` configura targets `dmg`, `app`, `msi`, `nsis`
+- [ ] Tauri sidecar arranca y monitorea ciclo de vida del backend nativo de Xavier
+- [ ] Cero dependencias manuales de terminal/Rust para el usuario final
+
+---
+
+## REQ-046: Cloudflare Serverless Edge persistence spec (WAVE-6.02)
+
+- **Category:** Cloud / Persistence
+- **Priority:** High
+- **SRS Status:** `in_progress`
+- **Features:** `feat-cloudflare-edge-backend`
+- **Files:** `src/memory/cloud_sync.rs`, `panel-ui/wrangler.toml`, `docs/features/specs/FEATURE-070-cloudflare-vectorize-backend.md`
+- **Docs:** Issue #1892, Issue #1895
+
+### Description
+Soporte de arquitectura híbrida SWAL en Cloudflare: frontend `panel-ui` en Cloudflare Pages (`panel.xavier.swal.dev`) y persistencia serverless para el tier Socio SWAL ($9/mes) mapeando vectores a Cloudflare Vectorize, embeddings en Workers AI y metadatos en Cloudflare D1 con cifrado E2E.
+
+### Acceptance criteria
+- [ ] `panel-ui/wrangler.toml` configurado para Cloudflare Pages SPA
+- [ ] Adaptador `CloudBackendType::CloudflareEdge` especificado en `cloud_sync.rs`
+- [ ] Zero-knowledge encryption: datos en reposo cifrados con llaves del usuario (AES-GCM)
+
+---
+
+*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence.*
