@@ -314,6 +314,7 @@ bech32 = "0.9.1"
 bincode = "1.3.3"
 x25519-dalek = { version = "2.0.1", features = ["static_secrets", "reusable_secrets"] }
 sqlite-vec = "0.1.0"
+mdns-sd = "0.13"
 # Iroh provides QUIC-based P2P transport with automatic NAT traversal (the mesh
 # roadmap's "Phase 2"). Feature-gated under `mesh` so the default
 # build stays lean; the IrohTransport is the preferred P2P backend going forward.
