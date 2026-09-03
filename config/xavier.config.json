@@ -185,7 +185,7 @@
     "wallet_address": null
   },
   "license": {
-    "mesh_accepted": false,
+    "mesh_accepted": true,
     "license_type": "MIT",
     "commercial_key": null
   }
