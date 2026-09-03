@@ -196,6 +196,38 @@ async fn test_revoke_dataset_removes_access() {
 }
 
 #[tokio::test]
+async fn test_list_dataset_with_invalid_signature_rejected() {
+    let router = create_router();
+
+    let invalid_sig_payload = json!({
+        "name": "Invalid Sig Dataset",
+        "description": "Dataset with bad signature",
+        "category": "Security",
+        "publisher": "xv1_publisher_invalid",
+        "tier": "Free",
+        "reputation": 0.0,
+        "rows": [],
+        "public_key": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        "signature": "112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00",
+        "fingerprint": "bad_fingerprint"
+    });
+
+    let req = Request::builder()
+        .uri("/v1/marketplace/datasets")
+        .method(Method::POST)
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&invalid_sig_payload).unwrap()))
+        .unwrap();
+
+    let response = router.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let err_json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(err_json["status"], "error");
+}
+
+#[tokio::test]
 async fn test_pricing_metadata_responses() {
     let router = create_router();
 
