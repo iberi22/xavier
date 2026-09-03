@@ -139,17 +139,13 @@ pub fn verify_mldsa65_signature(req: &ListDatasetRequest) -> Result<(), &'static
         .as_deref()
         .ok_or("Missing signature for signature verification")?;
 
-    let pk_bytes = crate::crypto::hex_decode(pk_hex)
-        .map_err(|_| "Invalid public key hex format")?;
-    let sig_bytes = crate::crypto::hex_decode(sig_hex)
-        .map_err(|_| "Invalid signature hex format")?;
+    let pk_bytes =
+        crate::crypto::hex_decode(pk_hex).map_err(|_| "Invalid public key hex format")?;
+    let sig_bytes =
+        crate::crypto::hex_decode(sig_hex).map_err(|_| "Invalid signature hex format")?;
 
-    let computed_fp = compute_dataset_fingerprint(
-        &req.name,
-        &req.category,
-        &req.publisher,
-        &req.description,
-    );
+    let computed_fp =
+        compute_dataset_fingerprint(&req.name, &req.category, &req.publisher, &req.description);
 
     if let Some(provided_fp) = &req.fingerprint {
         if provided_fp.trim() != computed_fp {
@@ -157,8 +153,7 @@ pub fn verify_mldsa65_signature(req: &ListDatasetRequest) -> Result<(), &'static
         }
     }
 
-    let sig_alg = Sig::new(SigAlg::MlDsa65)
-        .map_err(|_| "Failed to initialize ML-DSA-65 engine")?;
+    let sig_alg = Sig::new(SigAlg::MlDsa65).map_err(|_| "Failed to initialize ML-DSA-65 engine")?;
 
     let pk = sig_alg
         .public_key_from_bytes(&pk_bytes)
@@ -167,7 +162,10 @@ pub fn verify_mldsa65_signature(req: &ListDatasetRequest) -> Result<(), &'static
         .signature_from_bytes(&sig_bytes)
         .ok_or("Invalid signature bytes for ML-DSA-65")?;
 
-    if sig_alg.verify(computed_fp.as_bytes(), &signature, &pk).is_err() {
+    if sig_alg
+        .verify(computed_fp.as_bytes(), &signature, &pk)
+        .is_err()
+    {
         return Err("Invalid ML-DSA-65 signature");
     }
 
@@ -191,12 +189,8 @@ pub fn verify_mldsa65_signature(req: &ListDatasetRequest) -> Result<(), &'static
         return Ok(());
     }
 
-    let computed_fp = compute_dataset_fingerprint(
-        &req.name,
-        &req.category,
-        &req.publisher,
-        &req.description,
-    );
+    let computed_fp =
+        compute_dataset_fingerprint(&req.name, &req.category, &req.publisher, &req.description);
 
     if let Some(provided_fp) = &req.fingerprint {
         if provided_fp.trim() != computed_fp {

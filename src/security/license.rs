@@ -249,8 +249,8 @@ pub fn verify_commercial_license(
     token: &str,
     expected_node_id: Option<&str>,
 ) -> Result<CommercialLicensePayload, LicenseError> {
-    let pubkey_bytes = if let Ok(hex_key) = std::env::var("SWAL_LICENSE_PUBKEY")
-        .or_else(|_| std::env::var("XAVIER_LICENSE_PUBKEY"))
+    let pubkey_bytes = if let Ok(hex_key) =
+        std::env::var("SWAL_LICENSE_PUBKEY").or_else(|_| std::env::var("XAVIER_LICENSE_PUBKEY"))
     {
         let vec = crate::crypto::hex_decode(&hex_key)
             .map_err(|e| LicenseError::PublicKeyError(e.to_string()))?;
