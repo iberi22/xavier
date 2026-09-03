@@ -258,7 +258,7 @@ async fn list_tools_returns_all_tools() {
 #[tokio::test]
 async fn xavier_issue_context_package_mcp_integration() {
     let (state, workspace) = test_state().await;
-    let router = test_router(state, workspace);
+    let router = test_router(state, workspace.clone());
 
     let response = post_json(
         router,
@@ -365,6 +365,45 @@ async fn create_and_get_memory_integration() {
         let search_text = content["text"].as_str().unwrap();
         assert!(search_text.contains("test content") || search_text.contains("Path:"));
     }
+}
+
+#[tokio::test]
+async fn test_async_background_embedding_create_memory() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace.clone());
+
+    let start = std::time::Instant::now();
+
+    // Create memory
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "create_memory",
+                "arguments": {
+                    "path": "test/async_path",
+                    "content": "async background embedding contents"
+                }
+            }
+        }),
+    )
+    .await;
+
+    let duration = start.elapsed();
+    assert_eq!(response.status(), StatusCode::OK);
+    // Ensure response was returned quickly (< 2000ms)
+    assert!(duration < std::time::Duration::from_millis(2000), "create_memory took too long: {:?}", duration);
+
+    let body = get_json_body(response).await;
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("Memory created successfully at path: test/async_path"));
+
+    // Verify document content was saved immediately
+    let recs = workspace.workspace.list_memory_records().await.unwrap();
+    assert!(recs.iter().any(|r| r.path == "test/async_path" && r.content == "async background embedding contents"));
 }
 
 #[tokio::test]
