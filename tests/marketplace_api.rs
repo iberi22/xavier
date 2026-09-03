@@ -216,7 +216,9 @@ async fn test_list_dataset_with_invalid_signature_rejected() {
         .uri("/v1/marketplace/datasets")
         .method(Method::POST)
         .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&invalid_sig_payload).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&invalid_sig_payload).unwrap(),
+        ))
         .unwrap();
 
     let response = router.oneshot(req).await.unwrap();

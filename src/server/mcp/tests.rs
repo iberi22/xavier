@@ -395,7 +395,11 @@ async fn test_async_background_embedding_create_memory() {
     let duration = start.elapsed();
     assert_eq!(response.status(), StatusCode::OK);
     // Ensure response was returned quickly (< 2000ms)
-    assert!(duration < std::time::Duration::from_millis(2000), "create_memory took too long: {:?}", duration);
+    assert!(
+        duration < std::time::Duration::from_millis(2000),
+        "create_memory took too long: {:?}",
+        duration
+    );
 
     let body = get_json_body(response).await;
     let text = body["result"]["content"][0]["text"].as_str().unwrap();
@@ -403,7 +407,11 @@ async fn test_async_background_embedding_create_memory() {
 
     // Verify document content was saved immediately
     let recs = workspace.workspace.list_memory_records().await.unwrap();
-    assert!(recs.iter().any(|r| r.path == "test/async_path" && r.content == "async background embedding contents"));
+    assert!(
+        recs.iter()
+            .any(|r| r.path == "test/async_path"
+                && r.content == "async background embedding contents")
+    );
 }
 
 #[tokio::test]

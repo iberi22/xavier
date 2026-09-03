@@ -653,7 +653,10 @@ mod shard_tests {
     #[test]
     fn test_parse_vector_text() {
         assert_eq!(parse_vector_text("[0.1, 0.2, 0.3]"), vec![0.1, 0.2, 0.3]);
-        assert_eq!(parse_vector_text(" 0.5, -1.2, 3.14 "), vec![0.5, -1.2, 3.14]);
+        assert_eq!(
+            parse_vector_text(" 0.5, -1.2, 3.14 "),
+            vec![0.5, -1.2, 3.14]
+        );
         assert_eq!(parse_vector_text("[]"), Vec::<f32>::new());
         assert_eq!(parse_vector_text(""), Vec::<f32>::new());
         assert_eq!(parse_vector_text("[invalid, 1.0]"), vec![1.0]);
