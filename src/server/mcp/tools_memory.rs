@@ -633,25 +633,50 @@ async fn handle_create_memory(
         .map(serde_json::from_value::<MemoryProvenance>)
         .transpose()?;
 
-    workspace
+    let typed_payload = Some(TypedMemoryPayload {
+        kind,
+        evidence_kind,
+        namespace,
+        provenance,
+        ..Default::default()
+    });
+
+    // Ingest immediately with an empty vector (fast path response under 500ms)
+    let doc_id = workspace
         .workspace
         .ingest_typed(
             path.to_string(),
             content.to_string(),
-            metadata,
-            Some(TypedMemoryPayload {
-                kind,
-                evidence_kind,
-                namespace,
-                provenance,
-                ..Default::default()
-            }),
-            None,
+            metadata.clone(),
+            typed_payload.clone(),
+            Some(Vec::new()),
             false,
         )
         .await?;
+
+    // Asynchronously compute embedding and update document in the background
+    let ws_clone = workspace.workspace.clone();
+    let content_owned = content.to_string();
+    let path_owned = path.to_string();
+    tokio::spawn(async move {
+        if let Ok(vector) = crate::memory::qmd_memory::reader::generate_embedding(&content_owned).await {
+            if !vector.is_empty() {
+                let _ = ws_clone
+                    .ingest_typed(
+                        path_owned,
+                        content_owned,
+                        metadata,
+                        typed_payload,
+                        Some(vector),
+                        false,
+                    )
+                    .await;
+            }
+        }
+    });
+
     super::server::mcp_text_result(
-        format!("Memory created successfully at path: {}", path),
+        format!("Memory created successfully at path: {} (id: {})", path, doc_id),
         false,
     )
 }
