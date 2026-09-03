@@ -63,7 +63,7 @@ pub fn parse_vector_binary(bytes: &[u8]) -> Vec<f32> {
         }
     }
 
-    if bytes.len() % 4 == 0 {
+    if bytes.len().is_multiple_of(4) {
         let mut result = Vec::with_capacity(bytes.len() / 4);
         for chunk in bytes.chunks_exact(4) {
             let val = f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
