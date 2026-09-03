@@ -338,7 +338,13 @@ impl AgentRuntime {
         system3_mode: System3Mode,
     ) -> Result<AgentRunTrace> {
         match self
-            .run_inner(query, session_id.clone(), category, filters.clone(), system3_mode)
+            .run_inner(
+                query,
+                session_id.clone(),
+                category,
+                filters.clone(),
+                system3_mode,
+            )
             .await
         {
             Ok(trace) => Ok(trace),
@@ -1153,12 +1159,16 @@ mod tests {
 
     #[test]
     fn test_extract_agent_id_helper() {
-        let mut filters = MemoryQueryFilters::default();
-        filters.agent_id = Some("agent-777".to_string());
+        let filters = MemoryQueryFilters {
+            agent_id: Some("agent-777".to_string()),
+            ..Default::default()
+        };
         assert_eq!(extract_agent_id(Some(&filters)), "agent-777");
 
-        let mut whitespace_filters = MemoryQueryFilters::default();
-        whitespace_filters.agent_id = Some("   ".to_string());
+        let whitespace_filters = MemoryQueryFilters {
+            agent_id: Some("   ".to_string()),
+            ..Default::default()
+        };
         assert_eq!(extract_agent_id(Some(&whitespace_filters)), "default-agent");
 
         assert_eq!(extract_agent_id(None), "default-agent");
@@ -1173,8 +1183,10 @@ mod tests {
 
         let runtime = AgentRuntime::new_test().with_event_bus(event_bus);
 
-        let mut filters = MemoryQueryFilters::default();
-        filters.agent_id = Some("agent-custom-42".to_string());
+        let filters = MemoryQueryFilters {
+            agent_id: Some("agent-custom-42".to_string()),
+            ..Default::default()
+        };
 
         let trace = runtime
             .run_with_trace_filtered(

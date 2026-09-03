@@ -1,0 +1,1049 @@
+---
+// Xavier Landing Page - Configurable Global Variables
+const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// Global Static Properties (easy to update via CI/CD tags or scripts)
+const siteConfig = {
+	version: "0.1.+",
+	repoUrl: "https://github.com/iberi22/xavier",
+	recallLatency: "< 1ms",
+	astLanguages: "6+",
+	coreInterfaces: "3",
+	protocolVersion: "3.8.0",
+};
+---
+
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Xavier | The Cognitive Memory Brain for AI Agents</title>
+  <meta name="description" content="High-performance vector memory runtime for AI agents written in Rust. Sub-millisecond contextual recall, local-first, native HTTP, CLI, and MCP interfaces." />
+  <link rel="icon" type="image/svg+xml" href={`${baseUrl}/favicon.svg`} />
+
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+
+  <!-- Xavier Config Variables Script Tag -->
+  <script is:inline define:vars={{ siteConfig }}>
+    window.XAVIER_CONFIG = siteConfig;
+  </script>
+
+  <!-- Tailwind CSS CDN -->
+  <script is:inline src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script is:inline>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#0e1322",
+            "surface-dim": "#0e1322",
+            "surface-bright": "#343949",
+            "surface-container-lowest": "#090e1c",
+            "surface-container-low": "#161b2b",
+            "surface-container": "#1a1f2f",
+            "surface-container-high": "#25293a",
+            "surface-container-highest": "#2f3445",
+            "on-surface": "#dee1f7",
+            "on-surface-variant": "#c7c4d7",
+            "primary": "#bf7af0",
+            "primary-light": "#e2b5ff",
+            "primary-container": "#6b33a5",
+            "secondary": "#22d3ee",
+            "tertiary": "#4de082",
+            "background": "#0a0f1e",
+            "background-deep": "#060b14",
+            "text-primary": "#f1f5f9",
+            "text-muted": "#64748b",
+            "code-bg": "#1e293b",
+            "syntax-orange": "#fb923c",
+            "syntax-green": "#4ade80",
+            "glass-stroke": "rgba(255, 255, 255, 0.08)",
+          },
+          fontFamily: {
+            display: ["Geist", "sans-serif"],
+            body: ["Inter", "sans-serif"],
+            code: ["JetBrains Mono", "monospace"],
+          },
+          fontSize: {
+            "display": ["72px", { "lineHeight": "1.05", "letterSpacing": "-0.04em", "fontWeight": "800" }],
+          },
+          spacing: {
+            "container-max": "1280px",
+            "section-gap": "96px",
+          }
+        }
+      }
+    };
+  </script>
+
+  <style is:global>
+    body {
+      background: linear-gradient(180deg, #0a0f1e 0%, #060b14 100%);
+      color: #dee1f7;
+      overflow-x: hidden;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .glass-panel:hover {
+      border-color: rgba(99, 102, 241, 0.6);
+      transform: translateY(-4px);
+      box-shadow: 0 16px 36px -10px rgba(99, 102, 241, 0.25), 0 0 20px rgba(34, 211, 238, 0.1) inset;
+    }
+
+    .neon-glow {
+      box-shadow: 0 0 25px rgba(99, 102, 241, 0.45);
+    }
+
+    .text-gradient {
+      background: linear-gradient(135deg, #e2b5ff 0%, #bf7af0 50%, #22d3ee 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Chromatic Aberration Effect (Responsive mobile calibrated) */
+    .glitch-text {
+      color: #ffffff;
+      text-shadow: -1.5px 0px 0px #22d3ee, 1.5px 0px 0px #bf7af0;
+    }
+    @media (min-width: 640px) {
+      .glitch-text {
+        text-shadow: -2.2px 0px 0px #22d3ee, 2.2px 0px 0px #bf7af0;
+      }
+    }
+
+    .glitch-text-hero {
+      color: #ffffff;
+      text-shadow: -1.8px 0px 0px #22d3ee, 1.8px 0px 0px #bf7af0;
+      letter-spacing: -0.03em;
+      word-break: break-word;
+      hyphens: auto;
+    }
+    @media (min-width: 640px) {
+      .glitch-text-hero {
+        text-shadow: -2.7px 0px 0px #22d3ee, 2.7px 0px 0px #bf7af0;
+        letter-spacing: -0.04em;
+      }
+    }
+
+    .glitch-text-primary {
+      color: #bf7af0;
+      text-shadow: -2.2px 0px 0px #22d3ee, 2.2px 0px 0px #e2b5ff;
+    }
+
+    .bg-grid {
+      background-size: 40px 40px;
+      background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
+    }
+
+    .cursor-blink::after {
+      content: '_';
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .flow-line {
+      stroke-dasharray: 8;
+      animation: flowDash 15s linear infinite;
+    }
+    @keyframes flowDash {
+      to { stroke-dashoffset: -500; }
+    }
+  </style>
+
+  <script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+
+<body class="antialiased min-h-screen flex flex-col relative selection:bg-primary/30 selection:text-white">
+  <!-- Interactive WebGL Neural Graph & Ambient Grid Background -->
+  <div class="fixed inset-0 z-[-2] pointer-events-none opacity-85" id="bg-canvas-container"></div>
+  <div class="fixed inset-0 bg-grid z-[-1] pointer-events-none"></div>
+
+  <!-- Top Navigation Bar -->
+  <nav class="bg-surface/75 backdrop-blur-xl border-b border-glass-stroke shadow-2xl fixed top-0 w-full z-50 transition-all duration-300">
+    <div class="flex justify-between items-center w-full px-4 sm:px-6 py-3 sm:py-4 max-w-container-max mx-auto">
+      <div class="flex items-center gap-2 sm:gap-3">
+        <a href={`${baseUrl}/`} class="font-display text-xl sm:text-2xl font-black tracking-tight text-white hover:opacity-90 transition-opacity flex items-center gap-2">
+          <img src={`${baseUrl}/xavier-icon.png`} alt="Xavier Logo" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-contain shadow-lg border border-white/10" />
+          <span class="glitch-text text-xl sm:text-2xl font-black tracking-tighter">Xavier</span>
+        </a>
+        <span id="version-badge" class="text-[11px] sm:text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary-light border border-primary/30 font-code font-medium">{siteConfig.version}</span>
+      </div>
+
+      <div class="hidden lg:flex gap-6 items-center font-medium text-sm">
+        <a class="text-on-surface-variant hover:text-white transition-colors" href="#how-it-works">How It Works</a>
+        <a class="text-on-surface-variant hover:text-white transition-colors" href="#features">Features</a>
+        <a class="text-on-surface-variant hover:text-white transition-colors" href="#terminal-demo">Interactive CLI</a>
+        <a class="text-on-surface-variant hover:text-white transition-colors" href="#architecture">Architecture</a>
+        <a class="text-on-surface-variant hover:text-white transition-colors" href="#mcp-tools">MCP Catalog</a>
+        <a class="text-secondary hover:text-white transition-colors font-semibold" href={`${baseUrl}/guides/intro/`}>Documentation →</a>
+      </div>
+
+      <div class="flex gap-2 sm:gap-3 items-center">
+        <a href={siteConfig.repoUrl} target="_blank" rel="noreferrer" class="hidden sm:flex px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg glass-panel text-xs sm:text-sm text-on-surface font-code hover:bg-white/10 transition-colors items-center gap-1.5 sm:gap-2">
+          <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+        <a href={`${baseUrl}/guides/quick-start/`} class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-primary text-white text-xs sm:text-sm font-semibold neon-glow hover:bg-primary-container transition-colors shadow-lg whitespace-nowrap">
+          Get Started
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="flex-grow pt-28 w-full flex flex-col items-center">
+    <!-- SECTION 1: HERO -->
+    <section class="reveal w-full max-w-container-max px-4 sm:px-6 mb-section-gap pt-6 sm:pt-10 flex flex-col lg:flex-row items-center gap-8 sm:gap-12 min-h-[580px] sm:min-h-[640px]">
+      <div class="w-full lg:w-1/2 flex flex-col gap-4 sm:gap-6">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-[11px] sm:text-xs font-code text-primary-light w-max">
+          <span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+          SWAL Ecosystem · GitCore {siteConfig.protocolVersion} Compliant
+        </div>
+
+        <h1 class="font-display text-[26px] xs:text-3xl sm:text-5xl lg:text-[72px] font-extrabold glitch-text-hero pb-1 leading-[1.18] sm:leading-[1.08] tracking-tight">
+          High-Performance<br class="hidden xs:inline sm:hidden" /> Cognitive Architecture
+        </h1>
+        <p class="font-display text-base sm:text-xl font-bold text-primary-light leading-snug">
+          The Cognitive Memory Brain for AI Agents
+        </p>
+
+        <p class="font-body text-sm sm:text-lg text-on-surface-variant max-w-xl leading-relaxed">
+          High-performance vector memory runtime written in Rust. Sub-millisecond contextual recall, local-first privacy, and native HTTP, CLI, and MCP interfaces.
+        </p>
+
+        <div class="flex flex-row flex-wrap sm:flex-nowrap gap-3 pt-2">
+          <a href={`${baseUrl}/guides/installation/`} class="flex-1 sm:flex-none justify-center px-5 sm:px-6 py-3 sm:py-3.5 rounded-xl bg-primary text-white font-semibold flex items-center gap-2 neon-glow hover:bg-primary-container transition-all text-sm sm:text-base">
+            <span>Deploy Now</span>
+            <span class="material-symbols-outlined text-base sm:text-lg">bolt</span>
+          </a>
+          <a href={siteConfig.repoUrl} target="_blank" rel="noreferrer" class="flex-1 sm:flex-none justify-center px-5 sm:px-6 py-3 sm:py-3.5 rounded-xl glass-panel text-white font-semibold flex items-center gap-2 hover:bg-white/10 transition-all text-sm sm:text-base">
+            <span>View Source</span>
+            <span class="material-symbols-outlined text-base sm:text-lg">code</span>
+          </a>
+        </div>
+
+        <!-- 3 Stats Counter Responsive Grid -->
+        <div class="grid grid-cols-3 gap-2 sm:gap-4 mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-glass-stroke">
+          <div class="glass-panel p-2.5 sm:p-4 rounded-xl flex flex-col">
+            <span class="font-display text-lg sm:text-2xl lg:text-3xl font-bold text-tertiary flex items-center">&lt;&nbsp;<span class="stat-counter" data-target="1">1</span>ms</span>
+            <span class="font-code text-[10px] sm:text-xs text-text-muted mt-1 uppercase tracking-wider">Recall</span>
+          </div>
+          <div class="glass-panel p-2.5 sm:p-4 rounded-xl flex flex-col">
+            <span class="font-display text-lg sm:text-2xl lg:text-3xl font-bold text-secondary"><span class="stat-counter" data-target="6">6</span>+</span>
+            <span class="font-code text-[10px] sm:text-xs text-text-muted mt-1 uppercase tracking-wider">Languages</span>
+          </div>
+          <div class="glass-panel p-2.5 sm:p-4 rounded-xl flex flex-col">
+            <span class="font-display text-lg sm:text-2xl lg:text-3xl font-bold text-primary-light"><span class="stat-counter" data-target="3">3</span></span>
+            <span class="font-code text-[10px] sm:text-xs text-text-muted mt-1 uppercase tracking-wider">Interfaces</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Side: Terminal Simulation + Neural Visualizer Overlay -->
+      <div class="w-full lg:w-1/2 relative h-[380px] sm:h-[460px] flex items-center justify-center">
+        <div class="absolute inset-0 glass-panel rounded-2xl overflow-hidden flex flex-col shadow-2xl border border-primary/20">
+          <div class="bg-surface-container-high h-11 w-full flex items-center px-4 gap-2 border-b border-glass-stroke">
+            <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+            <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+            <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+            <span class="ml-4 font-code text-xs text-text-muted">xavier@agent-node:~</span>
+            <span class="ml-auto text-xs font-code px-2 py-0.5 rounded bg-primary/20 text-primary-light">swal/xavier:8006</span>
+          </div>
+          <div class="p-6 font-code text-xs sm:text-sm text-syntax-green flex-grow relative bg-code-bg/90 overflow-hidden flex flex-col justify-start">
+            <div class="cursor-blink text-text-primary mb-3 text-sm font-semibold" id="hero-prompt-text">$ xavier recall "vector memory" --limit 3</div>
+            <div class="flex flex-col gap-2.5 text-on-surface-variant font-code text-xs sm:text-sm" id="hero-output-text">
+              <div class="p-2 rounded bg-surface-container-low/80 border border-glass-stroke flex items-start gap-2">
+                <span class="text-tertiary font-bold">[0.98]</span>
+                <span>Architecture decision: SQLite-vec + BM25 hybrid engine</span>
+              </div>
+              <div class="p-2 rounded bg-surface-container-low/80 border border-glass-stroke flex items-start gap-2">
+                <span class="text-secondary font-bold">[0.94]</span>
+                <span>Hybrid BM25 + semantic search with dynamic 1.5x zone boost</span>
+              </div>
+              <div class="p-2 rounded bg-surface-container-low/80 border border-glass-stroke flex items-start gap-2">
+                <span class="text-primary-light font-bold">[0.91]</span>
+                <span>Agent context compression reduces 40% active tokens</span>
+              </div>
+            </div>
+            <div class="mt-auto pt-4 border-t border-glass-stroke flex items-center justify-between text-xs text-text-muted">
+              <span>Status: <span class="text-tertiary font-semibold">Active Node ⚡</span></span>
+              <span>Ed25519 BIP39-24 Key Authenticated</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: HOW IT WORKS (Scroll 3-step flow) -->
+    <section id="how-it-works" class="reveal w-full max-w-container-max px-6 mb-section-gap flex flex-col gap-12">
+      <div class="text-center max-w-2xl mx-auto">
+        <h2 class="font-display text-3xl sm:text-4xl font-extrabold text-white">How Xavier Works</h2>
+        <p class="font-body text-base text-on-surface-variant mt-3">From raw unstructured developer context to sub-millisecond agent decision routing.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+        <!-- Card 1 -->
+        <div class="glass-panel p-8 rounded-2xl flex flex-col gap-4 relative group">
+          <div class="w-14 h-14 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center text-primary-light mb-2 shadow-[0_0_20px_rgba(99,102,241,0.2)]">
+            <span class="material-symbols-outlined text-3xl">database</span>
+          </div>
+          <span class="text-xs font-code text-primary-light uppercase tracking-wider font-semibold">Step 01</span>
+          <h3 class="font-display text-xl font-bold text-white">Ingest & Store</h3>
+          <p class="font-body text-sm text-on-surface-variant leading-relaxed">
+            Add memories, code graphs, and multi-turn session contexts. Xavier embeds everything locally using SQLite-vec — zero cloud leakage, zero network latency.
+          </p>
+          <div class="mt-auto pt-4 text-xs font-code text-text-muted flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-primary"></span>
+            <span>Local SQLite-vec · MMap IO</span>
+          </div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="glass-panel p-8 rounded-2xl flex flex-col gap-4 relative group">
+          <div class="w-14 h-14 rounded-xl bg-secondary/10 border border-secondary/30 flex items-center justify-center text-secondary mb-2 shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+            <span class="material-symbols-outlined text-3xl">manage_search</span>
+          </div>
+          <span class="text-xs font-code text-secondary uppercase tracking-wider font-semibold">Step 02</span>
+          <h3 class="font-display text-xl font-bold text-white">Hybrid Recall</h3>
+          <p class="font-body text-sm text-on-surface-variant leading-relaxed">
+            BM25 keyword scoring merged with semantic vector search. Active workspace zones automatically receive a dynamic 1.5x boost for real-time relevance.
+          </p>
+          <div class="mt-auto pt-4 text-xs font-code text-text-muted flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-secondary"></span>
+            <span>BM25 + Cosine Vector Fusion</span>
+          </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="glass-panel p-8 rounded-2xl flex flex-col gap-4 relative group">
+          <div class="w-14 h-14 rounded-xl bg-tertiary/10 border border-tertiary/30 flex items-center justify-center text-tertiary mb-2 shadow-[0_0_20px_rgba(77,224,130,0.2)]">
+            <span class="material-symbols-outlined text-3xl">hub</span>
+          </div>
+          <span class="text-xs font-code text-tertiary uppercase tracking-wider font-semibold">Step 03</span>
+          <h3 class="font-display text-xl font-bold text-white">Multi-Interface Serve</h3>
+          <p class="font-body text-sm text-on-surface-variant leading-relaxed">
+            Native HTTP REST on <code class="text-primary-light">:8006</code>, Model Context Protocol (MCP) over SSE/Stdio, and full CLI. Works instantly with Cursor, Claude, and Hermes agents.
+          </p>
+          <div class="mt-auto pt-4 text-xs font-code text-text-muted flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-tertiary"></span>
+            <span>MCP SSE/Stdio · REST · CLI</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: CORE FEATURES (3x2 Grid) -->
+    <section id="features" class="reveal w-full max-w-container-max px-6 mb-section-gap flex flex-col gap-12">
+      <div class="text-center max-w-2xl mx-auto">
+        <h2 class="font-display text-3xl sm:text-4xl font-extrabold text-white">Architected for Autonomy</h2>
+        <p class="font-body text-base text-on-surface-variant mt-3">Six core subsystems engineered in Rust for extreme reliability and zero external bloat.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Feature 1 -->
+        <div class="glass-panel p-8 rounded-2xl flex flex-col gap-4 group">
+          <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary-light group-hover:scale-110 transition-transform">
+            <span class="material-symbols-outlined text-2xl">neurology</span>
+          </div>
+          <h3 class="font-display text-xl font-bold text-white">🧠 Hybrid Memory Engine</h3>
+          <ul class="font-body text-sm text-on-surface-variant space-y-2">
+            <li class="flex items-center gap-2"><span class="text-primary-light">›</span> Semantic vector search via SQLite-vec</li>
+            <li class="flex items-center gap-2"><span class="text-primary-light">›</span> BM25 full-text keyword scoring</li>
+            <li class="flex items-center gap-2"><span class="text-primary-light">›</span> Dynamic 1.5x zone boost for active contexts</li>
+          </ul>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="glass-panel p-8 rounded-2xl flex flex-col gap-4 group">
+          <div class="w-12 h-12 rounded-lg bg-secondary/10 flex items-center justify-center text-secondary group-hover:scale-110 transition-transform">
+            <span class="material-symbols-outlined text-2xl">account_tree</span>
+          </div>
+          <h3 class="font-display text-xl font-bold text-white">🕸️ Code Graph Intelligence</h3>
+          <ul class="font-body text-sm text-on-surface-variant space-y-2">
+            <li class="flex items-center gap-2"><span class="text-secondary">›</span> AST parsing for Rust, TS, Python, Go, Java, C/C++</li>
+            <li class="flex items-center gap-2"><span class="text-secondary">›</span> Call chain analysis & reverse blast radius</li>
+            <li class="flex items-center gap-2"><span class="text-secondary">›</span> Complexity hotspot & cycle detection</li>
+          </ul>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="glass-panel p-8 rounded-2xl flex flex-col gap-4 group">
+          <div class="w-12 h-12 rounded-lg bg-tertiary/10 flex items-center justify-center text-tertiary group-hover:scale-110 transition-transform">
+            <span class="material-symbols-outlined text-2xl">share</span>
+          </div>
+          <h3 class="font-display text-xl font-bold text-white">🌐 P2P Mesh Network</h3>
+          <ul class="font-body text-sm text-on-surface-variant space-y-2">
+            <li class="flex items-center gap-2"><span class="text-tertiary">›</span> QUIC / Iroh decentralized sync between nodes</li>
+            <li class="flex items-center gap-2"><span class="text-tertiary">›</span> Offline SQLite queue with last-write-wins</li>
+            <li class="flex items-center gap-2"><span class="text-tertiary">›</span> Ed25519 BIP39-24 cryptographic node identity</li>
+          </ul>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="glass-panel p-8 rounded-2xl flex flex-col gap-4 group">
+          <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary-light group-hover:scale-110 transition-transform">
+            <span class="material-symbols-outlined text-2xl">terminal</span>
+          </div>
+          <h3 class="font-display text-xl font-bold text-white">⚡ MCP Protocol Native</h3>
+          <ul class="font-body text-sm text-on-surface-variant space-y-2">
+            <li class="flex items-center gap-2"><span class="text-primary-light">›</span> Complete MCP JSON-RPC over Stdio & SSE</li>
+            <li class="flex items-center gap-2"><span class="text-primary-light">›</span> Plug-and-play with Cursor and Claude Desktop</li>
+            <li class="flex items-center gap-2"><span class="text-primary-light">›</span> 20+ built-in agent memory & search tools</li>
+          </ul>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="glass-panel p-8 rounded-2xl flex flex-col gap-4 group">
+          <div class="w-12 h-12 rounded-lg bg-red-400/10 flex items-center justify-center text-red-400 group-hover:scale-110 transition-transform">
+            <span class="material-symbols-outlined text-2xl">security</span>
+          </div>
+          <h3 class="font-display text-xl font-bold text-white">🛡️ Local-First Security</h3>
+          <ul class="font-body text-sm text-on-surface-variant space-y-2">
+            <li class="flex items-center gap-2"><span class="text-red-400">›</span> Zero external third-party cloud dependencies</li>
+            <li class="flex items-center gap-2"><span class="text-red-400">›</span> Bearer token HTTP auth (<code class="text-xs">X-Xavier-Token</code>)</li>
+            <li class="flex items-center gap-2"><span class="text-red-400">›</span> Ephemeral secret leasing & automatic zeroing</li>
+          </ul>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="glass-panel p-8 rounded-2xl flex flex-col gap-4 group">
+          <div class="w-12 h-12 rounded-lg bg-secondary/10 flex items-center justify-center text-secondary group-hover:scale-110 transition-transform">
+            <span class="material-symbols-outlined text-2xl">view_in_ar</span>
+          </div>
+          <h3 class="font-display text-xl font-bold text-white">📊 Maloca Portal</h3>
+          <ul class="font-body text-sm text-on-surface-variant space-y-2">
+            <li class="flex items-center gap-2"><span class="text-secondary">›</span> Real-time human-in-the-loop dashboard</li>
+            <li class="flex items-center gap-2"><span class="text-secondary">›</span> Ecosystem alignment score & backlog audit</li>
+            <li class="flex items-center gap-2"><span class="text-secondary">›</span> Hardware sidecar: NVIDIA, ROCm, Metal detection</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 4: INTERACTIVE TERMINAL DEMO -->
+    <section id="terminal-demo" class="reveal w-full max-w-container-max px-6 mb-section-gap flex flex-col gap-8">
+      <div class="text-center max-w-2xl mx-auto">
+        <h2 class="font-display text-3xl sm:text-4xl font-extrabold text-white">Try It in Your Terminal</h2>
+        <p class="font-body text-base text-on-surface-variant mt-3">Experience Xavier multi-paradigm command interface across memory, code graph, MCP, and mesh.</p>
+      </div>
+
+      <!-- Terminal Window -->
+      <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl border border-glass-stroke max-w-4xl mx-auto w-full">
+        <!-- Window Chrome -->
+        <div class="bg-surface-container-high px-4 py-3 flex items-center justify-between border-b border-glass-stroke">
+          <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+            <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+            <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+            <span class="ml-3 font-code text-xs text-text-muted">xavier-cli (zsh)</span>
+          </div>
+
+          <!-- Interactive Tabs -->
+          <div class="flex gap-1 bg-surface-container-lowest p-1 rounded-lg border border-glass-stroke" id="terminal-tabs">
+            <button data-tab="memory" class="tab-btn px-3 py-1 rounded text-xs font-code font-semibold transition-all bg-primary text-white">Memory</button>
+            <button data-tab="codegraph" class="tab-btn px-3 py-1 rounded text-xs font-code font-semibold transition-all text-text-muted hover:text-white">Code Graph</button>
+            <button data-tab="mcp" class="tab-btn px-3 py-1 rounded text-xs font-code font-semibold transition-all text-text-muted hover:text-white">MCP Tools</button>
+            <button data-tab="mesh" class="tab-btn px-3 py-1 rounded text-xs font-code font-semibold transition-all text-text-muted hover:text-white">Mesh</button>
+          </div>
+        </div>
+
+        <!-- Terminal Body -->
+        <div class="p-6 font-code text-sm sm:text-base bg-code-bg/95 min-h-[260px] text-text-primary" id="terminal-display">
+          <!-- Populated by client script -->
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: ARCHITECTURE DIAGRAM -->
+    <section id="architecture" class="reveal w-full max-w-container-max px-6 mb-section-gap flex flex-col gap-10">
+      <div class="text-center max-w-2xl mx-auto">
+        <h2 class="font-display text-3xl sm:text-4xl font-extrabold text-white">Modular. Composable. Extensible.</h2>
+        <p class="font-body text-base text-on-surface-variant mt-3">Layered architecture ensuring sub-millisecond memory performance without blocking Tokio event workers.</p>
+      </div>
+
+      <div class="glass-panel p-8 rounded-2xl max-w-4xl mx-auto w-full flex flex-col gap-6">
+        <!-- Layer 1: Entry Points -->
+        <div class="border border-primary/30 bg-primary/5 p-6 rounded-xl relative overflow-hidden group hover:border-primary transition-colors">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <span class="text-xs font-code text-primary-light uppercase tracking-wider font-semibold">Layer 1</span>
+              <h3 class="text-lg font-display font-bold text-white">Entry Points &amp; Protocols</h3>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <span class="px-3 py-1 rounded bg-surface-container border border-glass-stroke text-xs font-code text-on-surface">HTTP REST :8006</span>
+              <span class="px-3 py-1 rounded bg-surface-container border border-glass-stroke text-xs font-code text-on-surface">MCP JSON-RPC (SSE/Stdio)</span>
+              <span class="px-3 py-1 rounded bg-surface-container border border-glass-stroke text-xs font-code text-on-surface">CLI Engine</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Arrow Down -->
+        <div class="flex justify-center text-primary-light/50">
+          <span class="material-symbols-outlined text-2xl animate-bounce">arrow_downward</span>
+        </div>
+
+        <!-- Layer 2: Core Engine -->
+        <div class="border border-secondary/30 bg-secondary/5 p-6 rounded-xl relative overflow-hidden group hover:border-secondary transition-colors">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <span class="text-xs font-code text-secondary uppercase tracking-wider font-semibold">Layer 2</span>
+              <h3 class="text-lg font-display font-bold text-white">Xavier Core Engine (Rust)</h3>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <span class="px-3 py-1 rounded bg-surface-container border border-glass-stroke text-xs font-code text-on-surface">Hybrid BM25 + Vector</span>
+              <span class="px-3 py-1 rounded bg-surface-container border border-glass-stroke text-xs font-code text-on-surface">AST Code Graph Indexer</span>
+              <span class="px-3 py-1 rounded bg-surface-container border border-glass-stroke text-xs font-code text-on-surface">Context Compression</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Arrow Down -->
+        <div class="flex justify-center text-secondary/50">
+          <span class="material-symbols-outlined text-2xl animate-bounce">arrow_downward</span>
+        </div>
+
+        <!-- Layer 3: Storage & Network -->
+        <div class="border border-tertiary/30 bg-tertiary/5 p-6 rounded-xl relative overflow-hidden group hover:border-tertiary transition-colors">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <span class="text-xs font-code text-tertiary uppercase tracking-wider font-semibold">Layer 3</span>
+              <h3 class="text-lg font-display font-bold text-white">Storage Adapters &amp; P2P Mesh</h3>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <span class="px-3 py-1 rounded bg-surface-container border border-glass-stroke text-xs font-code text-on-surface">SQLite-vec</span>
+              <span class="px-3 py-1 rounded bg-surface-container border border-glass-stroke text-xs font-code text-on-surface">BM25 Inverted Index</span>
+              <span class="px-3 py-1 rounded bg-surface-container border border-glass-stroke text-xs font-code text-on-surface">Iroh / QUIC P2P Mesh</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 6: MCP TOOLS CATALOG -->
+    <section id="mcp-tools" class="reveal w-full max-w-container-max px-6 mb-section-gap flex flex-col gap-10">
+      <div class="text-center max-w-2xl mx-auto">
+        <h2 class="font-display text-3xl sm:text-4xl font-extrabold text-white">20+ Built-in MCP Tools</h2>
+        <p class="font-body text-base text-on-surface-variant mt-3">Plug directly into Cursor, Claude Desktop, or autonomous agent loops with native zero-friction tools.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Column 1 -->
+        <div class="glass-panel p-6 rounded-2xl flex flex-col gap-4">
+          <h3 class="font-display text-lg font-bold text-primary-light flex items-center gap-2">
+            <span class="material-symbols-outlined text-xl">psychology</span>
+            Memory Tools
+          </h3>
+          <div class="flex flex-wrap gap-2">
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-primary cursor-pointer transition-colors" title="Search memories with hybrid recall">mem_search</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-primary cursor-pointer transition-colors" title="Ingest new memory node">mem_add</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-primary cursor-pointer transition-colors" title="Update memory metadata">mem_update</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-primary cursor-pointer transition-colors" title="Soft/hard memory pruning">mem_delete</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-primary cursor-pointer transition-colors" title="Assemble active workspace context">mem_context</span>
+          </div>
+        </div>
+
+        <!-- Column 2 -->
+        <div class="glass-panel p-6 rounded-2xl flex flex-col gap-4">
+          <h3 class="font-display text-lg font-bold text-secondary flex items-center gap-2">
+            <span class="material-symbols-outlined text-xl">code</span>
+            Code &amp; Context
+          </h3>
+          <div class="flex flex-wrap gap-2">
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-secondary cursor-pointer transition-colors" title="Save snapshot of current working session">xavier_context_save</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-secondary cursor-pointer transition-colors" title="Restore past session state">xavier_context_restore</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-secondary cursor-pointer transition-colors" title="Search past agent decisions">xavier_context_search</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-secondary cursor-pointer transition-colors" title="Audit tokens saved through compression">xavier_token_savings</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-secondary cursor-pointer transition-colors" title="Retrieve parsed symbol graph">get_code_graph</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-secondary cursor-pointer transition-colors" title="Explore symbols and references">codegraph_explore</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-secondary cursor-pointer transition-colors" title="Trace call chains and blast radius">trace_path</span>
+          </div>
+        </div>
+
+        <!-- Column 3 -->
+        <div class="glass-panel p-6 rounded-2xl flex flex-col gap-4">
+          <h3 class="font-display text-lg font-bold text-tertiary flex items-center gap-2">
+            <span class="material-symbols-outlined text-xl">monitor_heart</span>
+            System &amp; Mesh
+          </h3>
+          <div class="flex flex-wrap gap-2">
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-tertiary cursor-pointer transition-colors" title="Instant node health verification">health_check</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-tertiary cursor-pointer transition-colors" title="Detailed system runtime metrics">sys_health</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-tertiary cursor-pointer transition-colors" title="Audit logs for anomalies">log_scan</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-tertiary cursor-pointer transition-colors" title="Environment and secret integrity">env_status</span>
+            <span class="tool-pill px-3 py-1.5 rounded-lg bg-surface-container text-xs font-code border border-glass-stroke hover:border-tertiary cursor-pointer transition-colors" title="File ledger ticket">ticket_create</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 7: METRICS & BENCHMARKS -->
+    <section class="reveal w-full max-w-container-max px-6 mb-section-gap flex flex-col gap-10">
+      <div class="text-center max-w-2xl mx-auto">
+        <h2 class="font-display text-3xl sm:text-4xl font-extrabold text-white">Performance That Speaks for Itself</h2>
+        <p class="font-body text-base text-on-surface-variant mt-3">Engineered in bare-metal Rust with zero garbage collection pauses and zero external network overhead.</p>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div class="glass-panel p-6 rounded-2xl flex flex-col text-center">
+          <span class="font-display text-4xl lg:text-5xl font-extrabold text-tertiary">&lt; 1ms</span>
+          <span class="font-code text-xs text-text-muted mt-2 uppercase tracking-wider">Recall Latency</span>
+        </div>
+        <div class="glass-panel p-6 rounded-2xl flex flex-col text-center">
+          <span class="font-display text-4xl lg:text-5xl font-extrabold text-secondary">256MB</span>
+          <span class="font-code text-xs text-text-muted mt-2 uppercase tracking-wider">MMap IO Window</span>
+        </div>
+        <div class="glass-panel p-6 rounded-2xl flex flex-col text-center">
+          <span class="font-display text-4xl lg:text-5xl font-extrabold text-primary-light">8MB</span>
+          <span class="font-code text-xs text-text-muted mt-2 uppercase tracking-wider">SQLite Cache / Conn</span>
+        </div>
+        <div class="glass-panel p-6 rounded-2xl flex flex-col text-center">
+          <span class="font-display text-4xl lg:text-5xl font-extrabold text-white">6+</span>
+          <span class="font-code text-xs text-text-muted mt-2 uppercase tracking-wider">Native AST Parsers</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 8: INSTALLATION CTA -->
+    <section class="reveal w-full max-w-container-max px-6 mb-section-gap flex flex-col lg:flex-row items-center gap-12">
+      <div class="w-full lg:w-1/2 flex flex-col gap-6">
+        <h2 class="font-display text-3xl sm:text-4xl font-extrabold text-white">Deploy in Minutes</h2>
+        <p class="font-body text-base text-on-surface-variant leading-relaxed">
+          Xavier runs as a standalone daemon or background sidecar. Get up and running in your agent environment with four simple commands.
+        </p>
+
+        <div class="flex flex-col gap-4 font-code text-sm">
+          <div class="flex items-center gap-3 text-on-surface">
+            <span class="w-6 h-6 rounded-full bg-tertiary/20 text-tertiary flex items-center justify-center font-bold text-xs">✓</span>
+            <span>1. Install Rust 1.80+ Toolchain</span>
+          </div>
+          <div class="flex items-center gap-3 text-on-surface">
+            <span class="w-6 h-6 rounded-full bg-tertiary/20 text-tertiary flex items-center justify-center font-bold text-xs">✓</span>
+            <span>2. <code class="text-primary-light">cargo install --path . --locked</code></span>
+          </div>
+          <div class="flex items-center gap-3 text-on-surface">
+            <span class="w-6 h-6 rounded-full bg-tertiary/20 text-tertiary flex items-center justify-center font-bold text-xs">✓</span>
+            <span>3. Set <code class="text-primary-light">export XAVIER_TOKEN=your-token</code></span>
+          </div>
+          <div class="flex items-center gap-3 text-on-surface">
+            <span class="w-6 h-6 rounded-full bg-tertiary/20 text-tertiary flex items-center justify-center font-bold text-xs">✓</span>
+            <span>4. <code class="text-secondary">xavier http</code> — You are live on port 8006</span>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-4 pt-4">
+          <a href={`${baseUrl}/guides/installation/`} class="px-6 py-3 rounded-xl bg-primary text-white font-semibold flex items-center gap-2 neon-glow hover:bg-primary-container transition-all">
+            <span>Read Full Installation Guide</span>
+            <span class="material-symbols-outlined text-sm">arrow_forward</span>
+          </a>
+          <a href={`${baseUrl}/downloads/`} class="px-6 py-3 rounded-xl glass-panel text-white font-semibold flex items-center gap-2 hover:bg-white/10 transition-all">
+            <span>Precompiled Binaries</span>
+            <span class="material-symbols-outlined text-sm">download</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Installation Terminal -->
+      <div class="w-full lg:w-1/2 glass-panel rounded-2xl overflow-hidden shadow-2xl border border-glass-stroke">
+        <div class="bg-surface-container-high px-4 py-3 flex items-center gap-2 border-b border-glass-stroke">
+          <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+          <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+          <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+          <span class="ml-3 font-code text-xs text-text-muted">build &amp; launch</span>
+        </div>
+        <div class="p-6 font-code text-xs sm:text-sm bg-code-bg/95 text-text-primary leading-relaxed">
+          <p class="text-text-muted"># Build optimized release binary</p>
+          <p class="text-white">$ cargo build --release --features local-gllm</p>
+          <p class="text-text-muted pl-4">Compiling xavier-core v0.0.1</p>
+          <p class="text-text-muted pl-4">Compiling xavier v0.0.1</p>
+          <p class="text-tertiary pl-4">Finished release [optimized] in 38.4s</p>
+          <br />
+          <p class="text-text-muted"># Set auth &amp; start unified HTTP/MCP daemon</p>
+          <p class="text-white">$ export XAVIER_TOKEN=sk-xavier-local-secure</p>
+          <p class="text-white">$ xavier http --port 8006</p>
+          <p class="text-secondary pl-4">→ HTTP REST server running on http://127.0.0.1:8006</p>
+          <p class="text-primary-light pl-4">→ Native MCP server active on /mcp/sse</p>
+          <p class="text-tertiary font-bold pl-4">→ Xavier cognitive brain is ready. 🧠</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- SECTION 9: FOOTER -->
+  <footer class="bg-background-deep w-full py-12 border-t border-glass-stroke">
+    <div class="max-w-container-max mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
+      <div class="flex flex-col items-center md:items-start gap-2">
+        <div class="font-display text-2xl font-black text-white flex items-center gap-2.5">
+          <img src={`${baseUrl}/xavier-icon.png`} alt="Xavier Logo" class="w-7 h-7 rounded-lg object-contain border border-white/10" />
+          <span class="glitch-text font-black">Xavier</span>
+        </div>
+        <p class="font-body text-xs text-text-muted">Cognitive memory runtime for the age of autonomous AI agents.</p>
+      </div>
+
+      <div class="flex flex-wrap justify-center gap-6 text-sm font-medium">
+        <a class="text-text-muted hover:text-white transition-colors" href="https://github.com/iberi22/xavier" target="_blank" rel="noreferrer">GitHub</a>
+        <a class="text-text-muted hover:text-white transition-colors" href={`${baseUrl}/guides/intro/`}>Documentation</a>
+        <a class="text-text-muted hover:text-white transition-colors" href={`${baseUrl}/downloads/`}>Downloads</a>
+        <a class="text-text-muted hover:text-white transition-colors" href={`${baseUrl}/features/feat-dual-license/`}>License (AGPL-3.0)</a>
+        <a class="text-text-muted hover:text-white transition-colors" href="https://github.com/iberi22" target="_blank" rel="noreferrer">SWAL Ecosystem</a>
+      </div>
+
+      <div class="font-code text-xs text-text-muted text-center md:text-right">
+        Built with Rust · Local-First · Privacy-Preserving<br />
+        © 2026 Xavier Systems. Part of the SWAL Mesh.
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts: Interactive WebGL Background, Terminal Tabs, Counters, Reveals -->
+  <script is:inline>
+    // 1. Interactive Three.js Neural Mesh Background (Communicative Pulsing Particles)
+    (function initWebGLBackground() {
+      const container = document.getElementById('bg-canvas-container');
+      if (!container || typeof THREE === 'undefined') return;
+
+      const width = container.clientWidth || window.innerWidth;
+      const height = container.clientHeight || window.innerHeight;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+      camera.position.z = 6;
+
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container.appendChild(renderer.domElement);
+
+      const group = new THREE.Group();
+      scene.add(group);
+
+      const nodes = [];
+      const nodeCount = 65;
+      // Particles are made smaller (radius 0.022 instead of 0.04)
+      const baseGeometry = new THREE.SphereGeometry(0.022, 16, 16);
+
+      // Colors from our palette: Lumina Primary (#bf7af0) and Cyan (#22d3ee)
+      const colorPurple = new THREE.Color(0xbf7af0);
+      const colorCyan = new THREE.Color(0x22d3ee);
+
+      for (let i = 0; i < nodeCount; i++) {
+        const isCyan = i % 3 === 0;
+        const mat = new THREE.MeshBasicMaterial({
+          color: isCyan ? colorCyan : colorPurple,
+          transparent: true,
+          opacity: 0.45 + Math.random() * 0.30
+        });
+        const mesh = new THREE.Mesh(baseGeometry, mat);
+        mesh.position.set(
+          (Math.random() - 0.5) * 13,
+          (Math.random() - 0.5) * 8.5,
+          (Math.random() - 0.5) * 5
+        );
+
+        // Simulation attributes for organic communication & soft twinkling
+        mesh.userData = {
+          baseColor: isCyan ? colorCyan : colorPurple,
+          velocity: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.0035,
+            (Math.random() - 0.5) * 0.0035,
+            (Math.random() - 0.5) * 0.0035
+          ),
+          pulsePhase: Math.random() * Math.PI * 2,
+          pulseSpeed: 1.2 + Math.random() * 1.8,
+          isTransmitting: false,
+          partnerIndex: -1,
+          transmitProgress: 0,
+          transmitCooldown: Math.random() * 180
+        };
+
+        group.add(mesh);
+        nodes.push(mesh);
+      }
+
+      // Dynamic Synapse Connection Lines
+      const maxLines = 45;
+      const linePositions = new Float32Array(maxLines * 6);
+      const lineColors = new Float32Array(maxLines * 6);
+      const lineGeometry = new THREE.BufferGeometry();
+      lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+      lineGeometry.setAttribute('color', new THREE.BufferAttribute(lineColors, 3));
+
+      const lineMaterial = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.65,
+        blending: THREE.AdditiveBlending
+      });
+      const linesMesh = new THREE.LineSegments(lineGeometry, lineMaterial);
+      group.add(linesMesh);
+
+      let clock = new THREE.Clock();
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const delta = clock.getDelta();
+        const time = clock.getElapsedTime();
+
+        // 1. Update each particle twinkling & random communication
+        nodes.forEach((node, idx) => {
+          node.position.add(node.userData.velocity);
+
+          // Soft bounds bounce
+          if (Math.abs(node.position.x) > 6.5) node.userData.velocity.x *= -1;
+          if (Math.abs(node.position.y) > 4.2) node.userData.velocity.y *= -1;
+          if (Math.abs(node.position.z) > 2.8) node.userData.velocity.z *= -1;
+
+          // Soft twinkle (sine wave shimmer)
+          node.userData.pulsePhase += node.userData.pulseSpeed * delta;
+          const twinkle = (Math.sin(node.userData.pulsePhase) + 1) * 0.5; // 0 to 1
+          
+          if (!node.userData.isTransmitting) {
+            node.material.opacity = 0.35 + twinkle * 0.50;
+            const scale = 0.85 + twinkle * 0.35;
+            node.scale.set(scale, scale, scale);
+
+            // Random trigger to talk to a nearby particle
+            node.userData.transmitCooldown -= 1;
+            if (node.userData.transmitCooldown <= 0 && Math.random() < 0.04) {
+              // Pick closest neighboring particle to talk with
+              let closestDist = 2.4;
+              let closestIdx = -1;
+              for (let j = 0; j < nodes.length; j++) {
+                if (j !== idx) {
+                  const d = node.position.distanceTo(nodes[j].position);
+                  if (d < closestDist && !nodes[j].userData.isTransmitting) {
+                    closestDist = d;
+                    closestIdx = j;
+                  }
+                }
+              }
+              if (closestIdx !== -1) {
+                node.userData.isTransmitting = true;
+                node.userData.partnerIndex = closestIdx;
+                node.userData.transmitProgress = 0;
+                nodes[closestIdx].userData.isTransmitting = true;
+                nodes[closestIdx].userData.partnerIndex = idx;
+                nodes[closestIdx].userData.transmitProgress = 0;
+              }
+              node.userData.transmitCooldown = 120 + Math.random() * 240;
+            }
+          } else {
+            // Synchronized transmission glow between the two particles
+            node.userData.transmitProgress += delta * 2.2;
+            const burst = Math.sin(node.userData.transmitProgress * Math.PI);
+            if (burst > 0) {
+              node.material.opacity = 0.8 + burst * 0.2;
+              const scale = 1.2 + burst * 0.6;
+              node.scale.set(scale, scale, scale);
+            } else {
+              // Transmission finished
+              node.userData.isTransmitting = false;
+              node.userData.partnerIndex = -1;
+              node.userData.transmitCooldown = 150 + Math.random() * 200;
+            }
+          }
+        });
+
+        // 2. Render connecting synapse lines when particles are communicating or close
+        let lineIdx = 0;
+        const posAttr = lineGeometry.attributes.position;
+        const colAttr = lineGeometry.attributes.color;
+
+        for (let i = 0; i < nodes.length && lineIdx < maxLines; i++) {
+          const a = nodes[i];
+
+          // If transmitting with partner, draw an active communicating beam
+          if (a.userData.isTransmitting && a.userData.partnerIndex > i) {
+            const b = nodes[a.userData.partnerIndex];
+            const burst = Math.sin(a.userData.transmitProgress * Math.PI);
+            const lineOffset = lineIdx * 6;
+
+            posAttr.setXYZ(lineOffset, a.position.x, a.position.y, a.position.z);
+            posAttr.setXYZ(lineOffset + 1, b.position.x, b.position.y, b.position.z);
+
+            // Shimmer color blending
+            colAttr.setXYZ(lineOffset, 0.75, 0.48, 0.94); // #bf7af0
+            colAttr.setXYZ(lineOffset + 1, 0.13, 0.83, 0.93); // #22d3ee
+            lineIdx++;
+          }
+          // Ambient delicate proximity links
+          for (let j = i + 1; j < nodes.length && lineIdx < maxLines; j++) {
+            const b = nodes[j];
+            const dist = a.position.distanceTo(b.position);
+            if (dist < 1.35) {
+              const alpha = Math.max(0, (1.35 - dist) / 1.35) * 0.3;
+              const lineOffset = lineIdx * 6;
+              posAttr.setXYZ(lineOffset, a.position.x, a.position.y, a.position.z);
+              posAttr.setXYZ(lineOffset + 1, b.position.x, b.position.y, b.position.z);
+
+              colAttr.setXYZ(lineOffset, 0.75 * alpha, 0.48 * alpha, 0.94 * alpha);
+              colAttr.setXYZ(lineOffset + 1, 0.13 * alpha, 0.83 * alpha, 0.93 * alpha);
+              lineIdx++;
+            }
+          }
+        }
+
+        // Zero out unused lines
+        for (let k = lineIdx; k < maxLines; k++) {
+          const offset = k * 6;
+          posAttr.setXYZ(offset, 0, 0, 0);
+          posAttr.setXYZ(offset + 1, 0, 0, 0);
+        }
+
+        posAttr.needsUpdate = true;
+        colAttr.needsUpdate = true;
+        lineGeometry.setDrawRange(0, lineIdx * 2);
+
+        // Slow ambient orbital drift
+        group.rotation.y += 0.0006;
+        group.rotation.x += 0.0003;
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      window.addEventListener('resize', () => {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      });
+    })();
+
+    // 2. Interactive Terminal Tab Switching
+    const terminalData = {
+      memory: `
+<p class="text-text-muted"># Ingest a memory fragment into SQLite-vec</p>
+<p class="text-white">$ xavier add "Architecture: hybrid BM25 + vector search" "ADR-001" --kind decision</p>
+<p class="text-tertiary">✓ Indexed embedding (384 dims) in 0.8ms</p>
+<br/>
+<p class="text-text-muted"># Search with hybrid recall</p>
+<p class="text-white">$ xavier recall "vector memory" --limit 3</p>
+<p class="text-tertiary">→ [0.98] Architecture: hybrid BM25 + vector search</p>
+<p class="text-secondary">→ [0.94] SQLite-vec embedding store</p>
+<p class="text-primary-light">→ [0.91] Context compression saves 40% tokens</p>
+      `,
+      codegraph: `
+<p class="text-text-muted"># Scan workspace AST & symbols</p>
+<p class="text-white">$ xavier code scan ./src</p>
+<p class="text-tertiary">✓ Parsed 84 files (Rust, TS) in 142ms · 1,420 symbols indexed</p>
+<br/>
+<p class="text-text-muted"># Calculate blast radius for refactor</p>
+<p class="text-white">$ xavier code blast-radius "HybridSearchEngine"</p>
+<p class="text-secondary">→ 14 affected symbols across 6 files:</p>
+<p class="text-on-surface-variant pl-4">· src/server/http.rs:L140 (endpoint handler)</p>
+<p class="text-on-surface-variant pl-4">· src/mcp/tools.rs:L85 (mem_search tool)</p>
+<p class="text-on-surface-variant pl-4">· xavier-core/src/hybrid.rs:L12 (caller)</p>
+      `,
+      mcp: `
+<p class="text-text-muted"># Via Model Context Protocol (Cursor / Claude Desktop)</p>
+<p class="text-white">&gt; mem_search({ "query": "vector recall", "limit": 2 })</p>
+<p class="text-syntax-green">{</p>
+<p class="text-on-surface-variant pl-4">"score": 0.98,</p>
+<p class="text-on-surface-variant pl-4">"content": "SQLite-vec unified storage engine",</p>
+<p class="text-on-surface-variant pl-4">"provenance": "wave-8-context"</p>
+<p class="text-syntax-green">}</p>
+<p class="text-white mt-2">&gt; xavier_token_savings()</p>
+<p class="text-tertiary">→ { "saved": "18,400 tokens", "sessions": 52, "compression_ratio": "1.65x" }</p>
+      `,
+      mesh: `
+<p class="text-text-muted"># List decentralized P2P peers</p>
+<p class="text-white">$ xavier mesh list</p>
+<p class="text-tertiary">● peer-a3f2 (online) — last sync: 2s ago · 14 new vectors</p>
+<p class="text-tertiary">● peer-c119 (online) — last sync: 8s ago · synced</p>
+<br/>
+<p class="text-text-muted"># Generate cryptographic node identity</p>
+<p class="text-white">$ xavier node create</p>
+<p class="text-secondary">→ Ed25519 identity created: node-8f4a-9b12... (BIP39-24 verified)</p>
+      `
+    };
+
+    const terminalDisplay = document.getElementById('terminal-display');
+    const tabButtons = document.querySelectorAll('.tab-btn');
+
+    function loadTab(tabKey) {
+      if (terminalDisplay && terminalData[tabKey]) {
+        terminalDisplay.innerHTML = terminalData[tabKey].trim();
+      }
+      tabButtons.forEach(btn => {
+        if (btn.dataset.tab === tabKey) {
+          btn.className = "tab-btn px-3 py-1 rounded text-xs font-code font-semibold transition-all bg-primary text-white";
+        } else {
+          btn.className = "tab-btn px-3 py-1 rounded text-xs font-code font-semibold transition-all text-text-muted hover:text-white";
+        }
+      });
+    }
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        loadTab(btn.dataset.tab);
+      });
+    });
+
+    loadTab('memory');
+
+    // Dynamic sync from window.XAVIER_CONFIG (allows script-tag runtime overrides)
+    if (window.XAVIER_CONFIG && window.XAVIER_CONFIG.version) {
+      const b = document.getElementById('version-badge');
+      if (b) b.textContent = window.XAVIER_CONFIG.version;
+    }
+
+    // 3. Scroll-Driven Reveals & Counter Animations
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+
+          // Counters
+          const counters = entry.target.querySelectorAll('.stat-counter');
+          counters.forEach(counter => {
+            const target = +counter.getAttribute('data-target');
+            if (counter.dataset.animated !== "true") {
+              counter.dataset.animated = "true";
+              let count = 0;
+              const inc = target / 40;
+              const timer = setInterval(() => {
+                count += inc;
+                if (count >= target) {
+                  counter.innerText = target;
+                  clearInterval(timer);
+                } else {
+                  counter.innerText = Math.floor(count);
+                }
+              }, 25);
+            }
+          });
+
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+  </script>
+</body>
+</html>
