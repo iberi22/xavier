@@ -654,8 +654,8 @@ mod shard_tests {
     fn test_parse_vector_text() {
         assert_eq!(parse_vector_text("[0.1, 0.2, 0.3]"), vec![0.1, 0.2, 0.3]);
         assert_eq!(
-            parse_vector_text(" 0.5, -1.2, 3.14 "),
-            vec![0.5, -1.2, 3.14]
+            parse_vector_text(" 0.5, -1.2, 3.15 "),
+            vec![0.5, -1.2, 3.15]
         );
         assert_eq!(parse_vector_text("[]"), Vec::<f32>::new());
         assert_eq!(parse_vector_text(""), Vec::<f32>::new());
