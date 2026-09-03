@@ -659,7 +659,9 @@ async fn handle_create_memory(
     let content_owned = content.to_string();
     let path_owned = path.to_string();
     tokio::spawn(async move {
-        if let Ok(vector) = crate::memory::qmd_memory::reader::generate_embedding(&content_owned).await {
+        if let Ok(vector) =
+            crate::memory::qmd_memory::reader::generate_embedding(&content_owned).await
+        {
             if !vector.is_empty() {
                 let _ = ws_clone
                     .ingest_typed(
@@ -676,7 +678,10 @@ async fn handle_create_memory(
     });
 
     super::server::mcp_text_result(
-        format!("Memory created successfully at path: {} (id: {})", path, doc_id),
+        format!(
+            "Memory created successfully at path: {} (id: {})",
+            path, doc_id
+        ),
         false,
     )
 }
