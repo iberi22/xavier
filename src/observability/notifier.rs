@@ -343,17 +343,24 @@ impl Default for Notifier {
 /// Helper: optionally emit a Telegram notification after a successful fixer
 /// action.
 ///
-/// Logs a trace-level message when called. In a future iteration this will
-/// actually push a [`FixerAction::TelegramNotified`] notification through the
-/// [`Notifier::send_background`] path when the `telegram` feature is enabled.
+/// Logs a trace-level message when called. Pushes a [`FixerAction::TelegramNotified`]
+/// notification through the [`Notifier::send_background`] path when the `telegram`
+/// feature is enabled.
 ///
 /// Intended to be called at the fixer call site after `result.success` is true.
 #[cfg(feature = "telegram")]
 #[allow(dead_code)] // Reserved for Telegram fixer notification dispatch
 pub fn maybe_notify_telegram_fix(action: &super::fixer::FixerAction) {
     tracing::trace!("maybe_notify_telegram_fix called with action: {action:?}");
-    // TODO: once the Notifier can produce a FixerAction::TelegramNotified
-    //       result from here, wire it through send_background.
+    let result = super::fixer::FixerResult {
+        action: super::fixer::FixerAction::TelegramNotified,
+        url: None,
+        number: None,
+        success: true,
+        message: format!("Telegram notification sent for fixer action: {:?}", action),
+    };
+    let notifier = Notifier::new();
+    notifier.notify_fixer_result(&result);
 }
 
 /// Fallback: no-op when the telegram feature is disabled.
@@ -608,8 +615,27 @@ mod tests {
 
     #[test]
     fn test_maybe_notify_telegram_fix_helper_exists_and_callable() {
-        // Verify the helper function can be called without panicking.
-        maybe_notify_telegram_fix(&FixerAction::TelegramNotified);
+        let mut rx = subscribe();
         maybe_notify_telegram_fix(&FixerAction::IssueCreated);
+
+        let mut saw_telegram_notified = false;
+        while let Ok(received) = rx.try_recv() {
+            if let Some(metadata) = &received.metadata {
+                if metadata.get("action").and_then(|a| a.as_str()) == Some("\"TelegramNotified\"")
+                    || metadata.get("action").and_then(|a| a.as_str()) == Some("TelegramNotified")
+                {
+                    saw_telegram_notified = true;
+                    break;
+                }
+            }
+        }
+
+        #[cfg(feature = "telegram")]
+        assert!(
+            saw_telegram_notified,
+            "maybe_notify_telegram_fix should publish a notification with FixerAction::TelegramNotified"
+        );
+        #[cfg(not(feature = "telegram"))]
+        let _ = saw_telegram_notified;
     }
 }
