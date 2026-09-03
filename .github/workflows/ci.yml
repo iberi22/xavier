@@ -138,8 +138,8 @@ jobs:
           VITE_XAVIER_API_TOKEN=dummy pnpm --filter xavier-panel-ui run build
           grep -c "dummy\|VITE" panel-ui/dist/assets/*.js
           pnpm --filter xavier-panel-ui run test
-          npx playwright install --with-deps chromium
-          npx --prefix panel-ui playwright test --project=chromium
+          pnpm --filter xavier-panel-ui exec playwright install --with-deps chromium
+          pnpm --filter xavier-panel-ui exec playwright test --project=chromium
 
   version-gate:
     name: Version Sync Gate

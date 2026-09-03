@@ -338,7 +338,13 @@ impl AgentRuntime {
         system3_mode: System3Mode,
     ) -> Result<AgentRunTrace> {
         match self
-            .run_inner(query, session_id.clone(), category, filters.clone(), system3_mode)
+            .run_inner(
+                query,
+                session_id.clone(),
+                category,
+                filters.clone(),
+                system3_mode,
+            )
             .await
         {
             Ok(trace) => Ok(trace),
