@@ -16,5 +16,8 @@
     "astro": "^7.2.4",
     "destr": "^2.0.5",
     "ufo": "^1.6.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.16"
   }
 }

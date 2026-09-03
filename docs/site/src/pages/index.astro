@@ -153,7 +153,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 <body class="antialiased min-h-screen flex flex-col relative selection:bg-primary/30 selection:text-white">
   <!-- Interactive WebGL Neural Graph & Ambient Grid Background -->
-  <div class="fixed inset-0 z-[-2] pointer-events-none opacity-75" id="bg-canvas-container"></div>
+  <div class="fixed inset-0 z-[-2] pointer-events-none opacity-85" id="bg-canvas-container"></div>
   <div class="fixed inset-0 bg-grid z-[-1] pointer-events-none"></div>
 
   <!-- Top Navigation Bar -->
@@ -727,7 +727,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         const mat = new THREE.MeshBasicMaterial({
           color: isCyan ? colorCyan : colorPurple,
           transparent: true,
-          opacity: 0.35 + Math.random() * 0.25
+          opacity: 0.45 + Math.random() * 0.30
         });
         const mesh = new THREE.Mesh(baseGeometry, mat);
         mesh.position.set(
@@ -767,7 +767,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       const lineMaterial = new THREE.LineBasicMaterial({
         vertexColors: true,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.65,
         blending: THREE.AdditiveBlending
       });
       const linesMesh = new THREE.LineSegments(lineGeometry, lineMaterial);
@@ -794,7 +794,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           const twinkle = (Math.sin(node.userData.pulsePhase) + 1) * 0.5; // 0 to 1
           
           if (!node.userData.isTransmitting) {
-            node.material.opacity = 0.25 + twinkle * 0.45;
+            node.material.opacity = 0.35 + twinkle * 0.50;
             const scale = 0.85 + twinkle * 0.35;
             node.scale.set(scale, scale, scale);
 
@@ -828,7 +828,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
             node.userData.transmitProgress += delta * 2.2;
             const burst = Math.sin(node.userData.transmitProgress * Math.PI);
             if (burst > 0) {
-              node.material.opacity = 0.7 + burst * 0.3;
+              node.material.opacity = 0.8 + burst * 0.2;
               const scale = 1.2 + burst * 0.6;
               node.scale.set(scale, scale, scale);
             } else {
@@ -867,7 +867,7 @@ const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
             const b = nodes[j];
             const dist = a.position.distanceTo(b.position);
             if (dist < 1.35) {
-              const alpha = Math.max(0, (1.35 - dist) / 1.35) * 0.2;
+              const alpha = Math.max(0, (1.35 - dist) / 1.35) * 0.3;
               const lineOffset = lineIdx * 6;
               posAttr.setXYZ(lineOffset, a.position.x, a.position.y, a.position.z);
               posAttr.setXYZ(lineOffset + 1, b.position.x, b.position.y, b.position.z);
