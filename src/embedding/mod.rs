@@ -221,26 +221,88 @@ impl EmbedderConfig {
         }
     }
 
-    /// Build sync.
+    /// Build sync embedder instance.
+    ///
+    /// Constructs an `Arc<dyn Embedder>` according to configured backends.
+    /// If a configured Ollama/local backend model is not present in the local Ollama instance,
+    /// `build_sync` probes available Ollama models via `probe_ollama_models()` and falls back
+    /// to an available embedding-capable model (preferring `nomic-embed-text:latest`, then
+    /// `mxbai-embed-large:latest`, then any model containing `embed`). A single `warn!` log
+    /// is emitted without pushing to `SYSTEM_ALERTS`. An alert is pushed to `SYSTEM_ALERTS`
+    /// only if all known embedding backends fail or are unreachable.
     pub fn build_sync(self) -> Result<Arc<dyn Embedder>, EmbeddingError> {
         match self {
             Self::Invalid(msg) => Err(EmbeddingError::Config(msg)),
             Self::Fallback(backends) => {
                 let mut embedders: Vec<Arc<dyn Embedder>> = Vec::new();
 
-                for backend in backends {
+                for mut backend in backends {
+                    let mut is_ollama = false;
+                    let mut configured_model = String::new();
+
+                    match &backend {
+                        EmbedderBackendConfig::Ollama(cfg) => {
+                            is_ollama = true;
+                            configured_model = cfg.model.clone();
+                        }
+                        EmbedderBackendConfig::OpenAICompatible(cfg) => {
+                            if cfg.endpoint.contains("localhost")
+                                || cfg.endpoint.contains("127.0.0.1")
+                                || cfg.endpoint.contains("11434")
+                            {
+                                is_ollama = true;
+                                configured_model = cfg.model.clone();
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    if is_ollama {
+                        if let Some(models) = probe_ollama_models() {
+                            let has_configured = models.iter().any(|m| {
+                                m == &configured_model
+                                    || m.starts_with(&format!("{}:", configured_model))
+                            });
+
+                            if !has_configured {
+                                if let Some(fallback) = select_ollama_fallback_model(&models) {
+                                    tracing::warn!(
+                                        "embedding model '{}' not found — falling back to '{}'",
+                                        configured_model,
+                                        fallback
+                                    );
+                                    let fallback_dim = embedding_dimension_for_model(&fallback);
+                                    match &mut backend {
+                                        EmbedderBackendConfig::Ollama(cfg) => {
+                                            cfg.model = fallback;
+                                            cfg.dimension = fallback_dim;
+                                        }
+                                        EmbedderBackendConfig::OpenAICompatible(cfg) => {
+                                            cfg.model = fallback;
+                                            cfg.dimension = fallback_dim;
+                                        }
+                                        _ => {}
+                                    }
+                                } else {
+                                    tracing::warn!(
+                                        "embedding model '{}' not found and no suitable fallback model available in Ollama",
+                                        configured_model
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else {
+                            tracing::warn!("Ollama embedding backend probe failed or backend unreachable");
+                            continue;
+                        }
+                    }
+
                     match build_backend(backend) {
                         Ok(embedder) => embedders.push(embedder),
                         Err(error) => {
-                            let msg = format!(
+                            tracing::warn!(
                                 "embedding backend unavailable; trying fallback error={}",
                                 error
-                            );
-                            tracing::warn!("{}", msg);
-                            crate::server::alerts::SYSTEM_ALERTS.push_alert(
-                                "WARN",
-                                &msg,
-                                "embedding",
                             );
                         }
                     }
@@ -299,33 +361,7 @@ impl EmbedderConfig {
         } else {
             // No explicit cloud or local signals are present.
             // Let's probe local Ollama.
-            let probe_url = std::env::var("_XAVIER_TEST_OLLAMA_PROBE_URL")
-                .unwrap_or_else(|_| "http://localhost:11434/v1/models".to_string());
-
-            let handle = tokio::runtime::Handle::try_current();
-            let models_opt = match handle {
-                Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
-                    tokio::task::block_in_place(|| {
-                        h.block_on(async { probe_ollama_async(&probe_url).await })
-                    })
-                }
-                _ => {
-                    let probe_url_clone = probe_url.clone();
-                    std::thread::spawn(move || {
-                        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .build()
-                        {
-                            rt.block_on(async { probe_ollama_async(&probe_url_clone).await })
-                        } else {
-                            None
-                        }
-                    })
-                    .join()
-                    .ok()
-                    .flatten()
-                }
-            };
+            let models_opt = probe_ollama_models();
 
             if let Some(models) = models_opt {
                 tracing::info!("Embeddings backend: local-ollama(embeddinggemma)");
@@ -669,6 +705,65 @@ impl Embedder for CircuitBreakerEmbedder {
     fn cache_metrics(&self) -> Option<cache::EmbeddingCacheMetrics> {
         self.inner.cache_metrics()
     }
+}
+
+pub(crate) fn probe_ollama_models() -> Option<Vec<String>> {
+    let probe_url = std::env::var("_XAVIER_TEST_OLLAMA_PROBE_URL")
+        .unwrap_or_else(|_| "http://localhost:11434/v1/models".to_string());
+
+    let handle = tokio::runtime::Handle::try_current();
+    match handle {
+        Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(|| {
+                h.block_on(async { probe_ollama_async(&probe_url).await })
+            })
+        }
+        _ => {
+            let probe_url_clone = probe_url.clone();
+            std::thread::spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    rt.block_on(async { probe_ollama_async(&probe_url_clone).await })
+                } else {
+                    None
+                }
+            })
+            .join()
+            .ok()
+            .flatten()
+        }
+    }
+}
+
+pub(crate) fn select_ollama_fallback_model(models: &[String]) -> Option<String> {
+    if models.is_empty() {
+        return None;
+    }
+
+    // Prefer nomic-embed-text:latest or nomic-embed-text variant
+    if let Some(m) = models.iter().find(|m| *m == "nomic-embed-text:latest") {
+        return Some(m.clone());
+    }
+    if let Some(m) = models.iter().find(|m| m.starts_with("nomic-embed-text")) {
+        return Some(m.clone());
+    }
+
+    // Then prefer mxbai-embed-large:latest or mxbai-embed-large variant
+    if let Some(m) = models.iter().find(|m| *m == "mxbai-embed-large:latest") {
+        return Some(m.clone());
+    }
+    if let Some(m) = models.iter().find(|m| m.starts_with("mxbai-embed-large")) {
+        return Some(m.clone());
+    }
+
+    // Then any model containing "embed"
+    if let Some(m) = models.iter().find(|m| m.to_ascii_lowercase().contains("embed")) {
+        return Some(m.clone());
+    }
+
+    None
 }
 
 async fn probe_ollama_async(url: &str) -> Option<Vec<String>> {
@@ -1171,5 +1266,97 @@ mod tests {
 
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
         std::env::remove_var("XAVIER_CONFIG_PATH");
+    }
+
+    #[test]
+    fn test_select_ollama_fallback_model_preference_order() {
+        // Preference 1: nomic-embed-text:latest or nomic-embed-text variant
+        let models1 = vec![
+            "llama3:latest".to_string(),
+            "mxbai-embed-large:latest".to_string(),
+            "nomic-embed-text:latest".to_string(),
+        ];
+        assert_eq!(
+            select_ollama_fallback_model(&models1),
+            Some("nomic-embed-text:latest".to_string())
+        );
+
+        let models2 = vec![
+            "mxbai-embed-large:latest".to_string(),
+            "nomic-embed-text-v1.5".to_string(),
+        ];
+        assert_eq!(
+            select_ollama_fallback_model(&models2),
+            Some("nomic-embed-text-v1.5".to_string())
+        );
+
+        // Preference 2: mxbai-embed-large:latest or mxbai-embed-large variant
+        let models3 = vec![
+            "qwen:7b".to_string(),
+            "mxbai-embed-large:latest".to_string(),
+            "custom-embed".to_string(),
+        ];
+        assert_eq!(
+            select_ollama_fallback_model(&models3),
+            Some("mxbai-embed-large:latest".to_string())
+        );
+
+        // Preference 3: Any model containing 'embed'
+        let models4 = vec!["qwen:7b".to_string(), "my-custom-embedding-model".to_string()];
+        assert_eq!(
+            select_ollama_fallback_model(&models4),
+            Some("my-custom-embedding-model".to_string())
+        );
+
+        // No match
+        let models5 = vec!["qwen:7b".to_string(), "llama3:latest".to_string()];
+        assert_eq!(select_ollama_fallback_model(&models5), None);
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_build_sync_model_fallback_without_system_alert() {
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let mock_url = server.url();
+        std::env::set_var(
+            "_XAVIER_TEST_OLLAMA_PROBE_URL",
+            format!("{}/v1/models", mock_url),
+        );
+
+        // Ollama returns nomic-embed-text:latest, but NOT embeddinggemma
+        let _mock = server
+            .mock("GET", "/v1/models")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                "object": "list",
+                "data": [
+                    {
+                        "id": "nomic-embed-text:latest",
+                        "object": "model"
+                    }
+                ]
+            }"#,
+            )
+            .create_async()
+            .await;
+
+        let backend_config = EmbedderBackendConfig::Ollama(OllamaConfig {
+            endpoint: format!("{}/api/embed", mock_url),
+            model: "embeddinggemma".to_string(),
+            dimension: 768,
+        });
+
+        let config = EmbedderConfig::Fallback(vec![backend_config]);
+        let embedder = config.build_sync().unwrap();
+
+        // The configured model was missing, but fallback to nomic-embed-text:latest succeeded,
+        // so build_sync returned a valid embedder without defaulting to NoopEmbedder.
+        assert_ne!(embedder.dimension(), 0);
+
+        std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
     }
 }
