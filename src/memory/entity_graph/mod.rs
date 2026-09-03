@@ -981,6 +981,53 @@ impl KnowledgeConsolidator {
             entity_count, relation_count, self.dedup_threshold, self.decay_rate
         )
     }
+
+    /// Executes knowledge graph entity deduplication and memory belief decay on the store.
+    pub async fn run_consolidation(
+        &self,
+        store: &dyn crate::memory::store::MemoryStore,
+        workspace_id: &str,
+    ) -> Result<ConsolidationReport> {
+        let records = store.list(workspace_id).await?;
+        let total_processed = records.len();
+
+        let mut all_entity_names = Vec::new();
+        for rec in &records {
+            let extracted = extraction::extract_entities(&rec.content);
+            for e in extracted {
+                all_entity_names.push(e.name);
+            }
+        }
+
+        let raw_count = all_entity_names.len();
+        let deduped = self.dedup_entities(all_entity_names);
+        let consolidated_entities = raw_count.saturating_sub(deduped.len());
+
+        let decay_mgr = crate::memory::decay::DecayManager::with_defaults();
+        let decay_report = decay_mgr.decay_workspace_memories(store, workspace_id).await?;
+
+        let summary = self.consolidation_summary(deduped.len(), 0);
+
+        Ok(ConsolidationReport {
+            total_processed,
+            consolidated_entities,
+            decayed_count: decay_report.decayed_count,
+            pruned_count: decay_report.pruned_count,
+            reclaimed_bytes: 0,
+            summary,
+        })
+    }
+}
+
+/// Consolidation report structure produced by KnowledgeConsolidator.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct ConsolidationReport {
+    pub total_processed: usize,
+    pub consolidated_entities: usize,
+    pub decayed_count: usize,
+    pub pruned_count: usize,
+    pub reclaimed_bytes: u64,
+    pub summary: String,
 }
 
 #[cfg(test)]
@@ -1014,5 +1061,41 @@ mod knowledge_tests {
         let k = KnowledgeConsolidator::default();
         assert!(k.zone_weight("atomic") > k.zone_weight("relational"));
         assert!(k.consolidation_summary(10, 5).contains("Knowledge graph"));
+    }
+
+    #[tokio::test]
+    async fn test_knowledge_run_consolidation() {
+        use crate::memory::store::InMemoryMemoryStore;
+        use crate::memory::store::MemoryStore;
+        use crate::memory::store::MemoryRecord;
+
+        let store = InMemoryMemoryStore::new();
+        let ws = "ws-test";
+
+        store
+            .put(MemoryRecord {
+                id: "m1".into(),
+                workspace_id: ws.into(),
+                content: "Alice works at Acme Corporation".into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        store
+            .put(MemoryRecord {
+                id: "m2".into(),
+                workspace_id: ws.into(),
+                content: "alice works at Acme Corporation in New York".into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let k = KnowledgeConsolidator::default();
+        let report = k.run_consolidation(&store, ws).await.unwrap();
+
+        assert_eq!(report.total_processed, 2);
+        assert!(report.summary.contains("Knowledge graph"));
     }
 }
