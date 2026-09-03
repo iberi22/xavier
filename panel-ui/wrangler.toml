@@ -1,3 +1,10 @@
 name = "xavier-panel"
 compatibility_date = "2026-09-01"
 pages_build_output_dir = "dist"
+
+# Production & Subdomain bindings
+# Target URLs: panel.xavier.swal.dev / xavier-panel.pages.dev
+[vars]
+ENVIRONMENT = "production"
+DEFAULT_MEMORY_NAMESPACE = "swal/xavier/community"
+
