@@ -155,7 +155,8 @@ impl HermesImporter {
                 // Fallback inspect any table with text/content columns
                 for table in tables {
                     if table.starts_with("sqlite_") { continue; }
-                    let query = format!("SELECT rowid, content FROM {} WHERE content IS NOT NULL LIMIT 500", table);
+                    let safe_table = table.replace('"', "\"\"");
+                    let query = format!("SELECT rowid, content FROM \"{}\" WHERE content IS NOT NULL LIMIT 500", safe_table);
                     if let Ok(mut msg_stmt) = conn.prepare(&query) {
                         let rows = msg_stmt.query_map([], |row| {
                             let rowid: i64 = row.get(0).unwrap_or(0);
