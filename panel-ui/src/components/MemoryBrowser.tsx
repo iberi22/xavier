@@ -62,6 +62,15 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
 
   useEffect(() => {
     doSearch(debouncedQuery, kind, page);
+
+    const handleWorkspaceChange = () => {
+      doSearch(debouncedQuery, kind, page);
+    };
+
+    window.addEventListener("xavier:workspace-changed", handleWorkspaceChange);
+    return () => {
+      window.removeEventListener("xavier:workspace-changed", handleWorkspaceChange);
+    };
   }, [debouncedQuery, kind, page, doSearch]);
 
   const handleAdd = async (e: React.FormEvent) => {

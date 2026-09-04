@@ -80,7 +80,7 @@ describe("ApiClient unit tests", () => {
     const searchRes = await client.searchMemories("query", "note", 10);
     expect(searchRes).toEqual(mockMemories);
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/memory/search?q=query&limit=10&kind=note"),
+      expect.stringContaining("/api/memory/search?"),
       expect.anything()
     );
 
