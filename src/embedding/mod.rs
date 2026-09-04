@@ -245,14 +245,13 @@ impl EmbedderConfig {
                             is_ollama = true;
                             configured_model = cfg.model.clone();
                         }
-                        EmbedderBackendConfig::OpenAICompatible(cfg) => {
+                        EmbedderBackendConfig::OpenAICompatible(cfg)
                             if cfg.endpoint.contains("localhost")
                                 || cfg.endpoint.contains("127.0.0.1")
-                                || cfg.endpoint.contains("11434")
-                            {
-                                is_ollama = true;
-                                configured_model = cfg.model.clone();
-                            }
+                                || cfg.endpoint.contains("11434") =>
+                        {
+                            is_ollama = true;
+                            configured_model = cfg.model.clone();
                         }
                         _ => {}
                     }

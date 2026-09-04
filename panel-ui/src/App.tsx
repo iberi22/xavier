@@ -496,7 +496,8 @@ function AppContent() {
 							Xavier Node Connection
 						</h1>
 						<p className="opacity-70 text-xs sm:text-sm text-white/70 leading-relaxed">
-							Connect to your local daemon (:8006), pair a remote SWAL node, or explore the memory console in browser mode.
+							Connect to your local daemon (:8006), pair a remote SWAL node, or
+							explore the memory console in browser mode.
 						</p>
 					</div>
 
