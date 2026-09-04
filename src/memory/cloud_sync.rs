@@ -499,6 +499,93 @@ impl CloudMemorySync {
 }
 
 // ---------------------------------------------------------------------------
+// CloudBackendType & Edge Payload Contracts
+// ---------------------------------------------------------------------------
+
+/// Supported cloud persistence target backends.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudBackendType {
+    /// Supabase backend (PostgREST / PostgreSQL + pgvector).
+    #[default]
+    Supabase,
+    /// Direct PostgreSQL / Neon backend.
+    Postgres,
+    /// Cloudflare Edge backend (Vectorize + Workers AI + D1).
+    CloudflareEdge,
+}
+
+/// Encrypted memory record payload for Cloudflare Edge proxy endpoints (`memories_enc` on D1).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CloudflareEncryptedRecordPayload {
+    /// Record ID.
+    pub id: String,
+    /// Workspace or tenant identifier.
+    pub workspace_id: String,
+    /// Memory record logical path.
+    pub path: String,
+    /// Encrypted content string or hex payload (`content_enc`).
+    pub content_enc: String,
+    /// Encrypted metadata JSON string or hex payload (`metadata_enc`).
+    pub metadata_enc: String,
+    /// Hex-encoded Data Encryption Key (`encrypted_dek`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encrypted_dek: Option<String>,
+    /// Hex-encoded Initialization Vector for content (`content_iv`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_iv: Option<String>,
+    /// Hex-encoded Initialization Vector for metadata (`metadata_iv`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata_iv: Option<String>,
+    /// Creation timestamp (RFC 3339).
+    pub created_at: String,
+    /// Modification timestamp (RFC 3339).
+    pub updated_at: String,
+    /// Record revision sequence number.
+    pub revision: u64,
+}
+
+/// Vector index item for Cloudflare Vectorize endpoints.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CloudflareVectorPayload {
+    /// Vector ID matching memory record ID.
+    pub id: String,
+    /// Embedding vector values.
+    pub values: Vec<f32>,
+    /// Optional Vectorize namespace (e.g. workspace_id).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+    /// Indexing metadata attached to vector in Vectorize.
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub metadata: serde_json::Value,
+}
+
+/// Batch push request payload sent to Cloudflare Worker proxy (`POST /v1/sync/push`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CloudflareEdgeSyncPayload {
+    /// Batch of zero-knowledge encrypted memory records to persist in D1.
+    pub records: Vec<CloudflareEncryptedRecordPayload>,
+    /// Batch of embedding vectors to upsert in Cloudflare Vectorize.
+    pub vectors: Vec<CloudflareVectorPayload>,
+    /// Sender node ID for LWW tie-breaking.
+    pub node_id: String,
+}
+
+/// Batch pull response payload received from Cloudflare Worker proxy (`GET /v1/sync/pull`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CloudflareEdgePullResponse {
+    /// Workspace ID of fetched records.
+    pub workspace_id: String,
+    /// Batch of encrypted memory records from cloud edge D1 store.
+    pub records: Vec<CloudflareEncryptedRecordPayload>,
+    /// Batch of embedding vectors from Cloudflare Vectorize.
+    pub vectors: Vec<CloudflareVectorPayload>,
+    /// Next pagination cursor or offset if more records exist.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // CloudSyncConfig
 // ---------------------------------------------------------------------------
 
@@ -522,6 +609,9 @@ pub struct CloudSyncConfig {
     /// Optional node ID override. If not set, system hostname is used.
     #[serde(default)]
     pub node_id: Option<String>,
+    /// Cloud persistence backend target (Supabase, Postgres, or CloudflareEdge).
+    #[serde(default)]
+    pub backend_type: CloudBackendType,
 }
 
 fn default_batch_size() -> usize {
@@ -537,6 +627,7 @@ impl Default for CloudSyncConfig {
             data_dir: "data".to_string(),
             supabase_only: false,
             node_id: None,
+            backend_type: CloudBackendType::default(),
         }
     }
 }
@@ -945,6 +1036,73 @@ pub fn sync_fallback_chain() -> Vec<&'static str> {
             assert_eq!(report.pushed, 0);
             assert_eq!(report.pulled, 0);
             assert!(report.success);
+        }
+
+        #[test]
+        fn test_cloud_backend_type_serde() {
+            let default_backend = CloudBackendType::default();
+            assert_eq!(default_backend, CloudBackendType::Supabase);
+
+            let json_cf = serde_json::to_string(&CloudBackendType::CloudflareEdge).unwrap();
+            assert_eq!(json_cf, "\"cloudflare_edge\"");
+
+            let parsed_cf: CloudBackendType = serde_json::from_str("\"cloudflare_edge\"").unwrap();
+            assert_eq!(parsed_cf, CloudBackendType::CloudflareEdge);
+
+            let config_json = r#"{
+                "data_dir": "data",
+                "backend_type": "cloudflare_edge"
+            }"#;
+            let config: CloudSyncConfig = serde_json::from_str(config_json).unwrap();
+            assert_eq!(config.backend_type, CloudBackendType::CloudflareEdge);
+        }
+
+        #[test]
+        fn test_cloudflare_edge_payload_contracts() {
+            let enc_rec = CloudflareEncryptedRecordPayload {
+                id: "rec_123".to_string(),
+                workspace_id: "ws_456".to_string(),
+                path: "memories/001.md".to_string(),
+                content_enc: "a1b2c3d4".to_string(),
+                metadata_enc: "e5f6g7h8".to_string(),
+                encrypted_dek: Some("dek_hex".to_string()),
+                content_iv: Some("iv_content_hex".to_string()),
+                metadata_iv: Some("iv_meta_hex".to_string()),
+                created_at: "2026-03-31T12:00:00Z".to_string(),
+                updated_at: "2026-03-31T12:00:00Z".to_string(),
+                revision: 1,
+            };
+
+            let vec_payload = CloudflareVectorPayload {
+                id: "rec_123".to_string(),
+                values: vec![0.1, 0.2, 0.3],
+                namespace: Some("ws_456".to_string()),
+                metadata: serde_json::json!({"workspace_id": "ws_456"}),
+            };
+
+            let sync_payload = CloudflareEdgeSyncPayload {
+                records: vec![enc_rec.clone()],
+                vectors: vec![vec_payload.clone()],
+                node_id: "node_alpha".to_string(),
+            };
+
+            let json_str = serde_json::to_string_pretty(&sync_payload).unwrap();
+            assert!(json_str.contains("\"content_enc\": \"a1b2c3d4\""));
+            assert!(json_str.contains("\"values\": ["));
+
+            let parsed: CloudflareEdgeSyncPayload = serde_json::from_str(&json_str).unwrap();
+            assert_eq!(parsed, sync_payload);
+
+            let pull_resp = CloudflareEdgePullResponse {
+                workspace_id: "ws_456".to_string(),
+                records: vec![enc_rec],
+                vectors: vec![vec_payload],
+                next_cursor: Some("cursor_xyz".to_string()),
+            };
+
+            let pull_json = serde_json::to_string(&pull_resp).unwrap();
+            let parsed_pull: CloudflareEdgePullResponse = serde_json::from_str(&pull_json).unwrap();
+            assert_eq!(parsed_pull, pull_resp);
         }
     }
     vec!["vec", "supabase", "neon"]
