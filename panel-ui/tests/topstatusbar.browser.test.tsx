@@ -214,4 +214,137 @@ describe("TopStatusBar Browser Compatibility & Guards", () => {
 
     expect(saveButton).toBeInTheDocument();
   });
+
+  test("opens sync popover, triggers manual sync push & pull cycle on Sync Now click, and dispatches toast event", async () => {
+    const toastListener = vi.fn();
+    window.addEventListener("xavier-toast", toastListener);
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/health")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ system: { cpu_usage: 10, ram_usage_percent: 20 } }),
+        });
+      }
+      if (typeof url === "string" && url.includes("/api/v1/memory/sync/push")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: "ok",
+              session: { chunks_sent: 2, chunks_received: 0 },
+            }),
+        });
+      }
+      if (typeof url === "string" && url.includes("/api/v1/memory/sync/pull")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: "ok",
+              session: { chunks_sent: 0, chunks_received: 3 },
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    render(<TopStatusBar />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Memory Sync Control & Status" }),
+      ).toBeInTheDocument();
+    });
+
+    const syncPill = screen.getByRole("button", {
+      name: "Memory Sync Control & Status",
+    });
+
+    await act(async () => {
+      syncPill.click();
+    });
+
+    expect(screen.getByText("Memory Sync")).toBeInTheDocument();
+
+    const syncNowButton = screen.getByRole("button", { name: "Sync Now" });
+    expect(syncNowButton).toBeInTheDocument();
+
+    await act(async () => {
+      syncNowButton.click();
+    });
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/memory/sync/push"),
+        expect.any(Object),
+      );
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/memory/sync/pull"),
+        expect.any(Object),
+      );
+      expect(toastListener).toHaveBeenCalled();
+    });
+
+    window.removeEventListener("xavier-toast", toastListener);
+  });
+
+  test("dispatches error toast when manual sync fails", async () => {
+    const errorToastListener = vi.fn();
+    window.addEventListener("xavier-error-toast", errorToastListener);
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/health")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({ system: { cpu_usage: 10, ram_usage_percent: 20 } }),
+        });
+      }
+      if (typeof url === "string" && url.includes("/api/v1/memory/sync/push")) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          text: () => Promise.resolve("Internal Server Error"),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    render(<TopStatusBar />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Memory Sync Control & Status" }),
+      ).toBeInTheDocument();
+    });
+
+    const syncPill = screen.getByRole("button", {
+      name: "Memory Sync Control & Status",
+    });
+
+    await act(async () => {
+      syncPill.click();
+    });
+
+    const syncNowButton = screen.getByRole("button", { name: "Sync Now" });
+
+    await act(async () => {
+      syncNowButton.click();
+    });
+
+    await waitFor(() => {
+      expect(errorToastListener).toHaveBeenCalled();
+    });
+
+    window.removeEventListener("xavier-error-toast", errorToastListener);
+  });
 });
+

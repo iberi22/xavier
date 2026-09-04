@@ -165,10 +165,9 @@ const ChatMessageItem = React.memo(function ChatMessageItem({ msg }: { msg: Chat
         </span>
         <span className="text-[9px] text-zinc-600">{msg.timestamp}</span>
         {msg.encrypted && (
-          <Lock
-            className="w-2.5 h-2.5 text-emerald-400/80"
-            title="End-to-End Encrypted"
-          />
+          <span title="End-to-End Encrypted">
+            <Lock className="w-2.5 h-2.5 text-emerald-400/80" />
+          </span>
         )}
       </div>
 

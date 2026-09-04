@@ -50,7 +50,7 @@ mod tests {
     #[test]
     fn test_code_graph_db_path_for_explicit() {
         // Serialize with other tests that mutate XAVIER_CODE_GRAPH_DB_PATH.
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _temp_env = crate::settings::tests::TempEnv::new();
         std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
         let ws = Path::new("/tmp/test-workspace");
         let path = code_graph_db_path_for(ws);

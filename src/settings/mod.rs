@@ -193,6 +193,7 @@ pub mod tests {
                 if lower.starts_with("XAVIER_")
                     || lower.starts_with("PGHEART_")
                     || lower == "STRIPE_SECRET_KEY"
+                    || lower == "OPENAI_API_KEY"
                 {
                     saved_vars.insert(key, val);
                 }
@@ -206,12 +207,13 @@ pub mod tests {
 
     impl Drop for TempEnv {
         fn drop(&mut self) {
-            // Remove any current XAVIER_ or PGHEART_ variables that are set but weren't originally saved
+            // Remove any current XAVIER_, PGHEART_, or test variables that are set but weren't originally saved
             for (key, _) in std::env::vars() {
                 let lower = key.to_ascii_uppercase();
                 if (lower.starts_with("XAVIER_")
                     || lower.starts_with("PGHEART_")
-                    || lower == "STRIPE_SECRET_KEY")
+                    || lower == "STRIPE_SECRET_KEY"
+                    || lower == "OPENAI_API_KEY")
                     && !self.saved_vars.contains_key(&key)
                 {
                     std::env::remove_var(&key);

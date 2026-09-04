@@ -3,13 +3,18 @@ import { expect, test } from "@playwright/test";
 test.describe("Notifications Dropdown & NotificationCenter E2E", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.route("**/health", async (route) => {
-			await route.fulfill({ json: { status: "online" } });
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({ status: "ok", system: { cpu_usage: 10, ram_usage_percent: 20 } }),
+			});
 		});
 
 		await page.route("**/notifications", async (route) => {
 			await route.fulfill({
 				status: 200,
-				json: [
+				contentType: "application/json",
+				body: JSON.stringify([
 					{
 						id: "e2e-1",
 						islandId: "system",
@@ -19,25 +24,23 @@ test.describe("Notifications Dropdown & NotificationCenter E2E", () => {
 						read: false,
 						severity: "info",
 					},
-				],
+				]),
 			});
 		});
 
-		await page.goto("/");
-		await page.evaluate(() => {
-			localStorage.setItem("xavier_onboarding_completed", "true");
+		await page.addInitScript(() => {
+			window.localStorage.setItem("xavier_onboarding_completed", "true");
+			window.localStorage.setItem("xavier_token", "mock-token");
 		});
-		const tokenInput = page.locator('input[placeholder="XAVIER_TOKEN"]');
-		if (await tokenInput.isVisible()) {
-			await tokenInput.fill("test-token");
-			await page.click('button:has-text("INITIALIZE SESSION")');
-		}
+
+		await page.goto("/");
 	});
 
 	test("notifications dropdown opens without crash and renders skeleton or notifications list", async ({
 		page,
 	}) => {
 		// Verify page loaded
-		await expect(page.locator("body")).toBeVisible();
+		const appElement = page.locator("header, [class*='TopStatusBar'], h1:has-text('XAVIER LOGIN')");
+		await expect(appElement.first()).toBeVisible();
 	});
 });

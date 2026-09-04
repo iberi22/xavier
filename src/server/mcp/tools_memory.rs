@@ -808,23 +808,40 @@ pub async fn handle_memory_update(
                 .get("id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
-            let record = workspace
-                .workspace
-                .get_memory_record(id)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("Memory not found: {id}"))?;
+            let (record_id, path, revision, primary, content, metadata) =
+                if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
+                    (
+                        record.id,
+                        record.path,
+                        record.revision,
+                        record.primary,
+                        record.content,
+                        record.metadata,
+                    )
+                } else if let Ok(Some(doc)) = workspace.workspace.memory.get(id).await {
+                    (
+                        doc.id.unwrap_or_else(|| id.to_string()),
+                        doc.path,
+                        1,
+                        true,
+                        doc.content,
+                        doc.metadata,
+                    )
+                } else {
+                    return Err(anyhow::anyhow!("Memory not found: {id}"));
+                };
 
             Ok(serde_json::to_value(MCPToolResult {
                 content: vec![MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
                     text: format!(
                         "Id: {}\nPath: {}\nRevision: {}\nPrimary: {}\nContent: {}\nMetadata: {}",
-                        record.id,
-                        record.path,
-                        record.revision,
-                        record.primary,
-                        record.content,
-                        serde_json::to_string_pretty(&record.metadata)?
+                        record_id,
+                        path,
+                        revision,
+                        primary,
+                        content,
+                        serde_json::to_string_pretty(&metadata)?
                     ),
                 })],
                 is_error: Some(false),
@@ -835,16 +852,39 @@ pub async fn handle_memory_update(
                 .get("id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
-            let record = workspace
-                .workspace
-                .get_memory_record(id)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("Memory not found: {}", id))?;
+            let (record_id, path, revision, content, gestalt_context, tags, metadata) =
+                if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
+                    let gc = record.metadata.get("gestalt_context").cloned();
+                    let tg = record.metadata.get("tags").cloned();
+                    (
+                        record.id,
+                        record.path,
+                        record.revision,
+                        record.content,
+                        gc,
+                        tg,
+                        record.metadata,
+                    )
+                } else if let Ok(Some(doc)) = workspace.workspace.memory.get(id).await {
+                    let gc = doc.metadata.get("gestalt_context").cloned();
+                    let tg = doc.metadata.get("tags").cloned();
+                    (
+                        doc.id.unwrap_or_else(|| id.to_string()),
+                        doc.path,
+                        1,
+                        doc.content,
+                        gc,
+                        tg,
+                        doc.metadata,
+                    )
+                } else {
+                    return Err(anyhow::anyhow!("Memory not found: {id}"));
+                };
 
             Ok(serde_json::to_value(MCPToolResult {
                 content: vec![MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
-                    text: format!("Id: {}\nPath: {}\nRevision: {}\nContent: {}\nContext: {:?}\nTags: {:?}\nMetadata: {}", record.id, record.path, record.revision, record.content, record.metadata.get("gestalt_context"), record.metadata.get("tags"), serde_json::to_string_pretty(&record.metadata)?),
+                    text: format!("Id: {}\nPath: {}\nRevision: {}\nContent: {}\nContext: {:?}\nTags: {:?}\nMetadata: {}", record_id, path, revision, content, gestalt_context, tags, serde_json::to_string_pretty(&metadata)?),
                 })],
                 is_error: Some(false),
             })?)
@@ -936,6 +976,8 @@ pub async fn handle_memory_delete(
                     if let Some(id) = id_val.as_str() {
                         if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
                             docs.push(record.to_document());
+                        } else if let Ok(Some(doc)) = workspace.workspace.memory.get(id).await {
+                            docs.push(doc);
                         }
                     }
                 }
@@ -989,13 +1031,10 @@ pub async fn handle_memory_delete(
                 estimated_tokens: mem_ctx.estimated_tokens,
             };
 
-            Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPContent::Structured(MCPStructuredContent {
-                    content_type: "structuredContent".to_string(),
-                    structured_content: serde_json::to_value(payload)?,
-                })],
-                is_error: Some(false),
-            })?)
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                serde_json::to_value(payload)?,
+                false,
+            ))?)
         }
         "memory_prune" => {
             let kind = arguments
@@ -1149,13 +1188,10 @@ pub async fn handle_memory_context(
                     sources: Vec::new(),
                     estimated_tokens: 0,
                 };
-                return Ok(serde_json::to_value(MCPToolResult {
-                    content: vec![MCPContent::Structured(MCPStructuredContent {
-                        content_type: "structuredContent".to_string(),
-                        structured_content: serde_json::to_value(payload)?,
-                    })],
-                    is_error: Some(false),
-                })?);
+                return Ok(serde_json::to_value(MCPToolResult::structured(
+                    serde_json::to_value(payload)?,
+                    false,
+                ))?);
             }
 
             let expanded = if depth > 0 {
@@ -1248,13 +1284,10 @@ pub async fn handle_memory_context(
                 sources,
                 estimated_tokens,
             };
-            Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPContent::Structured(MCPStructuredContent {
-                    content_type: "structuredContent".to_string(),
-                    structured_content: serde_json::to_value(payload)?,
-                })],
-                is_error: Some(false),
-            })?)
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                serde_json::to_value(payload)?,
+                false,
+            ))?)
         }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
     }

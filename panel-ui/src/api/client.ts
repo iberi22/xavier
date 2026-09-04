@@ -511,6 +511,39 @@ export class ApiClient {
       body: JSON.stringify({ url }),
     });
   }
+
+  // Memory Sync
+  async syncPush(peerUrl = "", workspaceId?: string, since?: string) {
+    return this.fetch<{ status: string; session?: any }>("/api/v1/memory/sync/push", {
+      method: "POST",
+      body: JSON.stringify({
+        peer_url: peerUrl,
+        workspace_id: workspaceId,
+        since,
+      }),
+    });
+  }
+
+  async syncPull(peerUrl = "", workspaceId?: string, since?: string) {
+    return this.fetch<{ status: string; session?: any }>("/api/v1/memory/sync/pull", {
+      method: "POST",
+      body: JSON.stringify({
+        peer_url: peerUrl,
+        workspace_id: workspaceId,
+        since,
+      }),
+    });
+  }
+
+  async getSyncStatus() {
+    return this.fetch<{
+      status: string;
+      initialized: boolean;
+      node_id: string;
+      sync_interval_secs: number;
+      last_session?: any;
+    }>("/api/v1/memory/sync/status");
+  }
 }
 
 export interface ProviderConfig {

@@ -720,6 +720,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             "/v1/memories/{id}/outline",
             get(xavier::server::v1_api::v1_memories_outline),
         )
+        .route(
+            "/v1/memories/graph",
+            get(xavier::server::v1_api::v1_memories_graph),
+        )
+        .route(
+            "/v1/graph/export",
+            get(xavier::server::v1_api::v1_graph_export),
+        )
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
         .route(

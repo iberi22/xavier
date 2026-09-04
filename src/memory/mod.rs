@@ -44,6 +44,7 @@ pub mod sqlite_vec_store;
 pub mod store;
 pub mod supabase_store;
 pub mod sync;
+pub mod sync_scheduler;
 pub mod telemetry;
 pub mod tgd;
 pub mod virtual_memory;
@@ -52,6 +53,7 @@ pub use connection_provider::*;
 pub use fallback_store::*;
 pub use query_engine::*;
 pub use store::*;
+pub use sync_scheduler::*;
 pub use tgd::*;
 
 #[cfg(test)]

@@ -80,7 +80,7 @@ pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::Workspace
             id: workspace_id.clone(),
             token: "mcp-token".to_string(),
             plan: xavier::workspace::PlanTier::Personal,
-            memory_backend: xavier::memory::store::MemoryBackend::Sqlite,
+            memory_backend: xavier::memory::store::MemoryBackend::Vec,
             storage_limit_bytes: None,
             request_limit: None,
             request_unit_limit: None,
