@@ -9,7 +9,31 @@ import type {
   SecretLease,
 } from "../types";
 
+export const REMOTE_URL_KEY = "xavier_remote_url";
+
+export const getRemoteUrl = (): string => {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(REMOTE_URL_KEY) || "";
+};
+
+export const setRemoteUrl = (url: string | null): void => {
+  if (typeof window === "undefined") return;
+  if (url && url.trim().length > 0) {
+    localStorage.setItem(REMOTE_URL_KEY, url.trim());
+  } else {
+    localStorage.removeItem(REMOTE_URL_KEY);
+  }
+};
+
 export const getApiUrl = (path: string) => {
+  if (typeof window !== "undefined") {
+    const remoteUrl = localStorage.getItem(REMOTE_URL_KEY);
+    if (remoteUrl && remoteUrl.trim().length > 0) {
+      const cleanRemote = remoteUrl.trim().replace(/\/+$/, "");
+      const cleanPath = path.startsWith("/") ? path : `/${path}`;
+      return `${cleanRemote}${cleanPath}`;
+    }
+  }
   const isTauri =
     typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   return isTauri ? `http://127.0.0.1:8006${path}` : path;

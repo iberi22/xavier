@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ApiClient, getApiUrl } from "../src/api/client";
+import { ApiClient, getApiUrl, getRemoteUrl, setRemoteUrl } from "../src/api/client";
 
 describe("ApiClient unit tests", () => {
   const globalFetch = global.fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   afterEach(() => {
     global.fetch = globalFetch;
+    localStorage.clear();
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   });
 
@@ -18,6 +20,19 @@ describe("ApiClient unit tests", () => {
 
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     expect(getApiUrl("/v1/test")).toBe("http://127.0.0.1:8006/v1/test");
+  });
+
+  it("resolves getApiUrl with remote URL when xavier_remote_url is set in localStorage", () => {
+    expect(getApiUrl("/v1/memories")).toBe("/v1/memories");
+
+    setRemoteUrl("https://node.swal.local:8006/");
+    expect(getRemoteUrl()).toBe("https://node.swal.local:8006/");
+    expect(getApiUrl("/v1/memories")).toBe("https://node.swal.local:8006/v1/memories");
+    expect(getApiUrl("v1/memories")).toBe("https://node.swal.local:8006/v1/memories");
+
+    setRemoteUrl(null);
+    expect(getRemoteUrl()).toBe("");
+    expect(getApiUrl("/v1/memories")).toBe("/v1/memories");
   });
 
   it("throws an error when HTTP fetch response is not ok", async () => {
