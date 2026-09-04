@@ -271,7 +271,7 @@ libc = "0.2"
 notify = "6.1.1"
 
 # Hardware Security
-keyring = "3"
+keyring = "4"
 
 # For WASM web deployment
 wasm-bindgen = { version = "0.2", optional = true }
