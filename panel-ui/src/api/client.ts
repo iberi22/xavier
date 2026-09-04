@@ -9,33 +9,226 @@ import type {
   SecretLease,
 } from "../types";
 
+export const REMOTE_URL_KEY = "xavier_remote_url";
+
+export const getRemoteUrl = (): string => {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(REMOTE_URL_KEY) || "";
+};
+
+export const setRemoteUrl = (url: string | null): void => {
+  if (typeof window === "undefined") return;
+  if (url && url.trim().length > 0) {
+    localStorage.setItem(REMOTE_URL_KEY, url.trim());
+  } else {
+    localStorage.removeItem(REMOTE_URL_KEY);
+  }
+};
+
 export const getApiUrl = (path: string) => {
+  if (typeof window !== "undefined") {
+    const remoteUrl = localStorage.getItem(REMOTE_URL_KEY);
+    if (remoteUrl && remoteUrl.trim().length > 0) {
+      const cleanRemote = remoteUrl.trim().replace(/\/+$/, "");
+      const cleanPath = path.startsWith("/") ? path : `/${path}`;
+      return `${cleanRemote}${cleanPath}`;
+    }
+  }
   const isTauri =
     typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   return isTauri ? `http://127.0.0.1:8006${path}` : path;
 };
 
+/**
+ * Parse Retry-After header into seconds.
+ * Handles integer seconds, float seconds, and HTTP Date strings.
+ */
+export function parseRetryAfter(headerValue: string | null): number | null {
+  if (!headerValue) return null;
+  const trimmed = headerValue.trim();
+  if (!trimmed) return null;
+
+  const parsedNum = Number(trimmed);
+  if (!isNaN(parsedNum) && parsedNum >= 0) {
+    return Math.ceil(parsedNum);
+  }
+
+  const parsedDate = Date.parse(trimmed);
+  if (!isNaN(parsedDate)) {
+    const diffMs = parsedDate - Date.now();
+    return Math.max(1, Math.ceil(diffMs / 1000));
+  }
+
+  return null;
+}
+
+/**
+ * Parse X-RateLimit-Remaining header into integer count.
+ */
+export function parseRateLimitRemaining(headerValue: string | null): number | null {
+  if (!headerValue) return null;
+  const parsed = parseInt(headerValue.trim(), 10);
+  return isNaN(parsed) ? null : parsed;
+}
+
+export class RateLimitError extends Error {
+  public readonly status = 429;
+  public readonly retryAfterSeconds: number;
+  public readonly remaining: number | null;
+
+  constructor(
+    message: string,
+    retryAfterSeconds: number,
+    remaining: number | null = null,
+  ) {
+    super(message);
+    this.name = "RateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.remaining = remaining;
+  }
+}
+
+export interface ApiRequestOptions extends RequestInit {
+  isBackground?: boolean;
+  autoRetry?: boolean;
+  maxRetries?: number;
+  baseDelayMs?: number;
+}
+
 export class ApiClient {
   private token: string;
+  private rateLimitUntil = 0;
+  private backoffAttempts = 0;
 
   constructor(token: string) {
     this.token = token;
   }
 
-  private async fetch<T>(path: string, options?: RequestInit): Promise<T> {
-    const response = await fetch(getApiUrl(path), {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Xavier-Token": this.token,
-        ...(options?.headers ?? {}),
-      },
-    });
+  public getRateLimitCooldown(): number {
+    const remainingMs = this.rateLimitUntil - Date.now();
+    return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
+  }
 
-    if (!response.ok) {
-      throw new Error(await response.text());
+  private async fetch<T>(path: string, options?: ApiRequestOptions): Promise<T> {
+    const isBackground = options?.isBackground ?? false;
+    const autoRetry = options?.autoRetry ?? isBackground;
+    const maxRetries = options?.maxRetries ?? (autoRetry ? 3 : 0);
+    const baseDelayMs = options?.baseDelayMs ?? 1000;
+
+    const activeWorkspace =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("xavier_active_workspace") || "default"
+        : "default";
+
+    let attempt = 0;
+
+    while (attempt <= maxRetries) {
+      // Respect active rate-limit cooldown before making automated attempts
+      if (attempt > 0 || autoRetry) {
+        const cooldownLeft = this.rateLimitUntil - Date.now();
+        if (cooldownLeft > 0) {
+          await new Promise((resolve) => setTimeout(resolve, cooldownLeft));
+        }
+      }
+
+      try {
+        const response = await fetch(getApiUrl(path), {
+          ...options,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Xavier-Token": this.token,
+            "X-Workspace-Id": activeWorkspace,
+            ...(options?.headers ?? {}),
+          },
+        });
+
+        if (response.status === 429) {
+          const retryAfterHeader =
+            response.headers?.get("Retry-After") ??
+            response.headers?.get("retry-after") ??
+            null;
+          const remainingHeader =
+            response.headers?.get("X-RateLimit-Remaining") ??
+            response.headers?.get("x-ratelimit-remaining") ??
+            null;
+
+          const parsedRetryAfter = parseRetryAfter(retryAfterHeader);
+          const remaining = parseRateLimitRemaining(remainingHeader);
+
+          const exponentialDelaySec = Math.ceil(
+            (baseDelayMs * Math.pow(2, this.backoffAttempts)) / 1000,
+          );
+          const retryAfterSeconds = parsedRetryAfter ?? Math.max(5, exponentialDelaySec);
+
+          const cooldownMs = retryAfterSeconds * 1000;
+          this.rateLimitUntil = Date.now() + cooldownMs;
+          this.backoffAttempts += 1;
+
+          const responseText = await response.text().catch(() => "Rate limit exceeded");
+          const errorMessage =
+            responseText || `Rate limit exceeded. Retry in ${retryAfterSeconds}s`;
+
+          if (typeof window !== "undefined" && window.dispatchEvent) {
+            window.dispatchEvent(
+              new CustomEvent("xavier-rate-limit", {
+                detail: {
+                  message: errorMessage,
+                  retryAfterSeconds,
+                  remaining,
+                  type: "rate-limit",
+                },
+              }),
+            );
+          }
+
+          const rateLimitError = new RateLimitError(
+            errorMessage,
+            retryAfterSeconds,
+            remaining,
+          );
+
+          if (attempt < maxRetries) {
+            attempt += 1;
+            await new Promise((resolve) => setTimeout(resolve, cooldownMs));
+            continue;
+          }
+
+          if (isBackground) {
+            return null as unknown as T;
+          }
+
+          throw rateLimitError;
+        }
+
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+
+        this.backoffAttempts = 0;
+        return (await response.json()) as T;
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          if (isBackground) {
+            return null as unknown as T;
+          }
+          throw err;
+        }
+
+        if (attempt < maxRetries) {
+          attempt += 1;
+          const delayMs = baseDelayMs * Math.pow(2, attempt);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        if (isBackground) {
+          return null as unknown as T;
+        }
+        throw err;
+      }
     }
-    return (await response.json()) as T;
+
+    return null as unknown as T;
   }
 
   // Provider Config
@@ -73,8 +266,17 @@ export class ApiClient {
   }
 
   // Memory
-  async searchMemories(query: string, kind?: string, limit = 20) {
-    const params = new URLSearchParams({ q: query, limit: String(limit) });
+  async searchMemories(query: string, kind?: string, limit = 20, workspaceId?: string) {
+    const activeWorkspace =
+      workspaceId ||
+      (typeof localStorage !== "undefined"
+        ? localStorage.getItem("xavier_active_workspace") || "default"
+        : "default");
+    const params = new URLSearchParams({
+      q: query,
+      limit: String(limit),
+      workspace_id: activeWorkspace,
+    });
     if (kind) params.set("kind", kind);
     return this.fetch<MemoryEntry[]>(`/api/memory/search?${params}`);
   }

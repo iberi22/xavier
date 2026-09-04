@@ -599,6 +599,59 @@ pub async fn update_handler(
     }
 }
 
+/// Runs offline consolidation, decay, and TGD utility pruning directly against local SqliteMemoryStore.
+pub async fn offline_consolidate(workspace_id: Option<&str>) -> anyhow::Result<serde_json::Value> {
+    use crate::memory::entity_graph::KnowledgeConsolidator;
+    use crate::memory::sqlite_store::SqliteMemoryStore;
+    use crate::memory::store::MemoryStore;
+    use crate::memory::tgd::TgdUtilityPruner;
+
+    let ws_id = workspace_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string())
+        });
+
+    let store: Arc<dyn MemoryStore> = match SqliteMemoryStore::from_env().await {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            tracing::warn!(
+                "Failed to instantiate SqliteMemoryStore ({}), attempting VecSqliteMemoryStore...",
+                e
+            );
+            let vec_store =
+                crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await?;
+            Arc::new(vec_store)
+        }
+    };
+
+    let consolidator = KnowledgeConsolidator::default();
+    let cons_report = consolidator.run_consolidation(&*store, &ws_id).await?;
+
+    let pruner = TgdUtilityPruner::with_defaults();
+    let prune_summary = pruner.prune_memories(&*store, &ws_id).await?;
+
+    let vacuum_res = store.compact().await;
+
+    let total_reclaimed = cons_report.reclaimed_bytes + prune_summary.reclaimed_bytes;
+
+    let res_json = serde_json::json!({
+        "status": "ok",
+        "offline": true,
+        "workspace_id": ws_id,
+        "total_processed": cons_report.total_processed,
+        "consolidated_entities": cons_report.consolidated_entities,
+        "decayed_documents": cons_report.decayed_count,
+        "pruned_documents": prune_summary.pruned_count,
+        "reclaimed_bytes": total_reclaimed,
+        "pruned_ids": prune_summary.pruned_ids,
+        "vacuumed": vacuum_res.is_ok(),
+        "summary": cons_report.summary,
+    });
+
+    Ok(res_json)
+}
+
 /// GET /v1/memory/manifest
 pub async fn memory_manifest_handler(
     State(state): State<CliState>,

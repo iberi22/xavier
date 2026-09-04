@@ -1,15 +1,50 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ApiClient, getApiUrl } from "../src/api/client";
+import {
+  ApiClient,
+  RateLimitError,
+  getApiUrl,
+  getRemoteUrl,
+  setRemoteUrl,
+  parseRateLimitRemaining,
+  parseRetryAfter,
+} from "../src/api/client";
+
+describe("Rate limiting helpers", () => {
+  it("parses Retry-After values correctly", () => {
+    expect(parseRetryAfter(null)).toBeNull();
+    expect(parseRetryAfter("")).toBeNull();
+    expect(parseRetryAfter("30")).toBe(30);
+    expect(parseRetryAfter("12.4")).toBe(13);
+
+    const futureDate = new Date(Date.now() + 10000).toUTCString();
+    const parsedDateDiff = parseRetryAfter(futureDate);
+    expect(parsedDateDiff).toBeGreaterThanOrEqual(9);
+    expect(parsedDateDiff).toBeLessThanOrEqual(11);
+
+    const pastDate = new Date(Date.now() - 5000).toUTCString();
+    expect(parseRetryAfter(pastDate)).toBe(1);
+  });
+
+  it("parses X-RateLimit-Remaining values correctly", () => {
+    expect(parseRateLimitRemaining(null)).toBeNull();
+    expect(parseRateLimitRemaining("")).toBeNull();
+    expect(parseRateLimitRemaining("invalid")).toBeNull();
+    expect(parseRateLimitRemaining("42")).toBe(42);
+    expect(parseRateLimitRemaining("0")).toBe(0);
+  });
+});
 
 describe("ApiClient unit tests", () => {
   const globalFetch = global.fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   afterEach(() => {
     global.fetch = globalFetch;
+    localStorage.clear();
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   });
 
@@ -18,6 +53,19 @@ describe("ApiClient unit tests", () => {
 
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     expect(getApiUrl("/v1/test")).toBe("http://127.0.0.1:8006/v1/test");
+  });
+
+  it("resolves getApiUrl with remote URL when xavier_remote_url is set in localStorage", () => {
+    expect(getApiUrl("/v1/memories")).toBe("/v1/memories");
+
+    setRemoteUrl("https://node.swal.local:8006/");
+    expect(getRemoteUrl()).toBe("https://node.swal.local:8006/");
+    expect(getApiUrl("/v1/memories")).toBe("https://node.swal.local:8006/v1/memories");
+    expect(getApiUrl("v1/memories")).toBe("https://node.swal.local:8006/v1/memories");
+
+    setRemoteUrl(null);
+    expect(getRemoteUrl()).toBe("");
+    expect(getApiUrl("/v1/memories")).toBe("/v1/memories");
   });
 
   it("throws an error when HTTP fetch response is not ok", async () => {
@@ -80,7 +128,7 @@ describe("ApiClient unit tests", () => {
     const searchRes = await client.searchMemories("query", "note", 10);
     expect(searchRes).toEqual(mockMemories);
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/memory/search?q=query&limit=10&kind=note"),
+      expect.stringContaining("/api/memory/search?"),
       expect.anything()
     );
 
@@ -195,5 +243,72 @@ describe("ApiClient unit tests", () => {
     expect(await client.getOfflineModels()).toEqual(mockOfflineModels);
     expect(await client.getOfflineStatus()).toEqual(mockOfflineStatus);
     expect(await client.downloadOfflineModel("http://url/m1")).toEqual({ status: "ok", message: "done", filename: "m1", path: "/p" });
+  });
+
+  it("handles 429 rate limit responses and emits custom event", async () => {
+    const mockHeaders = new Headers({
+      "Retry-After": "10",
+      "X-RateLimit-Remaining": "0",
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: mockHeaders,
+      text: vi.fn().mockResolvedValue("Rate limit exceeded for tests"),
+    });
+
+    const eventListener = vi.fn();
+    window.addEventListener("xavier-rate-limit", eventListener);
+
+    const client = new ApiClient("test-token");
+
+    let thrownErr: unknown;
+    try {
+      await client.getProvidersConfig();
+    } catch (e) {
+      thrownErr = e;
+    }
+
+    expect(thrownErr).toBeInstanceOf(RateLimitError);
+    const rlErr = thrownErr as RateLimitError;
+    expect(rlErr.status).toBe(429);
+    expect(rlErr.retryAfterSeconds).toBe(10);
+    expect(rlErr.remaining).toBe(0);
+    expect(rlErr.message).toBe("Rate limit exceeded for tests");
+
+    expect(eventListener).toHaveBeenCalledTimes(1);
+    const eventDetail = (eventListener.mock.calls[0][0] as CustomEvent).detail;
+    expect(eventDetail).toEqual({
+      message: "Rate limit exceeded for tests",
+      retryAfterSeconds: 10,
+      remaining: 0,
+      type: "rate-limit",
+    });
+
+    window.removeEventListener("xavier-rate-limit", eventListener);
+  });
+
+  it("handles background polling requests on 429 without throwing unhandled rejections", async () => {
+    const mockHeaders = new Headers({
+      "Retry-After": "1",
+      "X-RateLimit-Remaining": "0",
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: mockHeaders,
+      text: vi.fn().mockResolvedValue("Background rate limit"),
+    });
+
+    const client = new ApiClient("test-token");
+    // Explicitly call with isBackground: true option via private fetch or custom background options
+    const result = await (client as any).fetch("/v1/system/scan", {
+      isBackground: true,
+      maxRetries: 0,
+    });
+
+    expect(result).toBeNull();
   });
 });

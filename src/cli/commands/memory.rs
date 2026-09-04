@@ -62,7 +62,7 @@ async fn run_export_markdown(dir: &std::path::Path, public_only: bool) -> Result
 
 async fn run_consolidation(nightly: bool) -> Result<()> {
     let base_url = resolve_base_url();
-    let token = require_xavier_token()?;
+    let token = require_xavier_token().unwrap_or_default();
     let client = CLI_HTTP_CLIENT.clone();
 
     if nightly {
@@ -71,23 +71,54 @@ async fn run_consolidation(nightly: bool) -> Result<()> {
         println!("🚀 Triggering one-off memory consolidation...");
     }
 
-    let resp = client
+    let response = client
         .post(format!("{}/memory/consolidate", base_url))
         .header("X-Xavier-Token", &token)
         .json(&serde_json::json!({ "nightly": nightly }))
         .send()
-        .await?;
+        .await;
 
-    if resp.status().is_success() {
-        let body: serde_json::Value = resp.json().await?;
-        println!(
-            "✅ Consolidation complete: {}",
-            serde_json::to_string_pretty(&body)?
-        );
-    } else {
-        println!("❌ Consolidation failed: {}", resp.text().await?);
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+            println!(
+                "✅ Consolidation complete: {}",
+                serde_json::to_string_pretty(&body)?
+            );
+            Ok(())
+        }
+        Ok(resp) => {
+            let status = resp.status();
+            let body_text = resp.text().await.unwrap_or_default();
+            println!(
+                "⚠️ Server HTTP {} ({}). Falling back to local offline memory consolidation...",
+                status.as_u16(),
+                body_text
+            );
+            run_offline_consolidation_cli().await
+        }
+        Err(e) => {
+            println!(
+                "⚠️ CONNECTION_REFUSED or server offline ({}). Falling back to local offline memory consolidation...",
+                e
+            );
+            run_offline_consolidation_cli().await
+        }
     }
-    Ok(())
+}
+
+async fn run_offline_consolidation_cli() -> Result<()> {
+    match crate::cli::handlers::memory::offline_consolidate(None).await {
+        Ok(summary) => {
+            println!("\n✅ Local offline consolidation complete!");
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+            Ok(())
+        }
+        Err(err) => {
+            println!("❌ Local offline consolidation failed: {}", err);
+            Err(err)
+        }
+    }
 }
 
 async fn start_consolidation() -> Result<()> {
@@ -155,25 +186,42 @@ async fn run_index_self() -> Result<()> {
 
 async fn run_nightly_consolidation() -> Result<()> {
     let base_url = resolve_base_url();
-    let token = require_xavier_token()?;
+    let token = require_xavier_token().unwrap_or_default();
     let client = CLI_HTTP_CLIENT.clone();
 
     println!("🌙 Triggering nightly consolidation (TGD + memory)...");
-    let resp = client
+    let response = client
         .post(format!("{}/memory/consolidate", base_url))
         .header("X-Xavier-Token", &token)
         .json(&serde_json::json!({"nightly": true}))
         .send()
-        .await?;
+        .await;
 
-    if resp.status().is_success() {
-        let body: serde_json::Value = resp.json().await?;
-        println!(
-            "✅ Nightly consolidation complete: {}",
-            serde_json::to_string_pretty(&body)?
-        );
-    } else {
-        println!("❌ Nightly consolidation failed: {}", resp.text().await?);
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+            println!(
+                "✅ Nightly consolidation complete: {}",
+                serde_json::to_string_pretty(&body)?
+            );
+            Ok(())
+        }
+        Ok(resp) => {
+            let status = resp.status();
+            let body_text = resp.text().await.unwrap_or_default();
+            println!(
+                "⚠️ Server HTTP {} ({}). Falling back to local offline memory consolidation...",
+                status.as_u16(),
+                body_text
+            );
+            run_offline_consolidation_cli().await
+        }
+        Err(e) => {
+            println!(
+                "⚠️ CONNECTION_REFUSED or server offline ({}). Falling back to local offline memory consolidation...",
+                e
+            );
+            run_offline_consolidation_cli().await
+        }
     }
-    Ok(())
 }

@@ -1347,6 +1347,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route("/health", get(health_handler))
         .route(
+            "/node/founder/status",
+            get(xavier::node_identity::founder_status_handler),
+        )
+        .route(
+            "/v1/node/founder/status",
+            get(xavier::node_identity::founder_status_handler),
+        )
+        .route(
             "/healthz",
             get(crate::cli::handlers::system::healthz_handler),
         )
