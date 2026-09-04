@@ -8,7 +8,9 @@ mod persistence_tests {
     use tokio::sync::RwLock;
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_hormer_persistence() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let config_path = temp_dir.path().join("test_hormer_config.json");
         let default_settings = XavierSettings::default();
@@ -17,7 +19,6 @@ mod persistence_tests {
             serde_json::to_string_pretty(&default_settings).unwrap(),
         )
         .unwrap();
-        let prev_config = std::env::var("XAVIER_CONFIG_PATH").ok();
         std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
 
         let initial_weights = LayerWeights::new(0.3, 0.3, 0.4);
@@ -70,10 +71,5 @@ mod persistence_tests {
             settings.retrieval.learned_policy.working_weight != 0.3
                 || settings.retrieval.learned_policy.update_count > 0
         );
-
-        match prev_config {
-            Some(p) => std::env::set_var("XAVIER_CONFIG_PATH", p),
-            None => std::env::remove_var("XAVIER_CONFIG_PATH"),
-        }
     }
 }

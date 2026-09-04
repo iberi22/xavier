@@ -88,7 +88,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run Lib Tests
-        run: cargo test --package xavier --lib --features ci-safe -- --test-threads=4
+        # Use 1 thread: tests in `src/memory/sqlite_vec_store/schema_impl.rs`
+        # that mutate global ENV (`XAVIER_EMBEDDING_PROVIDER_MODE`,
+        # `OPENAI_API_KEY`) cannot be parallelised across processes — the
+        # `#[serial]`/`ENV_LOCK` mutex lives per-process and does not
+        # coordinate cross-process. With 4 threads, 4 of those tests
+        # deterministically fail (`left:0 right:1`). Tests are fast enough
+        # that 1 thread (~100s) is acceptable; CI wall-time cost is minimal
+        # vs the engineering cost of refactoring every test to use TempEnv.
+        # See commit message for full rationale and reproduction log.
+        run: cargo test --package xavier --lib --features ci-safe -- --test-threads=1
 
   # Job 4: Secret Scan
   secret-scan:

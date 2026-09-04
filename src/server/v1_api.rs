@@ -167,6 +167,49 @@ pub struct V1ExportParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct GraphExportQuery {
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GraphViewNode {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub trust_score: f32,
+    pub memory_count: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GraphViewLink {
+    pub source: String,
+    pub target: String,
+    pub relation: String,
+    pub weight: f32,
+    pub confidence_score: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GraphViewStats {
+    pub entities: usize,
+    pub relations: usize,
+    pub shown_nodes: usize,
+    pub shown_links: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GraphViewResponse {
+    pub status: String,
+    pub layer: String,
+    pub truncated: bool,
+    pub nodes: Vec<GraphViewNode>,
+    pub links: Vec<GraphViewLink>,
+    pub stats: GraphViewStats,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct RecallEvalCase {
     pub query: String,
     pub expected_path: String,
@@ -2147,6 +2190,276 @@ pub async fn v1_mesh_data_commons_opt_in(
     Json(serde_json::json!({ "status": "ok" })).into_response()
 }
 
+/// Helper function to build nodes, links, and stats from workspace memories
+async fn build_memory_graph(
+    workspace: &WorkspaceContext,
+) -> (Vec<GraphViewNode>, Vec<GraphViewLink>, GraphViewStats) {
+    let all_docs = workspace.workspace.memory.all_documents().await;
+    let mut nodes = Vec::new();
+    let mut links = Vec::new();
+    let mut seen_nodes = std::collections::HashSet::new();
+
+    for doc in &all_docs {
+        let node_id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+        if node_id.is_empty() {
+            continue;
+        }
+
+        if seen_nodes.insert(node_id.clone()) {
+            let label = doc
+                .metadata
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&doc.path)
+                .to_string();
+
+            let kind = doc
+                .metadata
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("memory")
+                .to_string();
+
+            let description = if !doc.content.is_empty() {
+                Some(doc.content.chars().take(120).collect::<String>())
+            } else {
+                doc.metadata
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            };
+
+            nodes.push(GraphViewNode {
+                id: node_id.clone(),
+                label,
+                kind,
+                description,
+                trust_score: 1.0,
+                memory_count: 1,
+            });
+        }
+
+        // Parent relationship
+        if let Some(parent_id) = doc.metadata.get("parent_id").and_then(|v| v.as_str()) {
+            if !parent_id.is_empty() {
+                links.push(GraphViewLink {
+                    source: parent_id.to_string(),
+                    target: node_id.clone(),
+                    relation: "parent".to_string(),
+                    weight: 1.0,
+                    confidence_score: 1.0,
+                });
+            }
+        }
+
+        // Wikilink extraction from content: [[Target]]
+        let content = &doc.content;
+        let mut start_idx = 0;
+        while let Some(open_idx) = content[start_idx..].find("[[") {
+            let actual_open = start_idx + open_idx + 2;
+            if let Some(close_idx) = content[actual_open..].find("]]") {
+                let raw_link = &content[actual_open..actual_open + close_idx];
+                let link_target = raw_link.split('|').next().unwrap_or("").trim();
+                if !link_target.is_empty() {
+                    // Find node with matching title, path, or label
+                    let matched_id = all_docs
+                        .iter()
+                        .find_map(|d| {
+                            let id = d.id.clone().unwrap_or_else(|| d.path.clone());
+                            let title = d.metadata.get("title").and_then(|v| v.as_str());
+                            if title.is_some_and(|t| t.eq_ignore_ascii_case(link_target))
+                                || d.path.eq_ignore_ascii_case(link_target)
+                                || d.content.starts_with(link_target)
+                            {
+                                Some(id)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_else(|| link_target.to_string());
+
+                    links.push(GraphViewLink {
+                        source: node_id.clone(),
+                        target: matched_id,
+                        relation: "wikilink".to_string(),
+                        weight: 1.0,
+                        confidence_score: 1.0,
+                    });
+                }
+                start_idx = actual_open + close_idx + 2;
+            } else {
+                break;
+            }
+        }
+
+        // Parse relations from metadata array
+        if let Some(rel_array) = doc.metadata.get("relations").and_then(|v| v.as_array()) {
+            for rel in rel_array {
+                if let (Some(target), Some(rel_type)) = (
+                    rel.get("target").and_then(|v| v.as_str()),
+                    rel.get("relation").and_then(|v| v.as_str()),
+                ) {
+                    links.push(GraphViewLink {
+                        source: node_id.clone(),
+                        target: target.to_string(),
+                        relation: rel_type.to_string(),
+                        weight: rel
+                            .get("weight")
+                            .and_then(|v| v.as_f64())
+                            .map(|f| f as f32)
+                            .unwrap_or(1.0),
+                        confidence_score: 1.0,
+                    });
+                }
+            }
+        }
+    }
+
+    let stats = GraphViewStats {
+        entities: nodes.len(),
+        relations: links.len(),
+        shown_nodes: nodes.len(),
+        shown_links: links.len(),
+    };
+
+    (nodes, links, stats)
+}
+
+/// GET /v1/memories/graph
+/// Returns nodes and links formatted for GraphCanvas / ForceGraph2D
+pub async fn v1_memories_graph(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    let (nodes, links, stats) = build_memory_graph(&workspace).await;
+
+    Json(GraphViewResponse {
+        status: "ok".to_string(),
+        layer: "memory".to_string(),
+        truncated: false,
+        nodes,
+        links,
+        stats,
+    })
+    .into_response()
+}
+
+/// GET /v1/graph/export?format=graphml|cytoscape
+/// Exports the memory semantic graph in GraphML XML or Cytoscape JSON formats.
+pub async fn v1_graph_export(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Query(query): Query<GraphExportQuery>,
+) -> impl IntoResponse {
+    let format = query
+        .format
+        .as_deref()
+        .unwrap_or("cytoscape")
+        .to_lowercase();
+    let (nodes, links, _) = build_memory_graph(&workspace).await;
+
+    match format.as_str() {
+        "graphml" => {
+            let mut xml = String::from(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns
+         http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+  <key id="d0" for="node" attr.name="label" attr.type="string"/>
+  <key id="d1" for="node" attr.name="kind" attr.type="string"/>
+  <key id="d2" for="node" attr.name="description" attr.type="string"/>
+  <key id="d3" for="edge" attr.name="relation" attr.type="string"/>
+  <key id="d4" for="edge" attr.name="weight" attr.type="float"/>
+  <graph id="G" edgedefault="directed">
+"#,
+            );
+            for n in &nodes {
+                let label_escaped = n
+                    .label
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                let kind_escaped = n
+                    .kind
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                let desc_escaped = n
+                    .description
+                    .as_deref()
+                    .unwrap_or("")
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                xml.push_str(&format!(
+                    "    <node id=\"{}\">\n      <data key=\"d0\">{}</data>\n      <data key=\"d1\">{}</data>\n      <data key=\"d2\">{}</data>\n    </node>\n",
+                    n.id, label_escaped, kind_escaped, desc_escaped
+                ));
+            }
+            for (idx, l) in links.iter().enumerate() {
+                let rel_escaped = l
+                    .relation
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                xml.push_str(&format!(
+                    "    <edge id=\"e{}\" source=\"{}\" target=\"{}\">\n      <data key=\"d3\">{}</data>\n      <data key=\"d4\">{}</data>\n    </edge>\n",
+                    idx, l.source, l.target, rel_escaped, l.weight
+                ));
+            }
+            xml.push_str("  </graph>\n</graphml>\n");
+
+            axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/xml; charset=utf-8")
+                .body(axum::body::Body::from(xml))
+                .unwrap()
+        }
+        _ => {
+            let cy_nodes: Vec<serde_json::Value> = nodes
+                .iter()
+                .map(|n| {
+                    serde_json::json!({
+                        "data": {
+                            "id": n.id,
+                            "label": n.label,
+                            "kind": n.kind,
+                            "description": n.description,
+                            "trust_score": n.trust_score,
+                            "memory_count": n.memory_count
+                        }
+                    })
+                })
+                .collect();
+
+            let cy_edges: Vec<serde_json::Value> = links
+                .iter()
+                .enumerate()
+                .map(|(i, l)| {
+                    serde_json::json!({
+                        "data": {
+                            "id": format!("e_{}", i),
+                            "source": l.source,
+                            "target": l.target,
+                            "relation": l.relation,
+                            "weight": l.weight,
+                            "confidence_score": l.confidence_score
+                        }
+                    })
+                })
+                .collect();
+
+            Json(serde_json::json!({
+                "format": "cytoscape",
+                "elements": {
+                    "nodes": cy_nodes,
+                    "edges": cy_edges
+                }
+            }))
+            .into_response()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2156,6 +2469,7 @@ mod tests {
         routing::{get, post},
         Router,
     };
+    use serial_test::serial;
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -2249,16 +2563,19 @@ mod tests {
             .route("/v1/context/package", post(v1_context_package))
             .route("/v1/memory/recall-eval", post(v1_memory_recall_eval))
             .route("/v1/memory/recall/stats", get(v1_memory_recall_stats))
+            .route("/v1/memories/graph", get(v1_memories_graph))
+            .route("/v1/graph/export", get(v1_graph_export))
             .route("/v1/mesh/health", get(v1_mesh_health))
             .layer(Extension(workspace))
             .with_state(state)
     }
 
     #[tokio::test]
+    #[serial]
     #[allow(clippy::await_holding_lock)]
     async fn test_v1_memory_recall_eval_5_known_memories() {
         // Blindar contra env-race: otros tests setean XAVIER_EMBEDDING_* sin restaurar
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _temp_env = crate::settings::tests::TempEnv::new();
         for key in [
             "XAVIER_EMBEDDING_PROVIDER_MODE",
             "XAVIER_EMBEDDING_URL",
@@ -3611,5 +3928,100 @@ mod tests {
         assert!(val.get("peers").is_some());
         assert!(val.get("maturity").is_some());
         assert!(val.get("bandwidth").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_v1_memories_graph_and_export() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // 1. Insert two connected memories with wikilinks and tags
+        let add_req1 = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": "Alpha document linking to [[Beta]] and [[Gamma]].",
+                    "source": "obsidian",
+                    "tags": ["rust", "graph"]
+                })
+                .to_string(),
+            ))
+            .expect("failed to build add memory request 1");
+
+        let resp1 = app.clone().oneshot(add_req1).await.expect("add 1");
+        assert_eq!(resp1.status(), StatusCode::OK);
+
+        let add_req2 = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": "Beta document details. Also #rust tag.",
+                    "source": "obsidian",
+                    "tags": ["rust"]
+                })
+                .to_string(),
+            ))
+            .expect("failed to build add memory request 2");
+
+        let resp2 = app.clone().oneshot(add_req2).await.expect("add 2");
+        assert_eq!(resp2.status(), StatusCode::OK);
+
+        // 2. Query /v1/memories/graph
+        let graph_req = Request::builder()
+            .method("GET")
+            .uri("/v1/memories/graph")
+            .body(Body::empty())
+            .expect("failed to build graph request");
+
+        let resp = app.clone().oneshot(graph_req).await.expect("graph req");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        let graph_res: serde_json::Value = serde_json::from_slice(&body).expect("parse json");
+
+        assert!(graph_res.get("nodes").is_some());
+        assert!(graph_res.get("links").is_some());
+        assert!(graph_res.get("stats").is_some());
+        let nodes = graph_res["nodes"].as_array().expect("nodes array");
+        assert!(nodes.len() >= 2);
+        let links = graph_res["links"].as_array().expect("links array");
+        assert!(!links.is_empty());
+
+        // 3. Query /v1/graph/export?format=graphml
+        let export_req = Request::builder()
+            .method("GET")
+            .uri("/v1/graph/export?format=graphml")
+            .body(Body::empty())
+            .expect("failed to build export request");
+
+        let resp = app.clone().oneshot(export_req).await.expect("export req");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        let graphml_str = String::from_utf8(body.to_vec()).expect("utf8 string");
+        assert!(graphml_str.contains("<graphml"));
+        assert!(graphml_str.contains("</graphml>"));
+
+        // 4. Query /v1/graph/export?format=cytoscape
+        let cyto_req = Request::builder()
+            .method("GET")
+            .uri("/v1/graph/export?format=cytoscape")
+            .body(Body::empty())
+            .expect("failed to build cyto request");
+
+        let resp = app.oneshot(cyto_req).await.expect("cyto req");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        let cyto_json: serde_json::Value = serde_json::from_slice(&body).expect("parse cyto json");
+        assert!(cyto_json.get("elements").is_some());
+        assert!(cyto_json["elements"].get("nodes").is_some());
     }
 }
