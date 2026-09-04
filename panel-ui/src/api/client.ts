@@ -293,6 +293,17 @@ export class ApiClient {
     });
   }
 
+  async updateMemory(
+    id: string,
+    content: string,
+    metadata?: Record<string, unknown>,
+  ) {
+    return this.fetch<{ status: string; id: string }>(`/v1/memories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ content, metadata }),
+    });
+  }
+
   async exportMarkdown(publicOnly = false) {
     const params = new URLSearchParams();
     if (publicOnly) params.set("public_only", "true");
@@ -307,6 +318,10 @@ export class ApiClient {
       }>;
       workspace_id: string;
     }>(`/v1/memory/export-markdown?${params.toString()}`);
+  }
+
+  async exportMarkdownVault(publicOnly = false) {
+    return this.exportMarkdown(publicOnly);
   }
 
   // Agents

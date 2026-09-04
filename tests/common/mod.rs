@@ -53,6 +53,7 @@ pub async fn compute_store_manifest_hash(store: &dyn MemoryStore) -> anyhow::Res
 }
 
 /// Helper to construct a test `MemoryRecord` with metadata and timestamp details.
+#[allow(clippy::too_many_arguments)]
 pub fn make_record(
     id: &str,
     workspace_id: &str,

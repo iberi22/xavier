@@ -274,32 +274,6 @@ pub(crate) fn has_temporal_signal(text: &str) -> TemporalScore {
     compute_temporal_score(text, None)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_temporal_score_with_signals() {
-        let score = has_temporal_signal("The incident occurred yesterday.");
-        assert_eq!(score.decay, 1.0);
-        assert_eq!(score.recency_boost, 1.5);
-    }
-
-    #[test]
-    fn test_temporal_score_without_signals() {
-        let score = has_temporal_signal("The system operates normally.");
-        assert_eq!(score.decay, 1.0);
-        assert_eq!(score.recency_boost, 1.0);
-    }
-
-    #[test]
-    fn test_compute_temporal_score_decay_formula() {
-        let score = compute_temporal_score("meeting last week", Some(72.0));
-        assert!((score.decay - (-1.0f32).exp()).abs() < 1e-4);
-        assert_eq!(score.recency_boost, 1.5);
-    }
-}
-
 /// Term overlap in content.
 pub(crate) fn term_overlap_in_content(doc: &RetrievedDocument, terms: &[String]) -> usize {
     let content_lower = doc.content.to_lowercase();
@@ -470,4 +444,30 @@ pub(crate) fn best_date_answer(query: &str, docs: &[RetrievedDocument]) -> Optio
         .get("session_time")
         .and_then(|value| value.as_str())
         .map(clean_date)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_temporal_score_with_signals() {
+        let score = has_temporal_signal("The incident occurred yesterday.");
+        assert_eq!(score.decay, 1.0);
+        assert_eq!(score.recency_boost, 1.5);
+    }
+
+    #[test]
+    fn test_temporal_score_without_signals() {
+        let score = has_temporal_signal("The system operates normally.");
+        assert_eq!(score.decay, 1.0);
+        assert_eq!(score.recency_boost, 1.0);
+    }
+
+    #[test]
+    fn test_compute_temporal_score_decay_formula() {
+        let score = compute_temporal_score("meeting last week", Some(72.0));
+        assert!((score.decay - (-1.0f32).exp()).abs() < 1e-4);
+        assert_eq!(score.recency_boost, 1.5);
+    }
 }
