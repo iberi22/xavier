@@ -136,4 +136,43 @@ describe("UI Loading & Error States", () => {
     const toastItems = screen.getAllByTestId("error-toast-item");
     expect(toastItems.length).toBe(2);
   });
+
+  test("(g) ErrorToast renders structured rate-limit toast with cooldown badge", () => {
+    render(
+      <ErrorToast
+        structuredToasts={[
+          {
+            id: "rl-1",
+            message: "Rate limit exceeded. Slow down.",
+            type: "rate-limit",
+            cooldownSeconds: 15,
+            remaining: 0,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText("Rate limit exceeded. Slow down.")).toBeInTheDocument();
+    expect(screen.getByTestId("rate-limit-cooldown-badge")).toHaveTextContent("Cooldown: 15s");
+    expect(screen.getByTestId("rate-limit-remaining-badge")).toHaveTextContent("Remaining: 0");
+  });
+
+  test("(h) ErrorToast captures xavier-rate-limit window event", () => {
+    render(<ErrorToast />);
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("xavier-rate-limit", {
+          detail: {
+            message: "Cloudflare rate limit hit",
+            retryAfterSeconds: 30,
+            remaining: 0,
+          },
+        })
+      );
+    });
+
+    expect(screen.getByText("Cloudflare rate limit hit")).toBeInTheDocument();
+    expect(screen.getByTestId("rate-limit-cooldown-badge")).toHaveTextContent("Cooldown: 30s");
+  });
 });
