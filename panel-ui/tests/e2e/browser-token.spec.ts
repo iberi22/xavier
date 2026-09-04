@@ -15,12 +15,36 @@ test.describe("Browser Token Hook E2E", () => {
       });
     });
 
+    await page.route("**/health*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", system: { cpu_usage: 10, ram_usage_percent: 20 } }),
+      });
+    });
+
     await page.route("**/notifications*", async (route) => {
       notificationsTokenHeader = route.request().headers()["x-xavier-token"] ?? null;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify([]),
+      });
+    });
+
+    await page.route("**/panel/api/**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+
+    await page.route("**/v1/config/providers*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ providers: [] }),
       });
     });
 
@@ -32,11 +56,17 @@ test.describe("Browser Token Hook E2E", () => {
       }
     });
 
+    await page.addInitScript(() => {
+      window.localStorage.setItem("xavier_onboarding_completed", "true");
+      window.localStorage.setItem("xavier_token", "mock-token");
+    });
+
     // Navigate to root page
     await page.goto("/");
 
-    // Verify page title or body rendered without blanking out
-    await expect(page.locator("body")).toBeVisible();
+    // Verify page title or app element rendered without blanking out
+    const appElement = page.locator("header, [class*='TopStatusBar'], h1:has-text('XAVIER LOGIN')");
+    await expect(appElement.first()).toBeVisible();
 
     // Verify no invocation of get_xavier_token or 401 authentication loops occurred in console
     const tauriErrors = consoleErrors.filter((err) =>

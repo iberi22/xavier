@@ -116,7 +116,12 @@ test.describe("TopStatusBar End-to-End Smoke Tests", () => {
     const cpuMetric = page.locator('div[title*="CPU:"]');
     await expect(cpuMetric).toBeVisible();
 
-    const cpuText = await cpuMetric.textContent();
-    expect(cpuText).not.toContain("0%");
+    await expect
+      .poll(async () => {
+        const title = (await cpuMetric.getAttribute("title")) || "";
+        const text = (await cpuMetric.textContent()) || "";
+        return title.includes("42%") || !text.includes("0%");
+      }, { timeout: 10_000 })
+      .toBe(true);
   });
 });

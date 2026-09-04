@@ -55,7 +55,7 @@ pub fn parse_vector_binary(bytes: &[u8]) -> Vec<f32> {
         let expected_len = 4 + dim * 4;
         if dim > 0 && bytes.len() == expected_len {
             let mut result = Vec::with_capacity(dim);
-            for chunk in bytes[4..].chunks_exact(4) {
+            for chunk in bytes[4..].as_chunks::<4>().0 {
                 let val = f32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
                 result.push(val);
             }
@@ -65,7 +65,7 @@ pub fn parse_vector_binary(bytes: &[u8]) -> Vec<f32> {
 
     if bytes.len().is_multiple_of(4) {
         let mut result = Vec::with_capacity(bytes.len() / 4);
-        for chunk in bytes.chunks_exact(4) {
+        for chunk in bytes.as_chunks::<4>().0 {
             let val = f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
             result.push(val);
         }
