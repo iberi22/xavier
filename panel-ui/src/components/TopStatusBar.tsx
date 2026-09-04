@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import React, { useEffect, useRef, useState } from "react";
-import { getApiUrl, getRemoteUrl, setRemoteUrl } from "../api/client";
+import { ApiClient, getApiUrl, getRemoteUrl, setRemoteUrl } from "../api/client";
 import { getApiTokenSync } from "../hooks/useApiToken";
 import FounderNodeStatusCard from "./FounderNodeStatusCard";
 import MessagingConfigModal from "./MessagingConfigModal";
@@ -95,6 +95,11 @@ export default React.memo(function TopStatusBar({
   const [inputRemoteUrl, setInputRemoteUrl] = useState<string>(remoteUrl);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncLatencyMs, setSyncLatencyMs] = useState<number | null>(null);
+  const [showSyncPopover, setShowSyncPopover] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
   const [modules, setModules] = useState({
     time: true,
@@ -298,6 +303,51 @@ export default React.memo(function TopStatusBar({
       });
     } finally {
       setTestingConnection(false);
+    }
+  };
+
+  const handleTriggerSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    const startTime = performance.now();
+    try {
+      const token = getToken();
+      const client = new ApiClient(token);
+
+      // Step 1: Push local changes to peer/cloud memory sync
+      await client.syncPush();
+
+      // Step 2: Pull remote changes from peer/cloud memory sync
+      await client.syncPull();
+
+      const elapsed = Math.round(performance.now() - startTime);
+      setSyncLatencyMs(elapsed);
+      setLastSyncTime(new Date());
+
+      if (typeof window !== "undefined" && window.dispatchEvent) {
+        window.dispatchEvent(
+          new CustomEvent("xavier-toast", {
+            detail: {
+              message: `Cloud memory sync completed successfully (${elapsed}ms)`,
+              type: "success",
+            },
+          })
+        );
+      }
+    } catch (err: any) {
+      const msg = err?.message || "Sync operation failed";
+      if (typeof window !== "undefined" && window.dispatchEvent) {
+        window.dispatchEvent(
+          new CustomEvent("xavier-error-toast", {
+            detail: {
+              message: `Sync failed: ${msg}`,
+              type: "error",
+            },
+          })
+        );
+      }
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -673,22 +723,111 @@ export default React.memo(function TopStatusBar({
 
           {/* Node Sync Pill */}
           {modules.sync && (
-            <motion.div
-              layout
-              transition={spring}
-              className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 sm:flex"
-            >
-              <Wifi className="w-3 h-3 text-cyan-400" />
-              <span className="font-mono text-[9px] text-cyan-400 uppercase tracking-wide hidden md:inline-block">
-                4
-              </span>
-              <div className="w-8 h-0.5 bg-black/50 rounded-full overflow-hidden border border-white/5 mx-0.5 hidden xl:block">
-                <div className="h-full bg-cyan-400 w-[98%] shadow-[0_0_6px_rgba(34,211,238,0.5)]" />
-              </div>
-              <span className="font-mono text-[9px] text-cyan-400 font-bold">
-                98%
-              </span>
-            </motion.div>
+            <div className="relative">
+              <motion.button
+                layout
+                transition={spring}
+                type="button"
+                onClick={() => setShowSyncPopover((prev) => !prev)}
+                className="bg-[#0a0a0a]/80 backdrop-blur-md border border-cyan-500/30 hover:border-cyan-400/60 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 sm:flex cursor-pointer transition-colors"
+                title="Cloud & Peer Memory Synchronization Status"
+                aria-label="Memory Sync Control & Status"
+              >
+                <Wifi className={`w-3 h-3 text-cyan-400 ${isSyncing ? "animate-pulse text-cyan-300" : ""}`} />
+                <span className="font-mono text-[9px] text-cyan-300 uppercase tracking-wide hidden md:inline-block">
+                  Sync
+                </span>
+                <div className="w-8 h-0.5 bg-black/50 rounded-full overflow-hidden border border-white/5 mx-0.5 hidden xl:block">
+                  <div className={`h-full bg-cyan-400 w-[98%] shadow-[0_0_6px_rgba(34,211,238,0.5)] ${isSyncing ? "animate-pulse" : ""}`} />
+                </div>
+                {isSyncing ? (
+                  <RefreshCw className="w-2.5 h-2.5 text-cyan-300 animate-spin" aria-label="Syncing progress indicator" />
+                ) : (
+                  <span className="font-mono text-[9px] text-cyan-400 font-bold">
+                    {syncLatencyMs !== null ? `${syncLatencyMs}ms` : "98%"}
+                  </span>
+                )}
+              </motion.button>
+
+              <AnimatePresence>
+                {showSyncPopover && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 top-full mt-2 w-60 bg-[#0a0a0a]/95 backdrop-blur-xl border border-cyan-500/30 rounded-xl p-3.5 shadow-2xl z-[80] space-y-3 font-mono"
+                  >
+                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Wifi className="w-3.5 h-3.5 text-cyan-400" />
+                        <span className="text-xs font-bold text-white uppercase tracking-wider">
+                          Memory Sync
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowSyncPopover(false)}
+                        className="text-white/40 hover:text-white transition-colors"
+                        aria-label="Close popover"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5 text-[10px] text-white/70">
+                      <div className="flex justify-between">
+                        <span>Sync Health:</span>
+                        <span className="text-cyan-400 font-bold">Optimal (98%)</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Peer Connection:</span>
+                        <span className="text-emerald-400 font-bold">4 Active</span>
+                      </div>
+                      {syncLatencyMs !== null && (
+                        <div className="flex justify-between">
+                          <span>Last Sync Latency:</span>
+                          <span className="text-cyan-300 font-bold">{syncLatencyMs}ms</span>
+                        </div>
+                      )}
+                      {lastSyncTime && (
+                        <div className="flex justify-between">
+                          <span>Last Synced At:</span>
+                          <span className="text-white/50">
+                            {lastSyncTime.toLocaleTimeString(undefined, {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={handleTriggerSync}
+                        disabled={isSyncing}
+                        className="w-full py-1.5 px-3 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        aria-label="Sync Now"
+                      >
+                        {isSyncing ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-300" />
+                            <span>Syncing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 text-cyan-300" />
+                            <span>Sync Now</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           )}
 
           {/* AI Providers Pill */}

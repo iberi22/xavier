@@ -5,7 +5,7 @@ import React, { useEffect, useState } from "react";
 export interface StructuredToastItem {
   id?: string;
   message: string;
-  type?: "error" | "rate-limit";
+  type?: "error" | "rate-limit" | "success" | "info";
   cooldownSeconds?: number;
   remaining?: number | null;
 }
@@ -103,12 +103,33 @@ export function ErrorToast({
       }
     };
 
+    const handleGenericToastEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        message?: string;
+        type?: "error" | "rate-limit" | "success" | "info";
+      }>;
+      if (customEvent.detail?.message) {
+        const id =
+          Date.now().toString() + Math.random().toString(36).substring(2, 5);
+        setItems((prev) => [
+          ...prev,
+          {
+            id,
+            message: customEvent.detail.message!,
+            type: customEvent.detail.type || "info",
+          },
+        ]);
+      }
+    };
+
     window.addEventListener("xavier-rate-limit", handleRateLimitEvent);
     window.addEventListener("xavier-error-toast", handleErrorEvent);
+    window.addEventListener("xavier-toast", handleGenericToastEvent);
 
     return () => {
       window.removeEventListener("xavier-rate-limit", handleRateLimitEvent);
       window.removeEventListener("xavier-error-toast", handleErrorEvent);
+      window.removeEventListener("xavier-toast", handleGenericToastEvent);
     };
   }, []);
 
@@ -195,6 +216,21 @@ export function ErrorToast({
         {items.map((item) => {
           const isRateLimit =
             item.type === "rate-limit" || item.cooldownSeconds !== undefined;
+          const isSuccess = item.type === "success";
+
+          let borderBgStyle = "bg-[#0a0a0a]/90 border-amber-500/20 text-amber-200";
+          let icon = "⚠️";
+          let iconColor = "text-amber-400";
+
+          if (isRateLimit) {
+            borderBgStyle = "bg-[#130d04]/95 border-amber-500/40 text-amber-200";
+            icon = "⏱️";
+          } else if (isSuccess) {
+            borderBgStyle = "bg-[#051a10]/95 border-emerald-500/40 text-emerald-200";
+            icon = "✓";
+            iconColor = "text-emerald-400 font-bold";
+          }
+
           return (
             <motion.div
               key={item.id}
@@ -202,19 +238,15 @@ export function ErrorToast({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, x: -20, scale: 0.95 }}
               transition={{ duration: 0.2 }}
-              className={`flex items-center justify-between gap-3 p-3 rounded-xl backdrop-blur-md shadow-xl text-xs font-mono border ${
-                isRateLimit
-                  ? "bg-[#130d04]/95 border-amber-500/40 text-amber-200"
-                  : "bg-[#0a0a0a]/90 border-amber-500/20 text-amber-200"
-              }`}
+              className={`flex items-center justify-between gap-3 p-3 rounded-xl backdrop-blur-md shadow-xl text-xs font-mono border ${borderBgStyle}`}
               data-testid="error-toast-item"
             >
               <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
                 <span
-                  className="text-amber-400 shrink-0 select-none"
+                  className={`${iconColor} shrink-0 select-none`}
                   aria-hidden="true"
                 >
-                  {isRateLimit ? "⏱️" : "⚠️"}
+                  {icon}
                 </span>
                 <span className="truncate">{item.message}</span>
                 {item.cooldownSeconds !== undefined &&
