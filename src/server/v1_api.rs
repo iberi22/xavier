@@ -2156,11 +2156,11 @@ mod tests {
         routing::{get, post},
         Router,
     };
+    use serial_test::serial;
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tower::util::ServiceExt;
-    use serial_test::serial;
 
     use crate::{
         agents::RuntimeConfig,
@@ -2260,7 +2260,9 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_v1_memory_recall_eval_5_known_memories() {
         // Blindar contra env-race: otros tests setean XAVIER_EMBEDDING_* sin restaurar
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::settings::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         for key in [
             "XAVIER_EMBEDDING_PROVIDER_MODE",
             "XAVIER_EMBEDDING_URL",
