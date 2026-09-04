@@ -526,6 +526,10 @@ function AppContent() {
 		);
 	}
 
+	if (showOnboarding) {
+		return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
+	}
+
 	if (!isAuthenticated) {
 		if (hash === "#/register") return <RegisterPage />;
 		if (hash === "#/recovery") return <RecoveryPage />;
@@ -543,10 +547,6 @@ function AppContent() {
 
 	if (hash === "#/mesh" || hash.startsWith("#/mesh/")) {
 		return <MeshHubView token={token || undefined} onClose={handleCloseMesh} />;
-	}
-
-	if (showOnboarding) {
-		return <OnboardingFlow onComplete={handleCompleteOnboarding} />;
 	}
 
 	return (
