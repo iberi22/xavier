@@ -319,6 +319,61 @@ pub async fn update_handler(
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ExportMarkdownQuery {
+    pub public_only: Option<bool>,
+}
+
+/// Export markdown handler.
+pub async fn export_markdown_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<ExportMarkdownQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_auth(&headers, &state)?;
+    let public_only = query.public_only.unwrap_or(false);
+
+    match state.memory.export(public_only).await {
+        Ok(records) => {
+            let exported: Vec<_> = records
+                .into_iter()
+                .map(|r| {
+                    let mut yaml_obj = serde_json::Map::new();
+                    yaml_obj.insert("id".to_string(), serde_json::json!(r.id));
+                    yaml_obj.insert("workspace_id".to_string(), serde_json::json!(r.workspace_id));
+                    yaml_obj.insert("created_at".to_string(), serde_json::json!(r.created_at.to_rfc3339()));
+                    yaml_obj.insert("updated_at".to_string(), serde_json::json!(r.updated_at.to_rfc3339()));
+
+                    if let Some(meta) = r.metadata.as_object() {
+                        for (k, v) in meta {
+                            yaml_obj.insert(k.clone(), v.clone());
+                        }
+                    }
+
+                    let yaml_str = serde_yaml::to_string(&serde_json::Value::Object(yaml_obj))
+                        .unwrap_or_else(|_| String::new());
+                    let markdown_content = format!("---\n{}---\n\n{}", yaml_str, r.content);
+
+                    serde_json::json!({
+                        "id": r.id,
+                        "path": r.path,
+                        "markdown": markdown_content,
+                        "metadata": r.metadata,
+                    })
+                })
+                .collect();
+
+            Ok(Json(serde_json::json!({
+                "status": "ok",
+                "count": exported.len(),
+                "notes": exported,
+                "workspace_id": state.workspace_id,
+            })))
+        }
+        Err(e) => Ok(error_json(e)),
+    }
+}
+
 /// Delete handler.
 pub async fn delete_handler(
     headers: HeaderMap,

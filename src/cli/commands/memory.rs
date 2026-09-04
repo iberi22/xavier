@@ -29,6 +29,34 @@ pub async fn handle_memory_command(
             }
         }
         crate::cli::commands::enums::memory::MemoryCommand::IndexSelf => run_index_self().await,
+        crate::cli::commands::enums::memory::MemoryCommand::ImportMarkdown { dir } => {
+            run_import_markdown(&dir).await
+        }
+        crate::cli::commands::enums::memory::MemoryCommand::ExportMarkdown { dir, public_only } => {
+            run_export_markdown(&dir, public_only.unwrap_or(false)).await
+        }
+    }
+}
+
+async fn run_import_markdown(dir: &std::path::Path) -> Result<()> {
+    let workspace_id =
+        std::env::var("XAVIER_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    let memory = crate::cli::commands::spawn::load_spawn_memory().await?;
+    if let Some(store) = memory.store().await {
+        crate::cli::handlers::export::handle_import_markdown(dir, store.as_ref(), &workspace_id).await
+    } else {
+        anyhow::bail!("Memory store backend unavailable")
+    }
+}
+
+async fn run_export_markdown(dir: &std::path::Path, public_only: bool) -> Result<()> {
+    let workspace_id =
+        std::env::var("XAVIER_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    let memory = crate::cli::commands::spawn::load_spawn_memory().await?;
+    if let Some(store) = memory.store().await {
+        crate::cli::handlers::export::handle_export_markdown(dir, store.as_ref(), &workspace_id, public_only).await
+    } else {
+        anyhow::bail!("Memory store backend unavailable")
     }
 }
 

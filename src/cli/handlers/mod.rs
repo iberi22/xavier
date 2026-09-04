@@ -11,6 +11,7 @@ pub mod chat;
 pub mod cloud;
 pub mod code;
 pub mod doctor;
+pub mod export;
 pub mod headless_api;
 pub mod headless_e2e;
 pub mod issue;
@@ -62,6 +63,7 @@ pub use system::*;
 pub use tasks::*;
 pub use tokens::*;
 pub use workspace_db::*;
+pub use export::*;
 
 pub use usage::*;
 pub use workspace::*;

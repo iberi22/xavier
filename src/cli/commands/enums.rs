@@ -1240,6 +1240,7 @@ pub enum LicenseCommand {
 
 pub mod memory {
     use clap::Subcommand;
+    use std::path::PathBuf;
 
     #[derive(Subcommand, Debug, Clone)]
     pub enum MemoryCommand {
@@ -1260,6 +1261,23 @@ pub mod memory {
             /// Enable nightly consolidation with full TGD pipeline
             #[arg(long)]
             nightly: bool,
+        },
+
+        /// Import markdown files and Obsidian vaults (.zip or folder) into Xavier memory
+        #[command(name = "import-markdown", alias = "import_markdown")]
+        ImportMarkdown {
+            /// Path to directory or .zip archive containing markdown notes
+            dir: PathBuf,
+        },
+
+        /// Export workspace memories as structured markdown notes with YAML frontmatter
+        #[command(name = "export-markdown", alias = "export_markdown")]
+        ExportMarkdown {
+            /// Target directory path for exported markdown files
+            dir: PathBuf,
+            /// Export only public memories
+            #[arg(long)]
+            public_only: Option<bool>,
         },
     }
 }

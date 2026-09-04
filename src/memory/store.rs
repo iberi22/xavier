@@ -1260,7 +1260,7 @@ pub(crate) fn filter_records(
 }
 
 /// Stable key.
-pub(crate) fn stable_key(kind: &str, parts: &[&str]) -> String {
+pub fn stable_key(kind: &str, parts: &[&str]) -> String {
     let mut digest = Sha256::new();
     digest.update(kind.as_bytes());
     for part in parts {
