@@ -277,9 +277,7 @@ mod tests {
 
     #[test]
     fn test_inspect_xavier_token_branches() {
-        let _guard = crate::settings::tests::ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _temp_env = crate::settings::tests::TempEnv::new();
 
         // Valid token
         std::env::set_var("XAVIER_TOKEN", "valid-secret-token");
