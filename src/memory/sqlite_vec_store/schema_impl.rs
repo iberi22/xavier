@@ -1294,9 +1294,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_put_record_without_embedding_succeeds() {
         use crate::memory::store::MemoryStore;
-        let _guard = crate::settings::tests::ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _temp_env = crate::settings::tests::TempEnv::new();
 
         // Ensure embedding client is not configured.
         // Clear every embedder-related key AND set XAVIER_EMBEDDER=disabled:
