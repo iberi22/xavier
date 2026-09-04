@@ -46,7 +46,8 @@ static SPACE_MANAGER: std::sync::OnceLock<Arc<crate::espacio::SpaceManager>> =
     std::sync::OnceLock::new();
 
 /// Module-level MalocaStore (initialized lazily)
-static MALOCA_STORE: std::sync::OnceLock<Arc<crate::maloca::MalocaStore>> = std::sync::OnceLock::new();
+static MALOCA_STORE: std::sync::OnceLock<Arc<crate::maloca::MalocaStore>> =
+    std::sync::OnceLock::new();
 
 /// Get the global maloca store, initializing with default path if needed
 pub fn get_maloca_store() -> Arc<crate::maloca::MalocaStore> {
@@ -250,7 +251,10 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         // ── Espacio Runtime API ───────────────────────────────────────────
         .nest("/api/v1/espacio", espacio_routes())
         // ── Maloca API ────────────────────────────────────────────────────
-        .nest("/api/v1/maloca", crate::maloca::nested_router(get_maloca_store()));
+        .nest(
+            "/api/v1/maloca",
+            crate::maloca::nested_router(get_maloca_store()),
+        );
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
