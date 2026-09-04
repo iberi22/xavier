@@ -32,11 +32,17 @@ test.describe("Browser Token Hook E2E", () => {
       }
     });
 
+    await page.addInitScript(() => {
+      window.localStorage.setItem("xavier_onboarding_completed", "true");
+      window.localStorage.setItem("xavier_token", "mock-token");
+    });
+
     // Navigate to root page
     await page.goto("/");
 
-    // Verify page title or body rendered without blanking out
-    await expect(page.locator("body")).toBeVisible();
+    // Verify page title or app element rendered without blanking out
+    const appElement = page.locator("header, [class*='TopStatusBar'], h1:has-text('XAVIER LOGIN')");
+    await expect(appElement.first()).toBeVisible();
 
     // Verify no invocation of get_xavier_token or 401 authentication loops occurred in console
     const tauriErrors = consoleErrors.filter((err) =>

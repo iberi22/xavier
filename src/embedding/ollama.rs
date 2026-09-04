@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_ollama_provider_configuration_from_env() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
         std::env::set_var("XAVIER_OLLAMA_URL", "http://127.0.0.1:11434/api/embed");
         std::env::set_var("XAVIER_OLLAMA_MODEL", "nomic-embed-text");
