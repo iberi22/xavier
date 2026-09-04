@@ -45,12 +45,14 @@ pub mod store;
 pub mod supabase_store;
 pub mod sync;
 pub mod telemetry;
+pub mod tgd;
 pub mod virtual_memory;
 pub mod working;
 pub use connection_provider::*;
 pub use fallback_store::*;
 pub use query_engine::*;
 pub use store::*;
+pub use tgd::*;
 
 #[cfg(test)]
 mod tests;
