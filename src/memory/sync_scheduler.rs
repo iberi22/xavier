@@ -3,10 +3,10 @@
 //! Periodically triggers bidirectional incremental sync between local memory store
 //! and remote cloud memory store using `CloudMemorySync`.
 
-use std::sync::Arc;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -271,14 +271,16 @@ impl SyncScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-    use tempfile::TempDir;
     use crate::checkpoint::Checkpoint;
     use crate::domain::memory::belief::BeliefEdge;
     use crate::memory::cloud_sync::CloudSyncConfig;
     use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
-    use crate::memory::store::{DurableWorkspaceState, MemoryBackend, MemoryRecord, SessionTokenRecord};
+    use crate::memory::store::{
+        DurableWorkspaceState, MemoryBackend, MemoryRecord, SessionTokenRecord,
+    };
     use crate::security::clearance::ClearanceLevel;
+    use std::sync::Mutex;
+    use tempfile::TempDir;
 
     #[derive(Default)]
     struct MockStore {
@@ -308,7 +310,10 @@ mod tests {
                 anyhow::bail!("Database connection failed");
             }
             let store = self.records.lock().unwrap();
-            Ok(store.iter().find(|r| r.workspace_id == workspace_id && r.id == id).cloned())
+            Ok(store
+                .iter()
+                .find(|r| r.workspace_id == workspace_id && r.id == id)
+                .cloned())
         }
 
         async fn put(&self, record: MemoryRecord) -> Result<()> {
@@ -316,7 +321,10 @@ mod tests {
                 anyhow::bail!("Database connection failed");
             }
             let mut store = self.records.lock().unwrap();
-            if let Some(pos) = store.iter().position(|r| r.id == record.id && r.workspace_id == record.workspace_id) {
+            if let Some(pos) = store
+                .iter()
+                .position(|r| r.id == record.id && r.workspace_id == record.workspace_id)
+            {
                 store[pos] = record;
             } else {
                 store.push(record);
@@ -330,7 +338,10 @@ mod tests {
 
         async fn delete(&self, workspace_id: &str, id: &str) -> Result<Option<MemoryRecord>> {
             let mut store = self.records.lock().unwrap();
-            if let Some(pos) = store.iter().position(|r| r.workspace_id == workspace_id && r.id == id) {
+            if let Some(pos) = store
+                .iter()
+                .position(|r| r.workspace_id == workspace_id && r.id == id)
+            {
                 Ok(Some(store.remove(pos)))
             } else {
                 Ok(None)
@@ -345,7 +356,11 @@ mod tests {
             if workspace_id.is_empty() {
                 Ok(store.clone())
             } else {
-                Ok(store.iter().filter(|r| r.workspace_id == workspace_id).cloned().collect())
+                Ok(store
+                    .iter()
+                    .filter(|r| r.workspace_id == workspace_id)
+                    .cloned()
+                    .collect())
             }
         }
 
@@ -366,7 +381,11 @@ mod tests {
             Ok(())
         }
 
-        async fn save_session_token(&self, _workspace_id: &str, _token: SessionTokenRecord) -> Result<()> {
+        async fn save_session_token(
+            &self,
+            _workspace_id: &str,
+            _token: SessionTokenRecord,
+        ) -> Result<()> {
             Ok(())
         }
 
@@ -374,19 +393,37 @@ mod tests {
             Ok(true)
         }
 
-        async fn save_checkpoint(&self, _workspace_id: &str, _checkpoint: Checkpoint) -> Result<()> {
+        async fn save_checkpoint(
+            &self,
+            _workspace_id: &str,
+            _checkpoint: Checkpoint,
+        ) -> Result<()> {
             Ok(())
         }
 
-        async fn load_checkpoint(&self, _workspace_id: &str, _task_id: &str, _name: &str) -> Result<Option<Checkpoint>> {
+        async fn load_checkpoint(
+            &self,
+            _workspace_id: &str,
+            _task_id: &str,
+            _name: &str,
+        ) -> Result<Option<Checkpoint>> {
             Ok(None)
         }
 
-        async fn list_checkpoints(&self, _workspace_id: &str, _task_id: &str) -> Result<Vec<Checkpoint>> {
+        async fn list_checkpoints(
+            &self,
+            _workspace_id: &str,
+            _task_id: &str,
+        ) -> Result<Vec<Checkpoint>> {
             Ok(Vec::new())
         }
 
-        async fn delete_checkpoint(&self, _workspace_id: &str, _task_id: &str, _name: &str) -> Result<()> {
+        async fn delete_checkpoint(
+            &self,
+            _workspace_id: &str,
+            _task_id: &str,
+            _name: &str,
+        ) -> Result<()> {
             Ok(())
         }
     }
