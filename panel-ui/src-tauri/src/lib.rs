@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::process::Command as StdCommand;
+use std::sync::{Arc, Mutex};
 use sysinfo::System;
 use tauri::{
     menu::{Menu, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
+use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
 // ── Constants ──────────────────────────────────────────────────
@@ -213,6 +215,36 @@ fn navigate_to_tab(app: &tauri::AppHandle, tab: &str) {
         let _ = window.emit("navigate-to", tab);
         let _ = window.show();
         let _ = window.set_focus();
+    }
+}
+
+// ── Sidecar State ──────────────────────────────────────────────
+
+#[derive(Clone)]
+pub struct SidecarState(pub Arc<Mutex<Option<CommandChild>>>);
+
+impl SidecarState {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(None)))
+    }
+
+    pub fn set_child(&self, child: CommandChild) {
+        if let Ok(mut guard) = self.0.lock() {
+            *guard = Some(child);
+        }
+    }
+
+    pub fn kill(&self) {
+        if let Ok(mut guard) = self.0.lock() {
+            if let Some(child) = guard.take() {
+                log::info!("Terminating Xavier sidecar child process...");
+                if let Err(e) = child.kill() {
+                    log::error!("Failed to kill sidecar child process: {}", e);
+                } else {
+                    log::info!("Xavier sidecar process terminated cleanly");
+                }
+            }
+        }
     }
 }
 
@@ -452,6 +484,9 @@ pub fn run() {
                     "open_providers" => navigate_to_tab(app, "providers"),
                     "quit" => {
                         log::info!("Closing Xavier via tray menu");
+                        if let Some(state) = app.try_state::<SidecarState>() {
+                            state.kill();
+                        }
                         app.exit(0);
                     }
                     _ => {}
@@ -473,7 +508,17 @@ pub fn run() {
                 .build(app)
                 .unwrap();
 
-            // ── Spawn Xavier sidecar ────────────────────────────────
+            // Register SidecarState
+            let sidecar_state = SidecarState::new();
+            app.manage(sidecar_state.clone());
+
+            // ── Pre-flight check & spawn Xavier sidecar ────────────
+            let port_in_use = std::net::TcpListener::bind("127.0.0.1:8006").is_err();
+
+            if port_in_use {
+                log::warn!("Port 8006 is already bound before spawning sidecar");
+            }
+
             // Xavier stores its SQLite databases in ~/.xavier/, so we must
             // set the working directory to the user's home dir so it finds them.
             // XDG-aware: prefer HOME (Linux), fall back to USERPROFILE (Windows)
@@ -492,108 +537,167 @@ pub fn run() {
             let sidecar_command = shell.sidecar("xavier").map_err(|e| {
                 log::error!("Failed to create sidecar command: {}", e);
                 e
-            })?;
+            });
 
-            let token = match get_xavier_token() {
-                Ok(t) => t,
-                Err(_) => {
-                    let new_token = uuid::Uuid::new_v4().to_string();
-                    if let Some(mut home) = std::env::var_os("USERPROFILE")
-                        .map(std::path::PathBuf::from)
-                        .or_else(|| std::env::var_os("HOME").map(std::path::PathBuf::from))
-                    {
-                        home.push(".xavier");
-                        home.push("config");
-                        let _ = std::fs::create_dir_all(&home);
-                        home.push("xavier.config.json");
+            let mut sidecar_spawned = false;
+            if let Ok(cmd) = sidecar_command {
+                let token = match get_xavier_token() {
+                    Ok(t) => t,
+                    Err(_) => {
+                        let new_token = uuid::Uuid::new_v4().to_string();
+                        if let Some(mut home) = std::env::var_os("USERPROFILE")
+                            .map(std::path::PathBuf::from)
+                            .or_else(|| std::env::var_os("HOME").map(std::path::PathBuf::from))
+                        {
+                            home.push(".xavier");
+                            home.push("config");
+                            let _ = std::fs::create_dir_all(&home);
+                            home.push("xavier.config.json");
 
-                        let mut json = serde_json::json!({});
-                        if let Ok(contents) = std::fs::read_to_string(&home) {
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&contents)
-                            {
-                                json = parsed;
+                            let mut json = serde_json::json!({});
+                            if let Ok(contents) = std::fs::read_to_string(&home) {
+                                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&contents)
+                                {
+                                    json = parsed;
+                                }
+                            }
+                            json["security"] = serde_json::json!({ "token_secret": new_token });
+                            if let Ok(updated_json) = serde_json::to_string_pretty(&json) {
+                                let _ = std::fs::write(home, updated_json);
                             }
                         }
-                        json["security"] = serde_json::json!({ "token_secret": new_token });
-                        if let Ok(updated_json) = serde_json::to_string_pretty(&json) {
-                            let _ = std::fs::write(home, updated_json);
-                        }
+                        new_token
                     }
-                    new_token
+                };
+
+                // Resolve the data directory: prefer XAVIER_DATA_DIR env var,
+                // then XDG_DATA_HOME/xavier (Linux) or %APPDATA%\xavier (Windows).
+                let data_dir = std::env::var_os("XAVIER_DATA_DIR")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| {
+                        if cfg!(target_os = "linux") {
+                            if let Some(xdg) =
+                                std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from)
+                            {
+                                let mut p = xdg;
+                                p.push("xavier");
+                                return p;
+                            }
+                            let mut p = xavier_cwd.clone();
+                            p.push(".local");
+                            p.push("share");
+                            p.push("xavier");
+                            p
+                        } else {
+                            let mut p = std::env::var_os("APPDATA")
+                                .map(std::path::PathBuf::from)
+                                .unwrap_or_else(|| xavier_cwd.clone());
+                            p.push("xavier");
+                            p
+                        }
+                    });
+                let _ = std::fs::create_dir_all(&data_dir);
+                let vec_path = std::env::var_os("XAVIER_MEMORY_VEC_PATH")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| data_dir.join("vec-store.sqlite3"));
+                let xavier_home = std::env::var_os("XAVIER_HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| {
+                        if cfg!(target_os = "linux") {
+                            // XDG_DATA_HOME on Linux
+                            if let Some(xdg) =
+                                std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from)
+                            {
+                                let mut p = xdg;
+                                p.push("xavier");
+                                return p;
+                            }
+                            let mut p = xavier_cwd.clone();
+                            p.push(".local");
+                            p.push("share");
+                            p.push("xavier");
+                            p
+                        } else {
+                            let mut p = xavier_cwd.clone();
+                            p.push(".xavier");
+                            p
+                        }
+                    });
+
+                match cmd
+                    .env("XAVIER_TOKEN", token)
+                    .env("XAVIER_DATA_DIR", &data_dir)
+                    .env("XAVIER_MEMORY_VEC_PATH", &vec_path)
+                    .env("XAVIER_HOME", &xavier_home)
+                    .args(["http", "8006"])
+                    .current_dir(&xavier_cwd)
+                    .spawn()
+                {
+                    Ok((_rx, child)) => {
+                        sidecar_state.set_child(child);
+                        sidecar_spawned = true;
+                        log::info!(
+                            "Xavier sidecar spawned successfully (CWD: {:?})",
+                            xavier_cwd
+                        );
+                    }
+                    Err(e) => {
+                        log::error!("Failed to spawn xavier sidecar process: {}", e);
+                    }
                 }
-            };
+            }
 
-            // Resolve the data directory: prefer XAVIER_DATA_DIR env var,
-            // then XDG_DATA_HOME/xavier (Linux) or %APPDATA%\xavier (Windows).
-            let data_dir = std::env::var_os("XAVIER_DATA_DIR")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| {
-                    if cfg!(target_os = "linux") {
-                        if let Some(xdg) =
-                            std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from)
-                        {
-                            let mut p = xdg;
-                            p.push("xavier");
-                            return p;
+            // ── Async Health Check Polling ─────────────────────────
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(2))
+                    .build()
+                    .unwrap_or_default();
+
+                let mut healthy = false;
+                for attempt in 1..=30 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if let Ok(resp) = client.get("http://127.0.0.1:8006/health").send().await {
+                        if resp.status().is_success() {
+                            healthy = true;
+                            log::info!("Sidecar backend health check passed on attempt {}", attempt);
+                            break;
                         }
-                        let mut p = xavier_cwd.clone();
-                        p.push(".local");
-                        p.push("share");
-                        p.push("xavier");
-                        p
-                    } else {
-                        let mut p = std::env::var_os("APPDATA")
-                            .map(std::path::PathBuf::from)
-                            .unwrap_or_else(|| xavier_cwd.clone());
-                        p.push("xavier");
-                        p
                     }
-                });
-            let _ = std::fs::create_dir_all(&data_dir);
-            let vec_path = std::env::var_os("XAVIER_MEMORY_VEC_PATH")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| data_dir.join("vec-store.sqlite3"));
-            let xavier_home = std::env::var_os("XAVIER_HOME")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| {
-                    if cfg!(target_os = "linux") {
-                        // XDG_DATA_HOME on Linux
-                        if let Some(xdg) =
-                            std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from)
-                        {
-                            let mut p = xdg;
-                            p.push("xavier");
-                            return p;
-                        }
-                        let mut p = xavier_cwd.clone();
-                        p.push(".local");
-                        p.push("share");
-                        p.push("xavier");
-                        p
+                }
+
+                if healthy {
+                    let _ = app_handle.emit(
+                        "backend-health-status",
+                        serde_json::json!({
+                            "status": "ready",
+                            "message": "Backend daemon is active on port 8006"
+                        }),
+                    );
+                } else {
+                    let error_msg = if port_in_use && !sidecar_spawned {
+                        "Port 8006 is blocked by another application."
                     } else {
-                        let mut p = xavier_cwd.clone();
-                        p.push(".xavier");
-                        p
+                        "Sidecar daemon failed to respond to health checks on port 8006."
+                    };
+
+                    log::error!("Backend health check failed: {}", error_msg);
+
+                    // Update tray tooltip if tray exists
+                    if let Some(tray) = app_handle.tray_by_id("main") {
+                        let _ = tray.set_tooltip(Some(&format!("Xavier - Error: {}", error_msg)));
                     }
-                });
 
-            let (mut _rx, _child) = sidecar_command
-                .env("XAVIER_TOKEN", token)
-                .env("XAVIER_DATA_DIR", &data_dir)
-                .env("XAVIER_MEMORY_VEC_PATH", &vec_path)
-                .env("XAVIER_HOME", &xavier_home)
-                .args(["http", "8006"])
-                .current_dir(&xavier_cwd)
-                .spawn()
-                .map_err(|e| {
-                    log::error!("Failed to spawn xavier sidecar: {}", e);
-                    e
-                })?;
-
-            log::info!(
-                "Xavier sidecar spawned successfully (CWD: {:?})",
-                xavier_cwd
-            );
+                    let _ = app_handle.emit(
+                        "backend-health-status",
+                        serde_json::json!({
+                            "status": "error",
+                            "message": error_msg
+                        }),
+                    );
+                }
+            });
 
             // Hide window on close (minimize to tray instead of quitting)
             if let Some(window) = app.get_webview_window("main") {
@@ -617,13 +721,21 @@ pub fn run() {
             list_api_tokens,
             evoke_api_token,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
 
-    // Clean up lock file on exit
-    let lock_dir = dirs_data_local_dir();
-    let lock_path = lock_dir.join(LOCK_FILENAME);
-    if lock_path.exists() {
-        let _ = std::fs::remove_file(&lock_path);
-    }
+    app.run(move |app_handle, event| match event {
+        tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+            if let Some(state) = app_handle.try_state::<SidecarState>() {
+                state.kill();
+            }
+            // Clean up lock file on exit
+            let lock_dir = dirs_data_local_dir();
+            let lock_path = lock_dir.join(LOCK_FILENAME);
+            if lock_path.exists() {
+                let _ = std::fs::remove_file(&lock_path);
+            }
+        }
+        _ => {}
+    });
 }
