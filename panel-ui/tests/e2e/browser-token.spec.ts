@@ -15,12 +15,36 @@ test.describe("Browser Token Hook E2E", () => {
       });
     });
 
+    await page.route("**/health*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", system: { cpu_usage: 10, ram_usage_percent: 20 } }),
+      });
+    });
+
     await page.route("**/notifications*", async (route) => {
       notificationsTokenHeader = route.request().headers()["x-xavier-token"] ?? null;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify([]),
+      });
+    });
+
+    await page.route("**/panel/api/**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+    });
+
+    await page.route("**/v1/config/providers*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ providers: [] }),
       });
     });
 
