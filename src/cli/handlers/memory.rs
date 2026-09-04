@@ -353,7 +353,7 @@ pub async fn add_handler(
         }
     }
 
-    // H-1 fix: extract typed memory fields (kind/evidence_kind/namespace/provenance) from
+    // Extract typed memory fields (kind/evidence_kind/namespace/provenance) from
     // the payload metadata and normalize, so that /memory/search filters by project/agent_id/
     // session_id actually isolate memories (multi-tenancy for subagents). Previously this was
     // hardcoded to {"kind":"Context","namespace":"Global"}, which broke all namespace filters.

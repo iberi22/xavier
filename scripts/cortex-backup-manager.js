@@ -100,8 +100,83 @@ function createBackup(name) {
 
 function restoreBackup(backupName) {
   console.log(`Restore de: ${backupName}`);
-  // TODO: implementar restore
-  console.log("Restore no implementado todavia - usar docker cp directamente");
+
+  let tsAndName = backupName;
+  if (backupName.startsWith("xavier_memory_vec_")) {
+    tsAndName = backupName.replace("xavier_memory_vec_", "");
+  } else if (backupName.startsWith("xavier_code_graph_")) {
+    tsAndName = backupName.replace("xavier_code_graph_", "");
+  } else if (backupName.startsWith("manifest_")) {
+    tsAndName = backupName.replace("manifest_", "").replace(".json", "");
+  }
+  if (tsAndName.endsWith(".db")) {
+    tsAndName = tsAndName.slice(0, -3);
+  }
+
+  const mount = getContainerMount();
+  let manifestPath = `${BACKUP_DIR}/manifest_${tsAndName}.json`;
+
+  if (fs.existsSync(manifestPath)) {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+
+    const files = manifest.files.map((f) => {
+      let target = `${mount}/xavier_memory_vec.db`;
+      if (f.name.includes("code_graph")) {
+        target = `${mount}/code_graph.db`;
+      } else if (f.name.includes("memory_vec")) {
+        target = `${mount}/xavier_memory_vec.db`;
+      }
+      return {
+        src: `${BACKUP_DIR}/${f.name}`,
+        dest: target,
+        name: f.name,
+      };
+    });
+
+    for (const f of files) {
+      try {
+        if (fs.existsSync(f.src)) {
+          execSync(
+            `docker run --rm -v ${VOLUME}:${mount} -v "${BACKUP_DIR}:/backup" ${XAVIER_IMAGE} cp /backup/${f.name} ${f.dest}`,
+            { stdio: "inherit" },
+          );
+          console.log(`  [OK] Restored ${f.name} to ${f.dest}`);
+        } else {
+          console.log(`  [FAIL] Archivo no encontrado: ${f.src}`);
+        }
+      } catch (e) {
+        console.log(`  [FAIL] ${f.name}: ${e.message}`);
+      }
+    }
+  } else {
+    console.log(
+      `No se encontró el manifiesto para: ${tsAndName}. Intentando restaurar usando el nombre como prefijo...`,
+    );
+    const prefix = `xavier_memory_vec_${tsAndName}`;
+    const graphPrefix = `xavier_code_graph_${tsAndName}`;
+
+    const files = [
+      { name: `${prefix}.db`, dest: `${mount}/xavier_memory_vec.db` },
+      { name: `${graphPrefix}.db`, dest: `${mount}/code_graph.db` },
+    ];
+
+    for (const f of files) {
+      const src = `${BACKUP_DIR}/${f.name}`;
+      try {
+        if (fs.existsSync(src)) {
+          execSync(
+            `docker run --rm -v ${VOLUME}:${mount} -v "${BACKUP_DIR}:/backup" ${XAVIER_IMAGE} cp /backup/${f.name} ${f.dest}`,
+            { stdio: "inherit" },
+          );
+          console.log(`  [OK] Restored ${f.name} to ${f.dest}`);
+        } else {
+          console.log(`  [FAIL] Archivo no encontrado: ${src}`);
+        }
+      } catch (e) {
+        console.log(`  [FAIL] ${f.name}: ${e.message}`);
+      }
+    }
+  }
 }
 
 const cmd = process.argv[2] || "list";

@@ -267,4 +267,47 @@ mod tests {
 
         assert_eq!(collector.get_overall_agreement_ratio(), 0.5);
     }
+
+    #[test]
+    fn test_update_uptimes() {
+        let collector = MeshTelemetryCollector::new();
+        let node1 = NodeId("xv1-node1".to_string());
+        let node2 = NodeId("xv1-node2".to_string());
+
+        // We insert two peers manually to control their `last_seen` values.
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        {
+            let mut metrics = collector.peer_metrics.lock().unwrap();
+
+            // Node 1: normal case, last_seen is 10 seconds in the past.
+            let mut m1 = PeerMetrics::new();
+            m1.last_seen = now.saturating_sub(10);
+            metrics.insert(node1.clone(), m1);
+
+            // Node 2: edge case, last_seen is in the future (or equal to now).
+            let mut m2 = PeerMetrics::new();
+            m2.last_seen = now.saturating_add(10);
+            metrics.insert(node2.clone(), m2);
+        }
+
+        // Call the method under test
+        collector.update_uptimes();
+
+        let metrics = collector.peer_metrics.lock().unwrap();
+
+        let m1 = metrics.get(&node1).unwrap();
+        // Since `now` might have progressed by a fraction of a second or a whole second
+        // between our `now` and `update_uptimes`'s `now`, it will increase by at least 10.
+        assert!(m1.uptime_secs >= 10);
+        assert!(m1.last_seen >= now);
+
+        let m2 = metrics.get(&node2).unwrap();
+        // Node 2 should not have been updated because its last_seen was in the future.
+        assert_eq!(m2.uptime_secs, 0);
+        assert_eq!(m2.last_seen, now.saturating_add(10));
+    }
 }
