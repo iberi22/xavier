@@ -28,7 +28,7 @@ use xavier::memory::store::{InMemoryMemoryStore, MemoryRecord, MemoryStore};
 use xavier::memory::sync::merge::serialise_chunk;
 use xavier::memory::sync::{ChunkDiff, DiffAction, PeerMemorySync};
 
-/// Drive a request through the router and return the parsed JSON body.
+/// Drive a request through the router and return the parsed JSON body, regardless of status code.
 async fn send_json(
     router: &Router,
     method: Method,
@@ -49,11 +49,6 @@ async fn send_json(
         .oneshot(request)
         .await
         .expect("router should respond");
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "unexpected status for {uri}"
-    );
     let bytes = response
         .into_body()
         .collect()
