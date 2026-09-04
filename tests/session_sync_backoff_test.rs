@@ -90,9 +90,8 @@ fn test_session_sync_backoff_delays() {
     let checker = MockSessionSyncHealthChecker::new(SESSION_SYNC_BACKOFF_SCHEDULE);
 
     // Mock health check call that always fails
-    let always_fail_health_check = || -> Result<(), &'static str> {
-        Err("Xavier /xavier/health endpoint unreachable")
-    };
+    let always_fail_health_check =
+        || -> Result<(), &'static str> { Err("Xavier /xavier/health endpoint unreachable") };
 
     let measured_intervals = checker.run_health_check_with_backoff(always_fail_health_check);
 
@@ -143,7 +142,10 @@ fn test_session_sync_hash_reset() {
     let emit_a1 = logger.log_warn(msg_a);
     let emit_a2 = logger.log_warn(msg_a);
     assert!(emit_a1, "First emission of Message A should be logged");
-    assert!(!emit_a2, "Second emission of Message A should be suppressed");
+    assert!(
+        !emit_a2,
+        "Second emission of Message A should be suppressed"
+    );
 
     let emit_b = logger.log_warn(msg_b);
     assert!(

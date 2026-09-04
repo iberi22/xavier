@@ -606,11 +606,9 @@ pub async fn offline_consolidate(workspace_id: Option<&str>) -> anyhow::Result<s
     use crate::memory::store::MemoryStore;
     use crate::memory::tgd::TgdUtilityPruner;
 
-    let ws_id = workspace_id
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string())
-        });
+    let ws_id = workspace_id.map(|s| s.to_string()).unwrap_or_else(|| {
+        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string())
+    });
 
     let store: Arc<dyn MemoryStore> = match SqliteMemoryStore::from_env().await {
         Ok(s) => Arc::new(s),
@@ -687,9 +685,18 @@ pub async fn export_markdown_handler(
                 .map(|r| {
                     let mut yaml_obj = serde_json::Map::new();
                     yaml_obj.insert("id".to_string(), serde_json::json!(r.id));
-                    yaml_obj.insert("workspace_id".to_string(), serde_json::json!(r.workspace_id));
-                    yaml_obj.insert("created_at".to_string(), serde_json::json!(r.created_at.to_rfc3339()));
-                    yaml_obj.insert("updated_at".to_string(), serde_json::json!(r.updated_at.to_rfc3339()));
+                    yaml_obj.insert(
+                        "workspace_id".to_string(),
+                        serde_json::json!(r.workspace_id),
+                    );
+                    yaml_obj.insert(
+                        "created_at".to_string(),
+                        serde_json::json!(r.created_at.to_rfc3339()),
+                    );
+                    yaml_obj.insert(
+                        "updated_at".to_string(),
+                        serde_json::json!(r.updated_at.to_rfc3339()),
+                    );
 
                     if let Some(meta) = r.metadata.as_object() {
                         for (k, v) in meta {

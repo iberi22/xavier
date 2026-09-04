@@ -2123,10 +2123,7 @@ mod route_tests {
         assert_eq!(parsed["is_valid"], true);
         assert!(parsed["attestation"]["signature_hex"].is_string());
         assert_eq!(parsed["attestation"]["version"], 1);
-        assert_eq!(
-            parsed["genesis_params"]["network_id"],
-            "swal-mainnet-v1"
-        );
+        assert_eq!(parsed["genesis_params"]["network_id"], "swal-mainnet-v1");
     }
 
     #[tokio::test]

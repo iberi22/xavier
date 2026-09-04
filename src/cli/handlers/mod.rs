@@ -48,6 +48,7 @@ pub use auth::*;
 pub use benchmarks::*;
 pub use chat::*;
 pub use code::*;
+pub use export::*;
 pub use issue::*;
 pub use memory::*;
 pub use mesh::*;
@@ -63,7 +64,6 @@ pub use system::*;
 pub use tasks::*;
 pub use tokens::*;
 pub use workspace_db::*;
-pub use export::*;
 
 pub use usage::*;
 pub use workspace::*;

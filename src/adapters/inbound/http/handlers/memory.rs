@@ -340,9 +340,18 @@ pub async fn export_markdown_handler(
                 .map(|r| {
                     let mut yaml_obj = serde_json::Map::new();
                     yaml_obj.insert("id".to_string(), serde_json::json!(r.id));
-                    yaml_obj.insert("workspace_id".to_string(), serde_json::json!(r.workspace_id));
-                    yaml_obj.insert("created_at".to_string(), serde_json::json!(r.created_at.to_rfc3339()));
-                    yaml_obj.insert("updated_at".to_string(), serde_json::json!(r.updated_at.to_rfc3339()));
+                    yaml_obj.insert(
+                        "workspace_id".to_string(),
+                        serde_json::json!(r.workspace_id),
+                    );
+                    yaml_obj.insert(
+                        "created_at".to_string(),
+                        serde_json::json!(r.created_at.to_rfc3339()),
+                    );
+                    yaml_obj.insert(
+                        "updated_at".to_string(),
+                        serde_json::json!(r.updated_at.to_rfc3339()),
+                    );
 
                     if let Some(meta) = r.metadata.as_object() {
                         for (k, v) in meta {

@@ -2,9 +2,7 @@
 
 use anyhow::Result;
 use tempfile::tempdir;
-use xavier::cli::handlers::export::{
-    export_markdown_vault, parse_markdown_vault,
-};
+use xavier::cli::handlers::export::{export_markdown_vault, parse_markdown_vault};
 use xavier::memory::store::{InMemoryMemoryStore, MemoryStore};
 
 #[tokio::test]
@@ -88,7 +86,10 @@ This is content for note 2 with a wikilink to [[Note1]].
 
     assert_eq!(reimported_note1.content, note1_record.content);
     assert_eq!(
-        reimported_note1.metadata.get("title").and_then(|v| v.as_str()),
+        reimported_note1
+            .metadata
+            .get("title")
+            .and_then(|v| v.as_str()),
         Some("First Test Note")
     );
 

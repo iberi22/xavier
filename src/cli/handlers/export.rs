@@ -101,7 +101,10 @@ pub fn parse_markdown_content(raw_content: &str) -> ParsedMarkdownNote {
         if let Some(matched) = cap.get(1) {
             let tag = matched.as_str().trim().to_string();
             // Ignore heading numbers like #1 or pure digits if desired, but keep valid tags
-            if !tag.is_empty() && !tag.chars().all(|c| c.is_ascii_digit()) && !note.tags.contains(&tag) {
+            if !tag.is_empty()
+                && !tag.chars().all(|c| c.is_ascii_digit())
+                && !note.tags.contains(&tag)
+            {
                 note.tags.push(tag);
             }
         }
@@ -130,10 +133,7 @@ fn extract_tags_from_value(val: &serde_json::Value, tags_out: &mut Vec<String>) 
 }
 
 /// Import markdown vault from a directory or a .zip file.
-pub fn parse_markdown_vault(
-    source_path: &Path,
-    workspace_id: &str,
-) -> Result<Vec<MemoryRecord>> {
+pub fn parse_markdown_vault(source_path: &Path, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
     let mut records = Vec::new();
 
     if source_path.is_file()
@@ -156,7 +156,9 @@ pub fn parse_markdown_vault(
             if name.ends_with(".md") && !name.starts_with("__MACOSX") && !name.starts_with('.') {
                 let mut content = String::new();
                 if zip_file.read_to_string(&mut content).is_ok() {
-                    if let Some(record) = build_memory_record_from_file(&name, &content, workspace_id) {
+                    if let Some(record) =
+                        build_memory_record_from_file(&name, &content, workspace_id)
+                    {
                         records.push(record);
                     }
                 }
@@ -164,10 +166,7 @@ pub fn parse_markdown_vault(
         }
     } else if source_path.is_dir() {
         // Parse directory
-        for entry in WalkDir::new(source_path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
+        for entry in WalkDir::new(source_path).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.is_file()
                 && path
@@ -191,7 +190,10 @@ pub fn parse_markdown_vault(
             }
         }
     } else {
-        anyhow::bail!("Source path {:?} is neither a directory nor a zip archive", source_path);
+        anyhow::bail!(
+            "Source path {:?} is neither a directory nor a zip archive",
+            source_path
+        );
     }
 
     Ok(records)
@@ -270,10 +272,7 @@ fn build_memory_record_from_file(
 }
 
 /// Export `MemoryRecord` instances into a markdown vault directory.
-pub fn export_markdown_vault(
-    records: &[MemoryRecord],
-    target_dir: &Path,
-) -> Result<usize> {
+pub fn export_markdown_vault(records: &[MemoryRecord], target_dir: &Path) -> Result<usize> {
     std::fs::create_dir_all(target_dir)
         .with_context(|| format!("Failed to create target directory {:?}", target_dir))?;
 
@@ -293,8 +292,14 @@ pub fn export_markdown_vault(
         let mut yaml_obj = serde_json::Map::new();
         yaml_obj.insert("id".to_string(), json!(record.id));
         yaml_obj.insert("workspace_id".to_string(), json!(record.workspace_id));
-        yaml_obj.insert("created_at".to_string(), json!(record.created_at.to_rfc3339()));
-        yaml_obj.insert("updated_at".to_string(), json!(record.updated_at.to_rfc3339()));
+        yaml_obj.insert(
+            "created_at".to_string(),
+            json!(record.created_at.to_rfc3339()),
+        );
+        yaml_obj.insert(
+            "updated_at".to_string(),
+            json!(record.updated_at.to_rfc3339()),
+        );
 
         if let Some(meta) = record.metadata.as_object() {
             for (k, v) in meta {
@@ -316,7 +321,11 @@ pub fn export_markdown_vault(
 }
 
 /// Handle CLI `xavier memory import-markdown <DIR>` command.
-pub async fn handle_import_markdown(dir: &Path, store: &dyn MemoryStore, workspace_id: &str) -> Result<()> {
+pub async fn handle_import_markdown(
+    dir: &Path,
+    store: &dyn MemoryStore,
+    workspace_id: &str,
+) -> Result<()> {
     info!("Importing Markdown vault from {:?}", dir);
     let records = parse_markdown_vault(dir, workspace_id)?;
     let total = records.len();
@@ -325,7 +334,10 @@ pub async fn handle_import_markdown(dir: &Path, store: &dyn MemoryStore, workspa
         store.put(record).await?;
     }
 
-    println!("✅ Successfully imported {} markdown notes into workspace '{}'", total, workspace_id);
+    println!(
+        "✅ Successfully imported {} markdown notes into workspace '{}'",
+        total, workspace_id
+    );
     Ok(())
 }
 
@@ -341,14 +353,25 @@ pub async fn handle_export_markdown(
 
     if public_only {
         records.retain(|r| {
-            let is_private = r.metadata.get("is_private").and_then(|v| v.as_bool()).unwrap_or(false);
-            let visibility = r.metadata.get("visibility").and_then(|v| v.as_str()).unwrap_or("public");
+            let is_private = r
+                .metadata
+                .get("is_private")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let visibility = r
+                .metadata
+                .get("visibility")
+                .and_then(|v| v.as_str())
+                .unwrap_or("public");
             !is_private && visibility != "private"
         });
     }
 
     let count = export_markdown_vault(&records, dir)?;
-    println!("✅ Successfully exported {} memories as Markdown notes to {:?}", count, dir);
+    println!(
+        "✅ Successfully exported {} memories as Markdown notes to {:?}",
+        count, dir
+    );
     Ok(())
 }
 
@@ -379,6 +402,9 @@ This is a test note linking to [[ArchitectureDoc]] and [[UserGuide|User Manual]]
         assert!(parsed.tags.contains(&"xavier/memory".to_string()));
         assert!(parsed.wikilinks.contains(&"ArchitectureDoc".to_string()));
         assert!(parsed.wikilinks.contains(&"UserGuide".to_string()));
-        assert_eq!(parsed.frontmatter.get("category").and_then(|v| v.as_str()), Some("architecture"));
+        assert_eq!(
+            parsed.frontmatter.get("category").and_then(|v| v.as_str()),
+            Some("architecture")
+        );
     }
 }
