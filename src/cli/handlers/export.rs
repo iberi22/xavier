@@ -75,8 +75,8 @@ pub fn parse_markdown_content(raw_content: &str) -> ParsedMarkdownNote {
     if note.title.is_none() {
         for line in note.body.lines() {
             let line_trim = line.trim();
-            if line_trim.starts_with("# ") {
-                note.title = Some(line_trim[2..].trim().to_string());
+            if let Some(stripped) = line_trim.strip_prefix("# ") {
+                note.title = Some(stripped.trim().to_string());
                 break;
             }
         }
