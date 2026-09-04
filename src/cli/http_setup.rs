@@ -30,6 +30,8 @@ pub async fn auth_middleware(
         || path == "/v1/mesh/workspaces/query"
         || path == "/mesh/public/nodes"
         || path == "/v1/mesh/public/nodes"
+        || path == "/node/founder/status"
+        || path == "/v1/node/founder/status"
     {
         return next.run(req).await;
     }

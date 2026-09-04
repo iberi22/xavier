@@ -14,6 +14,7 @@
 pub mod bip39_seed;
 pub mod check_codes;
 pub mod derive;
+pub mod founder;
 pub mod hybrid_pack;
 pub mod persist;
 pub mod shamir;
@@ -22,6 +23,10 @@ pub mod vault;
 pub use bip39_seed::{GeneratedSeed, SeedPhrase};
 pub use check_codes::{CheckCodes, OrderMode, OrderedChallenge};
 pub use derive::{DerivedNodeKeys, DOMAIN_ML_DSA, DOMAIN_NODE_ED25519};
+pub use founder::{
+    founder_status_handler, generate_founder_attestation, verify_founder_attestation,
+    FounderNodeAttestation, FounderStatusResponse, NodeMetadata, SwalGenesisParams,
+};
 pub use hybrid_pack::{onchain_pack_hash, HybridPackSignature};
 pub use persist::{NodeStore, NodeStorePaths, PublicNodeIdentity};
 pub use shamir::{ShamirShare, ShamirSplit};

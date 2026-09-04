@@ -134,6 +134,15 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             "/v1/memory/pull-since/{workspace_id}/{since}",
             get(crate::adapters::inbound::http::handlers::sync::legacy_pull_since_handler),
         )
+        // ── Founder Node Attestation (SWAL Genesis Status) ─────────────────
+        .route(
+            "/node/founder/status",
+            get(crate::node_identity::founder_status_handler),
+        )
+        .route(
+            "/v1/node/founder/status",
+            get(crate::node_identity::founder_status_handler),
+        )
         // ── Public Node Directory (SWAL Node Discovery) ──────────────────
         .route(
             "/mesh/public/nodes",
@@ -2082,6 +2091,42 @@ mod route_tests {
         assert_eq!(res_invalid.status(), StatusCode::BAD_REQUEST);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_route_founder_status_ok() {
+        use axum::response::Response;
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/node/founder/status")
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse status response");
+
+        assert_eq!(parsed["status"], "active");
+        assert_eq!(parsed["is_valid"], true);
+        assert!(parsed["attestation"]["signature_hex"].is_string());
+        assert_eq!(parsed["attestation"]["version"], 1);
+        assert_eq!(
+            parsed["genesis_params"]["network_id"],
+            "swal-mainnet-v1"
+        );
     }
 
     #[tokio::test]
