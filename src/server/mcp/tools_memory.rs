@@ -989,13 +989,10 @@ pub async fn handle_memory_delete(
                 estimated_tokens: mem_ctx.estimated_tokens,
             };
 
-            Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPContent::Structured(MCPStructuredContent {
-                    content_type: "structuredContent".to_string(),
-                    structured_content: serde_json::to_value(payload)?,
-                })],
-                is_error: Some(false),
-            })?)
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                serde_json::to_value(payload)?,
+                false,
+            ))?)
         }
         "memory_prune" => {
             let kind = arguments
@@ -1149,13 +1146,10 @@ pub async fn handle_memory_context(
                     sources: Vec::new(),
                     estimated_tokens: 0,
                 };
-                return Ok(serde_json::to_value(MCPToolResult {
-                    content: vec![MCPContent::Structured(MCPStructuredContent {
-                        content_type: "structuredContent".to_string(),
-                        structured_content: serde_json::to_value(payload)?,
-                    })],
-                    is_error: Some(false),
-                })?);
+                return Ok(serde_json::to_value(MCPToolResult::structured(
+                    serde_json::to_value(payload)?,
+                    false,
+                ))?);
             }
 
             let expanded = if depth > 0 {
@@ -1248,13 +1242,10 @@ pub async fn handle_memory_context(
                 sources,
                 estimated_tokens,
             };
-            Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPContent::Structured(MCPStructuredContent {
-                    content_type: "structuredContent".to_string(),
-                    structured_content: serde_json::to_value(payload)?,
-                })],
-                is_error: Some(false),
-            })?)
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                serde_json::to_value(payload)?,
+                false,
+            ))?)
         }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
     }

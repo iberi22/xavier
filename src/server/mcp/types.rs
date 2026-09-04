@@ -191,11 +191,19 @@ impl MCPToolResult {
 
     /// Structured.
     pub fn structured(payload: Value, is_error: bool) -> Self {
+        let text_repr =
+            serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string());
         MCPToolResult {
-            content: vec![MCPContent::Structured(MCPStructuredContent {
-                content_type: "structuredContent".to_string(),
-                structured_content: payload,
-            })],
+            content: vec![
+                MCPContent::Text(MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: text_repr,
+                }),
+                MCPContent::Structured(MCPStructuredContent {
+                    content_type: "structuredContent".to_string(),
+                    structured_content: payload,
+                }),
+            ],
             is_error: Some(is_error),
         }
     }
