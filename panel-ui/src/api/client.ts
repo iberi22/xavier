@@ -293,6 +293,22 @@ export class ApiClient {
     });
   }
 
+  async exportMarkdown(publicOnly = false) {
+    const params = new URLSearchParams();
+    if (publicOnly) params.set("public_only", "true");
+    return this.fetch<{
+      status: string;
+      count: number;
+      notes: Array<{
+        id: string;
+        path: string;
+        markdown: string;
+        metadata: Record<string, unknown>;
+      }>;
+      workspace_id: string;
+    }>(`/v1/memory/export-markdown?${params.toString()}`);
+  }
+
   // Agents
   async getAgents() {
     return this.fetch<Agent[]>("/api/agents");

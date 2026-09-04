@@ -36,6 +36,8 @@ mod internal_benchmark_test;
 mod memory_test;
 #[path = "integration/notifications_test.rs"]
 mod notifications_test;
+#[path = "integration/obsidian_roundtrip_test.rs"]
+mod obsidian_roundtrip_test;
 #[path = "integration/scheduler_test.rs"]
 mod scheduler_test;
 #[path = "integration/security_hardening_test.rs"]

@@ -174,7 +174,10 @@ pub fn verify_founder_attestation(
     }
 
     if let Some(ref expected_pk) = genesis_params.expected_founder_public_key_hex {
-        if !attestation.ed25519_public_hex.eq_ignore_ascii_case(expected_pk) {
+        if !attestation
+            .ed25519_public_hex
+            .eq_ignore_ascii_case(expected_pk)
+        {
             tracing::warn!(
                 "Founder public key mismatch: {} != {}",
                 attestation.ed25519_public_hex,
@@ -271,7 +274,8 @@ pub async fn founder_status_handler() -> impl IntoResponse {
 
     match attestation_res {
         Ok(attestation) => {
-            let is_valid = verify_founder_attestation(&attestation, &genesis_params).unwrap_or(false);
+            let is_valid =
+                verify_founder_attestation(&attestation, &genesis_params).unwrap_or(false);
             let status = if is_valid { "active" } else { "degraded" };
 
             axum::Json(FounderStatusResponse {
