@@ -45,6 +45,16 @@ static HEALTH_PORT: std::sync::OnceLock<Arc<HttpHealthAdapter>> = std::sync::Onc
 static SPACE_MANAGER: std::sync::OnceLock<Arc<crate::espacio::SpaceManager>> =
     std::sync::OnceLock::new();
 
+/// Module-level MalocaStore (initialized lazily)
+static MALOCA_STORE: std::sync::OnceLock<Arc<crate::maloca::MalocaStore>> = std::sync::OnceLock::new();
+
+/// Get the global maloca store, initializing with default path if needed
+pub fn get_maloca_store() -> Arc<crate::maloca::MalocaStore> {
+    MALOCA_STORE
+        .get_or_init(|| crate::maloca::MalocaStore::open(std::path::Path::new("data/maloca")))
+        .clone()
+}
+
 /// Initialize the global time metrics port (call once at startup)
 pub fn init_time_store(port: Arc<dyn TimeMetricsPort>) {
     if TIME_STORE.set(port).is_err() {
@@ -238,7 +248,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             get(crate::adapters::inbound::http::handlers::ivn::get_ivn_karma_handler),
         )
         // ── Espacio Runtime API ───────────────────────────────────────────
-        .nest("/api/v1/espacio", espacio_routes());
+        .nest("/api/v1/espacio", espacio_routes())
+        // ── Maloca API ────────────────────────────────────────────────────
+        .nest("/api/v1/maloca", crate::maloca::nested_router(get_maloca_store()));
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
