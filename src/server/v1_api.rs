@@ -2258,7 +2258,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_v1_memory_recall_eval_5_known_memories() {
         // Blindar contra env-race: otros tests setean XAVIER_EMBEDDING_* sin restaurar
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _temp_env = crate::settings::tests::TempEnv::new();
         for key in [
             "XAVIER_EMBEDDING_PROVIDER_MODE",
             "XAVIER_EMBEDDING_URL",

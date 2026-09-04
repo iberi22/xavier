@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn test_config_from_env_capacity_and_ttl() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _temp_env = crate::settings::tests::TempEnv::new();
         std::env::set_var("XAVIER_EMBEDDING_CACHE_CAPACITY", "5000");
         std::env::set_var("XAVIER_EMBEDDING_CACHE_TTL", "48");
 

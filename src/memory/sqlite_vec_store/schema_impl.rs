@@ -668,7 +668,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_reindex_null_embeddings_background() {
         use crate::memory::store::MemoryStore;
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _temp_env = crate::settings::tests::TempEnv::new();
 
         // Clear any stale embedding env vars from previous tests
         // NOTE: XAVIER_EMBEDDER must be cleared too — other tests (e.g. qmd offline)
@@ -836,7 +836,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_reindex_null_embeddings_background_with_limit_batches() {
         use crate::memory::store::MemoryStore;
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _temp_env = crate::settings::tests::TempEnv::new();
 
         for key in &[
             "XAVIER_EMBEDDING_PROVIDER_MODE",
@@ -957,7 +957,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_reindex_null_embeddings_background_with_errors() {
         use crate::memory::store::MemoryStore;
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _temp_env = crate::settings::tests::TempEnv::new();
 
         for key in &[
             "XAVIER_EMBEDDING_PROVIDER_MODE",
@@ -1061,7 +1061,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_dead_letter_isolation_after_max_attempts() {
         use crate::memory::store::MemoryStore;
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _temp_env = crate::settings::tests::TempEnv::new();
 
         for key in &[
             "XAVIER_EMBEDDING_PROVIDER_MODE",
@@ -1294,7 +1294,7 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn test_put_record_without_embedding_succeeds() {
         use crate::memory::store::MemoryStore;
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _temp_env = crate::settings::tests::TempEnv::new();
 
         // Ensure embedding client is not configured.
         // Clear every embedder-related key AND set XAVIER_EMBEDDER=disabled:
