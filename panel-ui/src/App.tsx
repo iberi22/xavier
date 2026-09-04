@@ -486,21 +486,40 @@ function AppContent() {
 
 	if (health === "offline") {
 		return (
-			<div className="w-full h-screen bg-white dark:bg-black flex items-center justify-center text-emerald-600 dark:text-[#39ff14] font-mono p-4 sm:p-6 md:p-8">
-				<div className="text-center">
-					<h1 className="text-xl sm:text-2xl mb-4 uppercase tracking-widest border-b border-emerald-500/30 dark:border-[#39ff14]/30 pb-2">
-						Xavier Offline
-					</h1>
-					<p className="opacity-70 text-xs sm:text-sm">
-						Cannot reach local backend at 127.0.0.1:8006.
-					</p>
-					<button
-						type="button"
-						onClick={() => window.location.reload()}
-						className="mt-8 px-6 py-2 border border-emerald-600 dark:border-[#39ff14] hover:bg-emerald-500/10 dark:hover:bg-[#39ff14]/10 transition-colors uppercase text-xs tracking-widest rounded-lg"
-					>
-						Retry
-					</button>
+			<div className="w-full h-screen bg-[#050505] flex items-center justify-center text-emerald-400 font-mono p-4 sm:p-6 md:p-8 relative">
+				<div className="text-center max-w-md w-full glass-panel p-8 border border-white/10 rounded-2xl space-y-5 bg-black/60 backdrop-blur-xl">
+					<div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
+						<span className="text-xl">🌐</span>
+					</div>
+					<div>
+						<h1 className="text-xl sm:text-2xl font-bold uppercase tracking-widest text-white mb-2">
+							Xavier Node Connection
+						</h1>
+						<p className="opacity-70 text-xs sm:text-sm text-white/70 leading-relaxed">
+							Connect to your local daemon (:8006), pair a remote SWAL node, or explore the memory console in browser mode.
+						</p>
+					</div>
+
+					<div className="space-y-3 pt-2">
+						<button
+							type="button"
+							onClick={() => setHealth("ok")}
+							className="w-full py-2.5 px-4 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 transition-all uppercase text-xs tracking-wider rounded-lg font-bold cursor-pointer"
+						>
+							Enter Browser Sandbox Mode
+						</button>
+						<button
+							type="button"
+							onClick={() => window.location.reload()}
+							className="w-full py-2.5 px-4 border border-white/10 text-white/70 hover:text-white hover:bg-white/5 transition-all uppercase text-xs tracking-wider rounded-lg font-mono cursor-pointer"
+						>
+							Retry Local Connection (:8006)
+						</button>
+					</div>
+
+					<div className="text-[10px] text-white/40 pt-2 border-t border-white/5">
+						Xavier Cloud Edge Runtime · SWAL Sovereign Mesh
+					</div>
 				</div>
 			</div>
 		);
