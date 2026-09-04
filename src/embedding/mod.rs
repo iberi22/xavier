@@ -246,9 +246,9 @@ impl EmbedderConfig {
                             configured_model = cfg.model.clone();
                         }
                         EmbedderBackendConfig::OpenAICompatible(cfg)
-                            if cfg.endpoint.contains("localhost")
-                                || cfg.endpoint.contains("127.0.0.1")
-                                || cfg.endpoint.contains("11434") =>
+                            if (cfg.endpoint.contains("11434")
+                                || cfg.endpoint.contains("/api/embed"))
+                                && cfg.api_key.is_none() =>
                         {
                             is_ollama = true;
                             configured_model = cfg.model.clone();
