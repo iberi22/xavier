@@ -339,16 +339,26 @@ impl VecSqliteMemoryStore {
                                     record_id,
                                     err_details
                                 );
-                                let chunk_rec = chunk_vec.iter().find(|r| r.id == record_id);
-                                let attempts =
-                                    chunk_rec.map(|r| r.embedding_attempts + 1).unwrap_or(1);
-                                let new_status = if attempts >= 5 { "failed" } else { "retry" };
+                                // Read current attempts from DB (not from chunk_vec, which
+                                // is the stale snapshot taken at the start of this
+                                // reindex call). Using `embedding_attempts + 1` in SQL
+                                // guarantees we always increment correctly even when
+                                // a previous reindex call already updated the count.
+                                let new_attempts: u32 = tx
+                                    .query_row(
+                                        "SELECT embedding_attempts FROM memory_records WHERE id = ?1",
+                                        params![record_id.as_str()],
+                                        |row| Ok(row.get::<_, Option<u32>>(0).ok().flatten().unwrap_or(0)),
+                                    )
+                                    .unwrap_or(0)
+                                    + 1;
+                                let new_status = if new_attempts >= 5 { "failed" } else { "retry" };
 
                                 tx.execute(
                                     "UPDATE memory_records SET embedding_status = ?1, embedding_attempts = ?2, updated_at = ?3 WHERE id = ?4",
                                     params![
                                         new_status,
-                                        attempts,
+                                        new_attempts,
                                         chrono::Utc::now().to_rfc3339(),
                                         record_id.as_str()
                                     ],
