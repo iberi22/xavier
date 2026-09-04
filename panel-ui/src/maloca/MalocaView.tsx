@@ -1,361 +1,123 @@
-import {
-  Cpu,
-  Globe,
-  KeyRound,
-  LayoutDashboard,
-  ListTodo,
-  RefreshCw,
-  ShieldAlert,
-  Target,
-  X,
-} from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
-import { obtainDeviceKeyViaWebAuthn } from "./webauthn";
-import "./maloca.css";
+import React from "react";
+import { X, RefreshCw, KeyRound } from "lucide-react";
+import { OverviewTab } from "./components/OverviewTab";
+import { RegistryTab } from "./components/RegistryTab";
+import { GovernanceTab } from "./components/GovernanceTab";
+import { SupportTab } from "./components/SupportTab";
+import { BacklogTab } from "./components/BacklogTab";
+import { TABS, TabConfig } from "./tabs";
+import { useMalocaView } from "./useMalocaView";
 
-export type MalocaTabId =
-  | "overview"
-  | "registry"
-  | "goals"
-  | "backlog"
-  | "challenges"
-  | "models";
-
-interface TabConfig {
-  id: MalocaTabId;
-  label: string;
-  icon: React.ElementType;
-  endpoint?: string;
-  description: string;
-}
-
-const TABS: TabConfig[] = [
-  {
-    id: "overview",
-    label: "Hub Overview",
-    icon: LayoutDashboard,
-    description: "Maloca ops workspace custom element host & primary node status.",
-  },
-  {
-    id: "registry",
-    label: "Ecosystem Registry",
-    icon: Globe,
-    endpoint: "/v1/maloca/registry",
-    description: "Distributed P2P node directory and registered ecosystem services.",
-  },
-  {
-    id: "goals",
-    label: "GOAL.md Alignment",
-    icon: Target,
-    endpoint: "/v1/maloca/alignment",
-    description: "Canonical SWAL project mission alignment & milestone tracking.",
-  },
-  {
-    id: "backlog",
-    label: "Global Backlog",
-    icon: ListTodo,
-    endpoint: "/v1/maloca/backlog/unified",
-    description: "Unified cross-node task queue & work-item scheduling backlog.",
-  },
-  {
-    id: "challenges",
-    label: "Human Challenge",
-    icon: ShieldAlert,
-    endpoint: "/v1/maloca/challenges/list",
-    description: "Human-in-the-loop validation requests & consensus challenges.",
-  },
-  {
-    id: "models",
-    label: "Model Connectivity",
-    icon: Cpu,
-    endpoint: "/v1/maloca/models/list",
-    description: "LLM backend routes, ONNX cross-encoders & local inference availability.",
-  },
-];
 
 type Props = {
   onClose?: () => void;
-  /** Scaffold: treat local session as manager ACL (no vote weight). */
-  isManager?: boolean;
 };
 
-export default function MalocaView({ onClose, isManager = true }: Props) {
-  const [activeTab, setActiveTab] = useState<MalocaTabId>("overview");
-  const [error, setError] = useState<string | null>(null);
-  const [_isReady, setIsReady] = useState(false);
-  const [deviceKey, setDeviceKey] = useState<string | null>(null);
-  const [isWebAuthnLoading, setIsWebAuthnLoading] = useState(false);
-  const panelRef = useRef<HTMLElement | null>(null);
+export default function MalocaView({ onClose }: Props) {
+  const {
+    activeTab,
+    setActiveTab,
+    deviceKey,
+    isWebAuthnLoading,
+    handleObtainWebAuthnKey,
+  } = useMalocaView();
 
-  // Tab dynamic data states
-  const [tabData, setTabData] = useState<Record<string, any>>({});
-  const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({});
-  const [tabError, setTabError] = useState<Record<string, string | null>>({});
-
-  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-  const xavierUrl = isTauri ? "http://127.0.0.1:8006" : (window.location.origin || "http://127.0.0.1:8006");
-
-  const handleObtainWebAuthnKey = async () => {
-    setIsWebAuthnLoading(true);
-    setError(null);
-    try {
-      const key = await obtainDeviceKeyViaWebAuthn();
-      setDeviceKey(key);
-    } catch (err: any) {
-      setError(err?.message || "Error al obtener clave WebAuthn");
-    } finally {
-      setIsWebAuthnLoading(false);
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case "overview": return <OverviewTab />;
+      case "registry": return <RegistryTab />;
+      case "governance": return <GovernanceTab />;
+      case "support": return <SupportTab />;
+      case "backlog": return <BacklogTab />;
+      default: return (
+        <div className="flex items-center justify-center h-48 text-white/40 font-mono text-sm">
+          Module '{activeTab}' under construction...
+        </div>
+      );
     }
   };
-
-  const fetchTabData = async (tab: TabConfig) => {
-    if (!tab.endpoint) return;
-    setTabLoading((prev) => ({ ...prev, [tab.id]: true }));
-    setTabError((prev) => ({ ...prev, [tab.id]: null }));
-
-    try {
-      const res = await fetch(`${xavierUrl}${tab.endpoint}`);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
-      const data = await res.json();
-      setTabData((prev) => ({ ...prev, [tab.id]: data }));
-    } catch (err: any) {
-      setTabError((prev) => ({
-        ...prev,
-        [tab.id]: err?.message || "Error fetching endpoint data",
-      }));
-    } finally {
-      setTabLoading((prev) => ({ ...prev, [tab.id]: false }));
-    }
-  };
-
-  useEffect(() => {
-    const currentTabConfig = TABS.find((t) => t.id === activeTab);
-    if (currentTabConfig?.endpoint && !tabData[activeTab] && !tabLoading[activeTab]) {
-      fetchTabData(currentTabConfig);
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    // Fallback dynamic import of the Custom Element if the sandbox lacks direct access
-    const embedPkg = "@swal/maloca-embed";
-    import(/* @vite-ignore */ embedPkg)
-      .then(() => {
-        console.log("@swal/maloca-embed loaded successfully");
-      })
-      .catch((err) => {
-        console.warn(
-          "Failed to dynamically load @swal/maloca-embed. Ensure it is registered in the workspace/environment.",
-          err
-        );
-      });
-  }, []);
-
-  useEffect(() => {
-    const element = panelRef.current;
-    if (!element) return;
-
-    const handleReady = (e: Event) => {
-      console.log("Maloca Panel Ready:", e);
-      setIsReady(true);
-    };
-
-    const handleError = (e: Event) => {
-      console.error("Maloca Panel Error:", e);
-      const customErr = e as CustomEvent;
-      setError(customErr.detail?.message || "Error loading Maloca Custom Element");
-    };
-
-    element.addEventListener("maloca-ready", handleReady);
-    element.addEventListener("maloca-error", handleError);
-
-    return () => {
-      element.removeEventListener("maloca-ready", handleReady);
-      element.removeEventListener("maloca-error", handleError);
-    };
-  }, []);
 
   const activeTabConfig = TABS.find((t) => t.id === activeTab) || TABS[0];
 
   return (
-    <div className="maloca-root absolute inset-0 z-40">
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
-      />
-      <div className="maloca-shell relative">
+    <div className="maloca-root absolute inset-0 z-40 bg-[#050505] text-white overflow-hidden flex flex-col font-sans">
+      <div className="maloca-shell relative flex-1 flex flex-col max-w-[1600px] w-full mx-auto p-4 sm:p-6 lg:p-8 overflow-hidden h-full">
         {onClose && (
           <button
             type="button"
-            className="maloca-btn maloca-close focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 z-50"
             onClick={onClose}
             aria-label="Cerrar Maloca"
           >
-            <X size={16} aria-hidden="true" />
+            <X size={20} aria-hidden="true" />
           </button>
         )}
 
-        <header className="maloca-header">
+        {/* Header */}
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-white/10 shrink-0">
           <div>
-            <h1 className="maloca-brand">Maloca</h1>
-            <p className="maloca-subtitle">Ops workspace · host primario Xavier</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-1 flex items-center gap-3">
+              <span className="w-3 h-3 rounded-full bg-[#39ff14] shadow-[0_0_12px_rgba(57,255,20,0.5)] animate-pulse" />
+              Maloca Ops Hub
+            </h1>
+            <p className="text-sm font-mono text-white/50">Primary Xavier Ecosystem Workspace</p>
           </div>
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
+
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              className="maloca-btn flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              className="flex items-center gap-2 px-4 py-2 text-xs font-mono bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg transition-all"
               onClick={handleObtainWebAuthnKey}
               disabled={isWebAuthnLoading}
-              title="Obtener Clave de Dispositivo vía WebAuthn PRF"
             >
-              <KeyRound size={14} aria-hidden="true" />
-              {isWebAuthnLoading ? "Autenticando..." : "WebAuthn Key"}
+              <KeyRound size={16} />
+              {isWebAuthnLoading ? "Authenticating..." : "Node Attestation"}
             </button>
           </div>
         </header>
 
         {deviceKey && (
-          <div className="maloca-card my-2 p-2.5 bg-slate-900/90 border border-emerald-500/40 rounded text-xs">
-            <span className="text-emerald-400 font-medium block mb-1">Device Key (WebAuthn PRF):</span>
-            <code className="font-mono text-slate-300 break-all select-all block bg-slate-950 p-1.5 rounded">
+          <div className="my-4 p-3 glass-panel border border-emerald-500/40 rounded-lg bg-[#0a0a0a] shrink-0">
+            <span className="text-xs text-emerald-400 font-mono mb-1 block">Attestation Key (WebAuthn PRF):</span>
+            <code className="text-[11px] font-mono text-white/70 break-all bg-black/50 p-2 rounded block">
               {deviceKey}
             </code>
           </div>
         )}
-        {error && (
-          <div
-            className="maloca-card"
-            style={{ borderColor: "var(--maloca-danger)" }}
-          >
-            <span className="maloca-muted">Xavier /maloca: {error}</span>
-          </div>
-        )}
 
-        {/* Multi-Tab Navigation Sub-Header */}
-        <nav
-          className="maloca-tab-bar"
-          role="tablist"
-          aria-label="Maloca Navigation Tabs"
-        >
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                id={`tab-${tab.id}`}
-                data-tab={`tab-${tab.id}`}
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={`panel-${tab.id}`}
-                tabIndex={isActive ? 0 : -1}
-                className={`maloca-tab tab-${tab.id} ${isActive ? "active" : ""}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <Icon size={16} aria-hidden="true" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Tab Content Panels */}
-        <main className="mt-2">
-          {activeTab === "overview" && (
-            <div
-              id="panel-overview"
-              role="tabpanel"
-              aria-labelledby="tab-overview"
-              className="maloca-panel"
-            >
-              <swal-maloca-panel
-                ref={panelRef as any}
-                app-id="xavier"
-                xavier-url={xavierUrl}
-              />
-            </div>
-          )}
-
-          {activeTab !== "overview" && (
-            <div
-              id={`panel-${activeTab}`}
-              role="tabpanel"
-              aria-labelledby={`tab-${activeTab}`}
-              className="maloca-subview"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-[var(--maloca-border)]">
-                <div>
-                  <h2 className="text-lg font-semibold flex items-center gap-2">
-                    {React.createElement(activeTabConfig.icon, {
-                      size: 20,
-                      "aria-hidden": "true",
-                    })}
-                    {activeTabConfig.label}
-                  </h2>
-                  <p className="maloca-subtitle text-xs mt-0.5">
-                    {activeTabConfig.description}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="maloca-mono text-xs text-slate-400">
-                    {activeTabConfig.endpoint}
-                  </span>
-                  <button
-                    type="button"
-                    className="maloca-btn flex items-center gap-1.5 text-xs py-1 px-2.5"
-                    onClick={() => fetchTabData(activeTabConfig)}
-                    disabled={tabLoading[activeTab]}
-                    title="Refresh endpoint data"
-                  >
-                    <RefreshCw
-                      size={13}
-                      className={tabLoading[activeTab] ? "animate-spin" : ""}
-                      aria-hidden="true"
-                    />
-                    Refresh
-                  </button>
-                </div>
-              </div>
-
-              {tabLoading[activeTab] && (
-                <div className="p-8 text-center text-slate-500 font-mono text-xs">
-                  Loading {activeTabConfig.endpoint}...
-                </div>
-              )}
-
-              {tabError[activeTab] && (
-                <div className="p-4 bg-rose-950/30 border border-rose-800/50 rounded-lg text-rose-300 text-xs">
-                  <p className="font-semibold mb-1">Failed to fetch data:</p>
-                  <code className="font-mono text-rose-200">
-                    {tabError[activeTab]}
-                  </code>
-                </div>
-              )}
-
-              {!tabLoading[activeTab] && !tabError[activeTab] && (
-                <div className="space-y-4">
-                  <div className="bg-slate-900/60 p-4 rounded-lg border border-[var(--maloca-border)] overflow-x-auto">
-                    <pre className="maloca-mono text-xs text-emerald-300">
-                      {JSON.stringify(
-                        tabData[activeTab] || {
-                          status: "connected",
-                          endpoint: activeTabConfig.endpoint,
-                          timestamp: new Date().toISOString(),
-                          host: xavierUrl,
-                          manager_mode: isManager,
-                        },
-                        null,
-                        2
-                      )}
-                    </pre>
+        <div className="flex flex-col lg:flex-row gap-6 mt-6 flex-1 min-h-0">
+          {/* Sidebar Navigation */}
+          <nav className="w-full lg:w-64 shrink-0 flex lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible custom-scrollbar pb-2 lg:pb-0">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all whitespace-nowrap lg:whitespace-normal text-left
+                    ${isActive
+                      ? 'bg-white/10 text-white shadow-[inset_3px_0_0_#39ff14]'
+                      : 'text-white/50 hover:bg-white/5 hover:text-white/80'}`}
+                >
+                  <Icon size={18} className={isActive ? 'text-[#39ff14]' : ''} />
+                  <div className="hidden sm:block">
+                    <div className={`text-sm font-medium ${isActive ? 'text-white' : ''}`}>{tab.label}</div>
+                    <div className="text-[10px] opacity-60 hidden lg:block mt-0.5 line-clamp-1">{tab.description}</div>
                   </div>
-                </div>
-              )}
+                  <span className="sm:hidden text-sm font-medium">{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Main Content Area */}
+          <main className="flex-1 min-w-0 bg-[#0a0a0a] rounded-2xl border border-white/5 p-4 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar relative">
+            <div className="max-w-5xl mx-auto">
+              {renderActiveTab()}
             </div>
-          )}
-        </main>
+          </main>
+        </div>
       </div>
     </div>
   );
