@@ -556,7 +556,8 @@ pub fn run() {
 
                             let mut json = serde_json::json!({});
                             if let Ok(contents) = std::fs::read_to_string(&home) {
-                                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&contents)
+                                if let Ok(parsed) =
+                                    serde_json::from_str::<serde_json::Value>(&contents)
                                 {
                                     json = parsed;
                                 }
@@ -661,7 +662,10 @@ pub fn run() {
                     if let Ok(resp) = client.get("http://127.0.0.1:8006/health").send().await {
                         if resp.status().is_success() {
                             healthy = true;
-                            log::info!("Sidecar backend health check passed on attempt {}", attempt);
+                            log::info!(
+                                "Sidecar backend health check passed on attempt {}",
+                                attempt
+                            );
                             break;
                         }
                     }

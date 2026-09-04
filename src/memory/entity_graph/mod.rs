@@ -1004,7 +1004,9 @@ impl KnowledgeConsolidator {
         let consolidated_entities = raw_count.saturating_sub(deduped.len());
 
         let decay_mgr = crate::memory::decay::DecayManager::with_defaults();
-        let decay_report = decay_mgr.decay_workspace_memories(store, workspace_id).await?;
+        let decay_report = decay_mgr
+            .decay_workspace_memories(store, workspace_id)
+            .await?;
 
         let summary = self.consolidation_summary(deduped.len(), 0);
 
@@ -1066,8 +1068,8 @@ mod knowledge_tests {
     #[tokio::test]
     async fn test_knowledge_run_consolidation() {
         use crate::memory::store::InMemoryMemoryStore;
-        use crate::memory::store::MemoryStore;
         use crate::memory::store::MemoryRecord;
+        use crate::memory::store::MemoryStore;
 
         let store = InMemoryMemoryStore::new();
         let ws = "ws-test";

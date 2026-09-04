@@ -54,7 +54,12 @@ pub struct TgdPruneSummary {
 /// Helper function to retrieve the effective utility score of a MemoryRecord.
 pub fn get_utility_score(record: &MemoryRecord) -> f32 {
     if let serde_json::Value::Object(ref map) = record.metadata {
-        for key in &["utility_score", "score", "tgd_refinement_score", "memory_importance"] {
+        for key in &[
+            "utility_score",
+            "score",
+            "tgd_refinement_score",
+            "memory_importance",
+        ] {
             if let Some(val) = map.get(*key).and_then(|v| v.as_f64()) {
                 return val as f32;
             }
@@ -77,9 +82,18 @@ pub fn is_pinned_or_critical(record: &MemoryRecord) -> bool {
 
     if let serde_json::Value::Object(ref map) = record.metadata {
         if map.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false)
-            || map.get("critical").and_then(|v| v.as_bool()).unwrap_or(false)
-            || map.get("is_pinned").and_then(|v| v.as_bool()).unwrap_or(false)
-            || map.get("is_critical").and_then(|v| v.as_bool()).unwrap_or(false)
+            || map
+                .get("critical")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            || map
+                .get("is_pinned")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            || map
+                .get("is_critical")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
         {
             return true;
         }
@@ -298,10 +312,7 @@ mod tests {
             safety_retention_floor: 6,
         });
 
-        let summary = pruner
-            .prune_memories(&store, workspace_id)
-            .await
-            .unwrap();
+        let summary = pruner.prune_memories(&store, workspace_id).await.unwrap();
 
         assert_eq!(summary.total_processed, 10);
         // Out of 5 candidates (r2, r3, r4, r5, r6), safety retention floor of 6 allows max 4 prunes (10 - 6 = 4)

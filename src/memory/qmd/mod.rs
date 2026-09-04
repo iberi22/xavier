@@ -159,7 +159,7 @@ impl QmdMemory {
     }
 
     /// Store.
-    pub(crate) async fn store(&self) -> Option<Arc<dyn MemoryStore>> {
+    pub async fn store(&self) -> Option<Arc<dyn MemoryStore>> {
         self.store.read().await.clone()
     }
 

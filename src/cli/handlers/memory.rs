@@ -606,11 +606,9 @@ pub async fn offline_consolidate(workspace_id: Option<&str>) -> anyhow::Result<s
     use crate::memory::store::MemoryStore;
     use crate::memory::tgd::TgdUtilityPruner;
 
-    let ws_id = workspace_id
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string())
-        });
+    let ws_id = workspace_id.map(|s| s.to_string()).unwrap_or_else(|| {
+        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string())
+    });
 
     let store: Arc<dyn MemoryStore> = match SqliteMemoryStore::from_env().await {
         Ok(s) => Arc::new(s),
@@ -663,6 +661,75 @@ pub async fn memory_manifest_handler(
             Json(serde_json::json!({
                 "status": "error",
                 "message": format!("Failed to build manifest: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ExportMarkdownQuery {
+    pub public_only: Option<bool>,
+}
+
+/// Export markdown HTTP handler for CLI HTTP server.
+pub async fn export_markdown_handler(
+    State(state): State<CliState>,
+    Query(params): Query<ExportMarkdownQuery>,
+) -> impl IntoResponse {
+    let public_only = params.public_only.unwrap_or(false);
+    match state.memory.export(public_only).await {
+        Ok(records) => {
+            let exported: Vec<_> = records
+                .into_iter()
+                .map(|r| {
+                    let mut yaml_obj = serde_json::Map::new();
+                    yaml_obj.insert("id".to_string(), serde_json::json!(r.id));
+                    yaml_obj.insert(
+                        "workspace_id".to_string(),
+                        serde_json::json!(r.workspace_id),
+                    );
+                    yaml_obj.insert(
+                        "created_at".to_string(),
+                        serde_json::json!(r.created_at.to_rfc3339()),
+                    );
+                    yaml_obj.insert(
+                        "updated_at".to_string(),
+                        serde_json::json!(r.updated_at.to_rfc3339()),
+                    );
+
+                    if let Some(meta) = r.metadata.as_object() {
+                        for (k, v) in meta {
+                            yaml_obj.insert(k.clone(), v.clone());
+                        }
+                    }
+
+                    let yaml_str = serde_yaml::to_string(&serde_json::Value::Object(yaml_obj))
+                        .unwrap_or_else(|_| String::new());
+                    let markdown_content = format!("---\n{}---\n\n{}", yaml_str, r.content);
+
+                    serde_json::json!({
+                        "id": r.id,
+                        "path": r.path,
+                        "markdown": markdown_content,
+                        "metadata": r.metadata,
+                    })
+                })
+                .collect();
+
+            Json(serde_json::json!({
+                "status": "ok",
+                "count": exported.len(),
+                "notes": exported,
+                "workspace_id": state.workspace_id,
+            }))
+            .into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string()
             })),
         )
             .into_response(),

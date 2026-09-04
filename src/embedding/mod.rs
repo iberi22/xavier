@@ -292,7 +292,9 @@ impl EmbedderConfig {
                                 }
                             }
                         } else {
-                            tracing::warn!("Ollama embedding backend probe failed or backend unreachable");
+                            tracing::warn!(
+                                "Ollama embedding backend probe failed or backend unreachable"
+                            );
                             continue;
                         }
                     }
@@ -759,7 +761,10 @@ pub(crate) fn select_ollama_fallback_model(models: &[String]) -> Option<String> 
     }
 
     // Then any model containing "embed"
-    if let Some(m) = models.iter().find(|m| m.to_ascii_lowercase().contains("embed")) {
+    if let Some(m) = models
+        .iter()
+        .find(|m| m.to_ascii_lowercase().contains("embed"))
+    {
         return Some(m.clone());
     }
 
@@ -1302,7 +1307,10 @@ mod tests {
         );
 
         // Preference 3: Any model containing 'embed'
-        let models4 = vec!["qwen:7b".to_string(), "my-custom-embedding-model".to_string()];
+        let models4 = vec![
+            "qwen:7b".to_string(),
+            "my-custom-embedding-model".to_string(),
+        ];
         assert_eq!(
             select_ollama_fallback_model(&models4),
             Some("my-custom-embedding-model".to_string())
