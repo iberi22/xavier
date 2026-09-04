@@ -1,65 +1,9 @@
-//! Vector operations for SQLite vector store
-//!
-//! Provides the implementation and data structures for this module's
-//! responsibilities within the Xavier cognitive memory system.
-use crate::memory::sqlite_vec_store::config::QJL_MAGIC;
-use anyhow::Result;
+use crate::utils::errors::XavierError;
 
-pub fn register_sqlite_vec_extension() -> Result<()> {
-    unsafe {
-        let init = std::mem::transmute::<
-            *const (),
-            unsafe extern "C" fn(
-                *mut rusqlite::ffi::sqlite3,
-                *mut *mut i8,
-                *const rusqlite::ffi::sqlite3_api_routines,
-            ) -> i32,
-        >(sqlite_vec::sqlite3_vec_init as *const ());
-        rusqlite::ffi::sqlite3_auto_extension(Some(init));
-    }
-    Ok(())
-}
+const QJL_MAGIC: &[u8] = &[0x71, 0x4a, 0x4c, 0x01]; // "qJL\x01"
 
 pub fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
     embedding.iter().flat_map(|v| v.to_le_bytes()).collect()
-}
-
-pub fn serialize_embedding_qjl(embedding: &[f32]) -> Vec<u8> {
-    let dims = embedding.len() as u32;
-    let max_abs = embedding
-        .iter()
-        .fold(0.0_f32, |acc, value| acc.max(value.abs()));
-    let scale_1 = if max_abs > 0.0 { max_abs / 127.0 } else { 1.0 };
-    let coarse: Vec<i8> = embedding
-        .iter()
-        .map(|value| ((value / scale_1).round().clamp(-127.0, 127.0)) as i8)
-        .collect();
-    let residuals: Vec<f32> = embedding
-        .iter()
-        .zip(coarse.iter())
-        .map(|(value, quantized)| value - (*quantized as f32 * scale_1))
-        .collect();
-    let residual_max = residuals
-        .iter()
-        .fold(0.0_f32, |acc, value| acc.max(value.abs()));
-    let scale_2 = if residual_max > 0.0 {
-        residual_max / 127.0
-    } else {
-        1.0
-    };
-    let residual_quantized: Vec<i8> = residuals
-        .iter()
-        .map(|value| ((value / scale_2).round().clamp(-127.0, 127.0)) as i8)
-        .collect();
-
-    let mut bytes = Vec::with_capacity(16 + (embedding.len() * 2));
-    bytes.extend_from_slice(QJL_MAGIC);
-    bytes.extend_from_slice(&dims.to_le_bytes());
-    bytes.extend_from_slice(&scale_1.to_le_bytes());
-    bytes.extend_from_slice(&scale_2.to_le_bytes());
-    bytes.extend(coarse.into_iter().map(|value| value as u8));
-    bytes.extend(residual_quantized.into_iter().map(|value| value as u8));
-    bytes
 }
 
 pub fn deserialize_embedding(data: &[u8]) -> Vec<f32> {
@@ -83,6 +27,11 @@ pub fn deserialize_embedding(data: &[u8]) -> Vec<f32> {
         }
     }
 
+    deserialize_embedding_bytes(data)
+}
+
+#[allow(clippy::incompatible_msrv)] // as_chunks stabilized in rust 1.88
+fn deserialize_embedding_bytes(data: &[u8]) -> Vec<f32> {
     data.as_chunks::<4>()
         .0
         .iter()
