@@ -989,7 +989,9 @@ mod tests {
 
     #[test]
     fn test_local_model_and_cloud_model_resolution() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::settings::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_MODEL");
         std::env::remove_var("XAVIER_EMBEDDING_CLOUD_MODEL");
@@ -1055,7 +1057,9 @@ mod tests {
 
     #[test]
     fn test_cloud_config_priorities() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::settings::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         // 1. Test XAVIER_OPENROUTER_API_KEY as fallback
         std::env::set_var("XAVIER_OPENROUTER_API_KEY", "sk-or-test-key");
@@ -1120,7 +1124,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_auto_respects_explicit_local_signal() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::settings::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         std::env::set_var(
             "XAVIER_EMBEDDING_LOCAL_URL",
@@ -1137,7 +1143,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_auto_respects_explicit_cloud_signal() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::settings::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         std::env::set_var("OPENAI_API_KEY", "sk-test-key-123");
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
@@ -1152,7 +1160,9 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_auto_triggers_probe_ollama_reachable_with_embeddinggemma() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::settings::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         std::env::set_var(
             "XAVIER_CONFIG_PATH",
@@ -1200,7 +1210,9 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_auto_triggers_probe_ollama_reachable_without_embeddinggemma() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::settings::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         std::env::set_var(
             "XAVIER_CONFIG_PATH",
@@ -1247,7 +1259,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_auto_triggers_probe_ollama_unreachable() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::settings::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         std::env::set_var(
             "XAVIER_CONFIG_PATH",
@@ -1323,7 +1337,9 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_build_sync_model_fallback_without_system_alert() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::settings::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
