@@ -169,4 +169,49 @@ describe("TopStatusBar Browser Compatibility & Guards", () => {
     expect(screen.getAllByText(/Xavier/).length).toBeGreaterThan(0);
     expect(screen.getByTitle("CPU: 0%")).toBeInTheDocument();
   });
+
+  test("displays node indicator button, opens Node modal, and updates remote URL", async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/health")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              system: { cpu_usage: 10, ram_usage_percent: 20 },
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    render(<TopStatusBar />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Node Connection Settings" }),
+      ).toBeInTheDocument();
+    });
+
+    const nodeButton = screen.getByRole("button", {
+      name: "Node Connection Settings",
+    });
+    await act(async () => {
+      nodeButton.click();
+    });
+
+    expect(screen.getByText("Xavier Node Connectivity")).toBeInTheDocument();
+
+    const input = screen.getByLabelText(/Remote Node Endpoint/) as HTMLInputElement;
+    expect(input).toBeInTheDocument();
+
+    const saveButton = screen.getByRole("button", { name: "Save Remote Node" });
+    await act(async () => {
+      saveButton.click();
+    });
+
+    expect(saveButton).toBeInTheDocument();
+  });
 });

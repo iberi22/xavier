@@ -2,26 +2,34 @@ import {
   Activity,
   Bell,
   Bot,
+  Crown,
   Database,
+  Globe,
   Hash,
   Home,
   Key,
   MessageCircle,
   MessageSquare,
+  RefreshCw,
   Send,
+  Server,
   Settings,
   ShieldCheck,
   Users,
   Wifi,
+  WifiOff,
+  X,
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import React, { useEffect, useRef, useState } from "react";
-import { getApiUrl } from "../api/client";
+import { getApiUrl, getRemoteUrl, setRemoteUrl } from "../api/client";
 import { getApiTokenSync } from "../hooks/useApiToken";
+import FounderNodeStatusCard from "./FounderNodeStatusCard";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
+import WorkspaceSelector from "./WorkspaceSelector";
 import LoadingSpinner from "./ui/LoadingSpinner";
 
 type MessagingPlatform =
@@ -74,13 +82,23 @@ export default React.memo(function TopStatusBar({
     has_telegram: false,
   });
   const [showConfig, setShowConfig] = useState(false);
+  const [showFounderCard, setShowFounderCard] = useState(false);
   const [showMessaging, setShowMessaging] = useState(false);
   const [messagingTab, setMessagingTab] =
     useState<MessagingPlatform>("telegram");
   const [showNotifications, setShowNotifications] = useState(false);
   const bellRef = useRef<HTMLButtonElement>(null);
+  const [nodeStatus, setNodeStatus] = useState<"connected" | "disconnected" | "retrying">("connected");
+  const [retryCount, setRetryCount] = useState(0);
+  const [remoteUrl, setRemoteUrlState] = useState<string>(getRemoteUrl());
+  const [showNodeModal, setShowNodeModal] = useState(false);
+  const [inputRemoteUrl, setInputRemoteUrl] = useState<string>(remoteUrl);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
   const [modules, setModules] = useState({
     time: true,
+    founder: true,
     channels: true,
     resources: true,
     security: true,
@@ -135,6 +153,8 @@ export default React.memo(function TopStatusBar({
           const { invoke } = await import("@tauri-apps/api/core");
           const met = await invoke<any>("get_realtime_metrics");
           if (met) setMetrics(met);
+          setNodeStatus("connected");
+          setRetryCount(0);
         } catch (err) {
           console.debug("Error fetching realtime metrics:", err);
         }
@@ -142,6 +162,8 @@ export default React.memo(function TopStatusBar({
         try {
           const res = await fetch(getApiUrl("/health"));
           if (res.ok) {
+            setNodeStatus("connected");
+            setRetryCount(0);
             const data = await res.json();
             if (data.system) {
               const cpu_percent = data.system.cpu_usage ?? 0;
@@ -156,9 +178,14 @@ export default React.memo(function TopStatusBar({
                 ram_total_gb: deviceMemory,
               });
             }
+          } else {
+            setNodeStatus("disconnected");
+            setRetryCount((prev) => prev + 1);
           }
         } catch (err) {
           console.debug("Error fetching metrics from /health:", err);
+          setNodeStatus("disconnected");
+          setRetryCount((prev) => prev + 1);
         }
       }
 
@@ -240,6 +267,40 @@ export default React.memo(function TopStatusBar({
     setShowMessaging(true);
   };
 
+  const handleSaveRemoteUrl = (url: string | null) => {
+    setRemoteUrl(url);
+    const active = getRemoteUrl();
+    setRemoteUrlState(active);
+    setInputRemoteUrl(active);
+    setTestResult(null);
+    setShowNodeModal(false);
+  };
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setTestResult(null);
+    try {
+      const target = inputRemoteUrl.trim().replace(/\/+$/, "");
+      const healthUrl = target ? `${target}/health` : getApiUrl("/health");
+      const res = await fetch(healthUrl);
+      if (res.ok) {
+        setTestResult({ ok: true, msg: "Connected successfully to node!" });
+      } else {
+        setTestResult({
+          ok: false,
+          msg: `HTTP Error ${res.status}: ${res.statusText}`,
+        });
+      }
+    } catch (_err) {
+      setTestResult({
+        ok: false,
+        msg: "Connection failed. Check node URL, CORS policies or network availability.",
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   return (
     <>
       <div className="absolute inset-0 z-[60] pointer-events-none overflow-hidden">
@@ -272,7 +333,45 @@ export default React.memo(function TopStatusBar({
             </motion.div>
           )}
 
+          {/* SWAL Genesis Founder Node Telemetry Badge */}
+          {modules.founder && (
+            <div className="relative">
+              <motion.button
+                layout
+                transition={spring}
+                type="button"
+                onClick={() => setShowFounderCard((prev) => !prev)}
+                className="bg-[#0a0a0a]/80 backdrop-blur-md border border-amber-500/30 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 hover:bg-amber-500/10 transition-colors"
+                title="SWAL Genesis Founder Node Telemetry"
+                aria-label="Founder Node Telemetry HUD Card"
+              >
+                <Crown className="w-3 h-3 text-amber-400" />
+                <span className="font-mono text-[9px] text-amber-300 font-bold tracking-wider uppercase hidden sm:inline-block">
+                  Founder Node
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              </motion.button>
+
+              <AnimatePresence>
+                {showFounderCard && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute left-0 top-full mt-2 z-[80]"
+                  >
+                    <FounderNodeStatusCard
+                      onClose={() => setShowFounderCard(false)}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
           <OperationModeBadge />
+
+          <WorkspaceSelector />
 
           {/* System Resources Pill */}
           {modules.resources && (
@@ -458,6 +557,7 @@ export default React.memo(function TopStatusBar({
                   </h3>
                   {Object.entries({
                     time: "Time & Date",
+                    founder: "Founder Node",
                     resources: "System Resources",
                     channels: "Communication",
                     security: "Security & Proxy",
@@ -495,6 +595,45 @@ export default React.memo(function TopStatusBar({
           transition={spring}
           className={`flex gap-2 pointer-events-auto ${isModalOpen ? "absolute right-2 lg:right-4 top-1/2 -translate-y-1/2 flex-col items-end z-[60]" : "absolute right-4 md:right-6 top-6 flex-row items-start"}`}
         >
+          {/* Active Node Indicator */}
+          <motion.button
+            layout
+            transition={spring}
+            type="button"
+            onClick={() => {
+              setInputRemoteUrl(getRemoteUrl());
+              setTestResult(null);
+              setShowNodeModal(true);
+            }}
+            className={`bg-[#0a0a0a]/80 backdrop-blur-md border ${
+              nodeStatus === "connected"
+                ? "border-emerald-500/30 hover:border-emerald-400/50"
+                : "border-amber-500/50 hover:border-amber-400/80 bg-amber-500/10"
+            } shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 transition-colors cursor-pointer`}
+            title={`Node: ${remoteUrl || "Local"} | Status: ${nodeStatus}${retryCount > 0 ? ` (Retries: ${retryCount})` : ""}`}
+            aria-label="Node Connection Settings"
+          >
+            {nodeStatus === "connected" ? (
+              <Server className="w-3 h-3 text-emerald-400" />
+            ) : (
+              <WifiOff className="w-3 h-3 text-amber-400 animate-pulse" />
+            )}
+            <span
+              className={`font-mono text-[9px] uppercase tracking-wide hidden sm:inline-block ${
+                nodeStatus === "connected"
+                  ? "text-emerald-300"
+                  : "text-amber-300 font-bold"
+              }`}
+            >
+              {remoteUrl ? "Remote Node" : "Local Node"}
+            </span>
+            {nodeStatus !== "connected" && (
+              <span className="font-mono text-[8px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1 rounded animate-pulse">
+                Retry #{retryCount}
+              </span>
+            )}
+          </motion.button>
+
           {/* Maloca ops workspace */}
           <motion.button
             layout
@@ -608,6 +747,144 @@ export default React.memo(function TopStatusBar({
           )}
         </motion.div>
       </div>
+
+      {/* Node Connection Modal Overlay */}
+      <AnimatePresence>
+        {showNodeModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto"
+            onClick={() => setShowNodeModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <div className="flex items-center gap-2">
+                  <Server className="w-5 h-5 text-emerald-400" />
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                      Xavier Node Connectivity
+                    </h3>
+                    <p className="text-[10px] text-white/50">
+                      Configure active remote node URL & auto-reconnect settings
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNodeModal(false)}
+                  className="text-white/40 hover:text-white transition-colors"
+                  aria-label="Close modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Active Mode Banner */}
+                <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center justify-between text-xs font-mono">
+                  <span className="text-white/60">Current Base URL:</span>
+                  <span
+                    className="text-emerald-400 font-bold truncate max-w-[200px]"
+                    title={getApiUrl("")}
+                  >
+                    {getApiUrl("") || "Relative / Default"}
+                  </span>
+                </div>
+
+                {/* Status Indicator */}
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="text-white/60">Status:</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                      nodeStatus === "connected"
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                        : "bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse"
+                    }`}
+                  >
+                    {nodeStatus === "connected"
+                      ? "Connected"
+                      : `Disconnected (${retryCount} retries)`}
+                  </span>
+                </div>
+
+                {/* Remote URL Input */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="remote-node-url-input"
+                    className="block text-xs font-mono text-white/70"
+                  >
+                    Remote Node Endpoint (e.g., https://xavier-node.domain.com:8006)
+                  </label>
+                  <div className="relative">
+                    <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                    <input
+                      id="remote-node-url-input"
+                      type="text"
+                      value={inputRemoteUrl}
+                      onChange={(e) => setInputRemoteUrl(e.target.value)}
+                      placeholder="https://node.swal.local:8006"
+                      className="w-full pl-9 pr-3 py-2 bg-black/50 border border-white/15 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-emerald-400 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {testResult && (
+                  <div
+                    className={`p-3 rounded-xl border text-xs font-mono ${
+                      testResult.ok
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                        : "bg-red-500/10 border-red-500/30 text-red-300"
+                    }`}
+                  >
+                    {testResult.msg}
+                  </div>
+                )}
+
+                {/* Button Controls */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={testingConnection}
+                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 rounded-xl text-xs font-mono font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {testingConnection && (
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                    )}
+                    Test
+                  </button>
+                  <div className="flex items-center gap-2">
+                    {remoteUrl && (
+                      <button
+                        type="button"
+                        onClick={() => handleSaveRemoteUrl(null)}
+                        className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 rounded-xl text-xs font-mono font-bold transition-colors"
+                      >
+                        Use Local
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleSaveRemoteUrl(inputRemoteUrl)}
+                      className="px-4 py-1.5 bg-emerald-500 text-black hover:bg-emerald-400 rounded-xl text-xs font-mono font-bold transition-colors"
+                    >
+                      Save Remote Node
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Messaging Config Modal — full screen overlay */}
       <AnimatePresence>

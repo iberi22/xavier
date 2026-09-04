@@ -9,7 +9,31 @@ import type {
   SecretLease,
 } from "../types";
 
+export const REMOTE_URL_KEY = "xavier_remote_url";
+
+export const getRemoteUrl = (): string => {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(REMOTE_URL_KEY) || "";
+};
+
+export const setRemoteUrl = (url: string | null): void => {
+  if (typeof window === "undefined") return;
+  if (url && url.trim().length > 0) {
+    localStorage.setItem(REMOTE_URL_KEY, url.trim());
+  } else {
+    localStorage.removeItem(REMOTE_URL_KEY);
+  }
+};
+
 export const getApiUrl = (path: string) => {
+  if (typeof window !== "undefined") {
+    const remoteUrl = localStorage.getItem(REMOTE_URL_KEY);
+    if (remoteUrl && remoteUrl.trim().length > 0) {
+      const cleanRemote = remoteUrl.trim().replace(/\/+$/, "");
+      const cleanPath = path.startsWith("/") ? path : `/${path}`;
+      return `${cleanRemote}${cleanPath}`;
+    }
+  }
   const isTauri =
     typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   return isTauri ? `http://127.0.0.1:8006${path}` : path;
@@ -91,6 +115,11 @@ export class ApiClient {
     const maxRetries = options?.maxRetries ?? (autoRetry ? 3 : 0);
     const baseDelayMs = options?.baseDelayMs ?? 1000;
 
+    const activeWorkspace =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("xavier_active_workspace") || "default"
+        : "default";
+
     let attempt = 0;
 
     while (attempt <= maxRetries) {
@@ -108,6 +137,7 @@ export class ApiClient {
           headers: {
             "Content-Type": "application/json",
             "X-Xavier-Token": this.token,
+            "X-Workspace-Id": activeWorkspace,
             ...(options?.headers ?? {}),
           },
         });
@@ -236,8 +266,17 @@ export class ApiClient {
   }
 
   // Memory
-  async searchMemories(query: string, kind?: string, limit = 20) {
-    const params = new URLSearchParams({ q: query, limit: String(limit) });
+  async searchMemories(query: string, kind?: string, limit = 20, workspaceId?: string) {
+    const activeWorkspace =
+      workspaceId ||
+      (typeof localStorage !== "undefined"
+        ? localStorage.getItem("xavier_active_workspace") || "default"
+        : "default");
+    const params = new URLSearchParams({
+      q: query,
+      limit: String(limit),
+      workspace_id: activeWorkspace,
+    });
     if (kind) params.set("kind", kind);
     return this.fetch<MemoryEntry[]>(`/api/memory/search?${params}`);
   }

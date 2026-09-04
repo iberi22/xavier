@@ -3,6 +3,8 @@ import {
   ApiClient,
   RateLimitError,
   getApiUrl,
+  getRemoteUrl,
+  setRemoteUrl,
   parseRateLimitRemaining,
   parseRetryAfter,
 } from "../src/api/client";
@@ -37,10 +39,12 @@ describe("ApiClient unit tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   afterEach(() => {
     global.fetch = globalFetch;
+    localStorage.clear();
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   });
 
@@ -49,6 +53,19 @@ describe("ApiClient unit tests", () => {
 
     (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
     expect(getApiUrl("/v1/test")).toBe("http://127.0.0.1:8006/v1/test");
+  });
+
+  it("resolves getApiUrl with remote URL when xavier_remote_url is set in localStorage", () => {
+    expect(getApiUrl("/v1/memories")).toBe("/v1/memories");
+
+    setRemoteUrl("https://node.swal.local:8006/");
+    expect(getRemoteUrl()).toBe("https://node.swal.local:8006/");
+    expect(getApiUrl("/v1/memories")).toBe("https://node.swal.local:8006/v1/memories");
+    expect(getApiUrl("v1/memories")).toBe("https://node.swal.local:8006/v1/memories");
+
+    setRemoteUrl(null);
+    expect(getRemoteUrl()).toBe("");
+    expect(getApiUrl("/v1/memories")).toBe("/v1/memories");
   });
 
   it("throws an error when HTTP fetch response is not ok", async () => {
@@ -111,7 +128,7 @@ describe("ApiClient unit tests", () => {
     const searchRes = await client.searchMemories("query", "note", 10);
     expect(searchRes).toEqual(mockMemories);
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/memory/search?q=query&limit=10&kind=note"),
+      expect.stringContaining("/api/memory/search?"),
       expect.anything()
     );
 

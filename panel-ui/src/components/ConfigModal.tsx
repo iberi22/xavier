@@ -150,10 +150,15 @@ export default function ConfigModal({
       const isTauri =
         typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
       const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
+      const activeWorkspace =
+        typeof localStorage !== "undefined"
+          ? localStorage.getItem("xavier_active_workspace") || "default"
+          : "default";
       const res = await fetch(`${baseUrl}/memory/graph/view`, {
         headers: {
           "Content-Type": "application/json",
           "X-Xavier-Token": token || "",
+          "X-Workspace-Id": activeWorkspace,
         },
       });
       if (!res.ok) throw new Error(await res.text());
@@ -179,12 +184,17 @@ export default function ConfigModal({
         const isTauri =
           typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
         const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
+        const activeWorkspace =
+          typeof localStorage !== "undefined"
+            ? localStorage.getItem("xavier_active_workspace") || "default"
+            : "default";
         const res = await fetch(
           `${baseUrl}/memory/graph/entities/${encodeURIComponent(node.id)}`,
           {
             headers: {
               "Content-Type": "application/json",
               "X-Xavier-Token": token || "",
+              "X-Workspace-Id": activeWorkspace,
             },
           },
         );
@@ -220,10 +230,15 @@ export default function ConfigModal({
         const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
 
         // 1. Fetch Stats
+        const activeWorkspace =
+          typeof localStorage !== "undefined"
+            ? localStorage.getItem("xavier_active_workspace") || "default"
+            : "default";
         const statsRes = await fetch(`${baseUrl}/code/stats`, {
           headers: {
             "Content-Type": "application/json",
             "X-Xavier-Token": token || "",
+            "X-Workspace-Id": activeWorkspace,
           },
         });
         if (!statsRes.ok) throw new Error("Failed to load code statistics");
@@ -241,6 +256,7 @@ export default function ConfigModal({
             headers: {
               "Content-Type": "application/json",
               "X-Xavier-Token": token || "",
+              "X-Workspace-Id": activeWorkspace,
             },
           });
           if (!graphRes.ok) throw new Error("Failed to load code graph view");
@@ -266,11 +282,16 @@ export default function ConfigModal({
       const isTauri =
         typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
       const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
+      const activeWorkspace =
+        typeof localStorage !== "undefined"
+          ? localStorage.getItem("xavier_active_workspace") || "default"
+          : "default";
       const res = await fetch(`${baseUrl}/code/scan`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Xavier-Token": token || "",
+          "X-Workspace-Id": activeWorkspace,
         },
         body: JSON.stringify({ path: "src" }),
       });
@@ -294,7 +315,7 @@ export default function ConfigModal({
     void fetchCodeStatsAndGraph(null);
   };
 
-  // Trigger loading based on sub-layer switches
+  // Trigger loading based on sub-layer switches & workspace changes
   useEffect(() => {
     if (mainTab === "graph") {
       if (subLayer === "memory") {
@@ -303,6 +324,21 @@ export default function ConfigModal({
         void fetchCodeStatsAndGraph(codeEgoQuery);
       }
     }
+
+    const handleWorkspaceChange = () => {
+      if (mainTab === "graph") {
+        if (subLayer === "memory") {
+          void fetchMemoryGraph();
+        } else if (subLayer === "code") {
+          void fetchCodeStatsAndGraph(codeEgoQuery);
+        }
+      }
+    };
+
+    window.addEventListener("xavier:workspace-changed", handleWorkspaceChange);
+    return () => {
+      window.removeEventListener("xavier:workspace-changed", handleWorkspaceChange);
+    };
   }, [
     mainTab,
     subLayer,
