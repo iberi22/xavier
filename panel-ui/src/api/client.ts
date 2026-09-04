@@ -293,6 +293,10 @@ export class ApiClient {
     });
   }
 
+  async exportMarkdown() {
+    return this.fetch<any>("/v1/memory/export-markdown");
+  }
+
   // Agents
   async getAgents() {
     return this.fetch<Agent[]>("/api/agents");

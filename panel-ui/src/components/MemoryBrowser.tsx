@@ -1,6 +1,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  Download,
   Filter,
   Plus,
   Search,
@@ -42,6 +43,7 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
   const [newContent, setNewContent] = useState("");
   const [newKind, setNewKind] = useState("note");
   const [adding, setAdding] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const debouncedQuery = useDebounce(query, 300);
 
   const doSearch = useCallback(
@@ -89,6 +91,40 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
     }
   };
 
+  const handleExportMarkdown = async () => {
+    setExporting(true);
+    try {
+      const data = await api.exportMarkdown();
+      const content =
+        typeof data === "string"
+          ? data
+          : JSON.stringify(data, null, 2);
+      const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "memories-export.md";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      if (typeof window !== "undefined" && window.dispatchEvent) {
+        window.dispatchEvent(
+          new CustomEvent("xavier-error-toast", {
+            detail: { message: "Markdown export downloaded successfully!" },
+          }),
+        );
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to export markdown vault",
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full p-4 sm:p-6 text-slate-900 dark:text-white space-y-4 sm:space-y-6 overflow-y-auto">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -98,15 +134,27 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
             Search and browse the shared memory store
           </p>
         </div>
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          type="button"
-          aria-label="Add Memory"
-          className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-emerald-500 dark:bg-[#39ff14] text-white dark:text-black rounded-xl text-xs sm:text-sm font-bold hover:shadow-[0_0_15px_rgba(57,255,20,0.4)] transition-all"
-        >
-          <Plus size={16} aria-hidden="true" />
-          Add Memory
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportMarkdown}
+            disabled={exporting}
+            type="button"
+            aria-label="Export Markdown"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-black/40 text-slate-800 dark:text-white rounded-xl text-xs sm:text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-50 transition-all"
+          >
+            <Download size={16} aria-hidden="true" />
+            {exporting ? "Exporting..." : "Export Markdown"}
+          </button>
+          <button
+            onClick={() => setShowAdd(!showAdd)}
+            type="button"
+            aria-label="Add Memory"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-emerald-500 dark:bg-[#39ff14] text-white dark:text-black rounded-xl text-xs sm:text-sm font-bold hover:shadow-[0_0_15px_rgba(57,255,20,0.4)] transition-all"
+          >
+            <Plus size={16} aria-hidden="true" />
+            Add Memory
+          </button>
+        </div>
       </div>
 
       {/* Add Memory Form */}
