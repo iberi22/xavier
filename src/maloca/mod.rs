@@ -25,7 +25,7 @@ use axum::Router;
 use std::sync::Arc;
 
 /// Build the `/maloca` router (mount with `.nest("/maloca", …)` + `Extension(store)`).
-pub fn router() -> Router {
+pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new()
         .route("/pack", get(handlers::pack))
         .route("/backlog", get(handlers::backlog))
@@ -64,15 +64,15 @@ pub fn router() -> Router {
 }
 
 /// Convenience: nested `/maloca` tree with store + consent registry extensions.
-pub fn nested_router(store: Arc<MalocaStore>) -> Router {
+pub fn nested_router<S: Clone + Send + Sync + 'static>(store: Arc<MalocaStore>) -> Router<S> {
     nested_router_with_consent(store, data_node::ConsentRegistry::new_std())
 }
 
 /// Convenience: nested `/maloca` tree with both store and consent registry.
-pub fn nested_router_with_consent(
+pub fn nested_router_with_consent<S: Clone + Send + Sync + 'static>(
     store: Arc<MalocaStore>,
     consent: Arc<data_node::ConsentRegistry>,
-) -> Router {
+) -> Router<S> {
     Router::new()
         .nest("/maloca", router())
         .layer(axum::Extension(store))
@@ -85,14 +85,14 @@ mod tests {
 
     #[test]
     fn test_router_initialization() {
-        let _r = router();
+        let _r: axum::Router<()> = router();
     }
 
     #[test]
     fn test_nested_router_initialization() {
         let dir = std::env::temp_dir().join(format!("maloca-mod-test-{}", uuid::Uuid::new_v4()));
         let store = MalocaStore::open(&dir);
-        let _r = nested_router(store);
+        let _r: axum::Router<()> = nested_router(store);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
