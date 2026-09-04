@@ -111,11 +111,17 @@ function AppContent() {
 
 	const api = useCallback(
 		async <T,>(path: string, options?: RequestInit): Promise<T> => {
+			const activeWorkspace =
+				typeof localStorage !== "undefined"
+					? localStorage.getItem("xavier_active_workspace") || "default"
+					: "default";
+
 			const response = await fetch(getApiUrl(path), {
 				...options,
 				headers: {
 					"Content-Type": "application/json",
 					"X-Xavier-Token": token ?? "",
+					"X-Workspace-Id": activeWorkspace,
 					...(options?.headers ?? {}),
 				},
 			});
@@ -281,6 +287,19 @@ function AppContent() {
 		if (!token) return;
 		void loadThreads(token);
 		void loadPanelData(token);
+
+		const handleWorkspaceChanged = () => {
+			void loadThreads(token);
+			void loadPanelData(token);
+		};
+
+		window.addEventListener("xavier:workspace-changed", handleWorkspaceChanged);
+		return () => {
+			window.removeEventListener(
+				"xavier:workspace-changed",
+				handleWorkspaceChanged,
+			);
+		};
 	}, [token, loadThreads, loadPanelData]);
 
 	async function _createThread() {

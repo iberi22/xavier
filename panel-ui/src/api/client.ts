@@ -23,11 +23,17 @@ export class ApiClient {
   }
 
   private async fetch<T>(path: string, options?: RequestInit): Promise<T> {
+    const activeWorkspace =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("xavier_active_workspace") || "default"
+        : "default";
+
     const response = await fetch(getApiUrl(path), {
       ...options,
       headers: {
         "Content-Type": "application/json",
         "X-Xavier-Token": this.token,
+        "X-Workspace-Id": activeWorkspace,
         ...(options?.headers ?? {}),
       },
     });
@@ -73,8 +79,17 @@ export class ApiClient {
   }
 
   // Memory
-  async searchMemories(query: string, kind?: string, limit = 20) {
-    const params = new URLSearchParams({ q: query, limit: String(limit) });
+  async searchMemories(query: string, kind?: string, limit = 20, workspaceId?: string) {
+    const activeWorkspace =
+      workspaceId ||
+      (typeof localStorage !== "undefined"
+        ? localStorage.getItem("xavier_active_workspace") || "default"
+        : "default");
+    const params = new URLSearchParams({
+      q: query,
+      limit: String(limit),
+      workspace_id: activeWorkspace,
+    });
     if (kind) params.set("kind", kind);
     return this.fetch<MemoryEntry[]>(`/api/memory/search?${params}`);
   }

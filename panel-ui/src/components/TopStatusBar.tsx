@@ -24,6 +24,7 @@ import FounderNodeStatusCard from "./FounderNodeStatusCard";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
+import WorkspaceSelector from "./WorkspaceSelector";
 import LoadingSpinner from "./ui/LoadingSpinner";
 
 type MessagingPlatform =
@@ -313,6 +314,8 @@ export default React.memo(function TopStatusBar({
           )}
 
           <OperationModeBadge />
+
+          <WorkspaceSelector />
 
           {/* System Resources Pill */}
           {modules.resources && (
