@@ -1,12 +1,7 @@
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { getApiUrl } from "../api/client";
 import { useAuthStore } from "../auth/AuthProvider";
-
-const getApiUrl = (path: string) => {
-  const isTauri =
-    typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-  return isTauri ? `http://127.0.0.1:8006${path}` : path;
-};
 
 export default function OperationModeBadge() {
   const token = useAuthStore((state) => state.token);

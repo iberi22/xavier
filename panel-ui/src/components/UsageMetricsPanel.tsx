@@ -9,12 +9,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-const getApiUrl = (path: string) => {
-	const isTauri =
-		typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-	return isTauri ? `http://127.0.0.1:8006${path}` : path;
-};
+import { getApiUrl } from "../api/client";
 
 interface ProviderUsage {
 	requests: number;

@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getApiUrl } from "./api/client";
 import { useAuthStore } from "./auth/AuthProvider";
 import { BackupCodesPage } from "./auth/BackupCodesPage";
 import { LoginPage } from "./auth/LoginPage";
@@ -45,12 +46,6 @@ const DEFAULT_GRAPH_META: RoadmapGraphMeta = {
 	id: "default",
 	name: "Workspace roadmap",
 	created_at: new Date(0).toISOString(),
-};
-
-const getApiUrl = (path: string) => {
-	const isTauri =
-		typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-	return isTauri ? `http://127.0.0.1:8006${path}` : path;
 };
 
 /** Backend stores messages with a `content` field; the panel expects `plain_text`. */
