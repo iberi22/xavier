@@ -40,6 +40,7 @@ pub fn codegraph_dump_path_for(workspace: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn test_code_graph_db_path_for_default() {
@@ -48,9 +49,10 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_code_graph_db_path_for_explicit() {
         // Serialize with other tests that mutate XAVIER_CODE_GRAPH_DB_PATH.
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH");
         let ws = Path::new("/tmp/test-workspace");
         let path = code_graph_db_path_for(ws);
