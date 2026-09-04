@@ -2,6 +2,7 @@ import {
   Activity,
   Bell,
   Bot,
+  Crown,
   Database,
   Hash,
   Home,
@@ -19,6 +20,7 @@ import { AnimatePresence, motion } from "motion/react";
 import React, { useEffect, useRef, useState } from "react";
 import { getApiUrl } from "../api/client";
 import { getApiTokenSync } from "../hooks/useApiToken";
+import FounderNodeStatusCard from "./FounderNodeStatusCard";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
@@ -74,6 +76,7 @@ export default React.memo(function TopStatusBar({
     has_telegram: false,
   });
   const [showConfig, setShowConfig] = useState(false);
+  const [showFounderCard, setShowFounderCard] = useState(false);
   const [showMessaging, setShowMessaging] = useState(false);
   const [messagingTab, setMessagingTab] =
     useState<MessagingPlatform>("telegram");
@@ -81,6 +84,7 @@ export default React.memo(function TopStatusBar({
   const bellRef = useRef<HTMLButtonElement>(null);
   const [modules, setModules] = useState({
     time: true,
+    founder: true,
     channels: true,
     resources: true,
     security: true,
@@ -272,6 +276,42 @@ export default React.memo(function TopStatusBar({
             </motion.div>
           )}
 
+          {/* SWAL Genesis Founder Node Telemetry Badge */}
+          {modules.founder && (
+            <div className="relative">
+              <motion.button
+                layout
+                transition={spring}
+                type="button"
+                onClick={() => setShowFounderCard((prev) => !prev)}
+                className="bg-[#0a0a0a]/80 backdrop-blur-md border border-amber-500/30 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 hover:bg-amber-500/10 transition-colors"
+                title="SWAL Genesis Founder Node Telemetry"
+                aria-label="Founder Node Telemetry HUD Card"
+              >
+                <Crown className="w-3 h-3 text-amber-400" />
+                <span className="font-mono text-[9px] text-amber-300 font-bold tracking-wider uppercase hidden sm:inline-block">
+                  Founder Node
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              </motion.button>
+
+              <AnimatePresence>
+                {showFounderCard && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute left-0 top-full mt-2 z-[80]"
+                  >
+                    <FounderNodeStatusCard
+                      onClose={() => setShowFounderCard(false)}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
           <OperationModeBadge />
 
           {/* System Resources Pill */}
@@ -458,6 +498,7 @@ export default React.memo(function TopStatusBar({
                   </h3>
                   {Object.entries({
                     time: "Time & Date",
+                    founder: "Founder Node",
                     resources: "System Resources",
                     channels: "Communication",
                     security: "Security & Proxy",
