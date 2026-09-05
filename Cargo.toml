@@ -58,7 +58,7 @@ members = [
 # the directory and its files remain in the repo.
 
 [features]
-default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage", "dao-evm"]
+default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage"]
 notification-in-app = []
 notification-webhook = []
 notification-email = []
