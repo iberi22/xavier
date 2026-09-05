@@ -135,7 +135,7 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
                     use sha2::{Digest, Sha256};
                     let mut hasher = Sha256::new();
                     hasher.update(markdown.as_bytes());
-                    format!("{:x}", hasher.finalize())
+                    crate::crypto::hex_encode(hasher.finalize())
                 };
 
                 // Check if already exists in store and if hash matches
@@ -242,7 +242,7 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
                         use sha2::{Digest, Sha256};
                         let mut hasher = Sha256::new();
                         hasher.update(doc.markdown.as_bytes());
-                        format!("{:x}", hasher.finalize())
+                        crate::crypto::hex_encode(hasher.finalize())
                     };
 
                     // Check if already exists in store and if hash matches

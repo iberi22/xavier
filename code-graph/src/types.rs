@@ -304,7 +304,7 @@ pub fn stable_symbol_id(
     hasher.update(parent.as_bytes());
     hasher.update(b"|");
     hasher.update(signature.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn normalize_signature(sig: &str) -> String {

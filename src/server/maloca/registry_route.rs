@@ -207,7 +207,7 @@ impl CachedRegistry {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
         let hash = hasher.finalize();
-        format!("\"{:x}\"", hash)
+        format!("\"{}\"", crate::crypto::hex_encode(hash))
     }
 }
 

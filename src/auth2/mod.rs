@@ -22,7 +22,7 @@ use qrcode::QrCode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use totp_rs::{Algorithm as TOTPAlgorithm, Secret, TOTP};
+use totp_rs::{Algorithm as TOTPAlgorithm, Builder, Secret, Totp};
 // use crate::cli::server::CliState;
 use crate::auth2::db::{AuditLog, AuthDb, User};
 use crate::auth2::jwt::JwtManager;
@@ -266,24 +266,24 @@ where
     if user.totp_enabled {
         let code = payload.totp_code.ok_or(StatusCode::UNAUTHORIZED)?;
         if let Some(ref secret) = user.totp_secret {
-            let secret_bytes = Secret::Encoded(secret.clone())
-                .to_bytes()
+            let secret = Secret::try_from_base32(secret.as_str())
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            let totp = TOTP {
-                algorithm: TOTPAlgorithm::SHA1,
-                digits: 6,
-                skew: 1,
-                step: 30,
-                secret: secret_bytes,
-                issuer: Some("Xavier".to_string()),
-                account_name: user.email.clone(),
-            };
+            let totp = Builder::new()
+                .with_algorithm(TOTPAlgorithm::SHA1)
+                .with_digits(6)
+                .with_skew(1)
+                .with_step_duration(30)
+                .with_secret(secret)
+                .with_account_name(user.email.clone())
+                .with_issuer(Some("Xavier".to_string()))
+                .build()
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             let time = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs()
                 / 30;
-            if !totp.check(&code, time) {
+            if totp.check(&code, time).is_none() {
                 return Err(StatusCode::UNAUTHORIZED);
             }
         }
@@ -449,26 +449,22 @@ where
         .next()
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Generate TOTP secret
-    let secret = totp_rs::Secret::generate_secret();
-    let secret_encoded = secret.to_encoded().to_string();
-    let secret_bytes = secret
-        .to_bytes()
+    // Generate TOTP secret (gen_secret auto-generates inside build)
+    let totp = Builder::new()
+        .with_algorithm(TOTPAlgorithm::SHA1)
+        .with_digits(6)
+        .with_skew(1)
+        .with_step_duration(30)
+        .with_account_name(user.email.clone())
+        .with_issuer(Some("Xavier".to_string()))
+        .build()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Build TOTP
-    let totp = TOTP {
-        algorithm: TOTPAlgorithm::SHA1,
-        digits: 6,
-        skew: 1,
-        step: 30,
-        secret: secret_bytes,
-        issuer: Some("Xavier".to_string()),
-        account_name: user.email.clone(),
-    };
+    let secret_encoded = totp.secret().to_base32();
 
     // Generate otpauth URL
-    let otpauth_url = totp.get_url();
+    let otpauth_url = totp
+        .to_url()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Generate QR code as Unicode (no need for SVG render feature)
     let qr = QrCode::new(otpauth_url.as_bytes()).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -556,26 +552,26 @@ where
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let secret_b32 = user.totp_secret.as_ref().ok_or(StatusCode::BAD_REQUEST)?;
-    let secret_bytes = Secret::Encoded(secret_b32.clone())
-        .to_bytes()
+    let secret = Secret::try_from_base32(secret_b32.as_str())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let totp = TOTP {
-        algorithm: TOTPAlgorithm::SHA1,
-        digits: 6,
-        skew: 1,
-        step: 30,
-        secret: secret_bytes,
-        issuer: Some("Xavier".to_string()),
-        account_name: user.email.clone(),
-    };
+    let totp = Builder::new()
+        .with_algorithm(TOTPAlgorithm::SHA1)
+        .with_digits(6)
+        .with_skew(1)
+        .with_step_duration(30)
+        .with_secret(secret)
+        .with_account_name(user.email.clone())
+        .with_issuer(Some("Xavier".to_string()))
+        .build()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs()
         / 30;
-    if !totp.check(&payload.code, time) {
+    if totp.check(&payload.code, time).is_none() {
         return Err(StatusCode::UNAUTHORIZED);
     }
 

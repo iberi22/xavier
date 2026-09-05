@@ -174,17 +174,19 @@ impl EntityGraph {
         Ok(())
     }
 
-    /// Export bincode.
+    /// Export bincode (v2 serde-compat encoding).
     pub async fn export_bincode(&self) -> Result<Vec<u8>> {
         let data = self.inner.read().await;
-        bincode::serialize(&*data).map_err(|e| anyhow!("failed to export bincode: {e}"))
+        bincode::serde::encode_to_vec(&*data, bincode::config::standard())
+            .map_err(|e| anyhow!("failed to export bincode: {e}"))
     }
 
-    /// Import bincode.
+    /// Import bincode (v2 serde-compat encoding).
     pub async fn import_bincode(&self, bytes: &[u8]) -> Result<()> {
         let mut data = self.inner.write().await;
-        let imported: GraphData =
-            bincode::deserialize(bytes).map_err(|e| anyhow!("failed to import bincode: {e}"))?;
+        let (imported, _len): (GraphData, usize) =
+            bincode::serde::borrow_decode_from_slice(bytes, bincode::config::standard())
+                .map_err(|e| anyhow!("failed to import bincode: {e}"))?;
         *data = imported;
         data.rebuild_indexes();
         Ok(())
