@@ -48,7 +48,7 @@
     "@vitest/coverage-v8": "4.1.8",
     "astro": "^7.2.4",
     "defu": "^6.1.5",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "picomatch": "^4.0.4",
     "postcss": "^8.5.26",
     "typescript": "^5.8.3",
