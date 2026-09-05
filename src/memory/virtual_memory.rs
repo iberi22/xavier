@@ -271,7 +271,7 @@ impl VirtualMemoryEntry {
     pub fn new(path: String, content: String, metadata: serde_json::Value) -> Self {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
-        let content_hash = format!("{:x}", hasher.finalize());
+        let content_hash = crate::crypto::hex_encode(hasher.finalize());
         let summary = create_summary(&content);
         let keywords = extract_keywords(&content);
 

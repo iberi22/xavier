@@ -960,7 +960,7 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
         let mut hasher = Sha256::new();
         hasher.update(args.title.trim().as_bytes());
         hasher.update(args.severity.trim().as_bytes());
-        format!("{:x}", hasher.finalize())
+        crate::crypto::hex_encode(hasher.finalize())
     });
 
     let mut reg = load_tickets_registry();

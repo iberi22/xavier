@@ -8,7 +8,7 @@ use qrcode::render::unicode;
 use qrcode::QrCode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use totp_rs::{Algorithm as TotpAlgorithm, Secret, TOTP};
+use totp_rs::{Algorithm as TotpAlgorithm, Builder, Secret, Totp};
 
 /// JWT Claims for authentication
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,50 +130,51 @@ impl TotpProvider {
 
     /// Generate secret.
     pub fn generate_secret(&self) -> String {
-        Secret::generate_secret().to_encoded().to_string()
+        Secret::generate().to_base32()
     }
 
     /// Get qr code.
     pub fn get_qr_code(&self, account_name: &str, secret_base32: &str) -> Result<String> {
-        let totp = TOTP::new(
-            TotpAlgorithm::SHA1,
-            6,
-            1,
-            30,
-            Secret::Encoded(secret_base32.to_string())
-                .to_bytes()
-                .map_err(|_| anyhow!("invalid secret"))?,
-            Some(self.issuer.clone()),
-            account_name.to_string(),
-        )
-        .map_err(|e| anyhow!("TOTP init failed: {}", e))?;
+        let secret =
+            Secret::try_from_base32(secret_base32).map_err(|_| anyhow!("invalid secret"))?;
+        let totp = Builder::new()
+            .with_algorithm(TotpAlgorithm::SHA1)
+            .with_digits(6)
+            .with_skew(1)
+            .with_step_duration(30)
+            .with_secret(secret)
+            .with_account_name(account_name.to_string())
+            .with_issuer(Some(self.issuer.clone()))
+            .build()
+            .map_err(|e| anyhow!("TOTP init failed: {e}"))?;
 
-        let code = totp.get_url();
+        let code = totp.to_url().map_err(|e| anyhow!("TOTP url failed: {e}"))?;
         let qr = QrCode::new(code.as_bytes())?;
         Ok(qr.render::<unicode::Dense1x2>().build())
     }
 
     /// Verify code.
     pub fn verify_code(&self, secret_base32: &str, code: &str) -> bool {
-        let secret = match Secret::Encoded(secret_base32.to_string()).to_raw() {
+        let secret = match Secret::try_from_base32(secret_base32) {
             Ok(s) => s,
             Err(_) => return false,
         };
 
-        let totp = match TOTP::new(
-            TotpAlgorithm::SHA1,
-            6,
-            1,
-            30,
-            secret.to_bytes().unwrap_or_default(),
-            Some(self.issuer.clone()),
-            "user".to_string(),
-        ) {
+        let totp = match Builder::new()
+            .with_algorithm(TotpAlgorithm::SHA1)
+            .with_digits(6)
+            .with_skew(1)
+            .with_step_duration(30)
+            .with_secret(secret)
+            .with_account_name("user".to_string())
+            .with_issuer(Some(self.issuer.clone()))
+            .build()
+        {
             Ok(t) => t,
             Err(_) => return false,
         };
 
-        totp.check_current(code).unwrap_or(false)
+        totp.check_current(code).is_some()
     }
 }
 
@@ -305,5 +306,30 @@ mod tests {
 
         // Restore
         std::env::set_var("XAVIER_TOKEN", "test-token");
+    }
+
+    #[test]
+    fn test_totp_generate_verify_roundtrip() {
+        let provider = TotpProvider::new("XavierTest");
+        let secret_b32 = provider.generate_secret();
+        assert!(!secret_b32.is_empty());
+
+        // Mint a current code with an equivalent Totp instance
+        let secret = Secret::try_from_base32(&secret_b32).expect("valid base32");
+        let totp: Totp = Builder::new()
+            .with_algorithm(TotpAlgorithm::SHA1)
+            .with_digits(6)
+            .with_skew(1)
+            .with_step_duration(30)
+            .with_secret(secret)
+            .with_account_name("user".to_string())
+            .with_issuer(Some("XavierTest".to_string()))
+            .build()
+            .expect("build TOTP");
+        let code = totp.generate_current().to_string();
+
+        assert!(provider.verify_code(&secret_b32, &code));
+        assert!(!provider.verify_code(&secret_b32, "000000"));
+        assert!(!provider.verify_code("!!!not-base32!!!", &code));
     }
 }

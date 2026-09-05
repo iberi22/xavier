@@ -129,7 +129,7 @@ impl TelemetryAnonymizer {
                             let mut hasher = Sha256::new();
                             hasher.update(matched.as_bytes());
                             let result = hasher.finalize();
-                            let hash_hex = format!("{:x}", result);
+                            let hash_hex = crate::crypto::hex_encode(result);
                             format!("[{}:{}]", label, &hash_hex[..8])
                         }
                     }

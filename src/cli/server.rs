@@ -73,20 +73,13 @@ pub static START_TIME: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(I
 /// Handler for Prometheus metrics endpoint
 pub async fn metrics_handler() -> axum::response::Response {
     use axum::response::IntoResponse;
-    match autometrics::encode_global_metrics() {
-        Ok(metrics) => metrics.into_response(),
-        Err(err) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to encode metrics: {:?}", err),
-        )
-            .into_response(),
-    }
+    autometrics::prometheus_exporter::encode_http_response().into_response()
 }
 
 /// Start http server.
 pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     // Initialize Prometheus exporter
-    let _ = autometrics::global_metrics_exporter();
+    let _ = autometrics::prometheus_exporter::try_init();
 
     // Initial health check run to populate the static HEALTH instance
     tokio::spawn(async {
