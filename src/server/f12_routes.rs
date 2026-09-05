@@ -656,6 +656,7 @@ pub async fn get_snapshot(
     if !repo
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || repo.contains("..")
     {
         return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
     }
@@ -675,6 +676,7 @@ pub async fn get_document_handler(
     if !id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || id.contains("..")
     {
         return (StatusCode::BAD_REQUEST, "Invalid document ID").into_response();
     }
