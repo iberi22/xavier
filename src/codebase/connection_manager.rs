@@ -201,6 +201,11 @@ impl ConnectionManager {
         code_graph::db::CodeGraphDB::new(db_path).map_err(|e| anyhow::anyhow!(e))
     }
 
+    /// Unload and checkpoint a specific `CodeGraphDB` from memory.
+    pub fn unload_code_graph_db(&self, db_path: &std::path::Path) -> bool {
+        code_graph::db::unload_db(db_path)
+    }
+
     /// Shutdown the connection manager and flush all SQLite WAL checkpoints cleanly.
     pub fn shutdown(&self) {
         self.pools.write().clear();

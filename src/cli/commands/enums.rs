@@ -38,6 +38,9 @@ pub enum Command {
         /// Port for the MCP HTTP+SSE server (default: 8100; set to 0 to disable)
         #[arg(long)]
         mcp_port: Option<u16>,
+        /// Disable the administration web panel UI and serve only the REST/MCP API
+        #[arg(long)]
+        no_ui: bool,
     },
     /// Start Xavier MCP-stdio server
     Mcp,
