@@ -94,6 +94,36 @@ const MOCK_PEER_HEALTH: PeerHealthInfo[] = [
   },
 ];
 
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted message row into ChatMessageItem and wrapped in React.memo()
+ * 🎯 Why: When user typed in the message box, chatMessage changed causing full re-render of MeshHubView
+ *         and ALL message items because they were rendered inline inside a .map().
+ * 📊 Impact: Prevents O(N) re-renders of all chat messages during typing interaction.
+ */
+const ChatMessageItem = React.memo(function ChatMessageItem({
+  msg,
+}: {
+  msg: { sender: string; text: string; time: string };
+}) {
+  return (
+    <div
+      className={`p-3 rounded-xl max-w-lg ${
+        msg.sender.startsWith("Local Node")
+          ? "ml-auto bg-[#39ff14]/10 border border-[#39ff14]/20 text-white"
+          : "bg-white/5 border border-white/10 text-white/90"
+      }`}
+    >
+      <div className="flex justify-between items-center text-[10px] text-white/40 mb-1">
+        <span className="font-medium text-[#39ff14]">{msg.sender}</span>
+        <span className="font-mono">{msg.time}</span>
+      </div>
+      <p className="text-xs leading-relaxed">{msg.text}</p>
+    </div>
+  );
+});
+
 export const MeshHubView: React.FC<MeshHubViewProps> = ({
   token = "",
   onClose,
@@ -421,22 +451,7 @@ export const MeshHubView: React.FC<MeshHubViewProps> = ({
 
             <div className="flex-1 p-4 space-y-3 overflow-y-auto min-h-[320px]">
               {chatLog.map((msg, index) => (
-                <div
-                  key={`${msg.sender}-${index}`}
-                  className={`p-3 rounded-xl max-w-lg ${
-                    msg.sender.startsWith("Local Node")
-                      ? "ml-auto bg-[#39ff14]/10 border border-[#39ff14]/20 text-white"
-                      : "bg-white/5 border border-white/10 text-white/90"
-                  }`}
-                >
-                  <div className="flex justify-between items-center text-[10px] text-white/40 mb-1">
-                    <span className="font-medium text-[#39ff14]">
-                      {msg.sender}
-                    </span>
-                    <span className="font-mono">{msg.time}</span>
-                  </div>
-                  <p className="text-xs leading-relaxed">{msg.text}</p>
-                </div>
+                <ChatMessageItem key={`${msg.sender}-${index}`} msg={msg} />
               ))}
             </div>
 
