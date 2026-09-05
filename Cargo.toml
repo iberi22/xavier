@@ -288,7 +288,7 @@ regex = "1.10"
 memchr = "2.5"
 
 # Security - Prompt Injection Detection
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Security - Phrase matching (Aho-Corasick)
 aho-corasick = "1.1"
