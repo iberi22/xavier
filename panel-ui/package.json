@@ -53,7 +53,7 @@
     "postcss": "^8.5.26",
     "typescript": "^5.8.3",
     "vite": "^8.0.13",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "sharp": "^0.35.3"
