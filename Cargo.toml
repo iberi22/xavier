@@ -247,7 +247,7 @@ ratatui = { version = "0.30", optional = true, features = ["serde"] }
 crossterm = { version = "0.28", optional = true }
 
 # Observability & Metrics
-autometrics = { version = "0.3", features = ["prometheus-exporter"] }
+autometrics = { version = "3.0", features = ["prometheus-exporter"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
