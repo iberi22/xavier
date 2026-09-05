@@ -119,7 +119,7 @@ impl SkillRegistry {
         // Compute hash for change detection
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
-        let content_hash = format!("{:x}", hasher.finalize());
+        let content_hash = crate::crypto::hex_encode(hasher.finalize());
 
         // Parse frontmatter
         let (name, description) = parse_frontmatter(&content);

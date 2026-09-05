@@ -9,7 +9,7 @@ use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use totp_rs::{Algorithm as TOTPAlgorithm, Secret, TOTP};
+use totp_rs::{Algorithm as TOTPAlgorithm, Builder, Secret, Totp};
 use xavier::auth2::db::AuthDb;
 use xavier::auth2::{auth_routes, HasAuthDb};
 
@@ -58,18 +58,17 @@ async fn spawn_test_server() -> (String, Client, tempfile::TempDir, Arc<Mutex<Au
 }
 
 fn generate_totp_code(secret_b32: &str, email: &str) -> String {
-    let secret_bytes = Secret::Encoded(secret_b32.to_string())
-        .to_bytes()
-        .expect("decode base32 secret");
-    let totp = TOTP {
-        algorithm: TOTPAlgorithm::SHA1,
-        digits: 6,
-        skew: 1,
-        step: 30,
-        secret: secret_bytes,
-        issuer: Some("Xavier".to_string()),
-        account_name: email.to_string(),
-    };
+    let secret = Secret::try_from_base32(secret_b32).expect("decode base32 secret");
+    let totp: Totp = Builder::new()
+        .with_algorithm(TOTPAlgorithm::SHA1)
+        .with_digits(6)
+        .with_skew(1)
+        .with_step_duration(30)
+        .with_secret(secret)
+        .with_account_name(email.to_string())
+        .with_issuer(Some("Xavier".to_string()))
+        .build()
+        .expect("build TOTP");
     // NOTE: The production server code in `src/auth2/mod.rs` divides the Unix timestamp
     // by 30 before passing it to `totp.check(&payload.code, time)`. To be bug-compatible
     // with this server-side double-division behavior, we must also divide the timestamp
@@ -79,7 +78,7 @@ fn generate_totp_code(secret_b32: &str, email: &str) -> String {
         .unwrap()
         .as_secs()
         / 30;
-    totp.generate(time)
+    totp.generate(time).to_string()
 }
 
 // ─── Test 1: Register → login with credentials → 200 + JWT + refresh_token ───
