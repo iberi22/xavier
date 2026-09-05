@@ -200,9 +200,24 @@ impl PluginManager {
         let descriptor = self
             .descriptor_by_name(name)
             .ok_or_else(|| GraphError::Parser(format!("unknown plugin '{}'", name)))?;
+
+        // On-demand resolver for plugin command binary: check .xavier/plugins/ and PATH
+        let mut command = descriptor.command.clone();
+        if !which::which(&command).is_ok() {
+            let local_path = std::path::Path::new(".xavier/plugins").join(&command);
+            if local_path.exists() {
+                command = local_path.to_string_lossy().into_owned();
+            } else if let Some(home) = dirs::home_dir() {
+                let home_path = home.join(".xavier/plugins").join(&command);
+                if home_path.exists() {
+                    command = home_path.to_string_lossy().into_owned();
+                }
+            }
+        }
+
         let config = PluginConfig {
             name: descriptor.name.clone(),
-            command: descriptor.command,
+            command,
             version: descriptor.version,
             languages: descriptor.languages,
             extensions: Some(descriptor.extensions),
