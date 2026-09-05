@@ -37,7 +37,7 @@
   "devDependencies": {
     "@astrojs/node": "^11.1.4",
     "@biomejs/biome": "^2.5.11",
-    "@playwright/test": "^1.54.2",
+    "@playwright/test": "^1.62.1",
     "@tauri-apps/cli": "2.11.4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
