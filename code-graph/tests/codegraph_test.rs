@@ -116,6 +116,8 @@ async fn test_parser_rust_plugin_execution() {
 
     let debug_dir = if let Ok(target_env) = env::var("CARGO_TARGET_DIR") {
         std::path::PathBuf::from(target_env).join("debug")
+    } else if std::path::Path::new("/tmp/xavier-target/debug").exists() {
+        std::path::PathBuf::from("/tmp/xavier-target/debug")
     } else {
         workspace_root.join("target/debug")
     };
