@@ -1151,7 +1151,7 @@ impl VecSqliteMemoryStore {
 
     /// Decomposed put step 3: SQLite INSERT or REPLACE into memory_records table and hash chain linking.
     pub fn put_store(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
-        let content_hash = format!("{:x}", Sha256::digest(record.content.as_bytes()));
+        let content_hash = crate::crypto::hex_encode(Sha256::digest(record.content.as_bytes()));
 
         let prev_hash: Option<String> = {
             conn.query_row(

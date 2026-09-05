@@ -1,5 +1,4 @@
 use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
-use rand::rngs::OsRng;
 use std::env;
 use tracing::warn;
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -47,7 +46,7 @@ pub fn encrypt_for_maintainer(
         .map_err(|_| crate::crypto::encryption::EncryptionError::InvalidKey)?;
 
     // 1. Generar llave efímera para esta única transacción
-    let ephemeral_secret = StaticSecret::random_from_rng(OsRng);
+    let ephemeral_secret = StaticSecret::random();
     let ephemeral_public = PublicKey::from(&ephemeral_secret);
 
     // 2. Derivar llave simétrica compartida
@@ -81,4 +80,27 @@ pub fn decrypt_as_maintainer(
     let decrypted_bytes = aes_decrypt(encrypted_payload, shared_secret.as_bytes())?;
 
     Ok(String::from_utf8_lossy(&decrypted_bytes).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    /// ECIES roundtrip with a deterministic TEST key (never production).
+    #[test]
+    #[serial]
+    fn test_maintainer_ecies_roundtrip() {
+        std::env::set_var(
+            "XAVIER_MAINTAINER_PRIVATE_KEY_HEX",
+            crate::crypto::hex_encode([0x42u8; 32]),
+        );
+        std::env::set_var("XAVIER_IS_MAINTAINER", "true");
+
+        let payload = r#"{"node":"test","metric":1}"#;
+        let (ct, eph) = encrypt_for_maintainer(payload).expect("encrypt");
+        assert!(!ct.is_empty());
+        let pt = decrypt_as_maintainer(&ct, &eph).expect("decrypt");
+        assert_eq!(pt, payload);
+    }
 }

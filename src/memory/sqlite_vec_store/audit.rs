@@ -56,21 +56,18 @@ impl VecSqliteMemoryStore {
         } else {
             "create"
         };
-        let content_hash = format!("{:x}", Sha256::digest(record.content.as_bytes()));
-        let curr_hash = format!(
-            "{:x}",
-            Sha256::digest(
-                format!(
-                    "{}:{}:{}:{}:{}",
-                    previous_hash.unwrap_or_default(),
-                    event_id,
-                    timestamp,
-                    operation,
-                    content_hash
-                )
-                .as_bytes()
+        let content_hash = crate::crypto::hex_encode(Sha256::digest(record.content.as_bytes()));
+        let curr_hash = crate::crypto::hex_encode(Sha256::digest(
+            format!(
+                "{}:{}:{}:{}:{}",
+                previous_hash.unwrap_or_default(),
+                event_id,
+                timestamp,
+                operation,
+                content_hash
             )
-        );
+            .as_bytes(),
+        ));
 
         conn.execute(
             "INSERT INTO timeline_events (id, workspace_id, memory_id, sequence, timestamp, operation, summary, details, agent_id, prev_hash, curr_hash)
