@@ -12,9 +12,11 @@ use crate::cli::state::CliState;
 use crate::cli::types::*;
 use crate::cli::utils::estimate_tokens;
 use code_graph::types::{CodeEdge, Symbol, SymbolKind};
+use xavier::codebase::codegraph_paths::code_graph_db_path_for;
 use xavier::codebase::codegraph_sidecar::{
     ensure_codegraph_sidecar_soft, maybe_sync_colby_project, EnsureOutcome,
 };
+use xavier::codebase::connection_manager::ConnectionManager;
 
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 
@@ -618,8 +620,15 @@ pub async fn code_search_handler(
 pub async fn code_stats_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
-    let code_graph = state.code_graph.read().await;
-    match code_graph.db.stats() {
+    let db_path = code_graph_db_path_for(&state.workspace_dir);
+    let db_stats = if let Ok(db) = ConnectionManager::global().get_code_graph_db(&db_path) {
+        db.stats()
+    } else {
+        let code_graph = state.code_graph.read().await;
+        code_graph.db.stats()
+    };
+
+    match db_stats {
         Ok(stats) => {
             let empty = stats.total_symbols == 0;
             axum::Json(serde_json::json!({
