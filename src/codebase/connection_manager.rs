@@ -96,7 +96,7 @@ impl ConnectionManager {
         Self {
             pools: RwLock::new(std::collections::HashMap::new()),
             active: Arc::new(tokio::sync::RwLock::new(None)),
-            idle_timeout_secs: 1800, // 30 minutes
+            idle_timeout_secs: 300, // 5 minutes
         }
     }
 
@@ -284,12 +284,24 @@ impl ConnectionManager {
         let now = Instant::now();
         let mut pools = self.pools.write();
 
-        // 1. Remove expired pools
-        pools.retain(|_, pool| {
-            now.duration_since(pool.activated_at).as_secs() < self.idle_timeout_secs
-        });
+        // 1. Remove expired pools (checkpoint WAL before removal)
+        let expired: Vec<String> = pools
+            .iter()
+            .filter(|(_, pool)| {
+                now.duration_since(pool.activated_at).as_secs() >= self.idle_timeout_secs
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        for key in expired {
+            if let Some(entry) = pools.get(&key) {
+                if let Ok(conn) = entry.pool.get() {
+                    let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+                }
+            }
+            pools.remove(&key);
+        }
 
-        // 2. If still too many, remove least recently used
+        // 2. If still too many, remove least recently used (checkpoint WAL before removal)
         while pools.len() >= MAX_POOLS {
             let oldest = pools
                 .iter()
@@ -297,6 +309,11 @@ impl ConnectionManager {
                 .min_by_key(|e| e.1);
 
             if let Some((key, _)) = oldest {
+                if let Some(entry) = pools.get(&key) {
+                    if let Ok(conn) = entry.pool.get() {
+                        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+                    }
+                }
                 pools.remove(&key);
             } else {
                 break;
