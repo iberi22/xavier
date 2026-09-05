@@ -1681,12 +1681,16 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     #[cfg(feature = "telegram")]
     {
-        let memory_bot = state.memory.clone();
-        let agents_bot = state.agent_registry.clone();
-        let security_bot = state.security_scan.clone();
-        tokio::spawn(async move {
-            xavier::telegram::run_bot(memory_bot, agents_bot, security_bot).await;
-        });
+        if settings.telegram.enabled {
+            let memory_bot = state.memory.clone();
+            let agents_bot = state.agent_registry.clone();
+            let security_bot = state.security_scan.clone();
+            tokio::spawn(async move {
+                xavier::telegram::run_bot(memory_bot, agents_bot, security_bot).await;
+            });
+        } else {
+            tracing::info!("Telegram bot is disabled in settings; skipping initialization to preserve idle memory");
+        }
     }
 
     tokio::spawn(async move {
