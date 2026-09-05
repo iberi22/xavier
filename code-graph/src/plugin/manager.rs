@@ -203,7 +203,7 @@ impl PluginManager {
 
         // On-demand resolver for plugin command binary: check .xavier/plugins/ and PATH
         let mut command = descriptor.command.clone();
-        if !which::which(&command).is_ok() {
+        if which::which(&command).is_err() {
             let local_path = std::path::Path::new(".xavier/plugins").join(&command);
             if local_path.exists() {
                 command = local_path.to_string_lossy().into_owned();
