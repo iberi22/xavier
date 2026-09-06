@@ -504,9 +504,10 @@ pub async fn approve_curation_review(
     axum::extract::Path(id): axum::extract::Path<String>,
     Json(req): Json<ApproveReviewRequest>,
 ) -> impl IntoResponse {
-    if !id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    if id.contains("..")
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     {
         return (StatusCode::BAD_REQUEST, "Invalid item ID").into_response();
     }
@@ -526,9 +527,10 @@ pub async fn reject_curation_review(
     axum::extract::Path(id): axum::extract::Path<String>,
     Json(req): Json<RejectReviewRequest>,
 ) -> impl IntoResponse {
-    if !id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    if id.contains("..")
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     {
         return (StatusCode::BAD_REQUEST, "Invalid item ID").into_response();
     }
@@ -603,10 +605,11 @@ pub async fn create_snapshot(
     State(state): State<F12State>,
     Json(req): Json<CreateSnapshotRequest>,
 ) -> impl IntoResponse {
-    if !req
-        .repo
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    if req.repo.contains("..")
+        || !req
+            .repo
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     {
         return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
     }
@@ -653,9 +656,10 @@ pub async fn get_snapshot(
     State(state): State<F12State>,
     axum::extract::Path(repo): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    if !repo
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    if repo.contains("..")
+        || !repo
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     {
         return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
     }
@@ -672,9 +676,10 @@ pub async fn get_document_handler(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    if !id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    if id.contains("..")
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     {
         return (StatusCode::BAD_REQUEST, "Invalid document ID").into_response();
     }

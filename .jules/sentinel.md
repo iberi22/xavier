@@ -7,3 +7,8 @@
 **Vulnerability:** A dynamically generated SQL query used unescaped table names to pull rows from SQLite. A maliciously named table could break out of the string boundary and inject arbitrary SQL commands.
 **Learning:** Even internal queries iterating over schema artifacts (e.g., `sqlite_master`) must assume inputs (like table names) might be tainted. SQLite identifier injection is distinct from value injection.
 **Prevention:** Always escape identifiers (tables, columns) by quoting them in double quotes and replacing `"` with `""` if parameterization is not supported for identifiers in the database driver.
+
+## 2026-09-06 - Directory Traversal Vulnerability in f12_routes.rs
+**Vulnerability:** A path parameter validation logic in `src/server/f12_routes.rs` explicitly allowed periods (`.`) without restricting `..`. This permitted a malicious actor to pass `..` as an ID, leading to directory traversal attacks when the parameter was used to construct file paths.
+**Learning:** Checking that all characters are alphanumeric or specific safe symbols (like `-`, `_`, `.`) is insufficient for preventing directory traversal. While slashes were blocked, `.join` semantics could still traverse up given `..`.
+**Prevention:** Always explicitly check for and reject `..` (e.g., `.contains("..")`) when validating path parameters that allow periods, before appending them to base directories.
