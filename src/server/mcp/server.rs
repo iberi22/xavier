@@ -96,6 +96,7 @@ pub async fn handle_tool_call(
     } else if name.starts_with("xavier_context")
         || name == "xavier_token_savings"
         || name == "xavier_issue_context_package"
+        || name == "xavier_run_command"
     {
         super::tools_context::handle_context_tool(state, workspace, name, arguments).await
     } else {

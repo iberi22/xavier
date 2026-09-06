@@ -83,6 +83,19 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
                 "required": ["issue_id", "title", "body"]
             }),
         },
+        MCPTool {
+            name: "xavier_run_command".to_string(),
+            description: "Execute a shell command via Xavier RTK Kernel Proxy with output condensation and token savings tracking".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "Command line to execute" },
+                    "cwd": { "type": "string", "description": "Optional working directory" },
+                    "session_id": { "type": "string", "description": "Optional session ID for token accounting" }
+                },
+                "required": ["command"]
+            }),
+        },
     ]
 }
 
@@ -297,6 +310,22 @@ pub async fn handle_context_tool(
         "xavier_token_savings" => {
             let stats = TRACKER.get_stats().await;
             super::server::mcp_text_result(serde_json::to_string_pretty(&stats)?, false)
+        }
+        "xavier_run_command" => {
+            let command = arguments
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let cwd = arguments.get("cwd").and_then(|v| v.as_str());
+            let session_id = arguments.get("session_id").and_then(|v| v.as_str());
+
+            if command.is_empty() {
+                return super::server::mcp_text_result("Error: 'command' argument cannot be empty", true);
+            }
+
+            let result = crate::kernel::execute_proxy_command(command, cwd, session_id).await?;
+            let json_res = serde_json::to_string_pretty(&result)?;
+            super::server::mcp_text_result(json_res, result.exit_code != 0)
         }
         "xavier_issue_context_package" => {
             let issue_id = arguments

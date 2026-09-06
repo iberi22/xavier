@@ -83,6 +83,16 @@ cargo clippy --all-targets -- -D warnings      # warnings are errors
 - CI runs: fmt, clippy, tests, feature verification, secret scan.
 - Never commit: session state, output artifacts, `.env`, logs, databases.
 
+## 10. Canonical Directory Protocol & Agent Hygiene
+
+All autonomous agents (Jules, Hermes, Antigravity, Claude, etc.) MUST strictly respect directory boundaries. **DO NOT invent arbitrary root-level dot-directories or config folders.**
+- **Jules memory / learnings**: MUST only be recorded in lowercase `.jules/` (e.g. `.jules/palette.md`). Never create uppercase `.Jules/`.
+- **Git Hooks**: The repository strictly uses `.husky/` via Husky 9. Never create or restore `.githooks/`.
+- **GitCore Ledger**: All wave management, issue definitions, chronicles, and specs live under `.gitcore/`. Do not create competing tracking directories.
+- **Skills**: Global skills reside in `~/.hermes/skills/` and project skills in `.skills/` (never commit ephemeral skill files directly to repo root).
+- **Runtime databases and caches**: `.xavier/`, `data/`, `*.db`, `*.sqlite*`, `metrics.db*`, `xavier_memory.db*` are strictly runtime caches. Never commit SQLite database files, WAL files, or SHM files. Only static configuration fixtures (such as `.xavier/maturity-anchors.json`) are tracked under `.xavier/`.
+- **Cargo & Compiler Settings**: `.cargo/` is the canonical Rust compiler configuration directory and must remain clean.
+
 <!-- SWAL-ROUTING-START -->
 ## SWAL Routing Minimalista (SDD Hibrido F1)
 > Antes de crear `.gitcore/sdd/` aplica routing organico (gentle-ai v2.3.0).
@@ -94,7 +104,15 @@ cargo clippy --all-targets -- -D warnings      # warnings are errors
 
 <!-- SWAL-REGISTRY-START -->
 ## Skill Registry + Xavier Indexer (F1b)
-> Skills viven FUERA de `.gitcore` (global `~/.hermes/skills` + proyecto `.skills/`). GitCore solo referencia via `.atl/skill-registry.md` + cache `.skill-registry.cache.json` y opcional `.gitcore/skill-registry.json`.
+> Skills viven en `skills/` dentro del proyecto y global en `~/.hermes/skills`. GitCore referencia via `.atl/skill-registry.md` + cache `.skill-registry.cache.json`.
+>
+> ### 📁 Canonical Project Skills (`skills/`)
+> - [`xavier-cognitive-memory`](skills/xavier-cognitive-memory/SKILL.md): Memory, CodeGraph, and MCP protocol integration.
+> - [`xavier-rtk-execution`](skills/xavier-rtk-execution/SKILL.md): High-performance CLI execution & token compression via `rtk-kernel` proxy.
+> - [`xavier-code-graph-analysis`](skills/xavier-code-graph-analysis/SKILL.md): AST navigation, symbol lookup, and blast-radius impact analysis.
+> - [`xavier-wave-verification`](skills/xavier-wave-verification/SKILL.md): Feature verification ledger & test pipeline execution.
+> - [`xavier-maintenance-hygiene`](skills/xavier-maintenance-hygiene/SKILL.md): Anti-sprawl repo hygiene, database cache quarantine, and deprecation policy.
+>
 > - Refresh: `~/.hermes/scripts/skill-registry-refresh.sh --cwd <proyecto>`
 > - Index: `~/.hermes/scripts/xavier-index-skills.sh --cwd <proyecto>` (Xavier tags [skill])
 > - Antes de delegar: `xavier_search(tags=[skill]) -> skill_view(paths)`
