@@ -49,6 +49,24 @@ pub fn flush_and_close_cache() {
     }
 }
 
+/// Unload and checkpoint a specific CodeGraphDB connection from the cache.
+pub fn unload_db(path: &Path) -> bool {
+    let norm_path = normalize_path(path);
+    let mut cache = db_cache().write();
+    if let Some(conn_arc) = cache.remove(&norm_path) {
+        if let Ok(conn) = conn_arc.lock() {
+            checkpoint_wal(&conn);
+            debug!(
+                "Flushed WAL checkpoint and unloaded CodeGraphDB at {:?}",
+                norm_path
+            );
+        }
+        true
+    } else {
+        false
+    }
+}
+
 /// Clear the connection cache (e.g. for testing).
 pub fn clear_cache() {
     db_cache().write().clear();
