@@ -171,7 +171,7 @@ impl Cli {
                     anyhow::bail!("No command specified. Usage: xavier exec <command> [args...]");
                 }
                 let full_cmd = command.join(" ");
-                let res = xavier::kernel::execute_proxy_command(
+                let res = crate::kernel::runner::execute_rtk_command(
                     &full_cmd,
                     cwd.as_deref(),
                     session.as_deref(),
