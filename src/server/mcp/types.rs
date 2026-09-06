@@ -191,18 +191,11 @@ impl MCPToolResult {
 
     /// Structured.
     pub fn structured(payload: Value, is_error: bool) -> Self {
-        let text_fallback = payload.to_string();
         MCPToolResult {
-            content: vec![
-                MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: text_fallback,
-                }),
-                MCPContent::Structured(MCPStructuredContent {
-                    content_type: "structuredContent".to_string(),
-                    structured_content: payload,
-                }),
-            ],
+            content: vec![MCPContent::Structured(MCPStructuredContent {
+                content_type: "structuredContent".to_string(),
+                structured_content: payload,
+            })],
             is_error: Some(is_error),
         }
     }

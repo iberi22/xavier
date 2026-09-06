@@ -56,7 +56,10 @@ pub fn unload_db(path: &Path) -> bool {
     if let Some(conn_arc) = cache.remove(&norm_path) {
         if let Ok(conn) = conn_arc.lock() {
             checkpoint_wal(&conn);
-            debug!("Flushed WAL checkpoint and unloaded CodeGraphDB at {:?}", norm_path);
+            debug!(
+                "Flushed WAL checkpoint and unloaded CodeGraphDB at {:?}",
+                norm_path
+            );
         }
         true
     } else {

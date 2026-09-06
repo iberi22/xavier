@@ -70,8 +70,7 @@ async fn test_index_command_failure_direct() -> Result<()> {
     let exit_code = 101;
     let snippet = "error: no test target found matching `non_existent_test_suite`";
 
-    let record =
-        index_command_failure(&store, workspace_id, cmd, exit_code, snippet).await?;
+    let record = index_command_failure(&store, workspace_id, cmd, exit_code, snippet).await?;
 
     assert!(record.path.starts_with("terminal/failures/"));
     assert_eq!(record.content, snippet);
