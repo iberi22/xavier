@@ -1,6 +1,6 @@
 use code_graph::plugin::types::{FileToParse, PluginConfig, PluginDescriptor, PluginEngine};
-use code_graph::plugin::ProcessEngine;
 use code_graph::plugin::PluginManager;
+use code_graph::plugin::ProcessEngine;
 use code_graph::types::{Language, SymbolKind};
 use std::fs::{self, File};
 use std::io::Write;
@@ -159,7 +159,12 @@ exit 1
     }];
 
     let result = engine.parse(&config, Language::Rust, files).await;
-    assert!(result.is_err(), "engine.parse should return Err when process exits non-zero");
+    assert!(
+        result.is_err(),
+        "engine.parse should return Err when process exits non-zero"
+    );
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("fatal: syntax error in source") || err_msg.contains("exited with status"));
+    assert!(
+        err_msg.contains("fatal: syntax error in source") || err_msg.contains("exited with status")
+    );
 }

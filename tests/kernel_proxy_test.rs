@@ -1,83 +1,104 @@
-//! Integration and verification tests for Xavier RTK Kernel Proxy
+use anyhow::Result;
+use xavier::kernel::runner::{condense_output, execute_proxy_command, index_command_failure};
+use xavier::memory::store::{InMemoryMemoryStore, MemoryStore};
 
-use xavier::kernel::filters::{filter_cargo, filter_git, filter_grep, strip_ansi};
-use xavier::kernel::runner::execute_proxy_command;
+#[tokio::test]
+async fn test_proxy_command_success() -> Result<()> {
+    let store = InMemoryMemoryStore::new();
+    let workspace_id = "test-workspace";
 
-#[test]
-fn test_strip_ansi_sequences() {
-    let colored = "\x1B[32mSuccess\x1B[0m: compilation \x1B[1;31mfinished\x1B[0m";
-    assert_eq!(strip_ansi(colored), "Success: compilation finished");
-}
+    #[cfg(target_os = "windows")]
+    let cmd = "echo hello";
+    #[cfg(not(target_os = "windows"))]
+    let cmd = "echo hello";
 
-#[test]
-fn test_filter_cargo_condenses_ok_tests() {
-    let raw = "\
-test tests::test_alpha ... ok
-test tests::test_beta ... ok
-test tests::test_gamma ... ok
-test tests::test_delta ... ok
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
-";
-    let filtered = filter_cargo(raw);
-    assert!(filtered.contains("all 4 tests passed"));
-    assert!(!filtered.contains("test tests::test_alpha ... ok"));
-}
+    let res = execute_proxy_command(cmd, Some(workspace_id), Some(&store)).await?;
 
-#[test]
-fn test_filter_cargo_preserves_failures() {
-    let raw = "\
-test tests::test_alpha ... ok
-test tests::test_beta ... FAILED
-failures:
----- tests::test_beta stdout ----
-thread 'tests::test_beta' panicked at 'explicit panic', src/lib.rs:42:9
-failures:
-    tests::test_beta
-test result: FAILED. 1 failed; 1 passed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
-";
-    let filtered = filter_cargo(raw);
-    assert!(filtered.contains("=== FAILURES & ERRORS ==="));
-    assert!(filtered.contains("tests::test_beta"));
-    assert!(filtered.contains("explicit panic"));
-    assert!(filtered.contains("passed: 1, failed: 1"));
-}
+    assert_eq!(res.exit_code, 0);
+    assert!(res.stdout.contains("hello"));
+    assert!(res.failure_record.is_none());
 
-#[test]
-fn test_filter_git_removes_noise() {
-    let raw = "\
-On branch main
-Your branch is up to date with 'origin/main'.
+    let records = store.list(workspace_id).await?;
+    assert!(records.is_empty());
 
-Changes not staged for commit:
-  (use \"git add <file>...\" to update what will be committed)
-  (use \"git restore <file>...\" to discard changes in working directory)
-	modified:   src/kernel/mod.rs
-
-no changes added to commit (use \"git add\" to track)
-";
-    let filtered = filter_git(raw);
-    assert!(!filtered.contains("use \"git add"));
-    assert!(!filtered.contains("use \"git restore"));
-    assert!(filtered.contains("modified:   src/kernel/mod.rs"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_execute_proxy_command_savings_accounting() {
-    // Run echo with repeated test patterns
-    let cmd = "echo 'test a ... ok\ntest b ... ok\ntest result: ok. 2 passed; 0 failed;'";
-    let res = execute_proxy_command(cmd, None, Some("test_integration_session")).await.unwrap();
+async fn test_proxy_command_failure_indexing() -> Result<()> {
+    let store = InMemoryMemoryStore::new();
+    let workspace_id = "test-workspace";
 
-    assert_eq!(res.exit_code, 0);
-    assert!(res.estimated_raw_tokens > 0);
-    assert_eq!(res.command, cmd);
+    #[cfg(target_os = "windows")]
+    let cmd = "cmd /c exit 1";
+    #[cfg(not(target_os = "windows"))]
+    let cmd = "sh -c 'echo \"failure error trace\" >&2; exit 1'";
+
+    let res = execute_proxy_command(cmd, Some(workspace_id), Some(&store)).await?;
+
+    assert_ne!(res.exit_code, 0);
+    assert!(res.failure_record.is_some());
+
+    let record = res.failure_record.unwrap();
+    assert!(record.path.starts_with("terminal/failures/"));
+    assert_eq!(
+        record.metadata.get("kind").and_then(|v| v.as_str()),
+        Some("failure_trace")
+    );
+    assert_eq!(
+        record.metadata.get("command").and_then(|v| v.as_str()),
+        Some(cmd)
+    );
+    assert_eq!(
+        record.metadata.get("exit_code").and_then(|v| v.as_i64()),
+        Some(i64::from(res.exit_code))
+    );
+
+    let fetched = store.get(workspace_id, &record.id).await?;
+    assert!(fetched.is_some());
+    let fetched_rec = fetched.unwrap();
+    assert_eq!(fetched_rec.path, record.path);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_index_command_failure_direct() -> Result<()> {
+    let store = InMemoryMemoryStore::new();
+    let workspace_id = "ws-direct";
+    let cmd = "cargo test non_existent_test_suite";
+    let exit_code = 101;
+    let snippet = "error: no test target found matching `non_existent_test_suite`";
+
+    let record = index_command_failure(&store, workspace_id, cmd, exit_code, snippet).await?;
+
+    assert!(record.path.starts_with("terminal/failures/"));
+    assert_eq!(record.content, snippet);
+    assert_eq!(
+        record.metadata.get("kind").and_then(|v| v.as_str()),
+        Some("failure_trace")
+    );
+    assert_eq!(
+        record.metadata.get("command").and_then(|v| v.as_str()),
+        Some(cmd)
+    );
+
+    let list = store.list(workspace_id).await?;
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, record.id);
+
+    Ok(())
 }
 
 #[test]
-fn test_filter_grep_truncation() {
-    let mut large_grep = String::new();
-    for i in 0..120 {
-        large_grep.push_str(&format!("src/file_{}.rs:10:fn calculate_{}() {{}}\n", i, i));
-    }
-    let filtered = filter_grep(&large_grep);
-    assert!(filtered.contains("matches truncated"));
+fn test_condense_output() {
+    let stdout = "short stdout";
+    let stderr = "short stderr";
+    let output = condense_output(stdout, stderr);
+    assert!(output.contains("STDOUT:\nshort stdout"));
+    assert!(output.contains("STDERR:\nshort stderr"));
+
+    let long_str = "a".repeat(3000);
+    let condensed = condense_output(&long_str, "");
+    assert!(condensed.contains("[... condensed 1000 bytes ...]"));
 }

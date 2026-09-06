@@ -15,9 +15,9 @@ use crate::parser::python::PythonParser;
 use crate::parser::rust::RustParser;
 use crate::plugin::types::{FallbackStep, FileToParse};
 use crate::plugin::PluginManager;
-use crate::types::{Language, Symbol};
 #[cfg(feature = "native-parsers")]
 use crate::types::SymbolKind;
+use crate::types::{Language, Symbol};
 #[cfg(feature = "native-parsers")]
 use tree_sitter::Node;
 
