@@ -194,6 +194,14 @@ path = "tests/ci_version_gate.test.rs"
 name = "embedding_fallback_resilience"
 path = "tests/embedding_fallback_resilience_test.rs"
 
+[[test]]
+name = "kernel_proxy_test"
+path = "tests/kernel_proxy_test.rs"
+
+[[test]]
+name = "kernel_mcp_test"
+path = "tests/kernel_mcp_test.rs"
+
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 code-graph = { path = "./code-graph" }

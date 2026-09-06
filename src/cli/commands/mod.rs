@@ -166,6 +166,30 @@ impl Cli {
                 http::reindex_memories().await
             }
             Command::Code { cmd } => code::handle_code_command(cmd.clone()).await,
+            Command::Exec { command, session, cwd } => {
+                if command.is_empty() {
+                    anyhow::bail!("No command specified. Usage: xavier exec <command> [args...]");
+                }
+                let full_cmd = command.join(" ");
+                let res = xavier::kernel::execute_proxy_command(
+                    &full_cmd,
+                    cwd.as_deref(),
+                    session.as_deref(),
+                ).await?;
+                println!("{}", res.output);
+                eprintln!(
+                    "\n[xavier-proxy] tokens: raw ≈ {}, filtered ≈ {} | saved: {} ({:.1}%) in {}ms",
+                    res.estimated_raw_tokens,
+                    res.estimated_filtered_tokens,
+                    res.tokens_saved,
+                    res.savings_percentage,
+                    res.duration_ms
+                );
+                if res.exit_code != 0 {
+                    std::process::exit(res.exit_code);
+                }
+                Ok(())
+            }
             Command::Issue { cmd } => match cmd {
                 IssueCommand::Pack { id, repo } => {
                     crate::cli::handlers::issue::handle_issue_pack(id, repo.clone()).await

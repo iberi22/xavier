@@ -58,7 +58,21 @@ xavier mcp
 ```bash
 # Add a memory fragment
 xavier add "Architecture decision: Use SQLite-vec for local vector storage" "ADR-001" --kind decision
+```
 
+---
+
+## 🧠 Canonical Agent Skills
+
+Xavier provides native, standardized agent skills located in [`skills/`](skills/) for continuous development, code-graph navigation, and maintenance:
+
+- **[`xavier-cognitive-memory`](skills/xavier-cognitive-memory/SKILL.md)**: Memory persistence, hybrid search (BM25 + vector), and MCP protocol integration.
+- **[`xavier-rtk-execution`](skills/xavier-rtk-execution/SKILL.md)**: High-speed command execution and 60–90% token reduction via the `rtk-kernel` proxy plugin.
+- **[`xavier-code-graph-analysis`](skills/xavier-code-graph-analysis/SKILL.md)**: AST symbol navigation, call hierarchy mapping, and blast-radius analysis.
+- **[`xavier-wave-verification`](skills/xavier-wave-verification/SKILL.md)**: Automated GitCore feature verification and CI test execution.
+- **[`xavier-maintenance-hygiene`](skills/xavier-maintenance-hygiene/SKILL.md)**: Anti-sprawl guidelines, database cache quarantine, and deprecated script handling.
+
+```bash
 # Search memory fragments
 xavier search "SQLite vector storage" -n 5
 

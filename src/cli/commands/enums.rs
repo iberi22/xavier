@@ -140,6 +140,18 @@ pub enum Command {
         #[command(subcommand)]
         cmd: CodeCommand,
     },
+    /// Execute a shell command via Xavier RTK Kernel Proxy with token reduction
+    Exec {
+        /// Command and arguments to execute
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
+        /// Optional session identifier for token savings tracking
+        #[arg(short, long)]
+        session: Option<String>,
+        /// Working directory
+        #[arg(short = 'C', long)]
+        cwd: Option<String>,
+    },
     /// Package GitHub issue context
     Issue {
         #[command(subcommand)]

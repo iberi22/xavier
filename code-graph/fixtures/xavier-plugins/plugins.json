@@ -47,6 +47,29 @@
       },
       "min_engine_version": "0.6.0",
       "license": "Apache-2.0"
+    },
+    {
+      "name": "rtk-kernel",
+      "display_name": "RTK Kernel CLI Proxy & Token Reducer",
+      "description": "High-performance CLI execution proxy that condenses toolchain outputs (cargo, git, grep) to save up to 90% LLM tokens.",
+      "version": "0.1.0",
+      "author": "SWAL Core / rtk-ai",
+      "languages": ["Rust", "Shell"],
+      "capabilities": ["exec_proxy", "token_accounting"],
+      "platform": {
+        "linux-x86_64": {
+          "url": "embedded://rtk-kernel",
+          "checksum": "embedded",
+          "format": "builtin"
+        },
+        "windows-x86_64": {
+          "url": "embedded://rtk-kernel",
+          "checksum": "embedded",
+          "format": "builtin"
+        }
+      },
+      "min_engine_version": "0.1.0",
+      "license": "Apache-2.0"
     }
   ]
 }
