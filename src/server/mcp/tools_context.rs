@@ -323,7 +323,7 @@ pub async fn handle_context_tool(
                 return super::server::mcp_text_result("Error: 'command' argument cannot be empty", true);
             }
 
-            let result = crate::kernel::execute_proxy_command(command, cwd, session_id).await?;
+            let result = crate::kernel::runner::execute_rtk_command(command, cwd, session_id).await?;
             let json_res = serde_json::to_string_pretty(&result)?;
             super::server::mcp_text_result(json_res, result.exit_code != 0)
         }
