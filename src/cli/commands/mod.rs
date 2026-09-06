@@ -62,10 +62,15 @@ impl Cli {
         match self.cmd.as_ref().unwrap_or(&Command::Http {
             port: None,
             mcp_port: None,
+            no_ui: false,
         }) {
-            Command::Http { port, mcp_port } => {
+            Command::Http {
+                port,
+                mcp_port,
+                no_ui,
+            } => {
                 let port = port.unwrap_or_else(resolve_http_port);
-                start_http_server(port, *mcp_port).await
+                start_http_server(port, *mcp_port, *no_ui).await
             }
             Command::Mcp => start_mcp_stdio().await,
             Command::IndexSelf => {

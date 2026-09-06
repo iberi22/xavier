@@ -55,9 +55,10 @@ use xavier::ports::inbound::{
 use xavier::security::sessions::SessionManager;
 use xavier::security::threat_store::SecurityThreatStore;
 use xavier::server::panel::{
-    get_graph, list_bookmarks, list_widgets, panel_asset, panel_index, save_bookmark, save_graph,
-    save_widget,
+    get_graph, list_bookmarks, list_widgets, save_bookmark, save_graph, save_widget,
 };
+#[cfg(feature = "panel-ui")]
+use xavier::server::panel::{panel_asset, panel_index};
 use xavier::tasks::session_sync_task::SessionSyncTask;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
@@ -77,7 +78,7 @@ pub async fn metrics_handler() -> axum::response::Response {
 }
 
 /// Start http server.
-pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
+pub async fn start_http_server(port: u16, mcp_port: Option<u16>, no_ui: bool) -> Result<()> {
     // Initialize Prometheus exporter
     let _ = autometrics::prometheus_exporter::try_init();
 
@@ -1370,13 +1371,21 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/build", get(build_handler))
         .route("/ready", get(readiness_handler))
         .route("/readiness", get(readiness_handler))
-        .route("/v1/health/ready", get(readiness_handler))
+        .route("/v1/health/ready", get(readiness_handler));
+
+    #[cfg(feature = "panel-ui")]
+    let app = if !no_ui {
         // Serve index + assets at both `/` and `/panel` so portable installs and
         // bookmarked `/panel` URLs both work.
-        .route("/", get(panel_index))
-        .route("/panel", get(panel_index))
-        .route("/assets/{*path}", get(panel_asset))
-        .route("/panel/assets/{*path}", get(panel_asset))
+        app.route("/", get(panel_index))
+            .route("/panel", get(panel_index))
+            .route("/assets/{*path}", get(panel_asset))
+            .route("/panel/assets/{*path}", get(panel_asset))
+    } else {
+        app
+    };
+
+    let app = app
         .merge(protected_routes)
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
@@ -1681,12 +1690,16 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     #[cfg(feature = "telegram")]
     {
-        let memory_bot = state.memory.clone();
-        let agents_bot = state.agent_registry.clone();
-        let security_bot = state.security_scan.clone();
-        tokio::spawn(async move {
-            xavier::telegram::run_bot(memory_bot, agents_bot, security_bot).await;
-        });
+        if settings.telegram.enabled {
+            let memory_bot = state.memory.clone();
+            let agents_bot = state.agent_registry.clone();
+            let security_bot = state.security_scan.clone();
+            tokio::spawn(async move {
+                xavier::telegram::run_bot(memory_bot, agents_bot, security_bot).await;
+            });
+        } else {
+            tracing::info!("Telegram bot is disabled in settings; skipping initialization to preserve idle memory");
+        }
     }
 
     tokio::spawn(async move {
