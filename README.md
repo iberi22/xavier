@@ -252,6 +252,42 @@ Xavier exposes standard MCP tools for integration with Cursor, Claude Desktop, a
 
 ---
 
+## 🧠 Agent Skill: Cognitive Memory & CodeGraph
+
+For autonomous coding assistants and agents (**Antigravity**, **Hermes**, **Jules**, **OpenClaw**, **Cursor**), Xavier ships with a ready-to-use canonical skill: [`skills/xavier-cognitive-memory/SKILL.md`](skills/xavier-cognitive-memory/SKILL.md).
+
+### Post-Installation Setup for Agents
+
+Install the skill into your global agent configuration:
+
+```bash
+# For Antigravity / Gemini agents
+mkdir -p ~/.gemini/config/skills/xavier-cognitive-memory
+cp skills/xavier-cognitive-memory/SKILL.md ~/.gemini/config/skills/xavier-cognitive-memory/SKILL.md
+
+# For Hermes agents
+mkdir -p ~/.hermes/skills/xavier-cognitive-memory
+cp skills/xavier-cognitive-memory/SKILL.md ~/.hermes/skills/xavier-cognitive-memory/SKILL.md
+```
+
+### Mandatory Agent Cycle (PRE → EXEC → POST)
+
+1. **PRE (Context Discovery):**
+   ```bash
+   xavier search "<task or feature keyword>" -n 5
+   ```
+2. **EXEC (Code-Graph Navigation & Blast Radius):**
+   ```bash
+   xavier code find <SymbolName>
+   xavier code blast-radius <SymbolName>
+   ```
+3. **POST (Persist Findings):**
+   ```bash
+   xavier add "Implemented X with decision Y" --kind decision --cluster "<project>"
+   ```
+
+---
+
 ### 💻 CLI Command Summary
 
 ```bash
