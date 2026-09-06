@@ -1,5 +1,6 @@
 import { AlertTriangle, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import React from "react";
 
 export interface SystemAlert {
   id: string;
@@ -15,7 +16,16 @@ interface SystemAlertBannerProps {
   onOpenConfig: () => void;
 }
 
-export default function SystemAlertBanner({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped SystemAlertBanner in React.memo()
+ * 🎯 Why: SystemAlertBanner is rendered in App.tsx and receives `errorAlerts` which are already memoized using useMemo.
+ *         However, because the component itself was not wrapped in React.memo, it would re-render every time App.tsx
+ *         re-rendered (e.g., during chat streaming or typing), causing unnecessary DOM reconciliation.
+ * 📊 Impact: Eliminates unnecessary re-renders of the alert banner component and its children when parent state changes.
+ */
+export default React.memo(function SystemAlertBanner({
   alerts,
   onDismiss,
   onOpenConfig,
@@ -83,4 +93,4 @@ export default function SystemAlertBanner({
       </AnimatePresence>
     </div>
   );
-}
+});
