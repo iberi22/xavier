@@ -544,6 +544,18 @@ export class ApiClient {
       last_session?: any;
     }>("/api/v1/memory/sync/status");
   }
+
+  // Plugins Manager
+  async getPlugins() {
+    return this.fetch<unknown>("/plugins");
+  }
+
+  async installPlugin(name: string) {
+    return this.fetch<{ status: string; message?: string }>("/plugins/install", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  }
 }
 
 export interface ProviderConfig {

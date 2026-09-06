@@ -13,6 +13,7 @@ import {
   Network,
   Play,
   Plug,
+  Puzzle,
   RefreshCw,
   Server,
   Share2,
@@ -44,6 +45,7 @@ import MeshConfig from "./MeshConfig";
 import MessagingConfigModal, {
   MessagingConfigInner,
 } from "./MessagingConfigModal";
+import { PluginsManager } from "./PluginsManager";
 import UsageMetricsPanel from "./UsageMetricsPanel";
 
 interface ConfigModalProps {
@@ -67,7 +69,8 @@ type MainTab =
   | "mesh"
   | "memory"
   | "agents"
-  | "usage";
+  | "usage"
+  | "plugins";
 
 type SubLayer = "roadmap" | "memory" | "code";
 
@@ -405,6 +408,12 @@ export default function ConfigModal({
             onClick={() => setMainTab("agents")}
             icon={<Bot className="w-4 h-4" />}
             label="Agents"
+          />
+          <TabButton
+            active={mainTab === "plugins"}
+            onClick={() => setMainTab("plugins")}
+            icon={<Puzzle className="w-4 h-4" />}
+            label="Plugins"
           />
           <TabButton
             active={mainTab === "graph"}
@@ -776,6 +785,17 @@ export default function ConfigModal({
               className="w-full h-full overflow-y-auto p-8"
             >
               <AgentsView token={token || ""} />
+            </motion.div>
+          )}
+          {mainTab === "plugins" && (
+            <motion.div
+              key="plugins"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-hidden"
+            >
+              <PluginsManager token={token || ""} />
             </motion.div>
           )}
         </AnimatePresence>
