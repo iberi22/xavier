@@ -42,6 +42,58 @@ pub enum EmbeddingError {
     Parse(String),
 }
 
+/// Helper function to list all compiled-in embedder backend names.
+pub fn available_embedders() -> Vec<&'static str> {
+    let mut list = vec!["auto", "cloud", "disabled", "local", "ollama", "openai"];
+    if cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda")) {
+        list.push("gllm");
+        list.push("local-gllm");
+    }
+    list.sort_unstable();
+    list
+}
+
+/// Resolves an embedder string identifier into an `EmbedderConfig`.
+///
+/// Fails fast with `EmbeddingError::Config` if the requested embedder is unknown or not compiled in.
+pub(crate) fn resolve_embedder(name: &str) -> Result<EmbedderConfig, EmbeddingError> {
+    let trimmed = name.trim().to_ascii_lowercase();
+    let api_flavor = std::env::var("XAVIER_EMBEDDING_API_FLAVOR")
+        .ok()
+        .and_then(|value| ApiFlavor::from_env(&value))
+        .unwrap_or(ApiFlavor::OpenAICompatible);
+
+    let gllm_enabled = cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda"));
+
+    match trimmed.as_str() {
+        "disabled" | "noop" => Ok(EmbedderConfig::Noop),
+        "ollama" => Ok(EmbedderConfig::Fallback(vec![
+            EmbedderBackendConfig::Ollama(ollama_config()),
+        ])),
+        "openai" | "cloud" => Ok(EmbedderConfig::cloud_only(api_flavor)),
+        "local" => Ok(EmbedderConfig::local_only(api_flavor)),
+        "auto" => Ok(EmbedderConfig::auto_explicit(api_flavor)),
+        "gllm" | "local-gllm" | "local_gllm" => {
+            if gllm_enabled {
+                Ok(EmbedderConfig::gllm_only())
+            } else {
+                let avail = available_embedders().join(", ");
+                Err(EmbeddingError::Config(format!(
+                    "embedder '{}' not compiled in; available: {}",
+                    name, avail
+                )))
+            }
+        }
+        _ => {
+            let avail = available_embedders().join(", ");
+            Err(EmbeddingError::Config(format!(
+                "embedder '{}' not compiled in; available: {}",
+                name, avail
+            )))
+        }
+    }
+}
+
 #[async_trait]
 pub trait Embedder: Send + Sync {
     async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
@@ -148,6 +200,16 @@ impl EmbedderConfig {
             .ok()
             .map(|value| value.trim().to_ascii_lowercase());
 
+        if let Some(ref explicit) = explicit_embedder {
+            if !explicit.is_empty() {
+                return match resolve_embedder(explicit) {
+                    Ok(cfg) => cfg,
+                    Err(EmbeddingError::Config(msg)) => Self::Invalid(msg),
+                    Err(err) => Self::Invalid(err.to_string()),
+                };
+            }
+        }
+
         let embed_provider = std::env::var("XAVIER_EMBED_PROVIDER")
             .ok()
             .map(|value| value.trim().to_ascii_lowercase());
@@ -156,10 +218,6 @@ impl EmbedderConfig {
             || explicit_embedder.as_deref() == Some("disabled")
         {
             return Self::Noop;
-        }
-
-        if explicit_embedder.as_deref() == Some("gllm") {
-            return Self::gllm_only();
         }
 
         if api_flavor == ApiFlavor::AnthropicCompatible {

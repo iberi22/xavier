@@ -119,6 +119,71 @@ async fn test_encode_dimension_and_similarity() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_wave20_add_embed_search_roundtrip() -> Result<()> {
+    let dimension = 768;
+    let (url, _handle) = start_mock_ollama(dimension).await?;
+
+    std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "local");
+    std::env::set_var("XAVIER_EMBEDDING_LOCAL_URL", &url);
+    std::env::set_var("XAVIER_EMBEDDING_MODEL", "embeddinggemma");
+
+    // Initialize temporary memory store
+    let temp_dir = tempfile::tempdir()?;
+    let db_path = temp_dir.path().join("wave20_roundtrip.db");
+    let config = VecSqliteStoreConfig {
+        path: db_path,
+        embedding_dimensions: dimension,
+    };
+    let store = VecSqliteMemoryStore::new(config).await?;
+
+    // Build embedder instance
+    let embedder = build_embedder_from_env().await?;
+
+    // Insert record with unique text and embed vector
+    let unique_content = "Xavier Wave 20 E2E local embeddings roundtrip validation test note";
+    let embedding = embedder.encode(unique_content).await?;
+    assert!(!embedding.is_empty(), "generated vector must not be empty");
+    assert_eq!(embedding.len(), dimension);
+
+    let record = MemoryRecord {
+        id: "wave20-rec-1".to_string(),
+        workspace_id: "ws-wave20".to_string(),
+        path: "wave20/roundtrip.md".to_string(),
+        content: unique_content.to_string(),
+        embedding: embedding.clone(),
+        ..Default::default()
+    };
+
+    store.put(record).await?;
+
+    // Perform hybrid search with query embedding
+    let query_vec = embedder.encode("roundtrip validation test note").await?;
+    let search_results = store
+        .hybrid_search_with_embedding("ws-wave20", "roundtrip", query_vec, None, 5)
+        .await?;
+
+    assert!(
+        !search_results.is_empty(),
+        "search results should not be empty"
+    );
+    assert_eq!(
+        search_results[0].record.id, "wave20-rec-1",
+        "inserted record must be returned as top-1 hit"
+    );
+    assert_eq!(
+        search_results[0].record.content, unique_content,
+        "content must match"
+    );
+
+    // Cleanup env
+    std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+    std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+    std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_fallback_embedder() -> Result<()> {
     // 1. Mock a failing "cloud" server (Primary)
     let failing_listener = TcpListener::bind("127.0.0.1:0").await?;
