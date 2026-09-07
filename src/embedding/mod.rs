@@ -391,7 +391,16 @@ impl EmbedderConfig {
     }
 
     fn auto_explicit(api_flavor: ApiFlavor) -> Self {
-        let mut backends = vec![EmbedderBackendConfig::Gllm(gllm_config())];
+        let mut backends = Vec::new();
+
+        // GLLM first when compiled with local-gllm (GPU path); otherwise
+        // Ollama native (/api/embed, nomic-embed-text 768d) is the local
+        // default — already available on localhost:11434, no rebuild needed.
+        if cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda")) {
+            backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+        } else {
+            backends.push(EmbedderBackendConfig::Ollama(ollama_config()));
+        }
 
         if api_flavor == ApiFlavor::OpenAICompatible {
             backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
@@ -405,19 +414,30 @@ impl EmbedderConfig {
     }
 
     fn local_only(_api_flavor: ApiFlavor) -> Self {
-        Self::Fallback(vec![
-            EmbedderBackendConfig::Ollama(ollama_config()),
-            EmbedderBackendConfig::Gllm(gllm_config()),
-            EmbedderBackendConfig::OpenAICompatible(local_config()),
-        ])
+        // Without the local-gllm feature the Gllm backend can never
+        // initialise (see GllmEmbedder::new) and only emits a spurious
+        // "embedding backend unavailable" warning on every startup /
+        // EmbeddingClient::from_env() call. Gate it so the default
+        // local path is Ollama (nomic-embed-text, 768d, localhost:11434)
+        // + OpenAI-compatible local fallback — both already available.
+        let mut backends = vec![EmbedderBackendConfig::Ollama(ollama_config())];
+        if cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda")) {
+            backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+        }
+        backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
+        Self::Fallback(backends)
     }
 
     fn cloud_only(api_flavor: ApiFlavor) -> Self {
         // Primary: cloud endpoint, Fallback: local endpoint if available
         let mut backends = vec![EmbedderBackendConfig::OpenAICompatible(cloud_config())];
 
+        // GLLM as a fallback only when compiled with the feature; otherwise
+        // it can never initialise and only spams the startup warning.
         // Always add GLLM as a fallback if in cloud mode to ensure offline/GPU availability
-        if api_flavor == ApiFlavor::OpenAICompatible {
+        if api_flavor == ApiFlavor::OpenAICompatible
+            && cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda"))
+        {
             backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
         }
 
@@ -427,9 +447,10 @@ impl EmbedderConfig {
                     backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
                 }
                 ApiFlavor::AnthropicCompatible => {
-                    if !backends
-                        .iter()
-                        .any(|b| matches!(b, EmbedderBackendConfig::Gllm(_)))
+                    if cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda"))
+                        && !backends
+                            .iter()
+                            .any(|b| matches!(b, EmbedderBackendConfig::Gllm(_)))
                     {
                         backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
                     }
