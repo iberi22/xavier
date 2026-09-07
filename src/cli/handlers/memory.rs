@@ -907,34 +907,58 @@ pub async fn reindex_handler(State(state): State<CliState>, headers: HeaderMap) 
     let mut errors = Vec::new();
     let mut skipped = 0usize;
 
-    for record in &records {
-        // Skip records that already have a non-empty embedding
-        if !record.embedding.is_empty() {
-            skipped += 1;
-            continue;
+    // Collect missing-embedding records first so the hot loop is bounded
+    // and can be processed in concurrent batches. Loading all records at
+    // once is inherent to the MemoryStore::list API; batching the embed
+    // phase bounds peak HTTP concurrency and keeps DB writes sequential
+    // (avoids sqlite "database is locked" under parallel writes).
+    let missing: Vec<_> = records
+        .iter()
+        .filter(|record| record.embedding.is_empty())
+        .collect();
+    skipped = total.saturating_sub(missing.len());
+
+    const REINDEX_BATCH_SIZE: usize = 64;
+    for chunk in missing.chunks(REINDEX_BATCH_SIZE) {
+        // Concurrent embeds (bounded by batch size); each with 60s timeout.
+        let mut join_set = tokio::task::JoinSet::new();
+        for record in chunk {
+            let embedder = state.embedder.clone();
+            let content = record.content.clone();
+            let id = record.id.clone();
+            join_set.spawn(async move {
+                let res = timeout(Duration::from_secs(60), embedder.encode(&content)).await;
+                (id, res)
+            });
         }
 
-        // Try embedding within a 60-second timeout per doc
-        match timeout(
-            Duration::from_secs(60),
-            state.embedder.encode(&record.content),
-        )
-        .await
-        {
-            Ok(Ok(embedding)) => {
-                let mut updated = record.clone();
-                updated.embedding = embedding;
+        // Collect vectors before touching the DB so writes stay sequential.
+        let mut ready: Vec<(String, Vec<f32>)> = Vec::new();
+        while let Some(joined) = join_set.join_next().await {
+            match joined {
+                Ok((id, Ok(Ok(vector)))) => ready.push((id, vector)),
+                Ok((id, Ok(Err(e)))) => {
+                    errors.push(format!("{id}: embedding failed: {e}"));
+                }
+                Ok((id, Err(_))) => {
+                    errors.push(format!("{id}: embedding timed out"));
+                }
+                Err(e) => {
+                    errors.push(format!("task join failed: {e}"));
+                }
+            }
+        }
+
+        // Sequential DB updates (bounds sqlite write contention).
+        for (id, vector) in ready {
+            if let Some(record) = missing.iter().find(|r| r.id == id) {
+                let mut updated = (*record).clone();
+                updated.embedding = vector;
                 updated.updated_at = chrono::Utc::now();
                 match state.store.update(updated).await {
                     Ok(()) => reindexed += 1,
-                    Err(e) => errors.push(format!("{}: update failed: {e}", record.id)),
+                    Err(e) => errors.push(format!("{id}: update failed: {e}")),
                 }
-            }
-            Ok(Err(e)) => {
-                errors.push(format!("{}: embedding failed: {e}", record.id));
-            }
-            Err(_) => {
-                errors.push(format!("{}: embedding timed out", record.id));
             }
         }
     }
