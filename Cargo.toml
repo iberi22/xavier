@@ -227,7 +227,7 @@ tokio-stream = "0.1"
 # Used by the MCP Streamable HTTP (SSE) transport to build the keepalive stream.
 # Also a transitive dependency of axum, so no extra version is pulled in.
 futures-util = "0.3"
-ulid = "1.1"
+ulid = "3.0"
 uuid = { version = "1.23", features = ["v4", "serde"] }
 dirs = "6.0"
 sysinfo = "0.38"
