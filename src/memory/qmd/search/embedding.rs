@@ -255,7 +255,7 @@ mod tests {
                         if body_str.contains(slow_marker) {
                             tokio::time::sleep(Duration::from_secs(slow_secs)).await;
                         }
-                        let vec_json = vec!["0.5"; TEST_DIM].join(",");
+                        let vec_json = ["0.5"; TEST_DIM].join(",");
                         (
                             format!(r#"{{"model":"test-embed","embeddings":[[{vec_json}]]}}"#),
                             200,
