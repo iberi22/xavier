@@ -14,6 +14,7 @@ pub mod conversations_db;
 pub mod db;
 pub mod executor_bridge;
 pub mod issue_context;
+pub mod repo_identity;
 pub mod snapshot;
 
 /// Validation regex for project_id: only alphanumeric, hyphens, and underscores.
