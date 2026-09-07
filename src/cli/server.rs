@@ -647,6 +647,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>, no_ui: bool) ->
             ),
         )
         .route("/memory/stats", get(stats_handler))
+        .route("/v1/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
         .route("/memory/export-markdown", get(export_markdown_handler))
         .route("/v1/memory/export-markdown", get(export_markdown_handler))
