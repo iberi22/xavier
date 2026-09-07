@@ -314,24 +314,85 @@ pub fn mesh_telemetry() -> Option<Arc<MeshTelemetryCollector>> {
 pub fn collect_health_sync() -> HealthResponse {
     let settings = XavierSettings::current();
 
-    // Spawning a new OS thread ensures we can always block without interfering
-    // with the current runtime, and avoids "cannot start a runtime from within a runtime".
-    std::thread::spawn(move || {
+    // Spawning a dedicated OS thread ensures health checks are isolated from Tokio worker task saturation.
+    // Enforce a strict 500ms upper bound on health collection so /health never hangs.
+    let handle = std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("Failed to create health check runtime");
 
         rt.block_on(async {
-            let (cpu, mem_used, mem_total, disk_used, disk_total) = gather_system_metrics();
-            collect_health_impl(
-                &settings, None, cpu, mem_used, mem_total, disk_used, disk_total,
-            )
+            match tokio::time::timeout(std::time::Duration::from_millis(500), async {
+                let (cpu, mem_used, mem_total, disk_used, disk_total) = gather_system_metrics();
+                collect_health_impl(
+                    &settings, None, cpu, mem_used, mem_total, disk_used, disk_total,
+                )
+                .await
+            })
             .await
+            {
+                Ok(response) => response,
+                Err(_) => {
+                    tracing::warn!("Health collection timed out after 500ms; returning fallback fast health state");
+                    HealthResponse {
+                        status: "degraded".to_string(),
+                        version: env!("CARGO_PKG_VERSION").to_string(),
+                        uptime_secs: 0,
+                        system: SystemHealth {
+                            cpu_usage_pct: 0.0,
+                            memory_used_mb: 0,
+                            memory_total_mb: 0,
+                            disk_used_gb: 0.0,
+                            disk_total_gb: 0.0,
+                            disk_usage_pct: 0.0,
+                        },
+                        database: DatabaseHealth {
+                            path: String::new(),
+                            size_mb: 0.0,
+                            wal_size_mb: 0.0,
+                            page_count: 0,
+                            fragmentation_pct: 0.0,
+                            needs_vacuum: false,
+                            last_vacuum: None,
+                            latency_ms: 500.0,
+                        },
+                        embedding: EmbeddingHealth {
+                            provider: "unknown".to_string(),
+                            connected: false,
+                            latency_ms: 500.0,
+                            error_rate_pct: 100.0,
+                            last_success: None,
+                            fallback_success: false,
+                        },
+                        mesh: MeshHealth {
+                            peers_count: 0,
+                            connected_peers: 0,
+                            sync_lag_ms: 0.0,
+                            latency_ms: 500.0,
+                            connectivity: "timeout".to_string(),
+                            maturity: crate::mesh::MeshMaturityReport::default(),
+                        },
+                        telegram: TelegramHealth::default(),
+                        auth: crate::security::auth::AuthHealth::default(),
+                        dependency_graph: ComponentDependencyGraph::default(),
+                        checks: vec![HealthCheck {
+                            name: "timeout_guard".to_string(),
+                            status: CheckStatus::Warn,
+                            detail: "Health check response generated under 500ms fallback timeout".to_string(),
+                            timestamp_secs: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
+                        }],
+                        embedding_coverage: EmbeddingCoverage::default(),
+                    }
+                }
+            }
         })
-    })
-    .join()
-    .expect("health thread panicked")
+    });
+
+    handle.join().expect("health thread panicked")
 }
 
 /// Async version — called from async contexts like `collect_health_sync` internals.
