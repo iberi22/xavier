@@ -905,7 +905,6 @@ pub async fn reindex_handler(State(state): State<CliState>, headers: HeaderMap) 
     let total = records.len();
     let mut reindexed = 0usize;
     let mut errors = Vec::new();
-    let mut skipped = 0usize;
 
     // Collect missing-embedding records first so the hot loop is bounded
     // and can be processed in concurrent batches. Loading all records at
@@ -916,7 +915,7 @@ pub async fn reindex_handler(State(state): State<CliState>, headers: HeaderMap) 
         .iter()
         .filter(|record| record.embedding.is_empty())
         .collect();
-    skipped = total.saturating_sub(missing.len());
+    let skipped = total.saturating_sub(missing.len());
 
     const REINDEX_BATCH_SIZE: usize = 64;
     for chunk in missing.chunks(REINDEX_BATCH_SIZE) {
