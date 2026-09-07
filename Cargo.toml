@@ -260,7 +260,7 @@ autometrics = { version = "3.0", features = ["prometheus-exporter"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
-cron = "0.15"
+cron = "0.17"
 # State management
 rayon = "1.10"
 parking_lot = "0.12"
