@@ -62,7 +62,7 @@ log "waiting for health gate..."
 for i in $(seq 1 100); do
     CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" || echo 000)"
     if [ "$CODE" = "200" ]; then
-        TIME="$(curl -s -o /dev/null -w '%{time_total}' --max-time 5 "$HEALTH_URL")"
+        TIME="$(curl -s -o /dev/null -w '%{time_total}' --max-time 5 "$HEALTH_URL" || echo timeout)"
         log "health gate PASS: 200 in ${TIME}s (attempt $i)"
         echo "DEPLOY_OK binary=$BIN_DST stamp=$STAMP log=$LOG"
         exit 0
