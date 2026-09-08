@@ -7,5 +7,6 @@ pub mod auth;
 pub mod token_bucket;
 
 pub use crate::adapters::inbound::http::middleware::clearance;
+pub use crate::adapters::inbound::http::middleware::timeout;
 pub use auth::require_permission;
 pub use token_bucket::{rate_limit_middleware, IpRateLimiter, RateLimiter, TokenBucket};

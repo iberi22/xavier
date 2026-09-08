@@ -118,6 +118,7 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             "/api/v1/memory/sync/pull",
             post(crate::adapters::inbound::http::handlers::sync::sync_pull_handler),
         )
+        .route("/memory/stats", get(memory_stats_route_handler))
         .route(
             "/api/v1/memory/sync/status",
             get(crate::adapters::inbound::http::handlers::sync::sync_status_handler),
@@ -262,6 +263,11 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route("/plugins/health", get(plugins_health_handler))
         .route("/plugins/sync", post(plugins_sync_handler));
 
+    // Global request timeout middleware (default 10s or XAVIER_HTTP_TIMEOUT_SECS)
+    let router = router.layer(axum::middleware::from_fn(
+        crate::adapters::inbound::http::middleware::timeout::timeout_middleware,
+    ));
+
     // Global rate limiting middleware (token_bucket per IP: 100 capacity, 60 req/min refill rate).
     let router = router.layer(axum::middleware::from_fn(
         crate::middleware::token_bucket::rate_limit_middleware,
@@ -353,6 +359,15 @@ async fn health_history_handler() -> impl axum::response::IntoResponse {
         .as_secs();
     let history = crate::health::history::fetch_health_history(now_secs);
     Json(history)
+}
+
+async fn memory_stats_route_handler() -> impl axum::response::IntoResponse {
+    let workspace_id =
+        std::env::var("XAVIER_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    Json(serde_json::json!({
+        "status": "ok",
+        "workspace_id": workspace_id,
+    }))
 }
 
 async fn health_handler() -> impl axum::response::IntoResponse {

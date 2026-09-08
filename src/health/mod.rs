@@ -306,16 +306,93 @@ pub fn mesh_telemetry() -> Option<Arc<MeshTelemetryCollector>> {
     MESH_TELEMETRY.get().cloned()
 }
 
+async fn cached_or_degraded_health_response(settings: &XavierSettings) -> HealthResponse {
+    if let Some(registry) = health_registry() {
+        if let Ok(reg) = registry.try_read() {
+            let uptime = reg.started_at.elapsed().unwrap_or_default().as_secs();
+
+            return HealthResponse {
+                status: "degraded".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                uptime_secs: uptime,
+                system: reg.system.clone(),
+                database: reg.database.clone(),
+                embedding: reg.embedding.clone(),
+                mesh: reg.mesh.clone(),
+                telegram: reg.telegram.clone(),
+                auth: crate::security::auth::AuthHealth::default(),
+                dependency_graph: reg.dependency_graph.clone(),
+                checks: reg.checks.clone(),
+                embedding_coverage: reg.embedding_coverage.clone(),
+            };
+        }
+    }
+
+    HealthResponse {
+        status: "degraded".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        uptime_secs: 0,
+        system: SystemHealth {
+            cpu_usage_pct: 0.0,
+            memory_used_mb: 0,
+            memory_total_mb: 0,
+            disk_used_gb: 0.0,
+            disk_total_gb: 0.0,
+            disk_usage_pct: 0.0,
+        },
+        database: DatabaseHealth {
+            path: String::new(),
+            size_mb: 0.0,
+            wal_size_mb: 0.0,
+            page_count: 0,
+            fragmentation_pct: 0.0,
+            needs_vacuum: false,
+            last_vacuum: None,
+            latency_ms: 0.0,
+        },
+        embedding: EmbeddingHealth {
+            provider: settings.embedding.embedder.clone(),
+            connected: false,
+            latency_ms: 500.0,
+            error_rate_pct: 0.0,
+            last_success: None,
+            fallback_success: false,
+        },
+        mesh: MeshHealth {
+            peers_count: 0,
+            connected_peers: 0,
+            sync_lag_ms: 0.0,
+            latency_ms: 0.0,
+            connectivity: "degraded".to_string(),
+            maturity: crate::mesh::MeshMaturityReport::default(),
+        },
+        telegram: TelegramHealth::default(),
+        auth: crate::security::auth::AuthHealth::default(),
+        dependency_graph: ComponentDependencyGraph::default(),
+        checks: vec![HealthCheck {
+            name: "health_timeout".to_string(),
+            status: CheckStatus::Warn,
+            detail: "Health check timed out (>500ms); serving cached/degraded state".to_string(),
+            timestamp_secs: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        }],
+        embedding_coverage: EmbeddingCoverage::default(),
+    }
+}
+
 /// Synchronous version — called from axum handlers.
 ///
 /// Spawns a dedicated OS thread with its own multi-threaded tokio runtime
 /// so that sysinfo calls and async health gathering never collide with
 /// any existing tokio context (e.g. `#[tokio::test]`).
+///
+/// Bounded by a strict 500ms timeout to ensure `/health` never hangs or stalls
+/// under daemon pressure/saturation.
 pub fn collect_health_sync() -> HealthResponse {
     let settings = XavierSettings::current();
 
-    // Spawning a new OS thread ensures we can always block without interfering
-    // with the current runtime, and avoids "cannot start a runtime from within a runtime".
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -323,11 +400,21 @@ pub fn collect_health_sync() -> HealthResponse {
             .expect("Failed to create health check runtime");
 
         rt.block_on(async {
-            let (cpu, mem_used, mem_total, disk_used, disk_total) = gather_system_metrics();
-            collect_health_impl(
-                &settings, None, cpu, mem_used, mem_total, disk_used, disk_total,
-            )
+            match tokio::time::timeout(std::time::Duration::from_millis(500), async {
+                let (cpu, mem_used, mem_total, disk_used, disk_total) =
+                    tokio::task::spawn_blocking(gather_system_metrics)
+                        .await
+                        .unwrap_or((0.0, 0, 0, 0.0, 0.0));
+                collect_health_impl(
+                    &settings, None, cpu, mem_used, mem_total, disk_used, disk_total,
+                )
+                .await
+            })
             .await
+            {
+                Ok(res) => res,
+                Err(_) => cached_or_degraded_health_response(&settings).await,
+            }
         })
     })
     .join()

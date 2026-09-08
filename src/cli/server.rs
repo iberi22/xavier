@@ -1281,6 +1281,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>, no_ui: bool) ->
             axum::routing::delete(crate::cli::handlers::notifications::delete_subscription_handler),
         )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,
@@ -1301,6 +1304,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>, no_ui: bool) ->
         .route("/panel/api/chat", post(panel_process_chat))
         .route("/code/scan", post(code_scan_handler))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,
@@ -1390,7 +1396,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>, no_ui: bool) ->
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
         .layer(Extension(event_bus_for_ws))
-        .layer(CorsLayer::permissive());
+        .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
+        ));
 
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
