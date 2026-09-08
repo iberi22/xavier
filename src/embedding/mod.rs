@@ -42,6 +42,37 @@ pub enum EmbeddingError {
     Parse(String),
 }
 
+/// Returns a list of available (compiled-in / supported) embedder backend names.
+pub fn available_embedders() -> Vec<&'static str> {
+    let mut backends = vec!["ollama", "openai", "local", "cloud", "auto", "disabled"];
+    if cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda")) {
+        backends.push("gllm");
+        backends.push("local-gllm");
+    }
+    backends
+}
+
+/// Validates requested embedder backend name and returns a fail-fast error if unknown/uncompiled.
+pub fn resolve_embedder(name: &str) -> Result<String, EmbeddingError> {
+    let trimmed = name.trim().to_ascii_lowercase();
+    let available = available_embedders();
+    if available.contains(&trimmed.as_str())
+        || trimmed == "openai-compatible"
+        || trimmed == "openrouter"
+        || trimmed == "local_gllm"
+        || trimmed == "local-gllm"
+        || trimmed == "gllm"
+    {
+        Ok(trimmed)
+    } else {
+        Err(EmbeddingError::Config(format!(
+            "embedder '{}' not compiled in; available: [{}]",
+            name.trim(),
+            available.join(", ")
+        )))
+    }
+}
+
 #[async_trait]
 pub trait Embedder: Send + Sync {
     async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
@@ -136,6 +167,33 @@ pub(crate) enum EmbedderConfig {
 impl EmbedderConfig {
     /// From env.
     pub fn from_env() -> Self {
+        if let Ok(explicit) = std::env::var("XAVIER_EMBEDDER") {
+            let explicit_trimmed = explicit.trim();
+            if !explicit_trimmed.is_empty() {
+                if let Err(err) = resolve_embedder(explicit_trimmed) {
+                    return Self::Invalid(err.to_string());
+                }
+            }
+        }
+
+        if let Ok(mode) = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE") {
+            let mode_trimmed = mode.trim();
+            if !mode_trimmed.is_empty() {
+                if let Err(err) = resolve_embedder(mode_trimmed) {
+                    return Self::Invalid(err.to_string());
+                }
+            }
+        }
+
+        if let Ok(provider) = std::env::var("XAVIER_EMBED_PROVIDER") {
+            let provider_trimmed = provider.trim();
+            if !provider_trimmed.is_empty() {
+                if let Err(err) = resolve_embedder(provider_trimmed) {
+                    return Self::Invalid(err.to_string());
+                }
+            }
+        }
+
         let provider_mode = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .ok()
             .and_then(|value| ProviderMode::from_env(&value));
