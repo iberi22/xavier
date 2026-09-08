@@ -27,6 +27,34 @@ pub fn get_embedding_error_count() -> u64 {
     EMBEDDING_ERROR_COUNT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Returns the list of currently available / compiled-in embedding backends.
+pub fn available_embedders() -> Vec<&'static str> {
+    #[allow(unused_mut)]
+    let mut embedders = vec!["local", "cloud", "auto", "disabled"];
+    #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
+    embedders.push("gllm");
+    embedders
+}
+
+/// Validates and resolves an embedder backend name.
+/// Returns an error listing available compiled-in backends if the requested embedder is unknown or not compiled in.
+pub fn resolve_embedder(name: &str) -> Result<String, EmbeddingError> {
+    let trimmed = name.trim().to_ascii_lowercase();
+    match trimmed.as_str() {
+        "local" | "ollama" => Ok("local".to_string()),
+        "cloud" | "openai" | "openrouter" => Ok("cloud".to_string()),
+        "auto" => Ok("auto".to_string()),
+        "disabled" | "noop" => Ok("disabled".to_string()),
+        "gllm" | "local-gllm" | "local_gllm" => Ok("gllm".to_string()),
+        _ => {
+            let avail = available_embedders().join(", ");
+            Err(EmbeddingError::Config(format!(
+                "embedder '{trimmed}' not compiled in; available: [{avail}]"
+            )))
+        }
+    }
+}
+
 const DEFAULT_LOCAL_EMBEDDING_ENDPOINT: &str = "http://localhost:11434/v1/embeddings";
 const DEFAULT_LOCAL_EMBEDDING_MODEL: &str = "embeddinggemma";
 const DEFAULT_CLOUD_EMBEDDING_ENDPOINT: &str = "https://api.openai.com/v1/embeddings";
@@ -136,30 +164,57 @@ pub(crate) enum EmbedderConfig {
 impl EmbedderConfig {
     /// From env.
     pub fn from_env() -> Self {
-        let provider_mode = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
-            .ok()
-            .and_then(|value| ProviderMode::from_env(&value));
-        let api_flavor = std::env::var("XAVIER_EMBEDDING_API_FLAVOR")
-            .ok()
-            .and_then(|value| ApiFlavor::from_env(&value))
-            .unwrap_or(ApiFlavor::OpenAICompatible);
+        let provider_mode_str = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE").ok();
+        if let Some(ref mode_str) = provider_mode_str {
+            if let Err(EmbeddingError::Config(msg)) = resolve_embedder(mode_str) {
+                return Self::Invalid(msg);
+            }
+        }
 
         let explicit_embedder = std::env::var("XAVIER_EMBEDDER")
             .ok()
             .map(|value| value.trim().to_ascii_lowercase());
 
+        if let Some(ref embedder_str) = explicit_embedder {
+            match resolve_embedder(embedder_str) {
+                Ok(resolved) => {
+                    if resolved == "disabled" {
+                        return Self::Noop;
+                    } else if resolved == "gllm" {
+                        return Self::gllm_only();
+                    }
+                }
+                Err(EmbeddingError::Config(msg)) => {
+                    return Self::Invalid(msg);
+                }
+                Err(_) => {}
+            }
+        }
+
         let embed_provider = std::env::var("XAVIER_EMBED_PROVIDER")
             .ok()
             .map(|value| value.trim().to_ascii_lowercase());
+
+        if let Some(ref provider_str) = embed_provider {
+            if provider_str != "openrouter" && provider_str != "ollama" {
+                if let Err(EmbeddingError::Config(msg)) = resolve_embedder(provider_str) {
+                    return Self::Invalid(msg);
+                }
+            }
+        }
+
+        let provider_mode = provider_mode_str
+            .as_deref()
+            .and_then(ProviderMode::from_env);
+        let api_flavor = std::env::var("XAVIER_EMBEDDING_API_FLAVOR")
+            .ok()
+            .and_then(|value| ApiFlavor::from_env(&value))
+            .unwrap_or(ApiFlavor::OpenAICompatible);
 
         if provider_mode == Some(ProviderMode::Disabled)
             || explicit_embedder.as_deref() == Some("disabled")
         {
             return Self::Noop;
-        }
-
-        if explicit_embedder.as_deref() == Some("gllm") {
-            return Self::gllm_only();
         }
 
         if api_flavor == ApiFlavor::AnthropicCompatible {

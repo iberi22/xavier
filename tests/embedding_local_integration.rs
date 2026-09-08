@@ -119,6 +119,73 @@ async fn test_encode_dimension_and_similarity() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_wave20_add_embed_search_roundtrip() -> Result<()> {
+    let dimension = 768;
+    let (url, _handle) = start_mock_ollama(dimension).await?;
+
+    std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "local");
+    std::env::set_var("XAVIER_EMBEDDING_LOCAL_URL", &url);
+    std::env::set_var("XAVIER_EMBEDDING_MODEL", "embeddinggemma");
+
+    // 1. Initialize store in temporary directory
+    let temp_dir = tempfile::tempdir()?;
+    let db_path = temp_dir.path().join("wave20_roundtrip.db");
+    let config = VecSqliteStoreConfig {
+        path: db_path,
+        embedding_dimensions: dimension,
+    };
+    let store = VecSqliteMemoryStore::new(config).await?;
+
+    // 2. Build local embedder
+    let embedder = build_embedder_from_env().await?;
+    assert_eq!(embedder.dimension(), dimension);
+
+    // 3. Generate embedding for unique memory content
+    let content = "Quantum computing algorithms for wave 20 local embeddings roundtrip";
+    let embedding = embedder.encode(content).await?;
+    assert!(!embedding.is_empty(), "embedding length must be > 0");
+    assert_eq!(embedding.len(), dimension);
+
+    let record_id = "wave20-memory-unique-001";
+    let record = MemoryRecord {
+        id: record_id.to_string(),
+        workspace_id: "ws-wave20".to_string(),
+        path: "notes/quantum.md".to_string(),
+        content: content.to_string(),
+        embedding,
+        ..Default::default()
+    };
+
+    // 4. Store memory
+    store.put(record).await?;
+
+    // 5. Query and verify hybrid search returns the record as top-1
+    let query_text = "wave 20 local embeddings";
+    let query_embedding = embedder.encode(query_text).await?;
+
+    let results = store
+        .hybrid_search_with_embedding("ws-wave20", query_text, query_embedding, None, 5)
+        .await?;
+
+    assert!(
+        !results.is_empty(),
+        "search results should not be empty for wave20 roundtrip"
+    );
+    assert_eq!(
+        results[0].record.id, record_id,
+        "inserted record must be returned as top-1 hit"
+    );
+    assert!(results[0].score > 0.0, "similarity score must be positive");
+
+    // Cleanup environment variables
+    std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+    std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+    std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_fallback_embedder() -> Result<()> {
     // 1. Mock a failing "cloud" server (Primary)
     let failing_listener = TcpListener::bind("127.0.0.1:0").await?;

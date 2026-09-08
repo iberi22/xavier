@@ -57,7 +57,7 @@ async fn start_mock_ollama_server(models: Vec<&'static str>) -> String {
     url
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_fallback_selection() {
     SYSTEM_ALERTS.clear();
@@ -97,7 +97,7 @@ async fn test_fallback_selection() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_no_system_alerts_on_fallback() {
     SYSTEM_ALERTS.clear();
@@ -143,7 +143,7 @@ async fn test_no_system_alerts_on_fallback() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_full_degraded_path() {
     SYSTEM_ALERTS.clear();
@@ -189,5 +189,40 @@ async fn test_full_degraded_path() {
             .iter()
             .map(|a| format!("[{}] {}", a.level, a.message))
             .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_wave20_unknown_embedder_fails_fast() {
+    SYSTEM_ALERTS.clear();
+
+    let env_vars = vec![
+        "XAVIER_EMBEDDING_PROVIDER_MODE",
+        "XAVIER_EMBEDDER",
+        "XAVIER_EMBEDCACHE_ENABLED",
+    ];
+    let _guard = EnvGuard::new(env_vars);
+
+    std::env::set_var("XAVIER_EMBEDCACHE_ENABLED", "false");
+    std::env::set_var("XAVIER_EMBEDDER", "nonexistent_backend_xyz");
+
+    let embedder_res = build_embedder_from_env().await;
+    assert!(
+        embedder_res.is_err(),
+        "build_embedder_from_env should fail fast for unknown embedder"
+    );
+
+    let err = embedder_res.err().unwrap();
+    let err_msg = err.to_string();
+    assert!(
+        err_msg.contains("not compiled in"),
+        "error message should state embedder not compiled in, got: {}",
+        err_msg
+    );
+    assert!(
+        err_msg.contains("available:"),
+        "error message should list available backends, got: {}",
+        err_msg
     );
 }
