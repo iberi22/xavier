@@ -203,7 +203,12 @@ pub async fn execute_rtk_command(
         let cleaned = filters::strip_ansi(&combined_raw);
         let lines: Vec<&str> = cleaned.lines().collect();
         if lines.len() > 100 {
-            let mut head = lines.iter().take(80).copied().collect::<Vec<_>>().join("\n");
+            let mut head = lines
+                .iter()
+                .take(80)
+                .copied()
+                .collect::<Vec<_>>()
+                .join("\n");
             head.push_str(&format!("\n... [{} lines truncated]", lines.len() - 80));
             head
         } else {
