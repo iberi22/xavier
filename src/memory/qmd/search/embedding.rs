@@ -143,21 +143,24 @@ pub async fn query_with_embedding_filtered(
 
         if context_terms.len() >= 2 {
             let expanded_query = format!("{} {}", processed_query, context_terms.join(" "));
-            if let Ok(expanded_vector) = generate_embedding(&expanded_query).await {
-                if !expanded_vector.is_empty() {
-                    return query_filtered(
-                        memory,
-                        &expanded_query,
-                        expanded_vector,
-                        limit,
-                        filters,
-                    )
+            // Bound the second embedding call with the same fallback budget:
+            // a slow provider must degrade, never hang the whole search.
+            let expanded_vector = match tokio::time::timeout(
+                std::time::Duration::from_millis(timeout_ms),
+                generate_embedding(&expanded_query),
+            )
+            .await
+            {
+                Ok(Ok(vector)) => vector,
+                _ => Vec::new(),
+            };
+            if !expanded_vector.is_empty() {
+                return query_filtered(memory, &expanded_query, expanded_vector, limit, filters)
                     .await
                     .map(|docs| EmbeddingSearchResult {
                         documents: docs,
                         degraded: false,
                     });
-                }
             }
         }
     }
@@ -168,4 +171,167 @@ pub async fn query_with_embedding_filtered(
             documents: docs,
             degraded,
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::sync::RwLock as AsyncRwLock;
+
+    const TEST_DIM: usize = 8;
+
+    fn test_doc(path: &str, content: &str) -> MemoryDocument {
+        MemoryDocument {
+            id: Some(path.to_string()),
+            path: path.to_string(),
+            content: content.to_string(),
+            metadata: serde_json::json!({}),
+            embedding: vec![0.5; TEST_DIM],
+            ..Default::default()
+        }
+    }
+
+    /// Minimal HTTP stub: fast on every route except POST /api/embed bodies
+    /// containing `slow_marker`, which sleep `slow_secs` before responding.
+    async fn run_slow_embed_server(slow_marker: &'static str, slow_secs: u64) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test embed server");
+        let addr = listener.local_addr().expect("test server addr");
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut chunk = vec![0u8; 8192];
+                    let mut req = Vec::new();
+                    loop {
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => {
+                                req.extend_from_slice(&chunk[..n]);
+                                if req.windows(4).any(|w| w == b"\r\n\r\n") {
+                                    break;
+                                }
+                                if req.len() > 65536 {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    let head_end = req.windows(4).position(|w| w == b"\r\n\r\n").unwrap_or(0) + 4;
+                    let head = String::from_utf8_lossy(&req[..head_end]).to_string();
+                    let content_len: usize = head
+                        .lines()
+                        .filter_map(|line| {
+                            let (k, v) = line.split_once(':')?;
+                            if k.trim().eq_ignore_ascii_case("content-length") {
+                                v.trim().parse::<usize>().ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .next()
+                        .unwrap_or(0);
+                    let mut body = req[head_end.min(req.len())..].to_vec();
+                    while body.len() < content_len {
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => body.extend_from_slice(&chunk[..n]),
+                        }
+                    }
+                    let body_str = String::from_utf8_lossy(&body);
+                    let (payload, status) = if head.starts_with("GET /v1/models") {
+                        (
+                            r#"{"object":"list","data":[{"id":"test-embed","object":"model"}]}"#
+                                .to_string(),
+                            200,
+                        )
+                    } else if head.starts_with("POST /api/embed") {
+                        if body_str.contains(slow_marker) {
+                            tokio::time::sleep(Duration::from_secs(slow_secs)).await;
+                        }
+                        let vec_json = ["0.5"; TEST_DIM].join(",");
+                        (
+                            format!(r#"{{"model":"test-embed","embeddings":[[{vec_json}]]}}"#),
+                            200,
+                        )
+                    } else {
+                        (r#"{"error":"not found"}"#.to_string(), 404)
+                    };
+                    let resp = format!(
+                        "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                        payload.len()
+                    );
+                    let _ = socket.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// The query-expansion embedding call must respect
+    /// XAVIER_EMBEDDING_FALLBACK_BUDGET_MS instead of hanging on a slow
+    /// provider (P0: POST /v1/memories/search hung, connections piled up).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_expanded_embedding_uses_fallback_budget() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        for key in [
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBED_PROVIDER",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_URL",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_OLLAMA_MODEL",
+            "XAVIER_OLLAMA_URL",
+            "XAVIER_OLLAMA_DIMS",
+            "XAVIER_EMBEDDING_FALLBACK_BUDGET_MS",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_API_KEY",
+            "XAVIER_EMBEDDING_CLOUD_MODEL",
+        ] {
+            std::env::remove_var(key);
+        }
+        // "registration" only appears in the *expanded* query (as a context
+        // term from the docs), so only the second embedding call is slow.
+        let base = run_slow_embed_server("registration", 3).await;
+        std::env::set_var("XAVIER_OLLAMA_URL", format!("{base}/api/embed"));
+        std::env::set_var("XAVIER_OLLAMA_MODEL", "test-embed");
+        std::env::set_var("XAVIER_OLLAMA_DIMS", TEST_DIM.to_string());
+        std::env::set_var("_XAVIER_TEST_OLLAMA_PROBE_URL", format!("{base}/v1/models"));
+        std::env::set_var("XAVIER_EMBEDDING_FALLBACK_BUDGET_MS", "500");
+
+        let docs = vec![
+            test_doc("notes/alpha", "alpha cluster registration workflow ledger"),
+            test_doc("notes/beta", "alpha cluster registration workflow index"),
+        ];
+        let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(docs)));
+
+        let start = Instant::now();
+        let result = query_with_embedding_filtered(&memory, "node provisioning", 5, None)
+            .await
+            .expect("search must not fail");
+        let elapsed = start.elapsed();
+
+        std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+
+        assert!(
+            !result.degraded,
+            "first embedding must succeed so the expansion path is exercised"
+        );
+        assert!(
+            !result.documents.is_empty(),
+            "hybrid search must return docs"
+        );
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "expanded embedding must respect the 500ms fallback budget, took {elapsed:?}"
+        );
+    }
 }
