@@ -8,8 +8,12 @@ OUTPUT_DIR="coverage"
 mkdir -p "$OUTPUT_DIR"
 
 # Args to tarpaulin
+# NOTE 2026-09-09: scoped to --package xavier --lib (same gate as CI test job).
+# --workspace pulls panel-ui/src-tauri -> glib-sys, which needs system
+# libglib2.0-dev absent on ubuntu-latest (see tarpaulin infra failure).
 ARGS=(
-  --workspace
+  --package xavier
+  --lib
   --features ci-safe
   --timeout 180
   --exclude-files "tests/*"
