@@ -75,6 +75,70 @@ impl PathChange {
     }
 }
 
+/// Default cap for indexed file size, extracted from tgrep's walker design
+/// (`DEFAULT_MAX_FILE_SIZE`). A file admitted to the walk is read fully into
+/// memory by [`parse_file`] and re-read on every incremental sync, so one
+/// giant generated artifact (minified bundle, lockfile, dump) can dominate
+/// indexing time and RAM. 64 MiB excludes only pathological outliers, and an
+/// explicitly synced path that exceeds it is reported, never silently parsed.
+pub const DEFAULT_MAX_FILE_SIZE: u64 = 64 * 1024 * 1024;
+
+/// Prefix size (bytes) sniffed for binary content. Same 8 KiB window tgrep
+/// uses: a NUL byte this early means the file is binary masquerading under a
+/// text extension — skip it before paying for a full read plus a parse.
+const BINARY_SNIFF_LEN: usize = 8 * 1024;
+
+/// Extensions rejected without reading any content (tgrep `BINARY_EXTENSIONS`).
+/// Defense in depth: the language filter in [`Indexer::collect_files`] already
+/// drops unknown extensions, but this list states the intent explicitly and
+/// short-circuits binaries before any IO beyond the directory walk.
+const BINARY_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "tiff", "tif", "psd", "mp3", "mp4", "avi",
+    "mkv", "mov", "wav", "flac", "ogg", "wma", "aac", "m4a", "webm", "zip", "tar", "gz", "bz2",
+    "xz", "zst", "7z", "rar", "lz4", "lzma", "cab", "exe", "dll", "so", "dylib", "obj", "o", "a",
+    "lib", "pdb", "wasm", "class", "jar", "pyc", "pyo", "beam", "pdf", "doc", "docx", "xls",
+    "xlsx", "ppt", "pptx", "ttf", "otf", "woff", "woff2", "eot", "bin", "dat", "db", "sqlite",
+    "sqlite3",
+];
+
+/// Files skipped during the walk, with the reason. Mirrors tgrep's
+/// `WalkResult` counters so an unindexed path is always explainable — a skip
+/// is reported, never silent.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct WalkSkipStats {
+    pub skipped_binary_ext: u64,
+    pub skipped_binary_content: u64,
+    pub skipped_too_large: u64,
+    pub skipped_errors: u64,
+}
+
+impl WalkSkipStats {
+    pub fn total(&self) -> u64 {
+        self.skipped_binary_ext
+            + self.skipped_binary_content
+            + self.skipped_too_large
+            + self.skipped_errors
+    }
+}
+
+/// True when the first [`BINARY_SNIFF_LEN`] bytes contain a NUL byte.
+/// Unreadable files return false here so they surface later with full IO
+/// context instead of being misclassified as binary.
+fn is_binary_content(path: &Path) -> bool {
+    use std::io::Read;
+    match std::fs::File::open(path) {
+        Ok(mut file) => {
+            let mut buf = [0u8; BINARY_SNIFF_LEN];
+            match file.read(&mut buf) {
+                Ok(0) => false,
+                Ok(n) => buf[..n].contains(&0),
+                Err(_) => false,
+            }
+        }
+        Err(_) => false,
+    }
+}
+
 pub struct Indexer {
     db: Arc<CodeGraphDB>,
     max_concurrent: usize,
@@ -114,7 +178,17 @@ impl Indexer {
             root
         );
 
-        let all_files = self.collect_files(root)?;
+        let (all_files, walk_skips) = self.collect_files(root)?;
+        if walk_skips.total() > 0 {
+            info!(
+                "Walk skipped {} files ({} binary-ext, {} binary-content, {} too-large, {} errors)",
+                walk_skips.total(),
+                walk_skips.skipped_binary_ext,
+                walk_skips.skipped_binary_content,
+                walk_skips.skipped_too_large,
+                walk_skips.skipped_errors
+            );
+        }
         let mut files_to_index = Vec::new();
         let mut files_to_mtime = HashMap::new();
         let mut files_to_delete = Vec::new();
@@ -405,7 +479,15 @@ impl Indexer {
     }
 
     /// Collect all relevant files in a directory using .gitignore/.ignore aware traversal.
-    fn collect_files(&self, root: &Path) -> Result<Vec<PathBuf>> {
+    ///
+    /// Walk policy (techniques extracted from tgrep, kept minimal):
+    /// - binary extensions are rejected from the name alone (no IO),
+    /// - files over [`DEFAULT_MAX_FILE_SIZE`] are skipped via walk metadata,
+    /// - remaining candidates get an 8 KiB NUL sniff before admission.
+    ///
+    /// Every skip is counted in the returned [`WalkSkipStats`] so callers can
+    /// report *why* a path was not indexed instead of staying silent.
+    fn collect_files(&self, root: &Path) -> Result<(Vec<PathBuf>, WalkSkipStats)> {
         let excludes = build_excludes(&[
             "**/target/**",
             "**/.git/**",
@@ -421,6 +503,7 @@ impl Indexer {
         ]);
 
         let mut files = Vec::new();
+        let mut skips = WalkSkipStats::default();
         let walker = WalkBuilder::new(root)
             .hidden(false)
             .git_ignore(true)
@@ -434,6 +517,7 @@ impl Indexer {
                 Ok(entry) => entry,
                 Err(error) => {
                     warn!("Error walking directory: {}", error);
+                    skips.skipped_errors += 1;
                     continue;
                 }
             };
@@ -444,8 +528,39 @@ impl Indexer {
             if excludes.as_ref().is_some_and(|set| set.is_match(path)) {
                 continue;
             }
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if Language::from_extension_with_plugins(ext, self.plugin_host.discovery())
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if BINARY_EXTENSIONS.contains(&ext.as_str()) {
+                skips.skipped_binary_ext += 1;
+                continue;
+            }
+            match entry.metadata() {
+                Ok(meta) if meta.len() > DEFAULT_MAX_FILE_SIZE => {
+                    debug!(
+                        "Skipping oversize file {:?} ({} bytes > {} MiB cap)",
+                        path,
+                        meta.len(),
+                        DEFAULT_MAX_FILE_SIZE / (1024 * 1024)
+                    );
+                    skips.skipped_too_large += 1;
+                    continue;
+                }
+                Err(error) => {
+                    warn!("Cannot stat {:?}: {}", path, error);
+                    skips.skipped_errors += 1;
+                    continue;
+                }
+                _ => {}
+            }
+            if is_binary_content(path) {
+                debug!("Skipping binary-content file {:?}", path);
+                skips.skipped_binary_content += 1;
+                continue;
+            }
+            if Language::from_extension_with_plugins(&ext, self.plugin_host.discovery())
                 == Language::Unknown
             {
                 continue;
@@ -453,7 +568,7 @@ impl Indexer {
             files.push(path.to_path_buf());
         }
 
-        Ok(files)
+        Ok((files, skips))
     }
 }
 
@@ -478,6 +593,25 @@ async fn parse_file(
     // We try to parse even if lang is Unknown because a plugin might handle it by extension
     // But for now, we follow the discovery logic in PluginHost::parser_for which might return NoOp
 
+    // Walk-independent guards: explicit path deltas (apply_paths / sync --git)
+    // bypass collect_files, so the same policy is enforced here. A skip
+    // surfaces as a warning via parse_and_persist, never as a batch failure.
+    let size = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
+    if size > DEFAULT_MAX_FILE_SIZE {
+        return Err(GraphError::Skipped(format!(
+            "{} is {} bytes, over the {} MiB walk cap",
+            file_path.display(),
+            size,
+            DEFAULT_MAX_FILE_SIZE / (1024 * 1024)
+        )));
+    }
+    if is_binary_content(file_path) {
+        return Err(GraphError::Skipped(format!(
+            "{} looks binary (NUL byte in first {} bytes)",
+            file_path.display(),
+            BINARY_SNIFF_LEN
+        )));
+    }
     let source = std::fs::read_to_string(file_path).map_err(GraphError::Io)?;
     let relative_path = file_path
         .strip_prefix(root)
@@ -775,7 +909,7 @@ mod tests {
 
         let stats = indexer.index(dir.path(), false).await.expect("index");
         println!("DEBUG STATS: {:?}", stats);
-        let collected_files = indexer.collect_files(dir.path()).expect("collect_files");
+        let (collected_files, _) = indexer.collect_files(dir.path()).expect("collect_files");
         println!("DEBUG COLLECTED FILES: {:?}", collected_files);
 
         assert_eq!(stats.total_files, 2);
@@ -795,7 +929,7 @@ mod tests {
 
         let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
         let indexer = Indexer::new(db);
-        let files = indexer.collect_files(dir.path()).expect("collect");
+        let (files, _) = indexer.collect_files(dir.path()).expect("collect");
 
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("main.rs"));
@@ -892,7 +1026,7 @@ mod tests {
         // We can't easily swap the engine in an existing Indexer/PluginHost,
         // but for collect_files test we don't even need the engine.
 
-        let files = indexer.collect_files(dir.path()).expect("collect");
+        let (files, _) = indexer.collect_files(dir.path()).expect("collect");
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("script.rb"));
 
@@ -909,7 +1043,7 @@ mod tests {
         let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
         let indexer = Indexer::new(db.clone());
 
-        let files = indexer.collect_files(dir.path()).expect("collect");
+        let (files, _) = indexer.collect_files(dir.path()).expect("collect");
         assert_eq!(files.len(), 0);
     }
 
@@ -925,6 +1059,79 @@ mod tests {
         assert_eq!(stats.total_files, 1);
         assert!(stats.total_symbols >= 1);
         assert_eq!(stats.languages[0].lang, Language::Rust);
+    }
+
+    #[test]
+    fn walk_skips_binary_extension_before_any_io() {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").expect("write rs");
+        std::fs::write(dir.path().join("logo.png"), [0x89, b'P', b'N', b'G']).expect("write png");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db);
+        let (files, skips) = indexer.collect_files(dir.path()).expect("collect");
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("main.rs"));
+        assert_eq!(skips.skipped_binary_ext, 1);
+        assert_eq!(skips.total(), 1);
+    }
+
+    #[test]
+    fn walk_skips_nul_masquerading_as_source() {
+        let dir = TempDir::new().expect("temp dir");
+        let mut payload = b"fn fake() {}\n".to_vec();
+        payload.push(0);
+        payload.extend_from_slice(b"trailing bytes");
+        std::fs::write(dir.path().join("fake.rs"), payload).expect("write fake rs");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db);
+        let (files, skips) = indexer.collect_files(dir.path()).expect("collect");
+
+        assert!(files.is_empty());
+        assert_eq!(skips.skipped_binary_content, 1);
+    }
+
+    #[test]
+    fn walk_skips_oversize_files_without_reading_them() {
+        let dir = TempDir::new().expect("temp dir");
+        // Sparse grow: metadata reports the size instantly, no big write.
+        let big = std::fs::File::create(dir.path().join("bundle.js")).expect("create");
+        big.set_len(DEFAULT_MAX_FILE_SIZE + 1).expect("sparse grow");
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").expect("write rs");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db);
+        let (files, skips) = indexer.collect_files(dir.path()).expect("collect");
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("main.rs"));
+        assert_eq!(skips.skipped_too_large, 1);
+    }
+
+    #[test]
+    fn walk_reports_zero_skips_for_clean_tree() {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").expect("write rs");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db);
+        let (files, skips) = indexer.collect_files(dir.path()).expect("collect");
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(skips.total(), 0);
+    }
+
+    #[tokio::test]
+    async fn parse_file_rejects_oversize_explicit_paths() {
+        let dir = TempDir::new().expect("temp dir");
+        let big_path = dir.path().join("huge.rs");
+        let big = std::fs::File::create(&big_path).expect("create");
+        big.set_len(DEFAULT_MAX_FILE_SIZE + 1).expect("sparse grow");
+
+        let res = parse_file(dir.path(), &big_path, None).await;
+        assert!(matches!(res, Err(GraphError::Skipped(_))));
     }
 
     #[tokio::test]
