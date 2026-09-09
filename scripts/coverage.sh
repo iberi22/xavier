@@ -24,6 +24,12 @@ ARGS=(
   --output-dir "$OUTPUT_DIR"
 )
 
+# Engine override: TARPAULIN_ENGINE=llvm (nightly + llvm-tools) works around
+# ptrace-engine const-eval failures on SIMD crates (pulp via qrcode).
+if [ -n "${TARPAULIN_ENGINE:-}" ]; then
+  ARGS+=(--engine "$TARPAULIN_ENGINE")
+fi
+
 case "$MODULE" in
   mesh)
     ARGS+=(--include-files "src/mesh/*")
