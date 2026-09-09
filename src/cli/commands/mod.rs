@@ -63,12 +63,19 @@ impl Cli {
             port: None,
             mcp_port: None,
             no_ui: false,
+            http: false,
+            host: None,
         }) {
             Command::Http {
                 port,
                 mcp_port,
                 no_ui,
+                http: _,
+                host,
             } => {
+                if let Some(ref h) = host {
+                    std::env::set_var("XAVIER_HTTP_HOST", h);
+                }
                 let port = port.unwrap_or_else(resolve_http_port);
                 start_http_server(port, *mcp_port, *no_ui).await
             }
