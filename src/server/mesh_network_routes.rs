@@ -62,6 +62,8 @@ pub struct NetworkRecord {
     pub name: String,
     pub template: NetworkTemplate,
     pub is_host: bool,
+    #[serde(default, alias = "public")]
+    pub is_public: bool,
     pub owner_node: String,
     pub members: Vec<String>,
     pub acl: NetworkAcl,
@@ -78,6 +80,8 @@ pub struct CreateMeshNetworkRequest {
     pub template: NetworkTemplate,
     #[serde(default)]
     pub is_host: bool,
+    #[serde(default, alias = "public")]
+    pub is_public: bool,
     #[serde(default)]
     pub owner_node: Option<String>,
 }
@@ -89,6 +93,8 @@ pub struct MeshNetworkResponse {
     pub name: String,
     pub template: NetworkTemplate,
     pub is_host: bool,
+    #[serde(default, alias = "public")]
+    pub is_public: bool,
     pub owner_node: String,
     pub members: Vec<String>,
     pub created_at: DateTime<Utc>,
@@ -102,6 +108,7 @@ impl From<&NetworkRecord> for MeshNetworkResponse {
             name: rec.name.clone(),
             template: rec.template,
             is_host: rec.is_host,
+            is_public: rec.is_public,
             owner_node: rec.owner_node.clone(),
             members: rec.members.clone(),
             created_at: rec.created_at,
@@ -126,6 +133,22 @@ pub struct NetworkInviteResponse {
     pub token: String,
     pub qr_code: String,
     pub expires_at: DateTime<Utc>,
+}
+
+/// Request body for POST /v1/mesh/networks/join and POST /v1/mesh/networks/{id}/join.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct JoinNetworkRequest {
+    pub token: String,
+    #[serde(default)]
+    pub node_id: Option<String>,
+}
+
+/// Request body for POST /v1/mesh/networks/accept.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct AcceptInviteRequest {
+    pub token: String,
+    #[serde(default)]
+    pub node_id: Option<String>,
 }
 
 /// Internal thread-safe store for mesh networks.
@@ -180,6 +203,7 @@ impl MeshNetworkStore {
         name: String,
         template: NetworkTemplate,
         is_host: bool,
+        is_public: bool,
         owner_node: String,
     ) -> Result<NetworkRecord, String> {
         let mut lock = self.networks.write().map_err(|e| e.to_string())?;
@@ -193,6 +217,7 @@ impl MeshNetworkStore {
             name,
             template,
             is_host,
+            is_public,
             owner_node: owner_node.clone(),
             members: vec![owner_node],
             acl: template.default_acl(),
@@ -220,6 +245,21 @@ impl MeshNetworkStore {
         } else {
             None
         }
+    }
+
+    pub fn add_member(&self, id: &str, node_id: String) -> Result<NetworkRecord, String> {
+        let mut lock = self.networks.write().map_err(|e| e.to_string())?;
+        let record = lock
+            .get_mut(id)
+            .ok_or_else(|| format!("Network '{}' not found", id))?;
+        if !record.members.contains(&node_id) {
+            record.members.push(node_id);
+            record.updated_at = Utc::now();
+        }
+        let record_cloned = record.clone();
+        drop(lock);
+        self.save();
+        Ok(record_cloned)
     }
 }
 
@@ -268,6 +308,7 @@ pub async fn create_network(
         payload.name,
         payload.template,
         payload.is_host,
+        payload.is_public,
         owner_node,
     ) {
         Ok(record) => (
@@ -338,11 +379,110 @@ pub async fn generate_invite(
         .into_response()
 }
 
+/// Helper function to parse and validate network invite tokens.
+pub fn parse_and_validate_invite_token(token: &str) -> Result<(String, i64), String> {
+    let parts: Vec<&str> = token.split(':').collect();
+    if parts.len() < 7 || parts[0] != "xavier" || parts[1] != "invite" || parts[2] != "v1" {
+        return Err("Invalid invite token format".to_string());
+    }
+    let network_id = parts[3].to_string();
+    let expires_at_ts: i64 = parts[5]
+        .parse()
+        .map_err(|_| "Invalid expiration timestamp in invite token".to_string())?;
+
+    if Utc::now().timestamp() > expires_at_ts {
+        return Err("Invite token expired".to_string());
+    }
+
+    Ok((network_id, expires_at_ts))
+}
+
+/// Handler for POST /v1/mesh/networks/join.
+pub async fn join_network(
+    State(state): State<MeshNetworkState>,
+    Json(payload): Json<JoinNetworkRequest>,
+) -> impl IntoResponse {
+    let (net_id, _) = match parse_and_validate_invite_token(&payload.token) {
+        Ok(res) => res,
+        Err(err) => {
+            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": err }))).into_response();
+        }
+    };
+
+    let node_id = payload
+        .node_id
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "node-self".to_string());
+
+    match state.store.add_member(&net_id, node_id) {
+        Ok(record) => (StatusCode::OK, Json(MeshNetworkResponse::from(&record))).into_response(),
+        Err(err) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": err }))).into_response(),
+    }
+}
+
+/// Handler for POST /v1/mesh/networks/:id/join.
+pub async fn join_network_by_id(
+    State(state): State<MeshNetworkState>,
+    Path(path_id): Path<String>,
+    Json(payload): Json<JoinNetworkRequest>,
+) -> impl IntoResponse {
+    let (net_id, _) = match parse_and_validate_invite_token(&payload.token) {
+        Ok(res) => res,
+        Err(err) => {
+            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": err }))).into_response();
+        }
+    };
+
+    if net_id != path_id {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": format!("Token network '{}' does not match path network '{}'", net_id, path_id) })),
+        )
+            .into_response();
+    }
+
+    let node_id = payload
+        .node_id
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "node-self".to_string());
+
+    match state.store.add_member(&net_id, node_id) {
+        Ok(record) => (StatusCode::OK, Json(MeshNetworkResponse::from(&record))).into_response(),
+        Err(err) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": err }))).into_response(),
+    }
+}
+
+/// Handler for POST /v1/mesh/networks/accept.
+pub async fn accept_invite(
+    State(state): State<MeshNetworkState>,
+    Json(payload): Json<AcceptInviteRequest>,
+) -> impl IntoResponse {
+    let (net_id, _) = match parse_and_validate_invite_token(&payload.token) {
+        Ok(res) => res,
+        Err(err) => {
+            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": err }))).into_response();
+        }
+    };
+
+    let node_id = payload
+        .node_id
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "node-self".to_string());
+
+    match state.store.add_member(&net_id, node_id) {
+        Ok(record) => (StatusCode::OK, Json(MeshNetworkResponse::from(&record))).into_response(),
+        Err(err) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": err }))).into_response(),
+    }
+}
+
 /// Build router for mesh network REST endpoints.
 pub fn router(state: MeshNetworkState) -> Router {
     Router::new()
         .route("/v1/mesh/networks", post(create_network).get(list_networks))
         .route("/v1/mesh/networks/{id}/invite", get(generate_invite))
+        .route("/v1/mesh/networks/join", post(join_network))
+        .route("/v1/mesh/networks/{id}/join", post(join_network_by_id))
+        .route("/v1/mesh/networks/accept", post(accept_invite))
         .with_state(state)
 }
 
@@ -474,7 +614,102 @@ mod tests {
             .uri("/v1/mesh/networks/non-existent-net/invite")
             .body(Body::empty())
             .unwrap();
-        let resp = app.oneshot(missing_invite_req).await.unwrap();
+        let resp = app.clone().oneshot(missing_invite_req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        // 8. Join network via /v1/mesh/networks/join
+        let join_req = Request::builder()
+            .method("POST")
+            .uri("/v1/mesh/networks/join")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "token": invite_resp.token,
+                    "node_id": "node-peer-1"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(join_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let join_resp: MeshNetworkResponse = serde_json::from_slice(&body).unwrap();
+        assert!(join_resp.members.contains(&"node-peer-1".to_string()));
+
+        // 9. Accept invite via /v1/mesh/networks/accept
+        let accept_req = Request::builder()
+            .method("POST")
+            .uri("/v1/mesh/networks/accept")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "token": invite_resp.token,
+                    "node_id": "node-peer-2"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(accept_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let accept_resp: MeshNetworkResponse = serde_json::from_slice(&body).unwrap();
+        assert!(accept_resp.members.contains(&"node-peer-2".to_string()));
+
+        // 10. Join by network ID /v1/mesh/networks/:id/join
+        let join_by_id_req = Request::builder()
+            .method("POST")
+            .uri("/v1/mesh/networks/net-enterprise-01/join")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "token": invite_resp.token,
+                    "node_id": "node-peer-3"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(join_by_id_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let join_by_id_resp: MeshNetworkResponse = serde_json::from_slice(&body).unwrap();
+        assert!(join_by_id_resp.members.contains(&"node-peer-3".to_string()));
+
+        // 11. Create public network and verify public flag
+        let create_pub_req = Request::builder()
+            .method("POST")
+            .uri("/v1/mesh/networks")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "id": "net-public-01",
+                    "name": "Public Mesh Commons",
+                    "template": "dao",
+                    "is_host": false,
+                    "public": true
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.clone().oneshot(create_pub_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let pub_resp: MeshNetworkResponse = serde_json::from_slice(&body).unwrap();
+        assert!(pub_resp.is_public);
+
+        // 12. Invalid/expired invite token returns 400
+        let invalid_join_req = Request::builder()
+            .method("POST")
+            .uri("/v1/mesh/networks/join")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "token": "invalid:token:format",
+                    "node_id": "node-bad"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let resp = app.oneshot(invalid_join_req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 }
