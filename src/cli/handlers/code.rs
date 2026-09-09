@@ -1505,56 +1505,75 @@ fn code_find_symbols(
 ) -> Vec<code_graph::types::Symbol> {
     let limit = limit.clamp(1, 100);
 
-    if let Some(n) = name {
-        return code_query.find_by_name(n, limit).unwrap_or_default();
-    }
-
-    let broad_limit = if query.trim().is_empty() {
+    let broad_limit = if query.trim().is_empty() && name.is_none() {
         limit
     } else {
         10_000
     };
 
-    let (mut symbols, is_listing) = if let Some(pattern) = pattern.filter(|p| !p.trim().is_empty())
-    {
+    let mut symbols = if let Some(n) = name.filter(|s| !s.trim().is_empty()) {
+        code_query.find_by_name(n, broad_limit).unwrap_or_default()
+    } else if let Some(pattern) = pattern.filter(|p| !p.trim().is_empty()) {
         if is_supported_code_pattern(pattern) {
-            (
-                code_query
-                    .search_by_pattern(pattern, broad_limit)
-                    .unwrap_or_default(),
-                true,
-            )
+            code_query
+                .search_by_pattern(pattern, broad_limit)
+                .unwrap_or_default()
         } else {
-            (
-                search_code_symbols_with_fallback(code_query, pattern, broad_limit),
-                false,
-            )
+            search_code_symbols_with_fallback(code_query, pattern, broad_limit)
         }
-    } else if let Some(kind) = kind.filter(|k| !k.trim().is_empty()) {
-        match kind.to_ascii_lowercase().as_str() {
-            "function" | "fn" => (code_query.functions(broad_limit).unwrap_or_default(), true),
-            "struct" => (code_query.structs(broad_limit).unwrap_or_default(), true),
-            "class" => (code_query.classes(broad_limit).unwrap_or_default(), true),
-            "enum" => (code_query.enums(broad_limit).unwrap_or_default(), true),
-            "route" | "http_route" => (code_query.routes(broad_limit).unwrap_or_default(), true),
-            _ => (
-                search_code_symbols_with_fallback(code_query, query, broad_limit),
-                false,
-            ),
+    } else if let Some(k) = kind.filter(|k| !k.trim().is_empty()) {
+        match k.to_ascii_lowercase().as_str() {
+            "function" | "fn" => code_query.functions(broad_limit).unwrap_or_default(),
+            "struct" => code_query.structs(broad_limit).unwrap_or_default(),
+            "class" => code_query.classes(broad_limit).unwrap_or_default(),
+            "enum" => code_query.enums(broad_limit).unwrap_or_default(),
+            "route" | "http_route" => code_query.routes(broad_limit).unwrap_or_default(),
+            _ => search_code_symbols_with_fallback(code_query, query, broad_limit),
         }
     } else {
-        (
-            search_code_symbols_with_fallback(code_query, query, broad_limit),
-            false,
-        )
+        search_code_symbols_with_fallback(code_query, query, broad_limit)
     };
 
-    if is_listing {
-        filter_symbols_by_query(&mut symbols, query);
+    // Post-filter by query if supplied
+    filter_symbols_by_query(&mut symbols, query);
+
+    // Post-filter by kind if supplied (handles all SymbolKind variants)
+    if let Some(k) = kind.filter(|k| !k.trim().is_empty()) {
+        filter_symbols_by_kind(&mut symbols, k);
     }
 
     symbols.truncate(limit);
     symbols
+}
+
+fn filter_symbols_by_kind(symbols: &mut Vec<code_graph::types::Symbol>, kind_str: &str) {
+    let target = kind_str.trim().to_ascii_lowercase();
+    symbols.retain(|symbol| {
+        let actual = format!("{:?}", symbol.kind).to_ascii_lowercase();
+        match target.as_str() {
+            "function" | "fn" => actual == "function",
+            "struct" => actual == "struct",
+            "enum" => actual == "enum",
+            "class" => actual == "class",
+            "method" => actual == "method",
+            "variable" | "var" => actual == "variable",
+            "constant" | "const" => actual == "constant",
+            "trait" => actual == "trait",
+            "impl" => actual == "impl",
+            "module" | "mod" => actual == "module",
+            "file" => actual == "file",
+            "import" => actual == "import",
+            "export" => actual == "export",
+            "route" | "http_route" => actual == "route",
+            "component" => actual == "component",
+            "property" => actual == "property",
+            "field" => actual == "field",
+            "parameter" | "param" => actual == "parameter",
+            "typealias" | "type_alias" | "type" => actual == "typealias",
+            "namespace" => actual == "namespace",
+            other => actual == other,
+        }
+    });
 }
 
 fn is_supported_code_pattern(pattern: &str) -> bool {
@@ -2130,7 +2149,7 @@ mod tests {
         db.insert_symbol(&s1).unwrap();
         db.insert_symbol(&s2).unwrap();
 
-        let query_engine = code_graph::query::QueryEngine::new(db);
+        let query_engine = code_graph::query::QueryEngine::new(db.clone());
 
         // Filter by kind "function"
         let res = code_find_symbols(&query_engine, "func", None, Some("function"), None, 10);
@@ -2141,6 +2160,35 @@ mod tests {
         let res = code_find_symbols(&query_engine, "struct", None, Some("struct"), None, 10);
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].name, "struct_two");
+
+        // Additional symbol kinds (Method, Variable)
+        let s3 = Symbol {
+            id: Some(3),
+            stable_id: Some("stable-3".to_string()),
+            name: "method_three".to_string(),
+            kind: SymbolKind::Method,
+            lang: Language::Rust,
+            file_path: "src/three.rs".to_string(),
+            start_line: 1,
+            end_line: 5,
+            start_col: 1,
+            end_col: 1,
+            signature: None,
+            parent: Some("struct_two".to_string()),
+            complexity: Some(1.0),
+        };
+        db.insert_symbol(&s3).unwrap();
+
+        let res_method = code_find_symbols(&query_engine, "", None, Some("method"), None, 10);
+        assert_eq!(res_method.len(), 1);
+        assert_eq!(res_method[0].name, "method_three");
+
+        // Combination of name and kind
+        let res_comb = code_find_symbols(&query_engine, "", Some("method_three"), Some("method"), None, 10);
+        assert_eq!(res_comb.len(), 1);
+
+        let res_mismatch = code_find_symbols(&query_engine, "", Some("method_three"), Some("struct"), None, 10);
+        assert_eq!(res_mismatch.len(), 0);
     }
 
     #[test]
