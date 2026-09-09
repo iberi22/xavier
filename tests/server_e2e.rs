@@ -101,6 +101,46 @@ async fn test_health_endpoint_via_xavier_binary() {
                 assert!(usage.get("optimization").is_some());
                 assert!(usage["optimization"].get("router_direct_count").is_some());
                 assert!(usage["optimization"].get("semantic_cache_hits").is_some());
+
+                // E2E Auth test for GET /v1/memories/{id}/outline
+                let outline_unauth = client
+                    .get(&format!("{url}/v1/memories/test-mem-id/outline"))
+                    .send()
+                    .await
+                    .expect("outline unauth response");
+                assert_eq!(outline_unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+                let outline_auth = client
+                    .get(&format!("{url}/v1/memories/non-existent-id/outline"))
+                    .header("X-Xavier-Token", "test-token")
+                    .send()
+                    .await
+                    .expect("outline auth response");
+                assert!(outline_auth.status().is_success());
+                let outline_json: serde_json::Value = outline_auth.json().await.expect("outline json");
+                assert_eq!(outline_json["status"], "error");
+                assert_eq!(outline_json["code"], "NOT_FOUND");
+
+                // E2E Auth test for POST /v1/memories/prune
+                let prune_unauth = client
+                    .post(&format!("{url}/v1/memories/prune"))
+                    .header("Content-Type", "application/json")
+                    .body(r#"{"older_than_days": 30, "dry_run": true}"#)
+                    .send()
+                    .await
+                    .expect("prune unauth response");
+                assert_eq!(prune_unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+                let prune_auth = client
+                    .post(&format!("{url}/v1/memories/prune"))
+                    .header("X-Xavier-Token", "test-token")
+                    .header("Content-Type", "application/json")
+                    .body(r#"{"older_than_days": 30, "dry_run": true}"#)
+                    .send()
+                    .await
+                    .expect("prune auth response");
+                assert!(prune_auth.status().is_success());
+
                 auth_checked = true;
                 break;
             }

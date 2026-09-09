@@ -211,3 +211,55 @@ Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes f
 | `-32002` | `XAVIER_ERROR_NOT_FOUND` | Requested resource (memory, project) not found |
 | `-32601` | `Method not found` | Standard JSON-RPC error for unknown methods |
 | `-32603` | `Internal error` | Unhandled internal exception |
+
+## Migration Guide: Deprecated `/mcp/tools` REST Endpoint -> JSON-RPC MCP (:8100)
+
+The REST endpoint `GET /mcp/tools` on the main API port (`:8006`) is **deprecated**.
+
+### Deprecation Response Signals
+
+When calling `GET http://localhost:8006/mcp/tools`, Xavier emits standard deprecation headers and payload:
+
+- **HTTP Headers:**
+  - `deprecation: true`
+  - `link: </mcp>; rel="successor-version"; title="JSON-RPC MCP on port 8100"`
+- **Response Body:**
+  ```json
+  {
+    "deprecated": true,
+    "note": "Legacy REST /mcp/tools on the main HTTP API (:8006). Prefer JSON-RPC MCP on port 8100 via `xavier mcp` or `xavier http --mcp-port`. Canonical agent loop: mem_search → memory_context/get_memory → create_memory.",
+    "tools": [ ... ]
+  }
+  ```
+
+### Migrating to Canonical JSON-RPC MCP (:8100)
+
+To migrate from the legacy REST endpoint to the full JSON-RPC MCP implementation:
+
+1. **Connect to the MCP HTTP port** (default: `http://localhost:8100/mcp`, enabled via `xavier http --mcp-port 8100` or `xavier mcp`).
+2. **Set authentication and protocol headers**:
+   - `X-Xavier-Token: <XAVIER_TOKEN>`
+   - `Content-Type: application/json`
+   - `MCP-Protocol-Version: 2026-07-28`
+3. **List available tools via `tools/list`**:
+   ```bash
+   curl -X POST http://localhost:8100/mcp \
+     -H "Content-Type: application/json" \
+     -H "X-Xavier-Token: $XAVIER_TOKEN" \
+     -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'
+   ```
+4. **Execute tool calls via `tools/call`**:
+   ```bash
+   curl -X POST http://localhost:8100/mcp \
+     -H "Content-Type: application/json" \
+     -H "X-Xavier-Token: $XAVIER_TOKEN" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": 2,
+       "method": "tools/call",
+       "params": {
+         "name": "mem_search",
+         "arguments": { "query": "memory architecture" }
+       }
+     }'
+   ```
