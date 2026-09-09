@@ -24,6 +24,9 @@ pub enum GraphError {
 
     #[error("Query error: {0}")]
     Query(String),
+
+    #[error("Skipped file: {0}")]
+    Skipped(String),
 }
 
 pub type Result<T> = std::result::Result<T, GraphError>;

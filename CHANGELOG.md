@@ -4,6 +4,9 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+### Added
+- **CodeGraph walk hardening** (`feat-codegraph-walk-hardening`, technique extracted from `microsoft/tgrep` v1.0.5): `collect_files` now rejects binary extensions without IO, skips files over the 64 MiB `DEFAULT_MAX_FILE_SIZE` cap via walk metadata, and sniffs the first 8 KiB for NUL bytes before admission; every skip is counted in the new `WalkSkipStats` and logged. `parse_file` enforces the same guards so explicit path deltas (`apply_paths` / `sync --git`) are covered too, via the new `GraphError::Skipped` variant (warn + continue, never a batch failure).
+
 ## [0.1.1] — 2026-09-02
 
 ### Fixed
