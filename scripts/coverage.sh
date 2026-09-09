@@ -26,9 +26,13 @@ ARGS=(
 
 # Engine override: TARPAULIN_ENGINE=llvm (nightly + llvm-tools) works around
 # ptrace-engine const-eval failures on SIMD crates (pulp via qrcode).
+# MUST come before the `--` test-args separator below.
 if [ -n "${TARPAULIN_ENGINE:-}" ]; then
   ARGS+=(--engine "$TARPAULIN_ENGINE")
 fi
+
+# Serial like the CI test gate: env-var tests (PLANKKA_*) race in parallel.
+ARGS+=(-- --test-threads=1)
 
 case "$MODULE" in
   mesh)
