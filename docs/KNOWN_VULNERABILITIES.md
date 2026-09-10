@@ -22,6 +22,13 @@ The remaining items are informational warnings (unmaintained crates) and one uns
 | openssl | CVE-2026-41677 | Low | Updated to 0.10.79 |
 | rustls-webpki | GHSA-82j2-j2ch-gfr8 | High | Updated to 0.103.13 |
 | rand | GHSA-cq8v-f236-94qc | Low | Updated to 0.8.6 / 0.9.4 |
+| notify | PR #2016 (v8.2.0) | Major Bump | Merged: upgraded workspace dependency to 8.2.0 |
+
+### Deferred / Rejected Major Upgrades (No Security Impact)
+| Package | PR / Version | Decision | Reason |
+|---------|--------------|----------|--------|
+| `rand` | PR #2015 (0.10.2) | Closed / Deferred | Major API breaking changes (`RngCore`, `thread_rng()`, `gen_range()`) across 50+ call sites & incompatible with current cryptographic dependencies (`ed25519-dalek`, `x25519-dalek`, `bip39`). |
+| `ulid` | PR #2017 (3.0.0) | Closed / Deferred | Breaking API change removing `Ulid::new()` across 70+ call sites with no security or performance benefit. |
 
 ### npm (package-lock.json)
 | Package | CVE | Severity | Resolution |
