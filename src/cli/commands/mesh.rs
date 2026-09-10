@@ -230,15 +230,70 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 if docs.is_empty() {
                     println!("No local memories to push.");
                 } else {
+                    // El transporte no soporta lotes grandes (el receptor corta la conexion) y el
+                    // tamaño NO depende del numero de documentos sino de su contenido: cada
+                    // MemoryDocument lleva sus embeddings serializados (~5 KB por documento), asi
+                    // que 2.000 docs daban ~9,5 MB y el push moria. Se acota por BYTES.
+                    const MAX_DOCS_PER_BATCH: usize = 2_000;
+                    const MAX_BYTES_PER_BATCH: usize = 1_500_000;
+
                     let mut manifest = xavier::sync::chunks::load_manifest(&sync_dir)?;
-                    let hash =
-                        xavier::sync::chunks::export_to_chunk(&sync_dir, &docs, &mut manifest)?;
 
-                    let chunk_path = sync_dir.join("chunks").join(format!("{}.jsonl.gz", hash));
-                    let data = std::fs::read(chunk_path)?;
+                    // Agrupar por tamaño estimado (contenido + vectores; un f32 se serializa como texto).
+                    let mut batches: Vec<Vec<_>> = Vec::new();
+                    let mut batch: Vec<_> = Vec::new();
+                    let mut bytes = 0usize;
+                    for doc in &docs {
+                        let est = doc.content.len()
+                            + doc.embedding.len() * 8
+                            + doc.content_vector.as_ref().map(|v| v.len() * 8).unwrap_or(0)
+                            + 256;
+                        if !batch.is_empty()
+                            && (bytes + est > MAX_BYTES_PER_BATCH
+                                || batch.len() >= MAX_DOCS_PER_BATCH)
+                        {
+                            batches.push(std::mem::take(&mut batch));
+                            bytes = 0;
+                        }
+                        bytes += est;
+                        batch.push(doc.clone());
+                    }
+                    if !batch.is_empty() {
+                        batches.push(batch);
+                    }
 
-                    println!("Pushing 1 chunk ({} docs) to {}...", docs.len(), node_id);
-                    let pushed = transport.push_chunks(peer, &token, &[(hash, data)]).await?;
+                    let total_batches = batches.len();
+                    let mut pushed_total: Vec<String> = Vec::new();
+
+                    for (idx, batch) in batches.iter().enumerate() {
+                        let hash =
+                            xavier::sync::chunks::export_to_chunk(&sync_dir, batch, &mut manifest)?;
+
+                        let chunk_path = sync_dir.join("chunks").join(format!("{}.jsonl.gz", hash));
+                        let data = std::fs::read(chunk_path)?;
+                        let kib = data.len() / 1024;
+
+                        // Ultima red de seguridad: avisar en vez de morir con un error opaco.
+                        if data.len() > 8 * 1024 * 1024 {
+                            println!(
+                                "⚠️  Lote {}/{} pesa {} KiB; conviene bajar MAX_BYTES_PER_BATCH.",
+                                idx + 1,
+                                total_batches,
+                                kib
+                            );
+                        }
+
+                        println!(
+                            "Pushing chunk {}/{} ({} docs, {} KiB) to {}...",
+                            idx + 1,
+                            total_batches,
+                            batch.len(),
+                            kib,
+                            node_id
+                        );
+                        let pushed = transport.push_chunks(peer, &token, &[(hash, data)]).await?;
+                        pushed_total.extend(pushed);
+                    }
 
                     // Publish manifest if in cloud mode
                     let mesh_manifest = xavier::mesh::protocol::MeshManifest {
@@ -258,7 +313,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
 
                     println!(
                         "✅ Push sync complete. Remote accepted {} chunks.",
-                        pushed.len()
+                        pushed_total.len()
                     );
                 }
             }
@@ -352,7 +407,18 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 .handshake_with_secret(&data.endpoint, &token, Some(data.secret))
                 .await
             {
-                Ok(_) => println!("✅ Connection verified and node registered!"),
+                Ok(_) => {
+                    // El peer ya verificó el handshake: refrescar last_seen_at y persistir.
+                    // Sin esto el registro queda con last_seen_at=None y el health calcula
+                    // un lag absurdo (now - 0) marcando el mesh como "degraded".
+                    if let Ok(mut reg) = PeerRegistry::load() {
+                        if let Some(existing) = reg.get_peer_mut(&data.node_id) {
+                            existing.last_seen_at = Some(chrono::Utc::now().timestamp());
+                        }
+                        let _ = reg.save();
+                    }
+                    println!("✅ Connection verified and node registered!");
+                }
                 Err(e) => println!("⚠️ Could not verify connection immediately: {}", e),
             }
         }
