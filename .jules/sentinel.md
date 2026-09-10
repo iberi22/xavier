@@ -8,7 +8,14 @@
 **Learning:** Even internal queries iterating over schema artifacts (e.g., `sqlite_master`) must assume inputs (like table names) might be tainted. SQLite identifier injection is distinct from value injection.
 **Prevention:** Always escape identifiers (tables, columns) by quoting them in double quotes and replacing `"` with `""` if parameterization is not supported for identifiers in the database driver.
 
+<<<<<<< HEAD
 ## 2026-09-06 - Directory Traversal Vulnerability in f12_routes.rs
 **Vulnerability:** A path parameter validation logic in `src/server/f12_routes.rs` explicitly allowed periods (`.`) without restricting `..`. This permitted a malicious actor to pass `..` as an ID, leading to directory traversal attacks when the parameter was used to construct file paths.
 **Learning:** Checking that all characters are alphanumeric or specific safe symbols (like `-`, `_`, `.`) is insufficient for preventing directory traversal. While slashes were blocked, `.join` semantics could still traverse up given `..`.
 **Prevention:** Always explicitly check for and reject `..` (e.g., `.contains("..")`) when validating path parameters that allow periods, before appending them to base directories.
+=======
+## 2026-09-08 - Path Traversal Vulnerability in F12 Routes
+**Vulnerability:** The F12 API handlers in `src/server/f12_routes.rs` validate path parameters like `id` and `repo` using `.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))`. This check permits strings containing `.` which allows directory traversal payloads like `..`
+**Learning:** Checking character by character (whitelisting alphanumeric + `.` + `-` + `_`) isn't sufficient when the order of those characters can create dangerous strings like `..` which can be used to escape the intended directory.
+**Prevention:** Always check for `..` specifically when `.` is allowed in a path parameter, or even better, use safe path resolution methods like `std::path::Path::canonicalize` and check if it starts with the expected base directory.
+>>>>>>> origin/main
