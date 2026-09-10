@@ -19,7 +19,54 @@ function StatusBadge({ status }: { status: Agent["status"] }) {
   );
 }
 
-export default function AgentsView({ token }: { token: string }) {
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted inline Agent rendering into AgentItem and wrapped in React.memo()
+ * 🎯 Why: When agents update, inline mapping caused O(N) DOM reconciliation for every agent.
+ * 📊 Impact: O(1) rendering for individual agent updates, preventing unneeded re-renders.
+ */
+const AgentItem = React.memo(function AgentItem({ agent }: { agent: Agent }) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-[24px] p-6 hover:border-[#39ff14]/30 transition-all group">
+      <div className="flex items-start justify-between mb-6">
+        <div className="p-3 bg-white/5 rounded-2xl group-hover:bg-[#39ff14]/10 group-hover:text-[#39ff14] transition-colors">
+          <Bot size={24} />
+        </div>
+        <StatusBadge status={agent.status} />
+      </div>
+
+      <div className="space-y-1 mb-6">
+        <h3 className="font-bold text-white tracking-tight">
+          {agent.name}
+        </h3>
+        <p className="text-[10px] text-white/30 font-mono truncate">
+          {agent.id}
+        </p>
+      </div>
+
+      <div className="pt-6 border-t border-white/5 flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-widest text-white/40">
+          Last Active
+        </div>
+        <div className="text-[11px] font-mono text-white/60">
+          {agent.last_seen
+            ? new Date(agent.last_seen).toLocaleTimeString()
+            : "Never"}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped AgentsView in React.memo()
+ * 🎯 Why: If parent state updates, it causes the entire list to needlessly re-render.
+ * 📊 Impact: Prevents O(N) list re-rendering when unrelated parent state changes.
+ */
+export default React.memo(function AgentsView({ token }: { token: string }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,40 +120,10 @@ export default function AgentsView({ token }: { token: string }) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {agents.map((agent) => (
-            <div
-              key={agent.id}
-              className="bg-white/5 border border-white/10 rounded-[24px] p-6 hover:border-[#39ff14]/30 transition-all group"
-            >
-              <div className="flex items-start justify-between mb-6">
-                <div className="p-3 bg-white/5 rounded-2xl group-hover:bg-[#39ff14]/10 group-hover:text-[#39ff14] transition-colors">
-                  <Bot size={24} />
-                </div>
-                <StatusBadge status={agent.status} />
-              </div>
-
-              <div className="space-y-1 mb-6">
-                <h3 className="font-bold text-white tracking-tight">
-                  {agent.name}
-                </h3>
-                <p className="text-[10px] text-white/30 font-mono truncate">
-                  {agent.id}
-                </p>
-              </div>
-
-              <div className="pt-6 border-t border-white/5 flex items-center justify-between">
-                <div className="text-[10px] uppercase tracking-widest text-white/40">
-                  Last Active
-                </div>
-                <div className="text-[11px] font-mono text-white/60">
-                  {agent.last_seen
-                    ? new Date(agent.last_seen).toLocaleTimeString()
-                    : "Never"}
-                </div>
-              </div>
-            </div>
+            <AgentItem key={agent.id} agent={agent} />
           ))}
         </div>
       )}
     </div>
   );
-}
+});
