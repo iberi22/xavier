@@ -104,14 +104,14 @@ async fn test_health_endpoint_via_xavier_binary() {
 
                 // E2E Auth test for GET /v1/memories/{id}/outline
                 let outline_unauth = client
-                    .get(&format!("{url}/v1/memories/test-mem-id/outline"))
+                    .get(format!("{url}/v1/memories/test-mem-id/outline"))
                     .send()
                     .await
                     .expect("outline unauth response");
                 assert_eq!(outline_unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
 
                 let outline_auth = client
-                    .get(&format!("{url}/v1/memories/non-existent-id/outline"))
+                    .get(format!("{url}/v1/memories/non-existent-id/outline"))
                     .header("X-Xavier-Token", "test-token")
                     .send()
                     .await
@@ -124,7 +124,7 @@ async fn test_health_endpoint_via_xavier_binary() {
 
                 // E2E Auth test for POST /v1/memories/prune
                 let prune_unauth = client
-                    .post(&format!("{url}/v1/memories/prune"))
+                    .post(format!("{url}/v1/memories/prune"))
                     .header("Content-Type", "application/json")
                     .body(r#"{"older_than_days": 30, "dry_run": true}"#)
                     .send()
@@ -133,7 +133,7 @@ async fn test_health_endpoint_via_xavier_binary() {
                 assert_eq!(prune_unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
 
                 let prune_auth = client
-                    .post(&format!("{url}/v1/memories/prune"))
+                    .post(format!("{url}/v1/memories/prune"))
                     .header("X-Xavier-Token", "test-token")
                     .header("Content-Type", "application/json")
                     .body(r#"{"older_than_days": 30, "dry_run": true}"#)
