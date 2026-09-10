@@ -32,6 +32,9 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
   const [headlessEnabled, setHeadlessEnabled] = useState(true);
   const [headlessPort, setHeadlessPort] = useState(8006);
 
+  const handleAgentToggle = useCallback(() => {}, []);
+  const handleAgentLogin = useCallback(() => {}, []);
+
   const fetchData = useCallback(async () => {
     try {
       const [scan, quotaList, configList] = await Promise.all([
@@ -271,17 +274,17 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
               </h3>
             </div>
             <CliAgentList
-              agents={[
-                { name: "Xavier Core", status: "logged_in", enabled: true },
-                { name: "Code Graph", status: "not_logged_in", enabled: true },
+              agents={useMemo(() => [
+                { name: "Xavier Core", status: "logged_in" as const, enabled: true },
+                { name: "Code Graph", status: "not_logged_in" as const, enabled: true },
                 {
                   name: "Swarm Master",
-                  status: "not_installed",
+                  status: "not_installed" as const,
                   enabled: false,
                 },
-              ]}
-              onToggle={() => {}}
-              onLogin={() => {}}
+              ], [])}
+              onToggle={handleAgentToggle}
+              onLogin={handleAgentLogin}
             />
           </section>
         </div>

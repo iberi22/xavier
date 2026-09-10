@@ -147,7 +147,6 @@ xavier/
 │   ├── MCP_CONTRACT.md
 │   ├── MEMORY.md
 │   ├── OPERATIONS.md
-│   ├── PUBLIC_RELEASE_ROADMAP.md
 │   ├── README.md
 │   ├── ROADMAP.md
 │   ├── SECURITY.md
@@ -163,8 +162,6 @@ xavier/
 │   │   ├── REQUIREMENTS.md
 │   │   ├── USER-STORIES.md
 │   │   └── index.md
-│   ├── XAVIER_DATA_COMMONS_ARCHITECTURE.md
-│   ├── XAVIER_DATA_COMMONS_FEATURES.md
 │   ├── XAVIER_RAG_GUIDE.md
 │   ├── adr/
 │   │   ├── 001-memory-domain.md
@@ -207,7 +204,6 @@ xavier/
 │   │   ├── CODE_REVIEW_GEMINI.md
 │   │   ├── CODE_REVIEW_MAY2026.md
 │   │   ├── CODE_REVIEW_REPORT.md
-│   │   ├── COMPETITIVE_ANALYSIS.md
 │   │   ├── CORTEX.md
 │   │   ├── CORTEX_NOTES.md
 │   │   ├── CORTEX_QUICK_REFERENCE.md
@@ -217,7 +213,6 @@ xavier/
 │   │   ├── DEPENDENCY_STRATEGY.md
 │   │   ├── FINE_TUNING_READINESS.md
 │   │   ├── GOVERNANCE_DAO_PLAN.md
-│   │   ├── GOVERNANCE_VISION.md
 │   │   ├── GRAPHIFY_INTEGRATION.md
 │   │   ├── GRAPH_LAYERS.md
 │   │   ├── HEARTBEAT.md
@@ -225,7 +220,6 @@ xavier/
 │   │   ├── IDENTITY.md
 │   │   ├── IMPROVEMENT_PLAN.md
 │   │   ├── INFOGRAPHIC_SYSTEM.md
-│   │   ├── INTERNAL_GOVERNANCE_DAO.md
 │   │   ├── JULES_PROMPTS_MAY2026.md
 │   │   ├── JULES_WORKFLOW.md
 │   │   ├── LICENSE_MIGRATION.md
@@ -242,7 +236,6 @@ xavier/
 │   │   ├── PLAN_TRES_MEMORIAS.md
 │   │   ├── PLAN_V1.md
 │   │   ├── POLYGON_ANCHORS.md
-│   │   ├── PRICING.md
 │   │   ├── REFACTOR_PLAN.md
 │   │   ├── REPO_RECONCILIATION_2026-05-08.md
 │   │   ├── ROADMAP_AND_AUDIT.md
@@ -259,7 +252,6 @@ xavier/
 │   │   ├── USER_GUIDE_LOCAL.md
 │   │   ├── VALIDATION_PROMPTS.md
 │   │   ├── VIDEO_SCRIPTS.md
-│   │   ├── WHITEPAPER_SOVEREIGN_MESH.md
 │   │   ├── WINDOWS_BUILD_INVESTIGATION.md
 │   │   ├── XAVIER_RAG_MEMORY_AUDIT.md
 │   │   ├── analysis/
@@ -279,12 +271,9 @@ xavier/
 │   │   └── ui/
 │   ├── benchmark/
 │   │   ├── BENCHMARK_COMPARISON.md
-│   │   ├── BENCHMARK_PLAN.md
-│   │   ├── DATA-MARKETPLACE.md
 │   │   └── REPORT.md
 │   ├── design/
 │   │   ├── F12-PRESERVACION-MINI-EXPERTOS.md
-│   │   └── F9-MESH-SWAL-PUBLICO-PRIVADO.md
 │   ├── devlog/
 │   │   ├── 2026-05-10-hexagonal-architecture.md
 │   │   ├── 2026-05-10-prompt-injection-detector.md

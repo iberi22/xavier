@@ -619,7 +619,7 @@
         "hash": "b1a4974b693767c93a22c561084490caa27c2bed",
         "message": "fix: remove strict literal filtering from semantic code search",
         "date": "2026-05-22",
-        "author": "beri <beri22@gmail.com>",
+        "author": "beri <dev@swal.dev>",
         "explanation": "<p><strong>Decisión Técnica:</strong> Se eliminó el filtro estricto por literales en las búsquedas semánticas generales. Esto permite que el agente use representaciones vectoriales completas al consultar conceptos amplios sin verse restringido a concordancias literales de caracteres.</p><ul><li>Se modificó la función <code>code_find_symbols</code> en <code>src/adapters/inbound/http/handlers/agent.rs</code>.</li><li>Se habilitó un flujo flexible preservando el filtrado estricto únicamente al listar tipos específicos.</li></ul>",
         "files": ["src/adapters/inbound/http/handlers/agent.rs", "src/api/search.rs"],
         "diffs": {
@@ -643,7 +643,7 @@
         "hash": "4e749c28221d5c2e82f1fd36e77f931dcc1dfdbb",
         "message": "Implement dynamic indexing lag calculation and improve fallback logic",
         "date": "2026-05-22",
-        "author": "beri <beri22@gmail.com>",
+        "author": "beri <dev@swal.dev>",
         "explanation": "<p><strong>Decisión Técnica:</strong> Introducción de un cálculo adaptativo para estimar el retardo (lag) de indexación en lugar del valor estático estático que causaba fallas falsas de salud de sistema.</p><ul><li>Monitorea y promedia los últimos 10 eventos de la cola de sincronización.</li><li>Actualiza la ruta <code>/health</code> con el estado en milisegundos dinámico real.</li></ul>",
         "files": ["src/tasks/session_sync_task.rs", "src/cli/server.rs"],
         "diffs": {
@@ -666,7 +666,7 @@
         "hash": "aa4e5f0b4c5056c46bd87da4659c517f6e890c3e",
         "message": "fix: DEFAULT_EMBEDDING_DIMENSIONS 768 -> 384 (smoke test blocker)",
         "date": "2026-05-21",
-        "author": "beri <beri22@gmail.com>",
+        "author": "beri <dev@swal.dev>",
         "explanation": "<p><strong>Decisión Técnica:</strong> Reducción de la dimensión de incrustación (embedding) por defecto a 384 dimensiones. Esto alinea la persistencia con modelos ligeros de codificadores MiniLM (todo un clásico en local de alto rendimiento) evitando errores de tamaño de tabla vec0.</p>",
         "files": ["src/memory/sqlite_vec_store.rs", "src/settings.rs"],
         "diffs": {
