@@ -80,6 +80,7 @@ pub use context_bridge::{BridgeKind, BridgeRegistry, ContextBridge};
 pub use dashboard::{aggregate_dashboard, MeshBandwidth, MeshDashboardResponse, MeshPeerHealth};
 pub use data_consent::{ActiveConsent, ConsentLevel, ConsentRecord, DataConsentManager};
 pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
+pub use discovery::{discover_mdns_peers, register_mdns_service, MeshNodeScanner, MeshScanReport};
 pub use fallback_transport::FallbackMeshTransport;
 #[cfg(feature = "mesh")]
 pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService, HeartbeatStatus};

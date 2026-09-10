@@ -58,7 +58,8 @@ members = [
 # the directory and its files remain in the repo.
 
 [features]
-default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage", "dao-evm"]
+default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage", "panel-ui"]
+panel-ui = []
 notification-in-app = []
 notification-webhook = []
 notification-email = []
@@ -182,6 +183,10 @@ name = "clearance_access_audit"
 path = "tests/e2e/clearance_access_audit.rs"
 
 [[test]]
+name = "xavier_repair_verify_wave20"
+path = "tests/e2e/xavier_repair_verify_wave20.rs"
+
+[[test]]
 name = "xtsp"
 path = "tests/xtsp/mod.rs"
 
@@ -192,6 +197,14 @@ path = "tests/ci_version_gate.test.rs"
 [[test]]
 name = "embedding_fallback_resilience"
 path = "tests/embedding_fallback_resilience_test.rs"
+
+[[test]]
+name = "kernel_proxy_test"
+path = "tests/kernel_proxy_test.rs"
+
+[[test]]
+name = "kernel_mcp_test"
+path = "tests/kernel_mcp_test.rs"
 
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
@@ -268,7 +281,7 @@ zerocopy = "0.8"
 # File traversal
 walkdir = "2"
 libc = "0.2"
-notify = "6.1.1"
+notify = "8.2.0"
 
 # Hardware Security
 keyring = "4"
