@@ -168,6 +168,13 @@ impl VecSqliteMemoryStore {
         let project_id_c = self.project_id.clone();
         let records = self.conn_provider
             .with_conn(&project_id_c, move |conn| {
+                // Self-heal before selecting: rows written while the embedder was
+                // unavailable have embedding NULL but a stale 'completed' status,
+                // and the SELECT below skips anything not pending/retry/NULL. Without
+                // this reconcile those rows are permanently invisible to reindexing.
+                if let Err(e) = Self::reconcile_embedding_status_conn(conn) {
+                    tracing::warn!("reindex: embedding_status reconcile failed: {}", e);
+                }
                 let sql = if let Some(lim) = limit {
                     format!(
                         "SELECT id, workspace_id, path, content, metadata, X'' AS embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv, embedding_status, embedding_attempts FROM memory_records WHERE embedding IS NULL AND (embedding_status IS NULL OR embedding_status = 'pending' OR embedding_status = 'retry') LIMIT {}",
@@ -955,6 +962,129 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res4, 0);
+
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::remove_var("XAVIER_EMBEDDING_URL");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_reindex_self_heals_stale_completed_rows_without_embedding() {
+        use crate::memory::store::MemoryStore;
+        let _temp_env = crate::settings::tests::TempEnv::new();
+
+        for key in &[
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+        ] {
+            std::env::remove_var(key);
+        }
+        std::env::set_var("XAVIER_EMBEDDER", "disabled");
+
+        let mut server = mockito::Server::new_async().await;
+        let mock_url = server.url();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_reindex_self_heal.db");
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        for i in 1..=3 {
+            let record = crate::memory::store::MemoryRecord {
+                id: format!("test_stale_mem_{}", i),
+                workspace_id: "test_ws_stale".to_string(),
+                path: format!("test/stale/{}", i),
+                content: format!("Stale content {}", i),
+                metadata: serde_json::json!({}),
+                embedding: vec![],
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                ..Default::default()
+            };
+            store.put(record).await.unwrap();
+        }
+
+        std::env::remove_var("XAVIER_EMBEDDER");
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
+        std::env::set_var(
+            "XAVIER_EMBEDDING_URL",
+            format!("{}/v1/embeddings", mock_url),
+        );
+        std::env::set_var("OPENAI_API_KEY", "test-api-key");
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "test-model");
+
+        let _mock = server
+            .mock("POST", "/v1/embeddings")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"
+                {
+                "data": [
+                    {
+                        "embedding": [0.1, 0.2, 0.3]
+                    }
+                ]
+            }"#,
+            )
+            .expect_at_least(3)
+            .create_async()
+            .await;
+
+        // Reproduce the production state that made reindexing a silent no-op:
+        // rows written while the embedder was unavailable keep embedding = NULL
+        // but were stamped 'completed', so the SELECT (pending/retry/NULL) missed
+        // them and the run reported "Success count: 0".
+        store
+            .conn_provider
+            .with_conn(&store.project_id, |conn| {
+                conn.execute(
+                    "UPDATE memory_records SET embedding = NULL, embedding_status = 'completed', embedding_attempts = 0",
+                    [],
+                )
+                .unwrap();
+                conn.execute("DELETE FROM memory_embeddings_768", [])
+                    .unwrap();
+                conn.execute("DELETE FROM memory_embeddings", []).unwrap();
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        let reindexed = store
+            .reindex_null_embeddings_background_with_limit(Some(10))
+            .await
+            .unwrap();
+        assert_eq!(
+            reindexed, 3,
+            "stale 'completed' rows with no embedding must be re-embedded"
+        );
+
+        let statuses: Vec<(String, String)> = store
+            .conn_provider
+            .with_conn(&store.project_id, |conn| {
+                let mut stmt =
+                    conn.prepare("SELECT id, embedding_status FROM memory_records ORDER BY id")?;
+                let rows = stmt
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .await
+            .unwrap();
+        assert_eq!(statuses.len(), 3);
+        assert!(statuses.iter().all(|(_, s)| s == "completed"));
 
         std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("XAVIER_EMBEDDING_URL");
