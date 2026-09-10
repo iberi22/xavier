@@ -166,7 +166,11 @@ impl Cli {
                 http::reindex_memories().await
             }
             Command::Code { cmd } => code::handle_code_command(cmd.clone()).await,
-            Command::Exec { command, session, cwd } => {
+            Command::Exec {
+                command,
+                session,
+                cwd,
+            } => {
                 if command.is_empty() {
                     anyhow::bail!("No command specified. Usage: xavier exec <command> [args...]");
                 }
@@ -175,7 +179,8 @@ impl Cli {
                     &full_cmd,
                     cwd.as_deref(),
                     session.as_deref(),
-                ).await?;
+                )
+                .await?;
                 println!("{}", res.output);
                 eprintln!(
                     "\n[xavier-proxy] tokens: raw ≈ {}, filtered ≈ {} | saved: {} ({:.1}%) in {}ms",
