@@ -1,6 +1,6 @@
 # FEATURE-070: Cloudflare Vectorize and Workers AI Edge Persistence Adapter Spec
 
-**Status:** `approved` | **Tier:** SWAL Partner Cloud ($9/mo) | **Last Updated:** 2026-03-31
+**Status:** `approved` | **Tier:** SWAL Partner Cloud (pricing pending — internal roadmap) | **Last Updated:** 2026-03-31
 
 ## Overview
 

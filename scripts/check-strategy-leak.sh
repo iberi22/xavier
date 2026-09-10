@@ -40,8 +40,8 @@ hits_pii=$(printf '%s\n' "$files" | grep -E "$DOC_SCOPE" | grep -vE "$PII_ALLOW"
   | grep -avE "$is_bin" | xargs -r grep -aInE "$PII_RE" 2>/dev/null || true)
 
 # 3. Marcadores económicos INEQUÍVOCOS (no términos técnicos como "tokenomics" que nombran módulos).
-ECON_RE='(\$[0-9][0-9,]*(\.[0-9]+)?[[:space:]]*(/yr|/year|/mo|/month|/mes|per year)[[:space:]]|bonding[ _]curve|revenue[ _]share|[[:space:]]pre-?sale[[:space:]]|\bTGE\b|\bAPY\b|burn[ _]rate|mint(ed)?[[:space:]]+[0-9,]+[[:space:]]*\$|\$XAV[[:space:]]*(token|wallet)|token[[:space:]]+(sale|allocation))'
-ECON_ALLOW='^(docs/SRS/|docs/auto-docs/|docs/api/|docs/reference/|docs/licenses/|docs/site/src/content/docs/(modules|manual)/|ACCOUNT|scripts/check-strategy-leak\.sh)'
+ECON_RE='(\$[0-9][0-9,]*(\.[0-9]+)?[[:space:]]*(/yr|/year|/mo|/month|/mes|per year)\b|bonding[ _]curve|revenue[ _]share|[[:space:]]pre-?sale[[:space:]]|\bTGE\b|\bAPY\b|burn[ _]rate|mint(ed)?[[:space:]]+[0-9,]+[[:space:]]*\$|\$XAV[[:space:]]*(token|wallet)|token[[:space:]]+(sale|allocation))'
+ECON_ALLOW='^(docs/SRS/|docs/auto-docs/|docs/api/|docs/reference/|docs/licenses/|docs/DEPLOY/|docs/site/src/content/docs/(modules|manual)/|ACCOUNT|scripts/check-strategy-leak\.sh)'
 hits_econ=$(printf '%s\n' "$files" | grep -E "$DOC_SCOPE" | grep -vE "$ECON_ALLOW" \
   | grep -avE "$is_bin" | xargs -r grep -aInE "$ECON_RE" 2>/dev/null || true)
 

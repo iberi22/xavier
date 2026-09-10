@@ -38,6 +38,12 @@ git add -f docs/_t6.md >/dev/null 2>&1
 $GATE --staged >/tmp/v_pii.txt 2>&1; check "detecta PII" 1 $?
 git rm -q --cached docs/_t6.md >/dev/null 2>&1; rm -f docs/_t6.md
 
+echo "T5b — debe DETECTAR precio sin espacio tras la unidad (regresion \$9/mo))"
+printf '# spec\n**Tier:** SWAL Partner Cloud ($9/mo) | x\n' > docs/_t5b.md
+git add -f docs/_t5b.md >/dev/null 2>&1
+$GATE --staged >/dev/null 2>&1; check "detecta (\$9/mo)" 1 $?
+git rm -q --cached docs/_t5b.md >/dev/null 2>&1; rm -f docs/_t5b.md
+
 echo "T7 — NO debe dar falso positivo con términos técnicos legítimos (staged)"
 printf '# Mesh\nModulos: `src/mesh/tokenomics/economy.rs` y el economic core $SWAL en L0-L1.\n' > docs/_t7.md
 git add -f docs/_t7.md >/dev/null 2>&1
