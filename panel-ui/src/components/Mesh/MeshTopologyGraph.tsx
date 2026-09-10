@@ -87,6 +87,161 @@ export function buildTopologyNodes(
 	return [masterNode, storageSubNode, ...mappedPeers];
 }
 
+const getClearanceBadgeClass = (level: ClearanceLevel) => {
+	switch (level) {
+		case "top_secret":
+			return "bg-purple-500/20 text-purple-300 border-purple-500/30";
+		case "secret":
+			return "bg-rose-500/20 text-rose-300 border-rose-500/30";
+		case "confidential":
+			return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+		default:
+			return "bg-slate-500/20 text-slate-300 border-slate-500/30";
+	}
+};
+
+const getStatusDot = (status: "online" | "degraded" | "offline") => {
+	switch (status) {
+		case "online":
+			return "bg-[#39ff14] shadow-[0_0_8px_#39ff14]";
+		case "degraded":
+			return "bg-amber-400 shadow-[0_0_8px_#fbbf24]";
+		case "offline":
+			return "bg-rose-500 shadow-[0_0_8px_#f43f5e]";
+	}
+};
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted Master Node inline map elements to MasterNodeCard and wrapped in React.memo()
+ * 🎯 Why: Typing in the offboarding confirm input caused state updates that forced the entire graph list to re-render N items.
+ * 📊 Impact: O(1) rendering for master nodes during unrelated state changes.
+ */
+const MasterNodeCard = React.memo(function MasterNodeCard({ node }: { node: TopologyNode }) {
+	return (
+		<div className="relative p-4 rounded-xl bg-black/80 border border-[#39ff14]/40 shadow-[0_0_15px_rgba(57,255,20,0.15)] min-w-[240px] flex flex-col items-center space-y-2">
+			<div className="w-12 h-12 rounded-full bg-[#39ff14]/10 border border-[#39ff14]/30 flex items-center justify-center text-[#39ff14]">
+				<Server className="w-6 h-6" />
+			</div>
+			<div className="text-center">
+				<div className="text-sm font-medium text-white flex items-center justify-center gap-2">
+					{node.alias}
+					<span className={`w-2 h-2 rounded-full ${getStatusDot(node.status)}`} />
+				</div>
+				<code className="text-[10px] text-white/40 font-mono block">
+					{node.id}
+				</code>
+			</div>
+			<div className="flex flex-wrap gap-1.5 justify-center pt-1">
+				<span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-[#39ff14]/20 text-[#39ff14] border border-[#39ff14]/30">
+					Master
+				</span>
+				<span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${getClearanceBadgeClass(node.clearance)}`}>
+					{node.clearance}
+				</span>
+				<span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/60 border border-white/10 flex items-center gap-1">
+					<Zap className="w-3 h-3 text-[#39ff14]" />
+					{node.latencyMs}ms
+				</span>
+			</div>
+		</div>
+	);
+});
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted Storage Node inline map elements to StorageNodeCard and wrapped in React.memo()
+ * 🎯 Why: Reduce redundant O(N) re-renders when parent states (like confirm modal input text) change.
+ * 📊 Impact: O(1) rendering for storage nodes during unrelated state updates.
+ */
+const StorageNodeCard = React.memo(function StorageNodeCard({ node }: { node: TopologyNode }) {
+	return (
+		<div className="relative p-4 rounded-xl bg-black/70 border border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.1)] min-w-[220px] flex flex-col items-center space-y-2">
+			<div className="w-10 h-10 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+				<Database className="w-5 h-5" />
+			</div>
+			<div className="text-center">
+				<div className="text-sm font-medium text-white flex items-center justify-center gap-2">
+					{node.alias}
+					<span className={`w-2 h-2 rounded-full ${getStatusDot(node.status)}`} />
+				</div>
+				<code className="text-[10px] text-white/40 font-mono block">
+					{node.id}
+				</code>
+			</div>
+			<div className="flex flex-wrap gap-1.5 justify-center pt-1">
+				<span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+					Storage
+				</span>
+				<span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${getClearanceBadgeClass(node.clearance)}`}>
+					{node.clearance}
+				</span>
+				<span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/60 border border-white/10 flex items-center gap-1">
+					<Zap className="w-3 h-3 text-cyan-400" />
+					{node.latencyMs}ms
+				</span>
+			</div>
+		</div>
+	);
+});
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted Employee Node inline map elements to EmployeeNodeCard and wrapped in React.memo()
+ * 🎯 Why: Reduce redundant O(N) re-renders when modal text changes. Added stable callback passing.
+ * 📊 Impact: O(1) rendering for employee nodes during unrelated state updates.
+ */
+const EmployeeNodeCard = React.memo(function EmployeeNodeCard({
+	node,
+	onRevoke,
+}: {
+	node: TopologyNode;
+	onRevoke: (node: TopologyNode) => void;
+}) {
+	return (
+		<div className="relative p-4 rounded-xl bg-black/60 border border-white/10 hover:border-white/20 transition-all min-w-[230px] flex flex-col items-center space-y-3">
+			<div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+				<User className="w-5 h-5" />
+			</div>
+			<div className="text-center">
+				<div className="text-sm font-medium text-white flex items-center justify-center gap-2">
+					{node.alias}
+					<span className={`w-2 h-2 rounded-full ${getStatusDot(node.status)}`} />
+				</div>
+				<code className="text-[10px] text-white/40 font-mono block">
+					{node.id}
+				</code>
+			</div>
+			<div className="flex flex-wrap gap-1.5 justify-center">
+				<span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+					{node.role}
+				</span>
+				<span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${getClearanceBadgeClass(node.clearance)}`}>
+					{node.clearance}
+				</span>
+				<span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/60 border border-white/10 flex items-center gap-1">
+					<Zap className="w-3 h-3 text-amber-400" />
+					{node.latencyMs}ms
+				</span>
+			</div>
+
+			{/* Offboard Disconnect Button */}
+			<button
+				type="button"
+				onClick={() => onRevoke(node)}
+				aria-label={`Disconnect & Purge ${node.alias}`}
+				className="w-full mt-2 px-3 py-1.5 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-all focus:ring-2 focus:ring-rose-500/50"
+			>
+				<Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+				Disconnect & Purge
+			</button>
+		</div>
+	);
+});
+
 export const MeshTopologyGraph: React.FC<MeshTopologyGraphProps> = React.memo(
 	({
 		localNodeId = "local-master-01",
@@ -118,11 +273,11 @@ export const MeshTopologyGraph: React.FC<MeshTopologyGraphProps> = React.memo(
 		const [isDisconnecting, setIsDisconnecting] = useState(false);
 		const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-		const handleOpenRevokeModal = (node: TopologyNode) => {
+		const handleOpenRevokeModal = React.useCallback((node: TopologyNode) => {
 			setSelectedNodeForRevoke(node);
 			setConfirmInput("");
 			setErrorMessage(null);
-		};
+		}, []);
 
 		const handleCloseRevokeModal = () => {
 			setSelectedNodeForRevoke(null);
@@ -150,30 +305,6 @@ export const MeshTopologyGraph: React.FC<MeshTopologyGraphProps> = React.memo(
 				);
 			} finally {
 				setIsDisconnecting(false);
-			}
-		};
-
-		const getClearanceBadgeClass = (level: ClearanceLevel) => {
-			switch (level) {
-				case "top_secret":
-					return "bg-purple-500/20 text-purple-300 border-purple-500/30";
-				case "secret":
-					return "bg-rose-500/20 text-rose-300 border-rose-500/30";
-				case "confidential":
-					return "bg-amber-500/20 text-amber-300 border-amber-500/30";
-				default:
-					return "bg-slate-500/20 text-slate-300 border-slate-500/30";
-			}
-		};
-
-		const getStatusDot = (status: "online" | "degraded" | "offline") => {
-			switch (status) {
-				case "online":
-					return "bg-[#39ff14] shadow-[0_0_8px_#39ff14]";
-				case "degraded":
-					return "bg-amber-400 shadow-[0_0_8px_#fbbf24]";
-				case "offline":
-					return "bg-rose-500 shadow-[0_0_8px_#f43f5e]";
 			}
 		};
 
@@ -214,39 +345,7 @@ export const MeshTopologyGraph: React.FC<MeshTopologyGraphProps> = React.memo(
 						</div>
 						<div className="flex justify-center gap-6">
 							{masterNodes.map((node) => (
-								<div
-									key={node.id}
-									className="relative p-4 rounded-xl bg-black/80 border border-[#39ff14]/40 shadow-[0_0_15px_rgba(57,255,20,0.15)] min-w-[240px] flex flex-col items-center space-y-2"
-								>
-									<div className="w-12 h-12 rounded-full bg-[#39ff14]/10 border border-[#39ff14]/30 flex items-center justify-center text-[#39ff14]">
-										<Server className="w-6 h-6" />
-									</div>
-									<div className="text-center">
-										<div className="text-sm font-medium text-white flex items-center justify-center gap-2">
-											{node.alias}
-											<span
-												className={`w-2 h-2 rounded-full ${getStatusDot(node.status)}`}
-											/>
-										</div>
-										<code className="text-[10px] text-white/40 font-mono block">
-											{node.id}
-										</code>
-									</div>
-									<div className="flex flex-wrap gap-1.5 justify-center pt-1">
-										<span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-[#39ff14]/20 text-[#39ff14] border border-[#39ff14]/30">
-											Master
-										</span>
-										<span
-											className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${getClearanceBadgeClass(node.clearance)}`}
-										>
-											{node.clearance}
-										</span>
-										<span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/60 border border-white/10 flex items-center gap-1">
-											<Zap className="w-3 h-3 text-[#39ff14]" />
-											{node.latencyMs}ms
-										</span>
-									</div>
-								</div>
+								<MasterNodeCard key={node.id} node={node} />
 							))}
 						</div>
 					</div>
@@ -263,39 +362,7 @@ export const MeshTopologyGraph: React.FC<MeshTopologyGraphProps> = React.memo(
 								</p>
 							) : (
 								storageNodes.map((node) => (
-									<div
-										key={node.id}
-										className="relative p-4 rounded-xl bg-black/70 border border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.1)] min-w-[220px] flex flex-col items-center space-y-2"
-									>
-										<div className="w-10 h-10 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-											<Database className="w-5 h-5" />
-										</div>
-										<div className="text-center">
-											<div className="text-sm font-medium text-white flex items-center justify-center gap-2">
-												{node.alias}
-												<span
-													className={`w-2 h-2 rounded-full ${getStatusDot(node.status)}`}
-												/>
-											</div>
-											<code className="text-[10px] text-white/40 font-mono block">
-												{node.id}
-											</code>
-										</div>
-										<div className="flex flex-wrap gap-1.5 justify-center pt-1">
-											<span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-												Storage
-											</span>
-											<span
-												className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${getClearanceBadgeClass(node.clearance)}`}
-											>
-												{node.clearance}
-											</span>
-											<span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/60 border border-white/10 flex items-center gap-1">
-												<Zap className="w-3 h-3 text-cyan-400" />
-												{node.latencyMs}ms
-											</span>
-										</div>
-									</div>
+									<StorageNodeCard key={node.id} node={node} />
 								))
 							)}
 						</div>
@@ -315,50 +382,11 @@ export const MeshTopologyGraph: React.FC<MeshTopologyGraphProps> = React.memo(
 								</div>
 							) : (
 								employeeNodes.map((node) => (
-									<div
+									<EmployeeNodeCard
 										key={node.id}
-										className="relative p-4 rounded-xl bg-black/60 border border-white/10 hover:border-white/20 transition-all min-w-[230px] flex flex-col items-center space-y-3"
-									>
-										<div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-											<User className="w-5 h-5" />
-										</div>
-										<div className="text-center">
-											<div className="text-sm font-medium text-white flex items-center justify-center gap-2">
-												{node.alias}
-												<span
-													className={`w-2 h-2 rounded-full ${getStatusDot(node.status)}`}
-												/>
-											</div>
-											<code className="text-[10px] text-white/40 font-mono block">
-												{node.id}
-											</code>
-										</div>
-										<div className="flex flex-wrap gap-1.5 justify-center">
-											<span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-												{node.role}
-											</span>
-											<span
-												className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${getClearanceBadgeClass(node.clearance)}`}
-											>
-												{node.clearance}
-											</span>
-											<span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/60 border border-white/10 flex items-center gap-1">
-												<Zap className="w-3 h-3 text-amber-400" />
-												{node.latencyMs}ms
-											</span>
-										</div>
-
-										{/* Offboard Disconnect Button */}
-										<button
-											type="button"
-											onClick={() => handleOpenRevokeModal(node)}
-											aria-label={`Disconnect & Purge ${node.alias}`}
-											className="w-full mt-2 px-3 py-1.5 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-all focus:ring-2 focus:ring-rose-500/50"
-										>
-											<Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-											Disconnect & Purge
-										</button>
-									</div>
+										node={node}
+										onRevoke={handleOpenRevokeModal}
+									/>
 								))
 							)}
 						</div>

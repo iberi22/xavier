@@ -43,7 +43,7 @@ memoria de la red de identidad.
 ## Verification harness
 
 ```bash
-cd /home/belal/proyectosSWAL/apps/xavier
+cd ~/proyectosSWAL/apps/xavier
 nix-shell -p openssl.dev pkg-config --run "cargo build --release --features ci-safe"
 nix-shell -p openssl.dev pkg-config --run "cargo clippy --all-targets -- -D warnings"
 nix-shell -p openssl.dev pkg-config --run "cargo test --test ivn_api"

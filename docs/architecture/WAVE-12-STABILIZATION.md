@@ -79,7 +79,7 @@ names.
 ### Issue 12.05: Relocation of Cargo Build Target Directory
 
 In Issue 12.05, build infrastructure was updated to set `CARGO_TARGET_DIR` to
-`/home/belal/.cargo/xavier-target` on persistent disk storage. Storing
+`~/.cargo/xavier-target` on persistent disk storage. Storing
 intermediate rustc compilation artifacts on disk rather than temporary
 in-memory filesystems (`tmpfs`) resolved recurring compiler out-of-memory
 errors and disk exhaustion during workspace builds.
@@ -128,7 +128,7 @@ codebase:
 - **Alert Deduplication**: `60-second suppression window`. Any alert matching
   the fingerprint of an active alert within 60 seconds is deduplicated at
   source to prevent alert queue floods.
-- **Build Target Directory**: `/home/belal/.cargo/xavier-target` on persistent
+- **Build Target Directory**: `~/.cargo/xavier-target` on persistent
   disk. All compilation steps must direct target output to persistent disk
   space to ensure sufficient capacity for large workspace compilation
   artifacts.
