@@ -54,7 +54,7 @@
       "description": "High-performance CLI execution proxy that condenses toolchain outputs (cargo, git, grep) to save up to 90% LLM tokens.",
       "version": "0.1.0",
       "author": "SWAL Core / rtk-ai",
-      "languages": ["Rust", "Shell"],
+      "languages": ["Rust", {"Other": "shell"}],
       "capabilities": ["exec_proxy", "token_accounting"],
       "platform": {
         "linux-x86_64": {

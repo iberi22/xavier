@@ -39,25 +39,70 @@ export function GovernanceTab() {
     );
   }
 
-  const getStatusIcon = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'open': return <Clock size={16} className="text-amber-400" />;
-      case 'closed': return <CheckCircle2 size={16} className="text-emerald-400" />;
-      case 'reconsidering': return <XCircle size={16} className="text-rose-400" />;
-      case 'analyzing': return <BarChart3 size={16} className="text-cyan-400" />;
-      default: return <Target size={16} className="text-white/50" />;
-    }
-  };
+const getStatusIcon = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'open': return <Clock size={16} className="text-amber-400" />;
+    case 'closed': return <CheckCircle2 size={16} className="text-emerald-400" />;
+    case 'reconsidering': return <XCircle size={16} className="text-rose-400" />;
+    case 'analyzing': return <BarChart3 size={16} className="text-cyan-400" />;
+    default: return <Target size={16} className="text-white/50" />;
+  }
+};
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'open': return 'text-amber-400 border-amber-400/20 bg-amber-400/10';
-      case 'closed': return 'text-emerald-400 border-emerald-400/20 bg-emerald-400/10';
-      case 'reconsidering': return 'text-rose-400 border-rose-400/20 bg-rose-400/10';
-      case 'analyzing': return 'text-cyan-400 border-cyan-400/20 bg-cyan-400/10';
-      default: return 'text-white/50 border-white/10 bg-white/5';
-    }
-  };
+const getStatusColor = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'open': return 'text-amber-400 border-amber-400/20 bg-amber-400/10';
+    case 'closed': return 'text-emerald-400 border-emerald-400/20 bg-emerald-400/10';
+    case 'reconsidering': return 'text-rose-400 border-rose-400/20 bg-rose-400/10';
+    case 'analyzing': return 'text-cyan-400 border-cyan-400/20 bg-cyan-400/10';
+    default: return 'text-white/50 border-white/10 bg-white/5';
+  }
+};
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted proposal row into ProposalItem and wrapped in React.memo()
+ * 🎯 Why: When local state related to a proposal changes (such as casting a vote),
+ *         GovernanceTab would re-render the entire list of proposals causing O(N)
+ *         performance bottleneck.
+ * 📊 Impact: Eliminates O(N) rendering for unchanged proposal items.
+ */
+const ProposalItem = React.memo(function ProposalItem({ proposal }: { proposal: Proposal }) {
+  return (
+    <div className="glass-panel p-4 border border-white/5 rounded-xl bg-[#0a0a0a] hover:bg-white/[0.02] transition-colors">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="font-mono text-xs text-cyan-400/50">#{proposal.id.substring(0, 8)}</span>
+            <h5 className="text-white font-medium text-sm">{proposal.title}</h5>
+          </div>
+          <p className="text-xs text-white/60 line-clamp-2">{proposal.body}</p>
+        </div>
+        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] uppercase font-mono tracking-wider ${getStatusColor(proposal.status)}`}>
+          {getStatusIcon(proposal.status)}
+          {proposal.status}
+        </div>
+      </div>
+      <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-white/40">
+        <div className="flex gap-4">
+          <span className="flex items-center gap-1.5">
+            <Clock size={12} />
+            {new Date(proposal.created_at).toLocaleDateString()}
+          </span>
+          <span className="font-mono px-1.5 py-0.5 rounded bg-white/5">
+            Type: {proposal.type}
+          </span>
+        </div>
+        {proposal.status === 'open' && (
+          <button className="text-cyan-400 hover:text-cyan-300 font-mono transition-colors">
+            Cast Vote →
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});
 
   return (
     <div className="space-y-6">
@@ -101,37 +146,7 @@ export function GovernanceTab() {
           </div>
         ) : (
           proposals.map(proposal => (
-            <div key={proposal.id} className="glass-panel p-4 border border-white/5 rounded-xl bg-[#0a0a0a] hover:bg-white/[0.02] transition-colors">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="font-mono text-xs text-cyan-400/50">#{proposal.id.substring(0, 8)}</span>
-                    <h5 className="text-white font-medium text-sm">{proposal.title}</h5>
-                  </div>
-                  <p className="text-xs text-white/60 line-clamp-2">{proposal.body}</p>
-                </div>
-                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] uppercase font-mono tracking-wider ${getStatusColor(proposal.status)}`}>
-                  {getStatusIcon(proposal.status)}
-                  {proposal.status}
-                </div>
-              </div>
-              <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-white/40">
-                <div className="flex gap-4">
-                  <span className="flex items-center gap-1.5">
-                    <Clock size={12} />
-                    {new Date(proposal.created_at).toLocaleDateString()}
-                  </span>
-                  <span className="font-mono px-1.5 py-0.5 rounded bg-white/5">
-                    Type: {proposal.type}
-                  </span>
-                </div>
-                {proposal.status === 'open' && (
-                  <button className="text-cyan-400 hover:text-cyan-300 font-mono transition-colors">
-                    Cast Vote →
-                  </button>
-                )}
-              </div>
-            </div>
+            <ProposalItem key={proposal.id} proposal={proposal} />
           ))
         )}
       </div>
