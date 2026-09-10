@@ -1,3 +1,6 @@
 #!/usr/bin/env sh
 # Xavier pre-commit: harvest chronicle, rebuild devlog blog, stage assets
 ./scripts/pre-commit-chronicle.sh
+
+# Anti-fuga de estrategia/economia/PII (auditoria 2026-09-10)
+bash scripts/check-strategy-leak.sh --staged || exit 1
