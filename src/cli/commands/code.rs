@@ -40,6 +40,13 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
     let base_url = resolve_base_url();
     let client = CODE_HTTP_CLIENT.clone();
 
+    // XAV-01: explicit repo identity derived from the caller's cwd so the
+    // server resolves the graph for THIS checkout, never the daemon's
+    // startup workspace.
+    let repo = xavier::codebase::repo_identity::derive_repo_identity(
+        &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    );
+
     let mut scanned_path = None;
     if let CodeCommand::Scan { path, .. } = &cmd {
         scanned_path = Some(path.clone());
@@ -86,14 +93,14 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .send()
                 .await?
         }
-        CodeCommand::Find { query, limit, kind } => {
-            client
-                .post(format!("{}/code/find", base_url))
-                .header("X-Xavier-Token", &token)
-                .json(&serde_json::json!({ "query": query, "limit": limit, "kind": kind }))
-                .send()
-                .await?
-        }
+        CodeCommand::Find { query, limit, kind } => client
+            .post(format!("{}/code/find", base_url))
+            .header("X-Xavier-Token", &token)
+            .json(
+                &serde_json::json!({ "query": query, "limit": limit, "kind": kind, "repo": repo }),
+            )
+            .send()
+            .await?,
         CodeCommand::Dependencies {
             query,
             depth,
@@ -161,8 +168,17 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .await?
         }
         CodeCommand::Stats => {
+            // XAV-01: explicit repo identity as query params (reqwest here
+            // has no `.query()` helper — minimal features — so encode manually).
+            let url = format!(
+                "{}/code/stats?project_id={}&root={}&indexed_commit={}",
+                base_url,
+                pct_encode(&repo.project_id),
+                pct_encode(&repo.root),
+                pct_encode(&repo.indexed_commit),
+            );
             client
-                .get(format!("{}/code/stats", base_url))
+                .get(url)
                 .header("X-Xavier-Token", &token)
                 .send()
                 .await?
@@ -211,6 +227,20 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
         eprintln!("{}", serde_json::to_string_pretty(&body)?);
         bail!("Code graph HTTP {} — see response body above", status);
     }
+}
+
+/// Minimal RFC3986 percent-encoding for query values (unreserved +
+/// `/` left intact so repo roots stay readable; `/` is legal in values).
+fn pct_encode(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for b in raw.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~' | b'/') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
 }
 
 async fn soft_dump(
