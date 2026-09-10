@@ -216,12 +216,32 @@ impl EmbedderConfig {
             return Self::Noop;
         }
 
-        if explicit_embedder.as_deref() == Some("gllm") {
-            return Self::gllm_only();
-        }
-
         if api_flavor == ApiFlavor::AnthropicCompatible {
             return Self::Noop;
+        }
+
+        if let Some(ref explicit) = explicit_embedder {
+            match explicit.as_str() {
+                "disabled" => return Self::Noop,
+                "gllm" | "local-gllm" | "local_gllm" => return Self::gllm_only(),
+                "ollama" => {
+                    return Self::Fallback(vec![EmbedderBackendConfig::Ollama(ollama_config())]);
+                }
+                "openai-compatible" | "openai" => {
+                    return Self::Fallback(vec![EmbedderBackendConfig::OpenAICompatible(
+                        local_config(),
+                    )]);
+                }
+                "openrouter" => {
+                    return Self::Fallback(vec![EmbedderBackendConfig::OpenAICompatible(
+                        cloud_config(),
+                    )]);
+                }
+                "cloud" => return Self::cloud_only(api_flavor),
+                "local" => return Self::local_only(api_flavor),
+                "auto" => return Self::auto_explicit(api_flavor),
+                _ => {}
+            }
         }
 
         if let Some(ref provider) = embed_provider {
@@ -1444,5 +1464,48 @@ mod tests {
         assert_ne!(embedder.dimension(), 0);
 
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+    }
+
+    #[test]
+    fn test_explicit_embedder_selects_single_backend() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+
+        // 1. openai-compatible -> single OpenAICompatible backend
+        std::env::set_var("XAVIER_EMBEDDER", "openai-compatible");
+        let config = EmbedderConfig::from_env();
+        if let EmbedderConfig::Fallback(backends) = config {
+            assert_eq!(backends.len(), 1);
+            assert!(matches!(
+                backends[0],
+                EmbedderBackendConfig::OpenAICompatible(_)
+            ));
+        } else {
+            panic!("expected EmbedderConfig::Fallback for openai-compatible");
+        }
+
+        // 2. ollama -> single Ollama backend
+        std::env::set_var("XAVIER_EMBEDDER", "ollama");
+        let config = EmbedderConfig::from_env();
+        if let EmbedderConfig::Fallback(backends) = config {
+            assert_eq!(backends.len(), 1);
+            assert!(matches!(backends[0], EmbedderBackendConfig::Ollama(_)));
+        } else {
+            panic!("expected EmbedderConfig::Fallback for ollama");
+        }
+
+        // 3. openrouter -> single OpenAICompatible backend
+        std::env::set_var("XAVIER_EMBEDDER", "openrouter");
+        let config = EmbedderConfig::from_env();
+        if let EmbedderConfig::Fallback(backends) = config {
+            assert_eq!(backends.len(), 1);
+            assert!(matches!(
+                backends[0],
+                EmbedderBackendConfig::OpenAICompatible(_)
+            ));
+        } else {
+            panic!("expected EmbedderConfig::Fallback for openrouter");
+        }
+
+        std::env::remove_var("XAVIER_EMBEDDER");
     }
 }
