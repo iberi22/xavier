@@ -29,6 +29,17 @@ async fn test_health_endpoints_e2e() {
         .expect("local addr")
         .port();
 
+    // Create temporary config file with mesh_accepted = false
+    let temp_config_path =
+        std::env::temp_dir().join(format!("xavier-test-config-no-mesh-{port}.json"));
+    let config_json = serde_json::json!({
+        "license": {
+            "mesh_accepted": false,
+            "license_type": "Community"
+        }
+    });
+    std::fs::write(&temp_config_path, config_json.to_string()).unwrap();
+
     let code_db = format!("data/health-test-code-{port}.db");
     let mem_db = format!("data/health-test-mem-{port}.db");
 
@@ -38,6 +49,7 @@ async fn test_health_endpoints_e2e() {
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")
             .env("XAVIER_HEADLESS", "true")
+            .env("XAVIER_CONFIG_PATH", temp_config_path.to_str().unwrap())
             .env("XAVIER_CODE_GRAPH_DB_PATH", &code_db)
             .env("XAVIER_MEMORY_VEC_PATH", &mem_db)
             .stdout(Stdio::inherit())
@@ -150,7 +162,7 @@ async fn test_health_endpoints_e2e() {
     assert_eq!(mesh_maturity["acl"].as_bool(), Some(true));
     assert_eq!(mesh_maturity["acl_percent"].as_u64(), Some(90));
     assert_eq!(mesh_maturity["tokenomics"].as_bool(), Some(true));
-    assert_eq!(mesh_maturity["tokenomics_percent"].as_u64(), Some(40));
+    assert_eq!(mesh_maturity["tokenomics_percent"].as_u64(), Some(85));
     assert_eq!(mesh_maturity["onchain_gov"].as_bool(), Some(false));
     assert_eq!(mesh_maturity["onchain_gov_percent"].as_u64(), Some(0));
 
@@ -162,6 +174,8 @@ async fn test_health_endpoints_e2e() {
         .await
         .unwrap();
     assert_eq!(resp_forbidden.status(), StatusCode::FORBIDDEN);
+
+    let _ = std::fs::remove_file(temp_config_path);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -235,7 +249,7 @@ async fn test_mesh_status_with_license_e2e() {
     assert_eq!(body["acl"].as_bool(), Some(true));
     assert_eq!(body["acl_percent"].as_u64(), Some(90));
     assert_eq!(body["tokenomics"].as_bool(), Some(true));
-    assert_eq!(body["tokenomics_percent"].as_u64(), Some(40));
+    assert_eq!(body["tokenomics_percent"].as_u64(), Some(85));
     assert_eq!(body["onchain_gov"].as_bool(), Some(false));
     assert_eq!(body["onchain_gov_percent"].as_u64(), Some(0));
 
