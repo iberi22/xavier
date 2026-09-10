@@ -203,7 +203,12 @@ pub async fn execute_rtk_command(
         let cleaned = filters::strip_ansi(&combined_raw);
         let lines: Vec<&str> = cleaned.lines().collect();
         if lines.len() > 100 {
-            let mut head = lines.iter().take(80).copied().collect::<Vec<_>>().join("\n");
+            let mut head = lines
+                .iter()
+                .take(80)
+                .copied()
+                .collect::<Vec<_>>()
+                .join("\n");
             head.push_str(&format!("\n... [{} lines truncated]", lines.len() - 80));
             head
         } else {
@@ -213,8 +218,8 @@ pub async fn execute_rtk_command(
 
     let filtered_bytes = filtered_output.len();
 
-    let estimated_raw_tokens = (raw_bytes + 3) / 4;
-    let estimated_filtered_tokens = (filtered_bytes + 3) / 4;
+    let estimated_raw_tokens = raw_bytes.div_ceil(4);
+    let estimated_filtered_tokens = filtered_bytes.div_ceil(4);
     let tokens_saved = estimated_raw_tokens.saturating_sub(estimated_filtered_tokens);
     let savings_percentage = if estimated_raw_tokens > 0 {
         (tokens_saved as f32 / estimated_raw_tokens as f32) * 100.0
