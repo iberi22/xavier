@@ -574,33 +574,46 @@ impl HealthMonitor {
             || config.provider_mode == crate::agents::provider::types::ProviderMode::ManagedLocal
         {
             if let Some(url) = &config.get_resolved_base_url() {
-                // Ollama version endpoint or just the base
-                let check_url = if url.contains("11434") {
-                    format!("{}/api/version", url.trim_end_matches("/v1"))
-                } else {
-                    url.clone()
-                };
+                // No adivinar por el puerto: un Ollama puede vivir en cualquier host:puerto (p.ej.
+                // un segundo servidor con sus propios modelos). Antes solo se probaba
+                // `/api/version` si la URL contenia "11434"; para cualquier otro puerto se hacia
+                // GET a `/v1`, que devuelve 404, y el proveedor local se marcaba como NO
+                // alcanzable aunque estuviera perfectamente vivo (el nodo entero pasaba a
+                // "unhealthy"). Se prueban los endpoints habituales y basta con que uno responda.
+                let trimmed = url.trim_end_matches('/');
+                let base = trimmed.trim_end_matches("/v1");
+                let candidates = [
+                    format!("{}/api/version", base), // Ollama nativo
+                    format!("{}/models", trimmed),   // OpenAI-compatible
+                ];
 
-                match self.http_client.get(&check_url).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        reachable = true;
-                        let mut fail_count = self.llm_failure_count.write().await;
-                        *fail_count = 0;
-                    }
-                    _ => {
-                        reachable = false;
-                        let mut fail_count = self.llm_failure_count.write().await;
-                        *fail_count += 1;
-                        if *fail_count >= 3 {
-                            crate::server::alerts::SYSTEM_ALERTS.push_alert(
-                                "ERROR",
-                                "Ollama local no responde — modo degradado",
-                                "llm",
-                            );
-                            status = HealthLevel::Unhealthy;
-                        } else {
-                            status = HealthLevel::Degraded;
+                let mut probe_ok = false;
+                for check_url in &candidates {
+                    if let Ok(resp) = self.http_client.get(check_url).send().await {
+                        if resp.status().is_success() {
+                            probe_ok = true;
+                            break;
                         }
+                    }
+                }
+
+                if probe_ok {
+                    reachable = true;
+                    let mut fail_count = self.llm_failure_count.write().await;
+                    *fail_count = 0;
+                } else {
+                    reachable = false;
+                    let mut fail_count = self.llm_failure_count.write().await;
+                    *fail_count += 1;
+                    if *fail_count >= 3 {
+                        crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                            "ERROR",
+                            "Ollama local no responde — modo degradado",
+                            "llm",
+                        );
+                        status = HealthLevel::Unhealthy;
+                    } else {
+                        status = HealthLevel::Degraded;
                     }
                 }
             }
