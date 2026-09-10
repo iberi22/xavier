@@ -35,10 +35,7 @@ pub enum GestaltEvent {
         status: String,
     },
     /// Generic Gestalt telemetry / ping
-    TelemetryPing {
-        agent_id: String,
-        timestamp: i64,
-    },
+    TelemetryPing { agent_id: String, timestamp: i64 },
 }
 
 /// Gestalt Inbound Adapter instance
@@ -83,13 +80,26 @@ impl GestaltAdapter {
                 counter.fetch_add(1, Ordering::Relaxed);
                 match event {
                     XavierEvent::AgentTaskStarted { agent_id, task_id } => {
-                        debug!("Gestalt bridge observed agent task start: {} - {}", agent_id, task_id);
+                        debug!(
+                            "Gestalt bridge observed agent task start: {} - {}",
+                            agent_id, task_id
+                        );
                     }
                     XavierEvent::AgentTaskCompleted { agent_id, task_id } => {
-                        debug!("Gestalt bridge observed agent task completion: {} - {}", agent_id, task_id);
+                        debug!(
+                            "Gestalt bridge observed agent task completion: {} - {}",
+                            agent_id, task_id
+                        );
                     }
-                    XavierEvent::AgentTaskFailed { agent_id, task_id, reason } => {
-                        debug!("Gestalt bridge observed agent task failure: {} - {} ({})", agent_id, task_id, reason);
+                    XavierEvent::AgentTaskFailed {
+                        agent_id,
+                        task_id,
+                        reason,
+                    } => {
+                        debug!(
+                            "Gestalt bridge observed agent task failure: {} - {} ({})",
+                            agent_id, task_id, reason
+                        );
                     }
                     _ => {}
                 }
