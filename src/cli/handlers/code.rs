@@ -2184,10 +2184,24 @@ mod tests {
         assert_eq!(res_method[0].name, "method_three");
 
         // Combination of name and kind
-        let res_comb = code_find_symbols(&query_engine, "", Some("method_three"), Some("method"), None, 10);
+        let res_comb = code_find_symbols(
+            &query_engine,
+            "",
+            Some("method_three"),
+            Some("method"),
+            None,
+            10,
+        );
         assert_eq!(res_comb.len(), 1);
 
-        let res_mismatch = code_find_symbols(&query_engine, "", Some("method_three"), Some("struct"), None, 10);
+        let res_mismatch = code_find_symbols(
+            &query_engine,
+            "",
+            Some("method_three"),
+            Some("struct"),
+            None,
+            10,
+        );
         assert_eq!(res_mismatch.len(), 0);
     }
 
