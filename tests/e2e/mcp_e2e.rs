@@ -91,7 +91,11 @@ fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
         .with_state(state)
 }
 
-async fn post_json_with_token(app: Router, body: Value, token: Option<&str>) -> axum::response::Response {
+async fn post_json_with_token(
+    app: Router,
+    body: Value,
+    token: Option<&str>,
+) -> axum::response::Response {
     let method = body
         .get("method")
         .and_then(|v| v.as_str())
@@ -206,7 +210,11 @@ async fn test_mcp_e2e_handshake_and_tools_list() {
     let tools = body["result"]["tools"]
         .as_array()
         .expect("tools should be an array");
-    assert!(tools.len() >= 15, "Expected at least 15 tools, found {}", tools.len());
+    assert!(
+        tools.len() >= 15,
+        "Expected at least 15 tools, found {}",
+        tools.len()
+    );
 }
 
 #[tokio::test]
