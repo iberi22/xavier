@@ -479,12 +479,23 @@ fn derive_address(pk: &[u8]) -> String {
     hasher.update(pk);
     let hash = hasher.finalize();
 
-    let base32_data = bech32::convert_bits(&hash[..32], 8, 5, true).expect("valid conversion");
-    let mut b32 = Vec::new();
-    for i in base32_data {
-        b32.push(bech32::u5::try_from_u8(i).expect("valid u5"));
+    // bech32 0.12: sin convert_bits/u5/Variant; conversión 8→5 manual (pad=true) + encode tipado.
+    let mut acc: u32 = 0;
+    let mut bits: u32 = 0;
+    let mut data5 = Vec::with_capacity(52);
+    for &b in &hash[..32] {
+        acc = (acc << 8) | u32::from(b);
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            data5.push(((acc >> bits) & 31) as u8);
+        }
     }
-    bech32::encode("xv1", b32, bech32::Variant::Bech32).expect("valid bech32")
+    if bits > 0 {
+        data5.push(((acc << (5 - bits)) & 31) as u8);
+    }
+    let hrp = bech32::Hrp::parse("xv1").expect("valid hrp");
+    bech32::encode::<bech32::Bech32>(hrp, &data5).expect("valid bech32")
 }
 
 #[derive(Debug)]
