@@ -42,6 +42,37 @@ pub enum EmbeddingError {
     Parse(String),
 }
 
+/// Returns a list of available (compiled-in / supported) embedder backend names.
+pub fn available_embedders() -> Vec<&'static str> {
+    let mut backends = vec!["ollama", "openai", "local", "cloud", "auto", "disabled"];
+    if cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda")) {
+        backends.push("gllm");
+        backends.push("local-gllm");
+    }
+    backends
+}
+
+/// Validates requested embedder backend name and returns a fail-fast error if unknown/uncompiled.
+pub fn resolve_embedder(name: &str) -> Result<String, EmbeddingError> {
+    let trimmed = name.trim().to_ascii_lowercase();
+    let available = available_embedders();
+    if available.contains(&trimmed.as_str())
+        || trimmed == "openai-compatible"
+        || trimmed == "openrouter"
+        || trimmed == "local_gllm"
+        || trimmed == "local-gllm"
+        || trimmed == "gllm"
+    {
+        Ok(trimmed)
+    } else {
+        Err(EmbeddingError::Config(format!(
+            "embedder '{}' not compiled in; available: [{}]",
+            name.trim(),
+            available.join(", ")
+        )))
+    }
+}
+
 #[async_trait]
 pub trait Embedder: Send + Sync {
     async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
@@ -136,6 +167,33 @@ pub(crate) enum EmbedderConfig {
 impl EmbedderConfig {
     /// From env.
     pub fn from_env() -> Self {
+        if let Ok(explicit) = std::env::var("XAVIER_EMBEDDER") {
+            let explicit_trimmed = explicit.trim();
+            if !explicit_trimmed.is_empty() {
+                if let Err(err) = resolve_embedder(explicit_trimmed) {
+                    return Self::Invalid(err.to_string());
+                }
+            }
+        }
+
+        if let Ok(mode) = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE") {
+            let mode_trimmed = mode.trim();
+            if !mode_trimmed.is_empty() {
+                if let Err(err) = resolve_embedder(mode_trimmed) {
+                    return Self::Invalid(err.to_string());
+                }
+            }
+        }
+
+        if let Ok(provider) = std::env::var("XAVIER_EMBED_PROVIDER") {
+            let provider_trimmed = provider.trim();
+            if !provider_trimmed.is_empty() {
+                if let Err(err) = resolve_embedder(provider_trimmed) {
+                    return Self::Invalid(err.to_string());
+                }
+            }
+        }
+
         let provider_mode = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .ok()
             .and_then(|value| ProviderMode::from_env(&value));
@@ -391,7 +449,16 @@ impl EmbedderConfig {
     }
 
     fn auto_explicit(api_flavor: ApiFlavor) -> Self {
-        let mut backends = vec![EmbedderBackendConfig::Gllm(gllm_config())];
+        let mut backends = Vec::new();
+
+        // GLLM first when compiled with local-gllm (GPU path); otherwise
+        // Ollama native (/api/embed, nomic-embed-text 768d) is the local
+        // default — already available on localhost:11434, no rebuild needed.
+        if cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda")) {
+            backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+        } else {
+            backends.push(EmbedderBackendConfig::Ollama(ollama_config()));
+        }
 
         if api_flavor == ApiFlavor::OpenAICompatible {
             backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
@@ -405,19 +472,30 @@ impl EmbedderConfig {
     }
 
     fn local_only(_api_flavor: ApiFlavor) -> Self {
-        Self::Fallback(vec![
-            EmbedderBackendConfig::Ollama(ollama_config()),
-            EmbedderBackendConfig::Gllm(gllm_config()),
-            EmbedderBackendConfig::OpenAICompatible(local_config()),
-        ])
+        // Without the local-gllm feature the Gllm backend can never
+        // initialise (see GllmEmbedder::new) and only emits a spurious
+        // "embedding backend unavailable" warning on every startup /
+        // EmbeddingClient::from_env() call. Gate it so the default
+        // local path is Ollama (nomic-embed-text, 768d, localhost:11434)
+        // + OpenAI-compatible local fallback — both already available.
+        let mut backends = vec![EmbedderBackendConfig::Ollama(ollama_config())];
+        if cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda")) {
+            backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+        }
+        backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
+        Self::Fallback(backends)
     }
 
     fn cloud_only(api_flavor: ApiFlavor) -> Self {
         // Primary: cloud endpoint, Fallback: local endpoint if available
         let mut backends = vec![EmbedderBackendConfig::OpenAICompatible(cloud_config())];
 
+        // GLLM as a fallback only when compiled with the feature; otherwise
+        // it can never initialise and only spams the startup warning.
         // Always add GLLM as a fallback if in cloud mode to ensure offline/GPU availability
-        if api_flavor == ApiFlavor::OpenAICompatible {
+        if api_flavor == ApiFlavor::OpenAICompatible
+            && cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda"))
+        {
             backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
         }
 
@@ -427,9 +505,10 @@ impl EmbedderConfig {
                     backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
                 }
                 ApiFlavor::AnthropicCompatible => {
-                    if !backends
-                        .iter()
-                        .any(|b| matches!(b, EmbedderBackendConfig::Gllm(_)))
+                    if cfg!(any(feature = "local-gllm", feature = "local-gllm-cuda"))
+                        && !backends
+                            .iter()
+                            .any(|b| matches!(b, EmbedderBackendConfig::Gllm(_)))
                     {
                         backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
                     }
