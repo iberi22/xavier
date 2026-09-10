@@ -73,7 +73,7 @@ export function PluginsManager({ token }: PluginsManagerProps) {
     void fetchPlugins();
   }, [fetchPlugins]);
 
-  const handleInstall = async (pluginName: string) => {
+  const handleInstall = useCallback(async (pluginName: string) => {
     setInstallingName(pluginName);
     setError(null);
     try {
@@ -95,7 +95,7 @@ export function PluginsManager({ token }: PluginsManagerProps) {
     } finally {
       setInstallingName(null);
     }
-  };
+  }, [api]);
 
   return (
     <motion.div
@@ -138,98 +138,121 @@ export function PluginsManager({ token }: PluginsManagerProps) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {plugins.map((plugin) => {
-            const isInstalled =
-              plugin.installed ||
-              installedMap[String(plugin.name)] ||
-              plugin.status === "active";
-            const isInstalling = installingName === plugin.name;
-
-            return (
-              <div
-                key={String(plugin.name)}
-                className="p-5 rounded-2xl bg-[#050505]/60 border border-white/10 hover:border-[#39ff14]/30 transition-all flex flex-col justify-between space-y-4"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-lg bg-white/5 text-[#39ff14] border border-white/5">
-                        <Package className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-base font-medium text-white tracking-wide">
-                          {String(plugin.name)}
-                        </h3>
-                        {plugin.version && (
-                          <span className="text-[10px] font-mono text-white/40">
-                            v{plugin.version}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {isInstalled && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#39ff14]/10 text-[#39ff14] border border-[#39ff14]/30 shadow-[0_0_10px_rgba(57,255,20,0.15)]">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Active / Enabled
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-white/60 leading-relaxed">
-                    {plugin.description || "No description provided."}
-                  </p>
-
-                  {plugin.languages && plugin.languages.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-3">
-                      {plugin.languages.map((lang) => (
-                        <span
-                          key={lang}
-                          className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/50 border border-white/5 uppercase"
-                        >
-                          {lang}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-2 border-t border-white/5 flex justify-end">
-                  {isInstalled ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="w-full py-2 px-4 rounded-xl bg-white/5 text-white/40 text-xs font-semibold cursor-default flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 className="w-4 h-4 text-[#39ff14]" />
-                      Installed
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void handleInstall(String(plugin.name))}
-                      disabled={isInstalling}
-                      className="w-full py-2 px-4 rounded-xl bg-[#39ff14] text-black font-semibold text-xs tracking-wider uppercase hover:shadow-[0_0_15px_rgba(57,255,20,0.4)] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-                    >
-                      {isInstalling ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Installing...
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4" />
-                          Install with 1-Click
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {plugins.map((plugin) => (
+            <PluginCard
+              key={String(plugin.name)}
+              plugin={plugin}
+              isInstalled={
+                plugin.installed ||
+                installedMap[String(plugin.name)] ||
+                plugin.status === "active"
+              }
+              isInstalling={installingName === plugin.name}
+              onInstall={handleInstall}
+            />
+          ))}
         </div>
       )}
     </motion.div>
   );
 }
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted PluginCard into a separate memoized component.
+ * 🎯 Why: Re-rendering PluginsManager whenever `installingName` state changed (e.g., clicking install on one plugin)
+ *         caused all plugin cards to re-render, creating O(N) performance overhead.
+ * 📊 Impact: Prevents O(N) DOM reconciliation overhead by only re-rendering the specific plugin whose install state changes.
+ */
+const PluginCard = React.memo(function PluginCard({
+  plugin,
+  isInstalled,
+  isInstalling,
+  onInstall,
+}: {
+  plugin: PluginItem;
+  isInstalled: boolean;
+  isInstalling: boolean;
+  onInstall: (name: string) => void;
+}) {
+  return (
+    <div className="p-5 rounded-2xl bg-[#050505]/60 border border-white/10 hover:border-[#39ff14]/30 transition-all flex flex-col justify-between space-y-4">
+      <div>
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-white/5 text-[#39ff14] border border-white/5">
+              <Package className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-medium text-white tracking-wide">
+                {String(plugin.name)}
+              </h3>
+              {plugin.version && (
+                <span className="text-[10px] font-mono text-white/40">
+                  v{plugin.version}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {isInstalled && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#39ff14]/10 text-[#39ff14] border border-[#39ff14]/30 shadow-[0_0_10px_rgba(57,255,20,0.15)]">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Active / Enabled
+            </span>
+          )}
+        </div>
+
+        <p className="text-xs text-white/60 leading-relaxed">
+          {plugin.description || "No description provided."}
+        </p>
+
+        {plugin.languages && plugin.languages.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {plugin.languages.map((lang) => (
+              <span
+                key={lang}
+                className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 text-white/50 border border-white/5 uppercase"
+              >
+                {lang}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="pt-2 border-t border-white/5 flex justify-end">
+        {isInstalled ? (
+          <button
+            type="button"
+            disabled
+            className="w-full py-2 px-4 rounded-xl bg-white/5 text-white/40 text-xs font-semibold cursor-default flex items-center justify-center gap-2"
+          >
+            <CheckCircle2 className="w-4 h-4 text-[#39ff14]" />
+            Installed
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void onInstall(String(plugin.name))}
+            disabled={isInstalling}
+            className="w-full py-2 px-4 rounded-xl bg-[#39ff14] text-black font-semibold text-xs tracking-wider uppercase hover:shadow-[0_0_15px_rgba(57,255,20,0.4)] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+          >
+            {isInstalling ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Installing...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                Install with 1-Click
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});

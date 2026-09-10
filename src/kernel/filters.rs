@@ -6,9 +6,8 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-static ANSI_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\x1B\[[0-9;]*[a-zA-Z]").unwrap()
-});
+static ANSI_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\x1B\[[0-9;]*[a-zA-Z]").unwrap());
 
 /// Strip ANSI escape sequences from terminal text.
 pub fn strip_ansi(input: &str) -> String {
@@ -34,7 +33,10 @@ pub fn filter_cargo(raw: &str) -> String {
             failures.push(trimmed.to_string());
         } else if trimmed.starts_with("test ") && trimmed.ends_with("... ignored") {
             ignored_count += 1;
-        } else if trimmed.starts_with("failures:") || trimmed.starts_with("error[E") || trimmed.starts_with("error:") {
+        } else if trimmed.starts_with("failures:")
+            || trimmed.starts_with("error[E")
+            || trimmed.starts_with("error:")
+        {
             capture_fail = true;
             failures.push(line.to_string());
         } else if capture_fail {
@@ -57,17 +59,26 @@ pub fn filter_cargo(raw: &str) -> String {
             res.push('\n');
         }
         if failures.len() > 80 {
-            res.push_str(&format!("... and {} more error lines truncated\n", failures.len() - 80));
+            res.push_str(&format!(
+                "... and {} more error lines truncated\n",
+                failures.len() - 80
+            ));
         }
         res.push_str("\n=== SUMMARY ===\n");
-        res.push_str(&format!("passed: {}, failed: {}, ignored: {}\n", passed_count, failed_count, ignored_count));
+        res.push_str(&format!(
+            "passed: {}, failed: {}, ignored: {}\n",
+            passed_count, failed_count, ignored_count
+        ));
         for o in out {
             res.push_str(&o);
             res.push('\n');
         }
         res
     } else if passed_count > 0 {
-        let mut res = format!("cargo: all {} tests passed (ignored: {})\n", passed_count, ignored_count);
+        let mut res = format!(
+            "cargo: all {} tests passed (ignored: {})\n",
+            passed_count, ignored_count
+        );
         for o in out {
             res.push_str(&o);
             res.push('\n');
@@ -84,8 +95,16 @@ pub fn filter_cargo(raw: &str) -> String {
         // General cargo build/check: take first 40 lines or relevant errors
         let lines: Vec<&str> = clean.lines().collect();
         if lines.len() > 50 {
-            let mut compact = lines.iter().take(30).copied().collect::<Vec<_>>().join("\n");
-            compact.push_str(&format!("\n... [{} lines truncated for token economy]", lines.len() - 30));
+            let mut compact = lines
+                .iter()
+                .take(30)
+                .copied()
+                .collect::<Vec<_>>()
+                .join("\n");
+            compact.push_str(&format!(
+                "\n... [{} lines truncated for token economy]",
+                lines.len() - 30
+            ));
             compact
         } else {
             clean
@@ -119,7 +138,10 @@ pub fn filter_git(raw: &str) -> String {
 
     if out.len() > 100 {
         let mut res = out.iter().take(70).copied().collect::<Vec<_>>().join("\n");
-        res.push_str(&format!("\n... [{} lines condensed for context limit]", out.len() - 70));
+        res.push_str(&format!(
+            "\n... [{} lines condensed for context limit]",
+            out.len() - 70
+        ));
         res
     } else {
         out.join("\n")
@@ -131,8 +153,16 @@ pub fn filter_grep(raw: &str) -> String {
     let clean = strip_ansi(raw);
     let lines: Vec<&str> = clean.lines().collect();
     if lines.len() > 60 {
-        let mut res = lines.iter().take(50).copied().collect::<Vec<_>>().join("\n");
-        res.push_str(&format!("\n... [{} matches truncated. Use specific search to refine]", lines.len() - 50));
+        let mut res = lines
+            .iter()
+            .take(50)
+            .copied()
+            .collect::<Vec<_>>()
+            .join("\n");
+        res.push_str(&format!(
+            "\n... [{} matches truncated. Use specific search to refine]",
+            lines.len() - 50
+        ));
         res
     } else {
         clean
