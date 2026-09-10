@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier},
     Argon2,
 };
 
@@ -9,13 +9,11 @@ pub const DEFAULT_COST: u32 = 3;
 
 /// Hashes a password using Argon2id.
 pub fn hash(password: &str, _cost: u32) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
-
     // Argon2 with default params (Argon2id)
     let argon2 = Argon2::default();
 
     let password_hash = argon2
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|e| anyhow!("password hashing failed: {}", e))?
         .to_string();
 
