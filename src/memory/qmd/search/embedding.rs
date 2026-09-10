@@ -82,7 +82,11 @@ async fn query_with_embedding_filtered_inner(
 
     let query_has_pronoun = {
         let q_lower = query_text.to_lowercase();
-        q_lower.contains("she") || q_lower.contains("he") || q_lower.contains("her") || q_lower.contains("his") || q_lower.contains("him")
+        q_lower.contains("she")
+            || q_lower.contains("he")
+            || q_lower.contains("her")
+            || q_lower.contains("his")
+            || q_lower.contains("him")
     };
 
     let docs = memory.docs.read().await;
@@ -459,9 +463,10 @@ mod tests {
         std::env::set_var("_XAVIER_TEST_OLLAMA_PROBE_URL", format!("{base}/v1/models"));
         std::env::set_var("XAVIER_SEARCH_DEADLINE_MS", "300");
 
-        let docs = vec![
-            test_doc("notes/alpha", "alpha cluster node provisioning workflow"),
-        ];
+        let docs = vec![test_doc(
+            "notes/alpha",
+            "alpha cluster node provisioning workflow",
+        )];
         let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(docs)));
 
         let start = Instant::now();
