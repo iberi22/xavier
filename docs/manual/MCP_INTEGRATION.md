@@ -51,3 +51,19 @@ memory:
   endpoint: "http://localhost:8006"
   token: "${XAVIER_TOKEN}"
 ```
+
+---
+
+## 3. Migration & Connection Modes
+
+Xavier supports dual transport modes for MCP integration:
+
+- **Stdio Transport**: Started via `xavier mcp`. Reads standard input/output using JSON-RPC 2.0.
+- **SSE Transport (HTTP)**: Served via `xavier http` at `/mcp/sse`.
+
+### Tool Catalog
+
+- `mem_search` (`memory_search` alias): Hybrid/vector recall across memories.
+- `mem_save` (`memory_add` alias): Persist conceptual memory record.
+- `code_find`: Query AST code symbols (functions, structs, routes, variables) with FTS5 and symbol kind filters.
+- `sys_health`: Monitor daemon health, system load, and storage usage.
