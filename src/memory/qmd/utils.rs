@@ -340,8 +340,9 @@ pub fn collect_present_keywords(lowered: &str, keywords: &[&str]) -> Vec<String>
 
 /// Extract quoted titles.
 pub fn extract_quoted_titles(content: &str) -> Vec<String> {
-    let quote_re = Regex::new(r#""([^"]+)""#).expect("quoted title regex");
-    quote_re
+    static QUOTE_TITLE_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r#""([^"]+)""#).expect("quoted title regex"));
+    QUOTE_TITLE_RE
         .captures_iter(content)
         .filter_map(|capture| {
             capture
@@ -356,20 +357,26 @@ pub fn extract_quoted_titles(content: &str) -> Vec<String> {
 
 /// Extract duration value.
 pub fn extract_duration_value(content: &str) -> Option<String> {
-    let years_ago = Regex::new(r"(?i)\b(\d+)\s+years?\s+ago\b").ok()?;
-    if let Some(capture) = years_ago.captures(content) {
+    static YEARS_AGO_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"(?i)\b(\d+)\s+years?\s+ago\b").expect("years-ago regex")
+    });
+    static FOR_YEARS_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"(?i)\bfor\s+(\d+)\s+years?\b").expect("for-years regex")
+    });
+    static BARE_YEARS_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"(?i)\b(\d+)\s+years?\b").expect("bare-years regex")
+    });
+    if let Some(capture) = YEARS_AGO_RE.captures(content) {
         let years = capture.get(1)?.as_str();
         return Some(format!("{years} years ago"));
     }
 
-    let for_years = Regex::new(r"(?i)\bfor\s+(\d+)\s+years?\b").ok()?;
-    if let Some(capture) = for_years.captures(content) {
+    if let Some(capture) = FOR_YEARS_RE.captures(content) {
         let years = capture.get(1)?.as_str();
         return Some(format!("{years} years"));
     }
 
-    let bare_years = Regex::new(r"(?i)\b(\d+)\s+years?\b").ok()?;
-    if let Some(capture) = bare_years.captures(content) {
+    if let Some(capture) = BARE_YEARS_RE.captures(content) {
         let years = capture.get(1)?.as_str();
         return Some(format!("{years} years"));
     }
@@ -461,22 +468,23 @@ pub fn resolve_temporal_value(content: &str, session_time: Option<&str>) -> Opti
 
 /// Extract explicit date value.
 pub fn extract_explicit_date_value(text: &str) -> Option<String> {
-    let patterns = [
-        (r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b", false),
-        (r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b", false),
-        (r"\b(19|20)\d{2}\b", true),
-    ];
+    static DATE_DMY_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b").expect("dmy date regex")
+    });
+    static DATE_MDY_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b").expect("mdy date regex")
+    });
+    static YEAR_ONLY_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"\b(19|20)\d{2}\b").expect("year regex"));
 
-    for (pattern, is_year_only) in patterns {
-        let regex = Regex::new(pattern).ok()?;
-        if let Some(found) = regex.find(text) {
-            let value = found.as_str().trim();
-            return Some(if is_year_only {
-                value.to_string()
-            } else {
-                clean_extracted_date(value)
-            });
-        }
+    if let Some(found) = DATE_DMY_RE.find(text) {
+        return Some(clean_extracted_date(found.as_str().trim()));
+    }
+    if let Some(found) = DATE_MDY_RE.find(text) {
+        return Some(clean_extracted_date(found.as_str().trim()));
+    }
+    if let Some(found) = YEAR_ONLY_RE.find(text) {
+        return Some(found.as_str().trim().to_string());
     }
 
     None
