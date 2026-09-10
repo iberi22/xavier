@@ -32,7 +32,7 @@
     "recharts": "^3.8.1",
     "tailwindcss": "4.3.0",
     "zustand": "^4.5.7",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@astrojs/node": "^11.0.2",
@@ -56,6 +56,6 @@
     "vitest": "^4.1.11"
   },
   "overrides": {
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.4"
   }
 }
