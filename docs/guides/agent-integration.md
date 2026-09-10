@@ -34,6 +34,9 @@ Xavier provides low-latency contextual recall over persistent vector stores (`sq
 Every authenticated request to Xavier requires the `X-Xavier-Token` header matching the server's `XAVIER_TOKEN` environment variable.
 
 ```bash
+# Start Xavier daemon via canonical or backwards-compatible serve command
+xavier serve --host 0.0.0.0 --port 8006
+
 export XAVIER_URL="http://localhost:8006"
 export XAVIER_TOKEN="your-xavier-token"
 ```
@@ -103,7 +106,15 @@ curl -s -X POST "$XAVIER_URL/v1/memories" \
 
 ---
 
-## 4. MCP Tools Reference
+## 4. Gestalt Inbound Plugin & Event Bus Contract
+
+Gestalt agents interface with Xavier through the inbound plugin adapter (`src/adapters/inbound/gestalt/mod.rs`). The event bus bridge (`GestaltAdapter`) subscribes to `XavierEventBus` to receive and emit real-time agent execution states:
+
+* **Task Lifecycle Events:** `AgentTaskStarted`, `AgentTaskCompleted`, `AgentTaskFailed`
+* **Gestalt Protocol Events:** `MemoryFragmentSaved`, `TaskStateUpdated`, `TelemetryPing`
+* **CLI Server Interface:** Supports `xavier serve --host <HOST> --port <PORT>` and `xavier http --http` for continuous agent daemon execution.
+
+## 5. MCP Tools Reference
 
 If integrating via Model Context Protocol (stdio or SSE on `:8100`):
 
@@ -118,7 +129,7 @@ If integrating via Model Context Protocol (stdio or SSE on `:8100`):
 
 ---
 
-## 5. Anti-Patterns & Best Practices
+## 6. Anti-Patterns & Best Practices
 
 | Anti-Pattern | Recommended Practice |
 |---|---|
