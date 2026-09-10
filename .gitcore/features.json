@@ -472,7 +472,7 @@
       "verified_by": "automated",
       "github_issue": 322,
       "last_tested": "2026-08-04",
-      "notes": "Bicameral governance complete with weighted voting, veto, overrule, and alloy-based on-chain integration. Real operational progress: onchain 0% live.",
+      "notes": "Bicameral governance complete with weighted voting, veto, overrule, and alloy-based on-chain integration. Real operational progress: onchain 0% live. [WAVE-21.09: Absorbed dual-maintainer DAO #1972 with autonomous mesh node scanner & wallet integration.]",
       "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance/, src/governance/mod.rs, src/cli/commands/governance.rs",
       "tests": [
         "test_voting"
