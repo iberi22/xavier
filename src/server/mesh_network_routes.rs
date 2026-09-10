@@ -405,7 +405,11 @@ pub async fn join_network(
     let (net_id, _) = match parse_and_validate_invite_token(&payload.token) {
         Ok(res) => res,
         Err(err) => {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": err }))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": err })),
+            )
+                .into_response();
         }
     };
 
@@ -416,7 +420,11 @@ pub async fn join_network(
 
     match state.store.add_member(&net_id, node_id) {
         Ok(record) => (StatusCode::OK, Json(MeshNetworkResponse::from(&record))).into_response(),
-        Err(err) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": err }))).into_response(),
+        Err(err) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": err })),
+        )
+            .into_response(),
     }
 }
 
@@ -429,7 +437,11 @@ pub async fn join_network_by_id(
     let (net_id, _) = match parse_and_validate_invite_token(&payload.token) {
         Ok(res) => res,
         Err(err) => {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": err }))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": err })),
+            )
+                .into_response();
         }
     };
 
@@ -448,7 +460,11 @@ pub async fn join_network_by_id(
 
     match state.store.add_member(&net_id, node_id) {
         Ok(record) => (StatusCode::OK, Json(MeshNetworkResponse::from(&record))).into_response(),
-        Err(err) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": err }))).into_response(),
+        Err(err) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": err })),
+        )
+            .into_response(),
     }
 }
 
@@ -460,7 +476,11 @@ pub async fn accept_invite(
     let (net_id, _) = match parse_and_validate_invite_token(&payload.token) {
         Ok(res) => res,
         Err(err) => {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": err }))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": err })),
+            )
+                .into_response();
         }
     };
 
@@ -471,7 +491,11 @@ pub async fn accept_invite(
 
     match state.store.add_member(&net_id, node_id) {
         Ok(record) => (StatusCode::OK, Json(MeshNetworkResponse::from(&record))).into_response(),
-        Err(err) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": err }))).into_response(),
+        Err(err) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": err })),
+        )
+            .into_response(),
     }
 }
 
