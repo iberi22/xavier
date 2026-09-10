@@ -10,7 +10,7 @@ Xavier exposes a unified MCP (Model Context Protocol) interface. Prefer the **JS
 
 | Transport | How to start | Endpoint / port |
 |-----------|--------------|-----------------|
-| **JSON-RPC MCP (canonical)** | `xavier mcp` or `xavier http --mcp-port 8100` | HTTP+SSE on **:8100** (`POST /mcp`, `GET /mcp`) |
+| **JSON-RPC MCP (canonical)** | `xavier mcp` or `xavier serve` / `xavier http --mcp-port 8100` | HTTP+SSE on **:8100** (`POST /mcp`, `GET /mcp`) |
 | **STDIO MCP** | `xavier mcp` (stdio mode for clients) | Line-delimited JSON-RPC |
 | **Legacy REST (deprecated)** | Main HTTP API | `GET /mcp/tools` on **:8006** — `deprecated: true`; prefer JSON-RPC on :8100 |
 
@@ -109,6 +109,10 @@ These tools provide compatibility with the Gestalt MCP protocol. Each has a cano
 | `get_recent_fragments` | `memoryfragment_recent` | Get recent fragments for agent | `agent_id` |
 | `memoryfragment_get` | — | Get a specific fragment by ID | `id` |
 | `memoryfragment_delete` | — | Delete a fragment by ID | `id` |
+
+### Gestalt Event Bus Integration Contract
+
+Gestalt agents connect to Xavier via the `GestaltAdapter` inbound plugin (`src/adapters/inbound/gestalt/mod.rs`). The event bus bridge subscribes to `XavierEventBus` and coordinates agent lifecycle events (`AgentTaskStarted`, `AgentTaskCompleted`, `AgentTaskFailed`) with the Gestalt runtime ecosystem.
 
 ## Security Scanning
 
