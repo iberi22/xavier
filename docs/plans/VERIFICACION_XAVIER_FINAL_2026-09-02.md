@@ -140,14 +140,14 @@ No bump needed (current 0.1.1, no feat/fix/breaking since v0.1.1)
    Compiling axum-server v0.8.0
    Compiling reqwest v0.13.4
    Compiling alloy-transport-http v2.1.1
-   Compiling code-graph v0.1.0 (/home/belal/proyectosSWAL/apps/xavier/code-graph)
+   Compiling code-graph v0.1.0 (~/proyectosSWAL/apps/xavier/code-graph)
    Compiling sqlx-postgres v0.8.6
    Compiling alloy-rpc-client v2.1.1
    Compiling alloy-provider v2.1.1
    Compiling alloy-contract v2.1.1
    Compiling alloy v2.1.1
    Compiling sqlx v0.8.6
-   Compiling xavier v0.1.1 (/home/belal/proyectosSWAL/apps/xavier)
+   Compiling xavier v0.1.1 (~/proyectosSWAL/apps/xavier)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 16s
 ```
 
@@ -231,7 +231,7 @@ let _ = maybe_wal_checkpoint(conn, 50 * 1024 * 1024);
 ## 7. `pnpm --filter xavier-panel-ui exec vitest run`
 
 ```
-RUN  v4.1.8 /home/belal/proyectosSWAL/apps/xavier/panel-ui
+RUN  v4.1.8 ~/proyectosSWAL/apps/xavier/panel-ui
 
 $ vite build
 $ vite build

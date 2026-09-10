@@ -266,7 +266,7 @@ PRÓXIMO PASO: Asignar issues #115, #166, #200 a Jules + monitorear PRs
 - [x] Evaluar los 3 sistemas enfrentándolos
 
 ### Siguiente — Gobernanza y Escalamiento
-- [x] WHITEPAPER_SOVEREIGN_MESH.md creado (tokenomics + vesting + bonding curves)
+- [x] internal token economics draft removed from this public repo (see private strategy docs)
 - [ ] #115 — [EPIC] Xavier Sovereign Mesh (asignado a Jules)
 - [ ] #166 — feat-governance-dao: Bicameral DAO on-chain (asignado a Jules)
 - [ ] Mesh multi-nodo con peers reales
