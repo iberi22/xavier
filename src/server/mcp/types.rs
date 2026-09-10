@@ -189,13 +189,24 @@ impl MCPToolResult {
         }
     }
 
-    /// Structured.
+    /// Structured (MCP 2025-06-18): structuredContent FIRST so typed
+    /// clients and contract tests read content[0] as structured; the
+    /// text JSON fallback rides second for plain-text clients.
+    /// (Regression note 2026-09-09: commit 7fe73173 prepended Text,
+    /// breaking every content[0]==structuredContent assertion.)
     pub fn structured(payload: Value, is_error: bool) -> Self {
+        let text_fallback = payload.to_string();
         MCPToolResult {
-            content: vec![MCPContent::Structured(MCPStructuredContent {
-                content_type: "structuredContent".to_string(),
-                structured_content: payload,
-            })],
+            content: vec![
+                MCPContent::Structured(MCPStructuredContent {
+                    content_type: "structuredContent".to_string(),
+                    structured_content: payload,
+                }),
+                MCPContent::Text(MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: text_fallback,
+                }),
+            ],
             is_error: Some(is_error),
         }
     }

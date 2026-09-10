@@ -39,6 +39,7 @@ pub mod espacio;
 pub mod governance;
 pub mod health;
 pub mod humanchallenge;
+pub mod kernel;
 pub mod maloca;
 pub mod maturity;
 pub mod memory;

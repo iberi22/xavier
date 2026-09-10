@@ -256,9 +256,20 @@ impl NotificationManager {
         let (tx, _) = broadcast::channel(100);
         let mut providers: Vec<Arc<dyn NotificationProvider>> = Vec::new();
 
-        providers.push(Arc::new(InAppProvider));
-        providers.push(Arc::new(WebhookProvider));
-        providers.push(Arc::new(EmailProvider));
+        let in_app = InAppProvider;
+        if in_app.is_enabled() {
+            providers.push(Arc::new(in_app));
+        }
+
+        let webhook = WebhookProvider;
+        if webhook.is_enabled() {
+            providers.push(Arc::new(webhook));
+        }
+
+        let email = EmailProvider;
+        if email.is_enabled() {
+            providers.push(Arc::new(email));
+        }
 
         Self {
             event_tx: tx,

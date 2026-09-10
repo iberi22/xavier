@@ -32,12 +32,22 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     /// Start Xavier HTTP server
+    #[command(alias = "serve")]
     Http {
         /// Port for the main HTTP API (default: settings/XAVIER_PORT, fallback 8006)
         port: Option<u16>,
         /// Port for the MCP HTTP+SSE server (default: 8100; set to 0 to disable)
         #[arg(long)]
         mcp_port: Option<u16>,
+        /// Disable the administration web panel UI and serve only the REST/MCP API
+        #[arg(long)]
+        no_ui: bool,
+        /// Optional compatibility flag for HTTP server start
+        #[arg(long)]
+        http: bool,
+        /// Host binding address (e.g., 0.0.0.0 or 127.0.0.1)
+        #[arg(long)]
+        host: Option<String>,
     },
     /// Start Xavier MCP-stdio server
     Mcp,
@@ -136,6 +146,18 @@ pub enum Command {
     Code {
         #[command(subcommand)]
         cmd: CodeCommand,
+    },
+    /// Execute a shell command via Xavier RTK Kernel Proxy with token reduction
+    Exec {
+        /// Command and arguments to execute
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
+        /// Optional session identifier for token savings tracking
+        #[arg(short, long)]
+        session: Option<String>,
+        /// Working directory
+        #[arg(short = 'C', long)]
+        cwd: Option<String>,
     },
     /// Package GitHub issue context
     Issue {

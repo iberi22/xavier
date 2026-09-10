@@ -862,4 +862,24 @@ Soporte de arquitectura híbrida SWAL en Cloudflare: frontend `panel-ui` en Clou
 
 ---
 
-*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence.*
+## REQ-047: RTK Kernel CLI Proxy & Token Reduction
+
+- **Category:** Execution / Agent Runtime
+- **Priority:** High
+- **SRS Status:** `verified`
+- **Features:** `feat-rtk-kernel-proxy`
+- **Files:** `src/kernel/`, `src/cli/commands/enums.rs`, `src/cli/commands/mod.rs`, `src/server/mcp/tools_context.rs`, `tests/kernel_proxy_test.rs`, `tests/kernel_mcp_test.rs`
+
+### Description
+Xavier provee un Kernel Proxy CLI en Rust que intercepta subprocesos de herramientas de desarrollo (`cargo test`, `git status/diff`, `grep`, `compiler logs`) y condensa su salida eliminando ruidos, reduciendo hasta un 90% el consumo de tokens en la ventana de contexto de los agentes (Antigravity, Hermes, Jules) con registro automático en `xavier_token_savings`.
+
+### Acceptance criteria
+- [x] Módulo `src/kernel/` implementa runners seguros y filtros de condensación (git, cargo, grep, ansi).
+- [x] Subcomando CLI `xavier exec <cmd>` ejecuta con proxy y reporta tokens consumidos y ahorrados.
+- [x] Herramienta MCP `xavier_run_command` expuesta para delegación transparente de agentes de IA.
+- [x] Integración transparente con el tracker de métricas y compatibilidad con instaladores nativos sin dependencias adicionales.
+
+---
+
+*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy.*
+

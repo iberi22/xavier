@@ -16,15 +16,15 @@ async-trait = "0.1"
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 
-# Tree-sitter - todas las versiones 0.23 (últimas estables)
-tree-sitter = "0.26"
-tree-sitter-rust = "0.24"
-tree-sitter-typescript = "0.23"
-tree-sitter-python = "0.25"
-tree-sitter-go = "0.25"
-tree-sitter-java = "0.23"
-tree-sitter-c = "0.24"
-tree-sitter-cpp = "0.23"
+# Tree-sitter - optional when native-parsers is disabled
+tree-sitter = { version = "0.26", optional = true }
+tree-sitter-rust = { version = "0.24", optional = true }
+tree-sitter-typescript = { version = "0.23", optional = true }
+tree-sitter-python = { version = "0.25", optional = true }
+tree-sitter-go = { version = "0.25", optional = true }
+tree-sitter-java = { version = "0.23", optional = true }
+tree-sitter-c = { version = "0.24", optional = true }
+tree-sitter-cpp = { version = "0.23", optional = true }
 
 # File traversal
 walkdir = "2"
@@ -75,6 +75,20 @@ tempfile = "3"
 name = "code-graph"
 path = "src/main.rs"
 
+[features]
+default = ["native-parsers"]
+native-parsers = [
+    "dep:tree-sitter",
+    "dep:tree-sitter-rust",
+    "dep:tree-sitter-typescript",
+    "dep:tree-sitter-python",
+    "dep:tree-sitter-go",
+    "dep:tree-sitter-java",
+    "dep:tree-sitter-c",
+    "dep:tree-sitter-cpp",
+]
+
 [lib]
 name = "code_graph"
 path = "src/lib.rs"
+
