@@ -117,7 +117,8 @@ async fn test_health_endpoint_via_xavier_binary() {
                     .await
                     .expect("outline auth response");
                 assert!(outline_auth.status().is_success());
-                let outline_json: serde_json::Value = outline_auth.json().await.expect("outline json");
+                let outline_json: serde_json::Value =
+                    outline_auth.json().await.expect("outline json");
                 assert_eq!(outline_json["status"], "error");
                 assert_eq!(outline_json["code"], "NOT_FOUND");
 
