@@ -40,6 +40,13 @@ Upon completing any substantial task or discovery, you MUST perform **Post-Task 
 4. **Public Surface changes require Docs**: Staging changes to a public API/interface (like HTTP routing or main workspace state) requires staging matching updates in public docs (like `README.md` or `docs/FEATURE_STATUS.md`).
 5. **No Hardcoded Secrets**: Do not commit API tokens, passwords, or keys. Define placeholders in `.env.example` and keep production settings in `config/xavier.config.json`.
 6. **Cargo Target Directory**: If compiling in a read-only or restricted Nix/system environment, prepend your commands with `CARGO_TARGET_DIR=target_local` to avoid write permission errors.
+7. **Directory Boundaries & Anti-Sprawl**:
+   - Never create duplicate or casing-variant folders (e.g. use `.jules/`, never `.Jules/`).
+   - Never create `.githooks/`; git hooks belong solely in `.husky/`.
+   - Never commit local database artifacts (`*.db`, `*.db-wal`, `*.db-shm`, `.xavier/*.db`). All dynamic DBs must stay in `.gitignore`.
+8. **Canonical Skills Routing**:
+   - Project-specific skills live under `skills/<skill-name>/SKILL.md`.
+   - Before implementing or diagnosing, consult the canonical skills: `xavier-cognitive-memory`, `xavier-rtk-execution`, `xavier-code-graph-analysis`, `xavier-wave-verification`, and `xavier-maintenance-hygiene`.
 
 ---
 

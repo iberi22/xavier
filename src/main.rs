@@ -31,6 +31,7 @@ mod observability {
 }
 
 // Re-export memory types for binary crate access
+pub use xavier_lib::kernel;
 pub use xavier_lib::memory;
 pub use xavier_lib::secrets;
 pub use xavier_lib::workspace;

@@ -27,11 +27,6 @@ pub struct AppState {
     pub workspace_id: String,
     pub auth_token: String,
     pub secrets_engine: Option<Arc<crate::coordination::KeyLendingEngine>>,
-
-    // Code graph components (to be moved to ports in a future phase)
-    pub code_db: Arc<code_graph::db::CodeGraphDB>,
-    pub code_indexer: Arc<code_graph::indexer::Indexer>,
-    pub code_query: Arc<code_graph::query::QueryEngine>,
 }
 
 /// Check that the `X-Xavier-Token` or `Authorization: Bearer <token>` header matches.
