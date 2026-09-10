@@ -274,11 +274,12 @@ impl QmdMemory {
             return Ok(optimized);
         }
 
-        let all_docs = self.all_documents().await;
-        let locomo_only = !all_docs.is_empty()
-            && all_docs
+        let docs = self.docs.read().await;
+        let locomo_only = !docs.is_empty()
+            && docs
                 .iter()
                 .all(|doc| is_locomo_document(&doc.path, &doc.metadata));
+        drop(docs);
 
         if locomo_only {
             return Ok(self

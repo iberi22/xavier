@@ -27,6 +27,9 @@ pnpm install
 
 | Crate | Severity | Fixed version | Action | Status |
 |---|---|---|---|---|
+| notify | major | 8.2.0 | Upgraded from 6.1.1 (#2016) | Merged / Done |
+| rand | major | 0.10.2 | PR #2015 - Rejected/Closed: major API breaking changes (`RngCore`, `thread_rng()`, `gen_range()`) across 50+ call sites & incompatible with crypto dependencies (`ed25519-dalek`, `x25519-dalek`, `bip39`) | Deferred / Rejected |
+| ulid | major | 3.0.0 | PR #2017 - Rejected/Closed: breaking API change removing `Ulid::new()` across 70+ call sites with no security benefit | Deferred / Rejected |
 | serde_with | medium | 3.21.0 | Already satisfied in lock | Done |
 | jsonwebtoken | medium | 10.3.0 | Direct dep at 9.3 — major API surface; deferred to dedicated PR | Deferred |
 | protobuf | medium | 3.7.2 | Transitive 2.28 from legacy parent; no single-package bump | Deferred |

@@ -1,9 +1,10 @@
 //! Code handlers for scanning, searching, and analyzing codebases.
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::Json;
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::cli::code_dump::{perform_dump, perform_load};
@@ -22,6 +23,182 @@ use xavier::ports::inbound::input_security_port::SecureInputResult;
 
 fn ensure_sidecar_for_workspace(workspace: &std::path::Path) -> EnsureOutcome {
     ensure_codegraph_sidecar_soft(workspace)
+}
+
+// ── XAV-01: explicit per-repo graph resolution ──────────────────────────
+// The CLI sends the cwd-derived repo identity (project_id + root +
+// indexed_commit) on stats/find. The server anchors the graph at that root
+// (`<root>/.xavier/code_graph.db`) and NEVER falls back to another repo's
+// graph: a missing/empty/stale index is reported as degraded FOR THAT repo.
+
+/// Server-side resolution of a requested repo.
+struct ResolvedRepo {
+    project_id: String,
+    root: PathBuf,
+    db_path: PathBuf,
+    indexed_commit: String,
+    head: String,
+    stale: bool,
+    project_id_mismatch: bool,
+}
+
+/// Resolve the caller's requested repo to its on-disk graph location.
+///
+/// Returns `None` when no usable `root` was supplied (legacy callers) or
+/// the supplied root is not an existing directory. Callers must report a
+/// missing repo as degraded for THAT repo, never another repo's graph.
+fn resolve_requested_repo(project_id: Option<&str>, root: Option<&str>) -> Option<ResolvedRepo> {
+    let raw = root.filter(|s| !s.trim().is_empty())?;
+    let abs = std::path::absolute(raw).ok()?;
+    if !abs.is_dir() {
+        return None;
+    }
+    let repo_root = xavier::codebase::repo_identity::find_repo_root(&abs);
+    let canonical = repo_root.canonicalize().unwrap_or(repo_root);
+    let derived = xavier::codebase::repo_identity::derive_project_id(&canonical);
+    let supplied = project_id.filter(|s| !s.trim().is_empty());
+    if let Some(pid) = supplied {
+        if xavier::codebase::validate_project_id(pid).is_err() {
+            return None;
+        }
+    }
+    let project_id_mismatch = supplied.is_some_and(|pid| pid != derived);
+    let indexed_commit = xavier::codebase::repo_identity::read_indexed_commit(&canonical);
+    let head = xavier::codebase::repo_identity::git_head(&canonical)
+        .unwrap_or_else(|| "unknown".to_string());
+    let stale = indexed_commit != "unknown" && head != "unknown" && indexed_commit != head;
+    Some(ResolvedRepo {
+        project_id: derived,
+        root: canonical.clone(),
+        db_path: xavier::codebase::repo_identity::code_graph_db_path_for_root(&canonical),
+        indexed_commit,
+        head,
+        stale,
+        project_id_mismatch,
+    })
+}
+
+/// Canonical repo root of the daemon's own startup workspace.
+///
+/// Used ONLY to decide whether the legacy global graph belongs to the
+/// requested repo (same-repo migration fallback). It never authorizes
+/// serving one repo's graph for a different repo.
+fn workspace_repo_root(workspace_dir: &std::path::Path) -> PathBuf {
+    let root = xavier::codebase::repo_identity::find_repo_root(workspace_dir);
+    root.canonicalize().unwrap_or(root)
+}
+
+/// True when the requested repo IS the daemon's workspace repo, in which
+/// case the legacy global graph (`state.code_graph`) is that repo's own
+/// pre-XAV-01 index and may serve as a same-repo fallback while no
+/// per-repo `<root>/.xavier/code_graph.db` exists yet.
+fn is_workspace_repo(workspace_dir: &std::path::Path, requested: &ResolvedRepo) -> bool {
+    workspace_repo_root(workspace_dir) == requested.root
+}
+
+/// Shared `repo` echo object for per-repo responses.
+fn repo_json(r: &ResolvedRepo) -> serde_json::Value {
+    serde_json::json!({
+        "project_id": r.project_id,
+        "root": r.root.to_string_lossy(),
+        "indexed_commit": r.indexed_commit,
+        "head": r.head,
+        "stale": r.stale,
+    })
+}
+
+/// Degraded stats for a repo whose index is missing/empty/stale.
+/// Totals are zeroed only when there is no data; identity always echoed.
+fn degraded_stats_response(
+    project_id: &str,
+    root: &str,
+    indexed_commit: &str,
+    reason: &str,
+    detail: String,
+) -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "total_files": 0,
+        "total_symbols": 0,
+        "total_imports": 0,
+        "languages": [],
+        "degraded": true,
+        "degraded_reason": reason,
+        "warning": detail,
+        "project_id": project_id,
+        "root": root,
+        "indexed_commit": indexed_commit,
+    }))
+}
+
+/// Legacy global stats (pre-XAV-01 single-workspace graph).
+async fn legacy_stats_json(state: &CliState) -> serde_json::Value {
+    let db_path = code_graph_db_path_for(&state.workspace_dir);
+    let db_stats = if let Ok(db) = ConnectionManager::global().get_code_graph_db(&db_path) {
+        db.stats()
+    } else {
+        let code_graph = state.code_graph.read().await;
+        code_graph.db.stats()
+    };
+
+    match db_stats {
+        Ok(stats) => {
+            let empty = stats.total_symbols == 0;
+            serde_json::json!({
+                "status": "ok",
+                "total_files": stats.total_files,
+                "total_symbols": stats.total_symbols,
+                "total_imports": stats.total_imports,
+                "languages": stats.languages,
+                "degraded": empty,
+                "warning": if empty {
+                    Some("CodeGraph vacío (total_symbols=0). Ejecuta `xavier code scan .` o `xavier code sync --git`.")
+                } else {
+                    None
+                },
+            })
+        }
+        Err(error) => serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+            "total_files": 0,
+            "total_symbols": 0,
+            "total_imports": 0,
+            "degraded": true,
+        }),
+    }
+}
+
+/// Inject the resolved repo identity into a stats body built from the
+/// same-repo legacy global index.
+fn with_repo_echo(
+    mut body: serde_json::Value,
+    r: &ResolvedRepo,
+    legacy: bool,
+) -> serde_json::Value {
+    body["repo"] = repo_json(r);
+    body["project_id"] = serde_json::json!(r.project_id);
+    body["root"] = serde_json::json!(r.root.to_string_lossy());
+    body["indexed_commit"] = serde_json::json!(r.indexed_commit);
+    if legacy {
+        body["legacy_index"] = serde_json::json!(true);
+    }
+    if r.stale && body.get("status") == Some(&serde_json::json!("ok")) {
+        body["degraded"] = serde_json::json!(true);
+        body["degraded_reason"] = serde_json::json!("stale");
+        body["warning"] = serde_json::json!(format!(
+            "Índice desactualizado para '{}': indexado={} HEAD={}. Ejecuta `xavier code sync --git`.",
+            r.root.display(),
+            r.indexed_commit,
+            r.head
+        ));
+    } else if r.project_id_mismatch && body.get("warning").is_none_or(|w| w.is_null()) {
+        body["warning"] = serde_json::json!(format!(
+            "project_id solicitado difiere del derivado para '{}'.",
+            r.root.display()
+        ));
+    }
+    body
 }
 
 /// Auto-index `src/` directory into the code graph.
@@ -453,6 +630,189 @@ pub async fn code_find_handler(
         query, limit, kind, pattern, name
     );
 
+    // XAV-01: explicit repo → resolve THAT repo's graph, never the daemon's
+    // startup workspace. Missing/empty index → degraded for that repo.
+    if let Some(repo) = payload.repo.as_ref() {
+        let repo_root = repo.root.clone().unwrap_or_default();
+        if repo_root.trim().is_empty() {
+            return axum::Json(serde_json::json!({
+                "status": "error",
+                "message": "repo.root vacío: el CLI debe enviar la identidad del repo (XAV-01)",
+                "query": query,
+                "count": 0,
+                "results": [],
+                "degraded": true,
+            }));
+        }
+        let Some(r) = resolve_requested_repo(repo.project_id.as_deref(), repo.root.as_deref())
+        else {
+            return axum::Json(serde_json::json!({
+                "status": "ok",
+                "query": query,
+                "count": 0,
+                "results": [],
+                "degraded": true,
+                "degraded_reason": "missing",
+                "warning": format!("No hay índice CodeGraph para '{}'. Ejecuta `xavier code scan .` en ese repo.", repo_root),
+                "project_id": repo.project_id.clone().unwrap_or_else(|| "unknown".to_string()),
+                "root": repo_root,
+                "indexed_commit": repo.indexed_commit.clone().unwrap_or_else(|| "unknown".to_string()),
+            }));
+        };
+        if !r.db_path.exists() {
+            // Same-repo migration: the daemon's pre-XAV-01 global graph IS
+            // this repo's index. Any other repo gets degraded — never the
+            // workspace's graph.
+            if is_workspace_repo(&state.workspace_dir, &r) {
+                let legacy_db_path = code_graph_db_path_for(&state.workspace_dir);
+                let legacy_db = match ConnectionManager::global().get_code_graph_db(&legacy_db_path)
+                {
+                    Ok(db) => db,
+                    Err(error) => {
+                        return axum::Json(serde_json::json!({
+                            "status": "error",
+                            "message": format!("No se pudo abrir el índice de '{}': {}", r.root.display(), error),
+                            "query": query,
+                            "count": 0,
+                            "results": [],
+                            "degraded": true,
+                            "legacy_index": true,
+                            "repo": repo_json(&r),
+                            "project_id": r.project_id,
+                            "root": r.root.to_string_lossy(),
+                            "indexed_commit": r.indexed_commit,
+                        }));
+                    }
+                };
+                if legacy_db.stats().map(|s| s.total_symbols).unwrap_or(0) == 0 {
+                    return axum::Json(serde_json::json!({
+                        "status": "ok",
+                        "query": query,
+                        "count": 0,
+                        "results": [],
+                        "degraded": true,
+                        "degraded_reason": "empty",
+                        "legacy_index": true,
+                        "warning": format!("CodeGraph vacío para '{}' (total_symbols=0). Ejecuta `xavier code scan .` en ese repo.", r.root.display()),
+                        "repo": repo_json(&r),
+                        "project_id": r.project_id,
+                        "root": r.root.to_string_lossy(),
+                        "indexed_commit": r.indexed_commit,
+                    }));
+                }
+                let legacy_query = code_graph::query::QueryEngine::new(Arc::new(legacy_db));
+                let symbols = code_find_symbols(
+                    &legacy_query,
+                    &query,
+                    name.as_deref(),
+                    kind.as_deref(),
+                    pattern.as_deref(),
+                    limit,
+                );
+                let results = find_results_json(symbols);
+                let mut body = serde_json::json!({
+                    "status": "ok",
+                    "query": query,
+                    "count": results.len(),
+                    "results": results,
+                    "degraded": false,
+                    "legacy_index": true,
+                    "repo": repo_json(&r),
+                    "project_id": r.project_id,
+                    "root": r.root.to_string_lossy(),
+                    "indexed_commit": r.indexed_commit,
+                });
+                if r.stale {
+                    body["degraded"] = serde_json::json!(true);
+                    body["degraded_reason"] = serde_json::json!("stale");
+                    body["warning"] = serde_json::json!(format!(
+                        "Índice desactualizado para '{}': indexado={} HEAD={}. Ejecuta `xavier code sync --git`.",
+                        r.root.display(),
+                        r.indexed_commit,
+                        r.head
+                    ));
+                }
+                return axum::Json(body);
+            }
+            return axum::Json(serde_json::json!({
+                "status": "ok",
+                "query": query,
+                "count": 0,
+                "results": [],
+                "degraded": true,
+                "degraded_reason": "missing",
+                "warning": format!("No hay índice CodeGraph para '{}' (falta {}). Ejecuta `xavier code scan .` en ese repo.", r.root.display(), r.db_path.display()),
+                "repo": repo_json(&r),
+                "project_id": r.project_id,
+                "root": r.root.to_string_lossy(),
+                "indexed_commit": r.indexed_commit,
+            }));
+        }
+        let repo_db = match ConnectionManager::global().get_code_graph_db(&r.db_path) {
+            Ok(db) => db,
+            Err(error) => {
+                return axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": format!("No se pudo abrir el índice de '{}': {}", r.root.display(), error),
+                    "query": query,
+                    "count": 0,
+                    "results": [],
+                    "degraded": true,
+                    "repo": repo_json(&r),
+                    "project_id": r.project_id,
+                    "root": r.root.to_string_lossy(),
+                    "indexed_commit": r.indexed_commit,
+                }));
+            }
+        };
+        if repo_db.stats().map(|s| s.total_symbols).unwrap_or(0) == 0 {
+            return axum::Json(serde_json::json!({
+                "status": "ok",
+                "query": query,
+                "count": 0,
+                "results": [],
+                "degraded": true,
+                "degraded_reason": "empty",
+                "warning": format!("CodeGraph vacío para '{}' (total_symbols=0). Ejecuta `xavier code scan .` en ese repo.", r.root.display()),
+                "repo": repo_json(&r),
+                "project_id": r.project_id,
+                "root": r.root.to_string_lossy(),
+                "indexed_commit": r.indexed_commit,
+            }));
+        }
+        let repo_query = code_graph::query::QueryEngine::new(Arc::new(repo_db));
+        let symbols = code_find_symbols(
+            &repo_query,
+            &query,
+            name.as_deref(),
+            kind.as_deref(),
+            pattern.as_deref(),
+            limit,
+        );
+        let results = find_results_json(symbols);
+        let mut body = serde_json::json!({
+            "status": "ok",
+            "query": query,
+            "count": results.len(),
+            "results": results,
+            "degraded": r.stale,
+            "repo": repo_json(&r),
+            "project_id": r.project_id,
+            "root": r.root.to_string_lossy(),
+            "indexed_commit": r.indexed_commit,
+        });
+        if r.stale {
+            body["degraded_reason"] = serde_json::json!("stale");
+            body["warning"] = serde_json::json!(format!(
+                "Índice desactualizado para '{}': indexado={} HEAD={}. Ejecuta `xavier code sync --git`.",
+                r.root.display(),
+                r.indexed_commit,
+                r.head
+            ));
+        }
+        return axum::Json(body);
+    }
+
     let code_graph = state.code_graph.read().await;
     let symbols = code_find_symbols(
         &code_graph.query,
@@ -463,7 +823,19 @@ pub async fn code_find_handler(
         limit,
     );
 
-    let results: Vec<_> = symbols
+    let results = find_results_json(symbols);
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "query": query,
+        "count": results.len(),
+        "results": results,
+    }))
+}
+
+/// Render find results as JSON values (shared by per-repo and legacy paths).
+fn find_results_json(symbols: Vec<code_graph::types::Symbol>) -> Vec<serde_json::Value> {
+    symbols
         .into_iter()
         .map(|symbol| {
             serde_json::json!({
@@ -480,14 +852,7 @@ pub async fn code_find_handler(
                 "complexity": symbol.complexity,
             })
         })
-        .collect();
-
-    axum::Json(serde_json::json!({
-        "status": "ok",
-        "query": query,
-        "count": results.len(),
-        "results": results,
-    }))
+        .collect()
 }
 
 /// Bridge between Xavier's Embedder and code_graph's SymbolEmbedder
@@ -617,43 +982,92 @@ pub async fn code_search_handler(
 }
 
 /// Code stats handler.
+///
+/// With XAV-01 repo params (`project_id` + `root` + `indexed_commit`) the
+/// stats come from THAT repo's `<root>/.xavier/code_graph.db`. A missing or
+/// empty index returns degraded stats for the requested repo — never another
+/// repo's graph. Without params, legacy workspace behavior is preserved.
 pub async fn code_stats_handler(
     State(state): State<CliState>,
+    Query(q): Query<CodeStatsQuery>,
 ) -> impl axum::response::IntoResponse {
-    let db_path = code_graph_db_path_for(&state.workspace_dir);
-    let db_stats = if let Ok(db) = ConnectionManager::global().get_code_graph_db(&db_path) {
-        db.stats()
-    } else {
-        let code_graph = state.code_graph.read().await;
-        code_graph.db.stats()
-    };
-
-    match db_stats {
-        Ok(stats) => {
-            let empty = stats.total_symbols == 0;
-            axum::Json(serde_json::json!({
-                "status": "ok",
-                "total_files": stats.total_files,
-                "total_symbols": stats.total_symbols,
-                "total_imports": stats.total_imports,
-                "languages": stats.languages,
-                "degraded": empty,
-                "warning": if empty {
-                    Some("CodeGraph vacío (total_symbols=0). Ejecuta `xavier code scan .` o `xavier code sync --git`.")
-                } else {
-                    None
-                },
-            }))
+    if q.root.as_deref().is_some_and(|s| !s.trim().is_empty()) {
+        let Some(r) = resolve_requested_repo(q.project_id.as_deref(), q.root.as_deref()) else {
+            let root = q.root.as_deref().unwrap_or("");
+            return degraded_stats_response(
+                q.project_id.as_deref().unwrap_or("unknown"),
+                root,
+                q.indexed_commit.as_deref().unwrap_or("unknown"),
+                "missing",
+                format!(
+                    "No hay índice CodeGraph para '{}' (repo sin .xavier/code_graph.db). Ejecuta `xavier code scan .` en ese repo.",
+                    root
+                ),
+            );
+        };
+        if !r.db_path.exists() {
+            // Same-repo migration: the daemon's pre-XAV-01 global index IS
+            // this repo's index (no per-repo file yet). Any other repo gets
+            // degraded — never the workspace's graph.
+            if is_workspace_repo(&state.workspace_dir, &r) {
+                let body = legacy_stats_json(&state).await;
+                return axum::Json(with_repo_echo(body, &r, true));
+            }
+            return degraded_stats_response(
+                &r.project_id,
+                &r.root.to_string_lossy(),
+                &r.indexed_commit,
+                "missing",
+                format!(
+                    "No hay índice CodeGraph para '{}' (falta {}). Ejecuta `xavier code scan .` en ese repo.",
+                    r.root.display(),
+                    r.db_path.display()
+                ),
+            );
         }
-        Err(error) => axum::Json(serde_json::json!({
-            "status": "error",
-            "message": error.to_string(),
-            "total_files": 0,
-            "total_symbols": 0,
-            "total_imports": 0,
-            "degraded": true,
-        })),
+        let db_stats: Result<code_graph::types::IndexStats, String> = (|| {
+            let db = ConnectionManager::global()
+                .get_code_graph_db(&r.db_path)
+                .map_err(|e| e.to_string())?;
+            db.stats().map_err(|e| e.to_string())
+        })();
+        return match db_stats {
+            Ok(stats) if stats.total_symbols > 0 => {
+                let body = serde_json::json!({
+                    "status": "ok",
+                    "total_files": stats.total_files,
+                    "total_symbols": stats.total_symbols,
+                    "total_imports": stats.total_imports,
+                    "languages": stats.languages,
+                    "degraded": false,
+                });
+                axum::Json(with_repo_echo(body, &r, false))
+            }
+            Ok(_) => degraded_stats_response(
+                &r.project_id,
+                &r.root.to_string_lossy(),
+                &r.indexed_commit,
+                "empty",
+                format!(
+                    "CodeGraph vacío para '{}' (total_symbols=0). Ejecuta `xavier code scan .` en ese repo.",
+                    r.root.display()
+                ),
+            ),
+            Err(error) => degraded_stats_response(
+                &r.project_id,
+                &r.root.to_string_lossy(),
+                &r.indexed_commit,
+                "unreadable",
+                format!(
+                    "No se pudo leer el índice de '{}': {}",
+                    r.root.display(),
+                    error
+                ),
+            ),
+        };
     }
+
+    axum::Json(legacy_stats_json(&state).await)
 }
 
 /// Git-driven CodeGraph sync handler (`POST /code/sync`).
@@ -1091,56 +1505,75 @@ fn code_find_symbols(
 ) -> Vec<code_graph::types::Symbol> {
     let limit = limit.clamp(1, 100);
 
-    if let Some(n) = name {
-        return code_query.find_by_name(n, limit).unwrap_or_default();
-    }
-
-    let broad_limit = if query.trim().is_empty() {
+    let broad_limit = if query.trim().is_empty() && name.is_none() {
         limit
     } else {
         10_000
     };
 
-    let (mut symbols, is_listing) = if let Some(pattern) = pattern.filter(|p| !p.trim().is_empty())
-    {
+    let mut symbols = if let Some(n) = name.filter(|s| !s.trim().is_empty()) {
+        code_query.find_by_name(n, broad_limit).unwrap_or_default()
+    } else if let Some(pattern) = pattern.filter(|p| !p.trim().is_empty()) {
         if is_supported_code_pattern(pattern) {
-            (
-                code_query
-                    .search_by_pattern(pattern, broad_limit)
-                    .unwrap_or_default(),
-                true,
-            )
+            code_query
+                .search_by_pattern(pattern, broad_limit)
+                .unwrap_or_default()
         } else {
-            (
-                search_code_symbols_with_fallback(code_query, pattern, broad_limit),
-                false,
-            )
+            search_code_symbols_with_fallback(code_query, pattern, broad_limit)
         }
-    } else if let Some(kind) = kind.filter(|k| !k.trim().is_empty()) {
-        match kind.to_ascii_lowercase().as_str() {
-            "function" | "fn" => (code_query.functions(broad_limit).unwrap_or_default(), true),
-            "struct" => (code_query.structs(broad_limit).unwrap_or_default(), true),
-            "class" => (code_query.classes(broad_limit).unwrap_or_default(), true),
-            "enum" => (code_query.enums(broad_limit).unwrap_or_default(), true),
-            "route" | "http_route" => (code_query.routes(broad_limit).unwrap_or_default(), true),
-            _ => (
-                search_code_symbols_with_fallback(code_query, query, broad_limit),
-                false,
-            ),
+    } else if let Some(k) = kind.filter(|k| !k.trim().is_empty()) {
+        match k.to_ascii_lowercase().as_str() {
+            "function" | "fn" => code_query.functions(broad_limit).unwrap_or_default(),
+            "struct" => code_query.structs(broad_limit).unwrap_or_default(),
+            "class" => code_query.classes(broad_limit).unwrap_or_default(),
+            "enum" => code_query.enums(broad_limit).unwrap_or_default(),
+            "route" | "http_route" => code_query.routes(broad_limit).unwrap_or_default(),
+            _ => search_code_symbols_with_fallback(code_query, query, broad_limit),
         }
     } else {
-        (
-            search_code_symbols_with_fallback(code_query, query, broad_limit),
-            false,
-        )
+        search_code_symbols_with_fallback(code_query, query, broad_limit)
     };
 
-    if is_listing {
-        filter_symbols_by_query(&mut symbols, query);
+    // Post-filter by query if supplied
+    filter_symbols_by_query(&mut symbols, query);
+
+    // Post-filter by kind if supplied (handles all SymbolKind variants)
+    if let Some(k) = kind.filter(|k| !k.trim().is_empty()) {
+        filter_symbols_by_kind(&mut symbols, k);
     }
 
     symbols.truncate(limit);
     symbols
+}
+
+fn filter_symbols_by_kind(symbols: &mut Vec<code_graph::types::Symbol>, kind_str: &str) {
+    let target = kind_str.trim().to_ascii_lowercase();
+    symbols.retain(|symbol| {
+        let actual = format!("{:?}", symbol.kind).to_ascii_lowercase();
+        match target.as_str() {
+            "function" | "fn" => actual == "function",
+            "struct" => actual == "struct",
+            "enum" => actual == "enum",
+            "class" => actual == "class",
+            "method" => actual == "method",
+            "variable" | "var" => actual == "variable",
+            "constant" | "const" => actual == "constant",
+            "trait" => actual == "trait",
+            "impl" => actual == "impl",
+            "module" | "mod" => actual == "module",
+            "file" => actual == "file",
+            "import" => actual == "import",
+            "export" => actual == "export",
+            "route" | "http_route" => actual == "route",
+            "component" => actual == "component",
+            "property" => actual == "property",
+            "field" => actual == "field",
+            "parameter" | "param" => actual == "parameter",
+            "typealias" | "type_alias" | "type" => actual == "typealias",
+            "namespace" => actual == "namespace",
+            other => actual == other,
+        }
+    });
 }
 
 fn is_supported_code_pattern(pattern: &str) -> bool {
@@ -1716,7 +2149,7 @@ mod tests {
         db.insert_symbol(&s1).unwrap();
         db.insert_symbol(&s2).unwrap();
 
-        let query_engine = code_graph::query::QueryEngine::new(db);
+        let query_engine = code_graph::query::QueryEngine::new(db.clone());
 
         // Filter by kind "function"
         let res = code_find_symbols(&query_engine, "func", None, Some("function"), None, 10);
@@ -1727,6 +2160,49 @@ mod tests {
         let res = code_find_symbols(&query_engine, "struct", None, Some("struct"), None, 10);
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].name, "struct_two");
+
+        // Additional symbol kinds (Method, Variable)
+        let s3 = Symbol {
+            id: Some(3),
+            stable_id: Some("stable-3".to_string()),
+            name: "method_three".to_string(),
+            kind: SymbolKind::Method,
+            lang: Language::Rust,
+            file_path: "src/three.rs".to_string(),
+            start_line: 1,
+            end_line: 5,
+            start_col: 1,
+            end_col: 1,
+            signature: None,
+            parent: Some("struct_two".to_string()),
+            complexity: Some(1.0),
+        };
+        db.insert_symbol(&s3).unwrap();
+
+        let res_method = code_find_symbols(&query_engine, "", None, Some("method"), None, 10);
+        assert_eq!(res_method.len(), 1);
+        assert_eq!(res_method[0].name, "method_three");
+
+        // Combination of name and kind
+        let res_comb = code_find_symbols(
+            &query_engine,
+            "",
+            Some("method_three"),
+            Some("method"),
+            None,
+            10,
+        );
+        assert_eq!(res_comb.len(), 1);
+
+        let res_mismatch = code_find_symbols(
+            &query_engine,
+            "",
+            Some("method_three"),
+            Some("struct"),
+            None,
+            10,
+        );
+        assert_eq!(res_mismatch.len(), 0);
     }
 
     #[test]
@@ -1870,5 +2346,369 @@ mod tests {
         }
 
         assert!(symbols.contains(&"require_permission".to_string()));
+    }
+
+    // ── XAV-01 handler-level isolation ────────────────────────────────
+    // Stats/find with explicit repo identity resolve THAT repo's
+    // `<root>/.xavier/code_graph.db`; a missing index degrades for the
+    // requested repo instead of leaking another repo's graph.
+
+    use crate::cli::state::CliState;
+    use std::collections::HashMap;
+    use tokio::sync::RwLock as AsyncRwLock;
+    use xavier::agents::provider::router::{ProviderKind, ProviderRouter};
+    use xavier::agents::rate_limit::RateLimitManager;
+    use xavier::app::proxy_use_case::ProxyUseCase;
+    use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
+    use xavier::codebase::conversations_db::ConversationsDb;
+    use xavier::coordination::KeyLendingEngine;
+    use xavier::coordination::SimpleAgentRegistry;
+    use xavier::embedding::NoopEmbedder;
+    use xavier::memory::agent_indexer::AgentIndexer;
+    use xavier::memory::file_indexer::{FileIndexer, FileIndexerConfig};
+    use xavier::memory::qmd_memory::QmdMemory;
+    use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+    use xavier::ports::inbound::AgentLifecyclePort;
+    use xavier::secrets::audit::QmdAuditLogger;
+    use xavier::security::auth_store::AuthStore;
+    use xavier::tasks::store::{InMemoryTaskStore, TaskService};
+
+    async fn xav01_test_state(workspace_dir: std::path::PathBuf) -> CliState {
+        let auth_store = Arc::new(AuthStore::open(":memory:", [0u8; 32]).unwrap());
+        let docs = Arc::new(AsyncRwLock::new(Vec::new()));
+        let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
+        let memory_port = Arc::new(QmdMemoryAdapter::new(Arc::clone(&qmd_memory)));
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            VecSqliteMemoryStore::new(VecSqliteStoreConfig {
+                path: tmp.path().join("vec_store.db"),
+                embedding_dimensions: 3,
+            })
+            .await
+            .unwrap(),
+        );
+        // Keep the tempdir alive via the store path parent? No — VecSqlite
+        // opens the DB eagerly; leaking the dir guard is unnecessary.
+        std::mem::forget(tmp);
+        let cg_db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let cg_state = Arc::new(tokio::sync::RwLock::new(
+            crate::cli::state::CodeGraphState {
+                db: cg_db.clone(),
+                indexer: Arc::new(code_graph::indexer::Indexer::new(cg_db.clone())),
+                query: Arc::new(code_graph::query::QueryEngine::new(cg_db)),
+            },
+        ));
+        CliState {
+            memory: memory_port,
+            qmd_memory,
+            store,
+            workspace_id: "test-ws".to_string(),
+            workspace_dir: workspace_dir.clone(),
+            state_dir: workspace_dir,
+            auth_db: None,
+            code_graph: cg_state,
+            security: Arc::new(xavier::app::security_service::SecurityService::new()),
+            security_scan: Arc::new(xavier::app::security_service::SecurityService::new()),
+            _time_store: None,
+            agent_registry: SimpleAgentRegistry::new(None) as Arc<dyn AgentLifecyclePort>,
+            panel_store: Arc::new(
+                ConversationsDb::open_in_memory("test-project")
+                    .await
+                    .unwrap(),
+            ),
+            secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None)),
+            event_bus: xavier::coordination::XavierEventBus::new(10),
+            tasks: Arc::new(TaskService::new(Arc::new(InMemoryTaskStore::new()))),
+            rate_manager: Arc::new(RateLimitManager::new()),
+            prompt_cache: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            http_client: reqwest::Client::new(),
+            proxy_use_case: Arc::new(ProxyUseCase::new(
+                Arc::new(RateLimitManager::new()),
+                Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            )),
+            usage_counters: Arc::new(xavier::observability::UsageCounters::new()),
+            session_manager: Arc::new(xavier::security::sessions::SessionManager::new(60)),
+            provider_router: Arc::new(tokio::sync::RwLock::new(ProviderRouter::new(
+                ProviderKind::Local,
+            ))),
+            embedder: Arc::new(NoopEmbedder),
+            agent_indexer: Arc::new(AgentIndexer::new(FileIndexer::new(
+                FileIndexerConfig::default(),
+                None,
+            ))),
+            auth_store: Some(auth_store),
+            openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
+                Arc::new(NoopEmbedder),
+            )),
+            multi_db: xavier::storage::multi_db::MultiDbManager::new(),
+            system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
+            maloca: xavier::maloca::MalocaStore::open(
+                &std::env::temp_dir().join("xavier-maloca-test-xav01"),
+            ),
+        }
+    }
+
+    fn xav01_seed_repo(dir: &std::path::Path, checkpoint: &str, symbols: &[(&str, &str)]) {
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::create_dir_all(dir.join(".xavier")).unwrap();
+        std::fs::write(
+            dir.join(".xavier").join("codegraph-sync-commit"),
+            checkpoint,
+        )
+        .unwrap();
+        let db_path = dir.join(".xavier").join("code_graph.db");
+        let cm = xavier::codebase::connection_manager::ConnectionManager::new();
+        let db = cm.get_code_graph_db(&db_path).unwrap();
+        for (name, file) in symbols {
+            db.insert_symbol(&Symbol {
+                id: None,
+                stable_id: None,
+                name: name.to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: file.to_string(),
+                start_line: 1,
+                end_line: 2,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                parent: None,
+                complexity: None,
+            })
+            .unwrap();
+        }
+        cm.unload_code_graph_db(&db_path);
+    }
+
+    fn xav01_stats_query(root: &std::path::Path) -> CodeStatsQuery {
+        let id = xavier::codebase::repo_identity::derive_repo_identity(root);
+        CodeStatsQuery {
+            project_id: Some(id.project_id),
+            root: Some(id.root),
+            indexed_commit: Some(id.indexed_commit),
+        }
+    }
+
+    async fn xav01_body<F, R>(fut: F) -> serde_json::Value
+    where
+        F: std::future::Future<Output = R>,
+        R: axum::response::IntoResponse,
+    {
+        let body = fut.await.into_response().into_body();
+        let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_xav01_stats_isolated_per_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir_a = tmp.path().join("repo-alpha-xav01");
+        let dir_b = tmp.path().join("repo-beta-xav01");
+        xav01_seed_repo(
+            &dir_a,
+            "aaa111\n",
+            &[
+                ("Xav01HandlerAlpha", "src/alpha.rs"),
+                ("Xav01HandlerExtra", "src/extra.rs"),
+            ],
+        );
+        xav01_seed_repo(&dir_b, "bbb222\n", &[("Xav01HandlerBeta", "src/beta.rs")]);
+
+        let state = xav01_test_state(tmp.path().to_path_buf()).await;
+
+        let a = xav01_body(code_stats_handler(
+            State(state.clone()),
+            Query(xav01_stats_query(&dir_a)),
+        ))
+        .await;
+        let b = xav01_body(code_stats_handler(
+            State(state.clone()),
+            Query(xav01_stats_query(&dir_b)),
+        ))
+        .await;
+        assert_eq!(a["status"], "ok");
+        assert_eq!(a["total_symbols"], 2);
+        assert_eq!(a["project_id"], "repo-alpha-xav01");
+        assert_eq!(a["indexed_commit"], "aaa111");
+        assert_eq!(b["status"], "ok");
+        assert_eq!(b["total_symbols"], 1);
+        assert_eq!(b["project_id"], "repo-beta-xav01");
+        assert_eq!(b["indexed_commit"], "bbb222");
+        assert_ne!(a["total_symbols"], b["total_symbols"]);
+
+        // Missing repo → degraded for THAT repo, never A's or B's numbers.
+        let missing_root = tmp.path().join("repo-missing-xav01");
+        let m = xav01_body(code_stats_handler(
+            State(state.clone()),
+            Query(xav01_stats_query(&missing_root)),
+        ))
+        .await;
+        assert_eq!(m["degraded"], true);
+        assert_eq!(m["total_symbols"], 0);
+        assert!(m["root"].as_str().unwrap().contains("repo-missing-xav01"));
+
+        println!(
+            "XAV-01 stats OK: A symbols={} project={} | B symbols={} project={} | missing degraded={}",
+            a["total_symbols"], a["project_id"], b["total_symbols"], b["project_id"], m["degraded"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_xav01_find_isolated_per_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir_a = tmp.path().join("repo-alpha-xav01");
+        let dir_b = tmp.path().join("repo-beta-xav01");
+        xav01_seed_repo(&dir_a, "aaa111\n", &[("Xav01HandlerAlpha", "src/alpha.rs")]);
+        xav01_seed_repo(&dir_b, "bbb222\n", &[("Xav01HandlerBeta", "src/beta.rs")]);
+
+        let state = xav01_test_state(tmp.path().to_path_buf()).await;
+        let payload_for = |query: &str, root: &std::path::Path| {
+            let id = xavier::codebase::repo_identity::derive_repo_identity(root);
+            axum::Json(CodeFindPayload {
+                query: query.to_string(),
+                name: None,
+                limit: 10,
+                kind: None,
+                pattern: None,
+                repo: Some(RepoIdentityPayload {
+                    project_id: Some(id.project_id),
+                    root: Some(id.root),
+                    indexed_commit: Some(id.indexed_commit),
+                }),
+            })
+        };
+
+        // Exclusive symbol resolves in its own repo…
+        let hit = xav01_body(code_find_handler(
+            State(state.clone()),
+            payload_for("Xav01HandlerBeta", &dir_b),
+        ))
+        .await;
+        assert_eq!(hit["status"], "ok");
+        assert_eq!(hit["count"], 1);
+        assert_eq!(hit["project_id"], "repo-beta-xav01");
+        // …and is invisible from the other repo (the reported XAV-01 bug
+        // returned the daemon workspace's graph instead).
+        let miss = xav01_body(code_find_handler(
+            State(state.clone()),
+            payload_for("Xav01HandlerBeta", &dir_a),
+        ))
+        .await;
+        assert_eq!(miss["status"], "ok");
+        assert_eq!(miss["count"], 0);
+        assert_eq!(miss["project_id"], "repo-alpha-xav01");
+
+        // Missing repo → degraded, zero results, own identity echoed.
+        let missing_root = tmp.path().join("repo-missing-xav01");
+        let deg = xav01_body(code_find_handler(
+            State(state.clone()),
+            payload_for("Xav01HandlerBeta", &missing_root),
+        ))
+        .await;
+        assert_eq!(deg["count"], 0);
+        assert_eq!(deg["degraded"], true);
+
+        println!(
+            "XAV-01 find OK: beta@B count={} | beta@A count={} | beta@missing degraded={}",
+            hit["count"], miss["count"], deg["degraded"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_xav01_same_repo_legacy_fallback() {
+        // Repo WITHOUT a per-repo `<root>/.xavier/code_graph.db`, but equal
+        // to the daemon workspace repo: the pre-XAV-01 global index serves
+        // it (migration path). A different repo must still degrade.
+        let _env = crate::settings::tests::TempEnv::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir_ws = tmp.path().join("repo-ws-xav01");
+        std::fs::create_dir_all(dir_ws.join(".git")).unwrap();
+        std::fs::create_dir_all(dir_ws.join(".xavier")).unwrap();
+
+        // Seed the legacy global DB file (redirected via env override) with
+        // a marker symbol; the workspace repo has NO per-repo DB file.
+        let legacy_db_path = tmp.path().join("legacy-global").join("code_graph.db");
+        std::fs::create_dir_all(legacy_db_path.parent().unwrap()).unwrap();
+        {
+            let cm = xavier::codebase::connection_manager::ConnectionManager::new();
+            let legacy_db = cm.get_code_graph_db(&legacy_db_path).unwrap();
+            legacy_db
+                .insert_symbol(&Symbol {
+                    id: None,
+                    stable_id: None,
+                    name: "Xav01LegacyMark".to_string(),
+                    kind: SymbolKind::Function,
+                    lang: Language::Rust,
+                    file_path: "src/legacy.rs".to_string(),
+                    start_line: 1,
+                    end_line: 2,
+                    start_col: 0,
+                    end_col: 0,
+                    signature: None,
+                    parent: None,
+                    complexity: None,
+                })
+                .unwrap();
+            cm.unload_code_graph_db(&legacy_db_path);
+        }
+        std::env::set_var("XAVIER_CODE_GRAPH_DB_PATH", &legacy_db_path);
+        assert!(!dir_ws.join(".xavier").join("code_graph.db").exists());
+
+        let state = xav01_test_state(dir_ws.clone()).await;
+
+        let id_ws = xavier::codebase::repo_identity::derive_repo_identity(&dir_ws);
+        let stats = xav01_body(code_stats_handler(
+            State(state.clone()),
+            Query(CodeStatsQuery {
+                project_id: Some(id_ws.project_id.clone()),
+                root: Some(id_ws.root.clone()),
+                indexed_commit: Some(id_ws.indexed_commit.clone()),
+            }),
+        ))
+        .await;
+        assert_eq!(stats["status"], "ok");
+        assert_eq!(stats["total_symbols"], 1);
+        assert_eq!(stats["legacy_index"], true);
+        assert_eq!(stats["project_id"], "repo-ws-xav01");
+
+        let find = xav01_body(code_find_handler(
+            State(state.clone()),
+            axum::Json(CodeFindPayload {
+                query: "Xav01LegacyMark".to_string(),
+                name: None,
+                limit: 10,
+                kind: None,
+                pattern: None,
+                repo: Some(RepoIdentityPayload {
+                    project_id: Some(id_ws.project_id.clone()),
+                    root: Some(id_ws.root.clone()),
+                    indexed_commit: Some(id_ws.indexed_commit.clone()),
+                }),
+            }),
+        ))
+        .await;
+        assert_eq!(find["count"], 1);
+        assert_eq!(find["legacy_index"], true);
+
+        // …while another repo without an index degrades (no cross-talk).
+        let other = tmp.path().join("repo-other-xav01");
+        std::fs::create_dir_all(other.join(".git")).unwrap();
+        let id_other = xavier::codebase::repo_identity::derive_repo_identity(&other);
+        let deg = xav01_body(code_stats_handler(
+            State(state.clone()),
+            Query(CodeStatsQuery {
+                project_id: Some(id_other.project_id),
+                root: Some(id_other.root),
+                indexed_commit: Some(id_other.indexed_commit),
+            }),
+        ))
+        .await;
+        assert_eq!(deg["degraded"], true);
+        assert_eq!(deg["total_symbols"], 0);
+
+        println!(
+            "XAV-01 legacy OK: ws symbols={} legacy={} | other degraded={}",
+            stats["total_symbols"], stats["legacy_index"], deg["degraded"]
+        );
     }
 }

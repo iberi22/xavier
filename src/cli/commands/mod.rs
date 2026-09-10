@@ -63,12 +63,19 @@ impl Cli {
             port: None,
             mcp_port: None,
             no_ui: false,
+            http: false,
+            host: None,
         }) {
             Command::Http {
                 port,
                 mcp_port,
                 no_ui,
+                http: _,
+                host,
             } => {
+                if let Some(ref h) = host {
+                    std::env::set_var("XAVIER_HTTP_HOST", h);
+                }
                 let port = port.unwrap_or_else(resolve_http_port);
                 start_http_server(port, *mcp_port, *no_ui).await
             }
@@ -166,7 +173,11 @@ impl Cli {
                 http::reindex_memories().await
             }
             Command::Code { cmd } => code::handle_code_command(cmd.clone()).await,
-            Command::Exec { command, session, cwd } => {
+            Command::Exec {
+                command,
+                session,
+                cwd,
+            } => {
                 if command.is_empty() {
                     anyhow::bail!("No command specified. Usage: xavier exec <command> [args...]");
                 }
@@ -175,7 +186,8 @@ impl Cli {
                     &full_cmd,
                     cwd.as_deref(),
                     session.as_deref(),
-                ).await?;
+                )
+                .await?;
                 println!("{}", res.output);
                 eprintln!(
                     "\n[xavier-proxy] tokens: raw ≈ {}, filtered ≈ {} | saved: {} ({:.1}%) in {}ms",
