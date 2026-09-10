@@ -257,7 +257,7 @@ pulldown-cmark = "0.13.4"
 
 # TUI Dashboard
 ratatui = { version = "0.30", optional = true, features = ["serde"] }
-crossterm = { version = "0.28", optional = true }
+crossterm = { version = "0.29", optional = true }
 
 # Observability & Metrics
 autometrics = { version = "3.0", features = ["prometheus-exporter"] }
