@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier},
     Argon2, Params,
 };
 
@@ -12,15 +12,13 @@ pub const ARGON2_P_COST: u32 = 1;
 
 /// Hashes a password using Argon2id with the specified parameters.
 pub fn hash_password(password: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
-
     let params = Params::new(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST, None)
         .map_err(|e| anyhow!("Failed to create Argon2 parameters: {}", e))?;
 
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
 
     let password_hash = argon2
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|e| anyhow!("Failed to hash password: {}", e))?
         .to_string();
 
@@ -36,7 +34,7 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
 
     match argon2.verify_password(password.as_bytes(), &parsed_hash) {
         Ok(_) => Ok(true),
-        Err(argon2::password_hash::Error::Password) => Ok(false),
+        Err(argon2::password_hash::Error::PasswordInvalid) => Ok(false),
         Err(e) => Err(anyhow!("Failed to verify password: {}", e)),
     }
 }
