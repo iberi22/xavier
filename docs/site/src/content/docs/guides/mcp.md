@@ -45,10 +45,19 @@ After saving the configuration, restart Claude Desktop.
 
 | Tool | Description |
 |------|-------------|
-| `memory_search` | Vector search over memories |
-| `memory_add` | Add a new memory |
-| `memory_stats` | Get memory statistics |
-| `code_find` | Search code symbols |
+| `mem_search` / `memory_search` | Vector & hybrid search over cognitive memories |
+| `mem_save` / `memory_add` | Add a new memory to the store |
+| `mem_stats` / `memory_stats` | Get memory and storage statistics |
+| `code_find` | Search code AST symbols by name, query, or kind |
+| `code_scan` | Trigger zero-token AST indexing of local repository |
+| `sys_health` | System health probe and resource status |
+
+## Migration & Connection Modes
+
+Xavier supports two connection modes for MCP:
+
+1. **Stdio Mode (Local CLI)**: Executed directly via `xavier mcp`. Ideal for local IDEs (Cursor, Claude Desktop).
+2. **SSE Mode (HTTP Transport)**: Started via `xavier http` with native SSE endpoints served at `http://127.0.0.1:8006/mcp/sse`. Ideal for remote agents and service-to-service MCP connections.
 
 ## Usage
 
