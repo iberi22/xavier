@@ -24,7 +24,7 @@ pub struct CodeScanPayload {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct CodeFindPayload {
     #[serde(default)]
     pub query: String,
@@ -36,6 +36,32 @@ pub struct CodeFindPayload {
     pub kind: Option<String>,
     #[serde(default)]
     pub pattern: Option<String>,
+    /// XAV-01: explicit repo identity (cwd-derived) so the server resolves
+    /// the graph for the caller's checkout. Absent = legacy behavior.
+    #[serde(default)]
+    pub repo: Option<RepoIdentityPayload>,
+}
+
+/// XAV-01 explicit repo identity sent by the CLI on code stats/find.
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct RepoIdentityPayload {
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub root: Option<String>,
+    #[serde(default)]
+    pub indexed_commit: Option<String>,
+}
+
+/// XAV-01 query params for `GET /code/stats` (all optional = backward compat).
+#[derive(Debug, Deserialize, Default)]
+pub struct CodeStatsQuery {
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub root: Option<String>,
+    #[serde(default)]
+    pub indexed_commit: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
