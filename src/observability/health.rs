@@ -642,17 +642,16 @@ impl HealthMonitor {
     async fn check_mesh(&self) -> MeshHealth {
         let mut peer_healths = vec![];
 
-        // First try the in-memory peer registry set on health monitor
+        // El disco es la FUENTE DE VERDAD: tanto la API HTTP como el CLI (`mesh join`,
+        // `mesh add-peer`) persisten ahi. El registro en memoria es un snapshot del arranque
+        // (src/cli/server.rs set_peer_registry) y quedaba desactualizado: emparejar por CLI
+        // no se reflejaba en /health hasta reiniciar el nodo. Se prefiere el disco.
+        let loaded_registry = PeerRegistry::load().ok();
         let reg_opt = self.peer_registry.read().await;
-        let loaded_registry = if reg_opt.is_none() {
-            PeerRegistry::load().ok()
-        } else {
-            None
-        };
 
-        let peers: Vec<&crate::mesh::PeerInfo> = if let Some(ref registry) = *reg_opt {
+        let peers: Vec<&crate::mesh::PeerInfo> = if let Some(ref registry) = loaded_registry {
             registry.list_peers()
-        } else if let Some(ref registry) = loaded_registry {
+        } else if let Some(ref registry) = *reg_opt {
             registry.list_peers()
         } else {
             vec![]
@@ -661,9 +660,8 @@ impl HealthMonitor {
         let active_peers = peers.len();
 
         for peer in peers {
-            let last_seen = peer.last_seen_at.unwrap_or(0);
             let now = chrono::Utc::now().timestamp();
-            let lag = (now - last_seen).max(0) as u64;
+            let lag = peer_lag_secs(peer, now);
 
             peer_healths.push(PeerHealth {
                 node_id: peer.node_id.to_string(),
@@ -702,9 +700,54 @@ impl HealthMonitor {
 pub static HEALTH: std::sync::LazyLock<Arc<HealthMonitor>> =
     std::sync::LazyLock::new(|| Arc::new(HealthMonitor::new(ConnectionManager::global())));
 
+/// Segundos de desfase de un peer respecto a `now`.
+///
+/// `last_seen_at` puede ser `None` (peer emparejado pero aun sin handshake verificado): en ese
+/// caso se usa `added_at` como referencia. Nunca se usa `0` como sustituto, que producia un lag
+/// absurdo (~1.79e9 s) y marcaba el mesh como `degraded` de forma permanente.
+fn peer_lag_secs(peer: &crate::mesh::PeerInfo, now: i64) -> u64 {
+    let reference = peer.last_seen_at.unwrap_or(peer.added_at);
+    if reference > 0 {
+        (now - reference).max(0) as u64
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_peer_lag_secs_uses_added_at_when_never_seen() {
+        let mut peer = crate::mesh::PeerInfo {
+            node_id: crate::mesh::node::NodeId("xv1-test".into()),
+            alias: None,
+            endpoint_url: "http://localhost:8006".into(),
+            public_key_hex: String::new(),
+            added_at: 1_000,
+            last_seen_at: None,
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: None,
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: std::collections::HashMap::new(),
+            capabilities: Vec::new(),
+        };
+        // Nunca visto: referencia = added_at, NO 0 (que daria lag ~1.79e9 y "degraded" eterno).
+        assert_eq!(peer_lag_secs(&peer, 1_060), 60);
+        // Recien emparejado: el mesh debe salir sano.
+        assert!(peer_lag_secs(&peer, 1_030) < 60);
+
+        // Con last_seen_at presente manda last_seen_at.
+        peer.last_seen_at = Some(2_000);
+        assert_eq!(peer_lag_secs(&peer, 2_010), 10);
+
+        // added_at 0 (registro incompleto) no produce lag negativo ni absurdo.
+        peer.added_at = 0;
+        peer.last_seen_at = None;
+        assert_eq!(peer_lag_secs(&peer, 5_000), 0);
+    }
 
     #[test]
     fn test_health_status_default() {
