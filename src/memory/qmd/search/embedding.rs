@@ -68,6 +68,21 @@ pub async fn query_with_embedding_filtered(
     }
 }
 
+/// Is stage-4 query expansion enabled?
+///
+/// Defaults to enabled (recall-friendly); set `XAVIER_SEARCH_EXPANSION=0` on nodes where
+/// the second, longer-query search is too expensive for the latency budget.
+fn expansion_enabled() -> bool {
+    std::env::var("XAVIER_SEARCH_EXPANSION")
+        .map(|v| {
+            !matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "off" | "no"
+            )
+        })
+        .unwrap_or(true)
+}
+
 async fn query_with_embedding_filtered_inner(
     memory: &QmdMemory,
     query_text: &str,
@@ -194,7 +209,11 @@ async fn query_with_embedding_filtered_inner(
 
     // Stage 4: Reranking & expansion
     let stage4_start = std::time::Instant::now();
-    if !initial_results.is_empty() {
+    // Expansion issues a SECOND full search with a longer query. On large corpora that
+    // dominates the request (measured 12-53s on a 35k-memory store while the first pass
+    // stayed at 0.1-0.4s) and it only adds recall on top of results already computed.
+    // Latency-critical nodes can disable it with XAVIER_SEARCH_EXPANSION=0.
+    if expansion_enabled() && !initial_results.is_empty() {
         let mut context_terms = Vec::new();
 
         let common_words: std::collections::HashSet<&str> = std::collections::HashSet::from_iter([
@@ -281,6 +300,25 @@ mod tests {
     use tokio::sync::RwLock as AsyncRwLock;
 
     const TEST_DIM: usize = 8;
+
+    #[test]
+    fn test_expansion_gate_env() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+
+        std::env::remove_var("XAVIER_SEARCH_EXPANSION");
+        assert!(expansion_enabled(), "expansion must default to enabled");
+
+        for off in ["0", "false", "OFF", "No"] {
+            std::env::set_var("XAVIER_SEARCH_EXPANSION", off);
+            assert!(!expansion_enabled(), "'{off}' must disable expansion");
+        }
+        for on in ["1", "true", "yes", "on"] {
+            std::env::set_var("XAVIER_SEARCH_EXPANSION", on);
+            assert!(expansion_enabled(), "'{on}' must keep expansion enabled");
+        }
+
+        std::env::remove_var("XAVIER_SEARCH_EXPANSION");
+    }
 
     fn test_doc(path: &str, content: &str) -> MemoryDocument {
         MemoryDocument {
