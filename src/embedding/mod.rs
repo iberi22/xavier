@@ -220,6 +220,32 @@ impl EmbedderConfig {
             return Self::gllm_only();
         }
 
+        // Honor an explicit embedder selection by building ONLY the requested backend.
+        // Falling through to the generic chain meant a correctly configured backend still
+        // waited on unrelated failing backends first: every `EmbeddingClient::from_env()`
+        // call paid that startup failure (measured ~10s on the BELA node, gllm without a
+        // matching local model) and embedder-dependent routes answered 504 to the client
+        // even though the write had already been persisted server-side.
+        match explicit_embedder.as_deref() {
+            Some("openrouter") => {
+                return Self::Fallback(vec![EmbedderBackendConfig::OpenAICompatible(
+                    cloud_config(),
+                )]);
+            }
+            Some("openai") | Some("openai-compatible") => {
+                return Self::Fallback(vec![EmbedderBackendConfig::OpenAICompatible(
+                    local_config(),
+                )]);
+            }
+            Some("ollama") => {
+                return Self::Fallback(vec![EmbedderBackendConfig::Ollama(ollama_config())]);
+            }
+            Some("cloud") => return Self::cloud_only(api_flavor),
+            Some("local") => return Self::local_only(api_flavor),
+            Some("auto") => return Self::auto_explicit(api_flavor),
+            _ => {}
+        }
+
         if api_flavor == ApiFlavor::AnthropicCompatible {
             return Self::Noop;
         }
@@ -1212,6 +1238,51 @@ mod tests {
         assert!(matches!(config, EmbedderConfig::Fallback(_)));
 
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+    }
+
+    #[tokio::test]
+    async fn test_explicit_embedder_selects_single_backend() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::set_var(
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "http://localhost:11434/v1/embeddings",
+        );
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "nomic-embed-text");
+        std::env::set_var("XAVIER_EMBEDDING_DIMENSIONS", "768");
+
+        // An explicit embedder must resolve to exactly ONE backend: a longer chain makes
+        // every construction pay the startup failure of unrelated backends.
+        std::env::set_var("XAVIER_EMBEDDER", "openai-compatible");
+        match EmbedderConfig::from_env() {
+            EmbedderConfig::Fallback(backends) => {
+                assert_eq!(
+                    backends.len(),
+                    1,
+                    "explicit 'openai-compatible' must not drag other backends in"
+                );
+                assert!(matches!(
+                    backends[0],
+                    EmbedderBackendConfig::OpenAICompatible(_)
+                ));
+            }
+            other => panic!("expected single-backend Fallback, got {:?}", other),
+        }
+
+        std::env::set_var("XAVIER_EMBEDDER", "ollama");
+        match EmbedderConfig::from_env() {
+            EmbedderConfig::Fallback(backends) => {
+                assert_eq!(backends.len(), 1);
+                assert!(matches!(backends[0], EmbedderBackendConfig::Ollama(_)));
+            }
+            other => panic!("expected single Ollama backend, got {:?}", other),
+        }
+
+        std::env::remove_var("XAVIER_EMBEDDER");
+        std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_DIMENSIONS");
     }
 
     #[tokio::test]
