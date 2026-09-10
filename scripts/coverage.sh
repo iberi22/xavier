@@ -8,8 +8,12 @@ OUTPUT_DIR="coverage"
 mkdir -p "$OUTPUT_DIR"
 
 # Args to tarpaulin
+# NOTE 2026-09-09: scoped to --package xavier --lib (same gate as CI test job).
+# --workspace pulls panel-ui/src-tauri -> glib-sys, which needs system
+# libglib2.0-dev absent on ubuntu-latest (see tarpaulin infra failure).
 ARGS=(
-  --workspace
+  --package xavier
+  --lib
   --features ci-safe
   --timeout 180
   --exclude-files "tests/*"
@@ -19,6 +23,16 @@ ARGS=(
   --out Xml
   --output-dir "$OUTPUT_DIR"
 )
+
+# Engine override: TARPAULIN_ENGINE=llvm (nightly + llvm-tools) works around
+# ptrace-engine const-eval failures on SIMD crates (pulp via qrcode).
+# MUST come before the `--` test-args separator below.
+if [ -n "${TARPAULIN_ENGINE:-}" ]; then
+  ARGS+=(--engine "$TARPAULIN_ENGINE")
+fi
+
+# Serial like the CI test gate: env-var tests (PLANKKA_*) race in parallel.
+ARGS+=(-- --test-threads=1)
 
 case "$MODULE" in
   mesh)

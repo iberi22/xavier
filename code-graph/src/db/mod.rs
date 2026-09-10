@@ -30,6 +30,22 @@ fn normalize_path(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// Insert into the global connection cache with a hard cap.
+///
+/// Every distinct path held here pins an open SQLite connection (WAL fds)
+/// forever. Long test suites / servers touching many DBs exhaust the fd
+/// table (ulimit 1024 -> "unable to open database file" in late tests).
+/// Keeps the hot path, evicts the rest; evicted holders keep working
+/// (their Arc owns the conn) and reopen transparently on next `new()`.
+fn cache_insert_capped(norm_path: PathBuf, conn: Arc<Mutex<Connection>>) {
+    const MAX_CACHED_DBS: usize = 64;
+    let mut cache = db_cache().write();
+    cache.insert(norm_path.clone(), conn);
+    if cache.len() > MAX_CACHED_DBS {
+        cache.retain(|p, _| *p == norm_path);
+    }
+}
+
 /// Standalone helper to execute WAL checkpoint (TRUNCATE).
 pub fn checkpoint_wal(conn: &Connection) {
     let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
@@ -187,7 +203,7 @@ impl CodeGraphDB {
 
         db.init_schema()?;
 
-        db_cache().write().insert(norm_path, conn_arc);
+        cache_insert_capped(norm_path, conn_arc);
         Ok(db)
     }
 
@@ -214,7 +230,7 @@ impl CodeGraphDB {
 
         db.init_schema()?;
 
-        db_cache().write().insert(norm_path, conn_arc);
+        cache_insert_capped(norm_path, conn_arc);
         Ok(db)
     }
 

@@ -183,6 +183,10 @@ name = "clearance_access_audit"
 path = "tests/e2e/clearance_access_audit.rs"
 
 [[test]]
+name = "xavier_repair_verify_wave20"
+path = "tests/e2e/xavier_repair_verify_wave20.rs"
+
+[[test]]
 name = "xtsp"
 path = "tests/xtsp/mod.rs"
 
@@ -277,7 +281,7 @@ zerocopy = "0.8"
 # File traversal
 walkdir = "2"
 libc = "0.2"
-notify = "6.1.1"
+notify = "8.2.0"
 
 # Hardware Security
 keyring = "4"
