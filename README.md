@@ -58,7 +58,21 @@ xavier mcp
 ```bash
 # Add a memory fragment
 xavier add "Architecture decision: Use SQLite-vec for local vector storage" "ADR-001" --kind decision
+```
 
+---
+
+## 🧠 Canonical Agent Skills
+
+Xavier provides native, standardized agent skills located in [`skills/`](skills/) for continuous development, code-graph navigation, and maintenance:
+
+- **[`xavier-cognitive-memory`](skills/xavier-cognitive-memory/SKILL.md)**: Memory persistence, hybrid search (BM25 + vector), and MCP protocol integration.
+- **[`xavier-rtk-execution`](skills/xavier-rtk-execution/SKILL.md)**: High-speed command execution and 60–90% token reduction via the `rtk-kernel` proxy plugin.
+- **[`xavier-code-graph-analysis`](skills/xavier-code-graph-analysis/SKILL.md)**: AST symbol navigation, call hierarchy mapping, and blast-radius analysis.
+- **[`xavier-wave-verification`](skills/xavier-wave-verification/SKILL.md)**: Automated GitCore feature verification and CI test execution.
+- **[`xavier-maintenance-hygiene`](skills/xavier-maintenance-hygiene/SKILL.md)**: Anti-sprawl guidelines, database cache quarantine, and deprecated script handling.
+
+```bash
 # Search memory fragments
 xavier search "SQLite vector storage" -n 5
 
@@ -249,6 +263,42 @@ Xavier exposes standard MCP tools for integration with Cursor, Claude Desktop, a
 - `xavier_context_search`: Search within saved session contexts.
 - `xavier_token_savings`: Report token savings statistics achieved via context compression.
 - `xavier_issue_context_package`: Produce a `PreciseChange` context package for a GitHub issue.
+
+---
+
+## 🧠 Agent Skill: Cognitive Memory & CodeGraph
+
+For autonomous coding assistants and agents (**Antigravity**, **Hermes**, **Jules**, **OpenClaw**, **Cursor**), Xavier ships with a ready-to-use canonical skill: [`skills/xavier-cognitive-memory/SKILL.md`](skills/xavier-cognitive-memory/SKILL.md).
+
+### Post-Installation Setup for Agents
+
+Install the skill into your global agent configuration:
+
+```bash
+# For Antigravity / Gemini agents
+mkdir -p ~/.gemini/config/skills/xavier-cognitive-memory
+cp skills/xavier-cognitive-memory/SKILL.md ~/.gemini/config/skills/xavier-cognitive-memory/SKILL.md
+
+# For Hermes agents
+mkdir -p ~/.hermes/skills/xavier-cognitive-memory
+cp skills/xavier-cognitive-memory/SKILL.md ~/.hermes/skills/xavier-cognitive-memory/SKILL.md
+```
+
+### Mandatory Agent Cycle (PRE → EXEC → POST)
+
+1. **PRE (Context Discovery):**
+   ```bash
+   xavier search "<task or feature keyword>" -n 5
+   ```
+2. **EXEC (Code-Graph Navigation & Blast Radius):**
+   ```bash
+   xavier code find <SymbolName>
+   xavier code blast-radius <SymbolName>
+   ```
+3. **POST (Persist Findings):**
+   ```bash
+   xavier add "Implemented X with decision Y" --kind decision --cluster "<project>"
+   ```
 
 ---
 
