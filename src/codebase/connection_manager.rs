@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 pub static INSTANCE: std::sync::OnceLock<ConnectionManager> = std::sync::OnceLock::new();
 
-const MAX_POOLS: usize = 128;
+const MAX_POOLS: usize = 16;
 const WAL_INIT_ATTEMPTS: usize = 10;
 const WAL_INIT_RETRY_DELAY: Duration = Duration::from_millis(50);
 
