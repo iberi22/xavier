@@ -112,7 +112,7 @@ function StatusIndicator({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" title={`Status: ${status}`}>
       <div className={`w-2 h-2 rounded-full ${colors[status]}`} />
       {status === "running" && (
         <div className="absolute inset-0 w-2 h-2 rounded-full bg-[#39ff14] animate-ping opacity-75" />
