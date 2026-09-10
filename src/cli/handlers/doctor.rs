@@ -931,7 +931,7 @@ mod tests {
     }
 
     #[tokio::test]
-    fn test_check_embeddings() {
+    async fn test_check_embeddings() {
         let settings = XavierSettings::current();
         let scan = mock_scan_result();
         let checks = check_embeddings(&settings, &scan).await;

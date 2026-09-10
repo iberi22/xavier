@@ -7,6 +7,7 @@
 pub mod db;
 pub mod jwt;
 pub mod middleware;
+pub mod oauth;
 pub mod password;
 pub mod refresh;
 
@@ -132,6 +133,8 @@ where
     let protected = Router::new()
         .route("/2fa/setup", post(setup_2fa_handler::<S>))
         .route("/2fa/verify", post(verify_2fa_handler::<S>))
+        // Vincular un proveedor a la cuenta AUTENTICADA (requiere sesion abierta).
+        .route("/oauth/link", post(oauth_link_handler::<S>))
         .route("/status", get(status_handler));
     let protected = protected.layer(ServiceBuilder::new().layer(from_fn(auth_middleware)));
 
@@ -143,6 +146,9 @@ where
         .route("/logout", post(logout_handler::<S>))
         .route("/check-users", get(check_users_handler::<S>))
         .route("/recovery", post(recovery_handler::<S>))
+        // OAuth: inicio del flujo y callback. Se montan bajo /auth (igual que register/login).
+        .route("/oauth/{provider}", get(oauth_start_handler))
+        .route("/oauth/{provider}/callback", get(oauth_callback_handler::<S>))
         .merge(protected)
         .layer(axum::Extension(std::sync::Arc::new(base_path.to_string())))
 }
@@ -707,4 +713,422 @@ async fn status_handler(req: Request) -> Result<impl IntoResponse, StatusCode> {
         "email": claims.email,
         "role": claims.role,
     })))
+}
+
+
+// ── OAuth 2.0 (Google, GitHub) ──────────────────────────────────────────────────
+//
+// Modelo de seguridad (ver `auth2::oauth` para el detalle):
+//   * el vinculo con el proveedor es por `subject`, nunca por email;
+//   * un email que ya existe NO se fusiona automaticamente: exige vincular con sesion abierta;
+//   * `state` firmado con caducidad y PKCE S256;
+//   * el email debe venir verificado por el proveedor para dar de alta una cuenta nueva.
+
+/// Parametros que devuelve el proveedor al callback.
+#[derive(Debug, Deserialize)]
+pub struct OAuthCallbackQuery {
+    pub code: Option<String>,
+    pub state: Option<String>,
+    pub error: Option<String>,
+    pub error_description: Option<String>,
+}
+
+fn json_err(status: StatusCode, body: serde_json::Value) -> axum::response::Response {
+    (status, Json(body)).into_response()
+}
+
+/// `GET /auth/oauth/{provider}` — inicia el flujo y redirige al proveedor.
+///
+/// Si el proveedor no esta configurado responde **501 con las variables exactas que faltan**:
+/// es preferible un error explicito a un flujo que falla a mitad del navegador.
+async fn oauth_start_handler(
+    axum::extract::Path(provider_slug): axum::extract::Path<String>,
+) -> axum::response::Response {
+    use axum::response::Redirect;
+
+    let Some(provider) = oauth::Provider::from_slug(&provider_slug) else {
+        return json_err(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "error": "proveedor no soportado", "soportados": ["google", "github"] }),
+        );
+    };
+
+    let cfg = oauth::OAuthConfig::from_env();
+    if cfg.provider(provider).is_none() {
+        let pref = format!("XAVIER_OAUTH_{}_", provider.slug().to_ascii_uppercase());
+        return json_err(
+            StatusCode::NOT_IMPLEMENTED,
+            serde_json::json!({
+                "error": "proveedor no configurado",
+                "faltan": [format!("{pref}CLIENT_ID"), format!("{pref}CLIENT_SECRET")],
+                "redirect_uri_a_registrar": cfg.redirect_uri(provider),
+            }),
+        );
+    }
+
+    let verifier = oauth::new_code_verifier();
+    let challenge = oauth::code_challenge_s256(&verifier);
+    let state = oauth::new_state(&cfg.state_secret, provider, &verifier, 600);
+
+    match oauth::authorize_url(&cfg, provider, &state, &challenge) {
+        Some(url) => Redirect::temporary(&url).into_response(),
+        None => json_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": "no se pudo construir la URL de autorizacion" }),
+        ),
+    }
+}
+
+/// `GET /auth/oauth/{provider}/callback` — canjea el codigo, resuelve la identidad y emite sesion.
+async fn oauth_callback_handler<S>(
+    State(state): State<S>,
+    axum::extract::Path(provider_slug): axum::extract::Path<String>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
+    axum::extract::Query(q): axum::extract::Query<OAuthCallbackQuery>,
+) -> axum::response::Response
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    // 0. Error devuelto por el proveedor (usuario cancelo, etc.)
+    if let Some(err) = q.error {
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": err, "detalle": q.error_description }),
+        );
+    }
+
+    let Some(provider) = oauth::Provider::from_slug(&provider_slug) else {
+        return json_err(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "error": "proveedor no soportado" }),
+        );
+    };
+
+    let cfg = oauth::OAuthConfig::from_env();
+    if cfg.provider(provider).is_none() {
+        return json_err(
+            StatusCode::NOT_IMPLEMENTED,
+            serde_json::json!({ "error": "proveedor no configurado" }),
+        );
+    }
+
+    // 1. `state`: firma, caducidad y coherencia con el proveedor de la ruta
+    let Some(state_param) = q.state else {
+        return json_err(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "falta state" }));
+    };
+    let Some((state_provider, verifier)) = oauth::verify_state(&cfg.state_secret, &state_param) else {
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "state invalido o caducado" }),
+        );
+    };
+    if state_provider != provider {
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "state de otro proveedor" }),
+        );
+    }
+
+    // 2. Codigo -> identidad
+    let Some(code) = q.code else {
+        return json_err(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "falta code" }));
+    };
+    let identidad = match oauth::exchange_code(&cfg, provider, &code, &verifier).await {
+        Ok(i) => i,
+        Err(e) => {
+            // El detalle se registra, no se devuelve: puede contener el cuerpo del proveedor.
+            tracing::warn!(error = %e, provider = provider.slug(), "oauth: fallo el canje del codigo");
+            return json_err(
+                StatusCode::BAD_GATEWAY,
+                serde_json::json!({ "error": "no se pudo validar el codigo con el proveedor" }),
+            );
+        }
+    };
+
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => {
+            let path = format!("{}/.xavier/auth.db", base_path);
+            match AuthDb::new(std::path::Path::new(&path)) {
+                Ok(db) => std::sync::Arc::new(parking_lot::Mutex::new(db)),
+                Err(_) => {
+                    return json_err(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        serde_json::json!({ "error": "auth db no disponible" }),
+                    )
+                }
+            }
+        }
+    };
+    let auth_db = auth_db_lock.lock();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    // 3. Ya vinculada -> login
+    let vinculado = match auth_db.get_user_by_oauth(provider.slug(), &identidad.subject) {
+        Ok(v) => v,
+        Err(_) => {
+            return json_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": "no se pudo consultar la vinculacion" }),
+            )
+        }
+    };
+
+    let user = match vinculado {
+        Some(u) => u,
+        None => {
+            // 4. Alta nueva: exige email VERIFICADO por el proveedor
+            let Some(email) = identidad.email.clone() else {
+                return json_err(
+                    StatusCode::FORBIDDEN,
+                    serde_json::json!({
+                        "error": "el proveedor no entrego un correo",
+                        "hint": "autoriza el permiso de email en el proveedor y reintenta"
+                    }),
+                );
+            };
+            if !identidad.email_verified {
+                return json_err(
+                    StatusCode::FORBIDDEN,
+                    serde_json::json!({
+                        "error": "el proveedor no marca ese correo como verificado",
+                        "hint": "verifica tu correo en el proveedor y reintenta"
+                    }),
+                );
+            }
+
+            // 5. El email ya existe: NO se fusiona solo (evita apropiarse de una cuenta ajena)
+            let ya_existe = auth_db
+                .get_user_by_email(&email)
+                .map(|u| u.is_some())
+                .unwrap_or(false);
+            if ya_existe {
+                return json_err(
+                    StatusCode::CONFLICT,
+                    serde_json::json!({
+                        "error": "cuenta_existente",
+                        "hint": "inicia sesion con tu contrasena y vincula el proveedor desde /auth/oauth/link"
+                    }),
+                );
+            }
+
+            let nuevo = User {
+                id: ulid::Ulid::new().to_string(),
+                email: email.clone(),
+                // Cuenta sin contrasena: marca inutilizable (nunca coincide con un hash argon2).
+                password_hash: "!oauth-no-password".to_string(),
+                name: email.clone(),
+                role: "user".to_string(),
+                totp_secret: None,
+                totp_enabled: false,
+                recovery_seed_hash: None,
+                backup_codes: None,
+                created_at: now,
+                updated_at: now,
+            };
+            if auth_db.create_user(&nuevo).is_err() {
+                return json_err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    serde_json::json!({ "error": "no se pudo crear la cuenta" }),
+                );
+            }
+            let _ = auth_db.mark_email_verified(&nuevo.id, now);
+            let _ = auth_db.link_oauth_identity(
+                provider.slug(),
+                &identidad.subject,
+                &nuevo.id,
+                Some(&email),
+            );
+            let _ = auth_db.log_audit(&AuditLog {
+                id: ulid::Ulid::new().to_string(),
+                user_id: Some(nuevo.id.clone()),
+                action: format!("register_oauth:{}", provider.slug()),
+                ip_address: None,
+                details: None,
+                created_at: now,
+            });
+            nuevo
+        }
+    };
+
+    // 6. Sesion (mismo contrato que el login local)
+    let jwt_manager = match JwtManager::new() {
+        Ok(j) => j,
+        Err(_) => {
+            return json_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": "no se pudo emitir el token" }),
+            )
+        }
+    };
+    let access_token = match jwt_manager.create_token(&user.id, &user.email, &user.role) {
+        Ok(t) => t,
+        Err(_) => {
+            return json_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": "no se pudo emitir el token" }),
+            )
+        }
+    };
+    let refresh_token = RefreshTokenManager::new(&auth_db)
+        .generate_token(&user.id, Some(format!("oauth:{}", provider.slug())))
+        .unwrap_or_default();
+
+    Json(serde_json::json!({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "requires_2fa": false,
+        "user": UserResponse::from(user),
+        "provider": provider.slug(),
+    }))
+    .into_response()
+}
+
+
+/// Cuerpo de `POST /auth/oauth/link`.
+#[derive(Debug, Deserialize)]
+pub struct OAuthLinkRequest {
+    pub provider: String,
+    pub code: String,
+    pub state: String,
+}
+
+/// `POST /auth/oauth/link` — vincula un proveedor a la cuenta **autenticada**.
+///
+/// Existe porque un email que ya tiene cuenta **no** se fusiona automaticamente en el callback: el
+/// usuario debe demostrar que controla la cuenta iniciando sesion y vinculando desde aqui.
+///
+/// El dueno de la vinculacion sale de `claims.sub` (el JWT que valido el middleware), NO de una
+/// consulta a la base. Nota: el handler de 2FA existente toma `list_users().next()`, o sea el primer
+/// usuario de la base, que con mas de una cuenta vincularia la identidad a quien no es; aqui no se
+/// repite ese patron.
+async fn oauth_link_handler<S>(
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
+    axum::Extension(claims): axum::Extension<crate::auth2::jwt::Claims>,
+    Json(payload): Json<OAuthLinkRequest>,
+) -> axum::response::Response
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    let Some(provider) = oauth::Provider::from_slug(&payload.provider) else {
+        return json_err(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "error": "proveedor no soportado", "soportados": ["google", "github"] }),
+        );
+    };
+
+    let cfg = oauth::OAuthConfig::from_env();
+    if cfg.provider(provider).is_none() {
+        return json_err(
+            StatusCode::NOT_IMPLEMENTED,
+            serde_json::json!({ "error": "proveedor no configurado" }),
+        );
+    }
+
+    let Some((state_provider, verifier)) = oauth::verify_state(&cfg.state_secret, &payload.state) else {
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "state invalido o caducado" }),
+        );
+    };
+    if state_provider != provider {
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "state de otro proveedor" }),
+        );
+    }
+
+    let identidad = match oauth::exchange_code(&cfg, provider, &payload.code, &verifier).await {
+        Ok(i) => i,
+        Err(e) => {
+            tracing::warn!(error = %e, provider = provider.slug(), "oauth link: fallo el canje del codigo");
+            return json_err(
+                StatusCode::BAD_GATEWAY,
+                serde_json::json!({ "error": "no se pudo validar el codigo con el proveedor" }),
+            );
+        }
+    };
+
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => {
+            let path = format!("{}/.xavier/auth.db", base_path);
+            match AuthDb::new(std::path::Path::new(&path)) {
+                Ok(db) => std::sync::Arc::new(parking_lot::Mutex::new(db)),
+                Err(_) => {
+                    return json_err(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        serde_json::json!({ "error": "auth db no disponible" }),
+                    )
+                }
+            }
+        }
+    };
+    let auth_db = auth_db_lock.lock();
+
+    // La identidad no puede pertenecer ya a OTRA cuenta.
+    match auth_db.get_user_by_oauth(provider.slug(), &identidad.subject) {
+        Ok(Some(otro)) if otro.id != claims.sub => {
+            return json_err(
+                StatusCode::CONFLICT,
+                serde_json::json!({
+                    "error": "esa identidad ya esta vinculada a otra cuenta",
+                }),
+            )
+        }
+        Ok(_) => {}
+        Err(_) => {
+            return json_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": "no se pudo consultar la vinculacion" }),
+            )
+        }
+    }
+
+    if auth_db
+        .link_oauth_identity(
+            provider.slug(),
+            &identidad.subject,
+            &claims.sub,
+            identidad.email.as_deref(),
+        )
+        .is_err()
+    {
+        return json_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": "no se pudo guardar la vinculacion" }),
+        );
+    }
+
+    // Si el proveedor confirma el correo, la cuenta queda con el email verificado.
+    if identidad.email_verified {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let _ = auth_db.mark_email_verified(&claims.sub, ts);
+    }
+
+    let _ = auth_db.log_audit(&AuditLog {
+        id: ulid::Ulid::new().to_string(),
+        user_id: Some(claims.sub.clone()),
+        action: format!("link_oauth:{}", provider.slug()),
+        ip_address: None,
+        details: None,
+        created_at: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0),
+    });
+
+    Json(serde_json::json!({
+        "linked": true,
+        "provider": provider.slug(),
+        "email_verified": identidad.email_verified,
+    }))
+    .into_response()
 }
