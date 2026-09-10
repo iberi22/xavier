@@ -262,6 +262,11 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route("/plugins/health", get(plugins_health_handler))
         .route("/plugins/sync", post(plugins_sync_handler));
 
+    // Global request timeout middleware (configurable via XAVIER_HTTP_TIMEOUT_SECS, default 10s).
+    let router = router.layer(axum::middleware::from_fn(
+        crate::adapters::inbound::http::middleware::timeout::timeout_middleware,
+    ));
+
     // Global rate limiting middleware (token_bucket per IP: 100 capacity, 60 req/min refill rate).
     let router = router.layer(axum::middleware::from_fn(
         crate::middleware::token_bucket::rate_limit_middleware,

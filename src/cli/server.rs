@@ -1391,7 +1391,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>, no_ui: bool) ->
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
         .layer(Extension(event_bus_for_ws))
-        .layer(CorsLayer::permissive());
+        .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
+        ));
 
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
