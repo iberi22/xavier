@@ -507,6 +507,7 @@ pub async fn approve_curation_review(
     if !id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || id.contains("..")
     {
         return (StatusCode::BAD_REQUEST, "Invalid item ID").into_response();
     }
@@ -529,6 +530,7 @@ pub async fn reject_curation_review(
     if !id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || id.contains("..")
     {
         return (StatusCode::BAD_REQUEST, "Invalid item ID").into_response();
     }
@@ -607,6 +609,7 @@ pub async fn create_snapshot(
         .repo
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || req.repo.contains("..")
     {
         return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
     }
@@ -656,6 +659,7 @@ pub async fn get_snapshot(
     if !repo
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || repo.contains("..")
     {
         return (StatusCode::BAD_REQUEST, "Invalid repo name").into_response();
     }
@@ -675,6 +679,7 @@ pub async fn get_document_handler(
     if !id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || id.contains("..")
     {
         return (StatusCode::BAD_REQUEST, "Invalid document ID").into_response();
     }

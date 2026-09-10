@@ -119,6 +119,87 @@ async fn test_encode_dimension_and_similarity() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_wave20_add_embed_search_roundtrip() -> Result<()> {
+    let test_real = std::env::var("XAVIER_TEST_OLLAMA").unwrap_or_default() == "1";
+    let dimension = 768;
+
+    let (url, _handle) = if test_real {
+        let real_url = "http://localhost:11434/v1/embeddings".to_string();
+        if !is_ollama_reachable(&real_url).await {
+            println!("Skipping real Ollama test: local instance not reachable");
+            return Ok(());
+        }
+        (real_url, None)
+    } else {
+        let (mock_url, handle) = start_mock_ollama(dimension).await?;
+        (mock_url, Some(handle))
+    };
+
+    std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "local");
+    std::env::set_var("XAVIER_EMBEDDING_LOCAL_URL", &url);
+    std::env::set_var("XAVIER_EMBEDDING_MODEL", "embeddinggemma");
+
+    // Initialize sqlite vector memory store
+    let temp_dir = tempfile::tempdir()?;
+    let db_path = temp_dir.path().join("wave20_roundtrip.db");
+    let config = VecSqliteStoreConfig {
+        path: db_path,
+        embedding_dimensions: dimension,
+    };
+    let store = VecSqliteMemoryStore::new(config).await?;
+
+    // Build embedder
+    let embedder = build_embedder_from_env().await?;
+    assert_eq!(embedder.dimension(), dimension);
+
+    // Ingest memory with unique content
+    let unique_content = "wave20 unique quantum mechanics memory entry 9988112233";
+    let embedding = embedder.encode(unique_content).await?;
+
+    assert!(
+        !embedding.is_empty(),
+        "generated embedding must not be empty"
+    );
+    assert_eq!(
+        embedding.len(),
+        dimension,
+        "embedding length must match configured dimension"
+    );
+
+    let record = MemoryRecord {
+        id: "wave20-roundtrip-rec-1".to_string(),
+        workspace_id: "ws-wave20".to_string(),
+        path: "notes/quantum.md".to_string(),
+        content: unique_content.to_string(),
+        embedding,
+        ..Default::default()
+    };
+
+    store.put(record).await?;
+
+    // Perform vector search
+    let query_embedding = embedder.encode("quantum mechanics").await?;
+    let search_results = store
+        .hybrid_search_with_embedding("ws-wave20", "quantum mechanics", query_embedding, None, 5)
+        .await?;
+
+    assert!(
+        !search_results.is_empty(),
+        "search must return at least one result"
+    );
+    assert_eq!(
+        search_results[0].record.id, "wave20-roundtrip-rec-1",
+        "inserted memory must be top-1 search hit"
+    );
+    assert!(
+        search_results[0].score > 0.0,
+        "search hit score must be positive"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_fallback_embedder() -> Result<()> {
     // 1. Mock a failing "cloud" server (Primary)
     let failing_listener = TcpListener::bind("127.0.0.1:0").await?;
