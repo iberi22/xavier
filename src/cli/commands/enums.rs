@@ -32,6 +32,7 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     /// Start Xavier HTTP server
+    #[command(alias = "serve")]
     Http {
         /// Port for the main HTTP API (default: settings/XAVIER_PORT, fallback 8006)
         port: Option<u16>,
@@ -41,6 +42,12 @@ pub enum Command {
         /// Disable the administration web panel UI and serve only the REST/MCP API
         #[arg(long)]
         no_ui: bool,
+        /// Optional compatibility flag for HTTP server start
+        #[arg(long)]
+        http: bool,
+        /// Host binding address (e.g., 0.0.0.0 or 127.0.0.1)
+        #[arg(long)]
+        host: Option<String>,
     },
     /// Start Xavier MCP-stdio server
     Mcp,
