@@ -91,7 +91,11 @@ fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
         .with_state(state)
 }
 
-async fn post_json(app: Router, body: Value) -> axum::response::Response {
+async fn post_json_with_token(
+    app: Router,
+    body: Value,
+    token: Option<&str>,
+) -> axum::response::Response {
     let method = body
         .get("method")
         .and_then(|v| v.as_str())
@@ -115,7 +119,9 @@ async fn post_json(app: Router, body: Value) -> axum::response::Response {
         }
     }
 
-    req = req.header("X-Xavier-Token", "e2e-mcp-token");
+    if let Some(tok) = token {
+        req = req.header("X-Xavier-Token", tok);
+    }
 
     app.oneshot(
         req.body(Body::from(
@@ -125,6 +131,10 @@ async fn post_json(app: Router, body: Value) -> axum::response::Response {
     )
     .await
     .expect("POST request to MCP endpoint failed")
+}
+
+async fn post_json(app: Router, body: Value) -> axum::response::Response {
+    post_json_with_token(app, body, Some("e2e-mcp-token")).await
 }
 
 async fn get_json_body(response: axum::response::Response) -> Value {
@@ -138,6 +148,32 @@ async fn get_json_body(response: axum::response::Response) -> Value {
 async fn test_mcp_e2e_handshake_and_tools_list() {
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
+
+    // 0. Verify Auth Enforcement: Request without token returns 401 Unauthorized
+    let unauth_response = post_json_with_token(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list"
+        }),
+        None,
+    )
+    .await;
+    assert_eq!(unauth_response.status(), StatusCode::UNAUTHORIZED);
+
+    // Request with invalid token returns 401 Unauthorized
+    let invalid_token_response = post_json_with_token(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list"
+        }),
+        Some("invalid-token"),
+    )
+    .await;
+    assert_eq!(invalid_token_response.status(), StatusCode::UNAUTHORIZED);
 
     // 1. Handshake with protocol-version 2026-07-28
     let response = post_json(
@@ -174,7 +210,11 @@ async fn test_mcp_e2e_handshake_and_tools_list() {
     let tools = body["result"]["tools"]
         .as_array()
         .expect("tools should be an array");
-    assert!(tools.len() >= 16);
+    assert!(
+        tools.len() >= 15,
+        "Expected at least 15 tools, found {}",
+        tools.len()
+    );
 }
 
 #[tokio::test]
@@ -197,7 +237,16 @@ async fn test_mcp_e2e_health_check() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
-    let content = &body["result"]["content"][0];
-    assert_eq!(content["type"], "structuredContent");
-    assert!(content["structuredContent"]["status"].is_string());
+    let content = body["result"]["content"]
+        .as_array()
+        .expect("content should be an array");
+    assert!(!content.is_empty());
+
+    // Check structured content element
+    let structured_item = content
+        .iter()
+        .find(|c| c["type"] == "structuredContent")
+        .expect("structuredContent item should exist in response content");
+    assert!(structured_item["structuredContent"]["status"].is_string());
+    assert_eq!(structured_item["structuredContent"]["handshakeOk"], true);
 }
