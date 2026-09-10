@@ -76,8 +76,28 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
                         cached_at: Instant::now(),
                     },
                 );
-                if cache.len() % 10 == 0 {
-                    drop(cache);
+                // Bound memory: global HashMap had no capacity limit (only
+                // 1h TTL, cleaned every 10 inserts). Under bulk reindex it
+                // grew without bound (each 768d vec ~3KB + overhead).
+                // Cap at 5000 entries; evict expired first, then arbitrary
+                // oldest batch if still over budget.
+                const MAX_EMBEDDING_CACHE_ENTRIES: usize = 5000;
+                if cache.len() > MAX_EMBEDDING_CACHE_ENTRIES {
+                    let now = Instant::now();
+                    cache.retain(|_, entry| {
+                        now.duration_since(entry.cached_at).as_secs() < EMBEDDING_CACHE_TTL_SECS
+                    });
+                }
+                if cache.len() > MAX_EMBEDDING_CACHE_ENTRIES {
+                    let excess = cache.len() - MAX_EMBEDDING_CACHE_ENTRIES;
+                    let keys: Vec<String> = cache.keys().take(excess).cloned().collect();
+                    for key in keys {
+                        cache.remove(&key);
+                    }
+                }
+                let needs_clean = cache.len() % 10 == 0;
+                drop(cache);
+                if needs_clean {
                     clean_embedding_cache().await;
                 }
                 return Ok(vector);
@@ -127,13 +147,15 @@ pub fn preprocess_for_embedding(text: &str) -> String {
 
 /// Preserve quoted speech.
 pub fn preserve_quoted_speech(text: &str) -> String {
+    // Static regex: compiling on every embedding/search call burned CPU
+    // (Regex::new per call). Hoist to a LazyLock so the hot path reuses it.
+    static QUOTE_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r#"["']([^"']+)["']"#).expect("valid quote regex")
+    });
     // Replace quoted text with a marker to emphasize it in embeddings
     let mut result = text.to_string();
-
-    // Pattern for quoted speech: "..." or '...'
-    let quote_re = regex::Regex::new(r#"["']([^"']+)["']"#).expect("test assertion");
     let mut quote_count = 0;
-    result = quote_re
+    result = QUOTE_RE
         .replace_all(&result, |caps: &regex::Captures| {
             quote_count += 1;
             let quote = &caps[1];
@@ -196,11 +218,28 @@ pub async fn search_with_cache_filtered(
     let documents: Vec<MemoryDocument> =
         scored.into_iter().map(|(_, doc)| doc).take(limit).collect();
 
-    memory
-        .search_cache
-        .write()
-        .await
-        .insert(cache_key, documents.clone());
+    {
+        let mut search_cache = memory.search_cache.write().await;
+        search_cache.insert(cache_key, documents.clone());
+        // Bound memory: search_cache was an unbounded HashMap keyed by
+        // (workspace, query, limit, filters). Each value clones up to
+        // `limit` docs with 768d embeddings — under diverse query load
+        // this grew without bound (GBs). Cap at 1000 entries; evict
+        // everything on overflow (correctness preserved via miss).
+        const MAX_SEARCH_CACHE_ENTRIES: usize = 1000;
+        if search_cache.len() > MAX_SEARCH_CACHE_ENTRIES {
+            search_cache.clear();
+            search_cache.insert(
+                SearchCacheKey {
+                    workspace_id: memory.workspace_id.clone(),
+                    query: normalized_query.clone(),
+                    limit,
+                    filters: serde_json::to_string(&filters).unwrap_or_default(),
+                },
+                documents.clone(),
+            );
+        }
+    }
     memory
         .cache_counters
         .misses
