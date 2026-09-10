@@ -49,6 +49,42 @@ pub struct SystemHealth {
     pub status: HealthLevel,
 }
 
+/// Cache for the deep SQLite integrity check.
+///
+/// `PRAGMA integrity_check` costs seconds on a large store (measured 4.91s on a
+/// 253k-page DB) and ran on every `/health` call, pushing the response past the 10s
+/// route timeout so healthchecks answered 504. The verdict is cached for
+/// `XAVIER_HEALTH_INTEGRITY_TTL_SECS` seconds (default 300; `0` disables the cache).
+static DB_INTEGRITY_CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> =
+    std::sync::Mutex::new(None);
+
+fn cached_integrity_ok(conn: &rusqlite::Connection) -> bool {
+    let ttl_secs = std::env::var("XAVIER_HEALTH_INTEGRITY_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(300);
+
+    if ttl_secs > 0 {
+        if let Ok(guard) = DB_INTEGRITY_CACHE.lock() {
+            if let Some((checked_at, ok)) = *guard {
+                if checked_at.elapsed() < std::time::Duration::from_secs(ttl_secs) {
+                    return ok;
+                }
+            }
+        }
+    }
+
+    let ok = conn
+        .query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
+        .map(|verdict| verdict == "ok")
+        .unwrap_or(false);
+
+    if let Ok(mut guard) = DB_INTEGRITY_CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), ok));
+    }
+    ok
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DbHealth {
     pub integrity_ok: bool,
@@ -390,8 +426,7 @@ impl HealthMonitor {
         let res = self
             .cm
             .with_conn(&project_id, |conn| {
-                let integrity: String =
-                    conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
+                let integrity = cached_integrity_ok(conn);
                 let pc: u32 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
                 let fc: u32 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
 
@@ -401,7 +436,7 @@ impl HealthMonitor {
                     0.0
                 };
 
-                Ok((integrity == "ok", frag, pc))
+                Ok((integrity, frag, pc))
             })
             .await;
 
@@ -646,6 +681,29 @@ mod tests {
             is_stale: 700_000 > 604800,
         };
         assert!(peer_stale.is_stale);
+    }
+
+    #[test]
+    fn test_integrity_verdict_is_cached() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        std::env::remove_var("XAVIER_HEALTH_INTEGRITY_TTL_SECS");
+
+        // First call runs the real PRAGMA and primes the cache.
+        assert!(cached_integrity_ok(&conn));
+
+        // Second call must be served from the cache: no PRAGMA, sub-millisecond.
+        let start = std::time::Instant::now();
+        assert!(cached_integrity_ok(&conn));
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(20),
+            "cached verdict must not re-run PRAGMA integrity_check, took {:?}",
+            start.elapsed()
+        );
+
+        // TTL=0 disables the cache and still returns a valid verdict.
+        std::env::set_var("XAVIER_HEALTH_INTEGRITY_TTL_SECS", "0");
+        assert!(cached_integrity_ok(&conn));
+        std::env::remove_var("XAVIER_HEALTH_INTEGRITY_TTL_SECS");
     }
 
     #[tokio::test]
