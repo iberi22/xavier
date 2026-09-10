@@ -1,10 +1,10 @@
 # FEATURE-070: Cloudflare Vectorize and Workers AI Edge Persistence Adapter Spec
 
-**Status:** `approved` | **Tier:** SWAL Partner Cloud ($9/mo) | **Last Updated:** 2026-03-31
+**Status:** `approved` | **Tier:** SWAL Partner Cloud (pricing pending — internal roadmap) | **Last Updated:** 2026-03-31
 
 ## Overview
 
-SWAL Partner Cloud ($9/mo subscription) offers serverless edge persistence for Xavier cognitive memory layers. The edge persistence tier utilizes Cloudflare serverless edge infrastructure:
+SWAL Partner Cloud (pricing pending — see internal roadmap) offers serverless edge persistence for Xavier cognitive memory layers. The edge persistence tier utilizes Cloudflare serverless edge infrastructure:
 - **Cloudflare Vectorize:** High-performance vector database for embedding indexing and similarity search.
 - **Cloudflare Workers AI:** Serverless embedding generation (`@cf/baai/bge-large-en-v1.5` / `@cf/baai/bge-base-en-v1.5`).
 - **Cloudflare D1:** Serverless SQL database for storing encrypted memory record metadata (`memories_enc`).
