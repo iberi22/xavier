@@ -53,8 +53,8 @@
   "models": {
     "provider": "local",
     "api_flavor": "openai-compatible",
-    "local_llm_url": "http://127.0.0.1:11435/v1",
-    "local_llm_model": "qwen2.5-coder:7b",
+    "local_llm_url": "http://localhost:11434/v1",
+    "local_llm_model": "qwen3-coder",
     "embedding_url": "http://localhost:11434/v1",
     "embedding_model": "nomic-embed-text:latest",
     "router_retrieved_model": "",
