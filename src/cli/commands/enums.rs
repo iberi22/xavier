@@ -457,6 +457,11 @@ pub enum Command {
         /// Limit the number of exported memory records
         #[arg(short, long)]
         limit: Option<usize>,
+        /// Only memories created at/after this date (ISO-8601, e.g. 2026-09-01).
+        /// The graph follows the window: an edge is only exported when both of
+        /// its endpoints are inside it, so no dangling references travel.
+        #[arg(long)]
+        since: Option<String>,
     },
 
     /// Import a neutral mirror package (JSONL) with content-hash dedupe

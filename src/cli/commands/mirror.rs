@@ -109,7 +109,11 @@ fn vec_db_path() -> PathBuf {
 }
 
 /// Handle `mirror-export --out <file> [--limit N]`.
-pub async fn handle_mirror_export(out: PathBuf, limit: Option<usize>) -> Result<()> {
+pub async fn handle_mirror_export(
+    out: PathBuf,
+    limit: Option<usize>,
+    since: Option<String>,
+) -> Result<()> {
     let db_path = vec_db_path();
     if !db_path.exists() {
         anyhow::bail!("database not found at {}", db_path.display());
@@ -118,7 +122,7 @@ pub async fn handle_mirror_export(out: PathBuf, limit: Option<usize>) -> Result<
     let node_key = at_rest::resolve_record_key();
     let conn =
         Connection::open(&db_path).with_context(|| format!("cannot open {}", db_path.display()))?;
-    let jsonl = export_jsonl(&conn, limit, node_key.as_ref())?;
+    let jsonl = export_jsonl(&conn, limit, since.as_deref(), node_key.as_ref())?;
 
     let mut f =
         std::fs::File::create(&out).with_context(|| format!("cannot create {}", out.display()))?;
@@ -160,24 +164,32 @@ pub async fn handle_mirror_import(input: PathBuf) -> Result<()> {
 fn export_jsonl(
     conn: &Connection,
     limit: Option<usize>,
+    since: Option<&str>,
     node_key: Option<&[u8; 32]>,
 ) -> Result<String> {
     let mut lines: Vec<String> = Vec::new();
 
-    // 1. Memory nodes (decrypted content).
+    // 1. Memory nodes (decrypted content). `--since` narrows the window; the
+    //    graph follows automatically because an edge is only emitted when both
+    //    of its endpoints are inside it.
     let mut mem_hashes: HashMap<String, String> = HashMap::new();
     {
-        let sql = match limit {
-            Some(n) => format!(
-                "SELECT id, content, metadata, encrypted_dek, content_iv, metadata_iv, updated_at \
-                 FROM memory_records ORDER BY created_at LIMIT {n}"
-            ),
-            None => {
-                "SELECT id, content, metadata, encrypted_dek, content_iv, metadata_iv, updated_at \
-                     FROM memory_records ORDER BY created_at"
-                    .to_string()
-            }
-        };
+        let mut sql = String::from(
+            "SELECT id, content, metadata, encrypted_dek, content_iv, metadata_iv, updated_at \
+             FROM memory_records",
+        );
+        if let Some(since) = since {
+            // Single quotes stripped: the value is a CLI date literal, never
+            // something to splice into SQL verbatim.
+            sql.push_str(&format!(
+                " WHERE created_at >= '{}'",
+                since.replace('\'', "")
+            ));
+        }
+        sql.push_str(" ORDER BY created_at");
+        if let Some(n) = limit {
+            sql.push_str(&format!(" LIMIT {n}"));
+        }
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map([], |row| {
             Ok((
@@ -757,7 +769,7 @@ mod tests {
         let conn = open_db();
         seed_memory(&conn, &key, "m1", CANARY, json!({"topic": "canary"}));
 
-        let jsonl = export_jsonl(&conn, None, Some(&key)).unwrap();
+        let jsonl = export_jsonl(&conn, None, None, Some(&key)).unwrap();
         assert!(
             jsonl.contains(CANARY),
             "exported content must be readable plaintext, got:\n{jsonl}"
@@ -825,7 +837,7 @@ mod tests {
         )
         .unwrap();
 
-        let jsonl = export_jsonl(&conn, None, Some(&key)).unwrap();
+        let jsonl = export_jsonl(&conn, None, None, Some(&key)).unwrap();
         let aristas: Vec<Value> = jsonl
             .lines()
             .filter(|l| l.contains("\"t\":\"edge\""))
@@ -848,6 +860,66 @@ mod tests {
     }
 
     #[test]
+    fn mirror_export_since_narrows_window_and_drops_crossing_edges() {
+        let key = test_key(0x8D);
+        let conn = open_db();
+        seed_memory(&conn, &key, "old", "memoria vieja", json!({}));
+        seed_memory(&conn, &key, "new", "memoria nueva", json!({}));
+        conn.execute(
+            "UPDATE memory_records SET created_at = '2026-07-01T00:00:00+00:00' WHERE id = 'old'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE memory_records SET created_at = '2026-09-10T00:00:00+00:00' WHERE id = 'new'",
+            [],
+        )
+        .unwrap();
+        for (ph, memory_id) in [("mem:ws1:old", "old"), ("mem:ws1:new", "new")] {
+            conn.execute(
+                "INSERT INTO entities (id, name, entity_type, workspace_id, properties) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    ph,
+                    format!("placeholder/{memory_id}"),
+                    ENTITY_TYPE_MEMORY,
+                    "ws1",
+                    json!({ "memory_id": memory_id }).to_string()
+                ],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO relations (id, source_id, target_id, relation_type, weight, workspace_id) \
+             VALUES ('r1', 'mem:ws1:old', 'mem:ws1:new', 'related', 0.5, 'ws1')",
+            [],
+        )
+        .unwrap();
+
+        // Sin ventana: las dos memorias y su arista.
+        let todo = export_jsonl(&conn, None, None, Some(&key)).unwrap();
+        assert_eq!(
+            todo.lines().filter(|l| l.contains("\"t\":\"node\"")).count(),
+            2
+        );
+        assert_eq!(
+            todo.lines().filter(|l| l.contains("\"t\":\"edge\"")).count(),
+            1
+        );
+
+        // Con ventana: solo la reciente, y NINGUNA arista, porque la unica que
+        // habia cruzaba la frontera (seria una referencia colgando en el destino).
+        let reciente = export_jsonl(&conn, None, Some("2026-09-01"), Some(&key)).unwrap();
+        assert!(reciente.contains("memoria nueva"), "falta la reciente:\n{reciente}");
+        assert!(!reciente.contains("memoria vieja"), "se colo la vieja:\n{reciente}");
+        assert_eq!(
+            reciente.lines().filter(|l| l.contains("\"t\":\"edge\"")).count(),
+            0,
+            "una arista con un extremo fuera de la ventana no debe viajar:\n{reciente}"
+        );
+    }
+
+    #[test]
     fn mirror_roundtrip_counts_and_content() {
         let key = test_key(0x6B);
         let src = open_db();
@@ -866,7 +938,7 @@ mod tests {
         )
         .unwrap();
 
-        let jsonl = export_jsonl(&src, None, Some(&key)).unwrap();
+        let jsonl = export_jsonl(&src, None, None, Some(&key)).unwrap();
         // 2 memory nodes + 1 entity node + 1 edge.
         assert_eq!(jsonl.lines().count(), 4);
 
@@ -936,7 +1008,7 @@ mod tests {
         let key = test_key(0x7C);
         let src = open_db();
         seed_memory(&src, &key, "m1", "único contenido", json!({}));
-        let jsonl = export_jsonl(&src, None, Some(&key)).unwrap();
+        let jsonl = export_jsonl(&src, None, None, Some(&key)).unwrap();
 
         let dst = open_db();
         let saved_key = set_record_key(&key);
@@ -967,7 +1039,7 @@ mod tests {
         let conn = open_db();
         seed_memory(&conn, &key, "m1", "uno", json!({}));
         seed_memory(&conn, &key, "m2", "dos", json!({}));
-        let jsonl = export_jsonl(&conn, Some(1), Some(&key)).unwrap();
+        let jsonl = export_jsonl(&conn, Some(1), None, Some(&key)).unwrap();
         assert_eq!(jsonl.lines().count(), 1);
         assert!(jsonl.contains("uno") || jsonl.contains("dos"));
     }
