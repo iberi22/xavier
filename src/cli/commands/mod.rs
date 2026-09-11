@@ -27,6 +27,7 @@ pub mod improve;
 pub mod license;
 pub mod memory;
 pub mod mesh;
+pub mod mirror;
 pub mod navigation;
 pub mod node;
 pub mod nodes;
@@ -390,6 +391,10 @@ impl Cli {
             Command::EncryptRecords { dry_run, apply } => {
                 encrypt_records::handle_encrypt_records(*dry_run, *apply).await
             }
+            Command::MirrorExport { out, limit } => {
+                mirror::handle_mirror_export(out.clone(), *limit).await
+            }
+            Command::MirrorImport { input } => mirror::handle_mirror_import(input.clone()).await,
         }
     }
 }

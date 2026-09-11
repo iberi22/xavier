@@ -298,7 +298,7 @@ pub fn decrypt_record_with_key(
 
 /// Decrypt with a pre-resolved key (`None` = resolve now). Used inside SQL
 /// closures so the key file is read once per query instead of once per row.
-pub(crate) fn decrypt_with_resolved_key(
+pub fn decrypt_with_resolved_key(
     record: &mut crate::memory::store::MemoryRecord,
     node_key: Option<&[u8; 32]>,
 ) -> Result<()> {
