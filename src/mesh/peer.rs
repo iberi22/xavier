@@ -76,12 +76,22 @@ impl PeerInfo {
 }
 
 /// A persistent, file-backed registry of trusted peers.
+#[derive(Clone, Debug)]
 pub struct PeerRegistry {
     peers: HashMap<NodeId, PeerInfo>,
     storage_path: PathBuf,
 }
 
 impl PeerRegistry {
+    /// Reload the registry from its storage path.
+    pub fn reload(&self) -> Result<Self> {
+        Self::load_from(self.storage_path.clone())
+    }
+
+    /// Path to the storage file.
+    pub fn storage_path(&self) -> &std::path::Path {
+        &self.storage_path
+    }
     /// Load the registry from the default storage path.
     pub fn load() -> Result<Self> {
         let config_dir = if let Ok(val) = std::env::var("XAVIER_CONFIG_DIR") {
