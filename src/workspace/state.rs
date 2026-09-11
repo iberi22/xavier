@@ -230,22 +230,33 @@ impl WorkspaceState {
             let store_clone = Arc::clone(&store);
             let ws_id = config.id.clone();
             tokio::spawn(async move {
+                // Solo interesan las ULTIMAS `capacity` memorias (abajo se recorta
+                // a eso mismo), asi que se pide una rebanada acotada en vez de
+                // cargar el estado completo del workspace (memorias + entidades +
+                // creencias). OJO: hoy `list_filtered` NO acota en SQL —hace
+                // `list()` y recorta en memoria—, asi que con 36 k memorias sigue
+                // costando ~30 s; el arreglo de fondo es empujar el LIMIT a la
+                // consulta (afecta tambien a `search`, que carga todo para filtrar).
+                let capacity = wm.read().await.capacity();
+                let filters = crate::memory::schema::MemoryQueryFilters {
+                    workspace_id: Some(ws_id.clone()),
+                    ..Default::default()
+                };
                 let initial_docs: Vec<crate::memory::qmd_memory::MemoryDocument> = {
                     let docs_guard = docs_clone.read().await;
                     if !docs_guard.is_empty() {
                         docs_guard.clone()
-                    } else if let Ok(state) = store_clone.load_workspace_state(&ws_id).await {
-                        state
-                            .memories
-                            .into_iter()
-                            .map(|r| r.to_document())
-                            .collect()
+                    } else if let Ok(records) =
+                        store_clone.list_filtered(&ws_id, &filters, capacity).await
+                    {
+                        records.into_iter().map(|r| r.to_document()).collect()
                     } else {
                         Vec::new()
                     }
                 };
                 let mut wm_guard = wm.write().await;
-                // Just take the last capacity items as initial working set
+                // Ya vienen acotadas; el recorte se mantiene por si el almacen
+                // devolviese mas de lo pedido.
                 let capacity = wm_guard.capacity();
                 let start = initial_docs.len().saturating_sub(capacity);
                 for doc in &initial_docs[start..] {
