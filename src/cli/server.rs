@@ -78,7 +78,11 @@ pub async fn metrics_handler() -> axum::response::Response {
 }
 
 /// Start http server.
-pub async fn start_http_server(port: u16, mcp_port: Option<u16>, no_ui: bool) -> Result<()> {
+pub async fn start_http_server(
+    port: u16,
+    mcp_port: Option<u16>,
+    #[cfg_attr(not(feature = "panel-ui"), allow(unused_variables))] no_ui: bool,
+) -> Result<()> {
     // Initialize Prometheus exporter
     let _ = autometrics::prometheus_exporter::try_init();
 
