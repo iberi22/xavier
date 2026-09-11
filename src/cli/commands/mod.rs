@@ -391,8 +391,8 @@ impl Cli {
             Command::EncryptRecords { dry_run, apply } => {
                 encrypt_records::handle_encrypt_records(*dry_run, *apply).await
             }
-            Command::MirrorExport { out, limit } => {
-                mirror::handle_mirror_export(out.clone(), *limit).await
+            Command::MirrorExport { out, limit, since } => {
+                mirror::handle_mirror_export(out.clone(), *limit, since.clone()).await
             }
             Command::MirrorImport { input } => mirror::handle_mirror_import(input.clone()).await,
         }
