@@ -213,7 +213,6 @@ pub fn b64url_decode(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-
 /// Codifica `application/x-www-form-urlencoded` sin dependencias.
 ///
 /// `reqwest` esta compilado aqui sin la feature que aporta `.form()`, asi que el cuerpo se arma a
@@ -320,7 +319,12 @@ fn now_secs() -> i64 {
 // ── URL de autorizacion ──────────────────────────────────────────────────────────
 
 /// URL a la que se redirige al usuario. `None` si el proveedor no esta configurado.
-pub fn authorize_url(cfg: &OAuthConfig, p: Provider, state: &str, challenge: &str) -> Option<String> {
+pub fn authorize_url(
+    cfg: &OAuthConfig,
+    p: Provider,
+    state: &str,
+    challenge: &str,
+) -> Option<String> {
     let creds = cfg.provider(p)?;
     let mut url = url::Url::parse(p.authorize_endpoint()).ok()?;
     {
@@ -457,11 +461,14 @@ pub async fn exchange_code(
                                 .iter()
                                 .find(|e| {
                                     e.get("primary").and_then(|v| v.as_bool()).unwrap_or(false)
-                                        && e.get("verified").and_then(|v| v.as_bool()).unwrap_or(false)
+                                        && e.get("verified")
+                                            .and_then(|v| v.as_bool())
+                                            .unwrap_or(false)
                                 })
                                 .or_else(|| {
-                                    arr.iter()
-                                        .find(|e| e.get("verified").and_then(|v| v.as_bool()).unwrap_or(false))
+                                    arr.iter().find(|e| {
+                                        e.get("verified").and_then(|v| v.as_bool()).unwrap_or(false)
+                                    })
                                 });
                             if let Some(e) = pick {
                                 email = e
@@ -493,7 +500,10 @@ mod tests {
         for caso in [&b"a"[..], &b"ab"[..], &b"abc"[..], &b"hola mundo!"[..]] {
             let e = b64url_encode(caso);
             assert!(!e.contains('='), "base64url no debe llevar relleno: {e}");
-            assert!(!e.contains('+') && !e.contains('/'), "alfabeto url-safe: {e}");
+            assert!(
+                !e.contains('+') && !e.contains('/'),
+                "alfabeto url-safe: {e}"
+            );
             assert_eq!(b64url_decode(&e).unwrap(), caso.to_vec());
         }
     }
@@ -512,7 +522,9 @@ mod tests {
     fn verifier_tiene_longitud_y_alfabeto_validos() {
         let v = new_code_verifier();
         assert!((43..=128).contains(&v.len()), "len={}", v.len());
-        assert!(v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        assert!(v
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
     }
 
     #[test]
@@ -528,7 +540,10 @@ mod tests {
     fn state_con_firma_manipulada_se_rechaza() {
         let v = new_code_verifier();
         let s = new_state("secreto-de-prueba", Provider::Google, &v, 600);
-        let manipulado = format!("{}x", s.trim_end_matches(|c: char| c.is_ascii_alphanumeric()));
+        let manipulado = format!(
+            "{}x",
+            s.trim_end_matches(|c: char| c.is_ascii_alphanumeric())
+        );
         assert!(verify_state("secreto-de-prueba", &manipulado).is_none());
         // Firma cambiada pero de la misma longitud
         let (payload, firma) = s.split_once('.').unwrap();
@@ -567,7 +582,9 @@ mod tests {
         assert!(url.contains("code_challenge=reto456"));
         assert!(url.contains("code_challenge_method=S256"));
         assert!(url.contains("state=estado123"));
-        assert!(url.contains("redirect_uri=https%3A%2F%2Fxaviercloud.pages.dev%2Fauth%2Foauth%2Fgoogle%2Fcallback"));
+        assert!(url.contains(
+            "redirect_uri=https%3A%2F%2Fxaviercloud.pages.dev%2Fauth%2Foauth%2Fgoogle%2Fcallback"
+        ));
 
         // Proveedor sin credenciales no produce URL (la ruta respondera 501).
         assert!(authorize_url(&cfg, Provider::GitHub, "e", "r").is_none());
@@ -575,7 +592,10 @@ mod tests {
 
     #[test]
     fn form_urlencode_escapa_lo_necesario() {
-        let s = form_urlencode(&[("redirect_uri", "https://x/x callback"), ("grant_type", "authorization_code")]);
+        let s = form_urlencode(&[
+            ("redirect_uri", "https://x/x callback"),
+            ("grant_type", "authorization_code"),
+        ]);
         assert!(s.starts_with("redirect_uri=https%3A%2F%2Fx%2Fx%20callback&"));
         assert!(s.contains("grant_type=authorization_code"));
         assert!(!s.contains(" "), "no debe quedar espacio sin escapar: {s}");

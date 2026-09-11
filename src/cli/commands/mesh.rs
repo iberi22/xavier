@@ -246,7 +246,11 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                     for doc in &docs {
                         let est = doc.content.len()
                             + doc.embedding.len() * 8
-                            + doc.content_vector.as_ref().map(|v| v.len() * 8).unwrap_or(0)
+                            + doc
+                                .content_vector
+                                .as_ref()
+                                .map(|v| v.len() * 8)
+                                .unwrap_or(0)
                             + 256;
                         if !batch.is_empty()
                             && (bytes + est > MAX_BYTES_PER_BATCH

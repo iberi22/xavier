@@ -36,7 +36,8 @@ async fn ollama_models_at(url: &str) -> Vec<String> {
                 v.get("models").and_then(|m| m.as_array()).map(|arr| {
                     arr.iter()
                         .filter_map(|m| {
-                            m.get("name").and_then(|n| n.as_str().map(|s| s.to_string()))
+                            m.get("name")
+                                .and_then(|n| n.as_str().map(|s| s.to_string()))
                         })
                         .collect::<Vec<_>>()
                 })
@@ -168,7 +169,10 @@ fn resolve_expected_embedding_model(settings: &XavierSettings) -> String {
 }
 
 /// Check embedding provider connectivity, model availability, and local/cloud setup.
-pub async fn check_embeddings(settings: &XavierSettings, scan: &SystemScanResult) -> Vec<CheckResult> {
+pub async fn check_embeddings(
+    settings: &XavierSettings,
+    scan: &SystemScanResult,
+) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
     let expected_embed = resolve_expected_embedding_model(settings);

@@ -661,7 +661,10 @@ impl HealthMonitor {
         // configurada (por ej. en tests con tempdir); si no hay inyectado, cargamos por defecto.
         let reg_opt = self.peer_registry.read().await;
         let loaded_registry = if let Some(ref registry) = *reg_opt {
-            registry.reload().ok().or_else(|| Some((**registry).clone()))
+            registry
+                .reload()
+                .ok()
+                .or_else(|| Some((**registry).clone()))
         } else {
             PeerRegistry::load().ok()
         };
