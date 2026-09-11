@@ -1834,6 +1834,42 @@
         "src/server/mcp/tools_context.rs",
         "src/server/mcp/server.rs"
       ]
+    },
+    "feat-codegraph-walk-hardening": {
+      "id": "feat-codegraph-walk-hardening",
+      "name": "CodeGraph walk hardening (tgrep-extracted)",
+      "category": "code-graph",
+      "status": "implemented",
+      "progress_pct": 100,
+      "description": "Binary-extension rejection, 8KiB NUL sniff and 64MiB size cap in code-graph walk + parse_file guards, with WalkSkipStats counters. Techniques extracted from microsoft/tgrep v1.0.5.",
+      "steps": [
+        "Reject binary extensions without IO in collect_files",
+        "Skip files over 64MiB via walk metadata",
+        "Sniff first 8KiB for NUL bytes before admission",
+        "Enforce same guards in parse_file for explicit path deltas",
+        "Count every skip in WalkSkipStats and log the summary"
+      ],
+      "passes": true,
+      "verified_by": "verify-pipeline.sh exit 0 + cargo test -p code-graph 24/24 + fmt + clippy clean",
+      "github_issue": 75,
+      "last_tested": "2026-09-08",
+      "notes": "Pipeline green 2026-09-08. 24/24 indexer tests (5 new), fmt+clippy clean. 2 plugin fixture failures pre-exist on HEAD, unrelated. Branch feat/codegraph-walk-hardening, awaiting PR review for stable.",
+      "implemented_in": "code-graph/src/indexer/mod.rs, code-graph/src/error.rs",
+      "tests": [
+        "walk_skips_binary_extension_before_any_io",
+        "walk_skips_nul_masquerading_as_source",
+        "walk_skips_oversize_files_without_reading_them",
+        "walk_reports_zero_skips_for_clean_tree",
+        "parse_file_rejects_oversize_explicit_paths"
+      ],
+      "req_ids": [
+        "REQ-005",
+        "REQ-009"
+      ],
+      "user_stories": [
+        "US-001",
+        "US-002"
+      ]
     }
   },
   "verification_commands": {
