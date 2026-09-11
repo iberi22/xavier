@@ -313,7 +313,7 @@ unicode-normalization = "0.1"
 moka = { version = "0.12", features = ["future"] }
 
 # E2E Encryption for cloud tier
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 argon2 = "0.6"
 rand = "0.8"
 rand_chacha = "0.3"
