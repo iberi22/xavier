@@ -448,6 +448,23 @@ pub enum Command {
         #[arg(long)]
         apply: bool,
     },
+
+    /// Export a neutral mirror package (JSONL: content + graph, no embeddings)
+    MirrorExport {
+        /// Output JSONL file
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Limit the number of exported memory records
+        #[arg(short, long)]
+        limit: Option<usize>,
+    },
+
+    /// Import a neutral mirror package (JSONL) with content-hash dedupe
+    MirrorImport {
+        /// Input JSONL package file
+        #[arg(short = 'i', long = "in")]
+        input: PathBuf,
+    },
 }
 
 /// Subcommands for the auto-improvement loop.
