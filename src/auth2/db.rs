@@ -82,9 +82,35 @@ impl AuthDb {
                 ip_address TEXT,
                 details TEXT,
                 created_at INTEGER NOT NULL
+            );
+
+            -- Identidad federada (Google/GitHub). La clave del vinculo es (provider, subject):
+            -- NUNCA el email, porque un email puede cambiar de dueno y el 'sub' no.
+            CREATE TABLE IF NOT EXISTS oauth_identities (
+                provider TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                user_id TEXT NOT NULL REFERENCES users(id),
+                email TEXT,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (provider, subject)
             );",
             )
             .map_err(|e| anyhow!("Failed to create tables: {}", e))?;
+
+        // Migracion aditiva: SQLite no soporta "ADD COLUMN IF NOT EXISTS", asi que se consulta
+        // el esquema antes. Marca cuando el correo quedo verificado.
+        let ya_tiene: bool = self
+            .conn
+            .prepare("PRAGMA table_info(users)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "email_verified_at");
+        if !ya_tiene {
+            self.conn
+                .execute("ALTER TABLE users ADD COLUMN email_verified_at INTEGER", [])
+                .map_err(|e| anyhow!("Failed to add email_verified_at: {}", e))?;
+        }
+
         Ok(())
     }
 
@@ -133,6 +159,70 @@ impl AuthDb {
         } else {
             Ok(None)
         }
+    }
+
+    /// Vincula (o actualiza) una identidad OAuth con un usuario.
+    ///
+    /// La clave es `(provider, subject)`: el `subject` es el id inmutable del proveedor.
+    pub fn link_oauth_identity(
+        &self,
+        provider: &str,
+        subject: &str,
+        user_id: &str,
+        email: Option<&str>,
+    ) -> AnyhowResult<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.conn
+            .execute(
+                "INSERT INTO oauth_identities (provider, subject, user_id, email, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(provider, subject) DO UPDATE SET user_id = excluded.user_id, email = excluded.email",
+                params![provider, subject, user_id, email, now],
+            )
+            .map_err(|e| anyhow!("Failed to link oauth identity: {}", e))?;
+        Ok(())
+    }
+
+    /// Devuelve el usuario vinculado a una identidad OAuth, buscando por `(provider, subject)`.
+    ///
+    /// Deliberadamente **no** se busca por email: vincular por email permitiria que un correo
+    /// no verificado se apropiara de una cuenta existente.
+    pub fn get_user_by_oauth(&self, provider: &str, subject: &str) -> AnyhowResult<Option<User>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT u.id, u.email, u.password_hash, u.name, u.role, u.totp_secret, u.totp_enabled,
+                    u.recovery_seed_hash, u.backup_codes, u.created_at, u.updated_at
+             FROM users u JOIN oauth_identities o ON o.user_id = u.id
+             WHERE o.provider = ?1 AND o.subject = ?2",
+        )?;
+        let mut rows = stmt.query(params![provider, subject])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(User {
+                id: row.get(0)?,
+                email: row.get(1)?,
+                password_hash: row.get(2)?,
+                name: row.get(3)?,
+                role: row.get(4)?,
+                totp_secret: row.get(5)?,
+                totp_enabled: row.get::<_, i32>(6)? != 0,
+                recovery_seed_hash: row.get(7)?,
+                backup_codes: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Marca el correo de un usuario como verificado.
+    pub fn mark_email_verified(&self, user_id: &str, ts: i64) -> AnyhowResult<()> {
+        self.conn
+            .execute(
+                "UPDATE users SET email_verified_at = ?1, updated_at = ?1 WHERE id = ?2",
+                params![ts, user_id],
+            )
+            .map_err(|e| anyhow!("Failed to mark email verified: {}", e))?;
+        Ok(())
     }
 
     /// Get user by id.

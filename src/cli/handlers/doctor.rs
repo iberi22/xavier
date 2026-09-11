@@ -5,6 +5,58 @@ use crate::settings::XavierSettings;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+/// Modelos disponibles en el endpoint Ollama que corresponde a `url`.
+///
+/// El doctor comparaba el modelo configurado contra el Ollama **por defecto** (`OLLAMA_HOST` o
+/// `localhost:11434`) aunque el proveedor local apuntase a otro host/puerto: reportaba un fallo y
+/// mandaba a instalar un modelo que ya estaba instalado (falso negativo). Aqui se deriva el host
+/// de la URL configurada (`http://host:puerto/v1` -> `http://host:puerto/api/tags`).
+async fn ollama_models_at(url: &str) -> Vec<String> {
+    let base = url
+        .trim_end_matches('/')
+        .trim_end_matches("/v1")
+        .trim_end_matches('/')
+        .to_string();
+    if base.is_empty() {
+        return Vec::new();
+    }
+
+    // Sin crear un runtime propio: el doctor ya se ejecuta dentro de uno y anidarlos paniquea
+    // ("Cannot start a runtime from within a runtime"). Verificado en ejecucion, no solo al compilar.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    match client.get(format!("{}/api/tags", base)).send().await {
+        Ok(resp) => resp
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|v| {
+                v.get("models").and_then(|m| m.as_array()).map(|arr| {
+                    arr.iter()
+                        .filter_map(|m| {
+                            m.get("name")
+                                .and_then(|n| n.as_str().map(|s| s.to_string()))
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Modelos efectivos: los del endpoint configurado y, si no responde, los del scan por defecto.
+async fn effective_ollama_models(configured_url: &str, scanned: &[String]) -> Vec<String> {
+    let probed = ollama_models_at(configured_url).await;
+    if probed.is_empty() {
+        scanned.to_vec()
+    } else {
+        probed
+    }
+}
+
 pub type CheckResult = DoctorCheck;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -117,7 +169,10 @@ fn resolve_expected_embedding_model(settings: &XavierSettings) -> String {
 }
 
 /// Check embedding provider connectivity, model availability, and local/cloud setup.
-pub fn check_embeddings(settings: &XavierSettings, scan: &SystemScanResult) -> Vec<CheckResult> {
+pub async fn check_embeddings(
+    settings: &XavierSettings,
+    scan: &SystemScanResult,
+) -> Vec<CheckResult> {
     let mut checks = Vec::new();
 
     let expected_embed = resolve_expected_embedding_model(settings);
@@ -133,7 +188,8 @@ pub fn check_embeddings(settings: &XavierSettings, scan: &SystemScanResult) -> V
         embeddings_use_local_ollama(&embedding_mode, &embedding_url, &expected_embed);
 
     if embeddings_are_local {
-        let embed_installed = scan.ollama.models.iter().any(|m| {
+        let embed_models = effective_ollama_models(&embedding_url, &scan.ollama.models).await;
+        let embed_installed = embed_models.iter().any(|m| {
             m.to_lowercase().contains(&expected_embed.to_lowercase())
                 || expected_embed.to_lowercase().contains(&m.to_lowercase())
         });
@@ -479,7 +535,15 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
             }
         });
 
-    let llm_installed = scan.ollama.models.iter().any(|m| {
+    // OJO: el proveedor local puede vivir en otro host/puerto (p.ej. un segundo Ollama con sus
+    // propios modelos). Se comprueba contra ESA URL, no contra el Ollama por defecto.
+    let llm_url = std::env::var("XAVIER_LOCAL_LLM_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| settings.models.local_llm_url.clone());
+    let llm_models = effective_ollama_models(&llm_url, &scan.ollama.models).await;
+
+    let llm_installed = llm_models.iter().any(|m| {
         m.to_lowercase().contains(&expected_llm.to_lowercase())
             || expected_llm.to_lowercase().contains(&m.to_lowercase())
     });
@@ -686,7 +750,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
     let mut checks = Vec::new();
 
     checks.extend(check_database(&settings));
-    checks.extend(check_embeddings(&settings, &scan));
+    checks.extend(check_embeddings(&settings, &scan).await);
     checks.extend(check_memory(&settings, verbose));
     checks.extend(check_mesh(&settings));
     checks.extend(check_http(&settings, &scan).await);
@@ -870,11 +934,11 @@ mod tests {
         assert_eq!(checks[0].name, "Database Access");
     }
 
-    #[test]
-    fn test_check_embeddings() {
+    #[tokio::test]
+    async fn test_check_embeddings() {
         let settings = XavierSettings::current();
         let scan = mock_scan_result();
-        let checks = check_embeddings(&settings, &scan);
+        let checks = check_embeddings(&settings, &scan).await;
         assert!(!checks.is_empty());
     }
 

@@ -299,6 +299,60 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>, no_ui: bool) ->
             .await;
     }
 
+    // ── Keepalive del mesh ────────────────────────────────────────────────────
+    // El health marca un peer como "degraded" si lleva mas de 60 s sin contacto
+    // (observability/health.rs). Sin este latido, un emparejamiento recien verificado
+    // pasaba a "degraded" al minuto aunque el peer estuviera vivo y accesible, que es
+    // justo lo que no puede pasar en una demo. Se refresca last_seen_at de los peers
+    // con endpoint conocido haciendo el handshake firmado normal.
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+
+            let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() else {
+                continue;
+            };
+            let Ok(mut registry) = xavier::mesh::PeerRegistry::load() else {
+                continue;
+            };
+            let peers: Vec<xavier::mesh::PeerInfo> =
+                registry.list_peers().into_iter().cloned().collect();
+            if peers.is_empty() {
+                continue;
+            }
+
+            let transport = xavier::mesh::MeshTransport::new(Arc::new(identity));
+            let token = xavier::security::auth::resolve_xavier_token();
+            let mut refreshed = 0usize;
+
+            for peer in peers {
+                // Sin endpoint no hay a quien saludar (los peers emparejados por handshake
+                // entrante quedan asi hasta que se les registra el endpoint).
+                if peer.endpoint_url.trim().is_empty() {
+                    continue;
+                }
+                if transport
+                    .handshake_with_secret(&peer.endpoint_url, &token, None)
+                    .await
+                    .is_ok()
+                {
+                    if let Some(entry) = registry.get_peer_mut(&peer.node_id) {
+                        entry.last_seen_at = Some(chrono::Utc::now().timestamp());
+                    }
+                    refreshed += 1;
+                }
+            }
+
+            if refreshed > 0 {
+                // Persistir para que /health (que lee el disco) vea el latido.
+                let _ = registry.save();
+                tracing::debug!(refreshed, "mesh keepalive: last_seen_at actualizado");
+            }
+        }
+    });
+
     let code_db_path = code_graph_db_path();
     if let Some(parent) = code_db_path.parent() {
         std::fs::create_dir_all(parent)?;

@@ -7,8 +7,18 @@ use axum::{extract::State, http::StatusCode, response::Response};
 use xavier::server::alerts::SYSTEM_ALERTS;
 
 /// Health handler.
+///
+/// Devuelve el estado CACHEADO del monitor, que se recalcula en segundo plano cada 60 s
+/// (`HEALTH.spawn()` en el arranque del servidor).
+///
+/// Antes ejecutaba `run_checks()` completo en el camino de la peticion: eso recorre la base de
+/// datos, el indice vectorial, el embedder y el proveedor de LLM. Con un almacen grande
+/// (~35.5k documentos) la suma pasa del corte de 10 s del middleware de timeout y `/health`
+/// respondia **504**, asi que el nodo con datos parecia caido justo cuando mas importaba
+/// (una demo, un monitor de salud, un orquestador). El nodo con el almacen vacio respondia en
+/// 0.3 s, que es lo que enmascaraba el problema.
 pub async fn health_handler() -> Response {
-    let status = xavier::observability::health::HEALTH.run_checks().await;
+    let status = xavier::observability::health::HEALTH.get_status().await;
     json_response(
         StatusCode::OK,
         serde_json::to_value(status).unwrap_or_default(),
@@ -19,10 +29,12 @@ pub async fn health_handler() -> Response {
 ///
 /// Reports `"ok"`, `"degraded"`, or `"down"` for the embedding subsystem
 /// so orchestrators can route traffic away from degraded instances.
+/// Usa tambien el estado cacheado: una sonda de vida no puede permitirse el mismo trabajo que
+/// el chequeo completo (era el mismo 504 que en `/health`).
 pub async fn healthz_handler() -> Response {
     use xavier::observability::health::HEALTH;
 
-    let status = HEALTH.run_checks().await;
+    let status = HEALTH.get_status().await;
     let embedder_status = match status.embedding.status {
         xavier::observability::health::HealthLevel::Healthy => "ok",
         xavier::observability::health::HealthLevel::Degraded => "degraded",
