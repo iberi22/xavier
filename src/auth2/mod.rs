@@ -355,7 +355,15 @@ mod register_validation_tests {
 
     #[test]
     fn rechaza_correos_mal_formados() {
-        for malo in ["", "ana", "ana@", "@ejemplo.com", "ana@ejemplo", "a b@ejemplo.com", "ana@@x.com"] {
+        for malo in [
+            "",
+            "ana",
+            "ana@",
+            "@ejemplo.com",
+            "ana@ejemplo",
+            "a b@ejemplo.com",
+            "ana@@x.com",
+        ] {
             assert!(
                 validate_registration(malo, OK_PASS, "Ana").is_err(),
                 "deberia rechazar {malo:?}"

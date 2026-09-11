@@ -1186,8 +1186,7 @@ impl VecSqliteMemoryStore {
         } else {
             (
                 record.content.clone(),
-                super::fts::code_tokens(&format!("{} {}", record.path, record.content))
-                    .join(" "),
+                super::fts::code_tokens(&format!("{} {}", record.path, record.content)).join(" "),
             )
         };
         conn.execute(
