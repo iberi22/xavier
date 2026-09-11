@@ -63,6 +63,8 @@ impl VecSqliteMemoryStore {
         let workspace_id_c = workspace_id.to_string();
         let filters_c = filters.cloned();
         let trimmed_query_c = trimmed_query.clone();
+        // Resolved once per query: decrypts rows inside the SQL closure.
+        let node_key = super::at_rest::resolve_record_key();
 
         let scored = self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut internal_scored: HashMap<String, HybridSearchResult> = HashMap::new();
@@ -92,6 +94,7 @@ impl VecSqliteMemoryStore {
                         SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
                                m.created_at, m.updated_at, m.revision, m.primary_flag,
                                m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                               m.encrypted_dek, m.content_iv, m.metadata_iv,
                                CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
                         FROM {} e
                         JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
@@ -111,13 +114,17 @@ impl VecSqliteMemoryStore {
                         ])?;
                     let mut rank = 0usize;
                     while let Some(row) = rows.next()? {
-                        let distance = match row.get::<_, rusqlite::types::Value>(15)? {
+                        let distance = match row.get::<_, rusqlite::types::Value>(18)? {
                             rusqlite::types::Value::Real(v) => v as f32,
                             rusqlite::types::Value::Integer(v) => v as f32,
                             _ => 0.0,
                         };
                         let similarity = 1.0 - distance;
-                        let record = Self::deserialize_record(row)?;
+                        let mut record = Self::deserialize_record(row)?;
+                        let _ = super::at_rest::decrypt_with_resolved_key(
+                            &mut record,
+                            node_key.as_ref(),
+                        );
                         if Self::row_matches_filters(&workspace_id_c, &record, filters_c.as_ref()) {
                             rank += 1;
                             search::merge_rrf_result(
@@ -138,7 +145,8 @@ impl VecSqliteMemoryStore {
                     let fts_sql = r#"
                         SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
                                m.created_at, m.updated_at, m.revision, m.primary_flag,
-                               m.parent_id, m.cluster_id, m.level, m.relation, m.revisions, CAST(bm25(memory_fts, 1.0, 0.8) AS REAL) AS rank
+                               m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                               m.encrypted_dek, m.content_iv, m.metadata_iv, CAST(bm25(memory_fts, 1.0, 0.8) AS REAL) AS rank
                         FROM memory_fts f
                         JOIN memory_records m ON m.id = f.id AND m.workspace_id = ?
                         WHERE f.memory_fts MATCH ?
@@ -151,12 +159,16 @@ impl VecSqliteMemoryStore {
                         .query(params![workspace_id_c, fts_query, candidate_limit as i64])?;
                     let mut rank = 0usize;
                     while let Some(row) = rows.next()? {
-                        let bm25_score = match row.get::<_, rusqlite::types::Value>(15)? {
+                        let bm25_score = match row.get::<_, rusqlite::types::Value>(18)? {
                             rusqlite::types::Value::Real(v) => Some(v as f32),
                             rusqlite::types::Value::Integer(v) => Some(v as f32),
                             _ => None,
                         };
-                        let record = Self::deserialize_record(row)?;
+                        let mut record = Self::deserialize_record(row)?;
+                        let _ = super::at_rest::decrypt_with_resolved_key(
+                            &mut record,
+                            node_key.as_ref(),
+                        );
                         if Self::row_matches_filters(&workspace_id_c, &record, filters_c.as_ref()) {
                             rank += 1;
                             search::merge_rrf_result(
@@ -193,10 +205,14 @@ impl VecSqliteMemoryStore {
                                     mem_row.get(0)?;
                                 if seen_ids.insert(memory_id.clone()) {
                                     // load_record_by_id logic here but sync
-                                    let mut stmt = conn.prepare("SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM memory_records WHERE id = ? AND workspace_id = ?")?;
+                                    let mut stmt = conn.prepare("SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE id = ? AND workspace_id = ?")?;
                                     let mut rows = stmt.query(params![memory_id, workspace_id_c])?;
                                     if let Some(row) = rows.next()? {
-                                        let record = Self::deserialize_record(row)?;
+                                        let mut record = Self::deserialize_record(row)?;
+                                        let _ = super::at_rest::decrypt_with_resolved_key(
+                                            &mut record,
+                                            node_key.as_ref(),
+                                        );
                                         if Self::row_matches_filters(&workspace_id_c, &record, filters_c.as_ref())
                                         {
                                             kg_rank += 1;
@@ -329,7 +345,7 @@ impl VecSqliteMemoryStore {
                 let relation_path: String = row.get(4)?;
 
                 let mut hit_stmt = conn.prepare(&format!(
-                    "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions
+                    "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv
                      FROM {}
                      WHERE workspace_id = ?
                        AND content LIKE '%' || ? || '%'
@@ -341,7 +357,9 @@ impl VecSqliteMemoryStore {
                     .query(params![workspace_id_c, entity_name.clone()])?;
                 let mut memory_hits = Vec::new();
                 while let Some(hit_row) = hit_rows.next()? {
-                    if let Ok(record) = Self::deserialize_record(hit_row) {
+                    if let Ok(mut record) = Self::deserialize_record(hit_row) {
+                        // Best effort: hits stay listed even if the node key is missing.
+                        let _ = super::at_rest::decrypt_record_in_place(&mut record);
                         if record.id != source_c.id {
                             memory_hits.push(record);
                         }

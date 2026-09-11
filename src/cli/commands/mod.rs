@@ -19,6 +19,7 @@ pub mod billing;
 pub mod cleanup;
 pub mod code;
 pub mod data_commons;
+pub mod encrypt_records;
 pub mod enums;
 pub mod governance;
 pub mod http;
@@ -386,6 +387,9 @@ impl Cli {
                 apply,
                 days,
             } => cleanup::handle_cleanup(*dry_run, *apply, *days).await,
+            Command::EncryptRecords { dry_run, apply } => {
+                encrypt_records::handle_encrypt_records(*dry_run, *apply).await
+            }
         }
     }
 }

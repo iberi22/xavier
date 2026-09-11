@@ -163,7 +163,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         }).await?;
 
         if let Some(mut record) = record {
-            crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record)?;
+            super::at_rest::decrypt_record_in_place(&mut record)?;
             Ok(Some(record))
         } else {
             Ok(None)
@@ -296,7 +296,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record)?;
+            super::at_rest::decrypt_record_in_place(&mut record)?;
             results.push(record);
         }
         Ok(results)
@@ -724,7 +724,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                     };
 
                     if let Some(mut record) = record {
-                        let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record);
+                        let _ = super::at_rest::decrypt_record_in_place(&mut record);
                         symbols = Self::link_memory_on_demand(conn, &memory_id, &record.content)?;
                     }
                 }
@@ -995,9 +995,15 @@ impl VecSqliteMemoryStore {
                                 Ok(mut rows) => {
                                     let mut best_sim = -1.0f32;
                                     let mut best_rec = None;
+                                    // Resolve once: lets namespace matching work on encrypted rows.
+                                    let node_key = super::at_rest::resolve_record_key();
                                     while let Ok(Some(row)) = rows.next() {
                                         match Self::deserialize_record(row) {
-                                            Ok(rec) => {
+                                            Ok(mut rec) => {
+                                                let _ = super::at_rest::decrypt_with_resolved_key(
+                                                    &mut rec,
+                                                    node_key.as_ref(),
+                                                );
                                                 let is_match = match dedup_settings_c.scope {
                                                     crate::settings::types::DedupScope::PathExact => rec.path == record_c.path,
                                                     crate::settings::types::DedupScope::Namespace => {
@@ -1050,9 +1056,7 @@ impl VecSqliteMemoryStore {
                         dedup_settings.threshold,
                         existing_record.id
                     );
-                    let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(
-                        &mut existing_record,
-                    );
+                    let _ = super::at_rest::decrypt_record_in_place(&mut existing_record);
 
                     if is_superset(&record.content, &existing_record.content) {
                         let existing_revisions = existing_record.revisions.clone();
@@ -1087,64 +1091,12 @@ impl VecSqliteMemoryStore {
             }
         }
 
-        let security = crate::security::get_security_service();
-        if security.get_config().encryption_at_rest_enabled {
-            let mgr = security.get_key_manager()?;
-            let kek = security.get_kek()?;
-
-            let workspace_id = record.workspace_id.clone();
-            let project_id = self.project_id.clone();
-            let _salt_bytes = self.conn_provider
-                .with_conn(&project_id, move |conn| {
-                    let mut stmt = conn.prepare(
-                        "SELECT salt FROM encryption_metadata WHERE workspace_id = ?",
-                    )?;
-                    match stmt.query_row([&workspace_id], |row| row.get::<_, Vec<u8>>(0)) {
-                        Ok(salt) => Ok(salt),
-                        Err(rusqlite::Error::QueryReturnedNoRows) => {
-                            let new_salt = crate::crypto::keys::KeySalt::generate();
-                            let salt_vec = new_salt.as_bytes().to_vec();
-                            conn.execute(
-                                "INSERT INTO encryption_metadata (id, workspace_id, salt, created_at) VALUES (?, ?, ?, ?)",
-                                params![ulid::Ulid::new().to_string(), workspace_id, salt_vec, chrono::Utc::now().to_rfc3339()],
-                            )?;
-                            Ok(salt_vec)
-                        }
-                        Err(e) => Err(anyhow::anyhow!("Database error: {}", e)),
-                    }
-                })
-                .await?;
-
-            let dek = mgr.generate_dek();
-            let encrypted_dek = mgr
-                .encrypt_dek(&dek, &kek)
-                .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
-
-            let content_nonce = crate::crypto::encryption::NonceBytes::generate();
-            let encrypted_content = crate::crypto::encryption::encrypt_data(
-                record.content.as_bytes(),
-                dek.as_bytes(),
-                &content_nonce,
-            )
-            .map_err(|e| anyhow::anyhow!("Content encryption failed: {}", e))?;
-
-            let metadata_nonce = crate::crypto::encryption::NonceBytes::generate();
-            let metadata_json = serde_json::to_string(&record.metadata)?;
-            let encrypted_metadata = crate::crypto::encryption::encrypt_data(
-                metadata_json.as_bytes(),
-                dek.as_bytes(),
-                &metadata_nonce,
-            )
-            .map_err(|e| anyhow::anyhow!("Metadata encryption failed: {}", e))?;
-
-            record.content = crate::utils::crypto::hex_encode(&encrypted_content.ciphertext);
-            record.metadata = serde_json::json!({
-                "encrypted": crate::utils::crypto::hex_encode(&encrypted_metadata.ciphertext)
-            });
-            record.encrypted_dek = Some(encrypted_dek);
-            record.content_iv = Some(content_nonce.as_bytes().to_vec());
-            record.metadata_iv = Some(metadata_nonce.as_bytes().to_vec());
-        }
+        // Per-record envelope encryption at rest (always on when a node key
+        // resolves; plaintext + warning otherwise, never a startup failure).
+        // Legacy `encryption_at_rest_enabled` KEK path is retired for this
+        // store: the node record key (XAVIER_RECORD_KEY / node/record.key)
+        // replaces it. Reads still understand legacy KEK rows.
+        super::at_rest::encrypt_columns_for_write(&mut record)?;
 
         Ok(record)
     }
@@ -1223,11 +1175,24 @@ impl VecSqliteMemoryStore {
     /// Decomposed put step 4: FTS5 and vector index updates.
     pub fn put_index(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
         conn.execute("DELETE FROM memory_fts WHERE id = ?", params![record.id])?;
-        let code_tokens =
-            super::fts::code_tokens(&format!("{} {}", record.path, record.content)).join(" ");
+        // Encrypted rows must not leak plaintext terms into the FTS index:
+        // index the path only. (Content search over encrypted rows still works
+        // through list()+filter on decrypted records.)
+        let (fts_content, code_tokens) = if record.encrypted_dek.is_some() {
+            (
+                String::new(),
+                super::fts::code_tokens(&record.path).join(" "),
+            )
+        } else {
+            (
+                record.content.clone(),
+                super::fts::code_tokens(&format!("{} {}", record.path, record.content))
+                    .join(" "),
+            )
+        };
         conn.execute(
             "INSERT INTO memory_fts(id, path, content, code_tokens) VALUES (?, ?, ?, ?)",
-            params![record.id, record.path, record.content, code_tokens],
+            params![record.id, record.path, fts_content, code_tokens],
         )?;
 
         if !record.embedding.is_empty() {
