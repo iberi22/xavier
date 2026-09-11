@@ -520,10 +520,9 @@ pub trait MemoryStore: Send + Sync {
         limit: usize,
     ) -> Result<Vec<MemoryRecord>> {
         let all = self.list(workspace_id).await?;
-        Ok(filter_records(all, workspace_id, "", Some(filters))?
-            .into_iter()
-            .take(limit)
-            .collect())
+        let mut filtered = filter_records(all, workspace_id, "", Some(filters))?;
+        filtered.sort_by_key(|b| std::cmp::Reverse(b.created_at));
+        Ok(filtered.into_iter().take(limit).collect())
     }
     async fn search(
         &self,
