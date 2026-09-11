@@ -716,7 +716,7 @@ mod tests {
 
         for bad in ["superadmin", "", "ADMINISTRADOR", "user "] {
             // "user " con espacio se recorta y SI vale; el resto debe fallar.
-            if bad.trim().to_ascii_lowercase() == "user" {
+            if bad.trim().eq_ignore_ascii_case("user") {
                 continue;
             }
             let err = db
