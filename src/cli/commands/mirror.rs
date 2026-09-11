@@ -256,6 +256,40 @@ fn export_jsonl(
         }
     }
 
+    // 2b. Placeholder entities (entity_type == "memory") are derived state and
+    //     are not exported as nodes, but they are the endpoints of every row in
+    //     `relations`: map each placeholder to its memory so those edges travel
+    //     as memory<->memory instead of being silently dropped. The link lives
+    //     in `properties.memory_id`, and the id itself is "mem:<ws>:<memory_id>":
+    //     both are read so a placeholder resolves whatever convention wrote it.
+    let mut placeholder_memories: HashMap<String, String> = HashMap::new();
+    {
+        let mut stmt =
+            conn.prepare("SELECT id, properties FROM entities WHERE entity_type = ?1")?;
+        let rows = stmt.query_map(params![ENTITY_TYPE_MEMORY], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+            ))
+        })?;
+        for row in rows {
+            let (entity_id, properties) = row?;
+            let from_props = properties
+                .as_deref()
+                .and_then(|p| serde_json::from_str::<Value>(p).ok())
+                .and_then(|v| v.get("memory_id").and_then(Value::as_str).map(str::to_owned));
+            let resolved = from_props.or_else(|| {
+                entity_id
+                    .strip_prefix("mem:")
+                    .and_then(|rest| rest.split_once(':'))
+                    .map(|(_, memory_id)| memory_id.to_string())
+            });
+            if let Some(memory_id) = resolved {
+                placeholder_memories.insert(entity_id, memory_id);
+            }
+        }
+    }
+
     // 3. memory_entities edges (memory -> entity).
     {
         let mut stmt =
@@ -299,9 +333,16 @@ fn export_jsonl(
         })?;
         for row in rows {
             let (source_id, target_id, relation_type, weight) = row?;
-            let (Some(from_hash), Some(to_hash)) =
-                (entity_hashes.get(&source_id), entity_hashes.get(&target_id))
-            else {
+            // An endpoint is either a real entity (exported as a node) or a
+            // memory placeholder (resolved to its memory). Anything else has no
+            // node in the package, so the edge would be an orphan on the other
+            // side: drop it here rather than ship a dangling reference.
+            let resolve = |id: &str| -> Option<&String> {
+                entity_hashes
+                    .get(id)
+                    .or_else(|| placeholder_memories.get(id).and_then(|m| mem_hashes.get(m)))
+            };
+            let (Some(from_hash), Some(to_hash)) = (resolve(&source_id), resolve(&target_id)) else {
                 continue;
             };
             lines.push(serde_json::to_string(&json!({
@@ -739,6 +780,71 @@ mod tests {
             )
             .unwrap();
         assert!(!stored.contains(CANARY));
+    }
+
+    #[test]
+    fn mirror_export_emits_edges_through_placeholders() {
+        let key = test_key(0x7C);
+        let conn = open_db();
+        seed_memory(&conn, &key, "m1", "memoria uno", json!({}));
+        seed_memory(&conn, &key, "m2", "memoria dos", json!({}));
+
+        // La base real cuelga las aristas memoria<->memoria de los placeholders
+        // (entity_type == "memory"), que NO se exportan como nodos. Su id es
+        // "mem:<workspace>:<memory_id>" y su properties lleva memory_id.
+        for (ph, memory_id) in [("mem:ws1:m1", "m1"), ("mem:ws1:m2", "m2")] {
+            conn.execute(
+                "INSERT INTO entities (id, name, entity_type, workspace_id, properties) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    ph,
+                    format!("placeholder/{memory_id}"),
+                    ENTITY_TYPE_MEMORY,
+                    "ws1",
+                    json!({ "memory_id": memory_id }).to_string()
+                ],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO memory_entities (id, workspace_id, memory_id, entity_id, relation_type) \
+             VALUES ('me1', 'ws1', 'm1', 'mem:ws1:m1', 'about')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_entities (id, workspace_id, memory_id, entity_id, relation_type) \
+             VALUES ('me2', 'ws1', 'm2', 'mem:ws1:m2', 'about')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO relations (id, source_id, target_id, relation_type, weight, workspace_id) \
+             VALUES ('r1', 'mem:ws1:m1', 'mem:ws1:m2', 'supports', 0.8, 'ws1')",
+            [],
+        )
+        .unwrap();
+
+        let jsonl = export_jsonl(&conn, None, Some(&key)).unwrap();
+        let aristas: Vec<Value> = jsonl
+            .lines()
+            .filter(|l| l.contains("\"t\":\"edge\""))
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+
+        assert_eq!(aristas.len(), 1, "la relacion debe viajar como arista:\n{jsonl}");
+        let edge = &aristas[0];
+        assert_eq!(edge["relation"], "supports");
+        assert_eq!(edge["kind"], EDGE_RELATIONS);
+        // Los extremos son las MEMORIAS, no los placeholders no exportados.
+        assert_eq!(edge["from"], content_hash("memoria uno"));
+        assert_eq!(edge["to"], content_hash("memoria dos"));
+        for extremo in [&edge["from"], &edge["to"]] {
+            assert!(
+                jsonl.contains(&format!("\"id\":{extremo}")),
+                "extremo sin nodo en el paquete: {extremo}"
+            );
+        }
     }
 
     #[test]
