@@ -986,14 +986,16 @@ impl VecSqliteMemoryStore {
                                  FROM {} e
                                  JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
                                  WHERE e.workspace_id = ?2
-                                   AND json_extract(m.metadata, '$.namespace.org_id') IS ?3
+                                   AND (m.encrypted_dek IS NOT NULL OR (
+                                       json_extract(m.metadata, '$.namespace.org_id') IS ?3
                                    AND json_extract(m.metadata, '$.namespace.user_id') IS ?4
                                    AND json_extract(m.metadata, '$.namespace.agent_id') IS ?5
                                    AND json_extract(m.metadata, '$.namespace.session_id') IS ?6
                                    AND json_extract(m.metadata, '$.namespace.project') IS ?7
                                    AND json_extract(m.metadata, '$.namespace.scope') IS ?8
+                                   ))
                                  ORDER BY distance ASC
-                                 LIMIT 1
+                                 LIMIT 20
                                  "#,
                                     table_name
                                 ),
@@ -1015,15 +1017,40 @@ impl VecSqliteMemoryStore {
                         Ok(mut stmt) => {
                             match stmt.query(rusqlite::params_from_iter(&query_params)) {
                                 Ok(mut rows) => {
-                                    if let Ok(Some(row)) = rows.next() {
+                                    let node_key = super::at_rest::resolve_record_key();
+                                    while let Ok(Some(row)) = rows.next() {
                                         let distance = match row.get::<_, rusqlite::types::Value>(18) {
                                             Ok(rusqlite::types::Value::Real(v)) => v as f32,
                                             Ok(rusqlite::types::Value::Integer(v)) => v as f32,
                                             _ => 1.0,
                                         };
                                         let similarity = 1.0 - distance;
-                                        if let Ok(rec) = Self::deserialize_record(row) {
-                                            best_cand = Some((rec, similarity));
+                                        if let Ok(mut rec) = Self::deserialize_record(row) {
+                                            let _ = super::at_rest::decrypt_with_resolved_key(
+                                                &mut rec,
+                                                node_key.as_ref(),
+                                            );
+                                            let is_match = match dedup_settings_c.scope {
+                                                crate::settings::types::DedupScope::PathExact => {
+                                                    rec.path == record_c.path
+                                                }
+                                                crate::settings::types::DedupScope::Namespace => {
+                                                    let rec_meta = match crate::memory::schema::resolve_metadata(
+                                                        &rec.path,
+                                                        &rec.metadata,
+                                                        &rec.workspace_id,
+                                                        None,
+                                                    ) {
+                                                        Ok(m) => m,
+                                                        Err(_) => continue,
+                                                    };
+                                                    namespaces_match(&record_ns, &rec_meta.namespace)
+                                                }
+                                            };
+                                            if is_match {
+                                                best_cand = Some((rec, similarity));
+                                                break;
+                                            }
                                         }
                                     }
                                 }
@@ -1038,7 +1065,6 @@ impl VecSqliteMemoryStore {
                     }
                 }
 
-                // 2. Fallback to manual Rust cosine similarity search
                 if best_cand.is_none() {
                     let (sql, query_params) = match dedup_settings_c.scope {
                         crate::settings::types::DedupScope::PathExact => {
@@ -1052,7 +1078,7 @@ impl VecSqliteMemoryStore {
                         }
                         crate::settings::types::DedupScope::Namespace => {
                             (
-                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND json_extract(metadata, '$.namespace.org_id') IS ? AND json_extract(metadata, '$.namespace.user_id') IS ? AND json_extract(metadata, '$.namespace.agent_id') IS ? AND json_extract(metadata, '$.namespace.session_id') IS ? AND json_extract(metadata, '$.namespace.project') IS ? AND json_extract(metadata, '$.namespace.scope') IS ?".to_string(),
+                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND (encrypted_dek IS NOT NULL OR (json_extract(metadata, '$.namespace.org_id') IS ? AND json_extract(metadata, '$.namespace.user_id') IS ? AND json_extract(metadata, '$.namespace.agent_id') IS ? AND json_extract(metadata, '$.namespace.session_id') IS ? AND json_extract(metadata, '$.namespace.project') IS ? AND json_extract(metadata, '$.namespace.scope') IS ?))".to_string(),
                                 vec![
                                     rusqlite::types::Value::Text(record_c.workspace_id.clone()),
                                     record_ns.org_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
