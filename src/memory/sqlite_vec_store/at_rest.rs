@@ -378,6 +378,15 @@ pub fn migrate_connection(conn: &rusqlite::Connection) -> Result<usize> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Fila cruda de `memory_records` como la devuelve rusqlite.
+    type RawRecordRow = (
+        String,
+        String,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+    );
     use super::*;
     use crate::memory::store::MemoryRecord;
     use rusqlite::params;
@@ -616,13 +625,7 @@ mod tests {
 
         // Migrated rows decrypt back to the originals.
         for (id, want) in [("m1", "legacy uno"), ("m2", "legacy dos")] {
-            let (c, m, dek, civ, miv): (
-                String,
-                String,
-                Option<Vec<u8>>,
-                Option<Vec<u8>>,
-                Option<Vec<u8>>,
-            ) = conn
+            let (c, m, dek, civ, miv): RawRecordRow = conn
                 .query_row(
                     "SELECT content, metadata, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE id = ?1",
                     params![id],
