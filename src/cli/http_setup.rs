@@ -14,7 +14,10 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 use tracing::warn;
 use xavier::coordination::secrets::SecretLease;
 
@@ -218,6 +221,142 @@ pub struct SessionInfo {
 }
 
 /// Rate limit middleware.
+/// Limitador de `/auth/*` EN MEMORIA (ventana fija de 60 s).
+///
+/// No consulta la base a proposito. El conteo anterior vivia en la tabla `rate_limit_usage` y en un
+/// nodo cargado la escritura del conteo fallaba en silencio: medido en vivo, 25 intentos de login
+/// seguidos no dejaron NI UNA fila nueva y jamas aparecio un 429. La puerta de la fuerza bruta no
+/// puede depender de una escritura que puede fallar.
+static AUTH_LIMITER: LazyLock<Mutex<HashMap<String, (Instant, u32)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Nucleo de ventana fija. Separado para poder probarlo sin esperar 60 s reales.
+fn auth_window_allow(
+    ventanas: &mut HashMap<String, (Instant, u32)>,
+    clave: &str,
+    limite: u32,
+    ahora: Instant,
+    ventana: Duration,
+) -> bool {
+    match ventanas.get_mut(clave) {
+        Some((inicio, cuenta)) => {
+            if ahora.duration_since(*inicio) >= ventana {
+                *inicio = ahora;
+                *cuenta = 1;
+                1 <= limite
+            } else {
+                *cuenta += 1;
+                *cuenta <= limite
+            }
+        }
+        // Primera peticion de esta clave: tambien respeta el limite (con limite 0 se corta).
+        None => {
+            ventanas.insert(clave.to_string(), (ahora, 1));
+            1 <= limite
+        }
+    }
+}
+
+/// Registra un intento de `/auth/*` y dice si se permite (ventana real de 60 s).
+fn auth_rate_allow(provider: &str, limite: u32) -> bool {
+    let mut m = AUTH_LIMITER.lock().unwrap_or_else(|e| e.into_inner());
+    auth_window_allow(
+        &mut m,
+        provider,
+        limite,
+        Instant::now(),
+        Duration::from_secs(60),
+    )
+}
+
+#[cfg(test)]
+mod auth_limit_tests {
+    use super::auth_window_allow;
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn corta_al_llegar_al_limite_y_reabre_en_la_ventana_siguiente() {
+        let mut v = HashMap::new();
+        let t0 = Instant::now();
+        let ventana = Duration::from_secs(60);
+        assert!(auth_window_allow(&mut v, "k", 3, t0, ventana));
+        assert!(auth_window_allow(&mut v, "k", 3, t0, ventana));
+        assert!(auth_window_allow(&mut v, "k", 3, t0, ventana));
+        assert!(!auth_window_allow(&mut v, "k", 3, t0, ventana));
+        assert!(!auth_window_allow(&mut v, "k", 3, t0 + Duration::from_secs(59), ventana));
+        assert!(auth_window_allow(&mut v, "k", 3, t0 + Duration::from_secs(61), ventana));
+    }
+
+    #[test]
+    fn cada_clave_cuenta_aparte() {
+        let mut v = HashMap::new();
+        let t0 = Instant::now();
+        let ventana = Duration::from_secs(60);
+        assert!(auth_window_allow(&mut v, "a", 1, t0, ventana));
+        assert!(!auth_window_allow(&mut v, "a", 1, t0, ventana));
+        assert!(auth_window_allow(&mut v, "b", 1, t0, ventana));
+    }
+
+    #[test]
+    fn limite_cero_corta_siempre() {
+        let mut v = HashMap::new();
+        let t0 = Instant::now();
+        assert!(!auth_window_allow(&mut v, "k", 0, t0, Duration::from_secs(60)));
+    }
+}
+
+/// Limitador de tasa EXCLUSIVO del nido de autenticacion.
+///
+/// Se monta con `from_fn` sobre el router de `auth_routes`, es decir DENTRO del nest `/auth`, y por
+/// eso no mira el path: axum recorta el prefijo al enrutar hacia el router anidado, de modo que
+/// dentro de esta capa la ruta es `/login` y no `/auth/login`. Comprobado a golpes: la condicion
+/// `path.starts_with("/auth/")` jamas era cierta aqui y el limite no disparaba nunca.
+///
+/// Como todo lo que entra en este nest es autenticacion, se limita todo por igual. El contador es en
+/// memoria (ver AUTH_LIMITER) y el tope por defecto es 20 por minuto (XAVIER_AUTH_RATE_LIMIT).
+pub async fn auth_rate_limit_middleware(req: Request<Body>, next: Next) -> Response {
+    let mut provider = if let Some(addr) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
+        format!("ip:{}", addr.0.ip())
+    } else {
+        "api_gateway".to_string()
+    };
+    if let Some(session) = req.extensions().get::<SessionInfo>() {
+        if let Some(lease) = &session.lease {
+            provider = format!("agent:{}", lease.agent_id);
+        }
+    }
+
+    let limite = std::env::var("XAVIER_AUTH_RATE_LIMIT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20);
+    if !auth_rate_allow(&provider, limite) {
+        warn!("Auth rate limit exceeded for {}", provider);
+        return json_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            serde_json::json!({
+                "status": "error",
+                "message": format!(
+                    "Demasiados intentos de autenticacion. Maximo {} por minuto.",
+                    limite
+                ),
+            }),
+        );
+    }
+
+    next.run(req).await
+}
+
+/// Limitador de tasa que SI se ejecuta en este servidor.
+///
+/// Lo trae `server.rs` por el import glob `pub use crate::cli::http_setup::*` y lo monta con
+/// `from_fn_with_state` sobre los grupos de rutas, incluido el nest de `/auth`.
+///
+/// OJO: `crate::middleware::token_bucket::rate_limit_middleware` es OTRA funcion con la misma
+/// intencion, y la usan las rutas del crate lib (`src/adapters/inbound/http/routes.rs:272`).
+/// Parchear la que no corresponde no cambia nada de lo que llega por HTTP a este servidor: eso ya
+/// paso dos veces, asi que si tocas limites, comprueba PRIMERO cual esta montado donde.
 pub async fn rate_limit_middleware(
     State(state): State<CliState>,
     req: Request<Body>,

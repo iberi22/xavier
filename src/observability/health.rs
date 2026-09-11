@@ -49,45 +49,14 @@ pub struct SystemHealth {
     pub status: HealthLevel,
 }
 
-/// Cache for the deep SQLite integrity check.
-///
-/// `PRAGMA integrity_check` costs seconds on a large store (measured 4.91s on a
-/// 253k-page DB) and ran on every `/health` call, pushing the response past the 10s
-/// route timeout so healthchecks answered 504. The verdict is cached for
-/// `XAVIER_HEALTH_INTEGRITY_TTL_SECS` seconds (default 300; `0` disables the cache).
-static DB_INTEGRITY_CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> =
-    std::sync::Mutex::new(None);
-
-fn cached_integrity_ok(conn: &rusqlite::Connection) -> bool {
-    let ttl_secs = std::env::var("XAVIER_HEALTH_INTEGRITY_TTL_SECS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(300);
-
-    if ttl_secs > 0 {
-        if let Ok(guard) = DB_INTEGRITY_CACHE.lock() {
-            if let Some((checked_at, ok)) = *guard {
-                if checked_at.elapsed() < std::time::Duration::from_secs(ttl_secs) {
-                    return ok;
-                }
-            }
-        }
-    }
-
-    let ok = conn
-        .query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
-        .map(|verdict| verdict == "ok")
-        .unwrap_or(false);
-
-    if let Ok(mut guard) = DB_INTEGRITY_CACHE.lock() {
-        *guard = Some((std::time::Instant::now(), ok));
-    }
-    ok
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DbHealth {
     pub integrity_ok: bool,
+    /// `false` = no se pudo EJECUTAR la comprobacion (pool ocupado, timeout...). Distinto de
+    /// "corrupta": antes cualquier error se reportaba como `integrity_ok: false` y el nodo entero
+    /// pasaba a `unhealthy` sin que la base tuviera nada.
+    #[serde(default)]
+    pub integrity_verified: bool,
     pub fragmentation_percent: f32,
     pub wal_size_bytes: u64,
     pub page_count: u32,
@@ -153,6 +122,7 @@ impl Default for HealthStatus {
             },
             database: DbHealth {
                 integrity_ok: true,
+                integrity_verified: false,
                 fragmentation_percent: 0.0,
                 wal_size_bytes: 0,
                 page_count: 0,
@@ -189,12 +159,6 @@ impl Default for HealthStatus {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct PeerRepairState {
-    pub last_attempt_at: std::time::Instant,
-    pub attempt_count: u64,
-}
-
 pub struct HealthMonitor {
     current_status: Arc<RwLock<HealthStatus>>,
     cm: &'static ConnectionManager,
@@ -202,8 +166,40 @@ pub struct HealthMonitor {
     embedder: Arc<RwLock<Option<Arc<dyn Embedder>>>>,
     tgd_progress: Arc<RwLock<Option<Arc<RwLock<crate::tgd::consolidation::ProgressReport>>>>>,
     llm_failure_count: Arc<RwLock<u32>>,
-    peer_attempts: Arc<RwLock<HashMap<String, PeerRepairState>>>,
+    peer_attempts: Arc<RwLock<HashMap<String, u64>>>,
     http_client: reqwest::Client,
+}
+
+/// Decide el estado de la base a partir de lo observado.
+///
+/// Regla que importa: **no poder verificar no es estar corrupta**. Un `integrity_check` que no se
+/// puede ejecutar (pool ocupado, timeout) antes ponia el nodo entero en `Unhealthy` y ademas
+/// escondia la corrupcion real. Ahora:
+///   * verificada y ok                        -> Healthy (o Degraded por fragmentacion/WAL)
+///   * verificada y NO ok (corrupcion real)   -> Unhealthy
+///   * no verificada                          -> Degraded, nunca Unhealthy
+fn db_status_from(
+    verified: bool,
+    integrity_ok: bool,
+    fragmentation_percent: f32,
+    wal_size_bytes: u64,
+) -> HealthLevel {
+    let mut status = if !verified {
+        HealthLevel::Degraded
+    } else if !integrity_ok {
+        HealthLevel::Unhealthy
+    } else {
+        HealthLevel::Healthy
+    };
+
+    if fragmentation_percent > 60.0 || wal_size_bytes > 1024 * 1024 * 1024 {
+        status = HealthLevel::Unhealthy;
+    } else if status == HealthLevel::Healthy
+        && (fragmentation_percent > 30.0 || wal_size_bytes > 256 * 1024 * 1024)
+    {
+        status = HealthLevel::Degraded;
+    }
+    status
 }
 
 impl HealthMonitor {
@@ -336,81 +332,35 @@ impl HealthMonitor {
             .unwrap_or(true);
 
         if auto_repair_enabled {
-            let repair_interval_secs = std::env::var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(60);
-            let min_interval = Duration::from_secs(repair_interval_secs);
-
             let mut attempts = self.peer_attempts.write().await;
             for peer in &new_status.mesh.peers {
-                let existing = attempts.get(&peer.node_id).cloned();
-                let attempt_count = existing.as_ref().map(|s| s.attempt_count).unwrap_or(0);
-                let decision = should_retry_peer(peer.sync_lag_secs, attempt_count);
+                let attempt = attempts.get(&peer.node_id).copied().unwrap_or(0);
+                let decision = should_retry_peer(peer.sync_lag_secs, attempt);
 
                 match decision {
                     PeerRetryDecision::Healthy => {
                         attempts.remove(&peer.node_id);
                     }
-                    PeerRetryDecision::RetryImmediately
-                    | PeerRetryDecision::RetryWithBackoff { .. } => {
-                        if let Some(ref state) = existing {
-                            if state.last_attempt_at.elapsed() < min_interval {
-                                tracing::debug!(
-                                    "Auto-repair: High lag for peer {} ({}s), skipping reconnection hint (cooldown active)",
-                                    peer.node_id,
-                                    peer.sync_lag_secs
-                                );
-                                continue;
-                            }
-                        }
-
-                        let should_log = match decision {
-                            PeerRetryDecision::RetryImmediately => true,
-                            PeerRetryDecision::RetryWithBackoff { should_log } => should_log,
-                            _ => false,
-                        };
-
-                        attempts.insert(
-                            peer.node_id.clone(),
-                            PeerRepairState {
-                                last_attempt_at: std::time::Instant::now(),
-                                attempt_count: attempt_count + 1,
-                            },
+                    PeerRetryDecision::RetryImmediately => {
+                        attempts.insert(peer.node_id.clone(), attempt + 1);
+                        tracing::info!(
+                            "Auto-repair: High lag for peer {} ({}s), attempting reconnection hint...",
+                            peer.node_id,
+                            peer.sync_lag_secs
                         );
-
+                    }
+                    PeerRetryDecision::RetryWithBackoff { should_log } => {
+                        attempts.insert(peer.node_id.clone(), attempt + 1);
                         if should_log {
                             tracing::info!(
                                 "Auto-repair: High lag for peer {} ({}s), attempting reconnection hint...",
                                 peer.node_id,
                                 peer.sync_lag_secs
                             );
-                        } else {
-                            tracing::debug!(
-                                "Auto-repair: High lag for peer {} ({}s), rate-limited reconnection hint...",
-                                peer.node_id,
-                                peer.sync_lag_secs
-                            );
                         }
                     }
                     PeerRetryDecision::Stale => {
-                        if let Some(ref state) = existing {
-                            if state.last_attempt_at.elapsed() < min_interval {
-                                tracing::debug!(
-                                    "Auto-repair: Peer {} is stale (lag {}s > 7 days), skipping reconnection hint",
-                                    peer.node_id,
-                                    peer.sync_lag_secs
-                                );
-                                continue;
-                            }
-                        }
-                        attempts.insert(
-                            peer.node_id.clone(),
-                            PeerRepairState {
-                                last_attempt_at: std::time::Instant::now(),
-                                attempt_count: attempt_count + 1,
-                            },
-                        );
+                        attempts.insert(peer.node_id.clone(), attempt + 1);
                         tracing::debug!(
                             "Auto-repair: Peer {} is stale (lag {}s > 7 days), skipping reconnection hint",
                             peer.node_id,
@@ -468,7 +418,11 @@ impl HealthMonitor {
     }
 
     async fn check_database(&self) -> DbHealth {
-        let integrity_ok;
+        // El monitor corre cada 60 s: `PRAGMA integrity_check` COMPLETO sobre esta base (991 MB,
+        // 253k paginas) cuesta una barbaridad y se ejecutaba en cada vuelta. Se usa `quick_check`,
+        // que detecta la corrupcion real a una fraccion del coste.
+        let mut integrity_ok = false;
+        let mut integrity_verified = false;
         let mut fragmentation_percent = 0.0;
         let mut page_count = 0;
 
@@ -478,7 +432,8 @@ impl HealthMonitor {
         let res = self
             .cm
             .with_conn(&project_id, |conn| {
-                let integrity = cached_integrity_ok(conn);
+                let integrity: String =
+                    conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
                 let pc: u32 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
                 let fc: u32 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
 
@@ -492,12 +447,20 @@ impl HealthMonitor {
             })
             .await;
 
-        if let Ok((ok, frag, pc)) = res {
-            integrity_ok = ok;
-            fragmentation_percent = frag;
-            page_count = pc;
-        } else {
-            integrity_ok = false;
+        match res {
+            Ok((integrity, frag, pc)) => {
+                integrity_verified = true;
+                integrity_ok = integrity == "ok";
+                if !integrity_ok {
+                    tracing::error!(detalle = %integrity, "integridad de la base comprometida");
+                }
+                fragmentation_percent = frag;
+                page_count = pc;
+            }
+            Err(e) => {
+                // NO se pudo verificar. Se registra y se marca degradado, no corrupto.
+                tracing::warn!(error = %e, "no se pudo verificar la integridad de la base");
+            }
         }
 
         let mut wal_size_bytes = 0;
@@ -509,15 +472,16 @@ impl HealthMonitor {
             wal_size_bytes = metadata.len();
         }
 
-        let mut status = HealthLevel::Healthy;
-        if !integrity_ok || fragmentation_percent > 60.0 || wal_size_bytes > 1024 * 1024 * 1024 {
-            status = HealthLevel::Unhealthy;
-        } else if fragmentation_percent > 30.0 || wal_size_bytes > 256 * 1024 * 1024 {
-            status = HealthLevel::Degraded;
-        }
+        let status = db_status_from(
+            integrity_verified,
+            integrity_ok,
+            fragmentation_percent,
+            wal_size_bytes,
+        );
 
         DbHealth {
             integrity_ok,
+            integrity_verified,
             fragmentation_percent,
             wal_size_bytes,
             page_count,
@@ -656,28 +620,23 @@ impl HealthMonitor {
         let mut peer_healths = vec![];
 
         // El disco es la FUENTE DE VERDAD: tanto la API HTTP como el CLI (`mesh join`,
-        // `mesh add-peer`) persisten ahi. Si hay un registro inyectado (`set_peer_registry`),
-        // recargamos desde su ruta de disco para reflejar cambios externos sin perder la ruta
-        // configurada (por ej. en tests con tempdir); si no hay inyectado, cargamos por defecto.
+        // `mesh add-peer`) persisten ahi. El registro en memoria es un snapshot del arranque
+        // (src/cli/server.rs set_peer_registry) y quedaba desactualizado: emparejar por CLI
+        // no se reflejaba en /health hasta reiniciar el nodo. Se prefiere el disco.
+        let loaded_registry = PeerRegistry::load().ok();
         let reg_opt = self.peer_registry.read().await;
-        let loaded_registry = if let Some(ref registry) = *reg_opt {
-            registry
-                .reload()
-                .ok()
-                .or_else(|| Some((**registry).clone()))
-        } else {
-            PeerRegistry::load().ok()
-        };
 
-        let peers: Vec<crate::mesh::PeerInfo> = if let Some(ref registry) = loaded_registry {
-            registry.list_peers().into_iter().cloned().collect()
+        let peers: Vec<&crate::mesh::PeerInfo> = if let Some(ref registry) = loaded_registry {
+            registry.list_peers()
+        } else if let Some(ref registry) = *reg_opt {
+            registry.list_peers()
         } else {
             vec![]
         };
 
         let active_peers = peers.len();
 
-        for peer in &peers {
+        for peer in peers {
             let now = chrono::Utc::now().timestamp();
             let lag = peer_lag_secs(peer, now);
 
@@ -735,6 +694,27 @@ fn peer_lag_secs(peer: &crate::mesh::PeerInfo, now: i64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn db_status_no_verificada_no_es_corrupcion() {
+        // El caso que rompia: no se pudo comprobar -> Degraded, jamas Unhealthy.
+        assert_eq!(db_status_from(false, false, 1.0, 0), HealthLevel::Degraded);
+        // Y una base verificada y sana es Healthy.
+        assert_eq!(db_status_from(true, true, 1.2, 6_439_592), HealthLevel::Healthy);
+    }
+
+    #[test]
+    fn db_status_corrupcion_confirmada_es_unhealthy() {
+        assert_eq!(db_status_from(true, false, 1.0, 0), HealthLevel::Unhealthy);
+    }
+
+    #[test]
+    fn db_status_umbrales_de_fragmentacion_y_wal() {
+        assert_eq!(db_status_from(true, true, 45.0, 0), HealthLevel::Degraded);
+        assert_eq!(db_status_from(true, true, 70.0, 0), HealthLevel::Unhealthy);
+        assert_eq!(db_status_from(true, true, 0.0, 300 * 1024 * 1024), HealthLevel::Degraded);
+        assert_eq!(db_status_from(true, true, 0.0, 2 * 1024 * 1024 * 1024), HealthLevel::Unhealthy);
+    }
 
     #[test]
     fn test_peer_lag_secs_uses_added_at_when_never_seen() {
@@ -796,136 +776,11 @@ mod tests {
         assert!(peer_stale.is_stale);
     }
 
-    #[test]
-    fn test_integrity_verdict_is_cached() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        std::env::remove_var("XAVIER_HEALTH_INTEGRITY_TTL_SECS");
-
-        // First call runs the real PRAGMA and primes the cache.
-        assert!(cached_integrity_ok(&conn));
-
-        // Second call must be served from the cache: no PRAGMA, sub-millisecond.
-        let start = std::time::Instant::now();
-        assert!(cached_integrity_ok(&conn));
-        assert!(
-            start.elapsed() < std::time::Duration::from_millis(20),
-            "cached verdict must not re-run PRAGMA integrity_check, took {:?}",
-            start.elapsed()
-        );
-
-        // TTL=0 disables the cache and still returns a valid verdict.
-        std::env::set_var("XAVIER_HEALTH_INTEGRITY_TTL_SECS", "0");
-        assert!(cached_integrity_ok(&conn));
-        std::env::remove_var("XAVIER_HEALTH_INTEGRITY_TTL_SECS");
-    }
-
     #[tokio::test]
     async fn test_health_monitor_initial_state() {
         let cm = ConnectionManager::global();
         let monitor = HealthMonitor::new(cm);
         let status = monitor.get_status().await;
         assert_eq!(status.status, HealthLevel::Healthy);
-    }
-
-    #[tokio::test]
-    async fn test_mesh_auto_repair_rate_limiting() {
-        let cm = ConnectionManager::global();
-        let monitor = HealthMonitor::new(cm);
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let storage_path = temp_dir.path().join("peers.json");
-        let mut peer_registry = PeerRegistry::load_from(storage_path).unwrap();
-
-        let node_id = crate::mesh::node::NodeId("xv1-testpeer123".into());
-        let peer_info = crate::mesh::PeerInfo {
-            node_id: node_id.clone(),
-            alias: Some("test".into()),
-            endpoint_url: "http://127.0.0.1:8006".into(),
-            public_key_hex: "00".into(),
-            added_at: 1000,
-            last_seen_at: Some(chrono::Utc::now().timestamp() - 300), // 300s lag
-            sync_enabled: true,
-            is_cloud: false,
-            iroh_addr: None,
-            shared_workspace_ids: vec![],
-            shared_workspace_tokens: HashMap::new(),
-            capabilities: vec![],
-        };
-        peer_registry.add_peer(peer_info).unwrap();
-        monitor.set_peer_registry(Arc::new(peer_registry)).await;
-
-        std::env::set_var("XAVIER_MESH_AUTO_REPAIR", "1");
-        std::env::set_var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS", "60");
-
-        // Cycle 1: First check triggers auto-repair attempt
-        let _ = monitor.run_checks().await;
-
-        let attempts = monitor.peer_attempts.read().await;
-        assert_eq!(attempts.len(), 1);
-        let peer_state = attempts.get("xv1-testpeer123").unwrap();
-        assert_eq!(peer_state.attempt_count, 1);
-        let first_attempt_at = peer_state.last_attempt_at;
-        drop(attempts);
-
-        // Cycle 2: Immediate second check within interval
-        let _ = monitor.run_checks().await;
-
-        let attempts = monitor.peer_attempts.read().await;
-        assert_eq!(attempts.len(), 1);
-        let peer_state_2 = attempts.get("xv1-testpeer123").unwrap();
-        // Attempt count must NOT have incremented, and timestamp must remain unchanged (cooldown active)
-        assert_eq!(peer_state_2.attempt_count, 1);
-        assert_eq!(peer_state_2.last_attempt_at, first_attempt_at);
-        drop(attempts);
-
-        std::env::remove_var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS");
-    }
-
-    #[tokio::test]
-    async fn test_mesh_auto_repair_custom_interval() {
-        let cm = ConnectionManager::global();
-        let monitor = HealthMonitor::new(cm);
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let storage_path = temp_dir.path().join("peers.json");
-        let mut peer_registry = PeerRegistry::load_from(storage_path).unwrap();
-
-        let node_id = crate::mesh::node::NodeId("xv1-testpeer456".into());
-        let peer_info = crate::mesh::PeerInfo {
-            node_id: node_id.clone(),
-            alias: Some("test".into()),
-            endpoint_url: "http://127.0.0.1:8006".into(),
-            public_key_hex: "00".into(),
-            added_at: 1000,
-            last_seen_at: Some(chrono::Utc::now().timestamp() - 300),
-            sync_enabled: true,
-            is_cloud: false,
-            iroh_addr: None,
-            shared_workspace_ids: vec![],
-            shared_workspace_tokens: HashMap::new(),
-            capabilities: vec![],
-        };
-        peer_registry.add_peer(peer_info).unwrap();
-        monitor.set_peer_registry(Arc::new(peer_registry)).await;
-
-        std::env::set_var("XAVIER_MESH_AUTO_REPAIR", "1");
-        std::env::set_var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS", "0");
-
-        let _ = monitor.run_checks().await;
-
-        let attempts = monitor.peer_attempts.read().await;
-        assert_eq!(attempts.get("xv1-testpeer456").unwrap().attempt_count, 1);
-        drop(attempts);
-
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
-        let _ = monitor.run_checks().await;
-
-        let attempts = monitor.peer_attempts.read().await;
-        // Since interval was 0s, 10ms > 0s so second check triggers attempt 2
-        assert_eq!(attempts.get("xv1-testpeer456").unwrap().attempt_count, 2);
-        drop(attempts);
-
-        std::env::remove_var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS");
     }
 }

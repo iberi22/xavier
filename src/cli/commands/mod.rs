@@ -37,6 +37,7 @@ pub mod spawn;
 pub mod tasks;
 pub mod token;
 pub mod usage;
+pub mod users;
 pub mod verify;
 pub mod wallet;
 
@@ -286,6 +287,7 @@ impl Cli {
                 xavier::chronicle::cli::handle_chronicle_command(cmd.clone()).await
             }
             Command::Token { cmd } => token::handle_token_command(cmd.clone()).await,
+            Command::Users { cmd } => users::handle_users_command(cmd.clone()).await,
             Command::Provider { cmd } => provider::handle_provider_command(cmd.clone()).await,
             Command::Setup { local } => crate::cli::handlers::setup::handle_setup(*local).await,
             Command::Doctor { format, verbose } => {

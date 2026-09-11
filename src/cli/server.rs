@@ -1400,7 +1400,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>, no_ui: bool) ->
     let app = Router::new()
         .nest(
             "/auth",
-            auth_routes::<CliState>(&state.state_dir.to_string_lossy()),
+            // Limite de tasa tambien aqui: /auth/register, /auth/login y el arranque de OAuth son
+            // publicos y sin esto se pueden martillear sin freno (medido: 60 intentos de login
+            // seguidos, todos 401, en 0.1 s => ~600 req/s de fuerza bruta). El resto del router ya
+            // lo tenia; este nest se habia quedado fuera.
+            // Middleware DEDICADO y sin estado: dentro del nest el path ya viene sin el prefijo
+            // (`/login`, no `/auth/login`), asi que este no puede decidir por la ruta.
+            auth_routes::<CliState>(&state.state_dir.to_string_lossy())
+                .layer(middleware::from_fn(auth_rate_limit_middleware)),
         )
         .route("/health", get(health_handler))
         .route(
