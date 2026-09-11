@@ -12,7 +12,9 @@
     "build:panel": "npm run build --workspace panel-ui",
     "build:docs": "npm run build --workspace docs/site",
     "lint": "pnpm --filter xavier-panel-ui run biome:check && pnpm --filter xavier-panel-ui run typecheck",
-    "prepare": "husky"
+    "prepare": "husky",
+    "verify:rust": "bash scripts/verify-rust.sh",
+    "verify:rust:full": "bash scripts/verify-rust.sh --full --with-data"
   },
   "engines": {
     "node": ">=22.12.0"
