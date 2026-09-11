@@ -57,19 +57,25 @@ paso() { # paso <nombre> <comando...>
     echo "=== $nombre ==="
     echo "  \$ $*"
     local inicio fin salida
+    # Un log por paso: pisar el mismo fichero se comio la salida de clippy y
+    # dejo el fallo sin diagnostico.
+    local slug
+    slug="$(printf '%s' "$nombre" | tr ' ():/' '-----' | tr -s '-' | cut -c1-40)"
+    local log="/tmp/verify-rust-${slug}.log"
     inicio=$(date +%s)
-    "$@" > /tmp/verify-rust-step.log 2>&1
+    "$@" > "$log" 2>&1
     local rc=$?
     fin=$(date +%s)
-    tail -12 /tmp/verify-rust-step.log | sed 's/^/    /'
+    tail -12 "$log" | sed 's/^/    /'
     NOMBRES+=("$nombre")
     if [[ $rc -eq 0 ]]; then
         ESTADOS+=("OK ($((fin - inicio))s)")
     else
         ESTADOS+=("FALLO (exit $rc)")
         FALLOS=$((FALLOS + 1))
-        echo "  --- salida completa en /tmp/verify-rust-step.log ---"
+        echo "  --- salida completa en $log ---"
     fi
+    ULTIMO_LOG="$log"
     return $rc
 }
 
