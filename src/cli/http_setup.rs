@@ -269,7 +269,6 @@ fn auth_rate_allow(provider: &str, limite: u32) -> bool {
     )
 }
 
-
 /// Limitador de tasa EXCLUSIVO del nido de autenticacion.
 ///
 /// Se monta con `from_fn` sobre el router de `auth_routes`, es decir DENTRO del nest `/auth`, y por
