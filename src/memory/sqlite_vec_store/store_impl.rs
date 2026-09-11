@@ -302,14 +302,91 @@ impl MemoryStore for VecSqliteMemoryStore {
         Ok(results)
     }
 
+    async fn list_filtered(
+        &self,
+        workspace_id: &str,
+        filters: &MemoryQueryFilters,
+        limit: usize,
+    ) -> Result<Vec<MemoryRecord>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (sql, query_params) =
+            match crate::memory::sqlite_store::SqliteMemoryStore::build_filtered_query(
+                workspace_id,
+                Some(filters),
+                None,
+                Some(limit),
+            ) {
+                Some(q) => q,
+                None => return Ok(Vec::new()),
+            };
+
+        let records = self
+            .conn_provider
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(&sql)?;
+                let mut rows = stmt.query(rusqlite::params_from_iter(&query_params))?;
+                let mut records = Vec::new();
+                while let Some(row) = rows.next()? {
+                    records.push(VecSqliteMemoryStore::deserialize_record(row)?);
+                }
+                Ok(records)
+            })
+            .await?;
+
+        let mut results = Vec::with_capacity(records.len());
+        for mut record in records {
+            super::at_rest::decrypt_record_in_place(&mut record)?;
+            results.push(record);
+        }
+
+        Ok(
+            crate::memory::store::filter_records(results, workspace_id, "", Some(filters))?
+                .into_iter()
+                .take(limit)
+                .collect(),
+        )
+    }
+
     async fn search(
         &self,
         workspace_id: &str,
         query: &str,
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<Vec<MemoryRecord>> {
-        let records = self.list(workspace_id).await?;
-        crate::memory::store::filter_records(records, workspace_id, query, filters)
+        let (sql, query_params) =
+            match crate::memory::sqlite_store::SqliteMemoryStore::build_filtered_query(
+                workspace_id,
+                filters,
+                Some(query),
+                None,
+            ) {
+                Some(q) => q,
+                None => return Ok(Vec::new()),
+            };
+
+        let records = self
+            .conn_provider
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(&sql)?;
+                let mut rows = stmt.query(rusqlite::params_from_iter(&query_params))?;
+                let mut records = Vec::new();
+                while let Some(row) = rows.next()? {
+                    records.push(VecSqliteMemoryStore::deserialize_record(row)?);
+                }
+                Ok(records)
+            })
+            .await?;
+
+        let mut results = Vec::with_capacity(records.len());
+        for mut record in records {
+            super::at_rest::decrypt_record_in_place(&mut record)?;
+            results.push(record);
+        }
+
+        crate::memory::store::filter_records(results, workspace_id, query, filters)
     }
 
     async fn hybrid_search(

@@ -254,6 +254,144 @@ impl SqliteMemoryStore {
         }
         Ok(())
     }
+
+    pub(crate) fn build_filtered_query(
+        workspace_id: &str,
+        filters: Option<&MemoryQueryFilters>,
+        query: Option<&str>,
+        limit: Option<usize>,
+    ) -> Option<(String, Vec<rusqlite::types::Value>)> {
+        if let Some(fws) = filters.and_then(|f| f.workspace_id.as_deref()) {
+            if fws != workspace_id {
+                return None;
+            }
+        }
+
+        let mut clauses = vec!["workspace_id = ?".to_string()];
+        let mut params = vec![rusqlite::types::Value::Text(workspace_id.to_string())];
+
+        if let Some(filters) = filters {
+            if let Some(levels) = &filters.levels {
+                if levels.is_empty() {
+                    return None;
+                }
+                let placeholders: Vec<&str> = levels.iter().map(|_| "?").collect();
+                clauses.push(format!("level IN ({})", placeholders.join(", ")));
+                for l in levels {
+                    params.push(rusqlite::types::Value::Text(l.as_str().to_string()));
+                }
+            }
+
+            if let Some(cluster_ids) = &filters.cluster_ids {
+                if cluster_ids.is_empty() {
+                    return None;
+                }
+                let placeholders: Vec<&str> = cluster_ids.iter().map(|_| "?").collect();
+                clauses.push(format!("cluster_id IN ({})", placeholders.join(", ")));
+                for c in cluster_ids {
+                    params.push(rusqlite::types::Value::Text(c.clone()));
+                }
+            }
+
+            if let Some(prefix) = &filters.path_prefix {
+                clauses.push("path LIKE ? || '%'".to_string());
+                params.push(rusqlite::types::Value::Text(prefix.clone()));
+            }
+
+            if let Some(org_id) = &filters.org_id {
+                clauses.push("(encrypted_dek IS NOT NULL OR json_extract(metadata, '$.namespace.org_id') = ? OR json_extract(metadata, '$.org_id') = ?)".to_string());
+                params.push(rusqlite::types::Value::Text(org_id.clone()));
+                params.push(rusqlite::types::Value::Text(org_id.clone()));
+            }
+
+            if let Some(user_id) = &filters.user_id {
+                clauses.push("(encrypted_dek IS NOT NULL OR json_extract(metadata, '$.namespace.user_id') = ? OR json_extract(metadata, '$.user_id') = ?)".to_string());
+                params.push(rusqlite::types::Value::Text(user_id.clone()));
+                params.push(rusqlite::types::Value::Text(user_id.clone()));
+            }
+
+            if let Some(agent_id) = &filters.agent_id {
+                clauses.push("(encrypted_dek IS NOT NULL OR json_extract(metadata, '$.namespace.agent_id') = ? OR json_extract(metadata, '$.agent_id') = ?)".to_string());
+                params.push(rusqlite::types::Value::Text(agent_id.clone()));
+                params.push(rusqlite::types::Value::Text(agent_id.clone()));
+            }
+
+            if let Some(session_id) = &filters.session_id {
+                clauses.push("(encrypted_dek IS NOT NULL OR json_extract(metadata, '$.namespace.session_id') = ? OR json_extract(metadata, '$.session_id') = ?)".to_string());
+                params.push(rusqlite::types::Value::Text(session_id.clone()));
+                params.push(rusqlite::types::Value::Text(session_id.clone()));
+            }
+
+            if let Some(project) = &filters.project {
+                clauses.push("(encrypted_dek IS NOT NULL OR json_extract(metadata, '$.namespace.project') = ? OR json_extract(metadata, '$.project') = ?)".to_string());
+                params.push(rusqlite::types::Value::Text(project.clone()));
+                params.push(rusqlite::types::Value::Text(project.clone()));
+            }
+
+            if let Some(scope) = &filters.scope {
+                clauses.push("(encrypted_dek IS NOT NULL OR json_extract(metadata, '$.namespace.scope') = ? OR json_extract(metadata, '$.scope') = ?)".to_string());
+                params.push(rusqlite::types::Value::Text(scope.clone()));
+                params.push(rusqlite::types::Value::Text(scope.clone()));
+            }
+
+            if let Some(source_app) = &filters.source_app {
+                clauses.push("(encrypted_dek IS NOT NULL OR json_extract(metadata, '$.provenance.source_app') = ? OR json_extract(metadata, '$.source_app') = ?)".to_string());
+                params.push(rusqlite::types::Value::Text(source_app.clone()));
+                params.push(rusqlite::types::Value::Text(source_app.clone()));
+            }
+
+            if let Some(after) = &filters.recorded_after {
+                clauses.push("(encrypted_dek IS NOT NULL OR created_at >= ? OR json_extract(metadata, '$.provenance.recorded_at') >= ? OR json_extract(metadata, '$.recorded_at') >= ?)".to_string());
+                params.push(rusqlite::types::Value::Text(after.clone()));
+                params.push(rusqlite::types::Value::Text(after.clone()));
+                params.push(rusqlite::types::Value::Text(after.clone()));
+            }
+
+            if let Some(before) = &filters.recorded_before {
+                clauses.push("(encrypted_dek IS NOT NULL OR created_at <= ? OR json_extract(metadata, '$.provenance.recorded_at') <= ? OR json_extract(metadata, '$.recorded_at') <= ?)".to_string());
+                params.push(rusqlite::types::Value::Text(before.clone()));
+                params.push(rusqlite::types::Value::Text(before.clone()));
+                params.push(rusqlite::types::Value::Text(before.clone()));
+            }
+
+            if let Some(after) = &filters.observed_after {
+                clauses.push("(encrypted_dek IS NOT NULL OR json_extract(metadata, '$.provenance.observed_at') >= ? OR json_extract(metadata, '$.observed_at') >= ?)".to_string());
+                params.push(rusqlite::types::Value::Text(after.clone()));
+                params.push(rusqlite::types::Value::Text(after.clone()));
+            }
+
+            if let Some(before) = &filters.observed_before {
+                clauses.push("(encrypted_dek IS NOT NULL OR json_extract(metadata, '$.provenance.observed_at') <= ? OR json_extract(metadata, '$.observed_at') <= ?)".to_string());
+                params.push(rusqlite::types::Value::Text(before.clone()));
+                params.push(rusqlite::types::Value::Text(before.clone()));
+            }
+        }
+
+        if let Some(q) = query {
+            let trimmed = q.trim();
+            if !trimmed.is_empty() {
+                clauses.push("(encrypted_dek IS NOT NULL OR path LIKE '%' || ? || '%' OR content LIKE '%' || ? || '%' OR metadata LIKE '%' || ? || '%')".to_string());
+                params.push(rusqlite::types::Value::Text(trimmed.to_string()));
+                params.push(rusqlite::types::Value::Text(trimmed.to_string()));
+                params.push(rusqlite::types::Value::Text(trimmed.to_string()));
+            }
+        }
+
+        let mut sql = format!(
+            "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE {}",
+            TABLE_MEMORIES,
+            clauses.join(" AND ")
+        );
+
+        sql.push_str(" ORDER BY created_at DESC");
+
+        if let Some(limit) = limit {
+            sql.push_str(" LIMIT ?");
+            params.push(rusqlite::types::Value::Integer(limit as i64));
+        }
+
+        Some((sql, params))
+    }
 }
 
 #[async_trait]
@@ -504,8 +642,38 @@ impl MemoryStore for SqliteMemoryStore {
         filters: &MemoryQueryFilters,
         limit: usize,
     ) -> Result<Vec<MemoryRecord>> {
-        let all = self.list(workspace_id).await?;
-        Ok(filter_records(all, workspace_id, "", Some(filters))?
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (sql, query_params) =
+            match Self::build_filtered_query(workspace_id, Some(filters), None, Some(limit)) {
+                Some(q) => q,
+                None => return Ok(Vec::new()),
+            };
+
+        let records = self
+            .conn_provider
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(&sql)?;
+                let mut rows = stmt.query(rusqlite::params_from_iter(&query_params))?;
+                let mut records = Vec::new();
+                while let Some(row) = rows.next()? {
+                    if let Ok(record) = Self::deserialize_record(row) {
+                        records.push(record);
+                    }
+                }
+                Ok(records)
+            })
+            .await?;
+
+        let mut results = Vec::with_capacity(records.len());
+        for mut record in records {
+            Self::decrypt_record(&mut record)?;
+            results.push(record);
+        }
+
+        Ok(filter_records(results, workspace_id, "", Some(filters))?
             .into_iter()
             .take(limit)
             .collect())
@@ -536,8 +704,34 @@ impl MemoryStore for SqliteMemoryStore {
         query: &str,
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<Vec<MemoryRecord>> {
-        let records = self.list(workspace_id).await?;
-        filter_records(records, workspace_id, query, filters)
+        let (sql, query_params) =
+            match Self::build_filtered_query(workspace_id, filters, Some(query), None) {
+                Some(q) => q,
+                None => return Ok(Vec::new()),
+            };
+
+        let records = self
+            .conn_provider
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(&sql)?;
+                let mut rows = stmt.query(rusqlite::params_from_iter(&query_params))?;
+                let mut records = Vec::new();
+                while let Some(row) = rows.next()? {
+                    if let Ok(record) = Self::deserialize_record(row) {
+                        records.push(record);
+                    }
+                }
+                Ok(records)
+            })
+            .await?;
+
+        let mut results = Vec::with_capacity(records.len());
+        for mut record in records {
+            Self::decrypt_record(&mut record)?;
+            results.push(record);
+        }
+
+        filter_records(results, workspace_id, query, filters)
     }
 
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState> {
@@ -1055,5 +1249,101 @@ mod tests {
         let fetched_nested = store.get("ws_test", "src/bar.rs").await.unwrap().unwrap();
         assert_eq!(fetched_nested.id, "nested1");
         assert_eq!(fetched_nested.path, "src/bar.rs");
+    }
+
+    #[tokio::test]
+    async fn test_list_filtered_sql_limit_and_ordering() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test_limit.db");
+        let config = SqliteStoreConfig { path: db_path };
+        let store = SqliteMemoryStore::new_in_memory(config).await.unwrap();
+
+        let base_time = Utc::now();
+        // Insert 10 records with incremental created_at timestamps
+        for i in 0..10 {
+            let rec = MemoryRecord {
+                id: format!("rec_{}", i),
+                workspace_id: "ws_limit_test".to_string(),
+                path: format!("item_{}.rs", i),
+                content: format!("content {}", i),
+                created_at: base_time + chrono::Duration::seconds(i as i64 * 10),
+                level: if i % 2 == 0 {
+                    MemoryLevel::Raw
+                } else {
+                    MemoryLevel::Processed
+                },
+                cluster_id: Some(format!("cluster_{}", i % 3)),
+                ..Default::default()
+            };
+            store.put(rec).await.unwrap();
+        }
+
+        let empty_filters = MemoryQueryFilters::default();
+
+        // 1. Verify SQL generation includes LIMIT and ORDER BY created_at DESC
+        let (sql, params) = SqliteMemoryStore::build_filtered_query(
+            "ws_limit_test",
+            Some(&empty_filters),
+            None,
+            Some(3),
+        )
+        .unwrap();
+        assert!(sql.contains("LIMIT ?"), "SQL must contain LIMIT ?");
+        assert!(
+            sql.contains("ORDER BY created_at DESC"),
+            "SQL must contain ORDER BY created_at DESC"
+        );
+        assert_eq!(params.last(), Some(&rusqlite::types::Value::Integer(3)));
+
+        // 2. Test list_filtered returns exactly limit records in descending created_at order
+        let results = store
+            .list_filtered("ws_limit_test", &empty_filters, 3)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 3, "Should return exactly 3 records");
+        assert_eq!(results[0].id, "rec_9", "Most recent should be rec_9");
+        assert_eq!(results[1].id, "rec_8");
+        assert_eq!(results[2].id, "rec_7");
+
+        // 3. Test list_filtered with level filter pushdown
+        let level_filter = MemoryQueryFilters {
+            levels: Some(vec![MemoryLevel::Processed]),
+            ..Default::default()
+        };
+        let (sql_level, _) = SqliteMemoryStore::build_filtered_query(
+            "ws_limit_test",
+            Some(&level_filter),
+            None,
+            Some(2),
+        )
+        .unwrap();
+        assert!(sql_level.contains("level IN (?)"));
+
+        let processed_results = store
+            .list_filtered("ws_limit_test", &level_filter, 2)
+            .await
+            .unwrap();
+        assert_eq!(processed_results.len(), 2);
+        assert_eq!(processed_results[0].id, "rec_9");
+        assert_eq!(processed_results[1].id, "rec_7");
+
+        // 4. Verify EXPLAIN QUERY PLAN demonstrates SQL limitation and query plan validity
+        let plan_check_sql = sql.clone();
+        store
+            .conn_provider
+            .with_conn(&store.project_id, move |conn| {
+                let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {}", plan_check_sql))?;
+                let mut plan_rows = stmt.query(rusqlite::params_from_iter(&params))?;
+                let mut has_plan = false;
+                while let Some(row) = plan_rows.next()? {
+                    let detail: String = row.get(3)?;
+                    assert!(!detail.is_empty());
+                    has_plan = true;
+                }
+                assert!(has_plan, "Query plan should be produced");
+                Ok(())
+            })
+            .await
+            .unwrap();
     }
 }
