@@ -13,6 +13,26 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 
+/// Roles validos para una cuenta local. `set_user_role` rechaza cualquier otro valor.
+pub const VALID_ROLES: &[&str] = &["user", "admin"];
+
+/// Genera una contrasena aleatoria fuerte de 24 caracteres.
+///
+/// Alfabeto de 70 simbolos sin caracteres ambiguos (sin `l`, `I`, `O`, `0`, `1`
+/// para que se pueda dictar por voz/telefono) muestreados del CSPRNG del
+/// sistema (`OsRng`, nunca `rand::random` ni un PRNG con semilla fija):
+/// 24 caracteres x ~6.13 bits = ~147 bits de entropia.
+fn generate_strong_password() -> String {
+    const ALPHABET: &[u8] =
+        b"abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*-_+=?";
+    let mut bytes = [0u8; 24];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut bytes);
+    bytes
+        .iter()
+        .map(|b| ALPHABET[usize::from(*b) % ALPHABET.len()] as char)
+        .collect()
+}
+
 pub struct AuthDb {
     conn: Connection,
 }
@@ -364,6 +384,103 @@ impl AuthDb {
         Ok(())
     }
 
+    /// Vista de administracion: id, email y rol de cada cuenta, ordenados por email.
+    ///
+    /// Devuelve [`UserSummary`] a proposito en vez de [`User`]: el hash de la
+    /// contrasena, el secreto TOTP y los codigos de respaldo no salen nunca de
+    /// esta capa hacia la salida de administracion.
+    pub fn list_user_summaries(&self) -> AnyhowResult<Vec<UserSummary>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, email, role FROM users ORDER BY email ASC")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(UserSummary {
+                    id: row.get(0)?,
+                    email: row.get(1)?,
+                    role: row.get(2)?,
+                })
+            })
+            .map_err(|e| anyhow!("Failed to list users: {}", e))?;
+
+        let mut users = Vec::new();
+        for row in rows {
+            users.push(row.map_err(|e| anyhow!("Failed to read user row: {}", e))?);
+        }
+        Ok(users)
+    }
+
+    /// Cambia el rol de la cuenta identificada por su email.
+    ///
+    /// El email se normaliza igual que en el alta (recorte + minusculas).
+    /// Roles validos: `user`, `admin`. Devuelve el resumen actualizado leido
+    /// de vuelta de la base de datos, o un error claro si el email no existe.
+    pub fn set_user_role(&self, email: &str, role: &str) -> AnyhowResult<UserSummary> {
+        let role = role.trim().to_ascii_lowercase();
+        if !VALID_ROLES.contains(&role.as_str()) {
+            return Err(anyhow!(
+                "rol no valido '{}': valores validos: {}",
+                role,
+                VALID_ROLES.join(", ")
+            ));
+        }
+        let email = email.trim().to_ascii_lowercase();
+        if email.is_empty() {
+            return Err(anyhow!("el email no puede estar vacio"));
+        }
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE users SET role = ?1, updated_at = ?2 WHERE email = ?3",
+                params![role, now(), email],
+            )
+            .map_err(|e| anyhow!("Failed to update user role: {}", e))?;
+        if changed == 0 {
+            return Err(anyhow!("no existe ningun usuario con el email '{}'", email));
+        }
+        let user = self
+            .get_user_by_email(&email)?
+            .ok_or_else(|| anyhow!("no existe ningun usuario con el email '{}'", email))?;
+        Ok(UserSummary {
+            id: user.id,
+            email: user.email,
+            role: user.role,
+        })
+    }
+
+    /// Resetea la contrasena de la cuenta identificada por su email.
+    ///
+    /// Genera una contrasena aleatoria fuerte (24 caracteres del alfabeto
+    /// sin caracteres ambiguos, muestreados del CSPRNG del sistema via
+    /// `OsRng`), la guarda con el MISMO hashing Argon2id del alta y revoca
+    /// todos los refresh tokens de la cuenta. Devuelve la contrasena en
+    /// claro UNA sola vez: el llamante debe entregarla al operador y no
+    /// registrarla en ningun log.
+    pub fn reset_user_password(&self, email: &str) -> AnyhowResult<String> {
+        let email = email.trim().to_ascii_lowercase();
+        if email.is_empty() {
+            return Err(anyhow!("el email no puede estar vacio"));
+        }
+        let user = self
+            .get_user_by_email(&email)?
+            .ok_or_else(|| anyhow!("no existe ningun usuario con el email '{}'", email))?;
+        let password = generate_strong_password();
+        let password_hash = super::password::hash_password(&password)
+            .map_err(|e| anyhow!("Failed to hash new password: {}", e))?;
+        self.update_password(&user.id, &password_hash)?;
+        self.revoke_all_user_tokens(&user.id)?;
+        self.log_audit(&AuditLog {
+            id: ulid::Ulid::new().to_string(),
+            user_id: Some(user.id),
+            action: "admin_password_reset".to_string(),
+            ip_address: None,
+            details: None,
+            created_at: now(),
+        })
+        .ok();
+        Ok(password)
+    }
+
     /// List users.
     pub fn list_users(&self) -> AnyhowResult<Vec<User>> {
         let mut stmt = self.conn.prepare(
@@ -511,6 +628,208 @@ mod tests {
             .expect("Should get token again");
         assert!(found_revoked.unwrap().revoked);
     }
+
+    /// Crea una cuenta de prueba con el MISMO hashing Argon2id del alta.
+    fn make_test_user(id: &str, email: &str, password: &str) -> User {
+        User {
+            id: id.to_string(),
+            email: email.to_string(),
+            password_hash: super::super::password::hash_password(password)
+                .expect("Should hash password"),
+            name: "Test User".to_string(),
+            role: "user".to_string(),
+            totp_secret: Some("S3CR3T".to_string()),
+            totp_enabled: false,
+            recovery_seed_hash: Some("seedhash".to_string()),
+            backup_codes: Some("[\"code-1\"]".to_string()),
+            created_at: 12345,
+            updated_at: 12345,
+        }
+    }
+
+    fn open_test_db(dir: &tempfile::TempDir) -> AuthDb {
+        // Igual que los tests existentes: AuthDb::new resuelve la clave maestra
+        // via HardwareVault, que en entornos sin llavero usa su vault local
+        // cifrado de respaldo. No se necesita ningun mecanismo especial.
+        AuthDb::new(&dir.path().join("auth.db")).expect("Should create DB")
+    }
+
+    #[test]
+    fn test_set_user_role_promotes_to_admin_and_reads_back() {
+        let dir = tempdir().unwrap();
+        let db = open_test_db(&dir);
+        db.create_user(&make_test_user(
+            "user_1",
+            "ana@ejemplo.com",
+            "ContrasenaLarga2026!",
+        ))
+        .expect("Should create user");
+
+        let summary = db
+            .set_user_role("ana@ejemplo.com", "admin")
+            .expect("Should promote to admin");
+        assert_eq!(summary.email, "ana@ejemplo.com");
+        assert_eq!(summary.role, "admin");
+
+        // Se lee de vuelta desde la base de datos, no es el valor de entrada.
+        let reloaded = db
+            .get_user_by_email("ana@ejemplo.com")
+            .expect("Should read user")
+            .expect("User must exist");
+        assert_eq!(reloaded.role, "admin");
+
+        // El email se normaliza igual que en el alta.
+        let summary = db
+            .set_user_role("  ANA@EJEMPLO.COM ", "user")
+            .expect("Should accept normalized email");
+        assert_eq!(summary.role, "user");
+    }
+
+    #[test]
+    fn test_set_user_role_unknown_email_is_clear_error() {
+        let dir = tempdir().unwrap();
+        let db = open_test_db(&dir);
+        let err = db
+            .set_user_role("nadie@ejemplo.com", "admin")
+            .expect_err("Should fail for unknown email");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("nadie@ejemplo.com"),
+            "el error debe nombrar el email: {msg}"
+        );
+        assert!(
+            msg.contains("no existe"),
+            "el error debe decir que no existe: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_set_user_role_rejects_invalid_role() {
+        let dir = tempdir().unwrap();
+        let db = open_test_db(&dir);
+        db.create_user(&make_test_user(
+            "user_1",
+            "ana@ejemplo.com",
+            "ContrasenaLarga2026!",
+        ))
+        .expect("Should create user");
+
+        for bad in ["superadmin", "", "ADMINISTRADOR", "user "] {
+            // "user " con espacio se recorta y SI vale; el resto debe fallar.
+            if bad.trim().to_ascii_lowercase() == "user" {
+                continue;
+            }
+            let err = db
+                .set_user_role("ana@ejemplo.com", bad)
+                .expect_err("Should reject invalid role");
+            assert!(
+                err.to_string().contains("rol no valido"),
+                "el error debe decir rol no valido: {}",
+                err
+            );
+        }
+        // El rol original queda intacto tras los intentos invalidos.
+        let reloaded = db
+            .get_user_by_email("ana@ejemplo.com")
+            .expect("Should read user")
+            .expect("User must exist");
+        assert_eq!(reloaded.role, "user");
+    }
+
+    #[test]
+    fn test_reset_user_password_rotates_credentials() {
+        let dir = tempdir().unwrap();
+        let db = open_test_db(&dir);
+        let old_password = "ContrasenaVieja2026!";
+        db.create_user(&make_test_user("user_1", "ana@ejemplo.com", old_password))
+            .expect("Should create user");
+
+        let new_password = db
+            .reset_user_password("ana@ejemplo.com")
+            .expect("Should reset password");
+        assert!(
+            new_password.chars().count() >= 20,
+            "la nueva contrasena debe tener >= 20 caracteres"
+        );
+
+        let reloaded = db
+            .get_user_by_email("ana@ejemplo.com")
+            .expect("Should read user")
+            .expect("User must exist");
+        // La vieja deja de servir y la nueva si, con el mismo Argon2id del alta.
+        assert!(
+            !super::super::password::verify_password(old_password, &reloaded.password_hash)
+                .expect("Should verify"),
+            "la contrasena vieja debe dejar de servir"
+        );
+        assert!(
+            super::super::password::verify_password(&new_password, &reloaded.password_hash)
+                .expect("Should verify"),
+            "la contrasena nueva debe servir"
+        );
+
+        // Dos resets generan contrasenas distintas (CSPRNG, no determinista).
+        let second = db
+            .reset_user_password("ana@ejemplo.com")
+            .expect("Should reset again");
+        assert_ne!(new_password, second);
+    }
+
+    #[test]
+    fn test_reset_user_password_unknown_email_is_clear_error() {
+        let dir = tempdir().unwrap();
+        let db = open_test_db(&dir);
+        let err = db
+            .reset_user_password("fantasma@ejemplo.com")
+            .expect_err("Should fail for unknown email");
+        assert!(err.to_string().contains("fantasma@ejemplo.com"));
+    }
+
+    #[test]
+    fn test_list_user_summaries_never_exposes_hash_or_secrets() {
+        let dir = tempdir().unwrap();
+        let db = open_test_db(&dir);
+        db.create_user(&make_test_user(
+            "user_1",
+            "ana@ejemplo.com",
+            "ContrasenaLarga2026!",
+        ))
+        .expect("Should create user");
+        db.create_user(&make_test_user(
+            "user_2",
+            "bruno@ejemplo.com",
+            "OtraContrasena2026!",
+        ))
+        .expect("Should create user");
+
+        let summaries = db.list_user_summaries().expect("Should list users");
+        assert_eq!(summaries.len(), 2);
+        // Ordenados por email.
+        assert_eq!(summaries[0].email, "ana@ejemplo.com");
+        assert_eq!(summaries[1].email, "bruno@ejemplo.com");
+        assert!(summaries.iter().all(|s| s.role == "user"));
+
+        // Por construccion no hay donde guardar un hash: el JSON serializado
+        // no debe contener hash ni secreto alguno.
+        let json = serde_json::to_string(&summaries).expect("Should serialize");
+        for forbidden in [
+            "password_hash",
+            "hash",
+            "S3CR3T",
+            "totp",
+            "secret",
+            "seedhash",
+            "code-1",
+            "backup",
+        ] {
+            assert!(
+                !json
+                    .to_ascii_lowercase()
+                    .contains(&forbidden.to_ascii_lowercase()),
+                "el listado filtra '{forbidden}': {json}"
+            );
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -526,6 +845,18 @@ pub struct User {
     pub backup_codes: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+/// Vista publica de una cuenta para administracion: id, email y rol.
+///
+/// No contiene ni el hash de la contrasena ni ningun secreto (TOTP, respaldo),
+/// por construccion: es lo unico que `list_user_summaries` y el CLI `users`
+/// pueden mostrar.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UserSummary {
+    pub id: String,
+    pub email: String,
+    pub role: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

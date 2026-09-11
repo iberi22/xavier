@@ -156,48 +156,147 @@ where
         .layer(axum::Extension(std::sync::Arc::new(base_path.to_string())))
 }
 
+/// Valida un alta antes de tocar la base de datos.
+///
+/// `/auth/register` es publico: sin validacion acepta cualquier cadena como correo o contrasena, y
+/// basta un cliente roto (o malintencionado) para llenar el servicio de cuentas basura. Se valida
+/// aqui, antes de crear nada, y se responde 400 con el motivo en vez de un error opaco.
+fn validate_registration(
+    email: &str,
+    password: &str,
+    name: &str,
+) -> Result<(), (&'static str, String)> {
+    let email = email.trim();
+    if email.len() < 6 || email.len() > 254 {
+        return Err((
+            "invalid_email",
+            "el correo debe tener entre 6 y 254 caracteres".to_string(),
+        ));
+    }
+    let partes: Vec<&str> = email.split('@').collect();
+    if partes.len() != 2 || partes[0].is_empty() || partes[1].is_empty() {
+        return Err((
+            "invalid_email",
+            "el correo debe tener la forma usuario@dominio".to_string(),
+        ));
+    }
+    let dominio = partes[1];
+    if !dominio.contains('.') || dominio.starts_with('.') || dominio.ends_with('.') {
+        return Err((
+            "invalid_email",
+            "el dominio del correo no es valido".to_string(),
+        ));
+    }
+    if email.chars().any(|c| c.is_whitespace()) {
+        return Err((
+            "invalid_email",
+            "el correo no puede tener espacios".to_string(),
+        ));
+    }
+    if password.chars().count() < 12 {
+        return Err((
+            "weak_password",
+            "la contrasena debe tener al menos 12 caracteres".to_string(),
+        ));
+    }
+    if password.chars().count() > 200 {
+        return Err((
+            "weak_password",
+            "la contrasena es demasiado larga (maximo 200)".to_string(),
+        ));
+    }
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 120 {
+        return Err((
+            "invalid_name",
+            "el nombre debe tener entre 1 y 120 caracteres".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 async fn register_handler<S>(
     State(state): State<S>,
     axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
     Json(payload): Json<RegisterRequest>,
-) -> Result<impl IntoResponse, StatusCode>
+) -> axum::response::Response
 where
     S: HasAuthDb + Clone + Send + Sync + 'static,
 {
+    if let Err((codigo, motivo)) =
+        validate_registration(&payload.email, &payload.password, &payload.name)
+    {
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": codigo, "message": motivo }),
+        );
+    }
+    // El correo se normaliza (sin espacios y en minusculas): si no, "Ana@x.com" y "ana@x.com"
+    // conviven como dos cuentas distintas.
+    let email = payload.email.trim().to_ascii_lowercase();
+
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
-        None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!(
-                "{}/.xavier/auth.db",
-                base_path
-            )))
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-        )),
+        None => {
+            let path = format!("{}/.xavier/auth.db", base_path);
+            match AuthDb::new(std::path::Path::new(&path)) {
+                Ok(db) => std::sync::Arc::new(parking_lot::Mutex::new(db)),
+                Err(_) => {
+                    return json_err(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        serde_json::json!({ "error": "auth db no disponible" }),
+                    )
+                }
+            }
+        }
     };
     let auth_db = auth_db_lock.lock();
 
-    // Check if user exists
-    if auth_db
-        .get_user_by_email(&payload.email)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .is_some()
-    {
-        return Err(StatusCode::CONFLICT);
+    // Correo ya registrado
+    match auth_db.get_user_by_email(&email) {
+        Ok(Some(_)) => {
+            return json_err(
+                StatusCode::CONFLICT,
+                serde_json::json!({
+                    "error": "email_taken",
+                    "message": "ese correo ya tiene cuenta; inicia sesion",
+                }),
+            )
+        }
+        Ok(None) => {}
+        Err(_) => {
+            return json_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": "auth db error" }),
+            )
+        }
     }
 
-    let password_hash =
-        hash_password(&payload.password).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let password_hash = match hash_password(&payload.password) {
+        Ok(h) => h,
+        Err(_) => {
+            return json_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": "no se pudo procesar la contrasena" }),
+            )
+        }
+    };
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
 
-    // Generate seed phrase for recovery
-    let mnemonic = bip39::Mnemonic::generate_in(bip39::Language::Spanish, 24)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let seed_phrase_str = mnemonic.to_string();
+    // Semilla de recuperacion (24 palabras en espanol)
+    let seed_phrase_str = match bip39::Mnemonic::generate_in(bip39::Language::Spanish, 24) {
+        Ok(m) => m.to_string(),
+        Err(_) => {
+            return json_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": "no se pudo generar la recuperacion" }),
+            )
+        }
+    };
 
-    // Hash recovery seed phrase
     let seed_hash = {
         let mut hasher = Sha256::new();
         hasher.update(seed_phrase_str.as_bytes());
@@ -206,9 +305,9 @@ where
 
     let user = User {
         id: ulid::Ulid::new().to_string(),
-        email: payload.email,
+        email,
         password_hash,
-        name: payload.name,
+        name: payload.name.trim().to_string(),
         role: "user".to_string(),
         totp_secret: None,
         totp_enabled: false,
@@ -218,9 +317,12 @@ where
         updated_at: now,
     };
 
-    auth_db
-        .create_user(&user)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if auth_db.create_user(&user).is_err() {
+        return json_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": "no se pudo crear la cuenta" }),
+        );
+    }
 
     auth_db
         .log_audit(&AuditLog {
@@ -233,10 +335,53 @@ where
         })
         .ok();
 
-    Ok(Json(RegisterResponse {
+    Json(RegisterResponse {
         seed_phrase: seed_phrase_str,
         user: UserResponse::from(user),
-    }))
+    })
+    .into_response()
+}
+
+#[cfg(test)]
+mod register_validation_tests {
+    use super::validate_registration;
+
+    const OK_PASS: &str = "ContrasenaLarga2026!";
+
+    #[test]
+    fn acepta_un_alta_valida() {
+        assert!(validate_registration("ana@ejemplo.com", OK_PASS, "Ana").is_ok());
+    }
+
+    #[test]
+    fn rechaza_correos_mal_formados() {
+        for malo in ["", "ana", "ana@", "@ejemplo.com", "ana@ejemplo", "a b@ejemplo.com", "ana@@x.com"] {
+            assert!(
+                validate_registration(malo, OK_PASS, "Ana").is_err(),
+                "deberia rechazar {malo:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rechaza_contrasenas_cortas() {
+        let err = validate_registration("ana@ejemplo.com", "corta1", "Ana").unwrap_err();
+        assert_eq!(err.0, "weak_password");
+        // 12 caracteres exactos ya valen
+        assert!(validate_registration("ana@ejemplo.com", "docecaracter", "Ana").is_ok());
+    }
+
+    #[test]
+    fn rechaza_nombres_vacios_o_larguisimos() {
+        assert!(validate_registration("ana@ejemplo.com", OK_PASS, "   ").is_err());
+        let largo = "x".repeat(121);
+        assert!(validate_registration("ana@ejemplo.com", OK_PASS, &largo).is_err());
+    }
+
+    #[test]
+    fn acepta_correos_con_subdominio_y_mas() {
+        assert!(validate_registration("a.b+tag@sub.ejemplo.co", OK_PASS, "A B").is_ok());
+    }
 }
 
 async fn login_handler<S>(

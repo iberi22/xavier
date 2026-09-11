@@ -144,6 +144,21 @@ impl IpRateLimiter {
 static GLOBAL_IP_RATE_LIMITER: std::sync::LazyLock<IpRateLimiter> =
     std::sync::LazyLock::new(|| IpRateLimiter::new(100.0, 1.0));
 
+/// Cubo de tasa ESPECIFICO de `/auth/*`, mas estricto que el general.
+///
+/// El general tiene capacidad 100 y recarga 1/s: medido en vivo, 60 intentos de login seguidos no
+/// llegaban a agotarlo y no aparecia ni un 429, con lo que la puerta de la fuerza bruta quedaba
+/// abierta. Aqui se usa XAVIER_AUTH_RATE_LIMIT (defecto 20 por minuto): capacidad = ese numero y
+/// recarga = numero/60 por segundo, es decir el mismo tope repartido en la ventana de un minuto.
+static AUTH_IP_RATE_LIMITER: std::sync::LazyLock<IpRateLimiter> = std::sync::LazyLock::new(|| {
+    let rpm = std::env::var("XAVIER_AUTH_RATE_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|v: &f64| *v > 0.0)
+        .unwrap_or(20.0);
+    IpRateLimiter::new(rpm, rpm / 60.0)
+});
+
 /// Axum rate-limiting middleware mounted by default on API routes.
 ///
 /// Throttles requests per IP (100 capacity, 60 req/min refill rate).
@@ -170,7 +185,13 @@ pub async fn rate_limit_middleware(
         })
         .unwrap_or_else(|| "127.0.0.1".to_string());
 
-    let (allowed, retry_after) = GLOBAL_IP_RATE_LIMITER.try_consume(&client_ip, 1.0);
+    // /auth/* va contra el cubo estricto; el resto contra el general.
+    let limiter = if req.uri().path().starts_with("/auth/") {
+        &AUTH_IP_RATE_LIMITER
+    } else {
+        &GLOBAL_IP_RATE_LIMITER
+    };
+    let (allowed, retry_after) = limiter.try_consume(&client_ip, 1.0);
     if !allowed {
         let retry_secs = retry_after.as_secs().max(1);
         let mut response = (
@@ -244,5 +265,50 @@ mod tests {
 
         assert!(hit_429, "Expected 429 status after 100 requests");
         assert!(retry_after_header.is_some(), "Expected Retry-After header");
+    }
+
+    /// El cubo de `/auth/*` debe cortar antes que el general.
+    ///
+    /// El general (capacidad 100) no corta 25 peticiones seguidas; el de /auth si, porque su tope
+    /// por defecto es 20 por minuto. Es la diferencia entre tener puerta y no tenerla.
+    #[tokio::test]
+    async fn test_auth_tiene_cubo_mas_estricto_que_el_general() {
+        use axum::http::StatusCode;
+
+        let app = Router::new()
+            .route("/auth/login", get(|| async { "ok" }))
+            .route("/v1/otra", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(rate_limit_middleware));
+
+        let ip = format!("10.77.66.{}", ulid::Ulid::new());
+        let mut codigos = Vec::new();
+        for _ in 0..25 {
+            let req = Request::builder()
+                .uri("/auth/login")
+                .header("x-forwarded-for", &ip)
+                .body(Body::empty())
+                .unwrap();
+            codigos.push(app.clone().oneshot(req).await.unwrap().status());
+        }
+        assert!(
+            codigos.contains(&StatusCode::TOO_MANY_REQUESTS),
+            "el cubo de /auth no corto en 25 intentos: {codigos:?}"
+        );
+
+        // El mismo numero de peticiones a una ruta normal NO se corta: el general permite 100.
+        let ip2 = format!("10.77.55.{}", ulid::Ulid::new());
+        let mut normales = Vec::new();
+        for _ in 0..25 {
+            let req = Request::builder()
+                .uri("/v1/otra")
+                .header("x-forwarded-for", &ip2)
+                .body(Body::empty())
+                .unwrap();
+            normales.push(app.clone().oneshot(req).await.unwrap().status());
+        }
+        assert!(
+            normales.iter().all(|c| *c == StatusCode::OK),
+            "el cubo general no deberia cortar 25 peticiones: {normales:?}"
+        );
     }
 }

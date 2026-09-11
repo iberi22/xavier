@@ -240,6 +240,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: TokenCommand,
     },
+    /// Manage local user accounts: list, change role, reset password
+    Users {
+        #[command(subcommand)]
+        cmd: UsersCommand,
+    },
     /// Show API quotas and limits for providers
     Quota,
     /// Manage LLM providers and hot-switching
@@ -858,6 +863,39 @@ pub enum TokenCommand {
     New,
     /// Generate a signed HMAC token for a user
     Gen { user_id: String },
+}
+
+/// Local user account administration subcommands (operador con acceso al nodo).
+///
+/// Leen y escriben directamente `<estado>/.xavier/auth.db`, la misma base que
+/// usa el servidor HTTP: no requieren que el servidor este en marcha.
+#[derive(Subcommand, Debug, Clone)]
+pub enum UsersCommand {
+    /// List local accounts (id, email, role). Never shows password hashes.
+    List {
+        /// Output as JSON instead of a human-readable table
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Change the role of an account by email (e.g. `user` or `admin`)
+    SetRole {
+        /// Account email (case-insensitive, as in registration)
+        email: String,
+        /// New role: `user` or `admin`
+        role: String,
+        /// Output as JSON instead of human-readable text
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Reset an account password by email: generates a strong random password,
+    /// stores it with the standard Argon2id hash and prints it ONCE.
+    ResetPassword {
+        /// Account email (case-insensitive, as in registration)
+        email: String,
+        /// Output as JSON instead of human-readable text
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 /// Vault management subcommands
