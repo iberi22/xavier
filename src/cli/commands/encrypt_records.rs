@@ -50,7 +50,9 @@ pub async fn handle_encrypt_records(dry_run: bool, apply: bool) -> Result<()> {
             println!("   Node key: generated {}", p.display());
         }
         (None, _) => {
-            anyhow::bail!("no node record key available (set XAVIER_RECORD_KEY or make the data dir writable)");
+            anyhow::bail!(
+                "no node record key available (set XAVIER_RECORD_KEY or make the data dir writable)"
+            );
         }
         (Some(_), at_rest::KeySource::Unavailable(reason)) => {
             println!("   Node key: available ({reason})");

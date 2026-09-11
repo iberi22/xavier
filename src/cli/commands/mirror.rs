@@ -279,17 +279,18 @@ fn export_jsonl(
         let mut stmt =
             conn.prepare("SELECT id, properties FROM entities WHERE entity_type = ?1")?;
         let rows = stmt.query_map(params![ENTITY_TYPE_MEMORY], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-            ))
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         })?;
         for row in rows {
             let (entity_id, properties) = row?;
             let from_props = properties
                 .as_deref()
                 .and_then(|p| serde_json::from_str::<Value>(p).ok())
-                .and_then(|v| v.get("memory_id").and_then(Value::as_str).map(str::to_owned));
+                .and_then(|v| {
+                    v.get("memory_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                });
             let resolved = from_props.or_else(|| {
                 entity_id
                     .strip_prefix("mem:")
@@ -354,7 +355,8 @@ fn export_jsonl(
                     .get(id)
                     .or_else(|| placeholder_memories.get(id).and_then(|m| mem_hashes.get(m)))
             };
-            let (Some(from_hash), Some(to_hash)) = (resolve(&source_id), resolve(&target_id)) else {
+            let (Some(from_hash), Some(to_hash)) = (resolve(&source_id), resolve(&target_id))
+            else {
                 continue;
             };
             lines.push(serde_json::to_string(&json!({
@@ -628,8 +630,7 @@ fn import_jsonl(conn: &Connection, jsonl: &str) -> Result<ImportStats> {
                     stats.skipped_edges += 1;
                     continue;
                 };
-                let Some(to_entity) =
-                    resolve_edge_entity(conn, &id_map, &memory_hashes, &edge.to)
+                let Some(to_entity) = resolve_edge_entity(conn, &id_map, &memory_hashes, &edge.to)
                 else {
                     stats.skipped_edges += 1;
                     continue;
@@ -844,7 +845,11 @@ mod tests {
             .map(|l| serde_json::from_str(l).unwrap())
             .collect();
 
-        assert_eq!(aristas.len(), 1, "la relacion debe viajar como arista:\n{jsonl}");
+        assert_eq!(
+            aristas.len(),
+            1,
+            "la relacion debe viajar como arista:\n{jsonl}"
+        );
         let edge = &aristas[0];
         assert_eq!(edge["relation"], "supports");
         assert_eq!(edge["kind"], EDGE_RELATIONS);
@@ -899,21 +904,34 @@ mod tests {
         // Sin ventana: las dos memorias y su arista.
         let todo = export_jsonl(&conn, None, None, Some(&key)).unwrap();
         assert_eq!(
-            todo.lines().filter(|l| l.contains("\"t\":\"node\"")).count(),
+            todo.lines()
+                .filter(|l| l.contains("\"t\":\"node\""))
+                .count(),
             2
         );
         assert_eq!(
-            todo.lines().filter(|l| l.contains("\"t\":\"edge\"")).count(),
+            todo.lines()
+                .filter(|l| l.contains("\"t\":\"edge\""))
+                .count(),
             1
         );
 
         // Con ventana: solo la reciente, y NINGUNA arista, porque la unica que
         // habia cruzaba la frontera (seria una referencia colgando en el destino).
         let reciente = export_jsonl(&conn, None, Some("2026-09-01"), Some(&key)).unwrap();
-        assert!(reciente.contains("memoria nueva"), "falta la reciente:\n{reciente}");
-        assert!(!reciente.contains("memoria vieja"), "se colo la vieja:\n{reciente}");
+        assert!(
+            reciente.contains("memoria nueva"),
+            "falta la reciente:\n{reciente}"
+        );
+        assert!(
+            !reciente.contains("memoria vieja"),
+            "se colo la vieja:\n{reciente}"
+        );
         assert_eq!(
-            reciente.lines().filter(|l| l.contains("\"t\":\"edge\"")).count(),
+            reciente
+                .lines()
+                .filter(|l| l.contains("\"t\":\"edge\""))
+                .count(),
             0,
             "una arista con un extremo fuera de la ventana no debe viajar:\n{reciente}"
         );
