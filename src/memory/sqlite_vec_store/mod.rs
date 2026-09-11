@@ -16,6 +16,7 @@ use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::memory::store::{stable_key, HybridSearchMode, HybridSearchResult, MemoryRecord};
 
+pub mod at_rest;
 pub mod audit;
 pub mod backend_impl;
 pub mod config;
@@ -253,7 +254,7 @@ impl VecSqliteMemoryStore {
 
         self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ? AND workspace_id = ?",
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE id = ? AND workspace_id = ?",
                 TABLE_MEMORIES
             ))?;
 

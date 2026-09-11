@@ -438,6 +438,16 @@ pub enum Command {
         #[arg(short, long, default_value_t = 0)]
         days: u64,
     },
+
+    /// Encrypt legacy plaintext memory records at rest (per-record envelope)
+    EncryptRecords {
+        /// Dry run mode (default: true if --apply is not set)
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the migration (actually encrypt rows)
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 /// Subcommands for the auto-improvement loop.
