@@ -70,12 +70,38 @@ pub struct SystemInfo {
 
 /// Run full system scan
 pub async fn scan_system(detailed: bool) -> SystemScanResult {
+    // Cronometro por detector: un escaneo que tarda minutos no dice DONDE se va
+    // el tiempo, y averiguarlo costo un diagnostico entero. Con esto el journal
+    // lo dice solo.
+    let inicio = std::time::Instant::now();
+    let mut previo = inicio;
+
     let ollama = detect_ollama().await;
+    tracing::info!("system_scan: ollama {:?}", previo.elapsed());
+    previo = std::time::Instant::now();
+
     let cli_agents = detect_cli_agents(detailed).await;
+    tracing::info!("system_scan: cli_agents {:?}", previo.elapsed());
+    previo = std::time::Instant::now();
+
     let gpu = detect_gpu();
+    tracing::info!("system_scan: gpu {:?}", previo.elapsed());
+    previo = std::time::Instant::now();
+
     let docker = detect_docker().await;
+    tracing::info!("system_scan: docker {:?}", previo.elapsed());
+    previo = std::time::Instant::now();
+
     let env_vars = detect_env_vars(detailed).await;
+    tracing::info!("system_scan: env_vars {:?}", previo.elapsed());
+    previo = std::time::Instant::now();
+
     let system_info = gather_system_info();
+    tracing::info!(
+        "system_scan: system_info {:?} (TOTAL {:?})",
+        previo.elapsed(),
+        inicio.elapsed()
+    );
 
     SystemScanResult {
         ollama,
