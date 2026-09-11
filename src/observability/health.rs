@@ -189,6 +189,12 @@ impl Default for HealthStatus {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct PeerRepairState {
+    pub last_attempt_at: std::time::Instant,
+    pub attempt_count: u64,
+}
+
 pub struct HealthMonitor {
     current_status: Arc<RwLock<HealthStatus>>,
     cm: &'static ConnectionManager,
@@ -196,7 +202,7 @@ pub struct HealthMonitor {
     embedder: Arc<RwLock<Option<Arc<dyn Embedder>>>>,
     tgd_progress: Arc<RwLock<Option<Arc<RwLock<crate::tgd::consolidation::ProgressReport>>>>>,
     llm_failure_count: Arc<RwLock<u32>>,
-    peer_attempts: Arc<RwLock<HashMap<String, u64>>>,
+    peer_attempts: Arc<RwLock<HashMap<String, PeerRepairState>>>,
     http_client: reqwest::Client,
 }
 
@@ -330,35 +336,81 @@ impl HealthMonitor {
             .unwrap_or(true);
 
         if auto_repair_enabled {
+            let repair_interval_secs = std::env::var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(60);
+            let min_interval = Duration::from_secs(repair_interval_secs);
+
             let mut attempts = self.peer_attempts.write().await;
             for peer in &new_status.mesh.peers {
-                let attempt = attempts.get(&peer.node_id).copied().unwrap_or(0);
-                let decision = should_retry_peer(peer.sync_lag_secs, attempt);
+                let existing = attempts.get(&peer.node_id).cloned();
+                let attempt_count = existing.as_ref().map(|s| s.attempt_count).unwrap_or(0);
+                let decision = should_retry_peer(peer.sync_lag_secs, attempt_count);
 
                 match decision {
                     PeerRetryDecision::Healthy => {
                         attempts.remove(&peer.node_id);
                     }
-                    PeerRetryDecision::RetryImmediately => {
-                        attempts.insert(peer.node_id.clone(), attempt + 1);
-                        tracing::info!(
-                            "Auto-repair: High lag for peer {} ({}s), attempting reconnection hint...",
-                            peer.node_id,
-                            peer.sync_lag_secs
+                    PeerRetryDecision::RetryImmediately
+                    | PeerRetryDecision::RetryWithBackoff { .. } => {
+                        if let Some(ref state) = existing {
+                            if state.last_attempt_at.elapsed() < min_interval {
+                                tracing::debug!(
+                                    "Auto-repair: High lag for peer {} ({}s), skipping reconnection hint (cooldown active)",
+                                    peer.node_id,
+                                    peer.sync_lag_secs
+                                );
+                                continue;
+                            }
+                        }
+
+                        let should_log = match decision {
+                            PeerRetryDecision::RetryImmediately => true,
+                            PeerRetryDecision::RetryWithBackoff { should_log } => should_log,
+                            _ => false,
+                        };
+
+                        attempts.insert(
+                            peer.node_id.clone(),
+                            PeerRepairState {
+                                last_attempt_at: std::time::Instant::now(),
+                                attempt_count: attempt_count + 1,
+                            },
                         );
-                    }
-                    PeerRetryDecision::RetryWithBackoff { should_log } => {
-                        attempts.insert(peer.node_id.clone(), attempt + 1);
+
                         if should_log {
                             tracing::info!(
                                 "Auto-repair: High lag for peer {} ({}s), attempting reconnection hint...",
                                 peer.node_id,
                                 peer.sync_lag_secs
                             );
+                        } else {
+                            tracing::debug!(
+                                "Auto-repair: High lag for peer {} ({}s), rate-limited reconnection hint...",
+                                peer.node_id,
+                                peer.sync_lag_secs
+                            );
                         }
                     }
                     PeerRetryDecision::Stale => {
-                        attempts.insert(peer.node_id.clone(), attempt + 1);
+                        if let Some(ref state) = existing {
+                            if state.last_attempt_at.elapsed() < min_interval {
+                                tracing::debug!(
+                                    "Auto-repair: Peer {} is stale (lag {}s > 7 days), skipping reconnection hint",
+                                    peer.node_id,
+                                    peer.sync_lag_secs
+                                );
+                                continue;
+                            }
+                        }
+                        attempts.insert(
+                            peer.node_id.clone(),
+                            PeerRepairState {
+                                last_attempt_at: std::time::Instant::now(),
+                                attempt_count: attempt_count + 1,
+                            },
+                        );
                         tracing::debug!(
                             "Auto-repair: Peer {} is stale (lag {}s > 7 days), skipping reconnection hint",
                             peer.node_id,
@@ -712,5 +764,107 @@ mod tests {
         let monitor = HealthMonitor::new(cm);
         let status = monitor.get_status().await;
         assert_eq!(status.status, HealthLevel::Healthy);
+    }
+
+    #[tokio::test]
+    async fn test_mesh_auto_repair_rate_limiting() {
+        let cm = ConnectionManager::global();
+        let monitor = HealthMonitor::new(cm);
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage_path = temp_dir.path().join("peers.json");
+        let mut peer_registry = PeerRegistry::load_from(storage_path).unwrap();
+
+        let node_id = crate::mesh::node::NodeId("xv1-testpeer123".into());
+        let peer_info = crate::mesh::PeerInfo {
+            node_id: node_id.clone(),
+            alias: Some("test".into()),
+            endpoint_url: "http://127.0.0.1:8006".into(),
+            public_key_hex: "00".into(),
+            added_at: 1000,
+            last_seen_at: Some(chrono::Utc::now().timestamp() - 300), // 300s lag
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: None,
+            shared_workspace_ids: vec![],
+            shared_workspace_tokens: HashMap::new(),
+            capabilities: vec![],
+        };
+        peer_registry.add_peer(peer_info).unwrap();
+        monitor.set_peer_registry(Arc::new(peer_registry)).await;
+
+        std::env::set_var("XAVIER_MESH_AUTO_REPAIR", "1");
+        std::env::set_var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS", "60");
+
+        // Cycle 1: First check triggers auto-repair attempt
+        let _ = monitor.run_checks().await;
+
+        let attempts = monitor.peer_attempts.read().await;
+        assert_eq!(attempts.len(), 1);
+        let peer_state = attempts.get("xv1-testpeer123").unwrap();
+        assert_eq!(peer_state.attempt_count, 1);
+        let first_attempt_at = peer_state.last_attempt_at;
+        drop(attempts);
+
+        // Cycle 2: Immediate second check within interval
+        let _ = monitor.run_checks().await;
+
+        let attempts = monitor.peer_attempts.read().await;
+        assert_eq!(attempts.len(), 1);
+        let peer_state_2 = attempts.get("xv1-testpeer123").unwrap();
+        // Attempt count must NOT have incremented, and timestamp must remain unchanged (cooldown active)
+        assert_eq!(peer_state_2.attempt_count, 1);
+        assert_eq!(peer_state_2.last_attempt_at, first_attempt_at);
+        drop(attempts);
+
+        std::env::remove_var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS");
+    }
+
+    #[tokio::test]
+    async fn test_mesh_auto_repair_custom_interval() {
+        let cm = ConnectionManager::global();
+        let monitor = HealthMonitor::new(cm);
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage_path = temp_dir.path().join("peers.json");
+        let mut peer_registry = PeerRegistry::load_from(storage_path).unwrap();
+
+        let node_id = crate::mesh::node::NodeId("xv1-testpeer456".into());
+        let peer_info = crate::mesh::PeerInfo {
+            node_id: node_id.clone(),
+            alias: Some("test".into()),
+            endpoint_url: "http://127.0.0.1:8006".into(),
+            public_key_hex: "00".into(),
+            added_at: 1000,
+            last_seen_at: Some(chrono::Utc::now().timestamp() - 300),
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: None,
+            shared_workspace_ids: vec![],
+            shared_workspace_tokens: HashMap::new(),
+            capabilities: vec![],
+        };
+        peer_registry.add_peer(peer_info).unwrap();
+        monitor.set_peer_registry(Arc::new(peer_registry)).await;
+
+        std::env::set_var("XAVIER_MESH_AUTO_REPAIR", "1");
+        std::env::set_var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS", "0");
+
+        let _ = monitor.run_checks().await;
+
+        let attempts = monitor.peer_attempts.read().await;
+        assert_eq!(attempts.get("xv1-testpeer456").unwrap().attempt_count, 1);
+        drop(attempts);
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let _ = monitor.run_checks().await;
+
+        let attempts = monitor.peer_attempts.read().await;
+        // Since interval was 0s, 10ms > 0s so second check triggers attempt 2
+        assert_eq!(attempts.get("xv1-testpeer456").unwrap().attempt_count, 2);
+        drop(attempts);
+
+        std::env::remove_var("XAVIER_MESH_AUTO_REPAIR_INTERVAL_SECS");
     }
 }
