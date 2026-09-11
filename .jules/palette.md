@@ -12,3 +12,6 @@
 ## 2024-05-17 - Added aria-pressed to ThemeToggle
 **Learning:** React component toggle buttons representing state (like a theme toggle) often miss `aria-pressed`, which is important to announce to screen readers whether the toggle is currently active or not. The `ThemeToggle` component in this codebase lacked this attribute.
 **Action:** Always check toggle buttons for an `aria-pressed` attribute when auditing for accessibility.
+## 2026-09-11 - [Added ARIA Labels to Topbar and ProviderSelector]
+**Learning:** Some icon buttons were missing aria-label attributes, and the dependency lockfile was modified unintentionally by running `pnpm install`.
+**Action:** Reverted lockfile modifications using `git checkout HEAD -- pnpm-lock.yaml` and added missing ARIA attributes. Going forward, run `pnpm install --frozen-lockfile` in similar monorepos.
