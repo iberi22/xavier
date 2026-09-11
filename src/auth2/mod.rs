@@ -148,7 +148,10 @@ where
         .route("/recovery", post(recovery_handler::<S>))
         // OAuth: inicio del flujo y callback. Se montan bajo /auth (igual que register/login).
         .route("/oauth/{provider}", get(oauth_start_handler))
-        .route("/oauth/{provider}/callback", get(oauth_callback_handler::<S>))
+        .route(
+            "/oauth/{provider}/callback",
+            get(oauth_callback_handler::<S>),
+        )
         .merge(protected)
         .layer(axum::Extension(std::sync::Arc::new(base_path.to_string())))
 }
@@ -715,7 +718,6 @@ async fn status_handler(req: Request) -> Result<impl IntoResponse, StatusCode> {
     })))
 }
 
-
 // ── OAuth 2.0 (Google, GitHub) ──────────────────────────────────────────────────
 //
 // Modelo de seguridad (ver `auth2::oauth` para el detalle):
@@ -814,9 +816,13 @@ where
 
     // 1. `state`: firma, caducidad y coherencia con el proveedor de la ruta
     let Some(state_param) = q.state else {
-        return json_err(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "falta state" }));
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "falta state" }),
+        );
     };
-    let Some((state_provider, verifier)) = oauth::verify_state(&cfg.state_secret, &state_param) else {
+    let Some((state_provider, verifier)) = oauth::verify_state(&cfg.state_secret, &state_param)
+    else {
         return json_err(
             StatusCode::BAD_REQUEST,
             serde_json::json!({ "error": "state invalido o caducado" }),
@@ -831,7 +837,10 @@ where
 
     // 2. Codigo -> identidad
     let Some(code) = q.code else {
-        return json_err(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "falta code" }));
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "falta code" }),
+        );
     };
     let identidad = match oauth::exchange_code(&cfg, provider, &code, &verifier).await {
         Ok(i) => i,
@@ -987,7 +996,6 @@ where
     .into_response()
 }
 
-
 /// Cuerpo de `POST /auth/oauth/link`.
 #[derive(Debug, Deserialize)]
 pub struct OAuthLinkRequest {
@@ -1029,7 +1037,8 @@ where
         );
     }
 
-    let Some((state_provider, verifier)) = oauth::verify_state(&cfg.state_secret, &payload.state) else {
+    let Some((state_provider, verifier)) = oauth::verify_state(&cfg.state_secret, &payload.state)
+    else {
         return json_err(
             StatusCode::BAD_REQUEST,
             serde_json::json!({ "error": "state invalido o caducado" }),
