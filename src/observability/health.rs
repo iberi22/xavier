@@ -656,23 +656,25 @@ impl HealthMonitor {
         let mut peer_healths = vec![];
 
         // El disco es la FUENTE DE VERDAD: tanto la API HTTP como el CLI (`mesh join`,
-        // `mesh add-peer`) persisten ahi. El registro en memoria es un snapshot del arranque
-        // (src/cli/server.rs set_peer_registry) y quedaba desactualizado: emparejar por CLI
-        // no se reflejaba en /health hasta reiniciar el nodo. Se prefiere el disco.
-        let loaded_registry = PeerRegistry::load().ok();
+        // `mesh add-peer`) persisten ahi. Si hay un registro inyectado (`set_peer_registry`),
+        // recargamos desde su ruta de disco para reflejar cambios externos sin perder la ruta
+        // configurada (por ej. en tests con tempdir); si no hay inyectado, cargamos por defecto.
         let reg_opt = self.peer_registry.read().await;
+        let loaded_registry = if let Some(ref registry) = *reg_opt {
+            registry.reload().ok().or_else(|| Some((**registry).clone()))
+        } else {
+            PeerRegistry::load().ok()
+        };
 
-        let peers: Vec<&crate::mesh::PeerInfo> = if let Some(ref registry) = loaded_registry {
-            registry.list_peers()
-        } else if let Some(ref registry) = *reg_opt {
-            registry.list_peers()
+        let peers: Vec<crate::mesh::PeerInfo> = if let Some(ref registry) = loaded_registry {
+            registry.list_peers().into_iter().cloned().collect()
         } else {
             vec![]
         };
 
         let active_peers = peers.len();
 
-        for peer in peers {
+        for peer in &peers {
             let now = chrono::Utc::now().timestamp();
             let lag = peer_lag_secs(peer, now);
 
