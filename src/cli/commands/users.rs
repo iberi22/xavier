@@ -20,7 +20,9 @@ fn auth_db_path() -> PathBuf {
         .or_else(|_| std::env::var("HOME"))
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(&state_dir_str).join(".xavier").join("auth.db")
+    PathBuf::from(&state_dir_str)
+        .join(".xavier")
+        .join("auth.db")
 }
 
 fn open_auth_db() -> Result<AuthDb> {
@@ -85,7 +87,10 @@ async fn reset_password(email: &str, json: bool) -> Result<()> {
             }))?
         );
     } else {
-        println!("Nueva contrasena para {}:", email.trim().to_ascii_lowercase());
+        println!(
+            "Nueva contrasena para {}:",
+            email.trim().to_ascii_lowercase()
+        );
         println!("{}", password);
     }
     eprintln!(

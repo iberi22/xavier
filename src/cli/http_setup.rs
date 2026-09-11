@@ -284,8 +284,20 @@ mod auth_limit_tests {
         assert!(auth_window_allow(&mut v, "k", 3, t0, ventana));
         assert!(auth_window_allow(&mut v, "k", 3, t0, ventana));
         assert!(!auth_window_allow(&mut v, "k", 3, t0, ventana));
-        assert!(!auth_window_allow(&mut v, "k", 3, t0 + Duration::from_secs(59), ventana));
-        assert!(auth_window_allow(&mut v, "k", 3, t0 + Duration::from_secs(61), ventana));
+        assert!(!auth_window_allow(
+            &mut v,
+            "k",
+            3,
+            t0 + Duration::from_secs(59),
+            ventana
+        ));
+        assert!(auth_window_allow(
+            &mut v,
+            "k",
+            3,
+            t0 + Duration::from_secs(61),
+            ventana
+        ));
     }
 
     #[test]
@@ -302,7 +314,13 @@ mod auth_limit_tests {
     fn limite_cero_corta_siempre() {
         let mut v = HashMap::new();
         let t0 = Instant::now();
-        assert!(!auth_window_allow(&mut v, "k", 0, t0, Duration::from_secs(60)));
+        assert!(!auth_window_allow(
+            &mut v,
+            "k",
+            0,
+            t0,
+            Duration::from_secs(60)
+        ));
     }
 }
 

@@ -432,8 +432,7 @@ impl HealthMonitor {
         let res = self
             .cm
             .with_conn(&project_id, |conn| {
-                let integrity: String =
-                    conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
+                let integrity: String = conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
                 let pc: u32 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
                 let fc: u32 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
 
@@ -700,7 +699,10 @@ mod tests {
         // El caso que rompia: no se pudo comprobar -> Degraded, jamas Unhealthy.
         assert_eq!(db_status_from(false, false, 1.0, 0), HealthLevel::Degraded);
         // Y una base verificada y sana es Healthy.
-        assert_eq!(db_status_from(true, true, 1.2, 6_439_592), HealthLevel::Healthy);
+        assert_eq!(
+            db_status_from(true, true, 1.2, 6_439_592),
+            HealthLevel::Healthy
+        );
     }
 
     #[test]
@@ -712,8 +714,14 @@ mod tests {
     fn db_status_umbrales_de_fragmentacion_y_wal() {
         assert_eq!(db_status_from(true, true, 45.0, 0), HealthLevel::Degraded);
         assert_eq!(db_status_from(true, true, 70.0, 0), HealthLevel::Unhealthy);
-        assert_eq!(db_status_from(true, true, 0.0, 300 * 1024 * 1024), HealthLevel::Degraded);
-        assert_eq!(db_status_from(true, true, 0.0, 2 * 1024 * 1024 * 1024), HealthLevel::Unhealthy);
+        assert_eq!(
+            db_status_from(true, true, 0.0, 300 * 1024 * 1024),
+            HealthLevel::Degraded
+        );
+        assert_eq!(
+            db_status_from(true, true, 0.0, 2 * 1024 * 1024 * 1024),
+            HealthLevel::Unhealthy
+        );
     }
 
     #[test]
