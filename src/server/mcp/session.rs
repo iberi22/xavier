@@ -596,12 +596,25 @@ async fn handle_mcp_request(
                 .and_then(|v| v.as_str())
                 .unwrap_or("2024-11-05");
 
-            let response_version =
-                if client_version == "2024-11-05" || client_version == "2024-10-22" {
-                    client_version
-                } else {
-                    "2026-07-28"
-                };
+            // Negociacion de version del handshake `initialize`: por esta via solo se
+            // negocian revisiones "handshake". 2026-07-28 es una revision "moderna"
+            // (envelope por request via `server/discover`) y devolverla aqui hace que un
+            // cliente SDK la rechace con "Unsupported protocol version from the server".
+            // Se hace eco de la revision del cliente cuando la conocemos y, si no, se
+            // responde con la mas nueva negociable por handshake.
+            const HANDSHAKE_KNOWN: [&str; 6] = [
+                "2024-10-22",
+                "2024-11-05",
+                "2025-03-26",
+                "2025-06-18",
+                "2025-11-25",
+                "2026-07-28",
+            ];
+            let response_version = if HANDSHAKE_KNOWN.contains(&client_version) {
+                client_version
+            } else {
+                "2025-11-25"
+            };
 
             Some(MCPResponse {
                 jsonrpc: "2.0".to_string(),
@@ -676,6 +689,17 @@ async fn handle_mcp_request(
                         "version": env!("CARGO_PKG_VERSION")
                     },
                     "protocolVersion": "2026-07-28",
+                    // Requerido por el DiscoverResult del spec 2026-07-28: un cliente SDK
+                    // valida el cuerpo y rechaza la respuesta si falta esta lista
+                    // ("1 validation error for DiscoverResult ... supportedVersions").
+                    // Va primero la revision moderna y despues las negociables por handshake.
+                    "supportedVersions": [
+                        "2026-07-28",
+                        "2025-11-25",
+                        "2025-06-18",
+                        "2025-03-26",
+                        "2024-11-05",
+                    ],
                     "capabilities": {
                         "tools": {
                             "count": tools.len(),
