@@ -60,7 +60,7 @@ mod tests {
             "Should return at least one search result"
         );
 
-        let structured_default = &content_array_default[0]["structuredContent"];
+        let structured_default = &body_default["result"]["structuredContent"];
         let candidates_default = structured_default["candidates"]
             .as_array()
             .expect("candidates should be an array");
@@ -116,7 +116,7 @@ mod tests {
         let content_array_full = body_full["result"]["content"]
             .as_array()
             .expect("content should be an array");
-        let structured_full = &content_array_full[0]["structuredContent"];
+        let structured_full = &body_full["result"]["structuredContent"];
         let candidates_full = structured_full["candidates"]
             .as_array()
             .expect("candidates should be an array");
@@ -206,7 +206,7 @@ mod tests {
         )
         .await;
         let body_rust = get_json_body(search_rust_resp).await;
-        let candidates_rust = body_rust["result"]["content"][0]["structuredContent"]["candidates"]
+        let candidates_rust = body_rust["result"]["structuredContent"]["candidates"]
             .as_array()
             .unwrap();
         let id_rust = candidates_rust[0]["id"].as_str().unwrap();
@@ -227,7 +227,7 @@ mod tests {
         )
         .await;
         let body_python = get_json_body(search_python_resp).await;
-        let candidates_python = body_python["result"]["content"][0]["structuredContent"]
+        let candidates_python = body_python["result"]["structuredContent"]
             ["candidates"]
             .as_array()
             .unwrap();
@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(context_resp_rust.status(), axum::http::StatusCode::OK);
 
         let context_body_rust = get_json_body(context_resp_rust).await;
-        let sc_rust = &context_body_rust["result"]["content"][0]["structuredContent"];
+        let sc_rust = &context_body_rust["result"]["structuredContent"];
         let content_rust_out = sc_rust["content"].as_str().unwrap();
 
         // Assert the returned context block has only the requested doc
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(context_resp_python.status(), axum::http::StatusCode::OK);
 
         let context_body_python = get_json_body(context_resp_python).await;
-        let sc_python = &context_body_python["result"]["content"][0]["structuredContent"];
+        let sc_python = &context_body_python["result"]["structuredContent"];
         let content_python_out = sc_python["content"].as_str().unwrap();
 
         // Assert the returned context block has only the requested doc

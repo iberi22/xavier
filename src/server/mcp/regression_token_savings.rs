@@ -38,7 +38,7 @@ mod tests {
         )
         .await;
         let body_fat = get_json_body(resp_fat).await;
-        let candidates_fat = body_fat["result"]["content"][0]["structuredContent"]["candidates"]
+        let candidates_fat = body_fat["result"]["structuredContent"]["candidates"]
             .as_array()
             .unwrap();
         assert!(!candidates_fat.is_empty());
@@ -57,7 +57,7 @@ mod tests {
         )
         .await;
         let body_full = get_json_body(resp_full).await;
-        let candidates_full = body_full["result"]["content"][0]["structuredContent"]["candidates"]
+        let candidates_full = body_full["result"]["structuredContent"]["candidates"]
             .as_array()
             .unwrap();
         assert!(!candidates_full.is_empty());
@@ -115,7 +115,7 @@ mod tests {
         )
         .await;
         let body_search = get_json_body(resp_search).await;
-        let candidates_search = body_search["result"]["content"][0]["structuredContent"]
+        let candidates_search = body_search["result"]["structuredContent"]
             ["candidates"]
             .as_array()
             .unwrap();
@@ -132,7 +132,7 @@ mod tests {
         )
         .await;
         let body_context = get_json_body(resp_context).await;
-        let sc = &body_context["result"]["content"][0]["structuredContent"];
+        let sc = &body_context["result"]["structuredContent"];
         let content = sc["content"].as_str().unwrap();
 
         assert!(
