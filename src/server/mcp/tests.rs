@@ -897,7 +897,7 @@ async fn mcp_server_health_sequence() {
     )
     .await;
     let body = get_json_body(response).await;
-    let content = &body["result"]["content"][0];
+    let _content = &body["result"]["content"][0];
     if body["result"]["structuredContent"].is_object() {
         assert!(body["result"]["structuredContent"]["status"].is_string());
     }
@@ -1023,7 +1023,7 @@ async fn get_project_context_size_limits() {
     let body = get_json_body(response).await;
     // The result may be structured or flat text; either way ensure the content
     // is bounded by roughly max_chars.
-    let content = &body["result"]["content"][0];
+    let _content = &body["result"]["content"][0];
     if body["result"]["structuredContent"].is_object() {
         let sc = &body["result"]["structuredContent"];
         let total_chars = sc
@@ -1673,7 +1673,7 @@ async fn xavier_local_status_tool_integration() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
-    let content = &body["result"]["content"][0];
+    let _content = &body["result"]["content"][0];
     assert!(body["result"]["structuredContent"].is_object());
     let sc = &body["result"]["structuredContent"];
 
@@ -2069,7 +2069,7 @@ async fn espacio_channel_mcp_tools_schema_and_dispatch() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
-    let content = &body["result"]["content"][0];
+    let _content = &body["result"]["content"][0];
     assert!(body["result"]["structuredContent"].is_object());
     let sc = &body["result"]["structuredContent"];
     assert_eq!(sc["space_id"], "test_space_123");
