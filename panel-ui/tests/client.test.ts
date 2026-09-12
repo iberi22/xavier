@@ -311,4 +311,67 @@ describe("ApiClient unit tests", () => {
 
     expect(result).toBeNull();
   });
+
+  it("fetches code sidecar status and installs code sidecar", async () => {
+    const mockStatus = {
+      available: true,
+      path: "/usr/local/bin/colby-sidecar",
+      version: "0.8.0",
+      engine: "colby",
+    };
+    const mockInstallRes = {
+      status: "ok",
+      path: "/usr/local/bin/colby-sidecar",
+    };
+
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockStatus),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockInstallRes),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockInstallRes),
+      });
+
+    const client = new ApiClient("test-token");
+
+    const statusRes = await client.getCodeSidecarStatus();
+    expect(statusRes).toEqual(mockStatus);
+    expect(global.fetch).toHaveBeenCalledWith(
+      getApiUrl("/code/sidecar/status"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-Xavier-Token": "test-token",
+        }),
+      })
+    );
+
+    const installDefaultRes = await client.installCodeSidecar();
+    expect(installDefaultRes).toEqual(mockInstallRes);
+    expect(global.fetch).toHaveBeenCalledWith(
+      getApiUrl("/code/sidecar/install"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ from_source: false }),
+        headers: expect.objectContaining({
+          "X-Xavier-Token": "test-token",
+        }),
+      })
+    );
+
+    const installSourceRes = await client.installCodeSidecar(true);
+    expect(installSourceRes).toEqual(mockInstallRes);
+    expect(global.fetch).toHaveBeenCalledWith(
+      getApiUrl("/code/sidecar/install"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ from_source: true }),
+      })
+    );
+  });
 });
