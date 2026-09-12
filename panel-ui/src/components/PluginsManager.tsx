@@ -63,7 +63,7 @@ export function PluginsManager({ token }: PluginsManagerProps) {
       for (const defaultPlugin of DEFAULT_PLUGINS) {
         const idx = list.findIndex((p) => p.name === defaultPlugin.name);
         if (idx === -1) {
-          list.unshift({
+          list.push({
             ...defaultPlugin,
             installed: installedMap[defaultPlugin.name] ?? false,
             status: installedMap[defaultPlugin.name]

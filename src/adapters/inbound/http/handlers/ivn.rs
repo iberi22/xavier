@@ -303,12 +303,12 @@ pub fn select_validators_with_diversity<R: Rng + ?Sized>(
                 let op_conflict = c
                     .operator_id
                     .as_deref()
-                    .map_or(false, |op| used_operators.contains(op));
+                    .is_some_and(|op| used_operators.contains(op));
                 let subnet_conflict = c
                     .ip_address
                     .as_deref()
                     .and_then(extract_ip_subnet)
-                    .map_or(false, |sub| used_subnets.contains(&sub));
+                    .is_some_and(|sub| used_subnets.contains(&sub));
                 !op_conflict && !subnet_conflict
             })
             .map(|(idx, _)| idx)
@@ -403,7 +403,7 @@ pub async fn create_identity_request_handler(
     // VRF-salted pseudo-random entropy derived from task_id, timestamp, applicant, submitter, seed, and signature
     let mut hasher = Sha256::new();
     hasher.update(request_id.as_bytes());
-    hasher.update(&now.to_be_bytes());
+    hasher.update(now.to_be_bytes());
     hasher.update(payload.applicant.as_bytes());
     hasher.update(submitter_id.as_bytes());
     hasher.update(exclude_seed.as_bytes());
@@ -463,6 +463,7 @@ pub async fn create_identity_request_handler(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -645,7 +646,7 @@ mod tests {
         // Same inputs yield same seed
         let mut hasher1 = Sha256::new();
         hasher1.update(b"test_req_id");
-        hasher1.update(&1000u64.to_be_bytes());
+        hasher1.update(1000u64.to_be_bytes());
         hasher1.update(req1.applicant.as_bytes());
         hasher1.update(req1.submitter_node_id.as_ref().unwrap().as_bytes());
         hasher1.update(req1.seed.as_ref().unwrap().as_bytes());
@@ -657,7 +658,7 @@ mod tests {
 
         let mut hasher2 = Sha256::new();
         hasher2.update(b"test_req_id");
-        hasher2.update(&1000u64.to_be_bytes());
+        hasher2.update(1000u64.to_be_bytes());
         hasher2.update(req1.applicant.as_bytes());
         hasher2.update(req1.submitter_node_id.as_ref().unwrap().as_bytes());
         hasher2.update(req1.seed.as_ref().unwrap().as_bytes());
