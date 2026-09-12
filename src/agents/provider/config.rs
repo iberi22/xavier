@@ -17,7 +17,7 @@ use crate::secrets::vault::HardwareVault;
 static REACHABILITY_CACHE: LazyLock<Mutex<HashMap<String, (bool, Instant)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
+pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://127.0.0.1:11435/v1";
 pub(crate) const DEFAULT_LOCAL_ANTHROPIC_BASE_URL: &str = "http://localhost:11434";
 pub(crate) const DEFAULT_LOCAL_MODEL: &str = "qwen2.5-coder:7b";
 pub(crate) const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";

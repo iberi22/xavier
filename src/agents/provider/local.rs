@@ -2,7 +2,8 @@
 //!
 //! # Contract
 //! When `ProviderMode::Local` is active, the system routes requests to a local instance of Ollama:
-//! - **Base URL**: Defaults to `http://localhost:11434/v1` (`DEFAULT_LOCAL_BASE_URL`).
+//! - **Base URL**: Defaults to `http://127.0.0.1:11435/v1` (`DEFAULT_LOCAL_BASE_URL`, the
+//!   Ollama instance that serves the chat model on this setup; embeddings stay on :11434).
 //! - **API Format**: OpenAI-compatible format, interacting with the `/v1/chat/completions` endpoint.
 //! - **Auth Headers**: By default, no `Authorization` header is sent since Ollama does not require authentication.
 //!   However, if `OLLAMA_API_KEY` or `XAVIER_LOCAL_LLM_API_KEY` is set in the environment,
@@ -10,7 +11,7 @@
 //! - **Default Model**: Defaults to `qwen2.5-coder:7b` (`DEFAULT_LOCAL_MODEL`).
 
 /// The default local base URL for Ollama's OpenAI-compatible endpoint.
-pub const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
+pub const DEFAULT_LOCAL_BASE_URL: &str = "http://127.0.0.1:11435/v1";
 
 /// The default local model name for code and general assistance.
 pub const DEFAULT_LOCAL_MODEL: &str = "qwen2.5-coder:7b";
