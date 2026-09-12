@@ -1,3 +1,4 @@
+use super::privacy::{PrivacyLevel, PrivacyPipeline};
 use crate::data_commons::maintainer::decrypt_as_maintainer;
 use crate::data_commons::telemetry_db::TelemetryDb;
 use chrono::{DateTime, Utc};
@@ -29,6 +30,7 @@ pub struct TrainingExporter {
     db_path: std::path::PathBuf,
     schema_version: String,
     pub is_curated: bool,
+    pub privacy_level: PrivacyLevel,
 }
 
 impl TrainingExporter {
@@ -38,12 +40,19 @@ impl TrainingExporter {
             db_path: db_path.to_path_buf(),
             schema_version: "1.0.0".to_string(),
             is_curated: false,
+            privacy_level: PrivacyLevel::P2,
         }
     }
 
     /// Set whether personal models or exports train ONLY on curated data.
     pub fn with_curated_only(mut self, curated_only: bool) -> Self {
         self.is_curated = curated_only;
+        self
+    }
+
+    /// Set the privacy level for anonymization and PII scrubbing.
+    pub fn with_privacy_level(mut self, level: PrivacyLevel) -> Self {
+        self.privacy_level = level;
         self
     }
 
@@ -108,8 +117,16 @@ impl TrainingExporter {
 
         let included_records = processed_records.len();
 
+        // Apply PrivacyPipeline based on privacy_level
+        let processed_records = if self.privacy_level == PrivacyLevel::P4 {
+            processed_records
+        } else {
+            PrivacyPipeline::new().process_batch(processed_records, self.privacy_level)
+        };
+
         // Deterministic split
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let mut processed_records = processed_records;
         processed_records.shuffle(&mut rng);
 
         let eval_size = (included_records as f32 * eval_ratio) as usize;
@@ -126,6 +143,7 @@ impl TrainingExporter {
             reproducibility_seed: seed,
             split_counts,
             data_files: vec!["train.jsonl".to_string(), "eval.jsonl".to_string()],
+            privacy_level: self.privacy_level.as_str().to_string(),
         };
 
         let audit_summary = AuditSummary {
@@ -319,6 +337,10 @@ pub fn write_bundle_to_dir(
             "segment".to_string(),
             serde_json::json!(segment.unwrap_or_else(|| "telemetry".to_string())),
         );
+        obj.insert(
+            "privacy_level".to_string(),
+            serde_json::json!(bundle.manifest.privacy_level),
+        );
     }
 
     std::fs::write(
@@ -464,6 +486,7 @@ mod tests {
                 reproducibility_seed: 42,
                 split_counts: std::collections::HashMap::new(),
                 data_files: vec!["train.jsonl".to_string()],
+                privacy_level: "P2".to_string(),
             },
             train_split: vec![],
             eval_split: vec![],
@@ -492,5 +515,60 @@ mod tests {
         let manifest_val = get_manifest(data_dir, "test_ds_1").unwrap();
         assert_eq!(manifest_val["reproducibility_seed"], 42);
         assert_eq!(manifest_val["clearance"], "INTERNAL");
+    }
+
+    #[test]
+    fn test_export_applies_privacy_scrubbing() {
+        std::env::set_var(
+            "XAVIER_MAINTAINER_PRIVATE_KEY_HEX",
+            "7861766965725f6c6f63616c5f6d61696e7461696e65725f6465765f73656372",
+        );
+        let db_file = NamedTempFile::new().unwrap();
+        let db = TelemetryDb::new(db_file.path()).unwrap();
+
+        let payload = serde_json::json!({
+            "email": "user@example.com",
+            "message": "Contact user@example.com for info"
+        });
+        let payload_str = serde_json::to_string(&payload).unwrap();
+        let (encrypted, ephemeral_pub) = encrypt_for_maintainer(&payload_str).unwrap();
+        let maintainer_pub = crate::data_commons::maintainer::get_maintainer_public_key()
+            .unwrap()
+            .to_bytes();
+
+        db.save_encrypted_log(
+            "hash_privacy_1",
+            &encrypted,
+            &ephemeral_pub,
+            &maintainer_pub,
+            "xv1_test_wallet",
+        )
+        .unwrap();
+
+        // 1. Export with P2 (Default) -> Should scrub email & set manifest privacy_level to P2
+        let exporter_p2 = TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P2);
+        let bundle_p2 = exporter_p2.generate_bundle(123, 0.0, None).unwrap();
+        assert_eq!(bundle_p2.manifest.privacy_level, "P2");
+        assert_eq!(bundle_p2.train_split.len(), 1);
+        let record_p2 = &bundle_p2.train_split[0];
+        assert_eq!(record_p2["email"], "[EMAIL]");
+        assert_eq!(record_p2["message"], "Contact [EMAIL] for info");
+
+        // 2. Export with P3 -> Should scrub email & set manifest privacy_level to P3
+        let exporter_p3 = TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P3);
+        let bundle_p3 = exporter_p3.generate_bundle(123, 0.0, None).unwrap();
+        assert_eq!(bundle_p3.manifest.privacy_level, "P3");
+        assert_eq!(bundle_p3.train_split.len(), 1);
+        let record_p3 = &bundle_p3.train_split[0];
+        assert_eq!(record_p3["email"], "[EMAIL]");
+
+        // 3. Export with P4 (Local Only) -> Should NOT scrub email & set manifest privacy_level to P4
+        let exporter_p4 = TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P4);
+        let bundle_p4 = exporter_p4.generate_bundle(123, 0.0, None).unwrap();
+        assert_eq!(bundle_p4.manifest.privacy_level, "P4");
+        assert_eq!(bundle_p4.train_split.len(), 1);
+        let record_p4 = &bundle_p4.train_split[0];
+        assert_eq!(record_p4["email"], "user@example.com");
+        assert_eq!(record_p4["message"], "Contact user@example.com for info");
     }
 }
