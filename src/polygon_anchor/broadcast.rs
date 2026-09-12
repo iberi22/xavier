@@ -17,6 +17,7 @@ sol!(
     interface ISwalIdentityRegistry {
         function anchorIdentity(bytes32 contentHash) external;
         function anchorPack(bytes32 contentHash) external;
+        function anchorKarmaRollup(bytes32 merkleRoot) external;
     }
 );
 
@@ -61,6 +62,7 @@ pub async fn broadcast_prepared_anchor(
     let pending = match prepared.kind {
         AnchorKind::Identity => contract.anchorIdentity(hash).send().await?,
         AnchorKind::Pack => contract.anchorPack(hash).send().await?,
+        AnchorKind::KarmaRollup => contract.anchorKarmaRollup(hash).send().await?,
     };
     let tx_hash = *pending.tx_hash();
     let _ = pending.get_receipt().await;
@@ -78,4 +80,19 @@ pub async fn broadcast_from_env(
     let key = std::env::var("SWAL_ANCHOR_KEY").context("SWAL_ANCHOR_KEY")?;
     let prepared = super::abi::prepare_anchor_call(contract, content_hash_hex, chain_id, kind)?;
     broadcast_prepared_anchor(&rpc, &key, &prepared).await
+}
+
+pub async fn broadcast_karma_rollup(
+    rpc_url: &str,
+    private_key: &str,
+    contract_address: &str,
+    merkle_root_hex: &str,
+) -> Result<String> {
+    let prepared = super::abi::prepare_anchor_call(
+        contract_address,
+        merkle_root_hex,
+        super::DEFAULT_CHAIN_ID_AMOY,
+        AnchorKind::KarmaRollup,
+    )?;
+    broadcast_prepared_anchor(rpc_url, private_key, &prepared).await
 }
