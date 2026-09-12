@@ -34,6 +34,7 @@ pub mod maintainer;
 pub mod marketplace;
 pub mod mesh_bridge;
 pub mod pricing;
+pub mod privacy;
 pub mod readiness;
 pub mod reputation;
 pub mod telemetry_db;
