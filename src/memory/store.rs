@@ -1210,6 +1210,53 @@ pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) 
 }
 
 /// Filter records.
+/// Hierarchy + resolved-namespace predicate for a single record. Used by
+/// [`filter_records`] and by store implementations that must evaluate filters
+/// AFTER decrypting each row (see `VecSqliteMemoryStore::list_filtered`).
+pub(crate) fn record_matches_filters(
+    record: &MemoryRecord,
+    workspace_id: &str,
+    filters: Option<&MemoryQueryFilters>,
+) -> bool {
+    filters.is_none_or(|filters| {
+        let matches_hierarchical = filters.cluster_ids.as_ref().is_none_or(|ids| {
+            record
+                .cluster_id
+                .as_ref()
+                .map(|id| ids.contains(id))
+                .unwrap_or(false)
+        }) && filters
+            .levels
+            .as_ref()
+            .is_none_or(|levels| levels.contains(&record.level));
+
+        if !matches_hierarchical {
+            return false;
+        }
+
+        resolve_metadata(&record.path, &record.metadata, workspace_id, None)
+            .map(|resolved| {
+                filters
+                    .workspace_id
+                    .as_deref()
+                    .is_none_or(|value| resolved.namespace.workspace_id.as_deref() == Some(value))
+                    && filters
+                        .project
+                        .as_deref()
+                        .is_none_or(|value| resolved.namespace.project.as_deref() == Some(value))
+                    && filters
+                        .scope
+                        .as_deref()
+                        .is_none_or(|value| resolved.namespace.scope.as_deref() == Some(value))
+                    && filters
+                        .session_id
+                        .as_deref()
+                        .is_none_or(|value| resolved.namespace.session_id.as_deref() == Some(value))
+            })
+            .unwrap_or(false)
+    })
+}
+
 pub(crate) fn filter_records(
     records: Vec<MemoryRecord>,
     workspace_id: &str,
@@ -1219,43 +1266,44 @@ pub(crate) fn filter_records(
     Ok(records
         .into_iter()
         .filter(|record| {
-            if !record.matches_query(query) {
-                return false;
-            }
-            filters.is_none_or(|filters| {
-                let matches_hierarchical = filters.cluster_ids.as_ref().is_none_or(|ids| {
-                    record
-                        .cluster_id
-                        .as_ref()
-                        .map(|id| ids.contains(id))
-                        .unwrap_or(false)
-                }) && filters
-                    .levels
-                    .as_ref()
-                    .is_none_or(|levels| levels.contains(&record.level));
-
-                if !matches_hierarchical {
-                    return false;
-                }
-
-                resolve_metadata(&record.path, &record.metadata, workspace_id, None)
-                    .map(|resolved| {
-                        filters.workspace_id.as_deref().is_none_or(|value| {
-                            resolved.namespace.workspace_id.as_deref() == Some(value)
-                        }) && filters.project.as_deref().is_none_or(|value| {
-                            resolved.namespace.project.as_deref() == Some(value)
-                        }) && filters
-                            .scope
-                            .as_deref()
-                            .is_none_or(|value| resolved.namespace.scope.as_deref() == Some(value))
-                            && filters.session_id.as_deref().is_none_or(|value| {
-                                resolved.namespace.session_id.as_deref() == Some(value)
-                            })
-                    })
-                    .unwrap_or(false)
-            })
+            record.matches_query(query) && record_matches_filters(record, workspace_id, filters)
         })
         .collect())
+}
+
+/// True when `filters` carries any predicate that cannot be fully enforced at
+/// SQL level for at-rest-encrypted rows: their metadata is an opaque blob, so
+/// `json_extract` yields NULL and `build_filtered_query` admits them through
+/// the `encrypted_dek IS NOT NULL OR ...` bypass. The effective match then
+/// happens in Rust, after decryption. Callers MUST NOT push `LIMIT` into SQL
+/// for such filters — otherwise `ORDER BY created_at DESC LIMIT n` fills the
+/// candidate window with the newest rows of the table regardless of the
+/// filter and real matches deeper in the table are silently dropped (the
+/// `get_project_context` -> 0 records production bug, 2026-09-11).
+pub(crate) fn filters_require_post_decrypt_match(filters: &MemoryQueryFilters) -> bool {
+    filters.kinds.is_some()
+        || filters.evidence_kinds.is_some()
+        || filters.org_id.is_some()
+        || filters.user_id.is_some()
+        || filters.agent_id.is_some()
+        || filters.session_id.is_some()
+        || filters.project.is_some()
+        || filters.scope.is_some()
+        || filters.retrieval_scope.is_some()
+        || filters.source_app.is_some()
+        || filters.source_type.is_some()
+        || filters.repo_url.is_some()
+        || filters.file_path.is_some()
+        || filters.symbol.is_some()
+        || filters.url.is_some()
+        || filters.message_id.is_some()
+        || filters.topic_key.is_some()
+        || filters.observed_after.is_some()
+        || filters.observed_before.is_some()
+        || filters.recorded_after.is_some()
+        || filters.recorded_before.is_some()
+        || filters.zones.is_some()
+        || filters.clearances.is_some()
 }
 
 /// Stable key.

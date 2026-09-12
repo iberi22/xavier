@@ -646,11 +646,52 @@ impl MemoryStore for SqliteMemoryStore {
             return Ok(Vec::new());
         }
 
+        // See `VecSqliteMemoryStore::list_filtered`: metadata filters cannot be
+        // enforced in SQL for at-rest-encrypted rows, so pushing LIMIT down
+        // would truncate the candidate window to the newest rows and drop real
+        // matches. Stream + decrypt + match, stop after `limit` matches.
+        let post_decrypt_match = crate::memory::store::filters_require_post_decrypt_match(filters);
+        let sql_limit = if post_decrypt_match {
+            None
+        } else {
+            Some(limit)
+        };
+
         let (sql, query_params) =
-            match Self::build_filtered_query(workspace_id, Some(filters), None, Some(limit)) {
+            match Self::build_filtered_query(workspace_id, Some(filters), None, sql_limit) {
                 Some(q) => q,
                 None => return Ok(Vec::new()),
             };
+
+        if post_decrypt_match {
+            let filters_owned = filters.clone();
+            let workspace_owned = workspace_id.to_string();
+            let records = self
+                .conn_provider
+                .with_conn(&self.project_id, move |conn| {
+                    let mut stmt = conn.prepare(&sql)?;
+                    let mut rows = stmt.query(rusqlite::params_from_iter(&query_params))?;
+                    let mut out: Vec<MemoryRecord> = Vec::new();
+                    while let Some(row) = rows.next()? {
+                        if let Ok(mut record) = Self::deserialize_record(row) {
+                            Self::decrypt_record(&mut record)?;
+                            if crate::memory::store::record_matches_filters(
+                                &record,
+                                &workspace_owned,
+                                Some(&filters_owned),
+                            ) {
+                                out.push(record);
+                                if out.len() >= limit {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Ok(out)
+                })
+                .await?;
+            return Ok(records);
+        }
 
         let records = self
             .conn_provider

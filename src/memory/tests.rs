@@ -700,4 +700,79 @@ mod tests {
         // Clean up
         let _ = std::fs::remove_file(&db_path);
     }
+
+    /// Regression (2026-09-11): metadata filters (project/user/agent/session/...)
+    /// could not be enforced at SQL level for at-rest-encrypted rows — the
+    /// `encrypted_dek IS NOT NULL` bypass admitted them — while SQL still
+    /// applied `ORDER BY created_at DESC LIMIT n`. The window filled up with
+    /// the newest rows of the table regardless of the filter, so a matching
+    /// record older than those n rows was silently dropped (production
+    /// symptom: `get_project_context` returning 0 records).
+    #[tokio::test]
+    async fn list_filtered_finds_match_beyond_newest_window() {
+        let unique_id = ulid::Ulid::new().to_string();
+        let db_path =
+            std::env::temp_dir().join(format!("xavier-test-list-filtered-{}.sqlite3", unique_id));
+        let _ = std::fs::remove_file(&db_path);
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path.clone(),
+            embedding_dimensions: 128,
+        };
+        let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::new(config)
+            .await
+            .unwrap();
+
+        // Oldest row: the ONLY one matching project = "gara-g". An EMPTY
+        // `encrypted_dek` (nOT NULL) simulates an at-rest-encrypted row for the
+        // SQL layer (admitted via the `encrypted_dek IS NOT NULL` bypass) while
+        // the decrypt step in the query path is a no-op for empty keys.
+        let matching = MemoryRecord {
+            id: "old-match".to_string(),
+            workspace_id: "ws_lf".to_string(),
+            path: "projects/gara-g/state/current".to_string(),
+            content: "project state".to_string(),
+            embedding: vec![0.5; 128],
+            metadata: serde_json::json!({
+                "namespace": { "project": "gara-g", "scope": "project" }
+            }),
+            encrypted_dek: Some(Vec::new()),
+            created_at: chrono::Utc::now() - chrono::Duration::days(30),
+            ..Default::default()
+        };
+        store.put(matching).await.unwrap();
+
+        // Newer rows: NOT matching the filter; the SQL bypass admits them too.
+        for i in 0..30 {
+            let rec = MemoryRecord {
+                id: format!("noise-{i}"),
+                workspace_id: "ws_lf".to_string(),
+                path: format!("sessions/2026-09-11/turn-{i}"),
+                content: format!("noise {i}"),
+                embedding: vec![0.1; 128],
+                metadata: serde_json::json!({
+                    "namespace": { "project": "otro", "scope": "session" }
+                }),
+                encrypted_dek: Some(Vec::new()),
+                created_at: chrono::Utc::now() - chrono::Duration::minutes(i as i64),
+                ..Default::default()
+            };
+            store.put(rec).await.unwrap();
+        }
+
+        let filters = crate::memory::schema::MemoryQueryFilters {
+            project: Some("gara-g".to_string()),
+            ..Default::default()
+        };
+
+        let results = store.list_filtered("ws_lf", &filters, 5).await.unwrap();
+        assert_eq!(
+            results.len(),
+            1,
+            "expected the older matching record to be found beyond the newest window, got {results:?}"
+        );
+        assert_eq!(results[0].id, "old-match");
+
+        // Clean up
+        let _ = std::fs::remove_file(&db_path);
+    }
 }
