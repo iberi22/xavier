@@ -1,20 +1,24 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { DEFAULT_THEME_MODE, getResolvedVariant, getThemeBackgroundColor } from "./tokens";
+import type { Theme, ThemeMode, ThemeVariantMode } from "./types";
 
-export type Theme = "dark" | "light" | "system";
+export type { Theme, ThemeMode, ThemeVariantMode };
 
 export interface ThemeProviderProps {
   children: React.ReactNode;
-  defaultTheme?: Theme;
+  defaultTheme?: ThemeMode;
   storageKey?: string;
 }
 
 export interface ThemeProviderState {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
+  theme: ThemeMode;
+  resolvedTheme: ThemeVariantMode;
+  setTheme: (theme: ThemeMode) => void;
 }
 
 const initialState: ThemeProviderState = {
-  theme: "dark",
+  theme: DEFAULT_THEME_MODE,
+  resolvedTheme: "dark",
   setTheme: () => null,
 };
 
@@ -22,35 +26,53 @@ const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
 export function ThemeProvider({
   children,
-  defaultTheme = "dark",
+  defaultTheme = "studio-dark",
   storageKey = "vite-ui-theme",
   ...props
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme,
+  const [theme, setThemeState] = useState<ThemeMode>(
+    () => (localStorage.getItem(storageKey) as ThemeMode) || defaultTheme,
   );
+
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return true;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e: MediaQueryListEvent) => {
+      setSystemPrefersDark(e.matches);
+    };
+    mediaQuery.addEventListener("change", handler);
+    return () => mediaQuery.removeEventListener("change", handler);
+  }, []);
+
+  const resolvedTheme: ThemeVariantMode = getResolvedVariant(theme, systemPrefersDark);
 
   useEffect(() => {
     const root = window.document.documentElement;
 
     root.classList.remove("light", "dark");
+    root.classList.add(resolvedTheme);
 
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light";
+    root.setAttribute("data-theme", theme);
 
-      root.classList.add(systemTheme);
-      return;
+    const bgColor = getThemeBackgroundColor(theme, systemPrefersDark);
+    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (!metaThemeColor) {
+      metaThemeColor = document.createElement("meta");
+      metaThemeColor.setAttribute("name", "theme-color");
+      document.head.appendChild(metaThemeColor);
     }
-
-    root.classList.add(theme);
-  }, [theme]);
+    metaThemeColor.setAttribute("content", bgColor);
+  }, [theme, resolvedTheme, systemPrefersDark]);
 
   const value = {
     theme,
-    setTheme: (newTheme: Theme) => {
+    resolvedTheme,
+    setTheme: (newTheme: ThemeMode) => {
       localStorage.setItem(storageKey, newTheme);
       setThemeState(newTheme);
     },
