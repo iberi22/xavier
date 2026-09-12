@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient } from "../api/client";
 
 export interface PluginItem {
-  name: String;
+  name: string;
   description?: string;
   version?: string;
   languages?: string[];
@@ -16,6 +16,25 @@ interface PluginsManagerProps {
   token?: string;
 }
 
+const DEFAULT_PLUGINS: PluginItem[] = [
+  {
+    name: "codegraph",
+    description: "Colby McHenry CodeGraph Engine — Fast Tree-sitter symbol graph & AST indexing",
+    version: "0.1.1",
+    languages: ["rust", "typescript", "python", "c", "cpp", "go", "java"],
+    installed: false,
+    status: "Not Installed",
+  },
+  {
+    name: "rtk-kernel",
+    description: "RTK Kernel Proxy plugin for real-time kernel acceleration and routing.",
+    version: "1.0.0",
+    languages: ["rust", "c"],
+    installed: false,
+    status: "Not Installed",
+  },
+];
+
 export function PluginsManager({ token }: PluginsManagerProps) {
   const api = useMemo(() => new ApiClient(token || ""), [token]);
 
@@ -24,6 +43,7 @@ export function PluginsManager({ token }: PluginsManagerProps) {
   const [error, setError] = useState<string | null>(null);
   const [installingName, setInstallingName] = useState<string | null>(null);
   const [installedMap, setInstalledMap] = useState<Record<string, boolean>>({
+    codegraph: false,
     "rtk-kernel": false,
   });
 
@@ -39,30 +59,36 @@ export function PluginsManager({ token }: PluginsManagerProps) {
         list = (data as any).plugins;
       }
 
-      // Ensure rtk-kernel default entry exists if backend response is empty or missing it
-      const hasRtk = list.some((p) => p.name === "rtk-kernel");
-      if (!hasRtk) {
-        list.unshift({
-          name: "rtk-kernel",
-          description: "RTK Kernel Proxy plugin for real-time kernel acceleration and routing.",
-          version: "1.0.0",
-          languages: ["rust", "c"],
-          installed: installedMap["rtk-kernel"] ?? false,
-        });
+      // Merge default featured plugins (codegraph & rtk-kernel) if missing in backend response
+      for (const defaultPlugin of DEFAULT_PLUGINS) {
+        const idx = list.findIndex((p) => p.name === defaultPlugin.name);
+        if (idx === -1) {
+          list.unshift({
+            ...defaultPlugin,
+            installed: installedMap[defaultPlugin.name] ?? false,
+            status: installedMap[defaultPlugin.name]
+              ? defaultPlugin.name === "codegraph"
+                ? "Active (Sidecar)"
+                : "Active"
+              : "Not Installed",
+          });
+        }
       }
 
       setPlugins(list);
     } catch (err: any) {
       // Fallback default plugins list when offline / API error
-      setPlugins([
-        {
-          name: "rtk-kernel",
-          description: "RTK Kernel Proxy plugin for real-time kernel acceleration and routing.",
-          version: "1.0.0",
-          languages: ["rust", "c"],
-          installed: installedMap["rtk-kernel"] ?? false,
-        },
-      ]);
+      setPlugins(
+        DEFAULT_PLUGINS.map((dp) => ({
+          ...dp,
+          installed: installedMap[dp.name] ?? false,
+          status: installedMap[dp.name]
+            ? dp.name === "codegraph"
+              ? "Active (Sidecar)"
+              : "Active"
+            : "Not Installed",
+        }))
+      );
       setError(err?.message || "Failed to load plugins from server");
     } finally {
       setLoading(false);
@@ -73,29 +99,39 @@ export function PluginsManager({ token }: PluginsManagerProps) {
     void fetchPlugins();
   }, [fetchPlugins]);
 
-  const handleInstall = useCallback(async (pluginName: string) => {
-    setInstallingName(pluginName);
-    setError(null);
-    try {
-      await api.installPlugin(pluginName);
-      setInstalledMap((prev) => ({ ...prev, [pluginName]: true }));
+  const handleInstall = useCallback(
+    async (pluginName: string) => {
+      setInstallingName(pluginName);
+      setError(null);
+
+      // Optimistic state update
       setPlugins((prev) =>
         prev.map((p) =>
-          p.name === pluginName ? { ...p, installed: true, status: "active" } : p
+          p.name === pluginName
+            ? {
+                ...p,
+                installed: true,
+                status: pluginName === "codegraph" ? "Active (Sidecar)" : "Active",
+              }
+            : p
         )
       );
-    } catch (err: any) {
-      // Optimistic state fallback if mock response is needed
-      setInstalledMap((prev) => ({ ...prev, [pluginName]: true }));
-      setPlugins((prev) =>
-        prev.map((p) =>
-          p.name === pluginName ? { ...p, installed: true, status: "active" } : p
-        )
-      );
-    } finally {
-      setInstallingName(null);
-    }
-  }, [api]);
+
+      try {
+        await api.installPlugin(pluginName);
+        setInstalledMap((prev) => ({ ...prev, [pluginName]: true }));
+      } catch (err: any) {
+        // Keep optimistic update for client offline/mock mode, but show error toast handling if needed
+        setInstalledMap((prev) => ({ ...prev, [pluginName]: true }));
+        if (err?.message) {
+          setError(`Installation note: ${err.message}`);
+        }
+      } finally {
+        setInstallingName(null);
+      }
+    },
+    [api]
+  );
 
   return (
     <motion.div
@@ -111,7 +147,7 @@ export function PluginsManager({ token }: PluginsManagerProps) {
             Dynamic Plugin Ecosystem
           </h2>
           <p className="text-sm text-white/40 mt-1">
-            Manage dynamic extensions, kernel proxies, and system integrations.
+            Manage dynamic extensions, Colby McHenry CodeGraph Engine, and kernel proxies.
           </p>
         </div>
         <button
@@ -145,7 +181,8 @@ export function PluginsManager({ token }: PluginsManagerProps) {
               isInstalled={
                 plugin.installed ||
                 installedMap[String(plugin.name)] ||
-                plugin.status === "active"
+                plugin.status === "active" ||
+                plugin.status === "Active (Sidecar)"
               }
               isInstalling={installingName === plugin.name}
               onInstall={handleInstall}
@@ -176,6 +213,16 @@ const PluginCard = React.memo(function PluginCard({
   isInstalling: boolean;
   onInstall: (name: string) => void;
 }) {
+  const getStatusText = () => {
+    if (isInstalling) return "Installing...";
+    if (isInstalled) {
+      return plugin.name === "codegraph" ? "Active (Sidecar)" : "Active";
+    }
+    return plugin.status || "Not Installed";
+  };
+
+  const statusText = getStatusText();
+
   return (
     <div className="p-5 rounded-2xl bg-[#050505]/60 border border-white/10 hover:border-[#39ff14]/30 transition-all flex flex-col justify-between space-y-4">
       <div>
@@ -196,12 +243,22 @@ const PluginCard = React.memo(function PluginCard({
             </div>
           </div>
 
-          {isInstalled && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#39ff14]/10 text-[#39ff14] border border-[#39ff14]/30 shadow-[0_0_10px_rgba(57,255,20,0.15)]">
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+              isInstalling
+                ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                : isInstalled
+                ? "bg-[#39ff14]/10 text-[#39ff14] border-[#39ff14]/30 shadow-[0_0_10px_rgba(57,255,20,0.15)]"
+                : "bg-white/5 text-white/40 border-white/10"
+            }`}
+          >
+            {isInstalling ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : isInstalled ? (
               <CheckCircle2 className="w-3.5 h-3.5" />
-              Active / Enabled
-            </span>
-          )}
+            ) : null}
+            {statusText}
+          </span>
         </div>
 
         <p className="text-xs text-white/60 leading-relaxed">
@@ -230,7 +287,7 @@ const PluginCard = React.memo(function PluginCard({
             className="w-full py-2 px-4 rounded-xl bg-white/5 text-white/40 text-xs font-semibold cursor-default flex items-center justify-center gap-2"
           >
             <CheckCircle2 className="w-4 h-4 text-[#39ff14]" />
-            Installed
+            {plugin.name === "codegraph" ? "Active (Sidecar)" : "Installed"}
           </button>
         ) : (
           <button
