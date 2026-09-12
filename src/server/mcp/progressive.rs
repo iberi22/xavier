@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(search_resp_full.status(), axum::http::StatusCode::OK);
 
         let body_full = get_json_body(search_resp_full).await;
-        let content_array_full = body_full["result"]["content"]
+        let _content_array_full = body_full["result"]["content"]
             .as_array()
             .expect("content should be an array");
         let structured_full = &body_full["result"]["structuredContent"];

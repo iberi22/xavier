@@ -1214,7 +1214,7 @@ async fn memory_context_depth_flat() {
         "DEBUG BODY DEPTH ONE: {}",
         serde_json::to_string_pretty(&body).unwrap()
     );
-    let content = &body["result"]["content"][0];
+    let _content = &body["result"]["content"][0];
     assert!(
         body["result"]["structuredContent"].is_object(),
         "depth/0 should return structured"
@@ -1247,7 +1247,7 @@ async fn memory_context_depth_one() {
     )
     .await;
     let body = get_json_body(response).await;
-    let content = &body["result"]["content"][0];
+    let _content = &body["result"]["content"][0];
     assert!(
         body["result"]["structuredContent"].is_object(),
         "depth/1 should return structured"
@@ -1293,7 +1293,7 @@ async fn memory_context_max_chars() {
     )
     .await;
     let body = get_json_body(response).await;
-    let content = &body["result"]["content"][0];
+    let _content = &body["result"]["content"][0];
     assert!(
         body["result"]["structuredContent"].is_object(),
         "max_chars should return structured"
@@ -1827,7 +1827,7 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
-    let content = &body["result"]["content"][0];
+    let _content = &body["result"]["content"][0];
     assert!(body["result"]["structuredContent"].is_object());
 
     let sc = &body["result"]["structuredContent"];
@@ -2044,7 +2044,7 @@ async fn espacio_channel_mcp_tools_schema_and_dispatch() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
-    let content = &body["result"]["content"][0];
+    let _content = &body["result"]["content"][0];
     assert!(body["result"]["structuredContent"].is_object());
     let sc = &body["result"]["structuredContent"];
     assert_eq!(sc["space_id"], "test_space_123");
