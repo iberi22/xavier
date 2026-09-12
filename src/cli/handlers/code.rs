@@ -2,7 +2,7 @@
 
 use axum::extract::{Query, State};
 use axum::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -15,7 +15,8 @@ use crate::cli::utils::estimate_tokens;
 use code_graph::types::{CodeEdge, Symbol, SymbolKind};
 use xavier::codebase::codegraph_paths::code_graph_db_path_for;
 use xavier::codebase::codegraph_sidecar::{
-    ensure_codegraph_sidecar_soft, maybe_sync_colby_project, EnsureOutcome,
+    ensure_codegraph_sidecar, ensure_codegraph_sidecar_soft, maybe_sync_colby_project,
+    EnsureOptions, EnsureOutcome, InstallMode,
 };
 use xavier::codebase::connection_manager::ConnectionManager;
 
@@ -23,6 +24,62 @@ use xavier::ports::inbound::input_security_port::SecureInputResult;
 
 fn ensure_sidecar_for_workspace(workspace: &std::path::Path) -> EnsureOutcome {
     ensure_codegraph_sidecar_soft(workspace)
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct InstallSidecarRequest {
+    #[serde(default)]
+    pub reprompt: Option<bool>,
+    #[serde(default)]
+    pub force: Option<bool>,
+    #[serde(default)]
+    pub mode: Option<String>,
+}
+
+/// Code sidecar status handler (`GET /code/sidecar/status`).
+pub async fn code_sidecar_status_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let outcome = ensure_codegraph_sidecar_soft(&state.workspace_dir);
+    let path = outcome.bin_path.map(|p| p.to_string_lossy().to_string());
+
+    axum::Json(serde_json::json!({
+        "available": outcome.available,
+        "path": path,
+        "version": Option::<String>::None,
+        "engine": "colby",
+        "message": outcome.message,
+    }))
+}
+
+/// Code sidecar install handler (`POST /code/install`).
+pub async fn code_sidecar_install_handler(
+    State(state): State<CliState>,
+    payload: Option<Json<InstallSidecarRequest>>,
+) -> impl axum::response::IntoResponse {
+    let req = payload.map(|Json(p)| p).unwrap_or_default();
+    let reprompt = req.reprompt.unwrap_or(false);
+    let install_mode = match req.mode.as_deref() {
+        Some("ask") => InstallMode::Ask,
+        _ => InstallMode::No,
+    };
+
+    let opts = EnsureOptions {
+        reprompt,
+        install_mode,
+    };
+
+    let outcome = ensure_codegraph_sidecar(&state.workspace_dir, opts);
+    let path = outcome.bin_path.map(|p| p.to_string_lossy().to_string());
+
+    axum::Json(serde_json::json!({
+        "status": if outcome.available { "ok" } else { "unavailable" },
+        "available": outcome.available,
+        "path": path,
+        "version": Option::<String>::None,
+        "engine": "colby",
+        "message": outcome.message,
+    }))
 }
 
 // ── XAV-01: explicit per-repo graph resolution ──────────────────────────
@@ -2710,5 +2767,38 @@ mod tests {
             "XAV-01 legacy OK: ws symbols={} legacy={} | other degraded={}",
             stats["total_symbols"], stats["legacy_index"], deg["degraded"]
         );
+    }
+
+    #[tokio::test]
+    async fn test_code_sidecar_status_handler() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = xav01_test_state(tmp.path().to_path_buf()).await;
+
+        let res = xav01_body(code_sidecar_status_handler(State(state.clone()))).await;
+        assert_eq!(res["engine"], "colby");
+        assert!(res.get("available").is_some());
+        assert!(res.get("message").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_code_sidecar_install_handler() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = xav01_test_state(tmp.path().to_path_buf()).await;
+
+        let payload = axum::Json(InstallSidecarRequest {
+            reprompt: Some(true),
+            force: Some(false),
+            mode: Some("ask".to_string()),
+        });
+
+        let res = xav01_body(code_sidecar_install_handler(
+            State(state.clone()),
+            Some(payload),
+        ))
+        .await;
+        assert_eq!(res["engine"], "colby");
+        assert!(res.get("status").is_some());
+        assert!(res.get("available").is_some());
+        assert!(res.get("message").is_some());
     }
 }
