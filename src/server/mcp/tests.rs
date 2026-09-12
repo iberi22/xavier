@@ -350,9 +350,9 @@ async fn create_and_get_memory_integration() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    if content["type"] == "structuredContent" {
+    if body["result"]["structuredContent"].is_object() {
         let empty: Vec<_> = vec![];
-        let candidates = content["structuredContent"]["candidates"]
+        let candidates = body["result"]["structuredContent"]["candidates"]
             .as_array()
             .unwrap_or(&empty);
         assert!(!candidates.is_empty(), "search should return results");
@@ -491,8 +491,8 @@ async fn core_tools_integration() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    if content["type"] == "structuredContent" {
-        let sc = &content["structuredContent"];
+    if body["result"]["structuredContent"].is_object() {
+        let sc = &body["result"]["structuredContent"];
         assert!(sc["content"].as_str().unwrap().contains("c1"));
         assert!(sc["totalRecords"].as_u64().unwrap_or(0) >= 1);
     } else {
@@ -547,7 +547,7 @@ async fn fragment_tools_integration() {
     // search_fragments now returns structuredContent.candidates plus optional text.
     // Prefer the structured id; fall back to the legacy "Id: <ulid>" text line.
     let content_entry = &body["result"]["content"][0];
-    let structured_id = content_entry
+    let structured_id = body["result"]
         .get("structuredContent")
         .and_then(|v| v.get("candidates"))
         .and_then(|v| v.get(0))
@@ -560,7 +560,7 @@ async fn fragment_tools_integration() {
         .map(String::from);
     let id: String = if let Some(cid) = structured_id {
         // verify fragment text is present somewhere in the payload
-        let all = content_entry
+        let all = body["result"]
             .get("structuredContent")
             .map(|v| v.to_string())
             .unwrap_or_default()
@@ -602,7 +602,7 @@ async fn fragment_tools_integration() {
         .get("text")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let rec_struct = body["result"]["content"][0]
+    let rec_struct = body["result"]
         .get("structuredContent")
         .map(|v| v.to_string())
         .unwrap_or_default();
@@ -813,8 +813,8 @@ async fn tools_health_check_returns_structured() {
 
     // health_check now returns structuredContent
     let content = &body["result"]["content"][0];
-    if content["type"] == "structuredContent" {
-        let sc = &content["structuredContent"];
+    if body["result"]["structuredContent"].is_object() {
+        let sc = &body["result"]["structuredContent"];
         assert!(sc["status"].is_string());
         assert!(sc["toolsCount"].as_u64().unwrap_or(0) >= 16);
         assert_eq!(sc["mcpProtocol"], "2026-07-28");
@@ -898,8 +898,8 @@ async fn mcp_server_health_sequence() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    if content["type"] == "structuredContent" {
-        assert!(content["structuredContent"]["status"].is_string());
+    if body["result"]["structuredContent"].is_object() {
+        assert!(body["result"]["structuredContent"]["status"].is_string());
     }
 
     // 4. mem_search (alias of search_memory) responds
@@ -1024,8 +1024,8 @@ async fn get_project_context_size_limits() {
     // The result may be structured or flat text; either way ensure the content
     // is bounded by roughly max_chars.
     let content = &body["result"]["content"][0];
-    if content["type"] == "structuredContent" {
-        let sc = &content["structuredContent"];
+    if body["result"]["structuredContent"].is_object() {
+        let sc = &body["result"]["structuredContent"];
         let total_chars = sc
             .get("totalChars")
             .or_else(|| sc.get("total_chars"))
@@ -1113,11 +1113,13 @@ async fn memory_save_and_search_roundtrip() {
     )
     .await;
     let body = get_json_body(response).await;
-    let content0 = &body["result"]["content"][0];
-    let blob = if content0["type"] == "structuredContent" {
-        content0["structuredContent"].to_string()
+    let blob = if body["result"]["structuredContent"].is_object() {
+        body["result"]["structuredContent"].to_string()
     } else {
-        content0["text"].as_str().unwrap_or("").to_string()
+        body["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
     };
     assert!(
         blob.contains("cortical stack persists"),
@@ -1151,8 +1153,8 @@ async fn memory_context_returns_context_block() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    if content["type"] == "structuredContent" {
-        let sc = &content["structuredContent"];
+    if body["result"]["structuredContent"].is_object() {
+        let sc = &body["result"]["structuredContent"];
         let ctx_text = sc["content"].as_str().unwrap_or("");
         assert!(
             ctx_text.contains("ownership") || ctx_text.contains("No relevant context"),
@@ -1213,11 +1215,11 @@ async fn memory_context_depth_flat() {
         serde_json::to_string_pretty(&body).unwrap()
     );
     let content = &body["result"]["content"][0];
-    assert_eq!(
-        content["type"], "structuredContent",
+    assert!(
+        body["result"]["structuredContent"].is_object(),
         "depth/0 should return structured"
     );
-    let sc = &content["structuredContent"];
+    let sc = &body["result"]["structuredContent"];
     let total_records = sc
         .get("totalRecords")
         .or_else(|| sc.get("total_records"))
@@ -1246,11 +1248,11 @@ async fn memory_context_depth_one() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    assert_eq!(
-        content["type"], "structuredContent",
+    assert!(
+        body["result"]["structuredContent"].is_object(),
         "depth/1 should return structured"
     );
-    let sc = &content["structuredContent"];
+    let sc = &body["result"]["structuredContent"];
     let total_records = sc
         .get("totalRecords")
         .or_else(|| sc.get("total_records"))
@@ -1292,11 +1294,11 @@ async fn memory_context_max_chars() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    assert_eq!(
-        content["type"], "structuredContent",
+    assert!(
+        body["result"]["structuredContent"].is_object(),
         "max_chars should return structured"
     );
-    let sc = &content["structuredContent"];
+    let sc = &body["result"]["structuredContent"];
     let total_chars = sc
         .get("totalChars")
         .or_else(|| sc.get("total_chars"))
@@ -1395,8 +1397,8 @@ async fn health_check_method_and_tool() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    if content["type"] == "structuredContent" {
-        assert!(content["structuredContent"]["status"].is_string());
+    if body["result"]["structuredContent"].is_object() {
+        assert!(body["result"]["structuredContent"]["status"].is_string());
     } else {
         let text = content["text"].as_str().unwrap();
         assert!(text.contains("status"));
@@ -1516,8 +1518,8 @@ async fn code_graph_explore_returns_real_data_not_mock() {
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
     // Structured content path (our new handlers return structuredContent).
-    let payload: Value = if content["structuredContent"].is_object() {
-        content["structuredContent"].clone()
+    let payload: Value = if body["result"]["structuredContent"].is_object() {
+        body["result"]["structuredContent"].clone()
     } else {
         serde_json::from_str(content["text"].as_str().unwrap()).unwrap()
     };
@@ -1579,8 +1581,8 @@ async fn code_graph_trace_path_returns_real_callers() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    let payload: Value = if content["structuredContent"].is_object() {
-        content["structuredContent"].clone()
+    let payload: Value = if body["result"]["structuredContent"].is_object() {
+        body["result"]["structuredContent"].clone()
     } else {
         serde_json::from_str(content["text"].as_str().unwrap()).unwrap()
     };
@@ -1672,8 +1674,8 @@ async fn xavier_local_status_tool_integration() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    assert_eq!(content["type"], "structuredContent");
-    let sc = &content["structuredContent"];
+    assert!(body["result"]["structuredContent"].is_object());
+    let sc = &body["result"]["structuredContent"];
 
     let mode = sc["mode"].as_str().expect("mode should be a string");
     assert!(
@@ -1826,9 +1828,9 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    assert_eq!(content["type"], "structuredContent");
+    assert!(body["result"]["structuredContent"].is_object());
 
-    let sc = &content["structuredContent"];
+    let sc = &body["result"]["structuredContent"];
     let ctx_text = sc["content"].as_str().unwrap();
 
     // Check that doc 1 is NOT truncated (since length is 10, which is < 20)
@@ -2043,8 +2045,8 @@ async fn espacio_channel_mcp_tools_schema_and_dispatch() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    assert_eq!(content["type"], "structuredContent");
-    let sc = &content["structuredContent"];
+    assert!(body["result"]["structuredContent"].is_object());
+    let sc = &body["result"]["structuredContent"];
     assert_eq!(sc["space_id"], "test_space_123");
     assert_eq!(sc["channel_name"], "general");
     assert_eq!(sc["status"], "created");
@@ -2068,8 +2070,8 @@ async fn espacio_channel_mcp_tools_schema_and_dispatch() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    assert_eq!(content["type"], "structuredContent");
-    let sc = &content["structuredContent"];
+    assert!(body["result"]["structuredContent"].is_object());
+    let sc = &body["result"]["structuredContent"];
     assert_eq!(sc["space_id"], "test_space_123");
     assert_eq!(sc["count"], 0);
     let msgs = sc["messages"].as_array().expect("messages array");

@@ -242,11 +242,8 @@ async fn test_mcp_e2e_health_check() {
         .expect("content should be an array");
     assert!(!content.is_empty());
 
-    // Check structured content element
-    let structured_item = content
-        .iter()
-        .find(|c| c["type"] == "structuredContent")
-        .expect("structuredContent item should exist in response content");
-    assert!(structured_item["structuredContent"]["status"].is_string());
-    assert_eq!(structured_item["structuredContent"]["handshakeOk"], true);
+    // Check structured content field (top-level sibling of `content`)
+    let structured_item = &body["result"]["structuredContent"];
+    assert!(structured_item["status"].is_string());
+    assert_eq!(structured_item["handshakeOk"], true);
 }

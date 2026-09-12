@@ -724,6 +724,7 @@ pub async fn handle_core_tool(
                         content_type: "text".to_string(),
                         text: serde_json::to_string(&dump)?,
                     })],
+                    structured_content: None,
                     is_error: Some(false),
                 })?);
             }
