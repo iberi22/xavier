@@ -275,7 +275,10 @@ async fn test_uds_symbol_search_roundtrip() -> Result<()> {
 
     let response = send_uds_request(&socket_path, &search_req).await?;
     assert_eq!(response.status, "ok");
-    assert!(!response.symbols.is_empty(), "Should return matching symbol");
+    assert!(
+        !response.symbols.is_empty(),
+        "Should return matching symbol"
+    );
 
     let matched = &response.symbols[0];
     assert_eq!(matched.name, "execute_agent_task");
@@ -312,7 +315,11 @@ async fn test_uds_concurrent_agent_queries() -> Result<()> {
 
     for i in 0..num_agents {
         let sock_path = socket_path.clone();
-        let query_term = if i % 2 == 0 { "execute" } else { "AgentContext" };
+        let query_term = if i % 2 == 0 {
+            "execute"
+        } else {
+            "AgentContext"
+        };
         tasks.push(tokio::spawn(async move {
             let req = IpcRequest {
                 command: "find".to_string(),

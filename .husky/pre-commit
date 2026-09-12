@@ -1,6 +1,46 @@
-#!/usr/bin/env sh
-# Xavier pre-commit: harvest chronicle, rebuild devlog blog, stage assets
-./scripts/pre-commit-chronicle.sh
+#!/usr/bin/env bash
+# Xavier robust pre-commit hook: ensures format, lints, privacy and integrity gates pass before committing.
+set -euo pipefail
 
-# Anti-fuga de estrategia/economia/PII (auditoria 2026-09-10)
-bash scripts/check-strategy-leak.sh --staged || exit 1
+echo "🛡️  [Xavier Pre-Commit] Running local gates..."
+
+# 1. Anti-fuga de estrategia/economia/PII (auditoria 2026-09-10)
+if [ -f "scripts/check-strategy-leak.sh" ]; then
+    bash scripts/check-strategy-leak.sh --staged || {
+        echo "❌ [Pre-Commit] Falla en check-strategy-leak. Corrige los archivos antes de commitear."
+        exit 1
+    }
+fi
+
+# 2. Revisa si hay cambios en archivos Rust staged
+STAGED_RS=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.rs$' || true)
+if [ -n "$STAGED_RS" ]; then
+    echo "🦀 [Pre-Commit] Verificando formato de Rust (cargo fmt)..."
+    cargo fmt --all -- --check || {
+        echo "❌ [Pre-Commit] Error de formato en Rust. Ejecuta 'cargo fmt --all' antes de commitear."
+        exit 1
+    }
+
+    echo "🦀 [Pre-Commit] Verificando clippy (-D warnings)..."
+    cargo clippy -p xavier -p code-graph --all-targets -- -D warnings || {
+        echo "❌ [Pre-Commit] Fallo en cargo clippy. Corrige las advertencias/errores antes de commitear."
+        exit 1
+    }
+fi
+
+# 3. Revisa si hay cambios en panel-ui staged
+STAGED_UI=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^panel-ui/' || true)
+if [ -n "$STAGED_UI" ]; then
+    echo "⚛️  [Pre-Commit] Verificando build de panel-ui..."
+    (cd panel-ui && npm run build) || {
+        echo "❌ [Pre-Commit] Fallo en build de panel-ui."
+        exit 1
+    }
+fi
+
+# 4. Harvest chronicle si existe
+if [ -f "./scripts/pre-commit-chronicle.sh" ]; then
+    ./scripts/pre-commit-chronicle.sh || true
+fi
+
+echo "✅ [Xavier Pre-Commit] Todas las verificaciones locales pasaron exitosamente."

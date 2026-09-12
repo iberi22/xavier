@@ -267,7 +267,10 @@ pub async fn list_plugins() -> Result<()> {
             } else {
                 "[available]"
             };
-            println!("- {}: {} (v{}) {}", p.name, p.description, p.version, status);
+            println!(
+                "- {}: {} (v{}) {}",
+                p.name, p.description, p.version, status
+            );
         } else {
             println!("- {}: {} (v{})", p.name, p.description, p.version);
         }

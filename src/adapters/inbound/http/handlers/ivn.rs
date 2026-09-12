@@ -21,8 +21,8 @@ use std::str::FromStr;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::data_commons::ivn::{
-    IvnConfig, IvnError, KarmaEngine, ValidatorCandidate, ValidatorSelection, Verdict, VerdictEngine,
-    VerdictStatus, Vote,
+    IvnConfig, IvnError, KarmaEngine, ValidatorCandidate, ValidatorSelection, Verdict,
+    VerdictEngine, VerdictStatus, Vote,
 };
 use crate::data_commons::types::WalletAddress;
 
@@ -477,10 +477,7 @@ mod tests {
             extract_ip_subnet("192.168.1.200"),
             Some("192.168.1.0/24".into())
         );
-        assert_eq!(
-            extract_ip_subnet("10.0.1.1"),
-            Some("10.0.1.0/24".into())
-        );
+        assert_eq!(extract_ip_subnet("10.0.1.1"), Some("10.0.1.0/24".into()));
         assert_eq!(
             extract_ip_subnet("2001:db8:abcd:0012::1"),
             Some("2001:db8:abcd:12::/64".into())
@@ -493,16 +490,14 @@ mod tests {
         let submitter = "node_submitter_x";
         let mut rng = StdRng::seed_from_u64(12345);
 
-        let mut pool = vec![
-            ValidatorCandidateDto {
-                node_id: submitter.to_string(),
-                wallet: "wallet_submitter".into(),
-                karma: 1000,
-                seed: "seed_submitter".into(),
-                operator_id: Some("op_submitter".into()),
-                ip_address: Some("192.168.0.1".into()),
-            },
-        ];
+        let mut pool = vec![ValidatorCandidateDto {
+            node_id: submitter.to_string(),
+            wallet: "wallet_submitter".into(),
+            karma: 1000,
+            seed: "seed_submitter".into(),
+            operator_id: Some("op_submitter".into()),
+            ip_address: Some("192.168.0.1".into()),
+        }];
 
         for i in 1..=6 {
             pool.push(ValidatorCandidateDto {
@@ -623,10 +618,18 @@ mod tests {
 
         for val in &selected {
             if let Some(op) = &val.operator_id {
-                assert!(seen_ops.insert(op.clone()), "Duplicate operator_id in 5-committee: {}", op);
+                assert!(
+                    seen_ops.insert(op.clone()),
+                    "Duplicate operator_id in 5-committee: {}",
+                    op
+                );
             }
             if let Some(sub) = val.ip_address.as_deref().and_then(extract_ip_subnet) {
-                assert!(seen_subnets.insert(sub.clone()), "Duplicate subnet in 5-committee: {}", sub);
+                assert!(
+                    seen_subnets.insert(sub.clone()),
+                    "Duplicate subnet in 5-committee: {}",
+                    sub
+                );
             }
         }
     }
@@ -673,11 +676,28 @@ mod tests {
         let mut rng1 = StdRng::seed_from_u64(u64_seed1);
         let mut rng2 = StdRng::seed_from_u64(u64_seed2);
 
-        let sel1 = select_validators_with_diversity(&pool, "submitter_node_1", "app_1", "seed_123", &mut rng1).unwrap();
-        let sel2 = select_validators_with_diversity(&pool, "submitter_node_1", "app_1", "seed_123", &mut rng2).unwrap();
+        let sel1 = select_validators_with_diversity(
+            &pool,
+            "submitter_node_1",
+            "app_1",
+            "seed_123",
+            &mut rng1,
+        )
+        .unwrap();
+        let sel2 = select_validators_with_diversity(
+            &pool,
+            "submitter_node_1",
+            "app_1",
+            "seed_123",
+            &mut rng2,
+        )
+        .unwrap();
 
         assert_eq!(sel1.len(), 5);
-        assert_eq!(sel1.iter().map(|v| &v.node_id).collect::<Vec<_>>(), sel2.iter().map(|v| &v.node_id).collect::<Vec<_>>());
+        assert_eq!(
+            sel1.iter().map(|v| &v.node_id).collect::<Vec<_>>(),
+            sel2.iter().map(|v| &v.node_id).collect::<Vec<_>>()
+        );
     }
 
     #[test]
