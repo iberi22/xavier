@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use regex::Regex;
 use std::sync::LazyLock;
 
+pub mod codegraph_client;
 pub mod codegraph_paths;
 pub mod codegraph_sidecar;
 pub mod connection_manager;

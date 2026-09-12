@@ -174,7 +174,7 @@ impl KarmaEngine {
         };
 
         if actual_hmac.len() != expected_hmac.len()
-            || bool::from(expected_hmac.ct_eq(actual_hmac.as_slice())) == false
+            || !bool::from(expected_hmac.ct_eq(actual_hmac.as_slice()))
         {
             tracing::error!("Tampering detected in karma.json");
             self.records = HashMap::new();
