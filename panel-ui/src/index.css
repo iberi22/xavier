@@ -8,9 +8,20 @@
   --foreground: #09090b;
 }
 
-.dark {
+.dark,
+.studio-dark {
+  --background: #0d0e10;
+  --foreground: #f3f3f5;
+}
+
+.studio-bone {
+  --background: #f4f1ea;
+  --foreground: #1c1b18;
+}
+
+.cyberpunk {
   --background: #050505;
-  --foreground: #ffffff;
+  --foreground: #39ff14;
 }
 
 @theme {

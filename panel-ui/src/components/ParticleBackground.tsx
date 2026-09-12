@@ -1,19 +1,58 @@
 import { memo, useEffect, useRef } from "react";
+import { useTheme } from "../lib/theme/theme-provider";
+
+/**
+ * Helper to resolve dynamic theme particle colors for Canvas 2D rendering.
+ */
+function getThemeColors(activeTheme: string) {
+  switch (activeTheme) {
+    case "studio-bone":
+      return {
+        particle: "rgba(30, 30, 30, 0.05)",
+        lineBase: "rgba(30, 30, 30,",
+        maxOpacity: 0.05,
+      };
+    case "cyberpunk":
+      return {
+        particle: "rgba(57, 255, 20, 0.15)",
+        lineBase: "rgba(57, 255, 20,",
+        maxOpacity: 0.15,
+      };
+    case "studio-dark":
+    default:
+      if (activeTheme === "light") {
+        return {
+          particle: "rgba(30, 30, 30, 0.05)",
+          lineBase: "rgba(30, 30, 30,",
+          maxOpacity: 0.05,
+        };
+      }
+      return {
+        particle: "rgba(255, 255, 255, 0.08)",
+        lineBase: "rgba(255, 255, 255,",
+        maxOpacity: 0.08,
+      };
+  }
+}
 
 /**
  * ⚡ Bolt Performance Optimization
  *
- * 💡 What: Wrapped ParticleBackground in React.memo()
+ * 💡 What: Wrapped ParticleBackground in React.memo() with dynamic theme awareness.
  * 🎯 Why: This component renders a complex canvas animation that is fully self-contained.
- *         Previously, it was re-rendering unnecessarily whenever the parent App component's
- *         state changed (e.g., typing in the chat, streaming responses, opening modals).
- *         Re-rendering caused the canvas element to be destroyed and re-created, resetting
- *         the useEffect and wasting significant CPU cycles.
- * 📊 Impact: Eliminates 100% of unnecessary re-renders of the particle background when parent
+ *         Particles dynamically respond to the active theme via `useTheme` while preserving
+ *         the requestAnimationFrame loop.
+ * 📊 Impact: Eliminates unnecessary re-renders of the particle background when parent
  *         state changes. Reduces main thread blocking during chat streaming.
  */
 const ParticleBackground = memo(function ParticleBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { theme } = useTheme();
+  const themeRef = useRef(theme);
+
+  useEffect(() => {
+    themeRef.current = theme;
+  }, [theme]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -64,7 +103,8 @@ const ParticleBackground = memo(function ParticleBackground() {
 
       draw() {
         if (!ctx) return;
-        ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+        const colors = getThemeColors(themeRef.current);
+        ctx.fillStyle = colors.particle;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
         ctx.closePath();
@@ -138,8 +178,10 @@ const ParticleBackground = memo(function ParticleBackground() {
           const distance = Math.sqrt(dx * dx + dy * dy);
 
           if (distance < 100) {
+            const colors = getThemeColors(themeRef.current);
+            const lineOpacity = (1 - distance / 100) * colors.maxOpacity;
             ctx.beginPath();
-            ctx.strokeStyle = `rgba(255, 255, 255, ${0.05 - distance / 2000})`;
+            ctx.strokeStyle = `${colors.lineBase} ${lineOpacity})`;
             ctx.lineWidth = 0.5;
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);

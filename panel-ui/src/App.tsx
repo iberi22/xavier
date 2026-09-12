@@ -550,7 +550,7 @@ function AppContent() {
 	}
 
 	return (
-		<div className="relative w-full h-screen font-sans bg-slate-50 dark:bg-[#050505] flex flex-col overflow-hidden text-slate-900 dark:text-white transition-colors duration-200">
+		<div className="relative w-full h-screen font-system-sans bg-[var(--background,#0d0e10)] text-[var(--foreground,#f3f3f5)] flex flex-col overflow-hidden transition-colors duration-200">
 			<ParticleBackground />
 			<TopStatusBar isModalOpen={isConfigOpen} isLoading={_isLoading} />
 			<SystemAlertBanner
@@ -587,7 +587,7 @@ function AppContent() {
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							exit={{ opacity: 0 }}
-							className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm p-2 sm:p-4 md:p-6"
+							className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-2 sm:p-4 md:p-6"
 						>
 							<ConfigModal
 								key="modal"
@@ -635,7 +635,7 @@ function AppContent() {
 
 export default function App() {
 	return (
-		<ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+		<ThemeProvider defaultTheme="studio-dark" storageKey="vite-ui-theme">
 			<AppContent />
 		</ThemeProvider>
 	);
