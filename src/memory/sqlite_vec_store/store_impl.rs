@@ -312,16 +312,62 @@ impl MemoryStore for VecSqliteMemoryStore {
             return Ok(Vec::new());
         }
 
+        // At-rest encrypted rows cannot be filtered in SQL (json_extract over
+        // the encrypted metadata yields NULL); `build_filtered_query` admits
+        // them through the `encrypted_dek IS NOT NULL OR ...` bypass and the
+        // real match runs below, in Rust, AFTER decryption. If SQL also applied
+        // `ORDER BY created_at DESC LIMIT n`, the candidate window would be
+        // truncated to the newest n rows of the whole table whoever they are,
+        // and matches deeper in the table would be silently dropped (the
+        // `get_project_context` -> 0 records production bug). For those filters
+        // we stream rows in recency order, decrypt + match one by one, and stop
+        // as soon as `limit` matches are collected.
+        let post_decrypt_match = crate::memory::store::filters_require_post_decrypt_match(filters);
+        let sql_limit = if post_decrypt_match {
+            None
+        } else {
+            Some(limit)
+        };
+
         let (sql, query_params) =
             match crate::memory::sqlite_store::SqliteMemoryStore::build_filtered_query(
                 workspace_id,
                 Some(filters),
                 None,
-                Some(limit),
+                sql_limit,
             ) {
                 Some(q) => q,
                 None => return Ok(Vec::new()),
             };
+
+        if post_decrypt_match {
+            let filters_owned = filters.clone();
+            let workspace_owned = workspace_id.to_string();
+            let records = self
+                .conn_provider
+                .with_conn(&self.project_id, move |conn| {
+                    let mut stmt = conn.prepare(&sql)?;
+                    let mut rows = stmt.query(rusqlite::params_from_iter(&query_params))?;
+                    let mut out: Vec<MemoryRecord> = Vec::new();
+                    while let Some(row) = rows.next()? {
+                        let mut record = VecSqliteMemoryStore::deserialize_record(row)?;
+                        super::at_rest::decrypt_record_in_place(&mut record)?;
+                        if crate::memory::store::record_matches_filters(
+                            &record,
+                            &workspace_owned,
+                            Some(&filters_owned),
+                        ) {
+                            out.push(record);
+                            if out.len() >= limit {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(out)
+                })
+                .await?;
+            return Ok(records);
+        }
 
         let records = self
             .conn_provider
