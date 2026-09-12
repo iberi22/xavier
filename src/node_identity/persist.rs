@@ -1,6 +1,10 @@
 //! Persist sealed node vault + public identity under `XAVIER_DATA_DIR/node/`.
 
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
 use anyhow::{Context, Result};
+use argon2::{Algorithm, Argon2, Params, Version};
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,6 +12,18 @@ use std::path::{Path, PathBuf};
 use super::derive::DerivedNodeKeys;
 use super::vault::{OpenedVault, SealedVault, VaultError};
 use super::{CheckCodes, SeedPhrase};
+
+/// Encrypted Share-3 representation for cloud backup to Cloudflare Worker KV.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EncryptedCloudShare {
+    pub version: u8,
+    pub node_id: String,
+    pub share_index: u8, // MUST be 3 for cloud backup
+    pub salt_hex: String,
+    pub nonce_hex: String,
+    pub ciphertext_hex: String,
+    pub created_at: String,
+}
 
 /// On-disk public identity (no secrets).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -135,6 +151,91 @@ impl NodeStore {
         let codes = CheckCodes::from_seed_bytes(&phrase.seed_bytes);
         Ok((opened, keys, codes))
     }
+
+    /// Prepare Argon2id + AES-256-GCM encrypted Share-3 payload for cloud backup.
+    pub fn prepare_cloud_share_3(
+        share: &super::shamir::ShamirShare,
+        user_passphrase: &str,
+        node_id: &str,
+    ) -> Result<EncryptedCloudShare> {
+        if share.x != 3 {
+            anyhow::bail!("invalid share index {}, expected 3 for cloud backup", share.x);
+        }
+        let mut salt = [0u8; 16];
+        let mut nonce = [0u8; 12];
+        rand::rngs::OsRng.fill_bytes(&mut salt);
+        rand::rngs::OsRng.fill_bytes(&mut nonce);
+
+        let params = Params::new(64 * 1024, 3, 1, Some(32))
+            .map_err(|e| anyhow::anyhow!("argon2 params: {e}"))?;
+        let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+        let mut key = [0u8; 32];
+        argon
+            .hash_password_into(user_passphrase.as_bytes(), &salt, &mut key)
+            .map_err(|e| anyhow::anyhow!("argon2 hash: {e}"))?;
+
+        let cipher =
+            Aes256Gcm::new_from_slice(&key).map_err(|e| anyhow::anyhow!("AES key init: {e}"))?;
+        let ciphertext = cipher
+            .encrypt(Nonce::from_slice(&nonce), share.ys.as_ref())
+            .map_err(|e| anyhow::anyhow!("encrypt failed: {e}"))?;
+
+        Ok(EncryptedCloudShare {
+            version: 1,
+            node_id: node_id.to_string(),
+            share_index: 3,
+            salt_hex: crate::crypto::hex_encode(salt),
+            nonce_hex: crate::crypto::hex_encode(nonce),
+            ciphertext_hex: crate::crypto::hex_encode(ciphertext),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+}
+
+/// Decrypt an `EncryptedCloudShare` using `user_passphrase` into a `ShamirShare`.
+pub fn decrypt_cloud_share_3(
+    encrypted: &EncryptedCloudShare,
+    user_passphrase: &str,
+) -> Result<super::shamir::ShamirShare> {
+    if encrypted.share_index != 3 {
+        anyhow::bail!("invalid share index {}, expected 3", encrypted.share_index);
+    }
+    let salt = crate::crypto::hex_decode(&encrypted.salt_hex)?;
+    let nonce = crate::crypto::hex_decode(&encrypted.nonce_hex)?;
+    let ciphertext = crate::crypto::hex_decode(&encrypted.ciphertext_hex)?;
+
+    if salt.len() != 16 {
+        anyhow::bail!("invalid salt length");
+    }
+    if nonce.len() != 12 {
+        anyhow::bail!("invalid nonce length");
+    }
+
+    let params = Params::new(64 * 1024, 3, 1, Some(32))
+        .map_err(|e| anyhow::anyhow!("argon2 params: {e}"))?;
+    let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let mut key = [0u8; 32];
+    argon
+        .hash_password_into(user_passphrase.as_bytes(), &salt, &mut key)
+        .map_err(|e| anyhow::anyhow!("argon2 hash: {e}"))?;
+
+    let cipher =
+        Aes256Gcm::new_from_slice(&key).map_err(|e| anyhow::anyhow!("AES key init: {e}"))?;
+    let pt = cipher
+        .decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref())
+        .map_err(|_| anyhow::anyhow!("decryption failed: invalid passphrase or corrupted data"))?;
+
+    if pt.len() != 32 {
+        anyhow::bail!("decrypted payload length mismatch, expected 32 bytes");
+    }
+
+    let mut ys = [0u8; 32];
+    ys.copy_from_slice(&pt);
+
+    Ok(super::shamir::ShamirShare {
+        x: encrypted.share_index,
+        ys,
+    })
 }
 
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -211,5 +312,57 @@ mod tests {
         let (_o, keys, _) = store.unlock("222222", None).unwrap();
         assert_eq!(keys.node_id.as_str(), pub_before.node_id);
         assert_eq!(keys.ml_dsa_commitment, original.keys.ml_dsa_commitment);
+    }
+
+    #[test]
+    fn test_cloud_share_encryption_roundtrip() {
+        let bundle = NodeBootstrap::create(None, "123456", None).unwrap();
+        let share_3 = &bundle.shares[2];
+        assert_eq!(share_3.x, 3);
+
+        let passphrase = "my-secret-cloud-passphrase";
+        let node_id = bundle.keys.node_id.as_str();
+
+        let encrypted = NodeStore::prepare_cloud_share_3(share_3, passphrase, node_id).unwrap();
+        assert_eq!(encrypted.version, 1);
+        assert_eq!(encrypted.node_id, node_id);
+        assert_eq!(encrypted.share_index, 3);
+        assert!(!encrypted.ciphertext_hex.is_empty());
+
+        let decrypted = decrypt_cloud_share_3(&encrypted, passphrase).unwrap();
+        assert_eq!(decrypted, *share_3);
+    }
+
+    #[test]
+    fn test_cloud_share_wrong_passphrase_fails() {
+        let bundle = NodeBootstrap::create(None, "123456", None).unwrap();
+        let share_3 = &bundle.shares[2];
+        let passphrase = "correct-passphrase";
+        let node_id = bundle.keys.node_id.as_str();
+
+        let encrypted = NodeStore::prepare_cloud_share_3(share_3, passphrase, node_id).unwrap();
+        let result = decrypt_cloud_share_3(&encrypted, "wrong-passphrase");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cloud_share_invalid_share_index() {
+        let bundle = NodeBootstrap::create(None, "123456", None).unwrap();
+        let share_1 = &bundle.shares[0];
+        assert_eq!(share_1.x, 1);
+
+        let passphrase = "test-passphrase";
+        let node_id = bundle.keys.node_id.as_str();
+
+        // Attempting to prepare share 1 must fail
+        let prep_res = NodeStore::prepare_cloud_share_3(share_1, passphrase, node_id);
+        assert!(prep_res.is_err());
+
+        // Attempting to decrypt an EncryptedCloudShare modified to share_index != 3 must fail
+        let share_3 = &bundle.shares[2];
+        let mut encrypted = NodeStore::prepare_cloud_share_3(share_3, passphrase, node_id).unwrap();
+        encrypted.share_index = 1;
+        let dec_res = decrypt_cloud_share_3(&encrypted, passphrase);
+        assert!(dec_res.is_err());
     }
 }
