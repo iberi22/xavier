@@ -11,6 +11,7 @@ import {
   Layers,
   MessageSquare,
   Network,
+  Palette,
   Play,
   Plug,
   Puzzle,
@@ -30,6 +31,7 @@ import {
   codeViewToCanvas,
   memoryViewToCanvas,
 } from "../api/graphAdapters";
+import AppearancePage from "./AppearancePage";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
 import type { Agent, BookmarkArtifact, GraphData, GraphNode } from "../types";
@@ -61,6 +63,7 @@ interface ConfigModalProps {
 
 type MainTab =
   | "config"
+  | "appearance"
   | "graph"
   | "bookmarks"
   | "providers"
@@ -356,16 +359,22 @@ export default function ConfigModal({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95, y: 10 }}
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className="relative z-20 w-[1000px] h-[650px] max-w-[95vw] rounded-[32px] flex flex-col overflow-hidden shadow-2xl glass"
+      className="relative z-20 w-[1000px] h-[650px] max-w-[95vw] rounded-[24px] flex flex-col overflow-hidden shadow-2xl bg-[#141518]/95 dark:bg-[#141518]/95 backdrop-blur-xl border border-white/[0.06]"
     >
       {/* Top Navigation */}
-      <div className="flex items-center justify-between px-8 py-4 border-b border-white/5 bg-black/40">
-        <div className="flex gap-6 overflow-x-auto">
+      <div className="flex items-center justify-between px-6 py-3 border-b border-white/[0.06] bg-black/20">
+        <div className="flex gap-2 overflow-x-auto py-1">
           <TabButton
             active={mainTab === "config"}
             onClick={() => setMainTab("config")}
             icon={<SettingsIcon />}
             label="Configuration"
+          />
+          <TabButton
+            active={mainTab === "appearance"}
+            onClick={() => setMainTab("appearance")}
+            icon={<Palette className="w-4 h-4" />}
+            label="Appearance"
           />
           <TabButton
             active={mainTab === "providers"}
@@ -447,6 +456,17 @@ export default function ConfigModal({
               graphData={graphData}
               token={token || ""}
             />
+          )}
+          {mainTab === "appearance" && (
+            <motion.div
+              key="appearance"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-hidden"
+            >
+              <AppearancePage />
+            </motion.div>
           )}
           {mainTab === "graph" && (
             <motion.div
@@ -845,17 +865,15 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 pb-1 relative transition-colors duration-300 text-sm font-medium tracking-wide
-        ${active ? "text-[#39ff14]" : "text-white/40 hover:text-white/80"}`}
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full relative transition-all duration-300 text-xs font-medium tracking-wide whitespace-nowrap
+        ${
+          active
+            ? "bg-[#26272b] text-white/90 shadow-sm"
+            : "text-white/40 hover:text-white/80 hover:bg-white/5"
+        }`}
     >
       {icon}
       {label}
-      {active && (
-        <motion.div
-          layoutId="activeTopTab"
-          className="absolute -bottom-[17px] left-0 right-0 h-[2px] bg-[#39ff14] shadow-[0_0_10px_#39ff14]"
-        />
-      )}
     </button>
   );
 }

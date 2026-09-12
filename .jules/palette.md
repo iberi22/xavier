@@ -12,3 +12,6 @@
 ## 2024-05-17 - Added aria-pressed to ThemeToggle
 **Learning:** React component toggle buttons representing state (like a theme toggle) often miss `aria-pressed`, which is important to announce to screen readers whether the toggle is currently active or not. The `ThemeToggle` component in this codebase lacked this attribute.
 **Action:** Always check toggle buttons for an `aria-pressed` attribute when auditing for accessibility.
+## 2026-05-18 - Studio Modal Borderless Elevation & Pill Navigation
+**Learning:** Studio theme modal containers benefit from borderless backdrop-blur card surfaces (`bg-[#141518]/95 border border-white/[0.06] rounded-[24px]`) and pill-shaped active tab buttons (`bg-[#26272b] text-white/90`) to maintain neutral contrast and visual clarity across complex multi-tab dialogs.
+**Action:** Use pill-styled active states and borderless subtle card borders when designing studio configuration modals.
