@@ -281,7 +281,7 @@ pub mod tests {
 
         // Assertions for provider=local and local_llm_* fields
         assert_eq!(s.models.provider, "local");
-        assert_eq!(s.models.local_llm_model, "qwen3-coder");
+        assert_eq!(s.models.local_llm_model, "qwen2.5-coder:7b");
         assert_eq!(s.models.local_llm_url, "http://localhost:11434/v1");
     }
 

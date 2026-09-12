@@ -7,13 +7,13 @@
 //! - **Auth Headers**: By default, no `Authorization` header is sent since Ollama does not require authentication.
 //!   However, if `OLLAMA_API_KEY` or `XAVIER_LOCAL_LLM_API_KEY` is set in the environment,
 //!   that key will be included in a `Bearer` token header.
-//! - **Default Model**: Defaults to `qwen3-coder` (`DEFAULT_LOCAL_MODEL`).
+//! - **Default Model**: Defaults to `qwen2.5-coder:7b` (`DEFAULT_LOCAL_MODEL`).
 
 /// The default local base URL for Ollama's OpenAI-compatible endpoint.
 pub const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
 
 /// The default local model name for code and general assistance.
-pub const DEFAULT_LOCAL_MODEL: &str = "qwen3-coder";
+pub const DEFAULT_LOCAL_MODEL: &str = "qwen2.5-coder:7b";
 
 #[cfg(test)]
 mod tests {

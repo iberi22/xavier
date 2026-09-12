@@ -227,8 +227,7 @@ mod tests {
         )
         .await;
         let body_python = get_json_body(search_python_resp).await;
-        let candidates_python = body_python["result"]["structuredContent"]
-            ["candidates"]
+        let candidates_python = body_python["result"]["structuredContent"]["candidates"]
             .as_array()
             .unwrap();
         let id_python = candidates_python[0]["id"].as_str().unwrap();

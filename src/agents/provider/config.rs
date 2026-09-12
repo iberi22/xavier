@@ -19,7 +19,7 @@ static REACHABILITY_CACHE: LazyLock<Mutex<HashMap<String, (bool, Instant)>>> =
 
 pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
 pub(crate) const DEFAULT_LOCAL_ANTHROPIC_BASE_URL: &str = "http://localhost:11434";
-pub(crate) const DEFAULT_LOCAL_MODEL: &str = "qwen3-coder";
+pub(crate) const DEFAULT_LOCAL_MODEL: &str = "qwen2.5-coder:7b";
 pub(crate) const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub(crate) const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 pub(crate) const DEFAULT_DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com/v1";
