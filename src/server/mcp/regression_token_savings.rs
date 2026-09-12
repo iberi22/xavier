@@ -115,8 +115,7 @@ mod tests {
         )
         .await;
         let body_search = get_json_body(resp_search).await;
-        let candidates_search = body_search["result"]["structuredContent"]
-            ["candidates"]
+        let candidates_search = body_search["result"]["structuredContent"]["candidates"]
             .as_array()
             .unwrap();
         assert!(!candidates_search.is_empty());
