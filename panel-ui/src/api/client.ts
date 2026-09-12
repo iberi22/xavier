@@ -556,6 +556,25 @@ export class ApiClient {
       body: JSON.stringify({ name }),
     });
   }
+
+  // Code Graph Sidecar
+  async getCodeSidecarStatus() {
+    return this.fetch<CodeSidecarStatus>("/code/sidecar/status");
+  }
+
+  async installCodeSidecar(fromSource?: boolean) {
+    return this.fetch<{ status: string; path?: string }>("/code/sidecar/install", {
+      method: "POST",
+      body: JSON.stringify({ from_source: fromSource ?? false }),
+    });
+  }
+}
+
+export interface CodeSidecarStatus {
+  available: boolean;
+  path?: string;
+  version?: string;
+  engine: string;
 }
 
 export interface ProviderConfig {
