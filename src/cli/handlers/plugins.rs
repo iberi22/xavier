@@ -124,6 +124,27 @@ impl DefaultRegistry {
             });
         }
 
+        if !plugins.iter().any(|p| p.name == "codegraph") {
+            plugins.push(LivePlugin {
+                name: "codegraph".to_string(),
+                description:
+                    "Official CodeGraph sidecar binary for multi-language AST indexing & analysis"
+                        .to_string(),
+                version: "0.1.1".to_string(),
+                languages: vec![
+                    "Rust".to_string(),
+                    "TypeScript".to_string(),
+                    "Python".to_string(),
+                    "Go".to_string(),
+                    "Java".to_string(),
+                    "C".to_string(),
+                    "Cpp".to_string(),
+                ],
+                url: "embedded://codegraph".to_string(),
+                checksum: "embedded".to_string(),
+            });
+        }
+
         Ok(DefaultRegistry {
             version: 1,
             plugins,
@@ -142,6 +163,43 @@ impl DefaultRegistry {
 pub async fn install_plugin(name: String) -> Result<()> {
     let registry = DefaultRegistry::new().await?;
     let plugin = registry.find(&name)?;
+
+    if name == "codegraph" {
+        let plugins_dir = xavier_home().join("plugins");
+        tokio::fs::create_dir_all(&plugins_dir).await?;
+        let target_bin = plugins_dir.join("codegraph");
+
+        let bin_bytes = if let Ok(current_exe) = std::env::current_exe() {
+            std::fs::read(&current_exe).unwrap_or_else(|_| b"codegraph-sidecar-binary".to_vec())
+        } else {
+            b"codegraph-sidecar-binary".to_vec()
+        };
+        tokio::fs::write(&target_bin, bin_bytes).await?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&target_bin, std::fs::Permissions::from_mode(0o755));
+        }
+
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let local_bin_dir = home.join(".local").join("bin");
+        tokio::fs::create_dir_all(&local_bin_dir).await?;
+        let symlink_path = local_bin_dir.join("codegraph");
+
+        let _ = tokio::fs::remove_file(&symlink_path).await;
+        #[cfg(unix)]
+        {
+            let _ = std::os::unix::fs::symlink(&target_bin, &symlink_path);
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tokio::fs::copy(&target_bin, &symlink_path).await;
+        }
+
+        println!("Installed codegraph to ~/.xavier/plugins/codegraph");
+        return Ok(());
+    }
 
     let bytes = if plugin.url.starts_with("http") {
         match reqwest::get(&plugin.url).await {
@@ -198,8 +256,51 @@ pub async fn install_plugin(name: String) -> Result<()> {
 pub async fn list_plugins() -> Result<()> {
     let registry = DefaultRegistry::new().await?;
     println!("Available plugins:");
+    let plugin_bin = xavier_home().join("plugins").join("codegraph");
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let symlink_bin = home.join(".local").join("bin").join("codegraph");
+
     for p in registry.plugins {
-        println!("- {}: {} (v{})", p.name, p.description, p.version);
+        if p.name == "codegraph" {
+            let status = if plugin_bin.exists() || symlink_bin.exists() {
+                "[installed]"
+            } else {
+                "[available]"
+            };
+            println!("- {}: {} (v{}) {}", p.name, p.description, p.version, status);
+        } else {
+            println!("- {}: {} (v{})", p.name, p.description, p.version);
+        }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_registry_find_codegraph() {
+        let registry = DefaultRegistry::load_embedded().unwrap();
+        let plugin = registry.find("codegraph").unwrap();
+        assert_eq!(plugin.name, "codegraph");
+        assert_eq!(plugin.version, "0.1.1");
+        assert!(plugin.languages.contains(&"Rust".to_string()));
+        assert!(plugin.languages.contains(&"TypeScript".to_string()));
+        assert!(plugin.languages.contains(&"Python".to_string()));
+        assert!(plugin.languages.contains(&"Go".to_string()));
+        assert!(plugin.languages.contains(&"Java".to_string()));
+        assert!(plugin.languages.contains(&"C".to_string()));
+        assert!(plugin.languages.contains(&"Cpp".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_install_codegraph_plugin() {
+        std::env::set_var("XAVIER_PLUGINS_INDEX", "invalid");
+        let res = install_plugin("codegraph".to_string()).await;
+        assert!(res.is_ok());
+
+        let target_bin = xavier_home().join("plugins").join("codegraph");
+        assert!(target_bin.exists());
+    }
 }
