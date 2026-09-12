@@ -526,9 +526,12 @@ pub async fn handle_core_tool(
                 mcp_protocol: "2026-07-28".to_string(),
             };
 
+            // MCP `isError` = tool EXECUTION failure (spec 2025-06-18+), not host
+            // state: warn/degraded alerts ride inside the payload. Only a hard
+            // unhealthy/critical state marks the result as an error.
             Ok(serde_json::to_value(MCPToolResult::structured(
                 serde_json::to_value(&result)?,
-                health.status != "healthy",
+                matches!(health.status.as_str(), "unhealthy" | "critical"),
             ))?)
         }
         "sys_health" => {
@@ -576,7 +579,7 @@ pub async fn handle_core_tool(
 
             Ok(serde_json::to_value(MCPToolResult::structured(
                 output,
-                overall_alert != "healthy",
+                overall_alert == "critical",
             ))?)
         }
         "log_scan" => {
@@ -625,7 +628,7 @@ pub async fn handle_core_tool(
             let result = crate::self_manage::env_status(args);
             Ok(serde_json::to_value(MCPToolResult::structured(
                 serde_json::to_value(&result)?,
-                result.overall != "healthy",
+                result.overall == "critical",
             ))?)
         }
         "ticket_create" => {
