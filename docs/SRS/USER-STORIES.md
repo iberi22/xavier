@@ -40,6 +40,9 @@
 | US-030 | Maintainer | feat-codegraph-maturity-bridge | REQ-011 |
 | US-031 | SWAL node user | feat-decentralized-login | REQ-008 |
 | US-032 | SWAL node user | feat-decentralized-login | REQ-003 |
+| US-044 | As a user, I want to enter introspection sessions surfaced by Xavier | REQ-049 |
+| US-045 | As a user, I want my training data scrubbed of PII before any export | REQ-050 |
+| US-046 | As an enterprise admin, I want ZDR-verified Colab training jobs | REQ-051 |
 
 ---
 
@@ -338,6 +341,57 @@ As a **user**, I can register my VPS as a private SWAL node over SSH, so that **
 
 - **Feature:** `feat-node-provisioning` · **REQ:** REQ-030
 - **Acceptance:** `xavier nodes add --provider vps --ssh user@host --key ~/.ssh/id_ed25519` installs edge-hive lite; SSH key only in Clavis; node syncs memory+snapshots with session encryption; other wallets cannot join.
+
+---
+
+## US-044: Guided Introspection Sessions
+
+**As a** Xavier user,
+**I want to** browse available introspection sessions detected from my interactions and enter them voluntarily,
+**So that** I can engage in guided deep reflection on decisions and assumptions using professional psychological techniques.
+
+**Acceptance Criteria:**
+- [ ] AC-044.1: Dashboard shows available sessions with technique, topic preview, and depth indicator
+- [ ] AC-044.2: User can enter a session with a single click — LLM immediately begins as guide
+- [ ] AC-044.3: LLM never gives direct answers — only facilitating questions
+- [ ] AC-044.4: Session insights are extractable as curated training data (with consent)
+- [ ] AC-044.5: Session state persists — user can resume incomplete sessions
+
+**Priority:** P2 — Medium | **Effort:** L | **REQ:** REQ-049 | **Wave:** 8
+
+---
+
+## US-045: Privacy-Safe Training Data Export
+
+**As a** Xavier user,
+**I want my** challenge responses and introspection insights to be automatically scrubbed of personal information before being used for model training,
+**So that** I can participate in training improvement without exposing private data.
+
+**Acceptance Criteria:**
+- [ ] AC-045.1: Emails, file paths, and API keys are replaced with [EMAIL], [PATH], [KEY] tokens
+- [ ] AC-045.2: P3 exports (Colab) additionally apply differential privacy noise to confidence scores
+- [ ] AC-045.3: Export is rejected if k-anonymity (k>=3) cannot be satisfied
+- [ ] AC-045.4: Every exported bundle includes a privacy audit report in its manifest
+- [ ] AC-045.5: User sees privacy level label (P2/P3/P4) before confirming export
+
+**Priority:** P1 — High | **Effort:** M | **REQ:** REQ-050, REQ-052 | **Wave:** 8
+
+---
+
+## US-046: Enterprise ZDR Training Jobs
+
+**As an** enterprise administrator,
+**I want to** run training jobs on external compute providers with cryptographic proof that my data was deleted after training,
+**So that** I can satisfy data protection obligations while still benefiting from specialized model training.
+
+**Acceptance Criteria:**
+- [ ] AC-046.1: Training jobs produce a ZdrAuditEntry with pre/post volume hashes
+- [ ] AC-046.2: ZdrAuditEntry::verify() passes before job is marked ZDR-compliant
+- [ ] AC-046.3: ZDR audit log is stored locally with CONFIDENTIAL clearance level
+- [ ] AC-046.4: Enterprise plan users can select RunPod or LambdaLabs as compute provider
+- [ ] AC-046.5: Failed ZDR verification blocks future jobs from that provider until resolved
+
+**Priority:** P2 — Medium | **Effort:** M | **REQ:** REQ-051 | **Wave:** 8
 
 ---
 
