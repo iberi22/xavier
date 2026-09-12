@@ -27,10 +27,36 @@
 //! - **Self-dealing:** Misma seed → transacción rechazada
 //! - **Replay:** Hash SHA-256 único por contexto
 
+use crate::crypto::hmac::hmac_sha256;
 use crate::data_commons::types::*;
+use crate::security::encryption_keys::MasterKeyManager;
+use crate::utils::crypto::{hex_decode, hex_encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use subtle::ConstantTimeEq;
+
+/// Storage envelope wrapping karma records with HMAC-SHA256 integrity verification
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KarmaStorageEnvelope {
+    pub version: u32,
+    pub hmac_hex: String,
+    pub records_json: String,
+}
+
+fn derive_karma_hmac_key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    if let Ok(mkm) = MasterKeyManager::load_or_init() {
+        if mkm.derive_key(b"xavier-karma-hmac-v1", &mut key).is_ok() {
+            return key;
+        }
+    }
+    // Fallback if MasterKeyManager fails to load
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(b"xavier-karma-hmac-v1-fallback-key");
+    hasher.finalize().into()
+}
 
 /// Reputation tier derived from Karma threshold
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,8 +151,45 @@ impl KarmaEngine {
         }
         let data = std::fs::read_to_string(&self.storage_path)
             .map_err(|e| format!("Failed to read karma file: {}", e))?;
-        let records: HashMap<String, AgentKarmaRecord> = serde_json::from_str(&data)
-            .map_err(|e| format!("Failed to parse karma JSON: {}", e))?;
+
+        let envelope: KarmaStorageEnvelope = match serde_json::from_str(&data) {
+            Ok(env) => env,
+            Err(e) => {
+                tracing::error!("Tampering detected in karma.json: invalid envelope structure ({})", e);
+                self.records = HashMap::new();
+                return Ok(());
+            }
+        };
+
+        let key = derive_karma_hmac_key();
+        let expected_hmac = hmac_sha256(&key, envelope.records_json.as_bytes());
+
+        let actual_hmac = match hex_decode(&envelope.hmac_hex) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                tracing::error!("Tampering detected in karma.json: invalid hmac hex");
+                self.records = HashMap::new();
+                return Ok(());
+            }
+        };
+
+        if actual_hmac.len() != expected_hmac.len()
+            || bool::from(expected_hmac.ct_eq(actual_hmac.as_slice())) == false
+        {
+            tracing::error!("Tampering detected in karma.json");
+            self.records = HashMap::new();
+            return Ok(());
+        }
+
+        let records: HashMap<String, AgentKarmaRecord> = match serde_json::from_str(&envelope.records_json) {
+            Ok(recs) => recs,
+            Err(e) => {
+                tracing::error!("Tampering detected in karma.json: invalid records JSON ({})", e);
+                self.records = HashMap::new();
+                return Ok(());
+            }
+        };
+
         self.records = records;
         Ok(())
     }
@@ -138,8 +201,22 @@ impl KarmaEngine {
                 let _ = std::fs::create_dir_all(parent);
             }
         }
-        let json = serde_json::to_string_pretty(&self.records)
+        let records_json = serde_json::to_string_pretty(&self.records)
             .map_err(|e| format!("Failed to serialize karma records: {}", e))?;
+
+        let key = derive_karma_hmac_key();
+        let hmac_bytes = hmac_sha256(&key, records_json.as_bytes());
+        let hmac_hex = hex_encode(&hmac_bytes);
+
+        let envelope = KarmaStorageEnvelope {
+            version: 1,
+            hmac_hex,
+            records_json,
+        };
+
+        let json = serde_json::to_string_pretty(&envelope)
+            .map_err(|e| format!("Failed to serialize karma envelope: {}", e))?;
+
         std::fs::write(&self.storage_path, json)
             .map_err(|e| format!("Failed to write karma file: {}", e))?;
         Ok(())
@@ -745,6 +822,34 @@ mod tests {
         let engine_reloaded = KarmaEngine::with_path(&file_path);
         assert_eq!(engine_reloaded.get_karma(agent), 396);
         assert_eq!(engine_reloaded.get_tier(agent), ReputationTier::Contributor);
+
+        let _ = std::fs::remove_file(file_path);
+    }
+
+    #[test]
+    fn test_karma_tampering_rejected() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join(format!("karma_tamper_test_{}.json", ulid::Ulid::new()));
+        let mut engine = KarmaEngine::with_path(&file_path);
+
+        let agent = "operator_malicious";
+        engine.reward(agent, 100, "initial reward");
+        assert_eq!(engine.get_karma(agent), 100);
+
+        // Read envelope file content
+        let content = std::fs::read_to_string(&file_path).unwrap();
+
+        // Tamper with records_json: change karma 100 to 999999
+        let tampered_content = content.replace("100", "999999");
+        assert_ne!(content, tampered_content);
+
+        // Overwrite karma file on disk with tampered data
+        std::fs::write(&file_path, tampered_content).unwrap();
+
+        // Attempt load with tampered file
+        let tampered_engine = KarmaEngine::with_path(&file_path);
+        // Tampering must be detected, resetting records to empty and karma to 0
+        assert_eq!(tampered_engine.get_karma(agent), 0);
 
         let _ = std::fs::remove_file(file_path);
     }
