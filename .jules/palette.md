@@ -12,3 +12,6 @@
 ## 2024-05-17 - Added aria-pressed to ThemeToggle
 **Learning:** React component toggle buttons representing state (like a theme toggle) often miss `aria-pressed`, which is important to announce to screen readers whether the toggle is currently active or not. The `ThemeToggle` component in this codebase lacked this attribute.
 **Action:** Always check toggle buttons for an `aria-pressed` attribute when auditing for accessibility.
+## 2025-03-08 - [Ola Theme.08] Command Dock & Bordered Interactive Actions
+**Learning:** Replaced hardcoded neon green focus rings and unbounded hover states with subtle theme-aware studio capsule styling (`bg-[#151619]/90 border border-white/[0.06]`) and bordered action chips (`border border-white/10 hover:bg-white/[0.06] press-attenuation`).
+**Action:** Use responsive item sizing (`w-10 h-10 sm:w-11 sm:h-11`, `shrink-0`) and theme-neutral indicators when building studio floating input bars.
