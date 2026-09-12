@@ -11,6 +11,7 @@ import {
   Layers,
   MessageSquare,
   Network,
+  Palette,
   Play,
   Plug,
   Puzzle,
@@ -18,6 +19,7 @@ import {
   Server,
   Share2,
   Shield,
+  Sliders,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -30,6 +32,7 @@ import {
   codeViewToCanvas,
   memoryViewToCanvas,
 } from "../api/graphAdapters";
+import { useTheme } from "../lib/theme/theme-provider";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
 import type { Agent, BookmarkArtifact, GraphData, GraphNode } from "../types";
@@ -61,6 +64,7 @@ interface ConfigModalProps {
 
 type MainTab =
   | "config"
+  | "appearance"
   | "graph"
   | "bookmarks"
   | "providers"
@@ -73,6 +77,149 @@ type MainTab =
   | "plugins";
 
 type SubLayer = "roadmap" | "memory" | "code";
+
+export function AppearanceSettings() {
+  const { theme, setTheme } = useTheme();
+  const [iconBorders, setIconBorders] = useState(true);
+  const [attenuation, setAttenuation] = useState(false);
+
+  const themeCards = [
+    {
+      id: "studio-dark",
+      name: "Studio Dark",
+      description: "Default dark theme for low-light environments",
+      color: "bg-[#0d0d0d] border-white/20",
+    },
+    {
+      id: "studio-bone",
+      name: "Studio Bone",
+      description: "High contrast light mode theme",
+      color: "bg-[#f6f3ea] text-black border-black/20",
+    },
+    {
+      id: "cyberpunk",
+      name: "Cyberpunk",
+      description: "High-energy neon theme with legacy tokens",
+      color: "bg-[#050014] text-[#39ff14] border-[#39ff14]/40",
+    },
+  ];
+
+  return (
+    <div className="p-8 space-y-8 max-w-4xl h-full overflow-y-auto">
+      <div>
+        <h2 className="text-3xl font-light text-white tracking-tight">
+          Appearance & System Redesign
+        </h2>
+        <p className="text-sm text-white/40 mt-1">
+          Customize visual theme, neon tokens, and interface micro-interactions.
+        </p>
+      </div>
+
+      {/* Theme Cards Selection */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-white/60">
+          Theme Presets
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4" role="radiogroup" aria-label="Theme selection">
+          {themeCards.map((card) => {
+            const isActive = theme === card.id;
+            return (
+              <button
+                key={card.id}
+                type="button"
+                role="radio"
+                aria-checked={isActive}
+                aria-label={`Select ${card.name} theme`}
+                onClick={() => setTheme(card.id)}
+                className={`p-5 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-36 ${card.color} ${
+                  isActive
+                    ? "ring-2 ring-[#39ff14] shadow-[0_0_20px_rgba(57,255,20,0.3)] scale-[1.02]"
+                    : "opacity-70 hover:opacity-100 hover:scale-[1.01]"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold text-base">{card.name}</span>
+                    {isActive && (
+                      <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded bg-[#39ff14] text-black">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs opacity-70 leading-relaxed">
+                    {card.description}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Micro-interaction Toggles */}
+      <div className="space-y-4 pt-4 border-t border-white/10">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-white/60">
+          Micro-Interactions
+        </h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-4 rounded-xl bg-black/40 border border-white/10">
+            <div>
+              <h4 className="text-white text-sm font-medium">Icon Borders</h4>
+              <p className="text-xs text-white/40">
+                Display subtle border outlines around UI icons and buttons
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={iconBorders}
+              aria-label="Toggle icon borders"
+              onClick={() => setIconBorders(!iconBorders)}
+              className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
+                iconBorders
+                  ? "bg-[#39ff14] shadow-[0_0_15px_rgba(57,255,20,0.4)]"
+                  : "bg-white/10"
+              }`}
+            >
+              <div
+                className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform duration-300 ${
+                  iconBorders ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-4 rounded-xl bg-black/40 border border-white/10">
+            <div>
+              <h4 className="text-white text-sm font-medium">Attenuation</h4>
+              <p className="text-xs text-white/40">
+                Enable motion attenuation and background visual dampening
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={attenuation}
+              aria-label="Toggle attenuation"
+              onClick={() => setAttenuation(!attenuation)}
+              className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
+                attenuation
+                  ? "bg-[#39ff14] shadow-[0_0_15px_rgba(57,255,20,0.4)]"
+                  : "bg-white/10"
+              }`}
+            >
+              <div
+                className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform duration-300 ${
+                  attenuation ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ConfigModal({
   onClose,
@@ -93,15 +240,6 @@ export default function ConfigModal({
   const [endDate, setEndDate] = useState<string>("");
   const [selectedMilestone, setSelectedMilestone] = useState<string>("all");
 
-  /**
-   * ⚡ Bolt Performance Optimization
-   *
-   * 💡 What: Replaced multiple array allocations (map, filter) with a single-pass reduce and wrapped in useMemo.
-   * 🎯 Why: The original code chained `.map()` and `.filter()` on every render, causing O(N) array allocations
-   *         for each step. By using `.reduce()` and `useMemo`, we avoid re-calculating this on unrelated state
-   *         changes (like switching tabs) and do the work in a single pass.
-   * 📊 Impact: O(1) evaluation on non-graph data updates. Replaces multiple intermediate O(N) allocations with a single O(N) pass.
-   */
   const milestones = useMemo(() => {
     return Array.from(
       graphData.nodes.reduce((acc, n) => {
@@ -125,7 +263,6 @@ export default function ConfigModal({
     return { nodes, links };
   }, [graphData, startDate, endDate, selectedMilestone]);
 
-  /** Apply GraphView edits to the full roadmap so filters never drop hidden nodes. */
   const handleFilteredGraphUpdate = useCallback(
     (updated: GraphData) => {
       const visibleIds = new Set(filteredGraphData.nodes.map((n) => n.id));
@@ -145,7 +282,6 @@ export default function ConfigModal({
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [isMemoryTruncated, setIsMemoryTruncated] = useState(false);
 
-  // Fetch memory graph view
   const fetchMemoryGraph = useCallback(async () => {
     setMemoryLoading(true);
     setMemoryError(null);
@@ -180,7 +316,6 @@ export default function ConfigModal({
     }
   }, [token]);
 
-  // Fetch specific entity detail (GET /memory/graph/entities/{id})
   const fetchMemoryNodeDetail = useCallback(
     async (node: GraphNode) => {
       try {
@@ -222,7 +357,6 @@ export default function ConfigModal({
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeEgoQuery, setCodeEgoQuery] = useState<string | null>(null);
 
-  // Fetch code stats and graph view
   const fetchCodeStatsAndGraph = useCallback(
     async (query: string | null = null) => {
       setCodeLoading(true);
@@ -232,7 +366,6 @@ export default function ConfigModal({
           typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
         const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
 
-        // 1. Fetch Stats
         const activeWorkspace =
           typeof localStorage !== "undefined"
             ? localStorage.getItem("xavier_active_workspace") || "default"
@@ -248,7 +381,6 @@ export default function ConfigModal({
         const stats = await statsRes.json();
         setCodeStats(stats);
 
-        // 2. Fetch graph if symbols exist
         if (stats.total_symbols > 0 || stats.total_files > 0) {
           const mode = query ? "ego" : "overview";
           let url = `${baseUrl}/code/graph/view?mode=${mode}`;
@@ -277,7 +409,6 @@ export default function ConfigModal({
     [token],
   );
 
-  // Scan Codebase
   const handleScanCodebase = async () => {
     setCodeLoading(true);
     setCodeError(null);
@@ -307,7 +438,6 @@ export default function ConfigModal({
     }
   };
 
-  // Expand Ego Graph
   const handleNodeExpand = (node: GraphNode) => {
     setCodeEgoQuery(node.id);
     void fetchCodeStatsAndGraph(node.id);
@@ -318,7 +448,6 @@ export default function ConfigModal({
     void fetchCodeStatsAndGraph(null);
   };
 
-  // Trigger loading based on sub-layer switches & workspace changes
   useEffect(() => {
     if (mainTab === "graph") {
       if (subLayer === "memory") {
@@ -366,6 +495,12 @@ export default function ConfigModal({
             onClick={() => setMainTab("config")}
             icon={<SettingsIcon />}
             label="Configuration"
+          />
+          <TabButton
+            active={mainTab === "appearance"}
+            onClick={() => setMainTab("appearance")}
+            icon={<Palette className="w-4 h-4" />}
+            label="Appearance"
           />
           <TabButton
             active={mainTab === "providers"}
@@ -448,6 +583,17 @@ export default function ConfigModal({
               token={token || ""}
             />
           )}
+          {mainTab === "appearance" && (
+            <motion.div
+              key="appearance"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-hidden"
+            >
+              <AppearanceSettings />
+            </motion.div>
+          )}
           {mainTab === "graph" && (
             <motion.div
               key="graph"
@@ -456,7 +602,7 @@ export default function ConfigModal({
               exit={{ opacity: 0 }}
               className="w-full h-full relative flex flex-col"
             >
-              {/* Sub-tab list switcher inside graph section (Accessible WAI-ARIA) */}
+              {/* Sub-tab list switcher inside graph section */}
               <div className="flex items-center justify-between px-8 py-3 bg-[#0a0a0a]/80 border-b border-white/5 shrink-0 z-40">
                 <div
                   role="tablist"
@@ -531,7 +677,6 @@ export default function ConfigModal({
                   </button>
                 </div>
 
-                {/* Additional controls depending on sub-layer */}
                 {subLayer === "code" && codeEgoQuery && (
                   <button
                     type="button"
@@ -644,7 +789,6 @@ export default function ConfigModal({
                     aria-labelledby="tab-sub-code"
                     className="w-full h-full relative"
                   >
-                    {/* Empty stats scan CTA */}
                     {codeStats &&
                     codeStats.total_symbols === 0 &&
                     !codeLoading ? (
@@ -716,7 +860,6 @@ export default function ConfigModal({
               exit={{ opacity: 0 }}
               className="w-full h-full overflow-y-auto"
             >
-              {/* Embedded messaging config — no close button, no backdrop */}
               <div className="p-6 h-full flex flex-col">
                 <div className="mb-4">
                   <h2 className="text-2xl font-light text-white tracking-tight">
@@ -822,7 +965,6 @@ function SettingsIcon() {
   );
 }
 
-/** Embedded version rendered inside ConfigModal (no backdrop/close button) */
 function MessagingEmbedded() {
   return (
     <div className="w-full h-full">
@@ -963,7 +1105,7 @@ function ConfigView({
 
     graphData.nodes.forEach((n) => {
       if (!visited.has(n.id)) {
-        depthCount[0] = (depthCount[0] || 0) + 1; // Unconnected or cyclical
+        depthCount[0] = (depthCount[0] || 0) + 1;
       }
     });
 
@@ -1279,8 +1421,6 @@ function ConfigView({
   );
 }
 
-// ------ Reusable UI Components ------
-
 function ToggleRow({
   label,
   description,
@@ -1353,13 +1493,11 @@ function SliderInput({
           onChange={(e) => setValue(Number(e.target.value))}
           className="w-full h-1 bg-[#1a1a1a] rounded-lg appearance-none cursor-pointer absolute top-1/2 -translate-y-1/2 z-10 opacity-0 w-full"
         />
-        {/* Custom Track */}
         <div className="w-full h-1 bg-[#1a1a1a] rounded-lg relative overflow-visible">
           <div
             className="h-full bg-[#39ff14] rounded-lg shadow-[0_0_10px_#39ff14]"
             style={{ width: `${percentage}%` }}
           />
-          {/* Thumb */}
           <div
             className="w-4 h-4 bg-white rounded-full absolute top-1/2 -translate-y-1/2 shadow-[0_0_15px_rgba(57,255,20,0.8)] border-2 border-[#39ff14] pointer-events-none"
             style={{ left: `calc(${percentage}% - 8px)` }}

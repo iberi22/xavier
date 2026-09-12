@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-export type Theme = "dark" | "light" | "system";
+export type Theme =
+  | "dark"
+  | "light"
+  | "system"
+  | "studio-dark"
+  | "studio-bone"
+  | "cyberpunk"
+  | string;
 
 export interface ThemeProviderProps {
   children: React.ReactNode;
@@ -13,16 +20,11 @@ export interface ThemeProviderState {
   setTheme: (theme: Theme) => void;
 }
 
-const initialState: ThemeProviderState = {
-  theme: "dark",
-  setTheme: () => null,
-};
-
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
+const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undefined);
 
 export function ThemeProvider({
   children,
-  defaultTheme = "dark",
+  defaultTheme = "studio-dark",
   storageKey = "vite-ui-theme",
   ...props
 }: ThemeProviderProps) {
@@ -33,7 +35,18 @@ export function ThemeProvider({
   useEffect(() => {
     const root = window.document.documentElement;
 
-    root.classList.remove("light", "dark");
+    root.classList.remove(
+      "light",
+      "dark",
+      "studio-dark",
+      "studio-bone",
+      "cyberpunk",
+      "neon-legacy-tokens",
+    );
+    root.removeAttribute("data-theme");
+    root.removeAttribute("data-neon-tokens");
+
+    root.setAttribute("data-theme", theme);
 
     if (theme === "system") {
       const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
@@ -45,7 +58,16 @@ export function ThemeProvider({
       return;
     }
 
-    root.classList.add(theme);
+    if (theme === "studio-bone" || theme === "light") {
+      root.classList.add("light", "studio-bone");
+    } else if (theme === "cyberpunk") {
+      root.classList.add("dark", "cyberpunk", "neon-legacy-tokens");
+      root.setAttribute("data-neon-tokens", "true");
+    } else if (theme === "studio-dark" || theme === "dark") {
+      root.classList.add("dark", "studio-dark");
+    } else {
+      root.classList.add(theme);
+    }
   }, [theme]);
 
   const value = {
