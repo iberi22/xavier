@@ -192,8 +192,5 @@ async fn test_codegraph_http_status_endpoint() {
     assert_eq!(json_val["status"], "ok");
     assert!(json_val["sidecar"].is_object());
     assert_eq!(json_val["sidecar"]["available"], false);
-    assert!(!json_val["sidecar"]["message"]
-        .as_str()
-        .unwrap()
-        .is_empty());
+    assert!(!json_val["sidecar"]["message"].as_str().unwrap().is_empty());
 }

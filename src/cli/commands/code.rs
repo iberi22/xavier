@@ -47,7 +47,10 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 println!("  Path:     {}", path.display());
             }
             println!("  Version:  {}", outcome.version);
-            println!("  Verified: {}", if outcome.verified { "yes" } else { "no" });
+            println!(
+                "  Verified: {}",
+                if outcome.verified { "yes" } else { "no" }
+            );
             println!("  Status:   {}", outcome.message);
         }
         return Ok(());

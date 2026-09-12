@@ -69,7 +69,19 @@ pub fn resolve_codegraph_binary() -> Option<PathBuf> {
 
     // Check workspace target directory if code-graph repository / crate is present locally
     let cwd = std::env::current_dir().unwrap_or_default();
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let tmp_xavier = PathBuf::from("/tmp/xavier-target");
+            if tmp_xavier.exists() {
+                tmp_xavier
+            } else {
+                cwd.join("target")
+            }
+        });
     let candidates = [
+        target_dir.join("release").join("code-graph"),
+        target_dir.join("debug").join("code-graph"),
         cwd.join("target").join("release").join("code-graph"),
         cwd.join("target").join("debug").join("code-graph"),
     ];
@@ -187,10 +199,36 @@ pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
             status
         );
 
-        let built_binary = Path::new("target").join("release").join("code-graph");
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                let tmp_xavier = PathBuf::from("/tmp/xavier-target");
+                if tmp_xavier.exists() {
+                    tmp_xavier
+                } else {
+                    cwd.join("target")
+                }
+            });
+
+        let built_binary = if target_dir.join("release").join("code-graph").exists() {
+            target_dir.join("release").join("code-graph")
+        } else if Path::new("target")
+            .join("release")
+            .join("code-graph")
+            .exists()
+        {
+            Path::new("target").join("release").join("code-graph")
+        } else if target_dir.join("debug").join("code-graph").exists() {
+            target_dir.join("debug").join("code-graph")
+        } else {
+            Path::new("target").join("debug").join("code-graph")
+        };
+
         ensure!(
             built_binary.exists(),
-            "Built binary not found at target/release/code-graph"
+            "Built binary not found at target/release/code-graph or {}",
+            target_dir.join("release").join("code-graph").display()
         );
 
         let target_bin = local_bin_dir.join("codegraph");
@@ -366,9 +404,14 @@ pub fn install_codegraph_sidecar_sync(from_source: bool) -> Result<SidecarInstal
             let report = get_sidecar_health_status();
             Ok(SidecarInstallOutcome {
                 success: true,
-                message: format!("CodeGraph sidecar installed successfully at {}", bin_path.display()),
+                message: format!(
+                    "CodeGraph sidecar installed successfully at {}",
+                    bin_path.display()
+                ),
                 bin_path: Some(bin_path),
-                version: report.version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
+                version: report
+                    .version
+                    .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
                 verified: report.executable,
             })
         }
