@@ -12,3 +12,7 @@
 ## 2024-05-17 - Added aria-pressed to ThemeToggle
 **Learning:** React component toggle buttons representing state (like a theme toggle) often miss `aria-pressed`, which is important to announce to screen readers whether the toggle is currently active or not. The `ThemeToggle` component in this codebase lacked this attribute.
 **Action:** Always check toggle buttons for an `aria-pressed` attribute when auditing for accessibility.
+
+## 2026-09-12 - [Responsive Bottom Sheet Drawer Safe Area Insets]
+**Learning:** Mobile PWA drawers and modals must account for device safe areas (dynamic islands, gesture bars) using CSS `env(safe-area-inset-bottom)` along with viewport meta tag `viewport-fit=cover`. Providing WAI-ARIA `role="dialog"` and `aria-modal="true"` along with Escape key listeners ensures mobile modal interactions remain accessible.
+**Action:** When adding bottom sheets or modals, wrap bottom padding in `pb-[env(safe-area-inset-bottom)]` and ensure `viewport-fit=cover` is set in `index.html`.
