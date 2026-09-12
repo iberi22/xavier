@@ -6,13 +6,53 @@
 use crate::cli::codegraph_sync::{sync_codegraph_from_git, GitSyncOptions};
 use crate::cli::commands::enums::{CodeCommand, CODE_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
-use xavier::codebase::codegraph_sidecar::{ensure_codegraph_sidecar, EnsureOptions, InstallMode};
+use xavier::codebase::codegraph_sidecar::{
+    ensure_codegraph_sidecar, install_codegraph_sidecar_sync, EnsureOptions, InstallMode,
+    SidecarInstallOutcome,
+};
 
 use anyhow::{bail, Result};
 use std::path::PathBuf;
 
 /// Dispatch a [`CodeCommand`] by making the appropriate HTTP request to the Xavier server.
 pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
+    // Install sidecar runs locally (no HTTP server required).
+    if let CodeCommand::Install {
+        from_source,
+        force: _,
+        json,
+    } = &cmd
+    {
+        if !*json {
+            eprintln!(
+                "[codegraph] Installing CodeGraph sidecar binary (from_source={})...",
+                from_source
+            );
+        }
+        let outcome: SidecarInstallOutcome = install_codegraph_sidecar_sync(*from_source)?;
+        if *json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "status": if outcome.success { "ok" } else { "error" },
+                    "installed_path": outcome.bin_path.as_ref().map(|p| p.display().to_string()),
+                    "version": outcome.version,
+                    "verified": outcome.verified,
+                    "message": outcome.message,
+                }))?
+            );
+        } else {
+            println!("CodeGraph sidecar installation complete:");
+            if let Some(path) = &outcome.bin_path {
+                println!("  Path:     {}", path.display());
+            }
+            println!("  Version:  {}", outcome.version);
+            println!("  Verified: {}", if outcome.verified { "yes" } else { "no" });
+            println!("  Status:   {}", outcome.message);
+        }
+        return Ok(());
+    }
+
     // Git sync runs locally against the CodeGraph DB (no HTTP server required).
     if let CodeCommand::Sync {
         git,
@@ -199,6 +239,7 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .send()
                 .await?
         }
+        CodeCommand::Install { .. } => unreachable!("Install handled above"),
         CodeCommand::Sync { .. } => unreachable!("Sync handled above"),
     };
 
@@ -271,4 +312,31 @@ async fn soft_dump(
         xavier::codebase::codegraph_paths::codegraph_dump_path_for(std::path::Path::new(path));
     println!("Portable code graph dumped to {}", resolved_path.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_install_codegraph_sidecar_human_output() {
+        let cmd = CodeCommand::Install {
+            from_source: false,
+            force: false,
+            json: false,
+        };
+        let res = handle_code_command(cmd).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_install_codegraph_sidecar_json_output() {
+        let cmd = CodeCommand::Install {
+            from_source: true,
+            force: true,
+            json: true,
+        };
+        let res = handle_code_command(cmd).await;
+        assert!(res.is_ok());
+    }
 }

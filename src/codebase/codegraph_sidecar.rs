@@ -332,6 +332,56 @@ pub fn maybe_sync_colby_project(_path: &Path, _bin: &Path) {
     // No-op stub
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SidecarInstallOutcome {
+    pub success: bool,
+    pub message: String,
+    pub bin_path: Option<PathBuf>,
+    pub version: String,
+    pub verified: bool,
+}
+
+pub fn install_codegraph_sidecar_sync(from_source: bool) -> Result<SidecarInstallOutcome> {
+    let path_res = if let Ok(_handle) = tokio::runtime::Handle::try_current() {
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(install_codegraph_sidecar(from_source))
+            })
+            .join()
+            .unwrap()
+        })
+    } else {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(install_codegraph_sidecar(from_source))
+    };
+
+    match path_res {
+        Ok(bin_path) => {
+            let report = get_sidecar_health_status();
+            Ok(SidecarInstallOutcome {
+                success: true,
+                message: format!("CodeGraph sidecar installed successfully at {}", bin_path.display()),
+                bin_path: Some(bin_path),
+                version: report.version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
+                verified: report.executable,
+            })
+        }
+        Err(e) => Ok(SidecarInstallOutcome {
+            success: false,
+            message: format!("CodeGraph sidecar install failed: {}", e),
+            bin_path: None,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            verified: false,
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
