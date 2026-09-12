@@ -772,6 +772,18 @@ pub enum IssueCommand {
 /// Code graph query subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum CodeCommand {
+    /// Install direct CodeGraph binary / sidecar
+    Install {
+        /// Build/install from local source repository instead of pre-built release binary
+        #[arg(long)]
+        from_source: bool,
+        /// Force re-installation even if already present and up to date
+        #[arg(long)]
+        force: bool,
+        /// Output progress and status as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Scan and index a codebase path
     Scan {
         path: String,
