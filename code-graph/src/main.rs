@@ -357,6 +357,10 @@ struct Cli {
     #[arg(long, env = "CODE_GRAPH_HOST", default_value = "0.0.0.0")]
     host: String,
 
+    /// Unix domain socket path (env: CODE_GRAPH_SOCKET)
+    #[arg(long, env = "CODE_GRAPH_SOCKET")]
+    socket: Option<PathBuf>,
+
     /// Database path (env: CODE_GRAPH_DB_PATH)
     #[arg(long, env = "CODE_GRAPH_DB_PATH")]
     db_path: Option<PathBuf>,
@@ -368,7 +372,18 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Start HTTP server (default when no command)
-    Serve,
+    Serve {
+        /// Unix domain socket path
+        #[arg(long)]
+        socket: Option<PathBuf>,
+    },
+
+    /// Start server listening on a Unix domain socket
+    SocketServe {
+        /// Unix domain socket path
+        #[arg(long, short)]
+        socket: PathBuf,
+    },
 
     /// Scan and index a codebase (CLI mode)
     Scan {
@@ -419,12 +434,26 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Server mode
-    if cli.command.is_none() || matches!(cli.command, Some(Commands::Serve)) {
-        let is_loopback = is_loopback_host(&cli.host);
+    let is_server_mode = cli.command.is_none()
+        || matches!(
+            cli.command,
+            Some(Commands::Serve { .. }) | Some(Commands::SocketServe { .. })
+        );
+
+    if is_server_mode {
+        let socket_path = match &cli.command {
+            Some(Commands::SocketServe { socket }) => Some(socket.clone()),
+            Some(Commands::Serve { socket }) => socket.clone().or_else(|| cli.socket.clone()),
+            None => cli.socket.clone(),
+            _ => None,
+        };
+
+        let is_uds = socket_path.is_some();
+        let is_loopback = is_uds || is_loopback_host(&cli.host);
 
         // Token resolution: explicit flag/env wins. Otherwise, when binding to
         // a non-loopback address we refuse the known-public default and generate
-        // a fresh random token instead. On loopback the default is still allowed
+        // a fresh random token instead. On loopback or UDS the default is still allowed
         // (local-only development) but warns loudly.
         let default_token = "default-token-change-me".to_string();
         let mut token = cli
@@ -436,7 +465,7 @@ async fn main() -> anyhow::Result<()> {
         if token == default_token {
             if is_loopback {
                 eprintln!(
-                    "⚠️  WARNING: Using the known-public default token on loopback. \
+                    "⚠️  WARNING: Using the known-public default token on loopback/UDS. \
                      Set CODE_GRAPH_TOKEN for anything beyond local development."
                 );
             } else {
@@ -503,15 +532,19 @@ async fn main() -> anyhow::Result<()> {
         println!("  GET  /code/stats       - Get index statistics (auth required)");
         println!("  [Plugin Management API mounted at /api/v1/plugins]");
 
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(listener, app).await?;
+        if let Some(ref path) = socket_path {
+            run_uds_server(path, app).await?;
+        } else {
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            axum::serve(listener, app).await?;
+        }
 
         return Ok(());
     }
 
     // CLI mode
     match cli.command.expect("test assertion") {
-        Commands::Serve => unreachable!(),
+        Commands::Serve { .. } | Commands::SocketServe { .. } => unreachable!(),
 
         Commands::Scan {
             path,
@@ -560,4 +593,206 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+// ============================================================================
+// UDS Server & Helper Functions
+// ============================================================================
+
+/// Helper guard to delete socket file on drop or shutdown
+struct SocketCleanupGuard<'a>(&'a Path);
+
+impl<'a> Drop for SocketCleanupGuard<'a> {
+    fn drop(&mut self) {
+        if self.0.exists() {
+            if let Err(e) = std::fs::remove_file(self.0) {
+                tracing::warn!(
+                    "Failed to remove socket file {:?} on shutdown: {}",
+                    self.0,
+                    e
+                );
+            } else {
+                println!("🧹 Cleaned up socket file {:?}", self.0);
+            }
+        }
+    }
+}
+
+/// Run Axum server over a Unix Domain Socket with a custom shutdown signal
+async fn run_uds_server_with_shutdown<F>(
+    socket_path: &Path,
+    app: axum::Router,
+    shutdown: F,
+) -> anyhow::Result<()>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    // Auto-cleanup existing socket file on startup
+    if socket_path.exists() {
+        if let Err(e) = std::fs::remove_file(socket_path) {
+            tracing::warn!(
+                "Failed to remove existing socket file at {:?}: {}",
+                socket_path,
+                e
+            );
+        }
+    }
+
+    // Ensure parent directory exists
+    if let Some(parent) = socket_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
+    let listener = tokio::net::UnixListener::bind(socket_path)?;
+
+    // Set file permissions (0600 on Unix)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let permissions = std::fs::Permissions::from_mode(0o600);
+        if let Err(e) = std::fs::set_permissions(socket_path, permissions) {
+            tracing::warn!(
+                "Failed to set 0600 permissions on socket file {:?}: {}",
+                socket_path,
+                e
+            );
+        }
+    }
+
+    let _cleanup_guard = SocketCleanupGuard(socket_path);
+
+    println!("🚀 Starting code-graph UDS server");
+    println!("📍 Socket: unix://{}", socket_path.display());
+
+    let auto_builder =
+        hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+
+    tokio::pin!(shutdown);
+
+    loop {
+        tokio::select! {
+            res = listener.accept() => {
+                match res {
+                    Ok((stream, _addr)) => {
+                        let io = hyper_util::rt::TokioIo::new(stream);
+                        let service = hyper_util::service::TowerToHyperService::new(app.clone());
+                        let builder = auto_builder.clone();
+                        tokio::spawn(async move {
+                            if let Err(err) = builder.serve_connection(io, service).await {
+                                tracing::debug!("UDS connection error: {}", err);
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("UnixListener accept error: {}", e);
+                    }
+                }
+            }
+            _ = &mut shutdown => {
+                println!("\n🛑 Shutdown signal received, closing UDS server");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Run Axum server over a Unix Domain Socket with default ctrl-c shutdown signal
+async fn run_uds_server(socket_path: &Path, app: axum::Router) -> anyhow::Result<()> {
+    run_uds_server_with_shutdown(socket_path, app, async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::routing::get;
+
+    #[tokio::test]
+    async fn test_uds_server_lifecycle_and_request() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let socket_path = temp_dir.path().join("test_code_graph.sock");
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+        let app = axum::Router::new().route("/health", get(health));
+
+        let socket_path_clone = socket_path.clone();
+        let server_handle = tokio::spawn(async move {
+            run_uds_server_with_shutdown(&socket_path_clone, app, async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+        });
+
+        // Give the server a moment to bind and start listening
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        assert!(
+            socket_path.exists(),
+            "Socket file should exist after server bind"
+        );
+
+        // Connect to UDS and send a raw HTTP request
+        let stream = tokio::net::UnixStream::connect(&socket_path).await?;
+        let io = hyper_util::rt::TokioIo::new(stream);
+
+        let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
+        tokio::spawn(async move {
+            if let Err(err) = conn.await {
+                eprintln!("Client connection error: {:?}", err);
+            }
+        });
+
+        let req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/health")
+            .header("Host", "localhost")
+            .body(axum::body::Body::empty())?;
+
+        let res = sender.send_request(req).await?;
+        assert_eq!(res.status(), axum::http::StatusCode::OK);
+
+        let body = axum::body::Body::new(res.into_body());
+        let body_bytes = axum::body::to_bytes(body, usize::MAX).await?;
+        let health_res: HealthResponse = serde_json::from_slice(&body_bytes)?;
+        assert_eq!(health_res.status, "ok");
+
+        // Trigger shutdown
+        let _ = shutdown_tx.send(());
+        server_handle.await??;
+
+        // Verify auto-cleanup on shutdown
+        assert!(
+            !socket_path.exists(),
+            "Socket file should be removed after server shutdown"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cli_socket_parsing() {
+        let cli = Cli::parse_from(["code-graph", "--socket", "/tmp/cg_test.sock"]);
+        assert_eq!(cli.socket, Some(PathBuf::from("/tmp/cg_test.sock")));
+
+        let cli_sub = Cli::parse_from([
+            "code-graph",
+            "socket-serve",
+            "--socket",
+            "/tmp/sub_test.sock",
+        ]);
+        assert!(
+            matches!(cli_sub.command, Some(Commands::SocketServe { ref socket }) if socket == &PathBuf::from("/tmp/sub_test.sock"))
+        );
+    }
 }
