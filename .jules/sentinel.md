@@ -16,3 +16,7 @@
 **Vulnerability:** The F12 API handlers in `src/server/f12_routes.rs` validate path parameters like `id` and `repo` using `.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))`. This check permits strings containing `.` which allows directory traversal payloads like `..`
 **Learning:** Checking character by character (whitelisting alphanumeric + `.` + `-` + `_`) isn't sufficient when the order of those characters can create dangerous strings like `..` which can be used to escape the intended directory.
 **Prevention:** Always check for `..` specifically when `.` is allowed in a path parameter, or even better, use safe path resolution methods like `std::path::Path::canonicalize` and check if it starts with the expected base directory.
+## 2026-09-11 - Fixed path traversal vulnerability in API path variables
+**Vulnerability:** Multiple API routes using `Path(id)` and `Path(session_id)` allowed `..` in the `is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-\)` checks, which could lead to path traversal.
+**Learning:** When validating IDs that can be mapped to files or paths, checking for valid characters (like `.`) is not enough; explicit checks for path traversal sequences like `..` must be included.
+**Prevention:** Ensure all custom string validation for path identifiers explicitly reject `..` (e.g., `id.contains("..")`).
