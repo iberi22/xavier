@@ -519,6 +519,52 @@ impl Default for NotificationManager {
 pub static NOTIFICATIONS: std::sync::LazyLock<NotificationManager> =
     std::sync::LazyLock::new(NotificationManager::new);
 
+/// Emits a notification to the specified island asynchronously.
+pub async fn emit_island_event(
+    island_id: IslandId,
+    title: &str,
+    body: &str,
+    severity: &str,
+) -> Result<Notification> {
+    NOTIFICATIONS.notify(island_id, title, body, severity).await
+}
+
+/// Emits a notification to the specified island synchronously without blocking the calling thread.
+///
+/// Spawns an async task on the current Tokio runtime (or a new thread/runtime if none is running).
+pub fn emit_island_event_sync(
+    island_id: IslandId,
+    title: impl Into<String>,
+    body: impl Into<String>,
+    severity: impl Into<String>,
+) {
+    let title = title.into();
+    let body = body.into();
+    let severity = severity.into();
+
+    let fut = async move {
+        let _ = NOTIFICATIONS
+            .notify(island_id, &title, &body, &severity)
+            .await;
+    };
+
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(fut);
+    } else {
+        std::thread::Builder::new()
+            .name("xavier-notify-event".into())
+            .spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    rt.block_on(fut);
+                }
+            })
+            .ok();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

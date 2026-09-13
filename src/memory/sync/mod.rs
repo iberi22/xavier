@@ -284,6 +284,19 @@ impl PeerMemorySync {
             .write()
             .await
             .insert(peer_url.to_string(), Utc::now());
+
+        let _ = crate::notifications::NOTIFICATIONS
+            .notify(
+                crate::notifications::IslandId::Memory,
+                "Memory Sync Completed",
+                &format!(
+                    "Synced with {}: sent {} chunks, received {} chunks ({}ms)",
+                    peer_url, chunks_sent, chunks_received, duration_ms
+                ),
+                "info",
+            )
+            .await;
+
         Ok(session)
     }
 
