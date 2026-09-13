@@ -168,7 +168,7 @@ fn pct_encode(s: &str) -> String {
 /// Decodes base64url encoded string.
 fn b64url_decode(s: &str) -> Option<Vec<u8>> {
     let mut s = s.replace('-', "+").replace('_', "/");
-    while s.len() % 4 != 0 {
+    while !s.len().is_multiple_of(4) {
         s.push('=');
     }
     let mut acc: u32 = 0;
@@ -202,14 +202,14 @@ pub fn extract_email_from_jwt(id_token: &str) -> Option<String> {
     }
     let decoded = b64url_decode(parts[1])?;
     let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    json.get("email").and_then(|v| v.as_str()).map(|s| s.to_string())
+    json.get("email")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 /// GET /auth/google/status
 /// Returns connection status, connection boolean, and connected user email.
-pub async fn status_handler(
-    State(state): State<GoogleOAuthState>,
-) -> impl IntoResponse {
+pub async fn status_handler(State(state): State<GoogleOAuthState>) -> impl IntoResponse {
     let mgr = state.manager.lock().unwrap();
     let status = mgr.status_string();
     let connected = status == "connected";
@@ -227,9 +227,7 @@ pub async fn status_handler(
 
 /// GET /auth/google/connect
 /// Initiates Google OAuth2 flow by generating state token and returning authorization URL.
-pub async fn connect_handler(
-    State(state): State<GoogleOAuthState>,
-) -> impl IntoResponse {
+pub async fn connect_handler(State(state): State<GoogleOAuthState>) -> impl IntoResponse {
     let state_token = format!("{:x}", rand::random::<u128>());
     {
         let mut mgr = state.manager.lock().unwrap();
@@ -355,10 +353,22 @@ pub async fn callback_handler(
             .into_response();
     }
 
-    let access_token = token_json.get("access_token").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let refresh_token = token_json.get("refresh_token").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let id_token = token_json.get("id_token").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let expires_in = token_json.get("expires_in").and_then(|v| v.as_i64()).unwrap_or(3600);
+    let access_token = token_json
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let refresh_token = token_json
+        .get("refresh_token")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let id_token = token_json
+        .get("id_token")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let expires_in = token_json
+        .get("expires_in")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(3600);
 
     let email = id_token.as_deref().and_then(extract_email_from_jwt);
 
@@ -382,9 +392,7 @@ pub async fn callback_handler(
 
 /// DELETE /auth/google/disconnect
 /// Clears Google OAuth2 token state and returns 200 OK.
-pub async fn disconnect_handler(
-    State(state): State<GoogleOAuthState>,
-) -> impl IntoResponse {
+pub async fn disconnect_handler(State(state): State<GoogleOAuthState>) -> impl IntoResponse {
     let mut mgr = state.manager.lock().unwrap();
     mgr.disconnect();
 

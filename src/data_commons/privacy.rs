@@ -7,8 +7,9 @@ use std::sync::OnceLock;
 /// - `P2`: Anonymized and PII scrubbed (emails, paths, API keys/tokens).
 /// - `P3`: PII scrubbed + Differential Privacy (Laplace noise applied to numeric metrics).
 /// - `P4`: Local-only data. Unscrubbed raw data for local model training.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum PrivacyLevel {
+    #[default]
     P2,
     P3,
     P4,
@@ -21,12 +22,6 @@ impl PrivacyLevel {
             PrivacyLevel::P3 => "P3",
             PrivacyLevel::P4 => "P4",
         }
-    }
-}
-
-impl Default for PrivacyLevel {
-    fn default() -> Self {
-        PrivacyLevel::P2
     }
 }
 
@@ -86,16 +81,15 @@ impl PrivacyPipeline {
             Value::String(s) => {
                 *s = self.scrub_string(s);
             }
-            Value::Number(n) => {
-                if level == PrivacyLevel::P3 {
-                    if let Some(f) = n.as_f64() {
-                        let noisy = add_laplace_noise(f, 1.0, 1.0);
-                        if let Some(num) = serde_json::Number::from_f64(noisy) {
-                            *n = num;
-                        }
+            Value::Number(n) if level == PrivacyLevel::P3 => {
+                if let Some(f) = n.as_f64() {
+                    let noisy = add_laplace_noise(f, 1.0, 1.0);
+                    if let Some(num) = serde_json::Number::from_f64(noisy) {
+                        *n = num;
                     }
                 }
             }
+            Value::Number(_) => {}
             Value::Array(arr) => {
                 for v in arr {
                     self.scrub_value(v, level);
@@ -111,14 +105,14 @@ impl PrivacyPipeline {
     }
 
     pub fn scrub_string(&self, input: &str) -> String {
-        let email_re = EMAIL_REGEX.get_or_init(|| {
-            Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap()
-        });
+        let email_re = EMAIL_REGEX
+            .get_or_init(|| Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap());
         let path_re = PATH_REGEX.get_or_init(|| {
             Regex::new(r"(?:/[a-zA-Z0-9_.-]+){2,}|(?:[a-zA-Z]:\\[a-zA-Z0-9_.-]+){2,}").unwrap()
         });
         let api_key_re = API_KEY_REGEX.get_or_init(|| {
-            Regex::new(r"\b(?:sk-[a-zA-Z0-9_-]{20,}|ghp_[a-zA-Z0-9]{36}|AKIA[0-9A-Z]{16})\b").unwrap()
+            Regex::new(r"\b(?:sk-[a-zA-Z0-9_-]{20,}|ghp_[a-zA-Z0-9]{36}|AKIA[0-9A-Z]{16})\b")
+                .unwrap()
         });
 
         let s = email_re.replace_all(input, "[EMAIL]");
