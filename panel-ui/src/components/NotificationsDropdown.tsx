@@ -10,9 +10,8 @@ import {
 	Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import React, { useEffect, useMemo, useState } from "react";
-import { getApiUrl } from "../api/client";
-import { getApiTokenSync } from "../hooks/useApiToken";
+import React, { useMemo, useState } from "react";
+import { useNotificationStream } from "../hooks/useNotificationStream";
 
 export interface Notification {
 	id: string;
@@ -70,14 +69,6 @@ const ISLANDS: Island[] = [
 		borderColor: "border-red-500/20",
 	},
 ];
-
-function isTauriRuntime(): boolean {
-	return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
-function getToken(): string {
-	return getApiTokenSync();
-}
 
 function formatRelativeTime(dateInput: Date | string): string {
 	const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
@@ -159,114 +150,16 @@ export default React.memo(function NotificationsDropdown({
 	onClose,
 	isLoading: propIsLoading,
 }: NotificationsDropdownProps) {
-	const [notifications, setNotifications] = useState<Notification[]>([]);
+	const {
+		notifications,
+		unreadCount,
+		isLoading: streamLoading,
+		markRead,
+		markAllRead,
+	} = useNotificationStream();
+
 	const [activeIsland, setActiveIsland] = useState<IslandId | "all">("all");
-	const [internalLoading, setInternalLoading] = useState<boolean>(true);
-	const isLoading = propIsLoading !== undefined ? propIsLoading : internalLoading;
-
-	useEffect(() => {
-		let isMounted = true;
-
-		// 1. Fetch notifications
-		const fetchNotifications = async () => {
-			try {
-				const token = getToken();
-				const response = await fetch(getApiUrl("/notifications"), {
-					headers: { "X-Xavier-Token": token },
-				});
-				if (!response.ok) {
-					if (response.status === 401) {
-						if (isMounted) setInternalLoading(false);
-						return;
-					}
-					throw new Error(`HTTP ${response.status}`);
-				}
-				if (isMounted) {
-					const data = await response.json();
-					if (Array.isArray(data)) {
-						setNotifications(data);
-					}
-				}
-			} catch (err) {
-				console.error("Failed to fetch notifications:", err);
-			} finally {
-				if (isMounted) setInternalLoading(false);
-			}
-		};
-
-		fetchNotifications();
-
-		let unlistenFn: (() => void) | null = null;
-		let intervalId: ReturnType<typeof setInterval> | null = null;
-
-		if (isTauriRuntime()) {
-			import("@tauri-apps/api/event")
-				.then(({ listen }) => {
-					return listen<Notification>("new-notification", (event) => {
-						if (!isMounted) return;
-						setNotifications((prev) => [event.payload, ...prev]);
-					});
-				})
-				.then((unlisten) => {
-					if (isMounted) unlistenFn = unlisten;
-					else unlisten();
-				})
-				.catch(() => {
-					// Ignore non-Tauri environment errors
-				});
-		} else {
-			intervalId = setInterval(fetchNotifications, 30_000);
-		}
-
-		return () => {
-			isMounted = false;
-			if (unlistenFn) unlistenFn();
-			if (intervalId) clearInterval(intervalId);
-		};
-	}, []);
-
-	/**
-	 * ⚡ Bolt Performance Optimization
-	 *
-	 * 💡 What: Wrapped filtered, unreadCount, and islandCounts in useMemo(), and NotificationsDropdown in React.memo().
-	 *          Replaced O(M*N) islandCounts calculation with O(N) single-pass iteration.
-	 * 🎯 Why: These derived computations were re-calculating on every render (e.g. when switching tabs), doing expensive array allocations and O(M*N) filtering.
-	 * 📊 Impact: O(1) filtering on non-notification state changes (like tab switching). Prevents unnecessary re-renders of the dropdown when parent state changes.
-	 */
-	const unreadCount = useMemo(
-		() => notifications.reduce((count, n) => count + (n.read ? 0 : 1), 0),
-		[notifications],
-	);
-
-	const markRead = async (id: string) => {
-		setNotifications((prev) =>
-			prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-		);
-
-		try {
-			const token = getToken();
-			await fetch(getApiUrl(`/notifications/${id}/read`), {
-				method: "PATCH",
-				headers: { "X-Xavier-Token": token },
-			});
-		} catch (err) {
-			console.error("Failed to mark notification as read:", err);
-		}
-	};
-
-	const markAllRead = async () => {
-		setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-
-		try {
-			const token = getToken();
-			await fetch(getApiUrl("/notifications/read-all"), {
-				method: "PATCH",
-				headers: { "X-Xavier-Token": token },
-			});
-		} catch (err) {
-			console.error("Failed to mark all notifications as read:", err);
-		}
-	};
+	const isLoading = propIsLoading !== undefined ? propIsLoading : streamLoading;
 
 	const filtered = useMemo(() => {
 		return activeIsland === "all"
