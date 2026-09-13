@@ -171,6 +171,10 @@ name = "decentralized_login_e2e"
 path = "tests/e2e/decentralized_login_e2e.rs"
 
 [[test]]
+name = "shamir_cloud_sync_e2e"
+path = "tests/e2e/shamir_cloud_sync_e2e.rs"
+
+[[test]]
 name = "context_regen_e2e"
 path = "tests/e2e/context_regen_e2e.rs"
 
