@@ -343,6 +343,7 @@ async fn stats(
 
 #[derive(Parser)]
 #[command(name = "code-graph")]
+#[command(version)]
 #[command(about = "Codebase Understanding without RAG - Tree-sitter + Agentic Search", long_about = None)]
 struct Cli {
     /// HTTP Token for authentication (env: CODE_GRAPH_TOKEN)

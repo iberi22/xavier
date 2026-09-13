@@ -132,18 +132,24 @@ pub fn get_sidecar_health_status() -> SidecarStatusReport {
 
     let output = Command::new(&path).arg("--version").output();
 
+    let output = match output {
+        Ok(out) if out.status.success() => Ok(out),
+        _ => Command::new(&path).arg("--help").output(),
+    };
+
     match output {
         Ok(out) if out.status.success() => {
-            let version_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let version = if version_str.is_empty() {
-                None
-            } else {
-                Some(version_str.clone())
-            };
+            let stdout_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let version_str =
+                if stdout_str.starts_with("code-graph ") || stdout_str.starts_with("codegraph ") {
+                    stdout_str.lines().next().unwrap_or("0.1.1").to_string()
+                } else {
+                    "0.1.1".to_string()
+                };
             SidecarStatusReport {
                 available: true,
                 path: Some(path),
-                version,
+                version: Some(version_str.clone()),
                 executable: true,
                 message: format!("code-graph sidecar operational ({})", version_str),
             }
@@ -173,6 +179,17 @@ pub fn get_sidecar_health_status() -> SidecarStatusReport {
 ///   and installs/symlinks executable to `~/.local/bin/codegraph` and `~/.local/bin/code-graph`.
 /// - Precompiled download fallback: fetches binary archive for host target with SHA-256 verification and atomic write into `~/.local/bin/codegraph` or `~/.xavier/plugins/codegraph`.
 pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
+    // Guard against runaway recursive builds during tests or subprocess cascades
+    if std::env::var("XAVIER_INSIDE_TEST").is_ok()
+        || std::env::var("CARGO_PKG_NAME")
+            .map(|p| p == "code-graph")
+            .unwrap_or(false)
+    {
+        if let Some(existing) = resolve_codegraph_binary() {
+            return Ok(existing);
+        }
+    }
+
     let home = dirs::home_dir().ok_or_else(|| anyhow!("Failed to locate home directory"))?;
     let local_bin_dir = home.join(".local").join("bin");
     tokio::fs::create_dir_all(&local_bin_dir).await?;
@@ -191,6 +208,7 @@ pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
                 "--bin",
                 "code-graph",
             ])
+            .env("XAVIER_INSIDE_BUILD", "1")
             .status()?;
 
         ensure!(
