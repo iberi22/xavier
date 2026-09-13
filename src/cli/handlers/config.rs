@@ -22,7 +22,7 @@ pub struct UpdateProvidersPayload {
 
 /// Get providers config handler.
 pub async fn get_providers_config_handler() -> Response {
-    let settings = XavierSettings::current();
+    let _settings = XavierSettings::current();
 
     // We'll return a list of providers and their current settings from env/config
     let mut providers = Vec::new();
@@ -42,6 +42,70 @@ pub async fn get_providers_config_handler() -> Response {
         StatusCode::OK,
         serde_json::to_value(UpdateProvidersPayload { providers }).unwrap(),
     )
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChannelStatus {
+    pub configured: bool,
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MessagingStatusResponse {
+    pub discord: ChannelStatus,
+    pub slack: ChannelStatus,
+    pub telegram: ChannelStatus,
+    pub whatsapp: ChannelStatus,
+    pub teams: ChannelStatus,
+}
+
+/// Get messaging channels active/configured status.
+pub async fn get_messaging_status_handler() -> Response {
+    let settings = XavierSettings::current();
+
+    let telegram_configured = settings.telegram.bot_token.is_some() || settings.telegram.enabled;
+    let telegram_active = settings.telegram.enabled && settings.telegram.bot_token.is_some();
+
+    let discord_configured = settings.discord.webhook_url.is_some()
+        || settings.discord.bot_token.is_some()
+        || settings.discord.enabled;
+    let discord_active = settings.discord.enabled
+        && (settings.discord.webhook_url.is_some() || settings.discord.bot_token.is_some());
+
+    let slack_configured = std::env::var("SLACK_BOT_TOKEN").is_ok()
+        || std::env::var("SLACK_WEBHOOK_URL").is_ok();
+    let slack_active = slack_configured;
+
+    let whatsapp_configured = std::env::var("WHATSAPP_TOKEN").is_ok();
+    let whatsapp_active = whatsapp_configured;
+
+    let teams_configured = std::env::var("TEAMS_WEBHOOK_URL").is_ok();
+    let teams_active = teams_configured;
+
+    let response = MessagingStatusResponse {
+        discord: ChannelStatus {
+            configured: discord_configured,
+            active: discord_active,
+        },
+        slack: ChannelStatus {
+            configured: slack_configured,
+            active: slack_active,
+        },
+        telegram: ChannelStatus {
+            configured: telegram_configured,
+            active: telegram_active,
+        },
+        whatsapp: ChannelStatus {
+            configured: whatsapp_configured,
+            active: whatsapp_active,
+        },
+        teams: ChannelStatus {
+            configured: teams_configured,
+            active: teams_active,
+        },
+    };
+
+    json_response(StatusCode::OK, serde_json::to_value(response).unwrap())
 }
 
 /// Update providers config handler.
