@@ -12,3 +12,6 @@
 ## 2024-05-17 - Added aria-pressed to ThemeToggle
 **Learning:** React component toggle buttons representing state (like a theme toggle) often miss `aria-pressed`, which is important to announce to screen readers whether the toggle is currently active or not. The `ThemeToggle` component in this codebase lacked this attribute.
 **Action:** Always check toggle buttons for an `aria-pressed` attribute when auditing for accessibility.
+## 2026-09-12 - [InputArea loading states]
+**Learning:** React components that take `isLoading` props often need to disable input and buttons to communicate to users that something is in progress and prevent double submissions.
+**Action:** When adding loading state variables, check if there are inputs and buttons that should be disabled, and add appropriate ARIA labels and micro-UX states (such as loading spinners instead of icons, and opacity drop).

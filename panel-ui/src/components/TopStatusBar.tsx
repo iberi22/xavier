@@ -862,6 +862,8 @@ export default React.memo(function TopStatusBar({
                 layout
                 transition={spring}
                 onClick={() => setShowNotifications((prev) => !prev)}
+                aria-label="Notifications"
+                aria-expanded={showNotifications}
                 className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2 hover:bg-white/5 hover:border-white/20 transition-all flex items-center justify-center h-7 w-7 shrink-0"
                 title={`${memoryCount} Memories | ${unreadCount} Unread`}
               >

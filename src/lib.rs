@@ -32,6 +32,7 @@ pub mod coordination;
 pub mod crypto;
 pub mod curation;
 pub mod data_commons;
+pub mod documents;
 pub mod embedding;
 pub mod enterprise;
 pub mod error;
@@ -63,6 +64,7 @@ pub mod session;
 pub mod settings;
 pub mod storage;
 pub mod sync;
+pub mod system;
 pub mod tasks;
 #[cfg(feature = "telegram")]
 pub mod telegram;

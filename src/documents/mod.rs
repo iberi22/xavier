@@ -5,9 +5,20 @@
 //! - Adobe PDF (text streams, FlateDecode decompression, page segmentation, scan detection)
 //! - Images (PNG, JPEG, WEBP, GIF, BMP with 64-bit dHash perceptual hashing and visual metadata)
 
+pub mod audio_transcriber;
 pub mod detector;
+pub mod image_extractor;
 pub mod img;
+pub mod legal_chunker;
 pub mod pdf;
+pub mod video_segmenter;
+
+#[cfg(test)]
+mod tests_audio_transcriber;
+#[cfg(test)]
+mod tests_image_extractor;
+#[cfg(test)]
+mod tests_video_segmenter;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

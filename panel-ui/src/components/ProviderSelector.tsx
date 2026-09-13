@@ -40,6 +40,7 @@ export function ProviderSelector({
         id={buttonId}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
+        aria-label="Select primary provider"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-labelledby={labelId}

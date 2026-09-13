@@ -625,6 +625,7 @@ function AppContent() {
 							onSendMessage={sendMessage}
 							onOpenConfig={handleOpenConfig}
 							onSystemMessage={handleSystemMessage}
+							isLoading={_isLoading}
 						/>
 					</motion.div>
 				)}

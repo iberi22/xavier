@@ -3,7 +3,7 @@
 //! This module defines the [`Command`] enum and all related subcommand enums
 //! used for parsing CLI arguments via clap.
 
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -31,6 +31,8 @@ pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 /// Each variant maps to a distinct subcommand exposed to the user.
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
+    /// Initialize Xavier onboarding and interactive RAG installer wizard
+    Init(InitArgs),
     /// Start Xavier HTTP server
     #[command(alias = "serve")]
     Http {
@@ -1384,6 +1386,30 @@ pub mod memory {
             public_only: Option<bool>,
         },
     }
+}
+
+/// Options for the interactive CLI onboarding installer (`xavier init`)
+#[derive(Args, Debug, Clone, Default)]
+pub struct InitArgs {
+    /// Data modality profiles to initialize (e.g., legal, code, video, image, audio)
+    #[arg(short, long, value_delimiter = ',')]
+    pub profile: Vec<String>,
+
+    /// Maximum storage quota allocated in Gigabytes (GB)
+    #[arg(long)]
+    pub storage_quota_gb: Option<u32>,
+
+    /// Restrict system to local-only operation without cloud backends
+    #[arg(long)]
+    pub local_only: bool,
+
+    /// Output path for the generated configuration file
+    #[arg(short, long)]
+    pub output_path: Option<PathBuf>,
+
+    /// Run in non-interactive / headless mode using default or flag parameters
+    #[arg(long)]
+    pub non_interactive: bool,
 }
 
 /// XP wallet subcommands [SKELETON — decisions pending with BELA]
