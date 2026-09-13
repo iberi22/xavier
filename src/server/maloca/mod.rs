@@ -6,6 +6,7 @@ pub mod challenge_routes;
 pub mod data_node;
 pub mod hc_analyzer_bridge;
 pub mod hc_cron_bridge;
+pub mod introspection_routes;
 pub mod live_sync;
 pub mod model_routes;
 pub mod model_service;
@@ -26,8 +27,12 @@ pub fn v1_maloca_router(
 ) -> Router {
     let registry_mgr = registry_route::AppRegistryManager::default();
     let challenge_state = challenge_store
+        .clone()
         .map(challenge_routes::ChallengeState::new)
         .unwrap_or_else(challenge_routes::ChallengeState::in_memory);
+    let introspection_state = challenge_store
+        .map(introspection_routes::IntrospectionState::new)
+        .unwrap_or_else(introspection_routes::IntrospectionState::in_memory);
     let mut backlog_svc = backlog_route::UnifiedBacklogService::new();
     if let Some(dir) = workspace_dir {
         backlog_svc = backlog_svc.with_workspace_dir(dir);
@@ -40,4 +45,5 @@ pub fn v1_maloca_router(
         .merge(backlog_route::router(backlog_svc))
         .merge(model_routes::router(model_svc))
         .merge(challenge_routes::router(challenge_state))
+        .merge(introspection_routes::router(introspection_state))
 }
