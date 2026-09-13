@@ -53,6 +53,8 @@ import MessagingConfigModal, {
 import { PluginsManager } from "./PluginsManager";
 import UsageMetricsPanel from "./UsageMetricsPanel";
 import { getActiveWorkspaceId, getWorkspaceList } from "./WorkspaceSelector";
+import FeedbackModal from "./modals/FeedbackModal";
+import ShortcutsModal from "./modals/ShortcutsModal";
 
 interface ConfigModalProps {
   key?: React.Key;
@@ -408,6 +410,9 @@ export default function ConfigModal({
     }
   };
 
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.96, y: 8 }}
@@ -515,12 +520,14 @@ export default function ConfigModal({
         <div className="pt-2 border-t border-white/[0.06] space-y-0.5">
           <button
             type="button"
+            onClick={() => setShowShortcuts(true)}
             className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/60 hover:text-white/90 hover:bg-white/[0.04] transition-all duration-150"
           >
             Shortcuts
           </button>
           <button
             type="button"
+            onClick={() => setShowFeedback(true)}
             className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/60 hover:text-white/90 hover:bg-white/[0.04] transition-all duration-150"
           >
             Provide Feedback
@@ -984,6 +991,10 @@ export default function ConfigModal({
         </AnimatePresence>
         </div>
       </div>
+
+      {/* Shortcuts & Feedback Modals */}
+      <ShortcutsModal isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
+      <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} />
     </motion.div>
   );
 }
