@@ -14,6 +14,7 @@
 //! The top-level [`Command`] enum and [`Cli::run()`] dispatch remain visible
 //! through re-exports so that external consumers are unaffected.
 
+pub mod airgap;
 pub mod benchmark_runner;
 pub mod billing;
 pub mod cleanup;
@@ -397,6 +398,7 @@ impl Cli {
                 mirror::handle_mirror_export(out.clone(), *limit, since.clone()).await
             }
             Command::MirrorImport { input } => mirror::handle_mirror_import(input.clone()).await,
+            Command::Airgap(args) => airgap::handle_airgap_command(args.clone()).await,
         }
     }
 }
