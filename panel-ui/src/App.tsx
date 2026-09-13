@@ -297,6 +297,18 @@ function AppContent() {
 		};
 	}, [token, loadThreads, loadPanelData]);
 
+	// Global Keyboard Shortcuts (e.g., Cmd/Ctrl + , to toggle Settings ConfigModal)
+	useEffect(() => {
+		const handleGlobalKeyDown = (e: KeyboardEvent) => {
+			if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+				e.preventDefault();
+				setIsConfigOpen((prev) => !prev);
+			}
+		};
+		window.addEventListener("keydown", handleGlobalKeyDown);
+		return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+	}, []);
+
 	async function _createThread() {
 		try {
 			const thread = await api<ThreadSummary>("/panel/api/threads", {

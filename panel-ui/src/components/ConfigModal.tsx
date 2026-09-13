@@ -4,10 +4,12 @@ import {
   Bot,
   Brain,
   ChevronRight,
+  Command,
   Cpu,
   Database,
   Globe,
   Grid,
+  HelpCircle,
   Layers,
   MessageSquare,
   Network,
@@ -45,6 +47,8 @@ import MeshConfig from "./MeshConfig";
 import MessagingConfigModal, {
   MessagingConfigInner,
 } from "./MessagingConfigModal";
+import FeedbackModal from "./modals/FeedbackModal";
+import ShortcutsModal from "./modals/ShortcutsModal";
 import { PluginsManager } from "./PluginsManager";
 import UsageMetricsPanel from "./UsageMetricsPanel";
 
@@ -878,6 +882,8 @@ function ConfigView({
   token: string;
 }) {
   const [activeTab, setActiveTab] = useState("topology");
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
 
   const tabs = [
     {
@@ -981,7 +987,7 @@ function ConfigView({
       className="flex h-full w-full"
     >
       {/* Sidebar */}
-      <div className="w-64 border-r border-white/5 p-6 flex flex-col bg-black/10 overflow-y-auto">
+      <div className="w-64 border-r border-white/5 p-6 flex flex-col justify-between bg-black/10 overflow-y-auto">
         <nav className="flex flex-col gap-2">
           {tabs.map((tab) => (
             <button
@@ -999,7 +1005,36 @@ function ConfigView({
             </button>
           ))}
         </nav>
+
+        {/* Antigravity Sidebar Footer Buttons */}
+        <div className="pt-4 border-t border-white/5 flex flex-col gap-2 mt-auto">
+          <button
+            type="button"
+            onClick={() => setIsShortcutsOpen(true)}
+            className="flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-white/50 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+          >
+            <Command className="w-4 h-4 text-[#39ff14]" />
+            Shortcuts
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsFeedbackOpen(true)}
+            className="flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-white/50 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+          >
+            <HelpCircle className="w-4 h-4 text-[#39ff14]" />
+            Provide Feedback
+          </button>
+        </div>
       </div>
+
+      <ShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+      />
+      <FeedbackModal
+        isOpen={isFeedbackOpen}
+        onClose={() => setIsFeedbackOpen(false)}
+      />
 
       {/* Content Area */}
       <div className="flex-1 p-10 overflow-y-auto">
