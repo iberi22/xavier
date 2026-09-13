@@ -60,7 +60,10 @@ fn test_dimension_mismatch_validation() -> Result<()> {
     // Attempt search with mismatched query vector
     let search_res = manager.search_modality(&conn, DataTypeKind::Code, &invalid_vec, 5);
     assert!(search_res.is_err());
-    assert!(search_res.unwrap_err().to_string().contains("Query dimension mismatch"));
+    assert!(search_res
+        .unwrap_err()
+        .to_string()
+        .contains("Query dimension mismatch"));
 
     Ok(())
 }

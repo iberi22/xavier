@@ -341,11 +341,11 @@ alloy = { version = "=2.4.1", optional = true, default-features = true, features
 ciborium = "0.2.2"
 zstd = "0.13.3"
 zip = { version = "8.6.0", features = ["deflate-flate2"] }
+image = "0.25"
 
 [dev-dependencies]
 serial_test = "3.2"
 mockito = "1.6"
-image = "0.25"
 proptest = "1.11.0"
 tempfile = "3.27.0"
 criterion = "0.5"

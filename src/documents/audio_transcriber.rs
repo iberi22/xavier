@@ -181,7 +181,10 @@ impl AudioChunkCombiner {
                 let reaches_target = current_words >= self.target_words;
                 let gap_too_large = gap > self.max_gap_sec;
 
-                if exceeds_max_words || (reaches_target && gap_too_large) || gap_too_large {
+                if exceeds_max_words
+                    || (current_words >= self.min_words && reaches_target)
+                    || gap_too_large
+                {
                     // Flush current accumulated chunk
                     if let Some(chunk) =
                         Self::build_chunk(audio_id, chunks.len(), &current_segments)

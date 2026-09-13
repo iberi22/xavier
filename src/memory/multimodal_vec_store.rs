@@ -185,7 +185,10 @@ impl MultimodalVecManager {
 
         let _ = conn.execute(&delete_virtual_sql, params![item_id]);
         if conn
-            .execute(&insert_virtual_sql, params![item_id, vec_json, payload_json])
+            .execute(
+                &insert_virtual_sql,
+                params![item_id, vec_json, payload_json],
+            )
             .is_err()
         {
             // Fallback insert for standard table
@@ -268,8 +271,11 @@ impl MultimodalVecManager {
             });
         }
 
-        scored_items
-            .sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
+        scored_items.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored_items.truncate(top_k);
 
         Ok(scored_items)

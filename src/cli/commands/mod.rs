@@ -24,6 +24,7 @@ pub mod enums;
 pub mod governance;
 pub mod http;
 pub mod improve;
+pub mod installer;
 pub mod license;
 pub mod memory;
 pub mod mesh;
@@ -82,6 +83,7 @@ impl Cli {
                 let port = port.unwrap_or_else(resolve_http_port);
                 start_http_server(port, *mcp_port, *no_ui).await
             }
+            Command::Init(ref args) => installer::run_installer(args.clone()),
             Command::Mcp => start_mcp_stdio().await,
             Command::IndexSelf => {
                 println!("IndexSelf is not yet implemented.");

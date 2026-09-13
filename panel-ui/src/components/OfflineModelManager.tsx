@@ -74,7 +74,7 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
     loadData();
   }, [loadData]);
 
-  const handleSaveConfig = async (
+  const handleSaveConfig = useCallback(async (
     updatedDirs: string[],
     updatedAutoStart: boolean,
   ) => {
@@ -93,7 +93,7 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
     } finally {
       setSavingConfig(false);
     }
-  };
+  }, [client, loadData]);
 
   const handleAddDir = (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,11 +109,11 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
     handleSaveConfig(updated, autoStart);
   };
 
-  const handleRemoveDir = (dirToRemove: string) => {
+  const handleRemoveDir = useCallback((dirToRemove: string) => {
     const updated = localDirs.filter((d) => d !== dirToRemove);
     setLocalDirs(updated);
     handleSaveConfig(updated, autoStart);
-  };
+  }, [localDirs, autoStart, handleSaveConfig]);
 
   const handleToggleAutoStart = () => {
     const nextVal = !autoStart;
@@ -138,14 +138,6 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
     } finally {
       setDownloading(false);
     }
-  };
-
-  const formatSize = (bytes: number): string => {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   };
 
   return (
@@ -298,23 +290,11 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
                 </p>
               ) : (
                 localDirs.map((dir) => (
-                  <div
+                  <LocalDirItem
                     key={dir}
-                    className="flex items-center justify-between bg-black/40 border border-white/5 p-2 rounded-xl"
-                  >
-                    <span className="text-[11px] font-mono text-white/80 truncate pr-2 flex items-center gap-1.5">
-                      <Folder className="w-3.5 h-3.5 text-white/40 shrink-0" />
-                      {dir}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveDir(dir)}
-                      aria-label={`Eliminar directorio ${dir}`}
-                      className="p-1 text-white/40 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                    dir={dir}
+                    onRemove={handleRemoveDir}
+                  />
                 ))
               )}
             </div>
@@ -364,27 +344,7 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
                 </div>
               ) : (
                 models.map((model) => (
-                  <div
-                    key={model.path}
-                    className="bg-white/5 border border-white/5 p-3 rounded-xl hover:border-white/10 transition-all flex flex-col gap-1"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white/90 truncate pr-2">
-                        {model.name}
-                      </span>
-                      <span className="text-[10px] bg-[#39ff14]/10 border border-[#39ff14]/20 text-[#39ff14] px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
-                        {model.quantization || "GGUF"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center text-[10px] text-white/40 font-mono">
-                      <span className="truncate pr-4" title={model.path}>
-                        {model.path}
-                      </span>
-                      <span className="shrink-0">
-                        {formatSize(model.size_bytes)}
-                      </span>
-                    </div>
-                  </div>
+                  <ModelItem key={model.path} model={model} />
                 ))
               )}
             </div>
@@ -394,3 +354,77 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
     </div>
   );
 }
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted local directory row into LocalDirItem and wrapped in React.memo()
+ * 🎯 Why: Typing in the input field triggered O(N) re-renders for every configured directory,
+ *         causing typing latency. Memoizing this item makes typing updates O(1).
+ * 📊 Impact: Eliminates unnecessary re-renders of the directories list on every keystroke.
+ */
+const LocalDirItem = React.memo(function LocalDirItem({
+  dir,
+  onRemove,
+}: {
+  dir: string;
+  onRemove: (dir: string) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between bg-black/40 border border-white/5 p-2 rounded-xl">
+      <span className="text-[11px] font-mono text-white/80 truncate pr-2 flex items-center gap-1.5">
+        <Folder className="w-3.5 h-3.5 text-white/40 shrink-0" />
+        {dir}
+      </span>
+      <button
+        type="button"
+        onClick={() => onRemove(dir)}
+        aria-label={`Eliminar directorio ${dir}`}
+        className="p-1 text-white/40 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+});
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted model item into ModelItem and wrapped in React.memo()
+ * 🎯 Why: Typing in the download URL input triggered O(N) re-renders for every discovered model.
+ *         With large model libraries, this blocked the main thread and caused typing latency.
+ * 📊 Impact: Eliminates unnecessary re-renders of the models list on every keystroke.
+ */
+const ModelItem = React.memo(function ModelItem({
+  model,
+}: {
+  model: OfflineModel;
+}) {
+  return (
+    <div className="bg-white/5 border border-white/5 p-3 rounded-xl hover:border-white/10 transition-all flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-white/90 truncate pr-2">
+          {model.name}
+        </span>
+        <span className="text-[10px] bg-[#39ff14]/10 border border-[#39ff14]/20 text-[#39ff14] px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
+          {model.quantization || "GGUF"}
+        </span>
+      </div>
+      <div className="flex justify-between items-center text-[10px] text-white/40 font-mono">
+        <span className="truncate pr-4" title={model.path}>
+          {model.path}
+        </span>
+        <span className="shrink-0">{formatSize(model.size_bytes)}</span>
+      </div>
+    </div>
+  );
+});

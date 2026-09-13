@@ -158,3 +158,110 @@ mod tests {
         assert!(doc.summary_text.contains("[IMAGE DOCUMENT: test.png]"));
     }
 }
+
+/// Supported image format types based on header inspection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ImageFormat {
+    Png,
+    Jpeg,
+    Gif,
+    Bmp,
+    WebP,
+    Tiff,
+}
+
+impl ImageFormat {
+    /// Detects image format from raw header byte slice.
+    pub fn detect(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 4 {
+            return None;
+        }
+
+        if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+            Some(Self::Png)
+        } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+            Some(Self::Jpeg)
+        } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+            Some(Self::Gif)
+        } else if bytes.starts_with(b"BM") {
+            Some(Self::Bmp)
+        } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+            Some(Self::WebP)
+        } else if bytes.starts_with(&[0x49, 0x49, 0x2A, 0x00])
+            || bytes.starts_with(&[0x4D, 0x4D, 0x00, 0x2A])
+        {
+            Some(Self::Tiff)
+        } else {
+            None
+        }
+    }
+}
+
+/// Helper struct for fast image dimension header extraction.
+pub struct ImageDimensions;
+
+impl ImageDimensions {
+    /// Extracts (width, height) from raw image file header bytes.
+    pub fn parse(bytes: &[u8]) -> Option<(u32, u32)> {
+        let format = ImageFormat::detect(bytes)?;
+        match format {
+            ImageFormat::Png => Self::parse_png(bytes),
+            ImageFormat::Jpeg => Self::parse_jpeg(bytes),
+            ImageFormat::Gif => Self::parse_gif(bytes),
+            ImageFormat::Bmp => Self::parse_bmp(bytes),
+            _ => None,
+        }
+    }
+
+    fn parse_png(bytes: &[u8]) -> Option<(u32, u32)> {
+        if bytes.len() < 24 {
+            return None;
+        }
+        let width = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
+        let height = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+        Some((width, height))
+    }
+
+    fn parse_gif(bytes: &[u8]) -> Option<(u32, u32)> {
+        if bytes.len() < 10 {
+            return None;
+        }
+        let width = u16::from_le_bytes(bytes[6..8].try_into().ok()?) as u32;
+        let height = u16::from_le_bytes(bytes[8..10].try_into().ok()?) as u32;
+        Some((width, height))
+    }
+
+    fn parse_bmp(bytes: &[u8]) -> Option<(u32, u32)> {
+        if bytes.len() < 26 {
+            return None;
+        }
+        let width = u32::from_le_bytes(bytes[18..22].try_into().ok()?);
+        let height = u32::from_le_bytes(bytes[22..26].try_into().ok()?);
+        Some((width, height))
+    }
+
+    fn parse_jpeg(bytes: &[u8]) -> Option<(u32, u32)> {
+        if bytes.len() < 4 || !bytes.starts_with(&[0xFF, 0xD8]) {
+            return None;
+        }
+        let mut idx = 2;
+        while idx + 8 < bytes.len() {
+            if bytes[idx] != 0xFF {
+                idx += 1;
+                continue;
+            }
+            let marker = bytes[idx + 1];
+            if marker == 0xC0 || marker == 0xC2 {
+                let height = u16::from_be_bytes(bytes[idx + 5..idx + 7].try_into().ok()?) as u32;
+                let width = u16::from_be_bytes(bytes[idx + 7..idx + 9].try_into().ok()?) as u32;
+                return Some((width, height));
+            }
+            if idx + 4 > bytes.len() {
+                break;
+            }
+            let seg_len = u16::from_be_bytes(bytes[idx + 2..idx + 4].try_into().ok()?) as usize;
+            idx += 2 + seg_len;
+        }
+        None
+    }
+}

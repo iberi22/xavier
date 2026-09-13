@@ -9,6 +9,7 @@ pub mod error;
 pub mod memory;
 pub mod pattern;
 pub mod proxy;
+pub mod rag_profile;
 pub mod security;
 
 pub use error::AppError;

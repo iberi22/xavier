@@ -1,10 +1,12 @@
 import { BrainCircuit, FolderPlus, Mic, Send } from "lucide-react";
 import React, { useState, useCallback, useRef } from "react";
+import LoadingSpinner from "./ui/LoadingSpinner";
 
 interface InputAreaProps {
   onSendMessage: (text: string) => void;
   onOpenConfig: () => void;
   onSystemMessage?: (text: string) => void;
+  isLoading?: boolean;
 }
 
 /**
@@ -18,6 +20,7 @@ export default React.memo(function InputArea({
   onSendMessage,
   onOpenConfig,
   onSystemMessage,
+  isLoading = false,
 }: InputAreaProps) {
   const [inputText, setInputText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -207,11 +210,15 @@ export default React.memo(function InputArea({
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder={
-                isRecording ? "Listening..." : "Initialize command sequence..."
+                isRecording
+                  ? "Listening..."
+                  : isLoading
+                    ? "Processing..."
+                    : "Initialize command sequence..."
               }
               aria-label="Command input"
               className="w-full bg-transparent border-none outline-none text-white px-2 placeholder:text-white/30 text-sm font-medium focus-visible:ring-0"
-              disabled={isRecording}
+              disabled={isRecording || isLoading}
             />
           )}
         </div>
@@ -219,16 +226,20 @@ export default React.memo(function InputArea({
         <button
           type="button"
           onClick={handleSend}
-          disabled={!inputText.trim() && !isTranscribing}
-          aria-label="Send command"
+          disabled={(!inputText.trim() && !isTranscribing) || isLoading}
+          aria-label={isLoading ? "Sending command" : "Send command"}
           className={`relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
-            inputText.trim()
+            inputText.trim() && !isLoading
               ? "bg-[#39ff14] text-[#050505] hover:brightness-110 shadow-[0_0_15px_rgba(57,255,20,0.3)]"
               : "bg-white/5 text-white/30 cursor-not-allowed"
           }`}
-          title="Send command"
+          title={isLoading ? "Sending command" : "Send command"}
         >
-          <Send className="w-5 h-5 ml-1" aria-hidden="true" />
+          {isLoading ? (
+            <LoadingSpinner size={20} className="text-white/50" />
+          ) : (
+            <Send className="w-5 h-5 ml-1" aria-hidden="true" />
+          )}
         </button>
       </div>
     </div>
