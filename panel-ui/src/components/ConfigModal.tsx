@@ -3,9 +3,11 @@ import {
   Bookmark,
   Bot,
   Brain,
+  Check,
   ChevronRight,
   Cpu,
   Database,
+  Folder,
   Globe,
   Grid,
   Layers,
@@ -14,6 +16,7 @@ import {
   Palette,
   Play,
   Plug,
+  Plus,
   Puzzle,
   RefreshCw,
   Server,
@@ -49,6 +52,7 @@ import MessagingConfigModal, {
 } from "./MessagingConfigModal";
 import { PluginsManager } from "./PluginsManager";
 import UsageMetricsPanel from "./UsageMetricsPanel";
+import { getActiveWorkspaceId, getWorkspaceList } from "./WorkspaceSelector";
 
 interface ConfigModalProps {
   key?: React.Key;
@@ -1003,6 +1007,83 @@ function ConfigView({
 }) {
   const [activeTab, setActiveTab] = useState("topology");
 
+  // Projects / Workspaces state
+  const [workspaces, setWorkspaces] = useState<string[]>(() => getWorkspaceList());
+  const [activeWorkspace, setActiveWorkspace] = useState<string>(() =>
+    getActiveWorkspaceId(),
+  );
+
+  const handleSwitchWorkspace = (wsId: string) => {
+    const sanitized = wsId.trim();
+    if (!sanitized) return;
+
+    setActiveWorkspace(sanitized);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("xavier_active_workspace", sanitized);
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("xavier:workspace-changed", {
+        detail: { workspaceId: sanitized },
+      }),
+    );
+  };
+
+  const handleAddProject = async () => {
+    let selectedName: string | null = null;
+    const isTauri =
+      typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+    if (isTauri) {
+      try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const chosen = await open({
+          directory: true,
+          multiple: false,
+        });
+        if (chosen && typeof chosen === "string") {
+          const folderName = chosen.split(/[/\\]/).filter(Boolean).pop();
+          selectedName = folderName || chosen;
+        }
+      } catch (err) {
+        console.warn("Tauri dialog error, falling back to prompt", err);
+      }
+    }
+
+    if (!selectedName) {
+      const input = prompt("Enter project / workspace name:");
+      if (input && input.trim()) {
+        selectedName = input.trim();
+      }
+    }
+
+    if (selectedName) {
+      const sanitized = selectedName.toLowerCase().replace(/\s+/g, "-");
+      const currentList = getWorkspaceList();
+      let updatedList = currentList;
+      if (!currentList.includes(sanitized)) {
+        updatedList = [...currentList, sanitized];
+        setWorkspaces(updatedList);
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("xavier_workspaces", JSON.stringify(updatedList));
+        }
+      }
+      handleSwitchWorkspace(sanitized);
+    }
+  };
+
+  useEffect(() => {
+    const syncWorkspaces = () => {
+      setWorkspaces(getWorkspaceList());
+      setActiveWorkspace(getActiveWorkspaceId());
+    };
+
+    window.addEventListener("xavier:workspace-changed", syncWorkspaces);
+    return () => {
+      window.removeEventListener("xavier:workspace-changed", syncWorkspaces);
+    };
+  }, []);
+
   const tabs = [
     {
       id: "server",
@@ -1105,24 +1186,69 @@ function ConfigView({
       className="flex h-full w-full"
     >
       {/* Sidebar */}
-      <div className="w-64 border-r border-white/5 p-6 flex flex-col bg-black/10 overflow-y-auto">
-        <nav className="flex flex-col gap-2">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-3 px-4 py-3 transition-all duration-300 text-sm font-medium rounded-lg
-                ${
-                  activeTab === tab.id
-                    ? "active-tab text-[#39ff14]"
-                    : "text-white/40 hover:text-white/80 hover:bg-white/5"
-                }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+      <div className="w-64 border-r border-white/5 p-6 flex flex-col bg-black/10 overflow-y-auto justify-between">
+        <div className="flex flex-col gap-6">
+          <nav className="flex flex-col gap-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-3 px-4 py-3 transition-all duration-300 text-sm font-medium rounded-lg
+                  ${
+                    activeTab === tab.id
+                      ? "active-tab text-[#39ff14]"
+                      : "text-white/40 hover:text-white/80 hover:bg-white/5"
+                  }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Projects / Workspaces Section */}
+          <div className="border-t border-white/5 pt-4">
+            <div className="flex items-center justify-between px-2 mb-2">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-white/40 font-semibold">
+                Projects
+              </span>
+              <button
+                type="button"
+                onClick={handleAddProject}
+                className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-[#39ff14] transition-colors"
+                title="Add Project"
+                aria-label="Add Project"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="flex flex-col gap-1 max-h-40 overflow-y-auto pr-1">
+              {workspaces.map((ws) => {
+                const isSelected = ws === activeWorkspace;
+                return (
+                  <button
+                    key={ws}
+                    type="button"
+                    onClick={() => handleSwitchWorkspace(ws)}
+                    className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono transition-all text-left ${
+                      isSelected
+                        ? "bg-[#39ff14]/10 text-[#39ff14] border border-[#39ff14]/30 font-semibold"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <Folder className="w-3 h-3 text-white/40 shrink-0" />
+                      <span className="truncate">{ws}</span>
+                    </div>
+                    {isSelected && (
+                      <Check className="w-3.5 h-3.5 text-[#39ff14] shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Content Area */}
