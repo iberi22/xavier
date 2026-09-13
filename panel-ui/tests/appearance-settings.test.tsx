@@ -11,51 +11,91 @@ describe("Appearance Settings Page", () => {
     document.documentElement.removeAttribute("data-theme");
   });
 
-  it("renders theme cards including Studio Dark as default and Xavier Cyberpunk as secondary", () => {
+  it("renders Antigravity Appearance header, chat settings, and theme sections", () => {
     render(
       <ThemeProvider defaultTheme="studio-dark" storageKey="test-theme">
         <AppearancePage />
       </ThemeProvider>
     );
 
-    expect(screen.getByText("Aspecto y Temas")).toBeDefined();
-    expect(screen.getByText(/Studio Dark/i)).toBeDefined();
-    expect(screen.getByText("Hueso Blanco")).toBeDefined();
-    expect(screen.getByText("Xavier Cyberpunk")).toBeDefined();
-    expect(screen.getByText("Oficial")).toBeDefined();
-    expect(screen.getByText("Secundario")).toBeDefined();
+    // Title & Subtitle
+    expect(screen.getAllByText("Appearance").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("Configure the agent's visual theme and display preferences.")
+    ).toBeDefined();
+
+    // Chat Settings Section
+    expect(screen.getByText("Chat Settings")).toBeDefined();
+    expect(screen.getByText("Verbose Agent Chat")).toBeDefined();
+    expect(
+      screen.getByText("Display and preserve intermediate thinking steps.")
+    ).toBeDefined();
+    expect(screen.getByText("Conversation Width")).toBeDefined();
+    expect(
+      screen.getByText("Configure the maximum width of the conversation panel.")
+    ).toBeDefined();
+    expect(screen.getByText("Default")).toBeDefined();
+    expect(screen.getByText("Narrow")).toBeDefined();
+    expect(screen.getByText("Wide")).toBeDefined();
+
+    // Theme Sections
+    expect(screen.getByText("Light Theme")).toBeDefined();
+    expect(screen.getByText("Dark Theme")).toBeDefined();
+    expect(screen.getByText("#EEEEEE")).toBeDefined();
+    expect(screen.getByText("#CCCCCC")).toBeDefined();
   });
 
-  it("changes theme when clicking a theme card", () => {
+  it("changes theme when clicking Light, Dark, or System mode buttons", () => {
     render(
       <ThemeProvider defaultTheme="studio-dark" storageKey="test-theme">
         <AppearancePage />
       </ThemeProvider>
     );
 
-    const boneCard = screen.getByText("Hueso Blanco");
+    const lightButton = screen.getByLabelText("Light theme");
     act(() => {
-      boneCard.click();
+      lightButton.click();
     });
 
     expect(document.documentElement.getAttribute("data-theme")).toBe("studio-bone");
     expect(document.documentElement.classList.contains("studio-bone")).toBe(true);
+
+    const darkButton = screen.getByLabelText("Dark theme");
+    act(() => {
+      darkButton.click();
+    });
+
+    expect(document.documentElement.getAttribute("data-theme")).toBe("studio-dark");
+    expect(document.documentElement.classList.contains("studio-dark")).toBe(true);
+
+    const systemButton = screen.getByLabelText("Inherit system theme");
+    act(() => {
+      systemButton.click();
+    });
+    // System resolves to studio-dark or studio-bone depending on matchMedia
+    expect(document.documentElement.getAttribute("data-theme")).toBeDefined();
   });
 
-  it("displays micro-interactions and typography toggles", () => {
+  it("toggles Verbose Agent Chat switch and selects Conversation Width", () => {
     render(
       <ThemeProvider defaultTheme="studio-dark" storageKey="test-theme">
         <AppearancePage />
       </ThemeProvider>
     );
 
-    const fontCheckbox = screen.getByLabelText("Usar fuente del sistema") as HTMLInputElement;
-    expect(fontCheckbox.checked).toBe(true);
+    const switchBtn = screen.getByRole("switch", { name: "Verbose Agent Chat" });
+    expect(switchBtn.getAttribute("aria-checked")).toBe("true");
 
     act(() => {
-      fontCheckbox.click();
+      switchBtn.click();
     });
+    expect(switchBtn.getAttribute("aria-checked")).toBe("false");
 
-    expect(fontCheckbox.checked).toBe(false);
+    const narrowBtn = screen.getByText("Narrow");
+    act(() => {
+      narrowBtn.click();
+    });
+    expect(narrowBtn.className).toContain("bg-[#25272c]");
   });
 });
+

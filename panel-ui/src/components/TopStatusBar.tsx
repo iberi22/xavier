@@ -564,11 +564,12 @@ export default React.memo(function TopStatusBar({
         </motion.div>
 
         {/* Center — Identity */}
-        <motion.div
-          layout
-          transition={spring}
-          className="absolute pointer-events-auto top-6 left-1/2 -translate-x-1/2 z-[60]"
-        >
+        {!isModalOpen && (
+          <motion.div
+            layout
+            transition={spring}
+            className="absolute pointer-events-auto top-6 left-1/2 -translate-x-1/2 z-[60]"
+          >
           <div className="relative group">
             <motion.div
               layout
@@ -639,6 +640,7 @@ export default React.memo(function TopStatusBar({
             </AnimatePresence>
           </div>
         </motion.div>
+        )}
 
         {/* Right Group */}
         <motion.div
