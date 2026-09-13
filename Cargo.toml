@@ -159,6 +159,10 @@ name = "notification_e2e"
 path = "tests/e2e/notification_e2e.rs"
 
 [[test]]
+name = "notification_emitters"
+path = "tests/notification_emitters.rs"
+
+[[test]]
 name = "hormer_navigation_e2e"
 path = "tests/e2e/hormer_navigation_e2e.rs"
 
