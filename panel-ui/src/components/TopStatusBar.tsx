@@ -25,6 +25,7 @@ import { AnimatePresence, motion } from "motion/react";
 import React, { useEffect, useRef, useState } from "react";
 import { ApiClient, getApiUrl, getRemoteUrl, setRemoteUrl } from "../api/client";
 import { getApiTokenSync } from "../hooks/useApiToken";
+import { useNotificationStream } from "../hooks/useNotificationStream";
 import FounderNodeStatusCard from "./FounderNodeStatusCard";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
@@ -68,7 +69,7 @@ export default React.memo(function TopStatusBar({
 }: TopStatusBarProps) {
   const [time, setTime] = useState(new Date());
   const [memoryCount, setMemoryCount] = useState(0);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const { unreadCount: streamUnreadCount } = useNotificationStream();
   const [internalLoading, setInternalLoading] = useState(true);
   const isLoading = propIsLoading !== undefined ? propIsLoading : internalLoading;
   const [metrics, setMetrics] = useState({
@@ -209,28 +210,6 @@ export default React.memo(function TopStatusBar({
         }
       } catch (err) {
         console.debug("Error fetching memories count:", err);
-      }
-
-      // 3. Fetch notifications unread count from REST API
-      try {
-        const token = getToken();
-        const res = await fetch(getApiUrl("/notifications"), {
-          headers: { "X-Xavier-Token": token },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            const unread = data.filter((n: any) => !n.read).length;
-            setUnreadCount(unread);
-          } else {
-            setUnreadCount(0);
-          }
-        } else {
-          setUnreadCount(0);
-        }
-      } catch (err) {
-        console.debug("Error fetching notifications unread count:", err);
-        setUnreadCount(0);
       } finally {
         setInternalLoading(false);
       }
@@ -867,13 +846,13 @@ export default React.memo(function TopStatusBar({
                 aria-label="Notifications"
                 aria-expanded={showNotifications}
                 className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2 hover:bg-white/5 hover:border-white/20 transition-all flex items-center justify-center h-7 w-7 shrink-0"
-                title={`${memoryCount} Memories | ${unreadCount} Unread`}
+                title={`${memoryCount} Memories | ${streamUnreadCount} Unread`}
               >
                 <div className="relative flex items-center justify-center">
                   <Bell className="w-3.5 h-3.5 text-white/60" />
-                  {unreadCount > 0 && (
+                  {streamUnreadCount > 0 && (
                     <div className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[7px] font-bold px-1 rounded-full border border-[#0a0a0a] min-w-[13px] text-center shadow-[0_0_5px_rgba(239,68,68,0.4)]">
-                      {unreadCount > 9 ? "9+" : unreadCount}
+                      {streamUnreadCount > 9 ? "9+" : streamUnreadCount}
                     </div>
                   )}
                 </div>
