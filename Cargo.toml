@@ -344,7 +344,7 @@ zip = { version = "8.6.0", features = ["deflate-flate2"] }
 image = "0.25"
 
 [dev-dependencies]
-serial_test = "3.2"
+serial_test = "4.0"
 mockito = "1.6"
 proptest = "1.11.0"
 tempfile = "3.27.0"
