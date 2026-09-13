@@ -19,6 +19,13 @@ pub struct TrainingBundleManifest {
     pub split_counts: HashMap<String, usize>,
     /// List of data files included in the bundle (usually .jsonl)
     pub data_files: Vec<String>,
+    /// Privacy level applied to the bundle (e.g., "P2", "P3", "P4")
+    #[serde(default = "default_privacy_level")]
+    pub privacy_level: String,
+}
+
+fn default_privacy_level() -> String {
+    "P2".to_string()
 }
 
 /// Detailed report of the readiness check.
