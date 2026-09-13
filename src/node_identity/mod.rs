@@ -28,7 +28,9 @@ pub use founder::{
     FounderNodeAttestation, FounderStatusResponse, NodeMetadata, SwalGenesisParams,
 };
 pub use hybrid_pack::{onchain_pack_hash, HybridPackSignature};
-pub use persist::{NodeStore, NodeStorePaths, PublicNodeIdentity};
+pub use persist::{
+    decrypt_cloud_share_3, EncryptedCloudShare, NodeStore, NodeStorePaths, PublicNodeIdentity,
+};
 pub use shamir::{ShamirShare, ShamirSplit};
 pub use vault::{SealedVault, VaultError};
 

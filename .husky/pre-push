@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# SWAL Security & Anti-Leak Pre-Push Guard
+if command -v node >/dev/null 2>&1; then
+  node "/home/belal/proyectosSWAL/scripts/swal-husky-guard.mjs" --push || exit 1
+fi
