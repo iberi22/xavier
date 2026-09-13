@@ -194,10 +194,41 @@ export function useNotificationStream(): UseNotificationStreamReturn {
     };
   }, [connectStream, fetchNotifications]);
 
+  // Synchronize state changes across multiple useNotificationStream hook instances
+  useEffect(() => {
+    const handleSync = (event: Event) => {
+      const custom = event as CustomEvent<{ action: string; id?: string }>;
+      if (!custom.detail) return;
+      if (custom.detail.action === "mark-all-read") {
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      } else if (custom.detail.action === "mark-read" && custom.detail.id) {
+        const targetId = custom.detail.id;
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === targetId ? { ...n, read: true } : n))
+        );
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("xavier:notifications-updated", handleSync);
+      return () => {
+        window.removeEventListener("xavier:notifications-updated", handleSync);
+      };
+    }
+  }, []);
+
   const markRead = useCallback(async (id: string) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("xavier:notifications-updated", {
+          detail: { action: "mark-read", id },
+        })
+      );
+    }
 
     try {
       const token = getToken();
@@ -212,6 +243,14 @@ export function useNotificationStream(): UseNotificationStreamReturn {
 
   const markAllRead = useCallback(async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("xavier:notifications-updated", {
+          detail: { action: "mark-all-read" },
+        })
+      );
+    }
 
     try {
       const token = getToken();
