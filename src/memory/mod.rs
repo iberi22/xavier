@@ -26,6 +26,7 @@ pub mod jules_importer;
 pub mod languages;
 pub mod layers_config;
 pub mod manager;
+pub mod multimodal_vec_store;
 pub mod openclaw_indexer;
 pub mod openclaw_scanner;
 pub mod pack;
@@ -58,3 +59,5 @@ pub use tgd::*;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_multimodal_vec;
