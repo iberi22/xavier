@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { THEME_TOKENS, type ThemeColors } from "./tokens";
 import type {
   ResolvedTheme,
   ThemeMode,
@@ -96,6 +97,23 @@ export function ThemeProvider({
     } else {
       root.classList.remove("attenuation-enabled");
     }
+
+    // Dynamic custom color CSS variable overrides
+    const baseColors = THEME_TOKENS[resolvedTheme] || THEME_TOKENS["studio-dark"];
+    const customColors: Partial<ThemeColors> =
+      resolvedTheme === "studio-bone"
+        ? settings.customLightColors || {}
+        : settings.customDarkColors || {};
+
+    const activeColors: ThemeColors = {
+      ...baseColors,
+      ...customColors,
+    };
+
+    Object.entries(activeColors).forEach(([key, value]) => {
+      const cssVarName = `--${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+      root.style.setProperty(cssVarName, value);
+    });
   }, [theme, resolvedTheme, settings]);
 
   const setTheme = (newTheme: ThemeMode) => {
