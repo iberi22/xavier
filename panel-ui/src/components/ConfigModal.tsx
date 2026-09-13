@@ -361,7 +361,52 @@ export default function ConfigModal({
     codeEgoQuery,
   ]);
 
-  const [activeProject, setActiveProject] = useState<string>("xavier");
+  const [workspaces, setWorkspaces] = useState<string[]>(() => getWorkspaceList());
+  const [activeProject, setActiveProject] = useState<string>(() => getActiveWorkspaceId());
+
+  useEffect(() => {
+    const syncWorkspaces = () => {
+      setWorkspaces(getWorkspaceList());
+      setActiveProject(getActiveWorkspaceId());
+    };
+    window.addEventListener("xavier:workspace-changed", syncWorkspaces);
+    return () => {
+      window.removeEventListener("xavier:workspace-changed", syncWorkspaces);
+    };
+  }, []);
+
+  const handleSwitchWorkspace = (workspaceId: string) => {
+    setActiveProject(workspaceId);
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("xavier_active_workspace", workspaceId);
+    }
+    window.dispatchEvent(
+      new CustomEvent("xavier:workspace-changed", {
+        detail: { workspaceId },
+      }),
+    );
+  };
+
+  const handleAddProject = () => {
+    let selectedName = "";
+    if (typeof window !== "undefined" && window.prompt) {
+      selectedName = window.prompt("Enter new project / workspace name:") || "";
+    }
+
+    if (selectedName) {
+      const sanitized = selectedName.toLowerCase().replace(/\s+/g, "-");
+      const currentList = getWorkspaceList();
+      let updatedList = currentList;
+      if (!currentList.includes(sanitized)) {
+        updatedList = [...currentList, sanitized];
+        setWorkspaces(updatedList);
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("xavier_workspaces", JSON.stringify(updatedList));
+        }
+      }
+      handleSwitchWorkspace(sanitized);
+    }
+  };
 
   return (
     <motion.div
@@ -410,17 +455,28 @@ export default function ConfigModal({
 
           {/* Projects Group */}
           <div>
-            <div className="px-2 py-1 text-[11px] font-medium text-white/40 tracking-wider">
-              Projects
+            <div className="flex items-center justify-between px-2 py-1">
+              <span className="text-[11px] font-medium text-white/40 tracking-wider">
+                Projects
+              </span>
+              <button
+                type="button"
+                onClick={handleAddProject}
+                className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors"
+                title="Add Project"
+                aria-label="Add Project"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
             </div>
             <div className="space-y-0.5 mt-1">
-              {["xavier", "/home/belal", "worldexams", "Show all"].map((proj) => {
+              {workspaces.map((proj) => {
                 const isSelected = activeProject === proj;
                 return (
                   <button
                     key={proj}
                     type="button"
-                    onClick={() => setActiveProject(proj)}
+                    onClick={() => handleSwitchWorkspace(proj)}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                       isSelected && mainTab !== "appearance"
                         ? "bg-white/10 text-white font-semibold"
