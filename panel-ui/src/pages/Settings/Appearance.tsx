@@ -2,10 +2,12 @@ import {
   Check,
   Laptop,
   Moon,
+  RotateCcw,
   Sun,
 } from "lucide-react";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useChatPreferences, type ConversationWidth } from "../../hooks/useChatPreferences";
+import { THEME_TOKENS, type ThemeColors } from "../../lib/theme/tokens";
 import { useTheme } from "../../lib/theme/theme-provider";
 import type { ThemeMode } from "../../lib/theme/types";
 
@@ -14,12 +16,52 @@ export interface AppearancePageProps {
 }
 
 export default function AppearancePage({ onClose }: AppearancePageProps) {
-  const { theme, setTheme, settings, updateSettings } = useTheme();
+  const { theme, resolvedTheme, setTheme, settings, updateSettings } = useTheme();
   const { preferences, updatePreferences } = useChatPreferences();
 
   // Presets State
   const [lightPreset, setLightPreset] = useState("Default Light");
   const [darkPreset, setDarkPreset] = useState("Default Dark");
+
+  const isLight = resolvedTheme === "studio-bone";
+  const customColors = isLight
+    ? settings.customLightColors || {}
+    : settings.customDarkColors || {};
+
+  const activeTokens: ThemeColors = {
+    ...THEME_TOKENS[resolvedTheme],
+    ...customColors,
+  };
+
+  const bgInputRef = useRef<HTMLInputElement>(null);
+  const fgInputRef = useRef<HTMLInputElement>(null);
+  const accentInputRef = useRef<HTMLInputElement>(null);
+
+  const handleColorChange = (key: keyof ThemeColors, value: string) => {
+    if (isLight) {
+      updateSettings({
+        customLightColors: {
+          ...settings.customLightColors,
+          [key]: value,
+        },
+      });
+    } else {
+      updateSettings({
+        customDarkColors: {
+          ...settings.customDarkColors,
+          [key]: value,
+        },
+      });
+    }
+  };
+
+  const resetCustomColors = () => {
+    if (isLight) {
+      updateSettings({ customLightColors: undefined });
+    } else {
+      updateSettings({ customDarkColors: undefined });
+    }
+  };
 
   return (
     <div className="w-full h-full overflow-y-auto px-8 py-6 text-foreground space-y-7 select-none font-sans">
@@ -282,6 +324,110 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
                 style={{ backgroundColor: "#007ACC" }}
               />
               <span className="font-mono text-[11px] text-white/70">#007ACC</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Custom Color Palette Overrides */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold tracking-wide uppercase text-foreground/70">
+              Personalización de Paleta de Colores
+            </h3>
+            <p className="text-xs text-foreground/50 mt-0.5">
+              Personaliza los tonos hexadecimales de {isLight ? "Modo Claro" : "Modo Oscuro"} (persiste en localStorage).
+            </p>
+          </div>
+          {Object.keys(customColors).length > 0 && (
+            <button
+              type="button"
+              onClick={resetCustomColors}
+              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Restablecer Valores
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          {/* Background Custom Swatch */}
+          <div className="p-4 rounded-xl border border-white/[0.06] bg-[#141518]/70 flex items-center justify-between gap-3">
+            <div>
+              <span className="text-sm font-medium block">Color de Fondo</span>
+              <span className="text-xs font-mono text-foreground/60">{activeTokens.background}</span>
+            </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => bgInputRef.current?.click()}
+                className="w-8 h-8 rounded-lg border border-white/20 shadow-sm cursor-pointer hover:scale-105 transition-transform"
+                style={{ backgroundColor: activeTokens.background }}
+                title="Editar color de fondo"
+                aria-label="Editar color de fondo"
+              />
+              <input
+                ref={bgInputRef}
+                type="color"
+                aria-label="Color de fondo input"
+                value={activeTokens.background.startsWith("#") ? activeTokens.background : "#0d0e10"}
+                onChange={(e) => handleColorChange("background", e.target.value)}
+                className="absolute inset-0 opacity-0 w-0 h-0 pointer-events-none"
+              />
+            </div>
+          </div>
+
+          {/* Foreground Custom Swatch */}
+          <div className="p-4 rounded-xl border border-white/[0.06] bg-[#141518]/70 flex items-center justify-between gap-3">
+            <div>
+              <span className="text-sm font-medium block">Color Texto / Texto Principal</span>
+              <span className="text-xs font-mono text-foreground/60">{activeTokens.foreground}</span>
+            </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => fgInputRef.current?.click()}
+                className="w-8 h-8 rounded-lg border border-white/20 shadow-sm cursor-pointer hover:scale-105 transition-transform"
+                style={{ backgroundColor: activeTokens.foreground }}
+                title="Editar color texto principal"
+                aria-label="Editar color texto principal"
+              />
+              <input
+                ref={fgInputRef}
+                type="color"
+                aria-label="Color texto principal input"
+                value={activeTokens.foreground.startsWith("#") ? activeTokens.foreground : "#f3f3f5"}
+                onChange={(e) => handleColorChange("foreground", e.target.value)}
+                className="absolute inset-0 opacity-0 w-0 h-0 pointer-events-none"
+              />
+            </div>
+          </div>
+
+          {/* Accent Custom Swatch */}
+          <div className="p-4 rounded-xl border border-white/[0.06] bg-[#141518]/70 flex items-center justify-between gap-3">
+            <div>
+              <span className="text-sm font-medium block">Color de Acento</span>
+              <span className="text-xs font-mono text-foreground/60">{activeTokens.accent}</span>
+            </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => accentInputRef.current?.click()}
+                className="w-8 h-8 rounded-lg border border-white/20 shadow-sm cursor-pointer hover:scale-105 transition-transform"
+                style={{ backgroundColor: activeTokens.accent }}
+                title="Editar color de acento"
+                aria-label="Editar color de acento"
+              />
+              <input
+                ref={accentInputRef}
+                type="color"
+                aria-label="Color de acento input"
+                value={activeTokens.accent.startsWith("#") ? activeTokens.accent : "#3b82f6"}
+                onChange={(e) => handleColorChange("accent", e.target.value)}
+                className="absolute inset-0 opacity-0 w-0 h-0 pointer-events-none"
+              />
             </div>
           </div>
         </div>
