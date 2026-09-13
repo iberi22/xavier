@@ -5,11 +5,14 @@
 //! Includes database-backed session and user stores.
 
 pub mod db;
+pub mod google_oauth;
 pub mod jwt;
 pub mod middleware;
 pub mod oauth;
 pub mod password;
 pub mod refresh;
+
+pub use google_oauth::*;
 
 use axum::{
     extract::{Request, State},
