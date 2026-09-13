@@ -543,23 +543,39 @@ export default function ConfigModal({
             {/* Preserved tab switchers (subtle badges for other settings) */}
             <button
               onClick={() => setMainTab("config")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                 mainTab === "config" ? "text-white bg-white/10" : "hover:text-white/70"
               }`}
             >
-              Config
+              Configuration
             </button>
             <button
               onClick={() => setMainTab("providers")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                 mainTab === "providers" ? "text-white bg-white/10" : "hover:text-white/70"
               }`}
             >
               Providers
             </button>
             <button
+              onClick={() => setMainTab("usage")}
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "usage" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Usage Metrics
+            </button>
+            <button
+              onClick={() => setMainTab("messaging")}
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "messaging" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Messaging
+            </button>
+            <button
               onClick={() => setMainTab("security")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                 mainTab === "security" ? "text-white bg-white/10" : "hover:text-white/70"
               }`}
             >
@@ -567,7 +583,7 @@ export default function ConfigModal({
             </button>
             <button
               onClick={() => setMainTab("mesh")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                 mainTab === "mesh" ? "text-white bg-white/10" : "hover:text-white/70"
               }`}
             >
@@ -575,7 +591,7 @@ export default function ConfigModal({
             </button>
             <button
               onClick={() => setMainTab("memory")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                 mainTab === "memory" ? "text-white bg-white/10" : "hover:text-white/70"
               }`}
             >
@@ -583,15 +599,23 @@ export default function ConfigModal({
             </button>
             <button
               onClick={() => setMainTab("agents")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                 mainTab === "agents" ? "text-white bg-white/10" : "hover:text-white/70"
               }`}
             >
               Agents
             </button>
             <button
+              onClick={() => setMainTab("plugins")}
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "plugins" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Plugins
+            </button>
+            <button
               onClick={() => setMainTab("graph")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                 mainTab === "graph" ? "text-white bg-white/10" : "hover:text-white/70"
               }`}
             >
@@ -599,11 +623,11 @@ export default function ConfigModal({
             </button>
             <button
               onClick={() => setMainTab("bookmarks")}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+              className={`relative pb-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                 mainTab === "bookmarks" ? "text-white bg-white/10" : "hover:text-white/70"
               }`}
             >
-              Bookmarks
+              Saved Artifacts
             </button>
           </div>
 
