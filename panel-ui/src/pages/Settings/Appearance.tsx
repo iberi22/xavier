@@ -2,277 +2,286 @@ import {
   Check,
   Laptop,
   Moon,
-  MousePointerClick,
-  Palette,
-  Sparkles,
   Sun,
-  Terminal,
-  Type,
 } from "lucide-react";
-import React from "react";
-import BorderedIcon from "../../components/ui/BorderedIcon";
-import SegmentedControl from "../../components/ui/SegmentedControl";
-import ThemedButton from "../../components/ui/ThemedButton";
+import React, { useState } from "react";
 import { useTheme } from "../../lib/theme/theme-provider";
 import type { ThemeMode } from "../../lib/theme/types";
 
-export default function AppearancePage() {
+export interface AppearancePageProps {
+  onClose?: () => void;
+}
+
+export default function AppearancePage({ onClose }: AppearancePageProps) {
   const { theme, setTheme, settings, updateSettings } = useTheme();
 
-  const themes: {
-    id: ThemeMode;
-    title: string;
-    description: string;
-    tag?: string;
-    icon: React.ReactNode;
-    bgHex: string;
-    cardHex: string;
-    accentHex: string;
-  }[] = [
-    {
-      id: "studio-dark",
-      title: "Studio Dark (Antigravity)",
-      description: "Estética oficial inspirada en Google Antigravity & Zed: obsidian mate, bordes tenues y tipografía nítida.",
-      tag: "Oficial",
-      icon: <Moon className="w-4 h-4 text-blue-400" />,
-      bgHex: "#111215",
-      cardHex: "#191a1e",
-      accentHex: "#3b82f6",
-    },
-    {
-      id: "studio-bone",
-      title: "Hueso Blanco",
-      description: "Modo claro ergonómico en tono hueso cálido. Máxima legibilidad y confort.",
-      tag: "Ergonómico",
-      icon: <Sun className="w-4 h-4 text-amber-500" />,
-      bgHex: "#f7f6f2",
-      cardHex: "#ebe8e1",
-      accentHex: "#2563eb",
-    },
-    {
-      id: "cyberpunk",
-      title: "Xavier Cyberpunk",
-      description: "Tema clásico de Xavier con acentos verde neón de alta energía.",
-      tag: "Secundario",
-      icon: <Terminal className="w-4 h-4 text-[#39ff14]" />,
-      bgHex: "#050505",
-      cardHex: "#0a0a0a",
-      accentHex: "#39ff14",
-    },
-    {
-      id: "system",
-      title: "Sistema (Auto)",
-      description: "Sincroniza automáticamente con las preferencias de modo oscuro del SO.",
-      icon: <Laptop className="w-4 h-4 text-zinc-400" />,
-      bgHex: "#101114",
-      cardHex: "#1a1b20",
-      accentHex: "#3b82f6",
-    },
-  ];
+  // Chat Settings State
+  const [verboseChat, setVerboseChat] = useState(true);
+  const [conversationWidth, setConversationWidth] = useState<"Default" | "Narrow" | "Wide">("Default");
+
+  // Presets State
+  const [lightPreset, setLightPreset] = useState("Default Light");
+  const [darkPreset, setDarkPreset] = useState("Default Dark");
 
   return (
-    <div className="w-full h-full overflow-y-auto px-4 py-6 md:px-8 space-y-8 text-foreground pb-20">
-      {/* Header */}
-      <div className="border-b border-white/[0.06] pb-5">
-        <div className="flex items-center gap-3">
-          <BorderedIcon size="md" active>
-            <Palette className="w-5 h-5 text-blue-400" />
-          </BorderedIcon>
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight">Aspecto y Temas</h2>
-            <p className="text-xs text-foreground/60 mt-0.5">
-              Personaliza el tema visual, tipografía nativa del sistema y micro-interacciones.
+    <div className="w-full h-full overflow-y-auto px-8 py-6 text-foreground space-y-7 select-none font-sans">
+      {/* Title & Subtitle */}
+      <div>
+        <h1 className="text-xl font-medium tracking-tight text-white/95">Appearance</h1>
+        <p className="text-xs text-white/50 mt-1">
+          Configure the agent's visual theme and display preferences.
+        </p>
+      </div>
+
+      {/* Section: Chat Settings */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-semibold text-white/70">Chat Settings</h2>
+
+        <div className="rounded-xl border border-white/[0.07] bg-[#16171a]/50 divide-y divide-white/[0.05]">
+          {/* Verbose Agent Chat */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium text-white/90">Verbose Agent Chat</span>
+              <p className="text-[11px] text-white/45 leading-relaxed">
+                Display and preserve intermediate thinking steps.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={verboseChat}
+              aria-label="Verbose Agent Chat"
+              onClick={() => setVerboseChat(!verboseChat)}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
+                verboseChat ? "bg-blue-600" : "bg-white/15"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out mt-[3px] ${
+                  verboseChat ? "translate-x-4 ml-[3px]" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Conversation Width */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium text-white/90">Conversation Width</span>
+              <p className="text-[11px] text-white/45 leading-relaxed">
+                Configure the maximum width of the conversation panel.
+              </p>
+            </div>
+            <div className="inline-flex rounded-lg bg-[#111215] p-0.5 border border-white/[0.08]">
+              {(["Default", "Narrow", "Wide"] as const).map((width) => (
+                <button
+                  key={width}
+                  type="button"
+                  onClick={() => setConversationWidth(width)}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-150 ${
+                    conversationWidth === width
+                      ? "bg-[#25272c] text-white shadow-sm font-semibold border border-white/10"
+                      : "text-white/50 hover:text-white hover:bg-white/[0.04]"
+                  }`}
+                >
+                  {width}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Section: Appearance (Mode Selector) */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-semibold text-white/70">Appearance</h2>
+
+        <div className="rounded-xl border border-white/[0.07] bg-[#16171a]/50 px-4 py-3 flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-xs font-medium text-white/90">Appearance</span>
+            <p className="text-[11px] text-white/45 leading-relaxed">
+              Select light, dark, or inherit system settings.
             </p>
           </div>
+
+          {/* 3-icon button group: [Monitor/System, Sun/Light, Moon/Dark] */}
+          <div className="inline-flex items-center rounded-lg bg-[#111215] p-0.5 border border-white/[0.08]">
+            <button
+              type="button"
+              aria-label="Inherit system theme"
+              title="System"
+              onClick={() => setTheme("system")}
+              className={`p-1.5 rounded-md transition-all duration-150 ${
+                theme === "system"
+                  ? "bg-[#25272c] text-white shadow-sm border border-white/10"
+                  : "text-white/40 hover:text-white/80 hover:bg-white/[0.04]"
+              }`}
+            >
+              <Laptop className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              type="button"
+              aria-label="Light theme"
+              title="Light"
+              onClick={() => setTheme("studio-bone")}
+              className={`p-1.5 rounded-md transition-all duration-150 ${
+                theme === "studio-bone" || theme === "light"
+                  ? "bg-[#25272c] text-white shadow-sm border border-white/10"
+                  : "text-white/40 hover:text-white/80 hover:bg-white/[0.04]"
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              type="button"
+              aria-label="Dark theme"
+              title="Dark"
+              onClick={() => setTheme("studio-dark")}
+              className={`p-1.5 rounded-md transition-all duration-150 ${
+                theme === "studio-dark" || theme === "dark"
+                  ? "bg-[#25272c] text-white shadow-sm border border-white/10"
+                  : "text-white/40 hover:text-white/80 hover:bg-white/[0.04]"
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Theme Selection Grid */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold tracking-wide uppercase text-foreground/70">
-            Tema Visual
-          </h3>
-          <span className="text-xs text-foreground/50">
-            Activo: <strong className="text-foreground capitalize">{theme}</strong>
-          </span>
-        </div>
+      {/* Section: Light Theme */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-semibold text-white/70">Light Theme</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {themes.map((t) => {
-            const isSelected = theme === t.id;
-            return (
-              <div
-                key={t.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setTheme(t.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setTheme(t.id);
+        <div className="rounded-xl border border-white/[0.07] bg-[#16171a]/50 divide-y divide-white/[0.05]">
+          {/* Preset Dropdown */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs font-medium text-white/90">Preset</span>
+            <div className="relative">
+              <select
+                aria-label="Light Theme Preset"
+                value={lightPreset}
+                onChange={(e) => {
+                  setLightPreset(e.target.value);
+                  setTheme("studio-bone");
+                }}
+                className="bg-[#1e2025] hover:bg-[#25272d] text-white/80 text-xs px-3 py-1 pr-6 rounded-md border border-white/10 outline-none cursor-pointer appearance-none transition-colors"
+              >
+                <option value="Default Light" className="bg-[#1a1b20]">Default Light</option>
+                <option value="studio-bone" className="bg-[#1a1b20]">Default Light (studio-bone)</option>
+              </select>
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/40 text-[10px]">
+                ▼
+              </span>
+            </div>
+          </div>
+
+          {/* Background Swatch */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs font-medium text-white/90">Background</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+              <span
+                className="w-3 h-3 rounded-[3px] border border-black/10 shrink-0"
+                style={{ backgroundColor: "#EEEEEE" }}
+              />
+              <span className="font-mono text-[11px] text-white/70">#EEEEEE</span>
+            </div>
+          </div>
+
+          {/* Foreground Swatch */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs font-medium text-white/90">Foreground</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/20 shrink-0">
+              <span
+                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                style={{ backgroundColor: "#101010" }}
+              />
+              <span className="font-mono text-[11px] text-white/70">#101010</span>
+            </div>
+          </div>
+
+          {/* Accent Swatch */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs font-medium text-white/90">Accent</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+              <span
+                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                style={{ backgroundColor: "#007ACC" }}
+              />
+              <span className="font-mono text-[11px] text-white/70">#007ACC</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Section: Dark Theme */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-semibold text-white/70">Dark Theme</h2>
+
+        <div className="rounded-xl border border-white/[0.07] bg-[#16171a]/50 divide-y divide-white/[0.05]">
+          {/* Preset Dropdown */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs font-medium text-white/90">Preset</span>
+            <div className="relative">
+              <select
+                aria-label="Dark Theme Preset"
+                value={darkPreset}
+                onChange={(e) => {
+                  setDarkPreset(e.target.value);
+                  if (e.target.value === "cyberpunk") {
+                    setTheme("cyberpunk");
+                  } else {
+                    setTheme("studio-dark");
                   }
                 }}
-                className={`
-                  relative flex flex-col p-4 rounded-xl border transition-all duration-150 cursor-pointer press-attenuation
-                  ${
-                    isSelected
-                      ? "border-blue-500/50 bg-blue-500/[0.04] shadow-lg shadow-black/20"
-                      : "border-white/[0.07] bg-[#141518]/60 hover:bg-[#18191d] hover:border-white/15"
-                  }
-                `}
+                className="bg-[#1e2025] hover:bg-[#25272d] text-white/80 text-xs px-3 py-1 pr-6 rounded-md border border-white/10 outline-none cursor-pointer appearance-none transition-colors"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className="w-4 h-4 rounded-full border border-white/20 shrink-0"
-                      style={{ backgroundColor: t.bgHex }}
-                    />
-                    <span className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      {t.title}
-                      {t.tag && (
-                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-white/[0.08] text-foreground/70">
-                          {t.tag}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  {isSelected && (
-                    <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
-                      <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
-                    </div>
-                  )}
-                </div>
-
-                <p className="text-xs text-foreground/60 mt-2 leading-relaxed">
-                  {t.description}
-                </p>
-
-                {/* Color Swatch Preview */}
-                <div className="mt-3.5 flex items-center gap-1.5 pt-2 border-t border-white/[0.04]">
-                  <div
-                    className="w-5 h-5 rounded-md border border-white/10"
-                    style={{ backgroundColor: t.bgHex }}
-                    title="Fondo"
-                  />
-                  <div
-                    className="w-5 h-5 rounded-md border border-white/10"
-                    style={{ backgroundColor: t.cardHex }}
-                    title="Superficie"
-                  />
-                  <div
-                    className="w-5 h-5 rounded-md border border-white/10"
-                    style={{ backgroundColor: t.accentHex }}
-                    title="Acento"
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Typography and Micro-Interactions */}
-      <div className="space-y-4">
-        <h3 className="text-sm font-semibold tracking-wide uppercase text-foreground/70">
-          Tipografía y Ergonomía
-        </h3>
-
-        <div className="rounded-xl border border-white/[0.06] bg-[#141518]/70 divide-y divide-white/[0.05] overflow-hidden">
-          {/* System Font */}
-          <div className="flex items-center justify-between p-4 hover-attenuation">
-            <div className="flex items-center gap-3">
-              <BorderedIcon size="sm">
-                <Type className="w-4 h-4 text-foreground/70" />
-              </BorderedIcon>
-              <div>
-                <span className="text-sm font-medium">Fuente Nativa del Sistema</span>
-                <p className="text-xs text-foreground/50">
-                  Usa la tipografía nativa del SO (-apple-system, Segoe UI, Roboto) para máxima nitidez y rendimiento.
-                </p>
-              </div>
+                <option value="Default Dark" className="bg-[#1a1b20]">Default Dark</option>
+                <option value="studio-dark" className="bg-[#1a1b20]">Default Dark (studio-dark)</option>
+                <option value="cyberpunk" className="bg-[#1a1b20]">Xavier Cyberpunk</option>
+              </select>
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/40 text-[10px]">
+                ▼
+              </span>
             </div>
-            <input
-              type="checkbox"
-              aria-label="Usar fuente del sistema"
-              checked={settings.useSystemFont}
-              onChange={(e) => updateSettings({ useSystemFont: e.target.checked })}
-              className="w-4 h-4 rounded border-white/20 text-blue-600 focus:ring-blue-500 cursor-pointer"
-            />
           </div>
 
-          {/* Bordered Icons */}
-          <div className="flex items-center justify-between p-4 hover-attenuation">
-            <div className="flex items-center gap-3">
-              <BorderedIcon size="sm">
-                <Sparkles className="w-4 h-4 text-foreground/70" />
-              </BorderedIcon>
-              <div>
-                <span className="text-sm font-medium">Iconos con Bordes</span>
-                <p className="text-xs text-foreground/50">
-                  Enmarca los iconos en contenedores sutilmente delineados para mayor definición táctil.
-                </p>
-              </div>
+          {/* Background Swatch */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs font-medium text-white/90">Background</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+              <span
+                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                style={{ backgroundColor: "#101010" }}
+              />
+              <span className="font-mono text-[11px] text-white/70">#101010</span>
             </div>
-            <input
-              type="checkbox"
-              aria-label="Habilitar iconos con bordes"
-              checked={settings.borderedIcons}
-              onChange={(e) => updateSettings({ borderedIcons: e.target.checked })}
-              className="w-4 h-4 rounded border-white/20 text-blue-600 focus:ring-blue-500 cursor-pointer"
-            />
           </div>
 
-          {/* Attenuation on Press & Hover */}
-          <div className="flex items-center justify-between p-4 hover-attenuation">
-            <div className="flex items-center gap-3">
-              <BorderedIcon size="sm">
-                <MousePointerClick className="w-4 h-4 text-foreground/70" />
-              </BorderedIcon>
-              <div>
-                <span className="text-sm font-medium">Atenuación OnPress & Hover</span>
-                <p className="text-xs text-foreground/50">
-                  Respuesta táctil con micro-escalado suave (active:scale-97) y atenuación de opacidad al interactuar.
-                </p>
-              </div>
+          {/* Foreground Swatch */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs font-medium text-white/90">Foreground</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+              <span
+                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                style={{ backgroundColor: "#CCCCCC" }}
+              />
+              <span className="font-mono text-[11px] text-white/70">#CCCCCC</span>
             </div>
-            <input
-              type="checkbox"
-              aria-label="Habilitar atenuación en hover y clic"
-              checked={settings.enableAttenuation}
-              onChange={(e) => updateSettings({ enableAttenuation: e.target.checked })}
-              className="w-4 h-4 rounded border-white/20 text-blue-600 focus:ring-blue-500 cursor-pointer"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Live Interactive Preview */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-semibold tracking-wide uppercase text-foreground/70">
-          Vista Previa en Vivo de Componentes
-        </h3>
-        <div className="p-5 rounded-xl border border-white/[0.06] bg-[#141518]/90 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <ThemedButton variant="primary">Botón Primario</ThemedButton>
-            <ThemedButton variant="secondary">Botón Secundario</ThemedButton>
-            <ThemedButton variant="pill" active>
-              Píldora Activa
-            </ThemedButton>
-            <BorderedIcon size="md">
-              <Sparkles className="w-4 h-4" />
-            </BorderedIcon>
           </div>
 
-          <div className="pt-2">
-            <SegmentedControl
-              value="queue"
-              onChange={() => null}
-              options={[
-                { value: "queue", label: "Queue" },
-                { value: "immediate", label: "Send Immediately" },
-              ]}
-            />
+          {/* Accent Swatch */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-xs font-medium text-white/90">Accent</span>
+            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#1e2025] border border-white/10">
+              <span
+                className="w-3 h-3 rounded-[3px] border border-white/20 shrink-0"
+                style={{ backgroundColor: "#007ACC" }}
+              />
+              <span className="font-mono text-[11px] text-white/70">#007ACC</span>
+            </div>
           </div>
         </div>
       </div>

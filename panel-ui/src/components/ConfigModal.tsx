@@ -63,7 +63,11 @@ interface ConfigModalProps {
 
 type MainTab =
   | "config"
+  | "general"
+  | "account"
   | "appearance"
+  | "customizations"
+  | "browser"
   | "graph"
   | "bookmarks"
   | "providers"
@@ -86,7 +90,7 @@ export default function ConfigModal({
   onUpdateBookmark,
   token,
 }: ConfigModalProps) {
-  const [mainTab, setMainTab] = useState<MainTab>("config");
+  const [mainTab, setMainTab] = useState<MainTab>("appearance");
   const [subLayer, setSubLayer] = useState<SubLayer>("roadmap");
 
   const api = useMemo(() => new ApiClient(token || ""), [token]);
@@ -353,121 +357,220 @@ export default function ConfigModal({
     codeEgoQuery,
   ]);
 
+  const [activeProject, setActiveProject] = useState<string>("xavier");
+
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+      initial={{ opacity: 0, scale: 0.96, y: 8 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95, y: 10 }}
-      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className="relative z-20 w-[1000px] h-[650px] max-w-[95vw] rounded-[32px] flex flex-col overflow-hidden shadow-2xl glass"
+      exit={{ opacity: 0, scale: 0.96, y: 8 }}
+      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      className="relative z-20 w-[960px] h-[640px] max-w-[95vw] rounded-2xl flex flex-row overflow-hidden shadow-2xl bg-[#141518]/95 border border-white/[0.08] backdrop-blur-2xl text-foreground"
     >
-      {/* Top Navigation */}
-      <div className="flex items-center justify-between px-8 py-4 border-b border-white/5 bg-black/40">
-        <div className="flex gap-6 overflow-x-auto">
-          <TabButton
-            active={mainTab === "config"}
-            onClick={() => setMainTab("config")}
-            icon={<SettingsIcon />}
-            label="Configuration"
-          />
-          <TabButton
-            active={mainTab === "appearance"}
-            onClick={() => setMainTab("appearance")}
-            icon={<Palette className="w-4 h-4" />}
-            label="Aspecto"
-          />
-          <TabButton
-            active={mainTab === "providers"}
-            onClick={() => setMainTab("providers")}
-            icon={<Globe className="w-4 h-4" />}
-            label="Providers"
-          />
-          <TabButton
-            active={mainTab === "usage"}
-            onClick={() => setMainTab("usage")}
-            icon={<TrendingUp className="w-4 h-4" />}
-            label="Usage Metrics"
-          />
-          <TabButton
-            active={mainTab === "messaging"}
-            onClick={() => setMainTab("messaging")}
-            icon={<MessageSquare className="w-4 h-4" />}
-            label="Messaging"
-          />
-          <TabButton
-            active={mainTab === "security"}
-            onClick={() => setMainTab("security")}
-            icon={<Shield className="w-4 h-4" />}
-            label="Security"
-          />
-          <TabButton
-            active={mainTab === "mesh"}
-            onClick={() => setMainTab("mesh")}
-            icon={<Network className="w-4 h-4" />}
-            label="Mesh"
-          />
-          <TabButton
-            active={mainTab === "memory"}
-            onClick={() => setMainTab("memory")}
-            icon={<Brain className="w-4 h-4" />}
-            label="Memory"
-          />
-          <TabButton
-            active={mainTab === "agents"}
-            onClick={() => setMainTab("agents")}
-            icon={<Bot className="w-4 h-4" />}
-            label="Agents"
-          />
-          <TabButton
-            active={mainTab === "plugins"}
-            onClick={() => setMainTab("plugins")}
-            icon={<Puzzle className="w-4 h-4" />}
-            label="Plugins"
-          />
-          <TabButton
-            active={mainTab === "graph"}
-            onClick={() => setMainTab("graph")}
-            icon={<Share2 className="w-4 h-4" />}
-            label="Roadmap"
-          />
-          <TabButton
-            active={mainTab === "bookmarks"}
-            onClick={() => setMainTab("bookmarks")}
-            icon={<Bookmark className="w-4 h-4" />}
-            label="Saved Artifacts"
-          />
+      {/* Left Sidebar */}
+      <div className="w-56 shrink-0 bg-[#111215]/80 border-r border-white/[0.06] flex flex-col justify-between p-3 select-none">
+        <div className="space-y-4 overflow-y-auto">
+          {/* Settings Group */}
+          <div>
+            <div className="px-2 py-1 text-[11px] font-medium text-white/40 tracking-wider">
+              Settings
+            </div>
+            <div className="space-y-0.5 mt-1">
+              {[
+                { id: "account" as MainTab, label: "Account" },
+                { id: "config" as MainTab, label: "General" },
+                { id: "appearance" as MainTab, label: "Appearance" },
+                { id: "providers" as MainTab, label: "Models" },
+                { id: "customizations" as MainTab, label: "Customizations" },
+                { id: "browser" as MainTab, label: "Browser" },
+                { id: "plugins" as MainTab, label: "App" },
+              ].map((item) => {
+                const isSelected = mainTab === item.id;
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => setMainTab(item.id)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
+                      isSelected
+                        ? "bg-white/10 text-white font-semibold shadow-sm"
+                        : "text-white/60 hover:text-white/90 hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Projects Group */}
+          <div>
+            <div className="px-2 py-1 text-[11px] font-medium text-white/40 tracking-wider">
+              Projects
+            </div>
+            <div className="space-y-0.5 mt-1">
+              {["xavier", "/home/belal", "worldexams", "Show all"].map((proj) => {
+                const isSelected = activeProject === proj;
+                return (
+                  <button
+                    key={proj}
+                    type="button"
+                    onClick={() => setActiveProject(proj)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
+                      isSelected && mainTab !== "appearance"
+                        ? "bg-white/10 text-white font-semibold"
+                        : "text-white/60 hover:text-white/90 hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    {proj}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Not in Project Group */}
+          <div>
+            <div className="px-2 py-1 text-[11px] font-medium text-white/40 tracking-wider">
+              Not in Project
+            </div>
+            <div className="space-y-0.5 mt-1">
+              <button
+                type="button"
+                onClick={() => setMainTab("messaging")}
+                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
+                  mainTab === "messaging"
+                    ? "bg-white/10 text-white font-semibold"
+                    : "text-white/60 hover:text-white/90 hover:bg-white/[0.04]"
+                }`}
+              >
+                Conversations
+              </button>
+            </div>
+          </div>
         </div>
-        <button
-          onClick={onClose}
-          className="p-2 hover:bg-white/10 rounded-full transition-colors text-white/50 hover:text-white group"
-          title="Salir"
-          aria-label="Cerrar ventana de configuración"
-        >
-          <X className="w-5 h-5 group-hover:scale-110 transition-transform" />
-        </button>
+
+        {/* Footer Items */}
+        <div className="pt-2 border-t border-white/[0.06] space-y-0.5">
+          <button
+            type="button"
+            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/60 hover:text-white/90 hover:bg-white/[0.04] transition-all duration-150"
+          >
+            Shortcuts
+          </button>
+          <button
+            type="button"
+            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/60 hover:text-white/90 hover:bg-white/[0.04] transition-all duration-150"
+          >
+            Provide Feedback
+          </button>
+        </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-hidden relative bg-black/20">
-        <AnimatePresence mode="wait">
-          {mainTab === "config" && (
-            <ConfigView
-              key="config"
-              graphData={graphData}
-              token={token || ""}
-            />
-          )}
-          {mainTab === "appearance" && (
-            <motion.div
-              key="appearance"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="w-full h-full overflow-hidden"
+      {/* Right Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative bg-[#131417]/60">
+        {/* Top Header with Close Button and preserving tabs */}
+        <div className="flex items-center justify-between pl-8 pr-6 pt-5 pb-1">
+          <div className="flex items-center gap-1.5 overflow-x-auto text-xs text-white/40">
+            {/* Preserved tab switchers (subtle badges for other settings) */}
+            <button
+              onClick={() => setMainTab("config")}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "config" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
             >
-              <AppearancePage />
-            </motion.div>
-          )}
+              Config
+            </button>
+            <button
+              onClick={() => setMainTab("providers")}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "providers" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Providers
+            </button>
+            <button
+              onClick={() => setMainTab("security")}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "security" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Security
+            </button>
+            <button
+              onClick={() => setMainTab("mesh")}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "mesh" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Mesh
+            </button>
+            <button
+              onClick={() => setMainTab("memory")}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "memory" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Memory
+            </button>
+            <button
+              onClick={() => setMainTab("agents")}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "agents" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Agents
+            </button>
+            <button
+              onClick={() => setMainTab("graph")}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "graph" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Roadmap
+            </button>
+            <button
+              onClick={() => setMainTab("bookmarks")}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                mainTab === "bookmarks" ? "text-white bg-white/10" : "hover:text-white/70"
+              }`}
+            >
+              Bookmarks
+            </button>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-white/10 rounded-full transition-colors text-white/40 hover:text-white group shrink-0"
+            title="Close"
+            aria-label="Cerrar ventana de configuración"
+          >
+            <X className="w-4 h-4 group-hover:scale-110 transition-transform" />
+          </button>
+        </div>
+
+        {/* Content Body */}
+        <div className="flex-1 overflow-hidden relative">
+          <AnimatePresence mode="wait">
+            {(mainTab === "config" || mainTab === "general") && (
+              <ConfigView
+                key="config"
+                graphData={graphData}
+                token={token || ""}
+              />
+            )}
+            {mainTab === "appearance" && (
+              <motion.div
+                key="appearance"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="w-full h-full overflow-hidden"
+              >
+                <AppearancePage onClose={onClose} />
+              </motion.div>
+            )}
           {mainTab === "graph" && (
             <motion.div
               key="graph"
@@ -819,6 +922,7 @@ export default function ConfigModal({
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
     </motion.div>
   );
