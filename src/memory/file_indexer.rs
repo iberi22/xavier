@@ -252,20 +252,48 @@ impl FileIndexer {
     pub async fn index_file(&self, path: &Path) -> Result<IndexedFile> {
         let path_str = path.to_string_lossy().to_string();
 
-        // If it's a code file and we have a code indexer, trigger it
-        if let Some(ref code_indexer) = self.code_indexer {
-            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                let code_exts = ["rs", "py", "ts", "js", "go", "java"];
-                if code_exts.contains(&ext) {
-                    debug!("🚀 Triggering code indexing for: {:?}", path);
+        let mut is_binary_multimodal = false;
+
+        // Auto-detect Modality & Route based on file extension
+        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            let code_exts = ["rs", "py", "ts", "js", "go", "java"];
+            let image_exts = ["png", "jpg", "jpeg", "webp"];
+            let audio_exts = ["mp3", "wav"];
+            let video_exts = ["mp4", "mkv"];
+
+            if code_exts.contains(&ext) {
+                if let Some(ref code_indexer) = self.code_indexer {
+                    debug!("🚀 Routing to Code Indexer for: {:?}", path);
                     let _ = code_indexer.index(path, true).await;
                 }
+            } else if image_exts.contains(&ext) {
+                debug!("📷 Routing to Image/Vision Indexer for: {:?}", path);
+                is_binary_multimodal = true;
+                // STUB: Here is where Vision Language Models (Qwen-VL, LLaVA) are called
+            } else if audio_exts.contains(&ext) {
+                debug!("🎙️ Routing to Audio/STT Indexer for: {:?}", path);
+                is_binary_multimodal = true;
+                // STUB: Here is where Whisper / Audio transcription is called
+            } else if video_exts.contains(&ext) {
+                debug!("🎥 Routing to Video Indexer for: {:?}", path);
+                is_binary_multimodal = true;
+                // STUB: Here is where frame extraction & video models are called
             }
         }
 
-        let content = fs::read_to_string(path)
-            .await
-            .with_context(|| format!("Failed to read file: {:?}", path))?;
+        let content = if is_binary_multimodal {
+            // Future SOTA: Execute multimodal processing pipeline (VLM, STT, etc.)
+            // Currently stores basic artifact metadata representation.
+            format!(
+                "Multimodal artifact [path: {}, size: {} bytes]",
+                path.display(),
+                fs::metadata(path).await.map(|m| m.len()).unwrap_or(0)
+            )
+        } else {
+            fs::read_to_string(path)
+                .await
+                .with_context(|| format!("Failed to read file: {:?}", path))?
+        };
 
         let metadata = fs::metadata(path).await?;
         let last_modified = metadata

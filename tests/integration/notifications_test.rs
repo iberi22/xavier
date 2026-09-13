@@ -97,8 +97,20 @@ async fn test_email_notification_delivery() {
         .await
         .expect("send notification");
 
-    // Check email delivery
+    // Check email delivery with a small retry loop
+    let mut sent = false;
+    for _ in 0..10 {
+        let emails = SENT_EMAILS.lock().await;
+        if !emails.is_empty() && emails.iter().any(|e| e.title == "Email Test Title") {
+            sent = true;
+            break;
+        }
+        drop(emails); // Important to drop the lock before sleeping
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    }
+
     let emails = SENT_EMAILS.lock().await;
+    assert!(sent, "Email was not sent");
     assert!(!emails.is_empty());
     let sent_email = emails
         .iter()

@@ -16,3 +16,4 @@ pub use scoring::{
 };
 pub use snippet::{clip_chars, extract, Excerpt, SnippetBudget};
 pub use types::*;
+pub mod benchmarks_plugin;
