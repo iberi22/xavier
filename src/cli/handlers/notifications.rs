@@ -2,13 +2,47 @@
 
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
+use std::convert::Infallible;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::Response,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        Response,
+    },
     Json,
 };
+use futures_util::stream::{self, Stream};
+use tokio::sync::broadcast::error::RecvError;
 use xavier::notifications::NOTIFICATIONS;
+
+/// Realtime SSE notification stream handler.
+pub async fn stream_notifications_handler(
+    State(_state): State<CliState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = NOTIFICATIONS.subscribe();
+    let stream = stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(notification) => {
+                    if let Ok(event) = Event::default().json_data(&notification) {
+                        return Some((Ok(event), rx));
+                    }
+                }
+                Err(RecvError::Lagged(skipped)) => {
+                    tracing::warn!("Notification stream lagged by {} messages", skipped);
+                    continue;
+                }
+                Err(RecvError::Closed) => {
+                    tracing::info!("Notification stream broadcast channel closed");
+                    return None;
+                }
+            }
+        }
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
 
 /// List notifications handler.
 pub async fn list_notifications_handler(State(_state): State<CliState>) -> Response {
