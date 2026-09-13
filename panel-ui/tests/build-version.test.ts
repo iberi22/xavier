@@ -9,7 +9,7 @@ describe.sequential("Panel UI Build & Version Integration", () => {
     const cargoContent = fs.readFileSync(cargoPath, "utf8");
     const expectedVersion = cargoContent.match(/^version = "(.+)"/m)?.[1];
 
-    expect(expectedVersion).toBeDefined();
+    expect(expectedVersion).toBe("0.2.1");
 
     const viteConfigPath = path.resolve(__dirname, "../vite.config.ts");
     const viteConfigContent = fs.readFileSync(viteConfigPath, "utf8");
@@ -55,7 +55,7 @@ describe.sequential("Panel UI Build & Version Integration", () => {
       let foundVersion = false;
       for (const jsFile of jsFiles) {
         const content = fs.readFileSync(path.join(assetsDir, jsFile), "utf8");
-        if (content.includes("0.1.1")) {
+        if (content.includes("0.2.1")) {
           foundVersion = true;
           break;
         }
