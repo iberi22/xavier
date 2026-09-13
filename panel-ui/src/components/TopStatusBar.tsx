@@ -4,7 +4,6 @@ import {
   Bot,
   Crown,
   Database,
-  Globe,
   Hash,
   Home,
   Key,
@@ -18,7 +17,6 @@ import {
   Users,
   Wifi,
   WifiOff,
-  X,
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -31,6 +29,8 @@ import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
 import WorkspaceSelector from "./WorkspaceSelector";
+import NodeConnectionModal from "./modals/NodeConnectionModal";
+import SyncStatusPopover from "./popovers/SyncStatusPopover";
 import LoadingSpinner from "./ui/LoadingSpinner";
 
 type MessagingPlatform =
@@ -45,7 +45,6 @@ interface TopStatusBarProps {
   isLoading?: boolean;
 }
 
-// Declare the vite define constant
 declare const __APP_VERSION__: string;
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -56,12 +55,7 @@ function getToken(): string {
 
 /**
  * ⚡ Bolt Performance Optimization
- *
- * 💡 What: Wrapped TopStatusBar in React.memo()
- * 🎯 Why: TopStatusBar is a complex component containing multiple intervals, fetches,
- *         and animated layout calculations. Updates to chat messages or other parent state in App.tsx shouldn't
- *         re-render this bar unnecessarily.
- * 📊 Impact: Prevents unnecessary heavy tree renders and layout recalculations.
+ * Wrapped TopStatusBar in React.memo() to avoid unnecessary tree re-renders.
  */
 export default React.memo(function TopStatusBar({
   isModalOpen = false,
@@ -85,17 +79,13 @@ export default React.memo(function TopStatusBar({
   const [showConfig, setShowConfig] = useState(false);
   const [showFounderCard, setShowFounderCard] = useState(false);
   const [showMessaging, setShowMessaging] = useState(false);
-  const [messagingTab, setMessagingTab] =
-    useState<MessagingPlatform>("telegram");
+  const [messagingTab, setMessagingTab] = useState<MessagingPlatform>("telegram");
   const [showNotifications, setShowNotifications] = useState(false);
   const bellRef = useRef<HTMLButtonElement>(null);
   const [nodeStatus, setNodeStatus] = useState<"connected" | "disconnected" | "retrying">("connected");
   const [retryCount, setRetryCount] = useState(0);
   const [remoteUrl, setRemoteUrlState] = useState<string>(getRemoteUrl());
   const [showNodeModal, setShowNodeModal] = useState(false);
-  const [inputRemoteUrl, setInputRemoteUrl] = useState<string>(remoteUrl);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   // Manual Memory Sync state
   const [showSyncPopover, setShowSyncPopover] = useState(false);
@@ -154,7 +144,6 @@ export default React.memo(function TopStatusBar({
     fetchConfig();
 
     const fetchMetrics = async () => {
-      // 1. Fetch realtime metrics from Tauri or HTTP /health
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         try {
           const { invoke } = await import("@tauri-apps/api/core");
@@ -176,14 +165,9 @@ export default React.memo(function TopStatusBar({
               const cpu_percent = data.system.cpu_usage ?? 0;
               const ram_percent = data.system.ram_usage_percent ?? 0;
               const deviceMemory =
-                (navigator as unknown as { deviceMemory?: number })
-                  .deviceMemory || 8;
+                (navigator as unknown as { deviceMemory?: number }).deviceMemory || 8;
               const ram_used_gb = (ram_percent / 100) * deviceMemory;
-              setMetrics({
-                cpu_percent,
-                ram_used_gb,
-                ram_total_gb: deviceMemory,
-              });
+              setMetrics({ cpu_percent, ram_used_gb, ram_total_gb: deviceMemory });
             }
           } else {
             setNodeStatus("disconnected");
@@ -196,7 +180,6 @@ export default React.memo(function TopStatusBar({
         }
       }
 
-      // 2. Fetch memory count from REST API
       try {
         const token = getToken();
         const res = await fetch(getApiUrl("/v1/memories?limit=1"), {
@@ -227,9 +210,7 @@ export default React.memo(function TopStatusBar({
         .then(({ listen }) => {
           listen<any>("new-notification", () => {
             fetchMetrics();
-          }).then((fn) => {
-            unlisten = fn;
-          });
+          }).then((fn) => { unlisten = fn; });
         })
         .catch((err) => console.debug("Error listening for events:", err));
     } else {
@@ -246,7 +227,6 @@ export default React.memo(function TopStatusBar({
 
   const spring = { type: "spring" as const, stiffness: 200, damping: 25 };
 
-  // Open messaging modal on a specific platform icon click
   const openMessaging = (platform: MessagingPlatform) => {
     setMessagingTab(platform);
     setShowMessaging(true);
@@ -259,11 +239,7 @@ export default React.memo(function TopStatusBar({
     try {
       const token = getToken();
       const client = new ApiClient(token);
-
-      // Step 1: Push local changes to peer/cloud memory sync
       await client.syncPush();
-
-      // Step 2: Pull remote changes from peer/cloud memory sync
       await client.syncPull();
 
       const elapsed = Math.round(performance.now() - startTime);
@@ -285,10 +261,7 @@ export default React.memo(function TopStatusBar({
       if (typeof window !== "undefined" && window.dispatchEvent) {
         window.dispatchEvent(
           new CustomEvent("xavier-error-toast", {
-            detail: {
-              message: `Sync failed: ${msg}`,
-              type: "error",
-            },
+            detail: { message: `Sync failed: ${msg}`, type: "error" },
           }),
         );
       }
@@ -301,34 +274,7 @@ export default React.memo(function TopStatusBar({
     setRemoteUrl(url);
     const active = getRemoteUrl();
     setRemoteUrlState(active);
-    setInputRemoteUrl(active);
-    setTestResult(null);
     setShowNodeModal(false);
-  };
-
-  const handleTestConnection = async () => {
-    setTestingConnection(true);
-    setTestResult(null);
-    try {
-      const target = inputRemoteUrl.trim().replace(/\/+$/, "");
-      const healthUrl = target ? `${target}/health` : getApiUrl("/health");
-      const res = await fetch(healthUrl);
-      if (res.ok) {
-        setTestResult({ ok: true, msg: "Connected successfully to node!" });
-      } else {
-        setTestResult({
-          ok: false,
-          msg: `HTTP Error ${res.status}: ${res.statusText}`,
-        });
-      }
-    } catch (_err) {
-      setTestResult({
-        ok: false,
-        msg: "Connection failed. Check node URL, CORS policies or network availability.",
-      });
-    } finally {
-      setTestingConnection(false);
-    }
   };
 
   return (
@@ -348,17 +294,11 @@ export default React.memo(function TopStatusBar({
               className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-3 py-1 flex items-center gap-2 h-7 text-white/80 shrink-0"
             >
               <span className="font-mono text-[10px] hidden md:inline-block">
-                {time.toLocaleDateString(undefined, {
-                  month: "numeric",
-                  day: "numeric",
-                })}
+                {time.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
               </span>
               <div className="w-px h-2.5 bg-white/20 hidden md:block" />
               <span className="font-mono text-[10px] min-w-[50px] text-center">
-                {time.toLocaleTimeString(undefined, {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+                {time.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
               </span>
             </motion.div>
           )}
@@ -390,9 +330,7 @@ export default React.memo(function TopStatusBar({
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     className="absolute left-0 top-full mt-2 z-[80]"
                   >
-                    <FounderNodeStatusCard
-                      onClose={() => setShowFounderCard(false)}
-                    />
+                    <FounderNodeStatusCard onClose={() => setShowFounderCard(false)} />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -400,7 +338,6 @@ export default React.memo(function TopStatusBar({
           )}
 
           <OperationModeBadge />
-
           <WorkspaceSelector />
 
           {/* System Resources Pill */}
@@ -413,9 +350,7 @@ export default React.memo(function TopStatusBar({
               {isLoading ? (
                 <div className="flex items-center gap-1.5 px-1">
                   <LoadingSpinner size={12} />
-                  <span className="font-mono text-[10px] text-white/50">
-                    Loading...
-                  </span>
+                  <span className="font-mono text-[10px] text-white/50">Loading...</span>
                 </div>
               ) : (
                 <>
@@ -424,23 +359,16 @@ export default React.memo(function TopStatusBar({
                     title={`Memory: ${metrics.ram_used_gb.toFixed(1)}GB / ${metrics.ram_total_gb.toFixed(1)}GB`}
                   >
                     <Database className="w-3 h-3 text-blue-400" />
-                    <span className="font-mono">
-                      {Math.round(metrics.ram_used_gb)}G
-                    </span>
+                    <span className="font-mono">{Math.round(metrics.ram_used_gb)}G</span>
                   </div>
                   <div
                     className="flex items-center gap-1 text-[10px] text-white/70"
                     title={`CPU: ${Math.round(metrics.cpu_percent)}%`}
                   >
                     <Activity className="w-3 h-3 text-red-400" />
-                    <span className="font-mono">
-                      {Math.round(metrics.cpu_percent)}%
-                    </span>
+                    <span className="font-mono">{Math.round(metrics.cpu_percent)}%</span>
                   </div>
-                  <div
-                    className="flex items-center gap-1 text-[10px] text-[#39ff14]"
-                    title="GPU: ON"
-                  >
+                  <div className="flex items-center gap-1 text-[10px] text-[#39ff14]" title="GPU: ON">
                     <Zap className="w-3 h-3 fill-[#39ff14]/20" />
                   </div>
                 </>
@@ -448,14 +376,13 @@ export default React.memo(function TopStatusBar({
             </motion.div>
           )}
 
-          {/* Communication Channels — each icon clickable */}
+          {/* Communication Channels */}
           {modules.channels && (
             <motion.div
               layout
               transition={spring}
               className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-2 h-7 shrink-0 hidden md:flex"
             >
-              {/* Discord */}
               <button
                 type="button"
                 onClick={() => openMessaging("discord")}
@@ -463,13 +390,8 @@ export default React.memo(function TopStatusBar({
                 aria-label="Configure Discord"
                 className="relative group p-0.5 rounded-full hover:bg-indigo-500/10 transition-colors"
               >
-                <MessageCircle
-                  className="w-3 h-3 text-indigo-400/40 group-hover:text-indigo-400 transition-colors"
-                  aria-hidden="true"
-                />
+                <MessageCircle className="w-3 h-3 text-indigo-400/40 group-hover:text-indigo-400 transition-colors" aria-hidden="true" />
               </button>
-
-              {/* Slack */}
               <button
                 type="button"
                 onClick={() => openMessaging("slack")}
@@ -477,13 +399,8 @@ export default React.memo(function TopStatusBar({
                 aria-label="Configure Slack"
                 className="relative group p-0.5 rounded-full hover:bg-amber-500/10 transition-colors"
               >
-                <Hash
-                  className="w-3 h-3 text-amber-400/40 group-hover:text-amber-400 transition-colors"
-                  aria-hidden="true"
-                />
+                <Hash className="w-3 h-3 text-amber-400/40 group-hover:text-amber-400 transition-colors" aria-hidden="true" />
               </button>
-
-              {/* Teams */}
               <button
                 type="button"
                 onClick={() => openMessaging("teams")}
@@ -491,41 +408,20 @@ export default React.memo(function TopStatusBar({
                 aria-label="Configure MS Teams"
                 className="relative group p-0.5 rounded-full hover:bg-purple-500/10 transition-colors"
               >
-                <Users
-                  className="w-3 h-3 text-purple-400/40 group-hover:text-purple-400 transition-colors"
-                  aria-hidden="true"
-                />
+                <Users className="w-3 h-3 text-purple-400/40 group-hover:text-purple-400 transition-colors" aria-hidden="true" />
               </button>
-
-              {/* Telegram — may be configured */}
               <button
                 type="button"
                 onClick={() => openMessaging("telegram")}
-                title={
-                  config.has_telegram
-                    ? "Telegram (Active)"
-                    : "Telegram — Click to configure"
-                }
-                aria-label={
-                  config.has_telegram
-                    ? "Telegram (Active)"
-                    : "Configure Telegram"
-                }
+                title={config.has_telegram ? "Telegram (Active)" : "Telegram — Click to configure"}
+                aria-label={config.has_telegram ? "Telegram (Active)" : "Configure Telegram"}
                 className="relative group p-0.5 rounded-full hover:bg-blue-500/10 transition-colors"
               >
-                <Send
-                  className={`w-3 h-3 transition-colors ${config.has_telegram ? "text-blue-400" : "text-blue-400/40 group-hover:text-blue-400"}`}
-                  aria-hidden="true"
-                />
+                <Send className={`w-3 h-3 transition-colors ${config.has_telegram ? "text-blue-400" : "text-blue-400/40 group-hover:text-blue-400"}`} aria-hidden="true" />
                 {config.has_telegram && (
-                  <div
-                    className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400 msg-active-dot shadow-[0_0_4px_rgba(96,165,250,0.6)]"
-                    aria-hidden="true"
-                  />
+                  <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400 msg-active-dot shadow-[0_0_4px_rgba(96,165,250,0.6)]" aria-hidden="true" />
                 )}
               </button>
-
-              {/* WhatsApp */}
               <button
                 type="button"
                 onClick={() => openMessaging("whatsapp")}
@@ -533,10 +429,7 @@ export default React.memo(function TopStatusBar({
                 aria-label="Configure WhatsApp"
                 className="relative group p-0.5 rounded-full hover:bg-green-500/10 transition-colors"
               >
-                <MessageSquare
-                  className="w-3 h-3 text-green-400/40 group-hover:text-green-400 transition-colors"
-                  aria-hidden="true"
-                />
+                <MessageSquare className="w-3 h-3 text-green-400/40 group-hover:text-green-400 transition-colors" aria-hidden="true" />
               </button>
             </motion.div>
           )}
@@ -560,7 +453,6 @@ export default React.memo(function TopStatusBar({
               </span>
             </motion.div>
 
-            {/* Gear Button */}
             <button
               type="button"
               onClick={() => setShowConfig(!showConfig)}
@@ -568,13 +460,9 @@ export default React.memo(function TopStatusBar({
               title="Configure Status Bar"
               aria-label="Configure Status Bar"
             >
-              <Settings
-                className="w-3.5 h-3.5 hover:animate-[spin_4s_linear_infinite]"
-                aria-hidden="true"
-              />
+              <Settings className="w-3.5 h-3.5 hover:animate-[spin_4s_linear_infinite]" aria-hidden="true" />
             </button>
 
-            {/* Config Popover */}
             <AnimatePresence>
               {showConfig && (
                 <motion.div
@@ -583,9 +471,7 @@ export default React.memo(function TopStatusBar({
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
                   className="absolute top-full mt-3 left-1/2 -translate-x-1/2 w-48 bg-[#0a0a0a]/95 backdrop-blur-xl border border-white/10 rounded-xl p-3 shadow-2xl flex flex-col gap-2 z-[60]"
                 >
-                  <h3 className="text-[10px] uppercase tracking-widest text-white/40 mb-1 px-1">
-                    Modules
-                  </h3>
+                  <h3 className="text-[10px] uppercase tracking-widest text-white/40 mb-1 px-1">Modules</h3>
                   {Object.entries({
                     time: "Time & Date",
                     founder: "Founder Node",
@@ -602,15 +488,9 @@ export default React.memo(function TopStatusBar({
                       onClick={() => toggleModule(key as keyof typeof modules)}
                       className="flex items-center justify-between px-2 py-1.5 hover:bg-white/5 rounded-lg transition-colors group/btn outline-none"
                     >
-                      <span className="text-xs text-white/80 font-mono">
-                        {label}
-                      </span>
-                      <div
-                        className={`w-3 h-3 rounded-sm border flex items-center justify-center transition-colors ${modules[key as keyof typeof modules] ? "bg-[#39ff14]/20 border-[#39ff14]/50" : "border-white/20 group-hover/btn:border-white/40"}`}
-                      >
-                        {modules[key as keyof typeof modules] && (
-                          <div className="w-1.5 h-1.5 bg-[#39ff14] rounded-[1px]" />
-                        )}
+                      <span className="text-xs text-white/80 font-mono">{label}</span>
+                      <div className={`w-3 h-3 rounded-sm border flex items-center justify-center transition-colors ${modules[key as keyof typeof modules] ? "bg-[#39ff14]/20 border-[#39ff14]/50" : "border-white/20 group-hover/btn:border-white/40"}`}>
+                        {modules[key as keyof typeof modules] && <div className="w-1.5 h-1.5 bg-[#39ff14] rounded-[1px]" />}
                       </div>
                     </button>
                   ))}
@@ -632,11 +512,7 @@ export default React.memo(function TopStatusBar({
             layout
             transition={spring}
             type="button"
-            onClick={() => {
-              setInputRemoteUrl(getRemoteUrl());
-              setTestResult(null);
-              setShowNodeModal(true);
-            }}
+            onClick={() => setShowNodeModal(true)}
             className={`bg-[#0a0a0a]/80 backdrop-blur-md border ${
               nodeStatus === "connected"
                 ? "border-emerald-500/30 hover:border-emerald-400/50"
@@ -650,13 +526,7 @@ export default React.memo(function TopStatusBar({
             ) : (
               <WifiOff className="w-3 h-3 text-amber-400 animate-pulse" />
             )}
-            <span
-              className={`font-mono text-[9px] uppercase tracking-wide hidden sm:inline-block ${
-                nodeStatus === "connected"
-                  ? "text-emerald-300"
-                  : "text-amber-300 font-bold"
-              }`}
-            >
+            <span className={`font-mono text-[9px] uppercase tracking-wide hidden sm:inline-block ${nodeStatus === "connected" ? "text-emerald-300" : "text-amber-300 font-bold"}`}>
               {remoteUrl ? "Remote Node" : "Local Node"}
             </span>
             {nodeStatus !== "connected" && (
@@ -671,9 +541,7 @@ export default React.memo(function TopStatusBar({
             layout
             transition={spring}
             type="button"
-            onClick={() => {
-              window.location.hash = "#/maloca";
-            }}
+            onClick={() => { window.location.hash = "#/maloca"; }}
             className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 hover:border-emerald-400/30 hover:bg-emerald-500/5 transition-colors"
             title="Abrir Maloca (ops workspace)"
           >
@@ -690,10 +558,7 @@ export default React.memo(function TopStatusBar({
               transition={spring}
               className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-2 h-7 shrink-0 lg:flex"
             >
-              <div
-                className="flex items-center gap-1"
-                title="TPM HW Encryption Active"
-              >
+              <div className="flex items-center gap-1" title="TPM HW Encryption Active">
                 <ShieldCheck className="w-3 h-3 text-emerald-400" />
               </div>
               <div className="w-px h-2.5 bg-white/20" />
@@ -731,84 +596,14 @@ export default React.memo(function TopStatusBar({
                 )}
               </motion.button>
 
-              <AnimatePresence>
-                {showSyncPopover && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 top-full mt-2 w-60 bg-[#0a0a0a]/95 backdrop-blur-xl border border-cyan-500/30 rounded-xl p-3.5 shadow-2xl z-[80] space-y-3 font-mono"
-                  >
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <Wifi className="w-3.5 h-3.5 text-cyan-400" />
-                        <span className="text-xs font-bold text-white uppercase tracking-wider">
-                          Memory Sync
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowSyncPopover(false)}
-                        className="text-white/40 hover:text-white transition-colors cursor-pointer"
-                        aria-label="Close popover"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-1.5 text-[10px] text-white/70">
-                      <div className="flex justify-between">
-                        <span>Sync Health:</span>
-                        <span className="text-cyan-400 font-bold">Optimal (98%)</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Peer Connection:</span>
-                        <span className="text-emerald-400 font-bold">4 Active</span>
-                      </div>
-                      {syncLatencyMs !== null && (
-                        <div className="flex justify-between">
-                          <span>Last Sync Latency:</span>
-                          <span className="text-cyan-300 font-bold">{syncLatencyMs}ms</span>
-                        </div>
-                      )}
-                      {lastSyncTime && (
-                        <div className="flex justify-between">
-                          <span>Last Synced At:</span>
-                          <span className="text-white/50">
-                            {lastSyncTime.toLocaleTimeString(undefined, {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={handleTriggerSync}
-                        disabled={isSyncing}
-                        className="w-full py-1.5 px-3 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-                        aria-label="Sync Now"
-                      >
-                        {isSyncing ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-300" />
-                            <span>Syncing...</span>
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 text-cyan-300" />
-                            <span>Sync Now</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              <SyncStatusPopover
+                isOpen={showSyncPopover}
+                onClose={() => setShowSyncPopover(false)}
+                isSyncing={isSyncing}
+                syncLatencyMs={syncLatencyMs}
+                lastSyncTime={lastSyncTime}
+                onTriggerSync={handleTriggerSync}
+              />
             </div>
           )}
 
@@ -835,7 +630,7 @@ export default React.memo(function TopStatusBar({
             </motion.div>
           )}
 
-          {/* Notifications Bell — opens dropdown */}
+          {/* Notifications Bell */}
           {modules.notifications && (
             <div className="relative">
               <motion.button
@@ -858,12 +653,9 @@ export default React.memo(function TopStatusBar({
                 </div>
               </motion.button>
 
-              {/* Dropdown */}
               <AnimatePresence>
                 {showNotifications && (
-                  <NotificationsDropdown
-                    onClose={() => setShowNotifications(false)}
-                  />
+                  <NotificationsDropdown onClose={() => setShowNotifications(false)} />
                 )}
               </AnimatePresence>
             </div>
@@ -872,144 +664,16 @@ export default React.memo(function TopStatusBar({
       </div>
 
       {/* Node Connection Modal Overlay */}
-      <AnimatePresence>
-        {showNodeModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto"
-            onClick={() => setShowNodeModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-5"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                <div className="flex items-center gap-2">
-                  <Server className="w-5 h-5 text-emerald-400" />
-                  <div>
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                      Xavier Node Connectivity
-                    </h3>
-                    <p className="text-[10px] text-white/50">
-                      Configure active remote node URL & auto-reconnect settings
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowNodeModal(false)}
-                  className="text-white/40 hover:text-white transition-colors"
-                  aria-label="Close modal"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+      <NodeConnectionModal
+        isOpen={showNodeModal}
+        onClose={() => setShowNodeModal(false)}
+        nodeStatus={nodeStatus}
+        retryCount={retryCount}
+        remoteUrl={remoteUrl}
+        onSaveRemoteUrl={handleSaveRemoteUrl}
+      />
 
-              <div className="space-y-4">
-                {/* Active Mode Banner */}
-                <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center justify-between text-xs font-mono">
-                  <span className="text-white/60">Current Base URL:</span>
-                  <span
-                    className="text-emerald-400 font-bold truncate max-w-[200px]"
-                    title={getApiUrl("")}
-                  >
-                    {getApiUrl("") || "Relative / Default"}
-                  </span>
-                </div>
-
-                {/* Status Indicator */}
-                <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-white/60">Status:</span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                      nodeStatus === "connected"
-                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                        : "bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse"
-                    }`}
-                  >
-                    {nodeStatus === "connected"
-                      ? "Connected"
-                      : `Disconnected (${retryCount} retries)`}
-                  </span>
-                </div>
-
-                {/* Remote URL Input */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="remote-node-url-input"
-                    className="block text-xs font-mono text-white/70"
-                  >
-                    Remote Node Endpoint (e.g., https://xavier-node.domain.com:8006)
-                  </label>
-                  <div className="relative">
-                    <Globe className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                    <input
-                      id="remote-node-url-input"
-                      type="text"
-                      value={inputRemoteUrl}
-                      onChange={(e) => setInputRemoteUrl(e.target.value)}
-                      placeholder="https://node.swal.local:8006"
-                      className="w-full pl-9 pr-3 py-2 bg-black/50 border border-white/15 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-emerald-400 transition-colors"
-                    />
-                  </div>
-                </div>
-
-                {testResult && (
-                  <div
-                    className={`p-3 rounded-xl border text-xs font-mono ${
-                      testResult.ok
-                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                        : "bg-red-500/10 border-red-500/30 text-red-300"
-                    }`}
-                  >
-                    {testResult.msg}
-                  </div>
-                )}
-
-                {/* Button Controls */}
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
-                  <button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={testingConnection}
-                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 rounded-xl text-xs font-mono font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    {testingConnection && (
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                    )}
-                    Test
-                  </button>
-                  <div className="flex items-center gap-2">
-                    {remoteUrl && (
-                      <button
-                        type="button"
-                        onClick={() => handleSaveRemoteUrl(null)}
-                        className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 rounded-xl text-xs font-mono font-bold transition-colors"
-                      >
-                        Use Local
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleSaveRemoteUrl(inputRemoteUrl)}
-                      className="px-4 py-1.5 bg-emerald-500 text-black hover:bg-emerald-400 rounded-xl text-xs font-mono font-bold transition-colors"
-                    >
-                      Save Remote Node
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Messaging Config Modal — full screen overlay */}
+      {/* Messaging Config Modal */}
       <AnimatePresence>
         {showMessaging && (
           <MessagingConfigModal
