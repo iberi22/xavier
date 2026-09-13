@@ -180,7 +180,7 @@ pub fn probe_disk_space(path: &Path) -> (Option<u64>, Option<u64>) {
         let mnt = disk.mount_point();
         if path.starts_with(mnt) {
             let mnt_len = mnt.as_os_str().len();
-            if best_match.as_ref().map_or(true, |(_, len)| mnt_len > *len) {
+            if best_match.as_ref().is_none_or(|(_, len)| mnt_len > *len) {
                 best_match = Some((disk, mnt_len));
             }
         }
