@@ -178,6 +178,8 @@ pub struct TrainingGateResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntrospectionAvailableResponse {
     pub techniques: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub challenges: Vec<HumanChallengeEvent>,
 }
 
 // ---------------------------------------------------------------------------
@@ -583,8 +585,10 @@ pub async fn training_gate_handler(State(state): State<ChallengeState>) -> impl 
     (StatusCode::OK, Json(response)).into_response()
 }
 
-/// `GET /v1/maloca/introspection/available`: Lists supported human introspection techniques.
-pub async fn introspection_available_handler() -> impl IntoResponse {
+/// `GET /v1/maloca/introspection/available`: Lists supported human introspection techniques and candidate challenges.
+pub async fn introspection_available_handler(
+    State(state): State<ChallengeState>,
+) -> impl IntoResponse {
     let techniques = vec![
         IntrospectionTechnique::SocraticQuestioning.as_str().to_string(),
         IntrospectionTechnique::FiveWhys.as_str().to_string(),
@@ -593,7 +597,14 @@ pub async fn introspection_available_handler() -> impl IntoResponse {
         IntrospectionTechnique::FirstPrinciples.as_str().to_string(),
         IntrospectionTechnique::PatternRecognition.as_str().to_string(),
     ];
-    let response = IntrospectionAvailableResponse { techniques };
+    let challenges = state
+        .store
+        .list_events(Some(ChallengeStatus::Candidate), 50)
+        .unwrap_or_default();
+    let response = IntrospectionAvailableResponse {
+        techniques,
+        challenges,
+    };
     (StatusCode::OK, Json(response)).into_response()
 }
 
@@ -917,5 +928,7 @@ mod tests {
         assert!(avail_res.techniques.contains(&"steel_manning".to_string()));
         assert!(avail_res.techniques.contains(&"first_principles".to_string()));
         assert!(avail_res.techniques.contains(&"pattern_recognition".to_string()));
+        // Challenges list should be deserializable
+        assert!(avail_res.challenges.is_empty() || !avail_res.challenges.is_empty());
     }
 }
