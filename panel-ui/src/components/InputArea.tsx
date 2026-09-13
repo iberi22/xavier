@@ -1,5 +1,6 @@
 import { BrainCircuit, FolderPlus, Mic, Send } from "lucide-react";
 import React, { useState, useCallback, useRef } from "react";
+import { useChatPreferences, type ConversationWidth } from "../hooks/useChatPreferences";
 import LoadingSpinner from "./ui/LoadingSpinner";
 
 interface InputAreaProps {
@@ -8,6 +9,12 @@ interface InputAreaProps {
   onSystemMessage?: (text: string) => void;
   isLoading?: boolean;
 }
+
+const WIDTH_CLASSES: Record<ConversationWidth, string> = {
+  narrow: "max-w-xl",
+  default: "max-w-3xl",
+  wide: "max-w-5xl",
+};
 
 /**
  * ⚡ Bolt Performance Optimization
@@ -22,6 +29,9 @@ export default React.memo(function InputArea({
   onSystemMessage,
   isLoading = false,
 }: InputAreaProps) {
+  const { conversationWidth } = useChatPreferences();
+  const widthClass = WIDTH_CLASSES[conversationWidth] || WIDTH_CLASSES.default;
+
   const [inputText, setInputText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -97,7 +107,7 @@ export default React.memo(function InputArea({
   }, [inputText, onSendMessage]);
 
   return (
-    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 pointer-events-auto z-10">
+    <div className={`absolute bottom-8 left-1/2 -translate-x-1/2 w-full ${widthClass} px-4 pointer-events-auto z-10`}>
       <input
         type="file"
         ref={fileInputRef}

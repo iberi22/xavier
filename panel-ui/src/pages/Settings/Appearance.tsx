@@ -1,6 +1,8 @@
 import {
   Check,
   Laptop,
+  Maximize2,
+  MessageSquare,
   Moon,
   MousePointerClick,
   Palette,
@@ -13,11 +15,14 @@ import React from "react";
 import BorderedIcon from "../../components/ui/BorderedIcon";
 import SegmentedControl from "../../components/ui/SegmentedControl";
 import ThemedButton from "../../components/ui/ThemedButton";
+import { useChatPreferences, type ConversationWidth } from "../../hooks/useChatPreferences";
 import { useTheme } from "../../lib/theme/theme-provider";
 import type { ThemeMode } from "../../lib/theme/types";
 
 export default function AppearancePage() {
   const { theme, setTheme, settings, updateSettings } = useTheme();
+  const { verboseChat, setVerboseChat, conversationWidth, setConversationWidth } =
+    useChatPreferences();
 
   const themes: {
     id: ThemeMode;
@@ -243,6 +248,63 @@ export default function AppearancePage() {
               onChange={(e) => updateSettings({ enableAttenuation: e.target.checked })}
               className="w-4 h-4 rounded border-white/20 text-blue-600 focus:ring-blue-500 cursor-pointer"
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Preferencias de Chat */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold tracking-wide uppercase text-foreground/70">
+          Preferencias de Chat
+        </h3>
+
+        <div className="rounded-xl border border-white/[0.06] bg-[#141518]/70 divide-y divide-white/[0.05] overflow-hidden">
+          {/* Verbose Chat */}
+          <div className="flex items-center justify-between p-4 hover-attenuation">
+            <div className="flex items-center gap-3">
+              <BorderedIcon size="sm">
+                <MessageSquare className="w-4 h-4 text-foreground/70" />
+              </BorderedIcon>
+              <div>
+                <span className="text-sm font-medium">Chat Detallado (Verbose Chat)</span>
+                <p className="text-xs text-foreground/50">
+                  Expande por defecto los pasos de pensamiento y razonamiento intermedio de los agentes.
+                </p>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              aria-label="Habilitar chat detallado"
+              checked={verboseChat}
+              onChange={(e) => setVerboseChat(e.target.checked)}
+              className="w-4 h-4 rounded border-white/20 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            />
+          </div>
+
+          {/* Conversation Width */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 hover-attenuation">
+            <div className="flex items-center gap-3">
+              <BorderedIcon size="sm">
+                <Maximize2 className="w-4 h-4 text-foreground/70" />
+              </BorderedIcon>
+              <div>
+                <span className="text-sm font-medium">Ancho de Conversación</span>
+                <p className="text-xs text-foreground/50">
+                  Ajusta el ancho máximo del contenedor del chat (Estrecho, Predeterminado o Ancho).
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0">
+              <SegmentedControl
+                value={conversationWidth}
+                onChange={(val) => setConversationWidth(val as ConversationWidth)}
+                options={[
+                  { value: "narrow", label: "Estrecho" },
+                  { value: "default", label: "Predeterminado" },
+                  { value: "wide", label: "Ancho" },
+                ]}
+              />
+            </div>
           </div>
         </div>
       </div>

@@ -11,6 +11,7 @@ import {
   Layers,
   MessageSquare,
   Network,
+  Palette,
   Play,
   Plug,
   Puzzle,
@@ -30,6 +31,7 @@ import {
   codeViewToCanvas,
   memoryViewToCanvas,
 } from "../api/graphAdapters";
+import AppearancePage from "../pages/Settings/Appearance";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
 import type { Agent, BookmarkArtifact, GraphData, GraphNode } from "../types";
@@ -61,6 +63,7 @@ interface ConfigModalProps {
 
 type MainTab =
   | "config"
+  | "appearance"
   | "graph"
   | "bookmarks"
   | "providers"
@@ -93,15 +96,6 @@ export default function ConfigModal({
   const [endDate, setEndDate] = useState<string>("");
   const [selectedMilestone, setSelectedMilestone] = useState<string>("all");
 
-  /**
-   * ⚡ Bolt Performance Optimization
-   *
-   * 💡 What: Replaced multiple array allocations (map, filter) with a single-pass reduce and wrapped in useMemo.
-   * 🎯 Why: The original code chained `.map()` and `.filter()` on every render, causing O(N) array allocations
-   *         for each step. By using `.reduce()` and `useMemo`, we avoid re-calculating this on unrelated state
-   *         changes (like switching tabs) and do the work in a single pass.
-   * 📊 Impact: O(1) evaluation on non-graph data updates. Replaces multiple intermediate O(N) allocations with a single O(N) pass.
-   */
   const milestones = useMemo(() => {
     return Array.from(
       graphData.nodes.reduce((acc, n) => {
@@ -125,7 +119,6 @@ export default function ConfigModal({
     return { nodes, links };
   }, [graphData, startDate, endDate, selectedMilestone]);
 
-  /** Apply GraphView edits to the full roadmap so filters never drop hidden nodes. */
   const handleFilteredGraphUpdate = useCallback(
     (updated: GraphData) => {
       const visibleIds = new Set(filteredGraphData.nodes.map((n) => n.id));
@@ -136,7 +129,6 @@ export default function ConfigModal({
     [filteredGraphData.nodes, graphData, onUpdateGraphData],
   );
 
-  // ─── Memory KG State ───
   const [memoryData, setMemoryData] = useState<GraphData>({
     nodes: [],
     links: [],
@@ -145,7 +137,6 @@ export default function ConfigModal({
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [isMemoryTruncated, setIsMemoryTruncated] = useState(false);
 
-  // Fetch memory graph view
   const fetchMemoryGraph = useCallback(async () => {
     setMemoryLoading(true);
     setMemoryError(null);
@@ -180,7 +171,6 @@ export default function ConfigModal({
     }
   }, [token]);
 
-  // Fetch specific entity detail (GET /memory/graph/entities/{id})
   const fetchMemoryNodeDetail = useCallback(
     async (node: GraphNode) => {
       try {
@@ -212,7 +202,6 @@ export default function ConfigModal({
     [token],
   );
 
-  // ─── Code State ───
   const [codeStats, setCodeStats] = useState<{
     total_symbols: number;
     total_files: number;
@@ -222,7 +211,6 @@ export default function ConfigModal({
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeEgoQuery, setCodeEgoQuery] = useState<string | null>(null);
 
-  // Fetch code stats and graph view
   const fetchCodeStatsAndGraph = useCallback(
     async (query: string | null = null) => {
       setCodeLoading(true);
@@ -232,7 +220,6 @@ export default function ConfigModal({
           typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
         const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
 
-        // 1. Fetch Stats
         const activeWorkspace =
           typeof localStorage !== "undefined"
             ? localStorage.getItem("xavier_active_workspace") || "default"
@@ -248,7 +235,6 @@ export default function ConfigModal({
         const stats = await statsRes.json();
         setCodeStats(stats);
 
-        // 2. Fetch graph if symbols exist
         if (stats.total_symbols > 0 || stats.total_files > 0) {
           const mode = query ? "ego" : "overview";
           let url = `${baseUrl}/code/graph/view?mode=${mode}`;
@@ -277,7 +263,6 @@ export default function ConfigModal({
     [token],
   );
 
-  // Scan Codebase
   const handleScanCodebase = async () => {
     setCodeLoading(true);
     setCodeError(null);
@@ -307,7 +292,6 @@ export default function ConfigModal({
     }
   };
 
-  // Expand Ego Graph
   const handleNodeExpand = (node: GraphNode) => {
     setCodeEgoQuery(node.id);
     void fetchCodeStatsAndGraph(node.id);
@@ -318,7 +302,6 @@ export default function ConfigModal({
     void fetchCodeStatsAndGraph(null);
   };
 
-  // Trigger loading based on sub-layer switches & workspace changes
   useEffect(() => {
     if (mainTab === "graph") {
       if (subLayer === "memory") {
@@ -366,6 +349,12 @@ export default function ConfigModal({
             onClick={() => setMainTab("config")}
             icon={<SettingsIcon />}
             label="Configuration"
+          />
+          <TabButton
+            active={mainTab === "appearance"}
+            onClick={() => setMainTab("appearance")}
+            icon={<Palette className="w-4 h-4" />}
+            label="Appearance"
           />
           <TabButton
             active={mainTab === "providers"}
@@ -448,6 +437,17 @@ export default function ConfigModal({
               token={token || ""}
             />
           )}
+          {mainTab === "appearance" && (
+            <motion.div
+              key="appearance"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-y-auto"
+            >
+              <AppearancePage />
+            </motion.div>
+          )}
           {mainTab === "graph" && (
             <motion.div
               key="graph"
@@ -456,7 +456,6 @@ export default function ConfigModal({
               exit={{ opacity: 0 }}
               className="w-full h-full relative flex flex-col"
             >
-              {/* Sub-tab list switcher inside graph section (Accessible WAI-ARIA) */}
               <div className="flex items-center justify-between px-8 py-3 bg-[#0a0a0a]/80 border-b border-white/5 shrink-0 z-40">
                 <div
                   role="tablist"
@@ -531,7 +530,6 @@ export default function ConfigModal({
                   </button>
                 </div>
 
-                {/* Additional controls depending on sub-layer */}
                 {subLayer === "code" && codeEgoQuery && (
                   <button
                     type="button"
@@ -544,7 +542,6 @@ export default function ConfigModal({
                 )}
               </div>
 
-              {/* Sub-tab panels */}
               <div className="flex-1 min-h-0 relative">
                 {subLayer === "roadmap" && (
                   <div
@@ -644,7 +641,6 @@ export default function ConfigModal({
                     aria-labelledby="tab-sub-code"
                     className="w-full h-full relative"
                   >
-                    {/* Empty stats scan CTA */}
                     {codeStats &&
                     codeStats.total_symbols === 0 &&
                     !codeLoading ? (
@@ -716,7 +712,6 @@ export default function ConfigModal({
               exit={{ opacity: 0 }}
               className="w-full h-full overflow-y-auto"
             >
-              {/* Embedded messaging config — no close button, no backdrop */}
               <div className="p-6 h-full flex flex-col">
                 <div className="mb-4">
                   <h2 className="text-2xl font-light text-white tracking-tight">
@@ -822,7 +817,6 @@ function SettingsIcon() {
   );
 }
 
-/** Embedded version rendered inside ConfigModal (no backdrop/close button) */
 function MessagingEmbedded() {
   return (
     <div className="w-full h-full">
@@ -963,7 +957,7 @@ function ConfigView({
 
     graphData.nodes.forEach((n) => {
       if (!visited.has(n.id)) {
-        depthCount[0] = (depthCount[0] || 0) + 1; // Unconnected or cyclical
+        depthCount[0] = (depthCount[0] || 0) + 1;
       }
     });
 
@@ -1279,8 +1273,6 @@ function ConfigView({
   );
 }
 
-// ------ Reusable UI Components ------
-
 function ToggleRow({
   label,
   description,
@@ -1353,13 +1345,11 @@ function SliderInput({
           onChange={(e) => setValue(Number(e.target.value))}
           className="w-full h-1 bg-[#1a1a1a] rounded-lg appearance-none cursor-pointer absolute top-1/2 -translate-y-1/2 z-10 opacity-0 w-full"
         />
-        {/* Custom Track */}
         <div className="w-full h-1 bg-[#1a1a1a] rounded-lg relative overflow-visible">
           <div
             className="h-full bg-[#39ff14] rounded-lg shadow-[0_0_10px_#39ff14]"
             style={{ width: `${percentage}%` }}
           />
-          {/* Thumb */}
           <div
             className="w-4 h-4 bg-white rounded-full absolute top-1/2 -translate-y-1/2 shadow-[0_0_15px_rgba(57,255,20,0.8)] border-2 border-[#39ff14] pointer-events-none"
             style={{ left: `calc(${percentage}% - 8px)` }}
