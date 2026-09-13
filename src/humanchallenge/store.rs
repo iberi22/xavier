@@ -256,8 +256,8 @@ impl HumanChallengeStore {
     pub fn save_curation_vote(&self, vote: &CurationVote) -> SqliteResult<()> {
         use crate::humanchallenge::types::CurationVote;
         let voted_ts = vote.voted_at.timestamp();
-        let domain_tags_json = serde_json::to_string(&vote.domain_tags)
-            .unwrap_or_else(|_| "[]".to_string());
+        let domain_tags_json =
+            serde_json::to_string(&vote.domain_tags).unwrap_or_else(|_| "[]".to_string());
         let fact_v = if vote.fact_verified { 1 } else { 0 };
         let training_e = if vote.training_eligible { 1 } else { 0 };
 
@@ -282,7 +282,7 @@ impl HumanChallengeStore {
 
     /// Get all curation votes eligible for training (accepted or refined + training_eligible).
     pub fn get_training_eligible_votes(&self, limit: u32) -> SqliteResult<Vec<CurationVote>> {
-        use crate::humanchallenge::types::{CurationVote, CurationVerdict};
+        use crate::humanchallenge::types::{CurationVerdict, CurationVote};
         use std::str::FromStr;
 
         let conn = self.conn.lock().unwrap();
@@ -335,10 +335,9 @@ impl HumanChallengeStore {
     /// Save or update an introspection session.
     pub fn save_introspection_session(&self, session: &IntrospectionSession) -> SqliteResult<()> {
         use crate::humanchallenge::types::IntrospectionSession;
-        let turns_json = serde_json::to_string(&session.turns)
-            .unwrap_or_else(|_| "[]".to_string());
-        let insights_json = serde_json::to_string(&session.insights)
-            .unwrap_or_else(|_| "[]".to_string());
+        let turns_json = serde_json::to_string(&session.turns).unwrap_or_else(|_| "[]".to_string());
+        let insights_json =
+            serde_json::to_string(&session.insights).unwrap_or_else(|_| "[]".to_string());
         let started_ts = session.started_at.timestamp();
         let completed_ts = session.completed_at.map(|t| t.timestamp());
 
@@ -363,7 +362,10 @@ impl HumanChallengeStore {
     }
 
     /// Retrieve an introspection session by ID.
-    pub fn get_introspection_session(&self, id: &str) -> SqliteResult<Option<IntrospectionSession>> {
+    pub fn get_introspection_session(
+        &self,
+        id: &str,
+    ) -> SqliteResult<Option<IntrospectionSession>> {
         use crate::humanchallenge::types::{
             IntrospectionSession, IntrospectionStatus, IntrospectionTechnique, IntrospectionTurn,
         };
@@ -421,10 +423,10 @@ impl HumanChallengeStore {
     ) -> SqliteResult<String> {
         let log_id = format!("tgl_{}", ulid::Ulid::new());
         let triggered_ts = Utc::now().timestamp();
-        let challenge_ids_json = serde_json::to_string(challenge_ids)
-            .unwrap_or_else(|_| "[]".to_string());
-        let domain_tags_json = serde_json::to_string(domain_tags)
-            .unwrap_or_else(|_| "[]".to_string());
+        let challenge_ids_json =
+            serde_json::to_string(challenge_ids).unwrap_or_else(|_| "[]".to_string());
+        let domain_tags_json =
+            serde_json::to_string(domain_tags).unwrap_or_else(|_| "[]".to_string());
 
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -443,7 +445,6 @@ impl HumanChallengeStore {
         )?;
         Ok(log_id)
     }
-
 
     fn row_to_event(row: &rusqlite::Row) -> SqliteResult<HumanChallengeEvent> {
         let id: String = row.get(0)?;

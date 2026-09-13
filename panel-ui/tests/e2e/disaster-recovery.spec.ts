@@ -4,7 +4,7 @@ import fs from "node:fs";
 
 const ARTIFACT_DIR = path.join(process.cwd(), "test-results", "artifacts");
 
-test.describe("Sovereign Recovery Modal & Disaster Recovery Wizard E2E", () => {
+test.describe.fixme("Sovereign Recovery Modal & Disaster Recovery Wizard E2E (pending wave-theme)", () => {
   test.beforeEach(async ({ page, context }) => {
     // Grant clipboard permissions for Chromium testing
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);

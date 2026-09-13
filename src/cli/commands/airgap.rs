@@ -100,7 +100,9 @@ async fn run_detect(json: bool) -> Result<()> {
 
     if devices.is_empty() {
         println!("ℹ️  No removable USB storage devices currently detected or mounted.");
-        println!("   Insert a USB drive and ensure it is mounted (e.g. in /run/media or /media).\n");
+        println!(
+            "   Insert a USB drive and ensure it is mounted (e.g. in /run/media or /media).\n"
+        );
         return Ok(());
     }
 
@@ -128,8 +130,18 @@ fn print_device_card(idx: usize, dev: &UsbStorageDevice) {
     println!("     Mount point: {}", dev.mount_point.display());
     println!("     Label:       {}", label);
     println!("     Filesystem:  {}", fs);
-    println!("     Capacity:    {} available / {} total", available, total);
-    println!("     Writable:    {}", if dev.is_writable { "Yes" } else { "No (Read-Only)" });
+    println!(
+        "     Capacity:    {} available / {} total",
+        available, total
+    );
+    println!(
+        "     Writable:    {}",
+        if dev.is_writable {
+            "Yes"
+        } else {
+            "No (Read-Only)"
+        }
+    );
     println!("---------------------------------------------------------------------------");
 }
 
@@ -154,12 +166,10 @@ async fn run_pack(
 
     let pass = match passphrase {
         Some(p) => p,
-        None => {
-            dialoguer::Password::new()
-                .with_prompt("Enter encryption passphrase for airgap capsule")
-                .interact()
-                .context("Failed to read passphrase")?
-        }
+        None => dialoguer::Password::new()
+            .with_prompt("Enter encryption passphrase for airgap capsule")
+            .interact()
+            .context("Failed to read passphrase")?,
     };
 
     if pass.trim().is_empty() {
@@ -188,9 +198,7 @@ async fn run_pack(
         .unwrap_or("payload")
         .to_string();
 
-    let author_tag = author.unwrap_or_else(|| {
-        whoami_username()
-    });
+    let author_tag = author.unwrap_or_else(|| whoami_username());
 
     println!("📦 Packaging: {}", input.display());
     println!("   Payload Kind: {:?}", payload_kind);
@@ -203,16 +211,15 @@ async fn run_pack(
         fs::read(&input).context("Failed to read input file")?
     };
 
-    println!("   Plaintext size: {} bytes ({})", raw_data.len(), format_bytes(raw_data.len() as u64));
+    println!(
+        "   Plaintext size: {} bytes ({})",
+        raw_data.len(),
+        format_bytes(raw_data.len() as u64)
+    );
     println!("   Deriving key (Argon2id 64MB RAM, 3 iterations) and encrypting AES-256-GCM...");
 
-    let capsule_bytes = AirgapCapsule::pack_with_passphrase(
-        &raw_data,
-        payload_kind,
-        filename,
-        author_tag,
-        &pass,
-    )?;
+    let capsule_bytes =
+        AirgapCapsule::pack_with_passphrase(&raw_data, payload_kind, filename, author_tag, &pass)?;
 
     if let Some(parent) = out_path.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -224,7 +231,11 @@ async fn run_pack(
 
     println!("🔒 Capsule created successfully!");
     println!("   Output:       {}", out_path.display());
-    println!("   Capsule size: {} bytes ({})", capsule_bytes.len(), format_bytes(capsule_bytes.len() as u64));
+    println!(
+        "   Capsule size: {} bytes ({})",
+        capsule_bytes.len(),
+        format_bytes(capsule_bytes.len() as u64)
+    );
     println!("   Ready for offline USB transport.\n");
 
     Ok(())
@@ -242,21 +253,22 @@ async fn run_unpack(
     let capsule_bytes = fs::read(&capsule).context("Failed to read capsule file")?;
 
     let header = AirgapCapsule::inspect_header(&capsule_bytes)?;
-    println!("🔍 Capsule Header: Version={}, Kind={:?}, Original='{}', Author='{}'",
-        header.version, header.payload_kind, header.original_filename, header.author);
+    println!(
+        "🔍 Capsule Header: Version={}, Kind={:?}, Original='{}', Author='{}'",
+        header.version, header.payload_kind, header.original_filename, header.author
+    );
 
     let pass = match passphrase {
         Some(p) => p,
-        None => {
-            dialoguer::Password::new()
-                .with_prompt("Enter decryption passphrase")
-                .interact()
-                .context("Failed to read passphrase")?
-        }
+        None => dialoguer::Password::new()
+            .with_prompt("Enter decryption passphrase")
+            .interact()
+            .context("Failed to read passphrase")?,
     };
 
     println!("🔓 Decrypting and authenticating capsule...");
-    let (decrypted_header, plaintext) = AirgapCapsule::unpack_with_passphrase(&capsule_bytes, &pass)?;
+    let (decrypted_header, plaintext) =
+        AirgapCapsule::unpack_with_passphrase(&capsule_bytes, &pass)?;
 
     if !output_dir.exists() {
         fs::create_dir_all(&output_dir)?;
@@ -264,15 +276,25 @@ async fn run_unpack(
 
     match decrypted_header.payload_kind {
         CapsulePayloadKind::DirectoryArchive => {
-            println!("   Unpacking directory archive into: {}", output_dir.display());
+            println!(
+                "   Unpacking directory archive into: {}",
+                output_dir.display()
+            );
             unzip_memory_to_dir(&plaintext, &output_dir)?;
-            println!("✅ Successfully extracted directory to: {}", output_dir.display());
+            println!(
+                "✅ Successfully extracted directory to: {}",
+                output_dir.display()
+            );
         }
         _ => {
             let out_file = output_dir.join(&decrypted_header.original_filename);
             fs::write(&out_file, &plaintext)?;
             println!("✅ Successfully extracted file: {}", out_file.display());
-            println!("   Size: {} bytes ({})", plaintext.len(), format_bytes(plaintext.len() as u64));
+            println!(
+                "   Size: {} bytes ({})",
+                plaintext.len(),
+                format_bytes(plaintext.len() as u64)
+            );
         }
     }
 
@@ -296,7 +318,11 @@ async fn run_inspect(capsule: PathBuf, json: bool) -> Result<()> {
     println!("║                    SWAL AIR-GAP CAPSULE HEADER INSPECT                    ║");
     println!("╚═══════════════════════════════════════════════════════════════════════════╝\n");
     println!(" Capsule File:       {}", capsule.display());
-    println!(" Total Size:         {} bytes ({})", capsule_bytes.len(), format_bytes(capsule_bytes.len() as u64));
+    println!(
+        " Total Size:         {} bytes ({})",
+        capsule_bytes.len(),
+        format_bytes(capsule_bytes.len() as u64)
+    );
     println!(" Magic:              SWALCAPS (valid)");
     println!(" Format Version:     {}", header.version);
     println!(" Payload Kind:       {:?}", header.payload_kind);
@@ -320,8 +346,8 @@ fn zip_dir_to_memory(src_dir: &Path) -> Result<Vec<u8>> {
     let mut buffer = Cursor::new(Vec::new());
     {
         let mut zip = ZipWriter::new(&mut buffer);
-        let options = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         for entry in walkdir::WalkDir::new(src_dir) {
             let entry = entry?;

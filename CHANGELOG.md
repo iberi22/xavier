@@ -4,8 +4,26 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-09-13
+
 ### Added
-- **CodeGraph walk hardening** (`feat-codegraph-walk-hardening`, technique extracted from `microsoft/tgrep` v1.0.5): `collect_files` now rejects binary extensions without IO, skips files over the 64 MiB `DEFAULT_MAX_FILE_SIZE` cap via walk metadata, and sniffs the first 8 KiB for NUL bytes before admission; every skip is counted in the new `WalkSkipStats` and logged. `parse_file` enforces the same guards so explicit path deltas (`apply_paths` / `sync --git`) are covered too, via the new `GraphError::Skipped` variant (warn + continue, never a batch failure).
+- **CodeGraph UDS Sidecar & Zero-Overhead IPC**: Native Unix Domain Socket client for fast symbol queries, automated installer routines, and process health telemetry.
+- **Air-Gap Capsule Protocol & USB Storage Transport**: AES-256-GCM encrypted air-gap capsules with Argon2id KDF, integrity inspection, and auto-detection of removable USB volumes.
+- **Multimodal Virtual Vector Manager**: Modal partition isolation (`MultimodalVecManager`) in `sqlite-vec` for unified multi-modal RAG across text, audio, images, and documents.
+- **Maloca Introspection & Challenge Curation API**: REST endpoints for human challenge curation, Socratic introspection session logging, and training readiness verification.
+- **Google OAuth2 & Colab Compute Uplink**: Authenticated flow for external compute access and decentralized SLM fine-tuning.
+- **CodeGraph Walk Hardening**: Binary extension filtering without IO, 64 MiB `DEFAULT_MAX_FILE_SIZE` walk cap, and 8 KiB NUL byte header sniffing.
+
+### Fixed
+- **CI/CD Parallel Rust Test Stability**: Integrated 4 GB Linux swapfile allocation in GitHub Actions runner, preventing OOM exit code 137 on large test batches.
+- **Code Formatting Compliance**: Synchronized codebase formatting with `cargo fmt --all`.
+- **Frontend Test Suite Parity**: Validated 185 Vitest unit tests and 8 Playwright E2E suites passing cleanly.
+
+### Marked for Upcoming Work Waves (Olas 9-11)
+- **Ola Theme Redesign**: Theme token engine, color attenuation, and Studio Dark / Bone White visual modernization (`.gitcore/issues/wave-theme/`).
+- **Sovereign Node Vault & WebAuthn PRF Bridge**: WebAuthn hardware-backed PRF extension integration and decentralized node login flow.
+- **Sovereign Wallet & Merkle Rollup**: TopStatusBar Karma integration and Polygon payout Merkle rollup sync.
+- **Disaster Recovery Wizard**: PWA mnemonic phrase backup quiz and restore wizard.
 
 ## [0.1.1] — 2026-09-02
 

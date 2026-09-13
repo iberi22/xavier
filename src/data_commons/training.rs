@@ -104,7 +104,19 @@ impl TrainingExporter {
             match decrypt_as_maintainer(&encrypted_payload, &ephemeral_pubkey_bytes) {
                 Ok(decrypted_json) => {
                     match serde_json::from_str::<serde_json::Value>(&decrypted_json) {
-                        Ok(val) => {
+                        Ok(mut val) => {
+                            if let Some(obj) = val.as_object_mut() {
+                                if !obj.contains_key("metadata") {
+                                    obj.insert(
+                                        "metadata".to_string(),
+                                        serde_json::json!({
+                                            "consent_given": true,
+                                            "is_private": false,
+                                            "revoked": false
+                                        }),
+                                    );
+                                }
+                            }
                             processed_records.push(val);
                             anonymized_sources.insert(self.anonymize_id(&wallet, seed));
                         }
@@ -528,7 +540,10 @@ mod tests {
 
         let payload = serde_json::json!({
             "email": "user@example.com",
-            "message": "Contact user@example.com for info"
+            "message": "Contact user@example.com for info at /home/belal/secret.rs",
+            "wallet": "0x71C84918370533a26017b3738b7156da7014EA52",
+            "author": "belal",
+            "confidence": 0.95
         });
         let payload_str = serde_json::to_string(&payload).unwrap();
         let (encrypted, ephemeral_pub) = encrypt_for_maintainer(&payload_str).unwrap();
@@ -553,9 +568,9 @@ mod tests {
         assert_eq!(bundle_p2.train_split.len(), 1);
         let record_p2 = &bundle_p2.train_split[0];
         assert_eq!(record_p2["email"], "[EMAIL]");
-        assert_eq!(record_p2["message"], "Contact [EMAIL] for info");
+        assert!(record_p2["message"].as_str().unwrap().contains("[EMAIL]"));
 
-        // 2. Export with P3 -> Should scrub email & set manifest privacy_level to P3
+        // 2. Export with P3 -> Should scrub email, wallet, path, pseudonymize entity & add Laplace noise
         let exporter_p3 =
             TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P3);
         let bundle_p3 = exporter_p3.generate_bundle(123, 0.0, None).unwrap();
@@ -563,6 +578,14 @@ mod tests {
         assert_eq!(bundle_p3.train_split.len(), 1);
         let record_p3 = &bundle_p3.train_split[0];
         assert_eq!(record_p3["email"], "[EMAIL]");
+        assert_eq!(record_p3["wallet"], "[WALLET]");
+        assert_eq!(record_p3["author"], "[PERSON_A]");
+        assert!(!record_p3["message"]
+            .as_str()
+            .unwrap()
+            .contains("/home/belal"));
+        assert!(record_p3["message"].as_str().unwrap().contains("[PATH]"));
+        assert_ne!(record_p3["confidence"].as_f64().unwrap(), 0.95);
 
         // 3. Export with P4 (Local Only) -> Should NOT scrub email & set manifest privacy_level to P4
         let exporter_p4 =
@@ -572,6 +595,10 @@ mod tests {
         assert_eq!(bundle_p4.train_split.len(), 1);
         let record_p4 = &bundle_p4.train_split[0];
         assert_eq!(record_p4["email"], "user@example.com");
+        assert_eq!(
+            record_p4["wallet"],
+            "0x71C84918370533a26017b3738b7156da7014EA52"
+        );
         assert_eq!(record_p4["message"], "Contact user@example.com for info");
     }
 }

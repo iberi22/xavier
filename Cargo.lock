@@ -2937,7 +2937,7 @@ dependencies = [
 
 [[package]]
 name = "code-graph"
-version = "0.1.1"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -16336,7 +16336,7 @@ dependencies = [
 
 [[package]]
 name = "xavier"
-version = "0.1.1"
+version = "0.2.1"
 dependencies = [
  "aes-gcm",
  "aho-corasick",
@@ -16441,7 +16441,7 @@ dependencies = [
 
 [[package]]
 name = "xavier-core-logic"
-version = "0.1.1"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "serde",

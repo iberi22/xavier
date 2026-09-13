@@ -398,7 +398,10 @@ impl IntrospectionSession {
         }
 
         let turn_factor = (human_turns.len() as f32 / 5.0).min(1.0);
-        let avg_len: f32 = human_turns.iter().map(|t| t.content.len() as f32).sum::<f32>()
+        let avg_len: f32 = human_turns
+            .iter()
+            .map(|t| t.content.len() as f32)
+            .sum::<f32>()
             / human_turns.len() as f32;
         let length_factor = (avg_len / 200.0).min(1.0);
 
@@ -431,7 +434,9 @@ impl TrainingReadinessGate {
     pub fn is_ready(&self, votes: &[CurationVote]) -> bool {
         let accepted: Vec<&CurationVote> = votes
             .iter()
-            .filter(|v| v.verdict == CurationVerdict::Accept || v.verdict == CurationVerdict::Refine)
+            .filter(|v| {
+                v.verdict == CurationVerdict::Accept || v.verdict == CurationVerdict::Refine
+            })
             .collect();
 
         if accepted.len() < self.min_accepted {
