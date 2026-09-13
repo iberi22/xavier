@@ -240,99 +240,63 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
     // 3. Navigate to application root
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(1000);
 
-    // 4. Open Settings Modal via BrainCircuit button or keyboard shortcut
-    const brainButton = page.getByRole("button", { name: "Open Control Node" });
-    await expect(brainButton).toBeVisible();
-
-    // Trigger keyboard shortcut attempt (Cmd/Ctrl + ,)
-    await page.keyboard.press("Control+,");
-
-    // If modal not open via shortcut, open via BrainCircuit button click
-    const closeModalBtn = page.getByRole("button", { name: "Cerrar ventana de configuración" });
-    if (!(await closeModalBtn.isVisible())) {
-      await brainButton.click();
-    }
-    await expect(closeModalBtn).toBeVisible();
-
-    // Helper function to click top tab explicitly by filtering TabButton elements in top bar
-    const clickTopNavTab = async (label: string) => {
-      await page.evaluate((tabText) => {
-        const btns = Array.from(document.querySelectorAll('button'));
-        const topNavBtns = btns.filter(
-          (b) => b.className?.includes('pb-1') && b.className?.includes('relative')
-        );
-        const target = topNavBtns.find((b) => b.textContent?.trim().includes(tabText));
-        if (target) {
-          target.scrollIntoView({ inline: 'start', block: 'nearest' });
-          target.click();
-        }
-      }, label);
-      await page.waitForTimeout(200);
-    };
-
-    // 5. Iterate through Settings Modal top tabs
-    const mainTabNames = [
-      "Configuration",
-      "Providers",
-      "Usage Metrics",
-      "Messaging",
-      "Security",
-      "Mesh",
-      "Memory",
-      "Agents",
-      "Plugins",
-      "Roadmap",
-      "Saved Artifacts",
-    ];
-
-    for (const name of mainTabNames) {
-      await clickTopNavTab(name);
+    // If login is shown, log in
+    const loginButton = page.locator('button:has-text("INITIALIZE SESSION")');
+    if (await loginButton.isVisible()) {
+      await page.fill('input[type="email"]', "operator@xavier.local");
+      await page.fill('input[type="password"]', "password123");
+      await loginButton.click();
+      await page.waitForTimeout(1000);
     }
 
-    // Return to "Configuration" tab
-    await clickTopNavTab("Configuration");
-    await page.waitForTimeout(300);
+    // 4. Open Settings Modal via BrainCircuit button
+    const brainButton = page.locator('button[aria-label="Open Control Node"]');
+    await expect(brainButton).toBeVisible({ timeout: 15000 });
+    await brainButton.click();
 
-    // Wait for Configuration view sidebar to be mounted
-    await expect(page.getByRole("button", { name: "Memory & Layers" }).first()).toBeVisible();
+    // Wait for ConfigModal to appear
+    const closeModalBtn = page.locator('button[aria-label="Cerrar ventana de configuración"]');
+    await expect(closeModalBtn).toBeVisible({ timeout: 15000 });
 
-    // Iterate through Configuration sidebar categories
-    const sidebarCategories = [
-      "Server & Network",
-      "Workspace Limits",
-      "Memory & Layers",
-      "Topology Stats",
-      "AI Models & Routing",
-      "Embedding & Cache",
-      "Advanced & Security",
-      "Integrations (PgHeart/TG)",
+    // Verify Antigravity Sidebar sections
+    await expect(page.locator('text="Settings"').first()).toBeVisible();
+    await expect(page.locator('text="Projects"').first()).toBeVisible();
+    await expect(page.locator('text="Not in Project"').first()).toBeVisible();
+    await expect(page.locator('text="Shortcuts"').first()).toBeVisible();
+    await expect(page.locator('text="Provide Feedback"').first()).toBeVisible();
+
+    // 5. Test Settings Sidebar navigation items
+    const sidebarItems = [
+      "Account",
+      "General",
+      "Appearance",
+      "Models",
+      "Customizations",
+      "Browser",
+      "App",
     ];
 
-    // Check additional requested tabs if present
-    const additionalSidebarItems = ["Account", "General", "Appearance", "Models", "Customizations", "Browser", "App"];
-    for (const itemLabel of additionalSidebarItems) {
-      const itemBtn = page.getByRole("button", { name: itemLabel }).first();
+    for (const itemLabel of sidebarItems) {
+      const itemBtn = page.locator(`button:has-text("${itemLabel}")`).first();
       if (await itemBtn.isVisible()) {
         await itemBtn.click({ force: true });
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(200);
       }
     }
 
-    for (const catName of sidebarCategories) {
-      const categoryBtn = page.getByRole("button", { name: catName }).first();
-      if (await categoryBtn.isVisible()) {
-        await categoryBtn.click({ force: true });
-        await page.waitForTimeout(100);
-      }
-    }
+    // Switch to Appearance tab to test chat preferences & theme switching
+    const appearanceSidebarBtn = page.locator('button:has-text("Appearance")').first();
+    await appearanceSidebarBtn.click({ force: true });
+    await page.waitForTimeout(600);
 
-    // 6. Test Toggle Switch interaction (Verbose Agent Chat / Working Memory LRU switch)
-    // Re-query "Memory & Layers" category dynamically
-    const memoryBtn = page.getByRole("button", { name: "Memory & Layers" }).first();
-    await memoryBtn.click({ force: true });
-    await expect(page.locator('h2:has-text("Memory Management")')).toBeVisible();
+    // Verify Appearance view headings
+    await expect(page.locator('h1:has-text("Appearance")')).toBeVisible();
+    await expect(page.locator('text="Verbose Agent Chat"')).toBeVisible();
+    await expect(page.locator('text="Conversation Width"')).toBeVisible();
 
+    // 6. Test Toggle Switch interaction (Verbose Agent Chat)
     const toggleSwitch = page.getByRole("switch").first();
     await expect(toggleSwitch).toBeVisible();
 
@@ -341,6 +305,27 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
     await page.waitForTimeout(150);
     const updatedChecked = await toggleSwitch.getAttribute("aria-checked");
     expect(updatedChecked).not.toBe(initialChecked);
+
+    // 7. Test Segmented / Conversation Width buttons
+    const narrowBtn = page.getByRole("button", { name: "Narrow" });
+    if (await narrowBtn.isVisible()) {
+      await narrowBtn.click({ force: true });
+      await page.waitForTimeout(150);
+    }
+
+    // Also verify theme mode buttons (Monitor, Sun, Moon)
+    const sunBtn = page.locator('button[aria-label="Light theme"]');
+    if (await sunBtn.isVisible()) {
+      await sunBtn.click({ force: true });
+      await page.waitForTimeout(300);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "studio-bone");
+
+      // Switch back to Dark theme
+      const moonBtn = page.locator('button[aria-label="Dark theme"]');
+      await moonBtn.click({ force: true });
+      await page.waitForTimeout(300);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "studio-dark");
+    }
 
     // 7. Test Slider / Conversation Width control interaction
     const sliderInput = page.locator('input[type="range"]').first();
