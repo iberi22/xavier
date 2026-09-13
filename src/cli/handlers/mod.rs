@@ -9,6 +9,7 @@ pub mod benchmarks;
 pub mod billing;
 pub mod chat;
 pub mod cloud;
+pub mod config;
 pub mod code;
 pub mod doctor;
 pub mod export;
