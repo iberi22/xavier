@@ -1,3 +1,5 @@
+import type { ThemeColors } from "./tokens";
+
 export type ThemeMode =
   | "studio-dark"
   | "studio-bone"
@@ -13,6 +15,8 @@ export interface ThemeSettings {
   useSystemFont: boolean;
   borderedIcons: boolean;
   enableAttenuation: boolean;
+  customLightColors?: Partial<ThemeColors>;
+  customDarkColors?: Partial<ThemeColors>;
 }
 
 export interface ThemeProviderProps {
