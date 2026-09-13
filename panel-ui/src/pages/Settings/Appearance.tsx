@@ -5,6 +5,7 @@ import {
   Sun,
 } from "lucide-react";
 import React, { useState } from "react";
+import { useChatPreferences, type ConversationWidth } from "../../hooks/useChatPreferences";
 import { useTheme } from "../../lib/theme/theme-provider";
 import type { ThemeMode } from "../../lib/theme/types";
 
@@ -14,10 +15,7 @@ export interface AppearancePageProps {
 
 export default function AppearancePage({ onClose }: AppearancePageProps) {
   const { theme, setTheme, settings, updateSettings } = useTheme();
-
-  // Chat Settings State
-  const [verboseChat, setVerboseChat] = useState(true);
-  const [conversationWidth, setConversationWidth] = useState<"Default" | "Narrow" | "Wide">("Default");
+  const { preferences, updatePreferences } = useChatPreferences();
 
   // Presets State
   const [lightPreset, setLightPreset] = useState("Default Light");
@@ -49,16 +47,16 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
             <button
               type="button"
               role="switch"
-              aria-checked={verboseChat}
+              aria-checked={preferences.verboseChat}
               aria-label="Verbose Agent Chat"
-              onClick={() => setVerboseChat(!verboseChat)}
+              onClick={() => updatePreferences({ verboseChat: !preferences.verboseChat })}
               className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
-                verboseChat ? "bg-blue-600" : "bg-white/15"
+                preferences.verboseChat ? "bg-blue-600" : "bg-white/15"
               }`}
             >
               <span
                 className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out mt-[3px] ${
-                  verboseChat ? "translate-x-4 ml-[3px]" : "translate-x-1"
+                  preferences.verboseChat ? "translate-x-4 ml-[3px]" : "translate-x-1"
                 }`}
               />
             </button>
@@ -73,20 +71,23 @@ export default function AppearancePage({ onClose }: AppearancePageProps) {
               </p>
             </div>
             <div className="inline-flex rounded-lg bg-[#111215] p-0.5 border border-white/[0.08]">
-              {(["Default", "Narrow", "Wide"] as const).map((width) => (
-                <button
-                  key={width}
-                  type="button"
-                  onClick={() => setConversationWidth(width)}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-150 ${
-                    conversationWidth === width
-                      ? "bg-[#25272c] text-white shadow-sm font-semibold border border-white/10"
-                      : "text-white/50 hover:text-white hover:bg-white/[0.04]"
-                  }`}
-                >
-                  {width}
-                </button>
-              ))}
+              {(["default", "narrow", "wide"] as const).map((width) => {
+                const label = width === "default" ? "Default" : width === "narrow" ? "Narrow" : "Wide";
+                return (
+                  <button
+                    key={width}
+                    type="button"
+                    onClick={() => updatePreferences({ conversationWidth: width })}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-150 ${
+                      preferences.conversationWidth === width
+                        ? "bg-[#25272c] text-white shadow-sm font-semibold border border-white/10"
+                        : "text-white/50 hover:text-white hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
