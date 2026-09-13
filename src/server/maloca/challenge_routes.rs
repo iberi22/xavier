@@ -15,28 +15,42 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::humanchallenge::{
-    ChallengeStatus, ChallengeType, HumanChallengeEvent, HumanChallengeStore,
+    curation_gate::CurationGate,
+    introspection::IntrospectionEngine,
+    types::{
+        ChallengeStatus, ChallengeType, CurationVerdict, CurationVote, HumanChallengeEvent,
+        IntrospectionSession, IntrospectionTechnique,
+    },
+    HumanChallengeStore,
 };
 
 /// Shared state for HumanChallenge Axum handlers.
 #[derive(Clone)]
 pub struct ChallengeState {
     pub store: Arc<HumanChallengeStore>,
+    pub introspection: Arc<IntrospectionEngine>,
+    pub curation_gate: Arc<CurationGate>,
 }
 
 impl ChallengeState {
     /// Creates a new `ChallengeState` wrapping a `HumanChallengeStore`.
     pub fn new(store: Arc<HumanChallengeStore>) -> Self {
-        Self { store }
+        let introspection = Arc::new(IntrospectionEngine::new(store.clone()));
+        let curation_gate = Arc::new(CurationGate::with_defaults(store.clone()));
+        Self {
+            store,
+            introspection,
+            curation_gate,
+        }
     }
 
     /// Creates an in-memory `ChallengeState` for testing.
     pub fn in_memory() -> Self {
-        let store = HumanChallengeStore::in_memory()
-            .expect("failed to create in-memory HumanChallengeStore");
-        Self {
-            store: Arc::new(store),
-        }
+        let store = Arc::new(
+            HumanChallengeStore::in_memory()
+                .expect("failed to create in-memory HumanChallengeStore"),
+        );
+        Self::new(store)
     }
 }
 
@@ -112,6 +126,58 @@ pub struct ChallengeStatsResponse {
     pub x2_points_total: u32,
     pub x2_target_points: u32,
     pub x2_points_breakdown: HashMap<String, u32>,
+}
+
+/// Request payload for curating a challenge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurateRequest {
+    pub challenge_id: String,
+    pub verdict: CurationVerdict,
+    pub curated_content: Option<String>,
+    #[serde(default)]
+    pub fact_verified: bool,
+    #[serde(default)]
+    pub domain_tags: Vec<String>,
+    #[serde(default)]
+    pub training_eligible: bool,
+}
+
+/// Response payload after curating a challenge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurateResponse {
+    pub vote_id: String,
+    pub challenge_id: String,
+    pub status: String,
+}
+
+/// Request payload for starting an introspection session from challenges.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntrospectRequest {
+    pub challenge_id: String,
+    pub technique: Option<IntrospectionTechnique>,
+}
+
+/// Response payload after starting an introspection session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntrospectResponse {
+    pub session: IntrospectionSession,
+}
+
+/// Response payload for training gate readiness check.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingGateResponse {
+    pub is_ready: bool,
+    pub eligible_count: usize,
+    pub fact_verified_count: usize,
+    pub training_eligible_count: usize,
+    pub domain_tags: Vec<String>,
+    pub message: String,
+}
+
+/// Response payload for available introspection techniques.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntrospectionAvailableResponse {
+    pub techniques: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +478,125 @@ pub async fn stats_handler(
     (StatusCode::OK, Json(response)).into_response()
 }
 
+/// `POST /v1/maloca/challenges/curate`: Human votes on a challenge for dataset curation.
+pub async fn curate_challenge_handler(
+    State(state): State<ChallengeState>,
+    Json(payload): Json<CurateRequest>,
+) -> impl IntoResponse {
+    let event = match state.store.get_event_by_id(&payload.challenge_id) {
+        Ok(Some(ev)) => ev,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Challenge not found" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let vote = CurationVote::new(
+        &event.id,
+        payload.verdict,
+        payload.curated_content,
+        payload.fact_verified,
+        payload.domain_tags,
+        payload.training_eligible,
+    );
+
+    if let Err(e) = state.store.save_curation_vote(&vote) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response();
+    }
+
+    let response = CurateResponse {
+        vote_id: vote.id,
+        challenge_id: event.id,
+        status: "saved".to_string(),
+    };
+
+    (StatusCode::OK, Json(response)).into_response()
+}
+
+/// `POST /v1/maloca/challenges/introspect`: Initiates an introspection session for a challenge.
+pub async fn introspect_handler(
+    State(state): State<ChallengeState>,
+    Json(payload): Json<IntrospectRequest>,
+) -> impl IntoResponse {
+    let event = match state.store.get_event_by_id(&payload.challenge_id) {
+        Ok(Some(ev)) => ev,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Challenge not found" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    match state.introspection.start_session(
+        &event.id,
+        event.challenge_type,
+        &event.description,
+        payload.technique,
+    ) {
+        Ok(session) => (
+            StatusCode::CREATED,
+            Json(IntrospectResponse { session }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+/// `GET /v1/maloca/challenges/training-gate`: Evaluates training readiness gate metrics.
+pub async fn training_gate_handler(State(state): State<ChallengeState>) -> impl IntoResponse {
+    let check = state.curation_gate.check_readiness();
+    let response = TrainingGateResponse {
+        is_ready: check.is_ready,
+        eligible_count: check.eligible_count,
+        fact_verified_count: check.fact_verified_count,
+        training_eligible_count: check.training_eligible_count,
+        domain_tags: check.domain_tags,
+        message: check.message,
+    };
+    (StatusCode::OK, Json(response)).into_response()
+}
+
+/// `GET /v1/maloca/introspection/available`: Lists supported human introspection techniques.
+pub async fn introspection_available_handler() -> impl IntoResponse {
+    let techniques = vec![
+        IntrospectionTechnique::SocraticQuestioning.as_str().to_string(),
+        IntrospectionTechnique::FiveWhys.as_str().to_string(),
+        IntrospectionTechnique::PreMortem.as_str().to_string(),
+        IntrospectionTechnique::SteelManning.as_str().to_string(),
+        IntrospectionTechnique::FirstPrinciples.as_str().to_string(),
+        IntrospectionTechnique::PatternRecognition.as_str().to_string(),
+    ];
+    let response = IntrospectionAvailableResponse { techniques };
+    (StatusCode::OK, Json(response)).into_response()
+}
+
 // ---------------------------------------------------------------------------
 // Router Constructor
 // ---------------------------------------------------------------------------
@@ -429,6 +614,22 @@ pub fn router(state: ChallengeState) -> Router {
         )
         .route("/v1/maloca/challenges/list", get(list_challenges_handler))
         .route("/v1/maloca/challenges/stats", get(stats_handler))
+        .route(
+            "/v1/maloca/challenges/curate",
+            post(curate_challenge_handler),
+        )
+        .route(
+            "/v1/maloca/challenges/introspect",
+            post(introspect_handler),
+        )
+        .route(
+            "/v1/maloca/challenges/training-gate",
+            get(training_gate_handler),
+        )
+        .route(
+            "/v1/maloca/introspection/available",
+            get(introspection_available_handler),
+        )
         .with_state(state)
 }
 
@@ -572,5 +773,149 @@ mod tests {
         let stats_res: ChallengeStatsResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(stats_res.total_challenges, 5);
         assert_eq!(stats_res.x2_target_points, 10);
+    }
+
+    #[tokio::test]
+    async fn test_curate_endpoint() {
+        let state = ChallengeState::in_memory();
+        let app = router(state.clone());
+
+        // Generate challenges
+        let gen_req = Request::builder()
+            .method("POST")
+            .uri("/v1/maloca/challenges/generate")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "session_id": "session_curate_test"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let gen_resp = app.clone().oneshot(gen_req).await.unwrap();
+        let body = to_bytes(gen_resp.into_body(), usize::MAX).await.unwrap();
+        let gen_res: GenerateChallengeResponse = serde_json::from_slice(&body).unwrap();
+        let target_id = gen_res.challenges[0].id.clone();
+
+        // Curate challenge
+        let curate_req = Request::builder()
+            .method("POST")
+            .uri("/v1/maloca/challenges/curate")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "challenge_id": target_id,
+                    "verdict": "accept",
+                    "curated_content": "Accepted without changes",
+                    "fact_verified": true,
+                    "domain_tags": ["rust", "database"],
+                    "training_eligible": true
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let curate_resp = app.oneshot(curate_req).await.unwrap();
+        assert_eq!(curate_resp.status(), StatusCode::OK);
+
+        let body = to_bytes(curate_resp.into_body(), usize::MAX).await.unwrap();
+        let curate_res: CurateResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(curate_res.challenge_id, target_id);
+        assert_eq!(curate_res.status, "saved");
+        assert!(curate_res.vote_id.starts_with("cv_"));
+    }
+
+    #[tokio::test]
+    async fn test_introspect_start_session() {
+        let state = ChallengeState::in_memory();
+        let app = router(state.clone());
+
+        // Generate challenges
+        let gen_req = Request::builder()
+            .method("POST")
+            .uri("/v1/maloca/challenges/generate")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "session_id": "session_introspect_test"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let gen_resp = app.clone().oneshot(gen_req).await.unwrap();
+        let body = to_bytes(gen_resp.into_body(), usize::MAX).await.unwrap();
+        let gen_res: GenerateChallengeResponse = serde_json::from_slice(&body).unwrap();
+        let target_id = gen_res.challenges[0].id.clone();
+
+        // Introspect challenge
+        let introspect_req = Request::builder()
+            .method("POST")
+            .uri("/v1/maloca/challenges/introspect")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "challenge_id": target_id,
+                    "technique": "socratic_questioning"
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let introspect_resp = app.oneshot(introspect_req).await.unwrap();
+        assert_eq!(introspect_resp.status(), StatusCode::CREATED);
+
+        let body = to_bytes(introspect_resp.into_body(), usize::MAX).await.unwrap();
+        let introspect_res: IntrospectResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(introspect_res.session.challenge_id, target_id);
+        assert_eq!(
+            introspect_res.session.technique,
+            IntrospectionTechnique::SocraticQuestioning
+        );
+        assert!(!introspect_res.session.turns.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_training_gate_not_ready() {
+        let state = ChallengeState::in_memory();
+        let app = router(state.clone());
+
+        let gate_req = Request::builder()
+            .method("GET")
+            .uri("/v1/maloca/challenges/training-gate")
+            .body(Body::empty())
+            .unwrap();
+
+        let gate_resp = app.oneshot(gate_req).await.unwrap();
+        assert_eq!(gate_resp.status(), StatusCode::OK);
+
+        let body = to_bytes(gate_resp.into_body(), usize::MAX).await.unwrap();
+        let gate_res: TrainingGateResponse = serde_json::from_slice(&body).unwrap();
+        assert!(!gate_res.is_ready);
+        assert_eq!(gate_res.eligible_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_introspection_available() {
+        let state = ChallengeState::in_memory();
+        let app = router(state);
+
+        let avail_req = Request::builder()
+            .method("GET")
+            .uri("/v1/maloca/introspection/available")
+            .body(Body::empty())
+            .unwrap();
+
+        let avail_resp = app.oneshot(avail_req).await.unwrap();
+        assert_eq!(avail_resp.status(), StatusCode::OK);
+
+        let body = to_bytes(avail_resp.into_body(), usize::MAX).await.unwrap();
+        let avail_res: IntrospectionAvailableResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(avail_res.techniques.len(), 6);
+        assert!(avail_res.techniques.contains(&"socratic_questioning".to_string()));
+        assert!(avail_res.techniques.contains(&"five_whys".to_string()));
+        assert!(avail_res.techniques.contains(&"pre_mortem".to_string()));
+        assert!(avail_res.techniques.contains(&"steel_manning".to_string()));
+        assert!(avail_res.techniques.contains(&"first_principles".to_string()));
+        assert!(avail_res.techniques.contains(&"pattern_recognition".to_string()));
     }
 }

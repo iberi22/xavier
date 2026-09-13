@@ -155,6 +155,300 @@ pub struct AnonymousMeshScore {
     pub points: u32,
 }
 
+/// Verdict on a HumanChallenge curation vote
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CurationVerdict {
+    /// The fact/decision is accepted as-is for training
+    Accept,
+    /// The fact/decision is rejected — do not use for training
+    Reject,
+    /// The content was refined/corrected by the human
+    Refine,
+}
+
+impl CurationVerdict {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CurationVerdict::Accept => "accept",
+            CurationVerdict::Reject => "reject",
+            CurationVerdict::Refine => "refine",
+        }
+    }
+}
+
+impl std::str::FromStr for CurationVerdict {
+    type Err = std::convert::Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "accept" => CurationVerdict::Accept,
+            "reject" => CurationVerdict::Reject,
+            _ => CurationVerdict::Refine,
+        })
+    }
+}
+
+/// A human's curation vote on a HumanChallenge event.
+/// Accepted/refined votes with training_eligible=true feed the TrainingExporter.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurationVote {
+    pub id: String,
+    pub challenge_id: String,
+    pub verdict: CurationVerdict,
+    /// Human-refined version of the content (if verdict=Refine)
+    pub curated_content: Option<String>,
+    /// True when the human explicitly verified the fact is correct
+    pub fact_verified: bool,
+    /// Domain tags for the mini-expert segment (e.g., ["rust", "architecture"])
+    pub domain_tags: Vec<String>,
+    /// Explicit consent to use this item for model training
+    pub training_eligible: bool,
+    pub voted_at: DateTime<Utc>,
+}
+
+impl CurationVote {
+    pub fn new(
+        challenge_id: impl Into<String>,
+        verdict: CurationVerdict,
+        curated_content: Option<String>,
+        fact_verified: bool,
+        domain_tags: Vec<String>,
+        training_eligible: bool,
+    ) -> Self {
+        Self {
+            id: format!("cv_{}", ulid::Ulid::new()),
+            challenge_id: challenge_id.into(),
+            verdict,
+            curated_content,
+            fact_verified,
+            domain_tags,
+            training_eligible,
+            voted_at: Utc::now(),
+        }
+    }
+}
+
+/// Status of a human introspection session
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntrospectionStatus {
+    Active,
+    Completed,
+    Abandoned,
+}
+
+impl IntrospectionStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IntrospectionStatus::Active => "active",
+            IntrospectionStatus::Completed => "completed",
+            IntrospectionStatus::Abandoned => "abandoned",
+        }
+    }
+}
+
+impl std::str::FromStr for IntrospectionStatus {
+    type Err = std::convert::Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "completed" => IntrospectionStatus::Completed,
+            "abandoned" => IntrospectionStatus::Abandoned,
+            _ => IntrospectionStatus::Active,
+        })
+    }
+}
+
+/// The 6 human introspection techniques that the LLM facilitates.
+/// The LLM guides — the human produces the insight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntrospectionTechnique {
+    /// LLM asks questions that lead the human to discover the answer
+    SocraticQuestioning,
+    /// Recursive "why?" 5 levels deep to find root cause
+    FiveWhys,
+    /// Pre-mortem: what could go wrong in 6 months?
+    PreMortem,
+    /// Argue the best case for the opposing position
+    SteelManning,
+    /// Decompose to the most fundamental axioms
+    FirstPrinciples,
+    /// Have you seen this pattern before? What happened?
+    PatternRecognition,
+}
+
+impl IntrospectionTechnique {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IntrospectionTechnique::SocraticQuestioning => "socratic_questioning",
+            IntrospectionTechnique::FiveWhys => "five_whys",
+            IntrospectionTechnique::PreMortem => "pre_mortem",
+            IntrospectionTechnique::SteelManning => "steel_manning",
+            IntrospectionTechnique::FirstPrinciples => "first_principles",
+            IntrospectionTechnique::PatternRecognition => "pattern_recognition",
+        }
+    }
+
+    /// Returns the LLM system prompt template for this technique.
+    pub fn system_prompt(&self, challenge_description: &str) -> String {
+        match self {
+            IntrospectionTechnique::SocraticQuestioning => format!(
+                "You are a Socratic guide. The human is exploring: '{challenge_description}'. \
+                 Ask one focused question at a time that helps them discover the answer themselves. \
+                 Never give the answer directly. Build on their previous responses."
+            ),
+            IntrospectionTechnique::FiveWhys => format!(
+                "You are facilitating a 5 Whys analysis on: '{challenge_description}'. \
+                 Each turn, acknowledge the human's answer and ask 'And why is that?' or a variant. \
+                 Track depth (1-5). At depth 5, synthesize the root cause."
+            ),
+            IntrospectionTechnique::PreMortem => format!(
+                "You are running a Pre-Mortem exercise on: '{challenge_description}'. \
+                 Ask the human to imagine it is 6 months from now and this decision failed. \
+                 Guide them to identify specific failure modes, probabilities, and mitigations."
+            ),
+            IntrospectionTechnique::SteelManning => format!(
+                "You are facilitating Steel Manning on: '{challenge_description}'. \
+                 Ask the human to build the strongest possible case for the opposing view. \
+                 Challenge weak arguments, push for the genuinely best version of the opposing position."
+            ),
+            IntrospectionTechnique::FirstPrinciples => format!(
+                "You are guiding First Principles thinking on: '{challenge_description}'. \
+                 Ask the human to break down assumptions one by one until they reach undeniable axioms. \
+                 Then help them rebuild from those axioms."
+            ),
+            IntrospectionTechnique::PatternRecognition => format!(
+                "You are guiding Pattern Recognition on: '{challenge_description}'. \
+                 Ask the human if they have seen similar situations before. \
+                 Guide them to identify the pattern structure, past outcomes, and how it applies now."
+            ),
+        }
+    }
+
+    /// Recommended technique for a given ChallengeType.
+    pub fn recommend_for(ct: ChallengeType) -> Self {
+        match ct {
+            ChallengeType::Contradiction => IntrospectionTechnique::SteelManning,
+            ChallengeType::Decision => IntrospectionTechnique::PreMortem,
+            ChallengeType::Execution => IntrospectionTechnique::FirstPrinciples,
+            ChallengeType::Assumption => IntrospectionTechnique::SocraticQuestioning,
+            ChallengeType::Clarification => IntrospectionTechnique::PatternRecognition,
+        }
+    }
+}
+
+/// Role in an introspection conversation turn
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnRole {
+    LlmGuide,
+    Human,
+}
+
+/// A single exchange turn in an introspection session
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntrospectionTurn {
+    pub role: TurnRole,
+    pub content: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// A complete introspection session — persisted locally, never leaves the node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntrospectionSession {
+    pub id: String,
+    pub challenge_id: String,
+    pub technique: IntrospectionTechnique,
+    /// Full turn-by-turn conversation (JSON-serialized)
+    pub turns: Vec<IntrospectionTurn>,
+    /// 0.0–1.0 how deep the analysis went (derived from turn count + content)
+    pub depth_score: f32,
+    /// Key insights extracted from the session by the LLM guide
+    pub insights: Vec<String>,
+    pub status: IntrospectionStatus,
+    pub started_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+impl IntrospectionSession {
+    pub fn new(challenge_id: impl Into<String>, technique: IntrospectionTechnique) -> Self {
+        Self {
+            id: format!("is_{}", ulid::Ulid::new()),
+            challenge_id: challenge_id.into(),
+            technique,
+            turns: Vec::new(),
+            depth_score: 0.0,
+            insights: Vec::new(),
+            status: IntrospectionStatus::Active,
+            started_at: Utc::now(),
+            completed_at: None,
+        }
+    }
+
+    /// Compute depth score based on turn count and average response length.
+    pub fn compute_depth_score(&self) -> f32 {
+        let human_turns: Vec<&IntrospectionTurn> = self
+            .turns
+            .iter()
+            .filter(|t| t.role == TurnRole::Human)
+            .collect();
+
+        if human_turns.is_empty() {
+            return 0.0;
+        }
+
+        let turn_factor = (human_turns.len() as f32 / 5.0).min(1.0);
+        let avg_len: f32 = human_turns.iter().map(|t| t.content.len() as f32).sum::<f32>()
+            / human_turns.len() as f32;
+        let length_factor = (avg_len / 200.0).min(1.0);
+
+        ((turn_factor + length_factor) / 2.0).clamp(0.0, 1.0)
+    }
+}
+
+/// Gate that decides if curated challenges are ready to feed the TrainingExporter.
+#[derive(Debug, Clone)]
+pub struct TrainingReadinessGate {
+    /// Minimum accepted curation votes needed to trigger a training bundle
+    pub min_accepted: usize,
+    /// Minimum fraction of votes that must have fact_verified=true
+    pub min_fact_verified_ratio: f32,
+    /// Minimum fraction of votes with training_eligible=true
+    pub min_training_eligible_ratio: f32,
+}
+
+impl Default for TrainingReadinessGate {
+    fn default() -> Self {
+        Self {
+            min_accepted: 20,
+            min_fact_verified_ratio: 0.7,
+            min_training_eligible_ratio: 0.8,
+        }
+    }
+}
+
+impl TrainingReadinessGate {
+    pub fn is_ready(&self, votes: &[CurationVote]) -> bool {
+        let accepted: Vec<&CurationVote> = votes
+            .iter()
+            .filter(|v| v.verdict == CurationVerdict::Accept || v.verdict == CurationVerdict::Refine)
+            .collect();
+
+        if accepted.len() < self.min_accepted {
+            return false;
+        }
+
+        let fact_verified_count = accepted.iter().filter(|v| v.fact_verified).count();
+        let training_eligible_count = accepted.iter().filter(|v| v.training_eligible).count();
+
+        let fact_ratio = fact_verified_count as f32 / accepted.len() as f32;
+        let eligible_ratio = training_eligible_count as f32 / accepted.len() as f32;
+
+        fact_ratio >= self.min_fact_verified_ratio
+            && eligible_ratio >= self.min_training_eligible_ratio
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
