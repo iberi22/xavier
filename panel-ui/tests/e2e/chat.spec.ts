@@ -48,6 +48,17 @@ test.describe("Agent Chat Interactions", () => {
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");
       window.localStorage.setItem("xavier_token", "mock-jwt-token");
+      window.localStorage.setItem(
+        "auth-storage",
+        JSON.stringify({
+          state: {
+            token: "mock-jwt-token",
+            isAuthenticated: true,
+            user: { id: "1", email: "operator@xavier.local", role: "admin" },
+          },
+          version: 0,
+        })
+      );
     });
 
     await page.goto("/");
@@ -60,7 +71,7 @@ test.describe("Agent Chat Interactions", () => {
     }
 
     await expect(
-      page.locator('input[placeholder="Initialize command sequence..."]'),
+      page.locator('[data-testid="command-input"], input[placeholder*="Ask anything"], input[placeholder="Initialize command sequence..."]'),
     ).toBeVisible();
   });
 
@@ -105,9 +116,7 @@ test.describe("Agent Chat Interactions", () => {
       });
     });
 
-    const input = page.locator(
-      'input[placeholder="Initialize command sequence..."]',
-    );
+    const input = page.locator('[data-testid="command-input"]');
     await input.fill(userInput);
 
     // Verify send button is enabled
@@ -155,7 +164,7 @@ test.describe("Agent Chat Interactions", () => {
     });
 
     await page.fill(
-      'input[placeholder="Initialize command sequence..."]',
+      '[data-testid="command-input"]',
       command,
     );
     await page.click('button[title="Send command"]');
@@ -176,7 +185,7 @@ test.describe("Agent Chat Interactions", () => {
     });
 
     await page.fill(
-      'input[placeholder="Initialize command sequence..."]',
+      '[data-testid="command-input"]',
       "Trigger error",
     );
     await page.click('button[title="Send command"]');

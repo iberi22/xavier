@@ -11,6 +11,7 @@ import {
   Layers,
   MessageSquare,
   Network,
+  Palette,
   Play,
   Plug,
   Puzzle,
@@ -30,6 +31,7 @@ import {
   codeViewToCanvas,
   memoryViewToCanvas,
 } from "../api/graphAdapters";
+import AppearancePage from "../pages/Settings/Appearance";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
 import type { Agent, BookmarkArtifact, GraphData, GraphNode } from "../types";
@@ -61,6 +63,7 @@ interface ConfigModalProps {
 
 type MainTab =
   | "config"
+  | "appearance"
   | "graph"
   | "bookmarks"
   | "providers"
@@ -368,6 +371,12 @@ export default function ConfigModal({
             label="Configuration"
           />
           <TabButton
+            active={mainTab === "appearance"}
+            onClick={() => setMainTab("appearance")}
+            icon={<Palette className="w-4 h-4" />}
+            label="Aspecto"
+          />
+          <TabButton
             active={mainTab === "providers"}
             onClick={() => setMainTab("providers")}
             icon={<Globe className="w-4 h-4" />}
@@ -447,6 +456,17 @@ export default function ConfigModal({
               graphData={graphData}
               token={token || ""}
             />
+          )}
+          {mainTab === "appearance" && (
+            <motion.div
+              key="appearance"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-hidden"
+            >
+              <AppearancePage />
+            </motion.div>
           )}
           {mainTab === "graph" && (
             <motion.div

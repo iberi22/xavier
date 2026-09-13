@@ -214,10 +214,11 @@ export default React.memo(function InputArea({
                   ? "Listening..."
                   : isLoading
                     ? "Processing..."
-                    : "Initialize command sequence..."
+                    : "Ask anything, @ to mention, / for actions"
               }
               aria-label="Command input"
-              className="w-full bg-transparent border-none outline-none text-white px-2 placeholder:text-white/30 text-sm font-medium focus-visible:ring-0"
+              data-testid="command-input"
+              className="w-full bg-transparent border-none outline-none text-white px-2 placeholder:text-white/40 text-sm font-mono focus-visible:ring-0"
               disabled={isRecording || isLoading}
             />
           )}

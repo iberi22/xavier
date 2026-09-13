@@ -636,7 +636,7 @@ function AppContent() {
 
 export default function App() {
 	return (
-		<ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+		<ThemeProvider defaultTheme="studio-dark" storageKey="vite-ui-theme">
 			<AppContent />
 		</ThemeProvider>
 	);

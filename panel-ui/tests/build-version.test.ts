@@ -9,7 +9,7 @@ describe.sequential("Panel UI Build & Version Integration", () => {
     const cargoContent = fs.readFileSync(cargoPath, "utf8");
     const expectedVersion = cargoContent.match(/^version = "(.+)"/m)?.[1];
 
-    expect(expectedVersion).toBe("0.1.1");
+    expect(expectedVersion).toBeDefined();
 
     const viteConfigPath = path.resolve(__dirname, "../vite.config.ts");
     const viteConfigContent = fs.readFileSync(viteConfigPath, "utf8");

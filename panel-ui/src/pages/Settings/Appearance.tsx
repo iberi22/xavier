@@ -31,12 +31,12 @@ export default function AppearancePage() {
   }[] = [
     {
       id: "studio-dark",
-      title: "Studio Dark",
-      description: "Tono oscuro refinado inspirado en UI de IDEs modernos. Sin bordes agresivos.",
-      tag: "Predeterminado",
+      title: "Studio Dark (Antigravity)",
+      description: "Estética oficial inspirada en Google Antigravity & Zed: obsidian mate, bordes tenues y tipografía nítida.",
+      tag: "Oficial",
       icon: <Moon className="w-4 h-4 text-blue-400" />,
-      bgHex: "#0d0e10",
-      cardHex: "#141518",
+      bgHex: "#111215",
+      cardHex: "#191a1e",
       accentHex: "#3b82f6",
     },
     {
