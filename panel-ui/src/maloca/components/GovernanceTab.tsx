@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { malocaApi, Proposal } from "../api";
 import { Landmark, Vote, Target, CheckCircle2, Clock, XCircle, BarChart3 } from "lucide-react";
+import ColabAuthButton from "../../components/ColabAuthButton";
 
 export function GovernanceTab() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -149,6 +150,31 @@ const ProposalItem = React.memo(function ProposalItem({ proposal }: { proposal: 
             <ProposalItem key={proposal.id} proposal={proposal} />
           ))
         )}
+      </div>
+
+      {/* Compute & Entrenamiento Section */}
+      <div className="mt-8 pt-6 border-t border-white/10 space-y-4">
+        <div>
+          <h4 className="text-sm font-medium text-white flex items-center gap-2">
+            Compute & Entrenamiento
+          </h4>
+          <p className="text-xs text-white/50 mt-1">
+            Gestión de recursos de cómputo externos y vinculación de Google Colab para entrenamiento de modelos.
+          </p>
+        </div>
+
+        <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 space-y-2">
+          <div className="text-amber-400 font-medium text-xs">
+            Google Colab (P3): Los datos serán anonimizados antes de enviarse. Google procesará el dataset durante el entrenamiento.
+          </div>
+          <p className="text-xs text-white/60">
+            Al conectar tu cuenta de Google Colab, se autorizará la ejecución de entornos de entrenamiento distribuido bajo strictly aceptadas garantías de privacidad P3.
+          </p>
+        </div>
+
+        <div className="pt-2">
+          <ColabAuthButton />
+        </div>
       </div>
     </div>
   );
