@@ -1320,6 +1320,10 @@ pub async fn start_http_server(
             get(crate::cli::handlers::notifications::list_notifications_handler),
         )
         .route(
+            "/notifications/stream",
+            get(crate::cli::handlers::notifications::stream_notifications_handler),
+        )
+        .route(
             "/notifications/{id}/read",
             axum::routing::patch(
                 crate::cli::handlers::notifications::mark_notification_read_handler,
