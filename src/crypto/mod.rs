@@ -24,6 +24,7 @@
 //! Store: Encrypted_DEK + Encrypted_Data + iv_kek + iv_data + salt
 //! ```
 
+pub mod airgap_capsule;
 pub mod encryption;
 pub mod envelope;
 pub mod hmac;
@@ -31,6 +32,7 @@ pub mod keys;
 pub mod password;
 pub mod wallet;
 
+pub use airgap_capsule::{AirgapCapsule, AirgapCapsuleHeader, CapsulePayloadKind};
 pub use encryption::{decrypt_data, encrypt_data, EncryptedBlob};
 pub use keys::{derive_kek_from_password, generate_dek, KeyManager};
 pub use wallet::{Ed25519Wallet, WalletError, WalletResult};

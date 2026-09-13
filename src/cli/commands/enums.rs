@@ -472,6 +472,9 @@ pub enum Command {
         #[arg(short = 'i', long = "in")]
         input: PathBuf,
     },
+
+    /// Air-gap offline storage capsule protocol (USB detection, pack, unpack, inspect)
+    Airgap(crate::cli::commands::airgap::AirgapArgs),
 }
 
 /// Subcommands for the auto-improvement loop.
