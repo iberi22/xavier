@@ -1873,8 +1873,8 @@
     "feat-challenge-curation-pipeline": {
       "id": "feat-challenge-curation-pipeline",
       "name": "HumanChallenge → Curation → Training Pipeline",
-      "status": "planned",
-      "progress": 60,
+      "status": "in_progress",
+      "progress": 85,
       "wave": "wave-8",
       "module": "humanchallenge",
       "requirements": [
@@ -1890,15 +1890,17 @@
         "src/server/maloca/challenge_routes.rs"
       ],
       "tests": [
-        "humanchallenge::curation_gate::tests"
+        "humanchallenge::curation_gate::tests",
+        "server::maloca::challenge_routes::tests::test_curate_endpoint",
+        "server::maloca::challenge_routes::tests::test_training_gate_not_ready"
       ],
       "added": "2026-09-12"
     },
     "feat-human-introspection-mode": {
       "id": "feat-human-introspection-mode",
       "name": "Human Introspection Mode (LLM as Guide)",
-      "status": "planned",
-      "progress": 65,
+      "status": "in_progress",
+      "progress": 85,
       "wave": "wave-8",
       "module": "humanchallenge",
       "requirements": [
@@ -1914,7 +1916,9 @@
         "panel-ui/src/maloca/components/IntrospectionTab.tsx"
       ],
       "tests": [
-        "humanchallenge::introspection::tests"
+        "humanchallenge::introspection::tests",
+        "server::maloca::challenge_routes::tests::test_introspect_start_session",
+        "server::maloca::challenge_routes::tests::test_introspection_available"
       ],
       "added": "2026-09-12"
     },
