@@ -198,7 +198,7 @@ async fn run_pack(
         .unwrap_or("payload")
         .to_string();
 
-    let author_tag = author.unwrap_or_else(|| whoami_username());
+    let author_tag = author.unwrap_or_else(whoami_username);
 
     println!("📦 Packaging: {}", input.display());
     println!("   Payload Kind: {:?}", payload_kind);

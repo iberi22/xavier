@@ -218,6 +218,10 @@ path = "tests/kernel_proxy_test.rs"
 name = "kernel_mcp_test"
 path = "tests/kernel_mcp_test.rs"
 
+[[test]]
+name = "messaging_status"
+path = "tests/messaging_status.rs"
+
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 code-graph = { path = "./code-graph" }
