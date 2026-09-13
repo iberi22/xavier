@@ -29,6 +29,11 @@ export default function MalocaView({ onClose }: Props) {
       case "governance": return <GovernanceTab />;
       case "support": return <SupportTab />;
       case "backlog": return <BacklogTab />;
+      case "introspection": return (
+        <div className="flex items-center justify-center h-48 text-white/40 font-mono text-sm">
+          Module 'introspection' under construction...
+        </div>
+      );
       default: return (
         <div className="flex items-center justify-center h-48 text-white/40 font-mono text-sm">
           Module '{activeTab}' under construction...
