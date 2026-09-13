@@ -1440,6 +1440,10 @@ pub async fn start_http_server(
             "/system/alerts",
             get(crate::cli::handlers::system::system_alerts_handler),
         )
+        .route(
+            "/v1/messaging/status",
+            get(crate::cli::handlers::config::get_messaging_status_handler),
+        )
         .route("/v1/version", get(version_handler))
         .route("/build", get(build_handler))
         .route("/ready", get(readiness_handler))

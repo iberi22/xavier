@@ -27,7 +27,7 @@ use crate::agents::system1::RetrievedDocument;
 #[derive(Clone)]
 pub struct ModelProviderClient {
     pub(crate) client: Client,
-    pub(crate) config: ModelProviderConfig,
+    pub config: ModelProviderConfig,
 }
 
 impl ModelProviderClient {
