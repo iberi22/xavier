@@ -77,7 +77,10 @@ fn list_linux_removable_devices() -> Vec<UsbStorageDevice> {
         let mount_path = PathBuf::from(mount_point_str);
 
         // Skip root filesystem, boot, and internal system paths
-        if mount_point_str == "/" || mount_point_str.starts_with("/boot") || mount_point_str.starts_with("/nix") {
+        if mount_point_str == "/"
+            || mount_point_str.starts_with("/boot")
+            || mount_point_str.starts_with("/nix")
+        {
             continue;
         }
 
@@ -192,7 +195,10 @@ pub fn probe_disk_space(path: &Path) -> (Option<u64>, Option<u64>) {
 
     // Fallback: if path is "/" or query cannot find exact mount point, return first available disk
     if let Some(first_disk) = disks.iter().next() {
-        return (Some(first_disk.total_space()), Some(first_disk.available_space()));
+        return (
+            Some(first_disk.total_space()),
+            Some(first_disk.available_space()),
+        );
     }
 
     (None, None)

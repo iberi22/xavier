@@ -558,11 +558,7 @@ pub async fn introspect_handler(
         &event.description,
         payload.technique,
     ) {
-        Ok(session) => (
-            StatusCode::CREATED,
-            Json(IntrospectResponse { session }),
-        )
-            .into_response(),
+        Ok(session) => (StatusCode::CREATED, Json(IntrospectResponse { session })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e })),
@@ -590,12 +586,16 @@ pub async fn introspection_available_handler(
     State(state): State<ChallengeState>,
 ) -> impl IntoResponse {
     let techniques = vec![
-        IntrospectionTechnique::SocraticQuestioning.as_str().to_string(),
+        IntrospectionTechnique::SocraticQuestioning
+            .as_str()
+            .to_string(),
         IntrospectionTechnique::FiveWhys.as_str().to_string(),
         IntrospectionTechnique::PreMortem.as_str().to_string(),
         IntrospectionTechnique::SteelManning.as_str().to_string(),
         IntrospectionTechnique::FirstPrinciples.as_str().to_string(),
-        IntrospectionTechnique::PatternRecognition.as_str().to_string(),
+        IntrospectionTechnique::PatternRecognition
+            .as_str()
+            .to_string(),
     ];
     let challenges = state
         .store
@@ -629,10 +629,7 @@ pub fn router(state: ChallengeState) -> Router {
             "/v1/maloca/challenges/curate",
             post(curate_challenge_handler),
         )
-        .route(
-            "/v1/maloca/challenges/introspect",
-            post(introspect_handler),
-        )
+        .route("/v1/maloca/challenges/introspect", post(introspect_handler))
         .route(
             "/v1/maloca/challenges/training-gate",
             get(training_gate_handler),
@@ -875,7 +872,9 @@ mod tests {
         let introspect_resp = app.oneshot(introspect_req).await.unwrap();
         assert_eq!(introspect_resp.status(), StatusCode::CREATED);
 
-        let body = to_bytes(introspect_resp.into_body(), usize::MAX).await.unwrap();
+        let body = to_bytes(introspect_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let introspect_res: IntrospectResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(introspect_res.session.challenge_id, target_id);
         assert_eq!(
@@ -922,12 +921,18 @@ mod tests {
         let body = to_bytes(avail_resp.into_body(), usize::MAX).await.unwrap();
         let avail_res: IntrospectionAvailableResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(avail_res.techniques.len(), 6);
-        assert!(avail_res.techniques.contains(&"socratic_questioning".to_string()));
+        assert!(avail_res
+            .techniques
+            .contains(&"socratic_questioning".to_string()));
         assert!(avail_res.techniques.contains(&"five_whys".to_string()));
         assert!(avail_res.techniques.contains(&"pre_mortem".to_string()));
         assert!(avail_res.techniques.contains(&"steel_manning".to_string()));
-        assert!(avail_res.techniques.contains(&"first_principles".to_string()));
-        assert!(avail_res.techniques.contains(&"pattern_recognition".to_string()));
+        assert!(avail_res
+            .techniques
+            .contains(&"first_principles".to_string()));
+        assert!(avail_res
+            .techniques
+            .contains(&"pattern_recognition".to_string()));
         // Challenges list should be deserializable
         assert!(avail_res.challenges.is_empty() || !avail_res.challenges.is_empty());
     }

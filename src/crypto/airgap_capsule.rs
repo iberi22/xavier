@@ -171,9 +171,9 @@ impl AirgapCapsule {
             .map_err(|e| anyhow::anyhow!("Cipher creation error: {}", e))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|_| anyhow::anyhow!("Decryption failed: incorrect passphrase or tampered capsule data"))?;
+        let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|_| {
+            anyhow::anyhow!("Decryption failed: incorrect passphrase or tampered capsule data")
+        })?;
 
         Ok((header, plaintext))
     }

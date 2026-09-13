@@ -8,7 +8,8 @@ export type MalocaTabId =
   | "support"
   | "backlog"
   | "challenges"
-  | "models";
+  | "models"
+  | "introspection";
 
 export interface TabConfig {
   id: MalocaTabId;
