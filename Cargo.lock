@@ -2463,7 +2463,7 @@ checksum = "3720e52e00ed0155ced4f8681d0e8a362e699cee36494ec5b97ad44fcc5194c0"
 dependencies = [
  "burn-backend",
  "burn-std",
- "colored 3.1.1",
+ "colored",
  "derive-new",
  "num-traits",
  "serde",
@@ -3010,16 +3010,6 @@ name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
-
-[[package]]
-name = "colored"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
-dependencies = [
- "lazy_static",
- "windows-sys 0.59.0",
-]
 
 [[package]]
 name = "colored"
@@ -4592,7 +4582,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db96968fcf52fe063a98c75df1d1f2b1fba304e7ae29b72fdc81c1165b7e2fd0"
 dependencies = [
- "colored 3.1.1",
+ "colored",
  "futures",
 ]
 
@@ -8378,7 +8368,7 @@ checksum = "90820618712cab19cfc46b274c6c22546a82affcb3c3bdf0f29e3db8e1bb92c0"
 dependencies = [
  "assert-json-diff",
  "bytes",
- "colored 3.1.1",
+ "colored",
  "futures-core",
  "http",
  "http-body",
@@ -11603,7 +11593,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -16357,7 +16347,7 @@ dependencies = [
  "ciborium",
  "clap",
  "code-graph",
- "colored 2.2.0",
+ "colored",
  "console_error_panic_hook",
  "criterion",
  "cron",
