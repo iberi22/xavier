@@ -15,3 +15,7 @@
 ## 2026-09-12 - [InputArea loading states]
 **Learning:** React components that take `isLoading` props often need to disable input and buttons to communicate to users that something is in progress and prevent double submissions.
 **Action:** When adding loading state variables, check if there are inputs and buttons that should be disabled, and add appropriate ARIA labels and micro-UX states (such as loading spinners instead of icons, and opacity drop).
+
+## 2026-09-13 - Modal Decomposition & Consolidated Sidebar UX
+**Learning:** Monolithic status bars with nested inline modals create duplicate navigation paths and layout clutter. Extracting modal overlays into dedicated components (`NodeConnectionModal`, `SyncStatusPopover`) and consolidating multi-level settings into a single left sidebar improves readability, keyboard accessibility, and navigation predictability.
+**Action:** When refactoring complex control panels, replace top duplicate pill strips with a unified left sidebar and isolate dialogs into `src/components/modals/`.
