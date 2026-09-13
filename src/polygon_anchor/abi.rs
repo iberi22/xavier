@@ -6,6 +6,7 @@
 //! interface ISwalIdentityRegistry {
 //!     function anchorIdentity(bytes32 contentHash) external;
 //!     function anchorPack(bytes32 contentHash) external;
+//!     function anchorKarmaRollup(bytes32 merkleRoot) external;
 //! }
 //! ```
 //!
@@ -22,6 +23,9 @@ pub const SELECTOR_ANCHOR_IDENTITY: [u8; 4] = [0x4f, 0x30, 0x66, 0xee];
 /// keccak256("anchorPack(bytes32)")[0..4] = 0x1581d78e
 pub const SELECTOR_ANCHOR_PACK: [u8; 4] = [0x15, 0x81, 0xd7, 0x8e];
 
+/// keccak256("anchorKarmaRollup(bytes32)")[0..4] = 0x8979b0c2
+pub const SELECTOR_ANCHOR_KARMA_ROLLUP: [u8; 4] = [0x89, 0x79, 0xb0, 0xc2];
+
 /// Prepared EVM call — safe to log (no private keys).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedAnchorCall {
@@ -36,6 +40,7 @@ pub struct PreparedAnchorCall {
 pub enum AnchorKind {
     Identity,
     Pack,
+    KarmaRollup,
 }
 
 fn parse_hash32(content_hash_hex: &str) -> Result<[u8; 32]> {
@@ -54,6 +59,7 @@ pub fn encode_anchor_calldata(kind: AnchorKind, content_hash_hex: &str) -> Resul
     let selector = match kind {
         AnchorKind::Identity => SELECTOR_ANCHOR_IDENTITY,
         AnchorKind::Pack => SELECTOR_ANCHOR_PACK,
+        AnchorKind::KarmaRollup => SELECTOR_ANCHOR_KARMA_ROLLUP,
     };
     let mut data = Vec::with_capacity(4 + 32);
     data.extend_from_slice(&selector);
@@ -92,6 +98,15 @@ mod tests {
         assert_eq!(data.len(), 36);
         assert_eq!(&data[0..4], &SELECTOR_ANCHOR_IDENTITY);
         assert_eq!(crate::crypto::hex_encode(&data[4..]), hash);
+    }
+
+    #[test]
+    fn test_encode_karma_rollup_calldata() {
+        let merkle_root = "22".repeat(32);
+        let data = encode_anchor_calldata(AnchorKind::KarmaRollup, &merkle_root).unwrap();
+        assert_eq!(data.len(), 36);
+        assert_eq!(&data[0..4], &SELECTOR_ANCHOR_KARMA_ROLLUP);
+        assert_eq!(crate::crypto::hex_encode(&data[4..]), merkle_root);
     }
 
     #[test]
