@@ -32,6 +32,7 @@ pub mod coordination;
 pub mod crypto;
 pub mod curation;
 pub mod data_commons;
+pub mod documents;
 pub mod embedding;
 pub mod enterprise;
 pub mod error;

@@ -155,7 +155,10 @@ impl KarmaEngine {
         let envelope: KarmaStorageEnvelope = match serde_json::from_str(&data) {
             Ok(env) => env,
             Err(e) => {
-                tracing::error!("Tampering detected in karma.json: invalid envelope structure ({})", e);
+                tracing::error!(
+                    "Tampering detected in karma.json: invalid envelope structure ({})",
+                    e
+                );
                 self.records = HashMap::new();
                 return Ok(());
             }
@@ -181,14 +184,18 @@ impl KarmaEngine {
             return Ok(());
         }
 
-        let records: HashMap<String, AgentKarmaRecord> = match serde_json::from_str(&envelope.records_json) {
-            Ok(recs) => recs,
-            Err(e) => {
-                tracing::error!("Tampering detected in karma.json: invalid records JSON ({})", e);
-                self.records = HashMap::new();
-                return Ok(());
-            }
-        };
+        let records: HashMap<String, AgentKarmaRecord> =
+            match serde_json::from_str(&envelope.records_json) {
+                Ok(recs) => recs,
+                Err(e) => {
+                    tracing::error!(
+                        "Tampering detected in karma.json: invalid records JSON ({})",
+                        e
+                    );
+                    self.records = HashMap::new();
+                    return Ok(());
+                }
+            };
 
         self.records = records;
         Ok(())

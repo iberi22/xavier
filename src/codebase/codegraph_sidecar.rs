@@ -366,9 +366,14 @@ pub fn install_codegraph_sidecar_sync(from_source: bool) -> Result<SidecarInstal
             let report = get_sidecar_health_status();
             Ok(SidecarInstallOutcome {
                 success: true,
-                message: format!("CodeGraph sidecar installed successfully at {}", bin_path.display()),
+                message: format!(
+                    "CodeGraph sidecar installed successfully at {}",
+                    bin_path.display()
+                ),
                 bin_path: Some(bin_path),
-                version: report.version.unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
+                version: report
+                    .version
+                    .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
                 verified: report.executable,
             })
         }
