@@ -632,6 +632,13 @@ pub async fn start_http_server(
             )
             .with_state(()),
         )
+        .nest(
+            "/auth/google",
+            xavier::server::auth_routes::router(
+                xavier::server::auth_routes::GoogleOAuthState::default(),
+            )
+            .with_state(()),
+        )
         .merge(
             xavier::server::f12_routes::router(xavier::server::f12_routes::F12State::new(
                 state.workspace_dir.clone().join("data"),
