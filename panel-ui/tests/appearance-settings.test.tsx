@@ -19,10 +19,10 @@ describe("Appearance Settings Page", () => {
     );
 
     expect(screen.getByText("Aspecto y Temas")).toBeDefined();
-    expect(screen.getByText("Studio Dark")).toBeDefined();
+    expect(screen.getByText(/Studio Dark/i)).toBeDefined();
     expect(screen.getByText("Hueso Blanco")).toBeDefined();
     expect(screen.getByText("Xavier Cyberpunk")).toBeDefined();
-    expect(screen.getByText("Predeterminado")).toBeDefined();
+    expect(screen.getByText("Oficial")).toBeDefined();
     expect(screen.getByText("Secundario")).toBeDefined();
   });
 

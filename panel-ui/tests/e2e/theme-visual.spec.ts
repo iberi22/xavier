@@ -3,7 +3,7 @@ import path from "node:path";
 
 const ARTIFACT_DIR = "/home/belal/.gemini/antigravity/brain/93991307-c184-424b-87e0-d141afcaa915";
 
-test.describe.fixme("Xavier Studio Dark & Bone White E2E Visual Verification (pending wave-theme)", () => {
+test.describe("Xavier Studio Dark & Bone White E2E Visual Verification", () => {
   test("loads Studio Dark by default, captures screenshots, and verifies theme switching", async ({
     page,
   }) => {
@@ -85,7 +85,7 @@ test.describe.fixme("Xavier Studio Dark & Bone White E2E Visual Verification (pe
     // Verify Appearance content
     await expect(page.locator('h2:has-text("Aspecto y Temas")')).toBeVisible();
     await expect(page.locator('span:has-text("Studio Dark")').first()).toBeVisible();
-    await expect(page.locator('span:has-text("Predeterminado")').first()).toBeVisible();
+    await expect(page.locator('span:has-text("Oficial")').first()).toBeVisible();
     await expect(page.locator('span:has-text("Hueso Blanco")').first()).toBeVisible();
     await expect(page.locator('span:has-text("Xavier Cyberpunk")').first()).toBeVisible();
 

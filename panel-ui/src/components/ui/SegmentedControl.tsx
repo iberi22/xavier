@@ -26,7 +26,7 @@ export function SegmentedControl<T extends string = string>({
   return (
     <div
       role="radiogroup"
-      className={`inline-flex items-center rounded-lg bg-[#141518] p-0.5 border border-white/[0.08] dark:bg-[#18191c] ${className}`}
+      className={`inline-flex items-center rounded-lg bg-[#111215] p-1 border border-white/[0.08] dark:bg-[#141518] ${className}`}
     >
       {options.map((option) => {
         const isSelected = option.value === value;
@@ -42,8 +42,8 @@ export function SegmentedControl<T extends string = string>({
               ${paddingClass}
               ${
                 isSelected
-                  ? "bg-[#282a2e] text-white shadow-sm font-semibold border border-white/[0.08]"
-                  : "text-white/60 hover:text-white/90 hover:bg-white/[0.04]"
+                  ? "bg-[#25272c] text-white shadow-sm font-semibold border border-white/10"
+                  : "text-white/50 hover:text-white/80 hover:bg-white/[0.03]"
               }
             `}
           >
