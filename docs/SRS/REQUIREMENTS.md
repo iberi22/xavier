@@ -881,5 +881,96 @@ Xavier provee un Kernel Proxy CLI en Rust que intercepta subprocesos de herramie
 
 ---
 
-*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy.*
+## REQ-048: HumanChallenge → Curation → Training Pipeline
+
+**Status:** Planned | **Wave:** 8 | **Module:** humanchallenge, data_commons
+**SRS Reference:** IEEE 830 §3.2
+
+### Description
+Verified HumanChallenge events must flow through a human curation gate before feeding
+the TrainingExporter. A CurationVote (Accept/Reject/Refine) with explicit training consent
+gates which challenge responses become training data. Minimum thresholds: 10 eligible votes,
+70% fact-verified, 60% training-eligible before export is allowed.
+
+### Requirements
+- REQ-048.1: System SHALL require explicit `training_eligible: true` on CurationVote for inclusion
+- REQ-048.2: System SHALL block export unless CurationGate::check_readiness() returns is_ready=true
+- REQ-048.3: CurationVote SHALL store domain_tags for mini-expert segment routing
+- REQ-048.4: All curation votes SHALL be stored locally (Privacy P4) unless user upgrades consent
+
+---
+
+## REQ-049: Human Introspection Mode (LLM as Guide)
+
+**Status:** Planned | **Wave:** 8 | **Module:** humanchallenge/introspection
+**SRS Reference:** IEEE 830 §3.3
+
+### Description
+Xavier SHALL provide a structured human introspection mode where the LLM acts as a
+professional guide (not answer-giver) using 6 evidence-based techniques. The human
+produces insights; the LLM facilitates depth through targeted questions.
+
+### Requirements
+- REQ-049.1: System SHALL support 6 IntrospectionTechniques: Socratic, FiveWhys, PreMortem, SteelManning, FirstPrinciples, PatternRecognition
+- REQ-049.2: IntrospectionSession SHALL auto-select technique based on ChallengeType
+- REQ-049.3: FiveWhys technique SHALL auto-complete after 5 human turns
+- REQ-049.4: Completed sessions SHALL extract human insights for optional training inclusion
+- REQ-049.5: LLM guide prompts SHALL be generated locally — no external LLM API required for the guide scaffolding
+
+---
+
+## REQ-050: Privacy Pipeline P2/P3/P4
+
+**Status:** Planned | **Wave:** 8 | **Module:** data_commons/privacy
+**SRS Reference:** IEEE 830 §3.4 (Privacy Requirements)
+
+### Description
+All training data exports SHALL pass through a PrivacyPipeline with three levels:
+P4 (local only, no processing), P2 (PII scrubbing for on-prem sharing), P3 (DP + scrubbing for external/Colab).
+
+### Requirements
+- REQ-050.1: P4 data SHALL never leave the local node without explicit user upgrade
+- REQ-050.2: P2 exports SHALL scrub: emails, file paths, API keys, passwords
+- REQ-050.3: P3 exports SHALL add Laplace differential privacy noise (epsilon=1.0) on confidence scores
+- REQ-050.4: k-anonymity check (k>=3) SHALL be enforced on P3 exports — export rejected if k<3
+- REQ-050.5: Privacy audit report SHALL be included in every TrainingBundle manifest
+
+---
+
+## REQ-051: Enterprise ComputeProvider with ZDR (Zero Data Retention)
+
+**Status:** Planned | **Wave:** 8 | **Module:** enterprise/compute
+**SRS Reference:** IEEE 830 §3.5 (Enterprise Requirements)
+
+### Description
+Enterprise users SHALL have access to ComputeProvider abstraction (Local, ColabPro, RunPod,
+VastAI, LambdaLabs) with cryptographically verifiable Zero Data Retention audit trail.
+
+### Requirements
+- REQ-051.1: ZdrAuditEntry SHALL include pre/post volume hashes signed by the provider
+- REQ-051.2: Xavier SHALL verify ZdrAuditEntry::verify() before marking a TrainingJob as ZDR-compliant
+- REQ-051.3: ColabPro provider SHALL require explicit Google OAuth token (not stored in plaintext)
+- REQ-051.4: Enterprise plan SHALL have access to RunPod and LambdaLabs providers
+- REQ-051.5: Free/Pro plans SHALL only access Local compute provider
+
+---
+
+## REQ-052: Informed Consent for P3 (Colab) Training Export
+
+**Status:** Planned | **Wave:** 8 | **Module:** panel-ui, humanchallenge
+**SRS Reference:** IEEE 830 §3.6 (User Consent Requirements)
+
+### Description
+Before any P3-level export (Google Colab, external compute), the system SHALL present
+a consent dialog explaining the privacy implications and requiring explicit user confirmation.
+
+### Requirements
+- REQ-052.1: P3 export SHALL be blocked until user explicitly confirms consent
+- REQ-052.2: Consent dialog SHALL clearly state: "Google will process your anonymized dataset"
+- REQ-052.3: Consent SHALL be recorded in the audit log with timestamp and user identity hash
+- REQ-052.4: Consent can be revoked at any time — revocation blocks future P3 exports until re-confirmed
+
+---
+
+*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, enterprise ZDR, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui.*
 
