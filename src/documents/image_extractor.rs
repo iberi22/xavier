@@ -178,10 +178,7 @@ impl ImageExtractor {
         }
 
         let dct_8x8 = Self::compute_dct_top_left_8x8(&matrix, 8);
-        let mut sum = 0.0;
-        for &val in dct_8x8.iter().skip(1) {
-            sum += val;
-        }
+        let sum: f64 = dct_8x8[1..64].iter().sum();
         let mean = sum / 63.0;
 
         let mut hash = 0u64;
@@ -390,34 +387,38 @@ impl ImageExtractor {
 
             match tag {
                 // Model (Tag 0x0110)
-                0x0110 if field_type == 2 => {
-                    let string_offset = match read_u32(bytes, val_offset) {
-                        Some(off) if count > 4 => off as usize,
-                        _ => val_offset,
-                    };
-                    if let Some(slice) = bytes.get(string_offset..string_offset + count) {
-                        let str_val = String::from_utf8_lossy(slice)
-                            .trim_matches('\0')
-                            .trim()
-                            .to_string();
-                        if !str_val.is_empty() {
-                            exif.camera_model = Some(str_val);
+                0x0110 => {
+                    if field_type == 2 {
+                        let string_offset = match read_u32(bytes, val_offset) {
+                            Some(off) if count > 4 => off as usize,
+                            _ => val_offset,
+                        };
+                        if let Some(slice) = bytes.get(string_offset..string_offset + count) {
+                            let str_val = String::from_utf8_lossy(slice)
+                                .trim_matches('\0')
+                                .trim()
+                                .to_string();
+                            if !str_val.is_empty() {
+                                exif.camera_model = Some(str_val);
+                            }
                         }
                     }
                 }
                 // DateTime (Tag 0x0132)
-                0x0132 if field_type == 2 => {
-                    let string_offset = match read_u32(bytes, val_offset) {
-                        Some(off) if count > 4 => off as usize,
-                        _ => val_offset,
-                    };
-                    if let Some(slice) = bytes.get(string_offset..string_offset + count) {
-                        let str_val = String::from_utf8_lossy(slice)
-                            .trim_matches('\0')
-                            .trim()
-                            .to_string();
-                        if !str_val.is_empty() {
-                            exif.capture_date = Some(str_val);
+                0x0132 => {
+                    if field_type == 2 {
+                        let string_offset = match read_u32(bytes, val_offset) {
+                            Some(off) if count > 4 => off as usize,
+                            _ => val_offset,
+                        };
+                        if let Some(slice) = bytes.get(string_offset..string_offset + count) {
+                            let str_val = String::from_utf8_lossy(slice)
+                                .trim_matches('\0')
+                                .trim()
+                                .to_string();
+                            if !str_val.is_empty() {
+                                exif.capture_date = Some(str_val);
+                            }
                         }
                     }
                 }
