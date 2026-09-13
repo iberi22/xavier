@@ -3,27 +3,22 @@
 //! Schedules and triggers mini-expert LLM fine-tuning jobs during configured night windows
 //! when sufficient curated human challenge datasets are ready.
 
-use std::sync::Arc;
 use chrono::{DateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::humanchallenge::store::HumanChallengeStore;
 
 /// Compute provider options for mini-expert fine-tuning jobs.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum ComputeProvider {
+    #[default]
     Local,
     Modal,
     RunPod,
     AWS,
     Custom(String),
-}
-
-impl Default for ComputeProvider {
-    fn default() -> Self {
-        Self::Local
-    }
 }
 
 /// Represents an automated mini-expert training job configuration and metadata.
@@ -69,7 +64,7 @@ impl std::fmt::Debug for CurationGate {
         f.debug_struct("CurationGate")
             .field("min_curated_items", &self.min_curated_items)
             .finish_non_exhaustive()
-        }
+    }
 }
 
 impl CurationGate {
@@ -91,7 +86,10 @@ impl CurationGate {
         let count = match self.store.list_events(None, 1000) {
             Ok(events) => events
                 .iter()
-                .filter(|e| e.points_awarded > 0 || e.status == crate::humanchallenge::types::ChallengeStatus::Answered)
+                .filter(|e| {
+                    e.points_awarded > 0
+                        || e.status == crate::humanchallenge::types::ChallengeStatus::Answered
+                })
                 .count(),
             Err(_) => 0,
         };
@@ -246,7 +244,7 @@ impl NightTrainer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::humanchallenge::types::{ChallengeStatus, HumanChallengeEvent, ChallengeType};
+    use crate::humanchallenge::types::{ChallengeStatus, ChallengeType, HumanChallengeEvent};
 
     fn create_test_store() -> Arc<HumanChallengeStore> {
         Arc::new(HumanChallengeStore::in_memory().unwrap())
@@ -353,12 +351,18 @@ mod tests {
         let trainer = NightTrainer::new(config, gate, store);
 
         let job_res = trainer.prepare_job();
-        assert!(job_res.is_ok(), "prepare_job should succeed when gate is ready");
+        assert!(
+            job_res.is_ok(),
+            "prepare_job should succeed when gate is ready"
+        );
 
         let job = job_res.unwrap();
         assert!(job.id.starts_with("job_"));
         assert_eq!(job.provider, ComputeProvider::Modal);
         assert_eq!(job.status, "pending");
-        assert_eq!(job.dataset_path, ".xavier/datasets/night_training_curated.json");
+        assert_eq!(
+            job.dataset_path,
+            ".xavier/datasets/night_training_curated.json"
+        );
     }
 }

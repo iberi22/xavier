@@ -217,7 +217,9 @@ impl GoogleOAuthManager {
                     .collect();
 
                 let has_colab = token.has_colab_scope()
-                    || scopes.iter().any(|s| s.contains("colab") || s.contains("drive"));
+                    || scopes
+                        .iter()
+                        .any(|s| s.contains("colab") || s.contains("drive"));
 
                 GoogleOAuthStatus {
                     is_connected: true,
@@ -406,9 +408,7 @@ mod tests {
             refresh_token: Some("1//refresh_token".to_string()),
             expires_at: Utc::now().timestamp() + 3600,
             id_token: Some("id.jwt.token".to_string()),
-            scope: Some(
-                "openid email profile https://www.googleapis.com/auth/colab".to_string(),
-            ),
+            scope: Some("openid email profile https://www.googleapis.com/auth/colab".to_string()),
             token_type: "Bearer".to_string(),
         };
 

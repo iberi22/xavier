@@ -546,7 +546,8 @@ mod tests {
         .unwrap();
 
         // 1. Export with P2 (Default) -> Should scrub email & set manifest privacy_level to P2
-        let exporter_p2 = TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P2);
+        let exporter_p2 =
+            TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P2);
         let bundle_p2 = exporter_p2.generate_bundle(123, 0.0, None).unwrap();
         assert_eq!(bundle_p2.manifest.privacy_level, "P2");
         assert_eq!(bundle_p2.train_split.len(), 1);
@@ -555,7 +556,8 @@ mod tests {
         assert_eq!(record_p2["message"], "Contact [EMAIL] for info");
 
         // 2. Export with P3 -> Should scrub email & set manifest privacy_level to P3
-        let exporter_p3 = TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P3);
+        let exporter_p3 =
+            TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P3);
         let bundle_p3 = exporter_p3.generate_bundle(123, 0.0, None).unwrap();
         assert_eq!(bundle_p3.manifest.privacy_level, "P3");
         assert_eq!(bundle_p3.train_split.len(), 1);
@@ -563,7 +565,8 @@ mod tests {
         assert_eq!(record_p3["email"], "[EMAIL]");
 
         // 3. Export with P4 (Local Only) -> Should NOT scrub email & set manifest privacy_level to P4
-        let exporter_p4 = TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P4);
+        let exporter_p4 =
+            TrainingExporter::new(db_file.path()).with_privacy_level(PrivacyLevel::P4);
         let bundle_p4 = exporter_p4.generate_bundle(123, 0.0, None).unwrap();
         assert_eq!(bundle_p4.manifest.privacy_level, "P4");
         assert_eq!(bundle_p4.train_split.len(), 1);
