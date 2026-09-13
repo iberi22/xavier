@@ -1,6 +1,7 @@
 //! Server modules for AgentRAG/Xavier
 
 pub mod alerts;
+pub mod auth_routes;
 pub mod events;
 pub mod f12_routes;
 pub mod gpud_sidecar;
