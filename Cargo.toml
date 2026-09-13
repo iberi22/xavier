@@ -348,7 +348,7 @@ serial_test = "3.2"
 mockito = "1.6"
 proptest = "1.11.0"
 tempfile = "3.27.0"
-criterion = "0.5"
+criterion = "0.8"
 axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
 tokio-tungstenite = "0.29"
