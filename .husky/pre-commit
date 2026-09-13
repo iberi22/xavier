@@ -22,7 +22,7 @@ if [ -n "$STAGED_RS" ]; then
     }
 
     echo "🦀 [Pre-Commit] Verificando clippy (-D warnings)..."
-    cargo clippy -p xavier -p code-graph --all-targets -- -D warnings || {
+    CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/xavier-precommit-target}" cargo clippy -p xavier -p code-graph --all-targets -- -D warnings || {
         echo "❌ [Pre-Commit] Fallo en cargo clippy. Corrige las advertencias/errores antes de commitear."
         exit 1
     }
