@@ -21,11 +21,13 @@ pub mod http {
         axum::Router::new()
     }
 }
+pub mod compute;
 pub mod persistence;
 #[cfg(test)]
 pub mod tests;
 
 pub use audit::{AuditAction, AuditEntry, AuditLog};
+pub use compute::{ColabGpu, ComputeProvider, TrainingJob, TrainingJobStatus, ZdrAuditEntry};
 pub use keys::{ApiKey, ApiKeyStore, ApiKeyType};
 pub use rate_limit::{RateLimitConfig, RateLimitKey, RateLimitResult, RateLimiter};
 pub use rbac::{Permission, PermissionCheck, Role, RoleGuard};
