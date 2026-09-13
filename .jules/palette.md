@@ -15,3 +15,6 @@
 ## 2026-09-12 - [InputArea loading states]
 **Learning:** React components that take `isLoading` props often need to disable input and buttons to communicate to users that something is in progress and prevent double submissions.
 **Action:** When adding loading state variables, check if there are inputs and buttons that should be disabled, and add appropriate ARIA labels and micro-UX states (such as loading spinners instead of icons, and opacity drop).
+## 2024-05-18 - Ensure custom modal drawers are accessible
+**Learning:** Custom modal drawers (like bottom-sheets built with Framer Motion) must include WAI-ARIA dialog attributes (`role="dialog"`, `aria-modal="true"`, `aria-labelledby`) and keyboard accessibility (specifically `Escape` to close) to be fully usable by screen readers and keyboard users.
+**Action:** Always add dialog semantics and an Escape key listener when building custom modal components.

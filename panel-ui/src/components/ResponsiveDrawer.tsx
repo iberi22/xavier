@@ -26,6 +26,18 @@ export const ResponsiveDrawer: React.FC<ResponsiveDrawerProps> = ({
     };
   }, [isOpen]);
 
+  const titleId = React.useId();
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -45,12 +57,15 @@ export const ResponsiveDrawer: React.FC<ResponsiveDrawerProps> = ({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: "100%", opacity: 0 }}
             transition={{ type: "spring", damping: 28, stiffness: 300 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={title ? titleId : undefined}
             className="relative z-10 w-full max-w-xl max-h-[85vh] rounded-t-2xl sm:rounded-2xl surface-borderless flex flex-col overflow-hidden bg-[#141518] shadow-2xl pb-[env(safe-area-inset-bottom,16px)]"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
               {title ? (
-                <h3 className="text-sm font-semibold text-foreground tracking-wide">
+                <h3 id={titleId} className="text-sm font-semibold text-foreground tracking-wide">
                   {title}
                 </h3>
               ) : (
