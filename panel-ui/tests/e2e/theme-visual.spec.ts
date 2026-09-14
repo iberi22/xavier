@@ -1,13 +1,22 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
 import path from "node:path";
 
-const CALLER_ARTIFACT_DIR = "/home/belal/.gemini/antigravity/brain/c0a3c8f4-05ed-4f34-a95f-0246711e76c1";
-const ARTIFACT_DIR = "/home/belal/.gemini/antigravity/brain/93991307-c184-424b-87e0-d141afcaa915";
+const CALLER_ARTIFACT_DIR = process.env.ARTIFACT_DIR || "/home/belal/.gemini/antigravity/brain/c0a3c8f4-05ed-4f34-a95f-0246711e76c1";
+const ARTIFACT_DIR = process.env.ARTIFACT_DIR || "/home/belal/.gemini/antigravity/brain/93991307-c184-424b-87e0-d141afcaa915";
+
+function ensureDir(dir: string) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch {}
+}
 
 test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", () => {
   test("loads Studio Dark by default, captures screenshots, and verifies theme switching", async ({
     page,
   }) => {
+    ensureDir(CALLER_ARTIFACT_DIR);
+    ensureDir(ARTIFACT_DIR);
     // Intercept health and auth requests
     await page.route("**/health", async (route) => {
       await route.fulfill({

@@ -21,6 +21,31 @@ use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 
+/// Extracts the presented auth token from the canonical request headers.
+///
+/// Accepts `X-Xavier-Token` (canonical) and falls back to
+/// `Authorization: Bearer <token>`, mirroring the CLI `auth_middleware` and
+/// `xavier::adapters::inbound::http::state::check_auth`.
+///
+/// The handler-level guards (update / delete / decay / consolidate / evict) used to
+/// read ONLY `X-Xavier-Token`, so a perfectly valid token sent as
+/// `Authorization: Bearer` was answered with `401 Unauthorized` by this layer even
+/// though the middleware had already accepted it. An empty `X-Xavier-Token` used to
+/// shadow a valid Bearer header as well; it no longer does.
+fn presented_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("X-Xavier-Token")
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| {
+            headers
+                .get("Authorization")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.strip_prefix("Bearer "))
+        })
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+}
+
 /// Embedding stats handler.
 pub async fn embedding_stats_handler(
     State(state): State<CliState>,
@@ -480,10 +505,7 @@ pub async fn update_handler(
         }
     };
 
-    match headers
-        .get("X-Xavier-Token")
-        .and_then(|value| value.to_str().ok())
-    {
+    match presented_token(&headers) {
         Some(token) if token == expected_token => {}
         _ => {
             return json_response(
@@ -824,10 +846,7 @@ pub async fn delete_handler(
         }
     };
 
-    match headers
-        .get("X-Xavier-Token")
-        .and_then(|value| value.to_str().ok())
-    {
+    match presented_token(&headers) {
         Some(token) if token == expected_token => {}
         _ => {
             return json_response(
@@ -1519,10 +1538,7 @@ pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
         }
     };
 
-    match headers
-        .get("X-Xavier-Token")
-        .and_then(|value| value.to_str().ok())
-    {
+    match presented_token(headers) {
         Some(token) if token == expected_token => Ok(()),
         _ => Err(json_response(
             StatusCode::UNAUTHORIZED,

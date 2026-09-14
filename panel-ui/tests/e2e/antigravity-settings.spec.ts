@@ -288,6 +288,7 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
 
     // Switch to Appearance tab to test chat preferences & theme switching
     const appearanceSidebarBtn = page.locator('button:has-text("Appearance")').first();
+    await appearanceSidebarBtn.scrollIntoViewIfNeeded();
     await appearanceSidebarBtn.click({ force: true });
     await page.waitForTimeout(600);
 
