@@ -32,10 +32,17 @@ fi
 STAGED_UI=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^panel-ui/' || true)
 if [ -n "$STAGED_UI" ]; then
     echo "⚛️  [Pre-Commit] Verificando build de panel-ui..."
-    (cd panel-ui && npm run build) || {
-        echo "❌ [Pre-Commit] Fallo en build de panel-ui."
-        exit 1
-    }
+    if command -v pnpm >/dev/null 2>&1; then
+        (cd panel-ui && pnpm run build) || {
+            echo "❌ [Pre-Commit] Fallo en build de panel-ui."
+            exit 1
+        }
+    else
+        (cd panel-ui && npm run build) || {
+            echo "❌ [Pre-Commit] Fallo en build de panel-ui."
+            exit 1
+        }
+    fi
 fi
 
 # 4. Harvest chronicle si existe

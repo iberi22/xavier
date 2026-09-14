@@ -2,21 +2,26 @@ import { expect, test } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
-const CALLER_ARTIFACT_DIR = process.env.ARTIFACT_DIR || "/home/belal/.gemini/antigravity/brain/c0a3c8f4-05ed-4f34-a95f-0246711e76c1";
-const ARTIFACT_DIR = process.env.ARTIFACT_DIR || "/home/belal/.gemini/antigravity/brain/93991307-c184-424b-87e0-d141afcaa915";
+const DEFAULT_ARTIFACT_DIR = path.join(process.cwd(), "test-results", "artifacts");
 
-function ensureDir(dir: string) {
+function getWritableDir(target: string): string {
   try {
-    fs.mkdirSync(dir, { recursive: true });
-  } catch {}
+    fs.mkdirSync(target, { recursive: true });
+    fs.accessSync(target, fs.constants.W_OK);
+    return target;
+  } catch {
+    fs.mkdirSync(DEFAULT_ARTIFACT_DIR, { recursive: true });
+    return DEFAULT_ARTIFACT_DIR;
+  }
 }
+
+const CALLER_ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || "/home/belal/.gemini/antigravity/brain/c0a3c8f4-05ed-4f34-a95f-0246711e76c1");
+const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || "/home/belal/.gemini/antigravity/brain/93991307-c184-424b-87e0-d141afcaa915");
 
 test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", () => {
   test("loads Studio Dark by default, captures screenshots, and verifies theme switching", async ({
     page,
   }) => {
-    ensureDir(CALLER_ARTIFACT_DIR);
-    ensureDir(ARTIFACT_DIR);
     // Intercept health and auth requests
     await page.route("**/health", async (route) => {
       await route.fulfill({
