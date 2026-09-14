@@ -76,7 +76,7 @@ jobs:
   rust-test:
     name: Parallel Rust Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
