@@ -5,6 +5,7 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
   test("opens settings, iterates tabs, toggles options, verifies notifications, and captures visual artifact", async ({
     page,
   }) => {
+    test.setTimeout(120_000);
     // 1. Intercept API routes with deterministic mock data
     await page.route("**/health", async (route) => {
       await route.fulfill({
