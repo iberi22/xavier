@@ -444,6 +444,7 @@ export default function ConfigModal({
                   <button
                     key={item.label}
                     type="button"
+                    data-testid={`settings-tab-${item.id}`}
                     onClick={() => setMainTab(item.id)}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                       isSelected
