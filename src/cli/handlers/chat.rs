@@ -7,6 +7,7 @@ use anyhow::Result;
 use colored::*;
 use serde_json::json;
 use std::io::{self, Write};
+use xavier_core_logic::token_counter::compress_and_calculate_stats;
 
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;
 use crate::cli::commands::spawn::load_spawn_memory;
@@ -178,7 +179,9 @@ pub async fn execute_single_turn(
 
     match llm_result {
         Ok(resp) => {
-            let response_text = resp.text.trim().to_string();
+            let raw_response = resp.text.trim().to_string();
+            let (response_text, compression_stats) = compress_and_calculate_stats(&raw_response);
+
             if as_json {
                 let output = json!({
                     "status": "ok",
@@ -188,26 +191,34 @@ pub async fn execute_single_turn(
                     "model": provider_status.model,
                     "provider": provider_status.provider,
                     "retrieved_memories_count": memories.len(),
-                    "memories": memories
+                    "memories": memories,
+                    "compression": {
+                        "original_tokens": compression_stats.original_tokens,
+                        "compressed_tokens": compression_stats.compressed_tokens,
+                        "tokens_saved": compression_stats.tokens_saved(),
+                        "savings_percentage": compression_stats.savings_percentage(),
+                        "summary": compression_stats.display_summary()
+                    }
                 });
                 println!("{}", serde_json::to_string_pretty(&output)?);
             } else {
                 println!(
-                    "
-{}",
+                    "\n{}",
                     "─".repeat(60).dimmed()
                 );
                 println!("{} {}", "🧠 Xavier:".bold().cyan(), response_text);
                 if !memories.is_empty() {
                     println!(
-                        "
-{}",
+                        "\n{}",
                         format!("(Recuperados {} fragmentos de memoria)", memories.len()).dimmed()
                     );
                 }
                 println!(
-                    "{}
-",
+                    "{}",
+                    format!("[RTK] {}", compression_stats.display_summary()).bold().green()
+                );
+                println!(
+                    "{}\n",
                     "─".repeat(60).dimmed()
                 );
             }
@@ -226,8 +237,7 @@ pub async fn execute_single_turn(
                 println!("{}", serde_json::to_string_pretty(&output)?);
             } else {
                 println!(
-                    "
-{}",
+                    "\n{}",
                     "─".repeat(60).dimmed()
                 );
                 println!(
@@ -237,8 +247,7 @@ pub async fn execute_single_turn(
                 );
                 if !memories.is_empty() {
                     println!(
-                        "
-{}",
+                        "\n{}",
                         "Información relevante encontrada en memoria:".bold()
                     );
                     for (i, m) in memories.iter().enumerate() {
@@ -246,13 +255,11 @@ pub async fn execute_single_turn(
                     }
                 } else {
                     println!(
-                        "
-No se encontró memoria previa relacionada y el modelo LLM no está disponible."
+                        "\nNo se encontró memoria previa relacionada y el modelo LLM no está disponible."
                     );
                 }
                 println!(
-                    "{}
-",
+                    "{}\n",
                     "─".repeat(60).dimmed()
                 );
             }
@@ -443,7 +450,9 @@ async fn execute_turn_with_history(
 
     match llm_result {
         Ok(resp) => {
-            let response_text = resp.text.trim().to_string();
+            let raw_response = resp.text.trim().to_string();
+            let (response_text, compression_stats) = compress_and_calculate_stats(&raw_response);
+
             println!("\n{}", "─".repeat(60).dimmed());
             println!("{} {}", "🧠 Xavier:".bold().cyan(), response_text);
             if !memories.is_empty() {
@@ -452,6 +461,10 @@ async fn execute_turn_with_history(
                     format!("(Recuperados {} fragmentos de memoria)", memories.len()).dimmed()
                 );
             }
+            println!(
+                "{}",
+                format!("[RTK] {}", compression_stats.display_summary()).bold().green()
+            );
             println!("{}\n", "─".repeat(60).dimmed());
 
             history.push(Turn {
