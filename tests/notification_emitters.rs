@@ -24,7 +24,12 @@ async fn test_multi_island_events_and_persistence() {
 
     // 1. Emit System island event
     let sys_n = NOTIFICATIONS
-        .notify(IslandId::System, "System Event", "CPU usage at 95%", "warning")
+        .notify(
+            IslandId::System,
+            "System Event",
+            "CPU usage at 95%",
+            "warning",
+        )
         .await
         .expect("notify system failed");
     assert_eq!(sys_n.island_id.as_str(), "system");
@@ -83,8 +88,16 @@ async fn test_multi_island_events_and_persistence() {
         .await
         .expect("list_notifications failed");
 
-    assert!(list.iter().any(|n| n.id == sys_n.id && matches!(n.island_id, IslandId::System)));
-    assert!(list.iter().any(|n| n.id == mem_n.id && matches!(n.island_id, IslandId::Memory)));
-    assert!(list.iter().any(|n| n.id == agent_n.id && matches!(n.island_id, IslandId::Agents)));
-    assert!(list.iter().any(|n| n.id == err_n.id && matches!(n.island_id, IslandId::Errors)));
+    assert!(list
+        .iter()
+        .any(|n| n.id == sys_n.id && matches!(n.island_id, IslandId::System)));
+    assert!(list
+        .iter()
+        .any(|n| n.id == mem_n.id && matches!(n.island_id, IslandId::Memory)));
+    assert!(list
+        .iter()
+        .any(|n| n.id == agent_n.id && matches!(n.island_id, IslandId::Agents)));
+    assert!(list
+        .iter()
+        .any(|n| n.id == err_n.id && matches!(n.island_id, IslandId::Errors)));
 }

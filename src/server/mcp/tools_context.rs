@@ -309,7 +309,12 @@ pub async fn handle_context_tool(
         }
         "xavier_token_savings" => {
             let stats = TRACKER.get_stats().await;
-            super::server::mcp_text_result(serde_json::to_string_pretty(&stats)?, false)
+            let search_stats = crate::observability::token_accounting::SEARCH_STATS.snapshot();
+            let combined = json!({
+                "execution_and_restore": stats,
+                "search_progressive_disclosure": search_stats,
+            });
+            super::server::mcp_text_result(serde_json::to_string_pretty(&combined)?, false)
         }
         "xavier_run_command" => {
             let command = arguments

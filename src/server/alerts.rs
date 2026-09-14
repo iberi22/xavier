@@ -103,14 +103,13 @@ impl SystemAlertStore {
             "WARN" | "WARNING" => "warning",
             _ => "info",
         };
-        let title = format!("[{}] {}", component.to_ascii_uppercase(), level.to_ascii_uppercase());
-        // Emit alert notification event (dispatches via NOTIFICATIONS.send to providers and listeners)
-        crate::notifications::emit_island_event_sync(
-            island_id,
-            title,
-            message,
-            severity,
+        let title = format!(
+            "[{}] {}",
+            component.to_ascii_uppercase(),
+            level.to_ascii_uppercase()
         );
+        // Emit alert notification event (dispatches via NOTIFICATIONS.send to providers and listeners)
+        crate::notifications::emit_island_event_sync(island_id, title, message, severity);
     }
 
     /// Get alerts.

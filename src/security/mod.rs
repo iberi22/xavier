@@ -378,14 +378,27 @@ impl SecurityService {
         let password = match vault.get_secret(&self.config.master_key_name) {
             Ok(p) => p,
             Err(_) => {
-                // For development/initial setup, if not in vault, use a fallback or fail
-                // In production, we expect the key to be there.
-                // Let's generate a random one and store it if it's missing?
-                // Or maybe just return an error if encryption is mandatory.
-                return Err(anyhow!(
-                    "Master key not found in vault: {}",
-                    self.config.master_key_name
-                ));
+                // If not found in vault, check MasterKeyManager fallback
+                if let Ok(mkm) = crate::security::encryption_keys::MasterKeyManager::load_or_init()
+                {
+                    let mut key_buf = [0u8; 32];
+                    if mkm
+                        .derive_key(b"xavier-master-key-v1", &mut key_buf)
+                        .is_ok()
+                    {
+                        crate::utils::crypto::hex_encode(&key_buf)
+                    } else {
+                        return Err(anyhow!(
+                            "Master key not found in vault: {}",
+                            self.config.master_key_name
+                        ));
+                    }
+                } else {
+                    return Err(anyhow!(
+                        "Master key not found in vault: {}",
+                        self.config.master_key_name
+                    ));
+                }
             }
         };
 
@@ -404,7 +417,15 @@ impl SecurityService {
     pub fn get_kek(&self) -> Result<crate::crypto::keys::KEK> {
         let mgr = self.get_key_manager()?;
         let vault = crate::secrets::vault::HardwareVault::new("xavier");
-        let password = vault.get_secret(&self.config.master_key_name)?;
+        let password = match vault.get_secret(&self.config.master_key_name) {
+            Ok(p) => p,
+            Err(_) => {
+                let mkm = crate::security::encryption_keys::MasterKeyManager::load_or_init()?;
+                let mut key_buf = [0u8; 32];
+                mkm.derive_key(b"xavier-master-key-v1", &mut key_buf)?;
+                crate::utils::crypto::hex_encode(&key_buf)
+            }
+        };
         Ok(mgr.derive_kek(&password)?)
     }
 }

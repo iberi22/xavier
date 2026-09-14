@@ -883,7 +883,10 @@ impl AgentRuntime {
             .notify(
                 crate::notifications::IslandId::Agents,
                 "Agent Task Completed",
-                &format!("Task completed for session {} ({}) in {}ms", session_id, agent_id, total_ms),
+                &format!(
+                    "Task completed for session {} ({}) in {}ms",
+                    session_id, agent_id, total_ms
+                ),
                 "info",
             )
             .await;
