@@ -6,11 +6,12 @@
 #        docker run -p 8006:8006 xavier
 
 # Stage 0: Frontend Builder
-FROM node:20-bookworm-slim AS frontend-builder
+FROM node:22-bookworm-slim AS frontend-builder
 WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY panel-ui/package.json panel-ui/package.json
-RUN corepack enable && corepack prepare pnpm@9.12.3 --activate && pnpm install --frozen-lockfile
+COPY vendor/ vendor/
+RUN corepack enable && corepack prepare pnpm@11.24.0 --activate && pnpm install
 COPY panel-ui/ panel-ui/
 COPY Cargo.toml Cargo.toml
 RUN pnpm --filter xavier-panel-ui run build
