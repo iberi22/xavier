@@ -1,11 +1,11 @@
 //! Provider configuration handlers.
 
-use axum::{extract::State, http::StatusCode, response::Response, Json};
-use serde::{Deserialize, Serialize};
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
-use xavier::settings::XavierSettings;
+use axum::{extract::State, http::StatusCode, response::Response, Json};
+use serde::{Deserialize, Serialize};
 use xavier::agents::provider::ModelProviderClient;
+use xavier::settings::XavierSettings;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderConfigPayload {
@@ -33,7 +33,11 @@ pub async fn get_providers_config_handler() -> Response {
         providers.push(ProviderConfigPayload {
             provider: name.to_string(),
             model: client.config.model.clone(),
-            api_key: client.config.api_key.as_ref().map(|_| "********".to_string()),
+            api_key: client
+                .config
+                .api_key
+                .as_ref()
+                .map(|_| "********".to_string()),
             base_url: client.config.base_url.clone(),
         });
     }
@@ -72,8 +76,8 @@ pub async fn get_messaging_status_handler() -> Response {
     let discord_active = settings.discord.enabled
         && (settings.discord.webhook_url.is_some() || settings.discord.bot_token.is_some());
 
-    let slack_configured = std::env::var("SLACK_BOT_TOKEN").is_ok()
-        || std::env::var("SLACK_WEBHOOK_URL").is_ok();
+    let slack_configured =
+        std::env::var("SLACK_BOT_TOKEN").is_ok() || std::env::var("SLACK_WEBHOOK_URL").is_ok();
     let slack_active = slack_configured;
 
     let whatsapp_configured = std::env::var("WHATSAPP_TOKEN").is_ok();
@@ -143,7 +147,10 @@ pub async fn test_provider_handler(
 ) -> Response {
     let client = ModelProviderClient::for_provider(&name, None);
 
-    match client.generate_text("You are a connectivity tester.", "Say 'ok'").await {
+    match client
+        .generate_text("You are a connectivity tester.", "Say 'ok'")
+        .await
+    {
         Ok(_) => json_response(
             StatusCode::OK,
             serde_json::json!({ "status": "ok", "message": format!("Connection to {} successful", name) }),

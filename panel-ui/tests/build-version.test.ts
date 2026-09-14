@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-describe.sequential("Panel UI Build & Version Integration", () => {
+describe("Panel UI Build & Version Integration", () => {
   test("should resolve __APP_VERSION__ equal to Cargo.toml version (0.1.1)", () => {
     const cargoPath = path.resolve(__dirname, "../../Cargo.toml");
     const cargoContent = fs.readFileSync(cargoPath, "utf8");

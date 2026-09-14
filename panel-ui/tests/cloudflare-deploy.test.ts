@@ -25,6 +25,11 @@ describe("Cloudflare Pages Deployment Configuration", () => {
 
   test("dist/_redirects exists in build output after build", () => {
     const distRedirectsPath = path.join(panelDir, "dist/_redirects");
+    if (!fs.existsSync(distRedirectsPath)) {
+      try {
+        execSync("npm run build", { cwd: panelDir });
+      } catch {}
+    }
     expect(fs.existsSync(distRedirectsPath)).toBe(true);
 
     const content = fs.readFileSync(distRedirectsPath, "utf8");

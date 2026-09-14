@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(unix)]
 use tokio::net::UnixStream;
 
 /// Representation of a code symbol returned by CodeGraph queries over UDS.
@@ -117,6 +118,7 @@ impl CodeGraphUdsClient {
     }
 
     /// Internal lightweight zero-overhead HTTP GET helper over Tokio UnixStream.
+    #[cfg(unix)]
     async fn send_get_request(&self, uri: &str) -> Result<Vec<u8>> {
         let mut stream = UnixStream::connect(&self.socket_path)
             .await
@@ -139,6 +141,13 @@ impl CodeGraphUdsClient {
         stream.read_to_end(&mut raw_response).await?;
 
         parse_http_body(&raw_response)
+    }
+
+    #[cfg(not(unix))]
+    async fn send_get_request(&self, _uri: &str) -> Result<Vec<u8>> {
+        Err(anyhow!(
+            "CodeGraph UDS client is not supported on non-unix platforms"
+        ))
     }
 }
 

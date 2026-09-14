@@ -24,7 +24,10 @@ async fn test_notifications_stream_endpoint() {
 
     // Receive the broadcasted notification
     let received = tokio::time::timeout(Duration::from_secs(2), rx.recv()).await;
-    assert!(received.is_ok(), "Timed out waiting for notification broadcast");
+    assert!(
+        received.is_ok(),
+        "Timed out waiting for notification broadcast"
+    );
     let received_notif = received.unwrap().expect("Failed to receive from broadcast");
     assert_eq!(received_notif.title, "SSE Stream Push");
     assert_eq!(received_notif.island_id.as_str(), "system");

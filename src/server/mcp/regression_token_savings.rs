@@ -189,4 +189,62 @@ mod tests {
             "Token estimation should be honest (chars / 4)"
         );
     }
+
+    #[tokio::test]
+    async fn regression_token_savings_accounting_e2e() {
+        let (state, workspace) = test_state().await;
+        let router = test_router(state, workspace.clone());
+
+        // 1. Seed memory
+        post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {
+                    "name": "create_memory",
+                    "arguments": {
+                        "path": "accounting-test/doc1",
+                        "content": "This is a detailed document about software architecture and token compression."
+                    }
+                }
+            }),
+        )
+        .await;
+
+        // 2. Perform snippet search
+        let resp_search = post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {
+                    "name": "mem_search",
+                    "arguments": { "query": "compression" }
+                }
+            }),
+        )
+        .await;
+        assert_eq!(resp_search.status(), axum::http::StatusCode::OK);
+
+        // 3. Check xavier_token_savings tool
+        let resp_savings = post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": {
+                    "name": "xavier_token_savings",
+                    "arguments": {}
+                }
+            }),
+        )
+        .await;
+        let body_savings = get_json_body(resp_savings).await;
+        let text = body_savings["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let payload: serde_json::Value = serde_json::from_str(text).unwrap();
+
+        let search_stats = &payload["search_progressive_disclosure"];
+        assert!(search_stats["searches_total"].as_u64().unwrap_or(0) >= 1);
+        assert!(search_stats["by_mode"]["snippet"].as_u64().unwrap_or(0) >= 1);
+    }
 }
