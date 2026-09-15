@@ -231,6 +231,10 @@ path = "tests/kernel_mcp_test.rs"
 name = "messaging_status"
 path = "tests/messaging_status.rs"
 
+[[test]]
+name = "clearance_audit_sqlite"
+path = "tests/clearance_audit_sqlite.rs"
+
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 code-graph = { path = "./code-graph" }
