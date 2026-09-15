@@ -204,6 +204,11 @@ pub async fn export_pack_handler(
 pub async fn search_handler(
     State(state): State<CliState>,
     requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
+    identity: Option<
+        axum::extract::Extension<
+            xavier::adapters::inbound::http::middleware::clearance::RequesterIdentity,
+        >,
+    >,
     axum::Json(payload): axum::Json<SearchPayload>,
 ) -> impl axum::response::IntoResponse {
     let sec_result = state
@@ -313,6 +318,24 @@ pub async fn search_handler(
                 item.get("metadata").unwrap_or(&serde_json::Value::Null),
             )
         });
+
+    // F3.2: la lectura queda auditada (hash de la query, nunca el texto crudo).
+    let (subject, role) = identity
+        .map(|axum::extract::Extension(id)| (id.subject, id.role))
+        .unwrap_or_else(|| ("anonymous".to_string(), "none".to_string()));
+    xavier::security::clearance_audit::record(
+        &xavier::security::clearance_audit::ClearanceReadAudit::new(
+            subject,
+            role,
+            requester_level,
+            "/memory/search",
+            "search",
+            effective_query,
+            search_results.len(),
+            hidden_by_clearance,
+            true,
+        ),
+    );
 
     axum::Json(serde_json::json!({
         "results": search_results,

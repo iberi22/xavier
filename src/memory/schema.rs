@@ -397,7 +397,7 @@ pub fn resolve_metadata(
         })
         .unwrap_or_else(|| infer_zone_from_kind_and_level(kind, typed.level));
 
-    let clearance = typed
+    let declared_clearance = typed
         .clearance
         .or_else(|| {
             metadata
@@ -407,6 +407,14 @@ pub fn resolve_metadata(
         })
         // Política: sin nivel declarado ⇒ default_clearance() (Internal por defecto).
         .unwrap_or_else(crate::security::clearance::default_clearance);
+
+    // Piso por namespace de segmento (F3.2): material escrito en
+    // `segments/<seg-id>/...` no puede quedar por debajo del nivel del segmento,
+    // aunque la metadata diga otra cosa (o no diga nada).
+    let clearance = match crate::security::groups::segment_level_from_path(path) {
+        Some(segment_level) => declared_clearance.max(segment_level),
+        None => declared_clearance,
+    };
 
     Ok(ResolvedMemoryMetadata {
         kind,
@@ -952,5 +960,55 @@ mod tests {
         let explicit = resolve_metadata("docs/nota", &json!({"clearance": "secret"}), "ws-1", None)
             .expect("test assertion");
         assert_eq!(explicit.clearance, ClearanceLevel::Secret);
+    }
+
+    // ── Piso por namespace de segmento (F3.2) ───────────────────────────────
+
+    #[test]
+    fn resolve_metadata_applies_segment_namespace_floor() {
+        // Sin declarar nivel, el namespace del segmento lo fija.
+        let admin = resolve_metadata("segments/seg-admin/plan-10pct", &json!({}), "ws-1", None)
+            .expect("test assertion");
+        assert_eq!(
+            admin.clearance,
+            ClearanceLevel::TopSecret,
+            "seg-admin exige TopSecret por el solo hecho de vivir en su namespace"
+        );
+
+        let ops = resolve_metadata("segments/seg-ops/nota", &json!({}), "ws-1", None)
+            .expect("test assertion");
+        assert_eq!(ops.clearance, ClearanceLevel::Confidential);
+
+        // Intento de degradar por metadata: el namespace es piso, no techo.
+        let downgrade = resolve_metadata(
+            "segments/seg-admin/plan",
+            &json!({"clearance": "unclassified"}),
+            "ws-1",
+            None,
+        )
+        .expect("test assertion");
+        assert_eq!(
+            downgrade.clearance,
+            ClearanceLevel::TopSecret,
+            "la metadata no puede rebajar el nivel del segmento"
+        );
+
+        // Declarar más alto sí se respeta (el piso no limita hacia arriba).
+        let higher = resolve_metadata(
+            "segments/seg-ops/plan",
+            &json!({"clearance": "topsecret"}),
+            "ws-1",
+            None,
+        )
+        .expect("test assertion");
+        assert_eq!(higher.clearance, ClearanceLevel::TopSecret);
+
+        // Fuera de los namespaces conocidos, la política normal sigue igual.
+        let normal = resolve_metadata("segments/otro/plan", &json!({}), "ws-1", None)
+            .expect("test assertion");
+        assert_eq!(normal.clearance, ClearanceLevel::Internal);
+
+        let docs = resolve_metadata("docs/nota", &json!({}), "ws-1", None).expect("test assertion");
+        assert_eq!(docs.clearance, ClearanceLevel::Internal);
     }
 }

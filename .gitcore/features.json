@@ -1975,7 +1975,7 @@
       "name": "Classified clearance bound to identity (internal lab plans)",
       "category": "security",
       "status": "in_progress",
-      "progress_pct": 88,
+      "progress_pct": 95,
       "description": "Clearance derivado de la identidad autenticada (no del header X-Clearance) y aplicado como frontera de seguridad; base para los planes internos top-secret del laboratorio (10%) con lectura por nodo/grupo.",
       "steps": [
         "F1: nivel desde Claims (role_clearance) + opt-in de header (XAVIER_CLEARANCE_TRUST_HEADER) + middleware cableado tras auth",
@@ -2057,7 +2057,30 @@
           }
         },
         "F3.2_config_de_ruta_y_auditoria": {
-          "status": "pending"
+          "status": "done",
+          "entregables": [
+            "route_policy.rs: exigencia por prefijo de ruta (env > archivo > defaults), fail-closed en config invalida",
+            "enforce_route_policy() en clearance_session_middleware: 403 + denegacion auditada (defaults cubren /memory/export*)",
+            "clearance_audit.rs: JSONL append-only con query_hash, subject/role, nivel, ruta, visible/hidden, allowed",
+            "RequesterIdentity en extensiones para auditar sin filtrar la identidad al handler",
+            "segment_level_from_path + resolve_metadata: namespace segments/<seg> fija el PISO de nivel (metadata no puede degradar)",
+            "docs/features/route_clearance.example.json versionado"
+          ],
+          "deuda_declarada": [
+            "P1: los endpoints de export devuelven memoria en bloque SIN filtrar por nivel de entrada (mitigado a INTERNAL, no cerrado)",
+            "unificar el sumidero JSONL con security::audit::AuditLogger (SQLite) en una sola superficie de consulta",
+            "espacio de documentos dedicado al 10% (hoy es convencion de namespace, no un store aparte)"
+          ],
+          "evidencia": {
+            "fmt": "OK",
+            "route_policy": "6 passed / 0 failed",
+            "clearance_audit": "4 passed / 0 failed",
+            "groups": "19 passed / 0 failed",
+            "clearance": "37 passed / 0 failed",
+            "schema": "23 passed / 0 failed",
+            "clippy": "cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings => Finished (3m48s), sin warnings",
+            "log": "/tmp/swal_verify/f32_gate.log"
+          }
         }
       }
     }

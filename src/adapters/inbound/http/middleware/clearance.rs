@@ -101,6 +101,50 @@ pub fn resolve_effective_clearance(headers: &HeaderMap, claims: Option<&Claims>)
     }
 }
 
+/// Identidad mínima del solicitante para auditoría (F3.2).
+#[derive(Debug, Clone)]
+pub struct RequesterIdentity {
+    pub subject: String,
+    pub role: String,
+}
+
+/// Exigencia de nivel por **configuración de ruta** (F3.2).
+///
+/// Devuelve `Some(respuesta 403)` cuando el solicitante no alcanza el nivel que la
+/// ruta exige, y deja la denegación auditada. `None` = la ruta no exige nada.
+pub fn enforce_route_policy(
+    path: &str,
+    requester_level: ClearanceLevel,
+    claims: Option<&Claims>,
+) -> Option<Response> {
+    let required = crate::security::route_policy::required_for_path(path)?;
+    if can_access(requester_level, required) {
+        return None;
+    }
+
+    crate::security::clearance_audit::record_denied(claims, requester_level, path, "route_denied");
+    tracing::warn!(
+        route = path,
+        requester = ?requester_level,
+        required = ?required,
+        "lectura denegada por política de ruta"
+    );
+
+    Some(
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "status": "error",
+                "message": format!(
+                    "Forbidden: route requires {:?} (requester has {:?})",
+                    required, requester_level
+                ),
+            })),
+        )
+            .into_response(),
+    )
+}
+
 /// Middleware: deriva el nivel de la identidad autenticada y lo publica en las
 /// extensiones de la request para que los handlers lo consuman.
 ///
@@ -108,8 +152,18 @@ pub fn resolve_effective_clearance(headers: &HeaderMap, claims: Option<&Claims>)
 pub async fn clearance_session_middleware(mut req: Request<Body>, next: Next) -> Response {
     let claims = req.extensions().get::<Claims>().cloned();
     let level = resolve_effective_clearance(req.headers(), claims.as_ref());
+
+    if let Some(denied) = enforce_route_policy(req.uri().path(), level, claims.as_ref()) {
+        return denied;
+    }
+
     req.extensions_mut().insert(level);
     req.extensions_mut().insert(ClearanceEnforcer::new(level));
+
+    let (subject, role) = crate::security::clearance_audit::subject_and_role(claims.as_ref());
+    req.extensions_mut()
+        .insert(RequesterIdentity { subject, role });
+
     next.run(req).await
 }
 
@@ -331,6 +385,50 @@ mod tests {
             *seen.borrow(),
             vec!["sub-1".to_string(), "a@b.c".to_string()]
         );
+    }
+
+    #[test]
+    fn test_route_policy_denies_below_required() {
+        let audit_file = tempfile::NamedTempFile::new().unwrap();
+        std::env::set_var(
+            crate::security::clearance_audit::CLEARANCE_AUDIT_ENV,
+            audit_file.path().to_string_lossy().to_string(),
+        );
+        std::env::set_var(
+            crate::security::route_policy::ROUTE_POLICY_ENV,
+            r#"{"routes":[{"prefix":"/segments","required":"SECRET"}]}"#,
+        );
+
+        // Un usuario CONFIDENTIAL no alcanza SECRET ⇒ 403 y queda auditado.
+        let denied = enforce_route_policy(
+            "/segments/seg-research/plan",
+            ClearanceLevel::Confidential,
+            None,
+        );
+        assert_eq!(
+            denied.map(|response| response.status()),
+            Some(StatusCode::FORBIDDEN)
+        );
+
+        // SECRET sí pasa.
+        assert!(
+            enforce_route_policy("/segments/seg-research/plan", ClearanceLevel::Secret, None)
+                .is_none()
+        );
+
+        // Fuera del prefijo configurado no se exige nada.
+        assert!(
+            enforce_route_policy("/memory/search", ClearanceLevel::Unclassified, None).is_none()
+        );
+
+        let raw = std::fs::read_to_string(audit_file.path()).unwrap();
+        assert!(
+            raw.contains("route_denied"),
+            "la denegación queda auditada: {raw}"
+        );
+
+        std::env::remove_var(crate::security::route_policy::ROUTE_POLICY_ENV);
+        std::env::remove_var(crate::security::clearance_audit::CLEARANCE_AUDIT_ENV);
     }
 
     #[test]

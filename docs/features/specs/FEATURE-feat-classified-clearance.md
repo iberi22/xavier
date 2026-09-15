@@ -127,13 +127,42 @@ significara algo al leer**:
 `test_ensure_lab_segments_is_idempotent_and_empty`, `test_shared_ceiling_reads_file_and_reloads_on_change`,
 `test_effective_clearance_is_union_and_never_lowers`, `test_effective_clearance_anonymous_never_lifts`.
 
-#### F3.2 — Config de ruta y auditoría de lecturas (pendiente)
+#### F3.2 — Config de ruta, auditoría y namespace de segmento ✅ (implementado)
 
-- **Exigencia de nivel por configuración de ruta** (no por header `X-Required-Clearance` del
-  cliente): mapa ruta→nivel en config del servidor.
-- **Auditoría de lecturas clasificadas** (concedidas y denegadas) sobre `enterprise/audit.rs`,
-  incluyendo el conteo `hidden_by_clearance` por request.
-- Espacio de documentos dedicado a los planes del 10 % (no mezclado con memoria normal).
+**(a) Exigencia de nivel por ruta — configuración del servidor, no del cliente**
+(`src/security/route_policy.rs`): fuente por prioridad `XAVIER_REQUIRED_CLEARANCE_ROUTES` (JSON inline)
+> `data/security/route_clearance.json` (recargado por mtime) > reglas por defecto del binario.
+Gana el **prefijo más largo**; un nivel ilegible en config ⇒ `TopSecret` (un error de config
+**cierra**, nunca abre). Enforcement en `enforce_route_policy()`, llamado desde
+`clearance_session_middleware`: 403 + denegación auditada.
+
+> **Hueco real que esto mitiga (P1 declarado, no cerrado):** los endpoints de exportación
+> (`/memory/export*`, `/v1/memory/export-markdown`) devuelven memoria en bloque **sin aplicar el
+> nivel de cada entrada**. La regla por defecto exige `INTERNAL` (bloquea al anónimo), pero el
+> arreglo de fondo es filtrar el export por nivel del solicitante — queda como deuda.
+
+**(b) Auditoría de lecturas clasificadas** (`src/security/clearance_audit.rs`): append-only JSONL en
+`data/security/clearance_audit.jsonl` (override `XAVIER_CLEARANCE_AUDIT_PATH`), con
+`timestamp, subject, role, requester_level, route, action, query_hash, visible, hidden_by_clearance, allowed`.
+**La query no se guarda cruda** (solo sha256 corto) y el sujeto es el `sub`/email del token.
+Concedidas y denegadas (`route_denied`). Un fallo de escritura se reporta por log y **no** tumba la
+lectura. Nota: existe además `security::audit::AuditLogger` (SQLite, `log_check`) para chequeos de
+permiso; unificar ambos sumideros en una sola superficie de consulta es deuda declarada.
+
+**(c) Namespace de segmento = piso de nivel** (`groups::segment_level_from_path` +
+`resolve_metadata`): material escrito en `segments/<seg-id>/...` no puede quedar por debajo del nivel
+de ese segmento **aunque la metadata diga otra cosa**. El namespace es piso, no techo: declarar un
+nivel más alto se respeta.
+
+**Criterios (F3.2):** `test_longest_prefix_wins`, `test_unknown_level_in_config_closes`,
+`test_disabled_rule_is_ignored`, `test_default_rules_cover_exports`,
+`test_route_policy_denies_below_required`, `test_query_hash_is_stable_and_hides_text`,
+`test_append_writes_jsonl_and_can_be_read_back`, `test_subject_and_role_from_claims`,
+`test_record_uses_env_path_when_set`, `test_segment_level_from_path`,
+`resolve_metadata_applies_segment_namespace_floor`.
+
+**Falta de F3 (para la siguiente):** espacio de documentos *dedicado* al 10 % (hoy es convención de
+namespace, no un store aparte) y filtrar los exports por nivel.
 
 ### Fase 4 — E2E y operación (pendiente)
 

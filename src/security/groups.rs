@@ -292,6 +292,22 @@ pub fn shared_member_ceiling(member_ids: &[&str]) -> Option<ClearanceLevel> {
     shared_member_ceiling_at(Path::new(GROUPS_STORAGE_PATH), member_ids)
 }
 
+/// Nivel implícito por namespace de segmento (`segments/<seg-id>/...`).
+///
+/// Escribir dentro del namespace de un segmento **fija el nivel mínimo** de la
+/// entrada: no depende de que quien escribe declare el nivel correcto. Es el piso,
+/// no el techo: un documento puede declarar un nivel *más* alto y se respeta.
+pub fn segment_level_from_path(path: &str) -> Option<ClearanceLevel> {
+    let rest = path
+        .strip_prefix("segments/")
+        .or_else(|| path.strip_prefix("/segments/"))?;
+    let id = rest.split('/').next()?;
+    LAB_SEGMENTS
+        .iter()
+        .find(|(segment_id, _, _)| *segment_id == id)
+        .map(|(_, _, level)| *level)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,6 +420,31 @@ mod tests {
             registry.get_group("seg-admin").unwrap().clearance,
             ClearanceLevel::TopSecret
         );
+    }
+
+    #[test]
+    fn test_segment_level_from_path() {
+        assert_eq!(
+            segment_level_from_path("segments/seg-admin/plan.md"),
+            Some(ClearanceLevel::TopSecret)
+        );
+        assert_eq!(
+            segment_level_from_path("segments/seg-ops/x"),
+            Some(ClearanceLevel::Confidential)
+        );
+        assert_eq!(
+            segment_level_from_path("segments/seg-research/a/b/c.md"),
+            Some(ClearanceLevel::Secret)
+        );
+        // Sin barra final tras el id también cuenta.
+        assert_eq!(
+            segment_level_from_path("segments/seg-legal"),
+            Some(ClearanceLevel::Secret)
+        );
+        // Namespaces ajenos o paths normales: sin piso.
+        assert_eq!(segment_level_from_path("segments/otro/plan"), None);
+        assert_eq!(segment_level_from_path("docs/nota"), None);
+        assert_eq!(segment_level_from_path("segments/"), None);
     }
 
     #[test]
