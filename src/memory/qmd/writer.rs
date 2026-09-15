@@ -76,8 +76,65 @@ async fn emit_operation_event(memory: &QmdMemory, operation: &str, path: &str, m
     tracing::info!("Auto-captured memory event: {:?}", event);
 }
 
+/// Paths that the gestalt event bus auto-captures. Unbounded growth here is
+/// what drove xavier RSS to multi-GB peaks (see #2264).
+const BUS_PATH_PREFIX: &str = "gestalt/bus/";
+
+/// Sliding-window quota for bus auto-capture.
+///
+/// Returns `true` when the document should be dropped because the configured
+/// window budget is exhausted. Reads two env knobs so operators can tune it
+/// without a rebuild:
+/// - `XAVIER_BUS_QUOTA_PER_WINDOW` (default 60)
+/// - `XAVIER_BUS_QUOTA_WINDOW_SECS` (default 3600)
+///
+/// A value of `0` disables the cap entirely (explicit opt-out).
+fn bus_quota_exceeded(path: &str) -> bool {
+    if !path.starts_with(BUS_PATH_PREFIX) {
+        return false;
+    }
+    let per_window: usize = std::env::var("XAVIER_BUS_QUOTA_PER_WINDOW")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+    if per_window == 0 {
+        return false;
+    }
+    let window_secs: i64 = std::env::var("XAVIER_BUS_QUOTA_WINDOW_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3600);
+
+    static BUS_WINDOW: std::sync::OnceLock<std::sync::Mutex<(i64, usize)>> =
+        std::sync::OnceLock::new();
+    let cell = BUS_WINDOW.get_or_init(|| std::sync::Mutex::new((0, 0)));
+    let now = chrono::Utc::now().timestamp();
+    let Ok(mut guard) = cell.lock() else {
+        return false;
+    };
+    let (window_start, count) = *guard;
+    if window_start == 0 || now - window_start >= window_secs {
+        *guard = (now, 1);
+        return false;
+    }
+    if count >= per_window {
+        tracing::warn!(
+            path = %path,
+            window_secs,
+            per_window,
+            "gestalt bus auto-capture quota reached; dropping event to bound memory growth"
+        );
+        return true;
+    }
+    *guard = (window_start, count + 1);
+    false
+}
+
 /// Add.
 pub async fn add(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
+    if bus_quota_exceeded(&doc.path) {
+        return Ok(());
+    }
     emit_operation_event(memory, "add", &doc.path, &doc.metadata).await;
 
     let canonical_path = doc.path.starts_with("stability/") || doc.path.starts_with("features/");
@@ -586,4 +643,35 @@ fn dedupe_variants(variants: Vec<(String, String, Value)>) -> Vec<(String, Strin
             seen.insert(key)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod bus_quota_tests {
+    use super::bus_quota_exceeded;
+
+    #[test]
+    fn non_bus_paths_are_never_capped() {
+        std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "1");
+        assert!(!bus_quota_exceeded("projects/xavier/overview"));
+        assert!(!bus_quota_exceeded("gestalt/audit/2026-09-15"));
+    }
+
+    #[test]
+    fn bus_paths_are_capped_within_a_window() {
+        std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "3");
+        std::env::set_var("XAVIER_BUS_QUOTA_WINDOW_SECS", "3600");
+        // First three events in the window pass, the fourth is dropped.
+        assert!(!bus_quota_exceeded("gestalt/bus/executions/a"));
+        assert!(!bus_quota_exceeded("gestalt/bus/executions/b"));
+        assert!(!bus_quota_exceeded("gestalt/bus/executions/c"));
+        assert!(bus_quota_exceeded("gestalt/bus/executions/d"));
+    }
+
+    #[test]
+    fn zero_disables_the_cap() {
+        std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "0");
+        for i in 0..100 {
+            assert!(!bus_quota_exceeded(&format!("gestalt/bus/executions/{i}")));
+        }
+    }
 }
