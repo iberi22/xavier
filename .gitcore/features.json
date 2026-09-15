@@ -1969,6 +1969,31 @@
         "auth2::google_oauth::tests"
       ],
       "added": "2026-09-12"
+    },
+    "feat-classified-clearance": {
+      "id": "feat-classified-clearance",
+      "name": "Classified clearance bound to identity (internal lab plans)",
+      "category": "security",
+      "status": "planned",
+      "progress_pct": 40,
+      "description": "Clearance derivado de la identidad autenticada (no del header X-Clearance) y aplicado como frontera de seguridad; base para los planes internos top-secret del laboratorio (10%) con lectura por nodo/grupo.",
+      "steps": [
+        "F1: nivel desde Claims (role_clearance) + opt-in de header (XAVIER_CLEARANCE_TRUST_HEADER) + middleware cableado tras auth",
+        "F1: /v1/documents/{id} usa el nivel de la identidad; tests de precedencia y de no-confianza del header",
+        "F2: enforzar nivel en busquedas/lecturas de memoria y corregir default de clearance",
+        "F3: grupos por segmento interno (admin/research/ops/legal) + auditoria de lecturas clasificadas",
+        "F4: E2E con dos identidades + guia operativa + promocion a stable con pipeline verde"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "github_issue": null,
+      "last_updated": "2026-09-15",
+      "spec": "docs/features/specs/FEATURE-feat-classified-clearance.md",
+      "f1_evidence": {
+        "tests": "cargo test --release --lib --features ci-safe -- clearance → 21 passed / 0 failed (EXIT=0)",
+        "clippy": "cargo clippy --all-targets --features ci-safe -- -D warnings → EXIT=0",
+        "fmt": "rustfmt --edition 2021 --check → sin diffs"
+      }
     }
   },
   "verification_commands": {

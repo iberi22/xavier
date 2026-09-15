@@ -4,10 +4,11 @@
 //! curation, private mesh, service network) over HTTP under `/v1/f12/*`.
 //! These modules are pure libraries; this file adds the HTTP surface.
 
-use crate::security::clearance::ClearanceLevel;
+use crate::adapters::inbound::http::middleware::clearance::resolve_requester_clearance;
+use crate::security::auth::Claims;
 use crate::security::redaction::{parse_segmented, SegmentedDoc};
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{delete, get, post},
@@ -675,6 +676,7 @@ pub async fn get_document_handler(
     State(state): State<F12State>,
     Path(id): Path<String>,
     headers: HeaderMap,
+    claims: Option<Extension<Claims>>,
 ) -> impl IntoResponse {
     if !id
         .chars()
@@ -684,18 +686,10 @@ pub async fn get_document_handler(
         return (StatusCode::BAD_REQUEST, "Invalid document ID").into_response();
     }
 
-    // Extract clearance header (support X-Clearance, Clearance, or fallback to UNCLASSIFIED / level 0)
-    let clearance_val = headers
-        .get("x-clearance")
-        .or_else(|| headers.get("clearance"))
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("0");
-
-    let requester_clearance = if let Ok(num) = clearance_val.parse::<u8>() {
-        ClearanceLevel::from(num)
-    } else {
-        ClearanceLevel::from(clearance_val)
-    };
+    // Clearance del solicitante: SIEMPRE desde la identidad autenticada (`Claims`).
+    // El header `X-Clearance` solo se honra si el operador activa
+    // `XAVIER_CLEARANCE_TRUST_HEADER=1` (interno/loopback/tests).
+    let requester_clearance = resolve_requester_clearance(&headers, claims.as_ref().map(|e| &e.0));
 
     let doc_path = state.data_dir.join("documents").join(format!("{}.md", id));
     let raw_content = if doc_path.exists() {
@@ -1248,49 +1242,85 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
+    /// Request con identidad autenticada (Claims inyectadas, como hace auth_middleware).
+    fn req_with_role(uri: &str, role: crate::security::auth::UserRole) -> Request<Body> {
+        let mut req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        req.extensions_mut().insert(Claims::new(
+            "test-user".to_string(),
+            "test@swal.dev".to_string(),
+            role,
+            chrono::Duration::hours(1),
+        ));
+        req
+    }
+
     #[tokio::test]
-    async fn test_get_document_clearance_redaction() {
+    async fn test_get_document_clearance_redaction_by_identity() {
         let app = router(test_state());
 
-        // Requester level 1
-        let resp_lvl1 = app
+        // Readonly → Internal(1): secciones clasificadas redactadas.
+        let resp_ro = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/documents/doc1")
-                    .header("X-Clearance", "1")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(req_with_role(
+                "/v1/documents/doc1",
+                crate::security::auth::UserRole::Readonly,
+            ))
             .await
             .unwrap();
-        assert_eq!(resp_lvl1.status(), StatusCode::OK);
-        let body_lvl1 = resp_lvl1.into_body().collect().await.unwrap().to_bytes();
-        let text_lvl1 = String::from_utf8(body_lvl1.to_vec()).unwrap();
-        assert!(text_lvl1.contains("[EMAIL]"));
-        assert!(text_lvl1.contains("[REDACTED: Operational Directives]"));
-        assert!(text_lvl1.contains("[REDACTED: Master Vault Keys]"));
-        assert!(!text_lvl1.contains("0xDEADBEEF42"));
+        assert_eq!(resp_ro.status(), StatusCode::OK);
+        let body_ro = resp_ro.into_body().collect().await.unwrap().to_bytes();
+        let text_ro = String::from_utf8(body_ro.to_vec()).unwrap();
+        assert!(text_ro.contains("[EMAIL]"));
+        assert!(text_ro.contains("[REDACTED: Operational Directives]"));
+        assert!(text_ro.contains("[REDACTED: Master Vault Keys]"));
+        assert!(!text_ro.contains("0xDEADBEEF42"));
 
-        // Requester level 5
-        let resp_lvl5 = app
+        // Admin → TopSecret(5): contenido completo.
+        let resp_admin = app
+            .oneshot(req_with_role(
+                "/v1/documents/doc1",
+                crate::security::auth::UserRole::Admin,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp_admin.status(), StatusCode::OK);
+        let body_admin = resp_admin.into_body().collect().await.unwrap().to_bytes();
+        let text_admin = String::from_utf8(body_admin.to_vec()).unwrap();
+        assert!(text_admin.contains("Executive Summary"));
+        assert!(text_admin.contains("Operational Directives"));
+        assert!(text_admin.contains("Master Vault Keys"));
+        assert!(text_admin.contains("0xDEADBEEF42"));
+        assert!(!text_admin.contains("[REDACTED: Master Vault Keys]"));
+    }
+
+    /// El header `X-Clearance` NO otorga acceso por sí solo: sin identidad el
+    /// solicitante queda en Unclassified (a menos que el operador active el opt-in).
+    #[tokio::test]
+    async fn test_clearance_header_alone_does_not_grant_access() {
+        if crate::adapters::inbound::http::middleware::clearance::trusts_clearance_header() {
+            eprintln!("skip: XAVIER_CLEARANCE_TRUST_HEADER activo en este entorno");
+            return;
+        }
+        let app = router(test_state());
+        let resp = app
             .oneshot(
                 Request::builder()
                     .uri("/v1/documents/doc1")
                     .header("X-Clearance", "5")
+                    .header("clearance", "TOPSECRET")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(resp_lvl5.status(), StatusCode::OK);
-        let body_lvl5 = resp_lvl5.into_body().collect().await.unwrap().to_bytes();
-        let text_lvl5 = String::from_utf8(body_lvl5.to_vec()).unwrap();
-        assert!(text_lvl5.contains("Executive Summary"));
-        assert!(text_lvl5.contains("Operational Directives"));
-        assert!(text_lvl5.contains("Master Vault Keys"));
-        assert!(text_lvl5.contains("0xDEADBEEF42"));
-        assert!(!text_lvl5.contains("[REDACTED: Master Vault Keys]"));
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        assert!(
+            !text.contains("0xDEADBEEF42"),
+            "el header no debe otorgar TopSecret"
+        );
+        assert!(text.contains("[REDACTED: Master Vault Keys]"));
     }
 
     #[tokio::test]
