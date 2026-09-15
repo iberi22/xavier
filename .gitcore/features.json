@@ -1975,7 +1975,7 @@
       "name": "Classified clearance bound to identity (internal lab plans)",
       "category": "security",
       "status": "in_progress",
-      "progress_pct": 78,
+      "progress_pct": 88,
       "description": "Clearance derivado de la identidad autenticada (no del header X-Clearance) y aplicado como frontera de seguridad; base para los planes internos top-secret del laboratorio (10%) con lectura por nodo/grupo.",
       "steps": [
         "F1: nivel desde Claims (role_clearance) + opt-in de header (XAVIER_CLEARANCE_TRUST_HEADER) + middleware cableado tras auth",
@@ -2029,9 +2029,6 @@
             "log": "/tmp/swal_verify/f22_gate.log + f22_clippy.log"
           }
         },
-        "F3_segmentos_y_auditoria": {
-          "status": "pending"
-        },
         "F4_e2e_y_promocion": {
           "status": "pending"
         },
@@ -2039,7 +2036,29 @@
           "exigencia de nivel por config de ruta (no header X-Required-Clearance)",
           "AclManager/GroupManager necesitan store persistente para segmentos",
           "migracion: informar cuantas entradas cambian de politica por el default nuevo"
-        ]
+        ],
+        "F3.1_techo_por_segmento": {
+          "status": "done",
+          "criterios": [
+            "InfoGroup.clearance (serde default = default_clearance, sin nivel no eleva)",
+            "GroupRegistry::member_ceiling = max de segmentos donde el miembro tiene acl.read",
+            "shared_member_ceiling con cache por mtime+len (camino de lectura)",
+            "resolve_effective_clearance: rol UNION segmentos; anonimo nunca eleva",
+            "LAB_SEGMENTS + ensure_lab_segments (4 segmentos, sin miembros)",
+            "POST /v1/f12/groups acepta clearance opcional"
+          ],
+          "evidencia": {
+            "fmt": "OK",
+            "groups": "cargo test ... -- security::groups => 18 passed / 0 failed",
+            "clearance": "cargo test ... -- clearance => 32 passed / 0 failed",
+            "clippy": "cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings => exit 0 (1m17s)",
+            "suite_completa_f2_2": "2323 passed / 0 failed / 1 ignored (326s)",
+            "log": "/tmp/swal_verify/f31_gate.log, f22_fullsuite.log"
+          }
+        },
+        "F3.2_config_de_ruta_y_auditoria": {
+          "status": "pending"
+        }
       }
     }
   },

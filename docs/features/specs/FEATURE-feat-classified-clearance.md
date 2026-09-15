@@ -98,11 +98,42 @@ también en `src/adapters/inbound/http/handlers/memory.rs` + `v1_api.rs` por def
 **Pendiente de F2.2 (migración):** informar cuántas entradas cambian de política por el default nuevo
 (`TopSecret` → `Internal`). No se reescribe contenido: el nivel efectivo se resuelve en lectura.
 
-### Fase 3 — Segmentos internos del laboratorio (pendiente)
+### Fase 3 — Segmentos internos del laboratorio
 
-- Grupos por segmento (`admin`, `research`, `ops`, `legal`) con `GroupManager` + `user_max_clearance`.
-- Espacio de documentos internos (top-secret) separado del material del DAO.
-- Auditoría de lecturas clasificadas (concedidas y denegadas) sobre `enterprise/audit.rs`.
+#### F3.1 — Techo por segmento (nivel del grupo) ✅ (implementado)
+
+Los grupos ya existían con persistencia (`security/groups.rs::GroupRegistry`, archivo
+`data/security/groups.json`) y con auditoría propia. Lo que faltaba era que **la pertenencia
+significara algo al leer**:
+
+- `InfoGroup.clearance` — nivel que el grupo otorga a sus miembros con permiso de lectura.
+  `#[serde(default = "default_clearance")]`: un grupo sin nivel explícito **no eleva** a nadie.
+- `GroupRegistry::member_ceiling(member_ids)` — máximo de los niveles de los grupos donde el
+  miembro tiene `acl.read`; `None` si no pertenece a ninguno. Un grupo sin permiso de lectura no
+  eleva aunque la persona sea miembro.
+- `shared_member_ceiling()` — registro compartido del camino de lectura, con **recarga por
+  mtime+tamaño**: una búsqueda no paga un parseo por request y los cambios escritos por
+  `/v1/f12/groups` se ven en la siguiente lectura.
+- `resolve_effective_clearance()` (middleware) — **techo efectivo = rol ∪ segmentos**, aplicado
+  en `clearance_session_middleware` y `clearance_middleware`. Sin `Claims` **no** se evalúa
+  membresía: un anónimo nunca sube de nivel.
+- `LAB_SEGMENTS` + `ensure_lab_segments()` — los cuatro segmentos del laboratorio
+  (`seg-admin` TopSecret, `seg-research` Secret, `seg-ops` Confidential, `seg-legal` Secret) se
+  crean **sin miembros**: la elevación se asigna, no se hereda.
+- `POST /v1/f12/groups` acepta `clearance` opcional.
+
+**Criterios (F3.1):** `test_member_ceiling_requires_read_membership`,
+`test_member_ceiling_is_max_over_segments`, `test_group_without_clearance_does_not_elevate`,
+`test_ensure_lab_segments_is_idempotent_and_empty`, `test_shared_ceiling_reads_file_and_reloads_on_change`,
+`test_effective_clearance_is_union_and_never_lowers`, `test_effective_clearance_anonymous_never_lifts`.
+
+#### F3.2 — Config de ruta y auditoría de lecturas (pendiente)
+
+- **Exigencia de nivel por configuración de ruta** (no por header `X-Required-Clearance` del
+  cliente): mapa ruta→nivel en config del servidor.
+- **Auditoría de lecturas clasificadas** (concedidas y denegadas) sobre `enterprise/audit.rs`,
+  incluyendo el conteo `hidden_by_clearance` por request.
+- Espacio de documentos dedicado a los planes del 10 % (no mezclado con memoria normal).
 
 ### Fase 4 — E2E y operación (pendiente)
 

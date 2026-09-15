@@ -68,13 +68,46 @@ pub fn resolve_requester_clearance(headers: &HeaderMap, claims: Option<&Claims>)
     ClearanceLevel::Unclassified
 }
 
+/// Unión del nivel base con el techo que otorgan los segmentos.
+///
+/// `ceiling_lookup` se inyecta para poder testear la política sin tocar el
+/// registro real del workspace.
+pub fn effective_clearance_with(
+    base: ClearanceLevel,
+    member_ids: &[&str],
+    ceiling_lookup: impl Fn(&[&str]) -> Option<ClearanceLevel>,
+) -> ClearanceLevel {
+    match ceiling_lookup(member_ids) {
+        Some(segment_level) => base.max(segment_level),
+        None => base,
+    }
+}
+
+/// Techo efectivo del solicitante: nivel del rol **∪** nivel de sus segmentos.
+///
+/// F3.1: la pertenencia a un segmento del laboratorio (con permiso de lectura)
+/// eleva el techo del miembro. La elevación **exige identidad autenticada**: sin
+/// `Claims` no hay membresía que evaluar, así que un anónimo nunca sube de nivel
+/// (ni con el header bajo opt-in).
+pub fn resolve_effective_clearance(headers: &HeaderMap, claims: Option<&Claims>) -> ClearanceLevel {
+    let base = resolve_requester_clearance(headers, claims);
+    match claims {
+        Some(claims) => effective_clearance_with(
+            base,
+            &[claims.sub.as_str(), claims.email.as_str()],
+            crate::security::groups::shared_member_ceiling,
+        ),
+        None => base,
+    }
+}
+
 /// Middleware: deriva el nivel de la identidad autenticada y lo publica en las
 /// extensiones de la request para que los handlers lo consuman.
 ///
 /// Va SIEMPRE después de `auth_middleware` (ver `cli/server.rs`).
 pub async fn clearance_session_middleware(mut req: Request<Body>, next: Next) -> Response {
     let claims = req.extensions().get::<Claims>().cloned();
-    let level = resolve_requester_clearance(req.headers(), claims.as_ref());
+    let level = resolve_effective_clearance(req.headers(), claims.as_ref());
     req.extensions_mut().insert(level);
     req.extensions_mut().insert(ClearanceEnforcer::new(level));
     next.run(req).await
@@ -84,7 +117,7 @@ pub async fn clearance_session_middleware(mut req: Request<Body>, next: Next) ->
 /// into request extensions, and enforces optional route-level clearance checks (`X-Required-Clearance`).
 pub async fn clearance_middleware(mut req: Request<Body>, next: Next) -> Response {
     let claims = req.extensions().get::<Claims>().cloned();
-    let requester_level = resolve_requester_clearance(req.headers(), claims.as_ref());
+    let requester_level = resolve_effective_clearance(req.headers(), claims.as_ref());
     let enforcer = ClearanceEnforcer::new(requester_level);
 
     // Enforce optional X-Required-Clearance check
@@ -262,5 +295,60 @@ mod tests {
                 StatusCode::FORBIDDEN
             );
         }
+    }
+
+    // ── F3.1: techo efectivo = rol ∪ segmentos ──────────────────────────────
+
+    #[test]
+    fn test_effective_clearance_is_union_and_never_lowers() {
+        // Miembro de un segmento Secret: sube desde su rol (Internal).
+        assert_eq!(
+            effective_clearance_with(ClearanceLevel::Internal, &["nodo-1"], |_| Some(
+                ClearanceLevel::Secret
+            )),
+            ClearanceLevel::Secret
+        );
+        // Sin segmento: se queda con su rol.
+        assert_eq!(
+            effective_clearance_with(ClearanceLevel::Confidential, &["nodo-2"], |_| None),
+            ClearanceLevel::Confidential
+        );
+        // El rol más alto manda: la membresía no degrada a nadie.
+        assert_eq!(
+            effective_clearance_with(ClearanceLevel::TopSecret, &["nodo-3"], |_| Some(
+                ClearanceLevel::Internal
+            )),
+            ClearanceLevel::TopSecret
+        );
+        // Los identificadores llegan al lookup (sub y email).
+        let seen: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+        let _ = effective_clearance_with(ClearanceLevel::Internal, &["sub-1", "a@b.c"], |ids| {
+            seen.borrow_mut()
+                .extend(ids.iter().map(|id| id.to_string()));
+            None
+        });
+        assert_eq!(
+            *seen.borrow(),
+            vec!["sub-1".to_string(), "a@b.c".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_effective_clearance_anonymous_never_lifts() {
+        // Sin identidad no hay membresía que evaluar: ni siquiera con el header.
+        let anon = resolve_effective_clearance(&HeaderMap::new(), None);
+        assert_eq!(anon, ClearanceLevel::Unclassified);
+
+        let readonly = Claims::new(
+            "nodo-sin-segmento".into(),
+            "nodo@swal.dev".into(),
+            UserRole::Readonly,
+            chrono::Duration::hours(1),
+        );
+        assert_eq!(
+            resolve_effective_clearance(&HeaderMap::new(), Some(&readonly)),
+            ClearanceLevel::Internal,
+            "un usuario fuera de segmentos conserva el nivel de su rol"
+        );
     }
 }

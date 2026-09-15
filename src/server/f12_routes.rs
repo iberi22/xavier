@@ -129,6 +129,10 @@ pub struct RAGResponse {
 pub struct CreateGroupRequest {
     pub id: String,
     pub name: String,
+    /// Nivel que el grupo otorga a sus miembros con permiso de lectura (F3.1).
+    /// Sin nivel ⇒ `default_clearance()` (no eleva a nadie).
+    #[serde(default)]
+    pub clearance: Option<crate::security::clearance::ClearanceLevel>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -282,6 +286,10 @@ pub async fn create_group(
             write: false,
             audit: false,
         },
+        // F3.1: sin nivel explícito el grupo no eleva a nadie por encima del default.
+        clearance: req
+            .clearance
+            .unwrap_or_else(crate::security::clearance::default_clearance),
     };
     match groups.create(group) {
         Ok(_) => {
