@@ -136,10 +136,13 @@ Gana el **prefijo más largo**; un nivel ilegible en config ⇒ `TopSecret` (un 
 **cierra**, nunca abre). Enforcement en `enforce_route_policy()`, llamado desde
 `clearance_session_middleware`: 403 + denegación auditada.
 
-> **Hueco real que esto mitiga (P1 declarado, no cerrado):** los endpoints de exportación
-> (`/memory/export*`, `/v1/memory/export-markdown`) devuelven memoria en bloque **sin aplicar el
-> nivel de cada entrada**. La regla por defecto exige `INTERNAL` (bloquea al anónimo), pero el
-> arreglo de fondo es filtrar el export por nivel del solicitante — queda como deuda.
+> **Hueco real detectado aquí y CERRADO en la fase siguiente (F4-export):** los endpoints de
+> exportación (`/memory/export*`, `/v1/memory/export-markdown`) devolvían memoria en bloque **sin
+> aplicar el nivel de cada entrada**. La política de ruta los exige a `INTERNAL` (bloquea al
+> anónimo) y ahora además aplican el techo del solicitante con
+> `split_by_clearance` + auditoría (`action: "export"`, con `hidden_by_clearance`). El contrato de
+> `/memory/export` se mantiene (array de documentos) para no romper a los consumidores; el conteo de
+> lo oculto viaja en la auditoría, no en el cuerpo.
 
 **(b) Auditoría de lecturas clasificadas** (`src/security/clearance_audit.rs`): append-only JSONL en
 `data/security/clearance_audit.jsonl` (override `XAVIER_CLEARANCE_AUDIT_PATH`), con
@@ -161,8 +164,8 @@ nivel más alto se respeta.
 `test_record_uses_env_path_when_set`, `test_segment_level_from_path`,
 `resolve_metadata_applies_segment_namespace_floor`.
 
-**Falta de F3 (para la siguiente):** espacio de documentos *dedicado* al 10 % (hoy es convención de
-namespace, no un store aparte) y filtrar los exports por nivel.
+**Falta de F3:** espacio de documentos *dedicado* al 10 % (hoy es convención de namespace, no un
+store aparte).
 
 ### Fase 4 — E2E y operación (pendiente)
 

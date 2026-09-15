@@ -747,11 +747,45 @@ pub struct ExportMarkdownQuery {
 /// Export markdown HTTP handler for CLI HTTP server.
 pub async fn export_markdown_handler(
     State(state): State<CliState>,
+    requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
+    identity: Option<
+        axum::extract::Extension<
+            xavier::adapters::inbound::http::middleware::clearance::RequesterIdentity,
+        >,
+    >,
     Query(params): Query<ExportMarkdownQuery>,
 ) -> impl IntoResponse {
     let public_only = params.public_only.unwrap_or(false);
+    let requester_level = requester
+        .map(|axum::extract::Extension(level)| level)
+        .unwrap_or_else(xavier::security::clearance::default_clearance);
+    let (subject, role) = identity
+        .map(|axum::extract::Extension(id)| (id.subject, id.role))
+        .unwrap_or_else(|| ("anonymous".to_string(), "none".to_string()));
+
     match state.memory.export(public_only).await {
         Ok(records) => {
+            // Un export devuelve memoria en bloque: sin este techo se saltaría el
+            // nivel de cada entrada (el hueco que F3.2 dejó declarado y aquí se cierra).
+            let (records, hidden_by_clearance) = xavier::security::clearance::split_by_clearance(
+                requester_level,
+                records,
+                |record| xavier::security::clearance::level_from_metadata(&record.metadata),
+            );
+            xavier::security::clearance_audit::record(
+                &xavier::security::clearance_audit::ClearanceReadAudit::new(
+                    subject,
+                    role,
+                    requester_level,
+                    "/memory/export-markdown",
+                    "export",
+                    "",
+                    records.len(),
+                    hidden_by_clearance,
+                    true,
+                ),
+            );
+
             let exported: Vec<_> = records
                 .into_iter()
                 .map(|r| {
@@ -792,6 +826,7 @@ pub async fn export_markdown_handler(
             Json(serde_json::json!({
                 "status": "ok",
                 "count": exported.len(),
+                "hidden_by_clearance": hidden_by_clearance,
                 "notes": exported,
                 "workspace_id": state.workspace_id,
             }))
@@ -1559,11 +1594,46 @@ async fn offline_add_memory(
 /// Export handler.
 pub async fn export_handler(
     State(state): State<CliState>,
+    requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
+    identity: Option<
+        axum::extract::Extension<
+            xavier::adapters::inbound::http::middleware::clearance::RequesterIdentity,
+        >,
+    >,
     Query(params): Query<ExportPayload>,
 ) -> impl IntoResponse {
     let public_only = params.public.unwrap_or(false);
+    let requester_level = requester
+        .map(|axum::extract::Extension(level)| level)
+        .unwrap_or_else(xavier::security::clearance::default_clearance);
+    let (subject, role) = identity
+        .map(|axum::extract::Extension(id)| (id.subject, id.role))
+        .unwrap_or_else(|| ("anonymous".to_string(), "none".to_string()));
+
     match state.memory.export(public_only).await {
-        Ok(docs) => Json(docs).into_response(),
+        Ok(docs) => {
+            // Mismo techo que en la búsqueda. La respuesta mantiene el contrato
+            // (array de documentos) para no romper a los consumidores; el conteo de
+            // lo oculto queda en la auditoría.
+            let (docs, hidden_by_clearance) =
+                xavier::security::clearance::split_by_clearance(requester_level, docs, |doc| {
+                    xavier::security::clearance::level_from_metadata(&doc.metadata)
+                });
+            xavier::security::clearance_audit::record(
+                &xavier::security::clearance_audit::ClearanceReadAudit::new(
+                    subject,
+                    role,
+                    requester_level,
+                    "/memory/export",
+                    "export",
+                    "",
+                    docs.len(),
+                    hidden_by_clearance,
+                    true,
+                ),
+            );
+            Json(docs).into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({
