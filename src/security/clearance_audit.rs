@@ -138,33 +138,6 @@ pub fn record(entry: &ClearanceReadAudit) {
     }
 }
 
-/// Registra una lectura permitida y devuelve la entrada (útil en tests).
-#[allow(clippy::too_many_arguments)]
-pub fn record_allowed(
-    claims: Option<&Claims>,
-    requester_level: ClearanceLevel,
-    route: &str,
-    action: &str,
-    query: &str,
-    visible: usize,
-    hidden_by_clearance: usize,
-) -> ClearanceReadAudit {
-    let (subject, role) = subject_and_role(claims);
-    let entry = ClearanceReadAudit::new(
-        subject,
-        role,
-        requester_level,
-        route,
-        action,
-        query,
-        visible,
-        hidden_by_clearance,
-        true,
-    );
-    record(&entry);
-    entry
-}
-
 /// Registra una denegación (por política de ruta o por nivel insuficiente).
 pub fn record_denied(
     claims: Option<&Claims>,
