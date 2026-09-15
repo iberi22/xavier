@@ -155,14 +155,12 @@ impl CodeGraphUdsClient {
         let port = std::env::var("CODE_GRAPH_PORT").unwrap_or_else(|_| "8080".to_string());
         let addr = format!("{}:{}", host, port);
 
-        let mut stream = TcpStream::connect(&addr)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to connect to CodeGraph local HTTP service at {}",
-                    addr
-                )
-            })?;
+        let mut stream = TcpStream::connect(&addr).await.with_context(|| {
+            format!(
+                "failed to connect to CodeGraph local HTTP service at {}",
+                addr
+            )
+        })?;
 
         let request = format!(
             "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nAccept: application/json\r\n\r\n",
@@ -456,7 +454,9 @@ mod tests {
     async fn test_find_symbols_over_mock_tcp() {
         use tokio::net::TcpListener;
 
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind tcp listener");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind tcp listener");
         let local_addr = listener.local_addr().unwrap();
         std::env::set_var("CODE_GRAPH_HOST", "127.0.0.1");
         std::env::set_var("CODE_GRAPH_PORT", local_addr.port().to_string());
@@ -517,6 +517,7 @@ mod tests {
 
         assert!(res.is_err());
         let err_msg = res.unwrap_err().to_string();
-        assert!(err_msg.contains("failed to connect to CodeGraph local HTTP service at 127.0.0.1:59999"));
+        assert!(err_msg
+            .contains("failed to connect to CodeGraph local HTTP service at 127.0.0.1:59999"));
     }
 }

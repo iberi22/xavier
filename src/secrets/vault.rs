@@ -89,10 +89,10 @@ impl HardwareVault {
         }
 
         let fallback_res = self.try_fallback_store(key, value);
-        if keyring_res.is_err() && fallback_res.is_err() {
-            return Err(fallback_res.unwrap_err());
-        }
-        Ok(())
+        // Succeed if either backend succeeded; report the fallback error
+        // only when both failed (`or` returns the first Ok, else the second
+        // result, which is exactly this truth table).
+        keyring_res.or(fallback_res)
     }
 
     /// Get secret.
@@ -243,7 +243,9 @@ mod tests {
         let value = "headless-secret-value-12345";
 
         // Store secret (uses fallback store when keyring unavailable or also populates fallback)
-        vault.try_fallback_store(key, value).expect("Fallback store failed");
+        vault
+            .try_fallback_store(key, value)
+            .expect("Fallback store failed");
 
         // Verify fallback get
         let retrieved = vault.try_fallback_get(key).expect("Fallback get failed");

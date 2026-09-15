@@ -123,8 +123,14 @@ async fn test_sse_reconnect_handshake_and_keepalive() {
         }
     }
 
-    assert!(received_notification, "Should have received notification event");
-    assert!(received_keepalive, "Should have received keepalive comment ping");
+    assert!(
+        received_notification,
+        "Should have received notification event"
+    );
+    assert!(
+        received_keepalive,
+        "Should have received keepalive comment ping"
+    );
 }
 
 #[tokio::test]

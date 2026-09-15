@@ -588,9 +588,25 @@ pub async fn save_pack(pack: &IssueContextPack, path: &str) -> Result<()> {
 pub async fn pack_issue(issue_id: &str, repo: &str) -> Result<IssueContextPack> {
     let repo_arg = if repo.is_empty() { "xavier" } else { repo };
 
+    // Helper: run a subprocess with a hard timeout so CI can never hang on
+    // `gh` auth prompts or a slow `git diff` on huge checkouts. On timeout or
+    // spawn failure the caller falls back to empty defaults.
+    async fn command_output_timeout(
+        cmd: &str,
+        args: &[&str],
+        timeout_secs: u64,
+    ) -> Option<std::process::Output> {
+        let fut = tokio::process::Command::new(cmd).args(args).output();
+        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), fut).await {
+            Ok(Ok(out)) => Some(out),
+            _ => None,
+        }
+    }
+
     // 1. Fetch GitHub issue payload via gh CLI
-    let issue_val = match tokio::process::Command::new("gh")
-        .args([
+    let issue_val = match command_output_timeout(
+        "gh",
+        &[
             "issue",
             "view",
             issue_id,
@@ -598,11 +614,12 @@ pub async fn pack_issue(issue_id: &str, repo: &str) -> Result<IssueContextPack> 
             repo_arg,
             "--json",
             "id,number,title,body,state,labels,author,createdAt",
-        ])
-        .output()
-        .await
+        ],
+        10,
+    )
+    .await
     {
-        Ok(out) if out.status.success() => {
+        Some(out) if out.status.success() => {
             serde_json::from_slice(&out.stdout).unwrap_or_else(|_| {
                 serde_json::json!({
                     "id": issue_id,
@@ -623,8 +640,9 @@ pub async fn pack_issue(issue_id: &str, repo: &str) -> Result<IssueContextPack> 
     };
 
     // 2. Fetch linked PRs via gh CLI
-    let prs_val: Vec<serde_json::Value> = match tokio::process::Command::new("gh")
-        .args([
+    let prs_val: Vec<serde_json::Value> = match command_output_timeout(
+        "gh",
+        &[
             "pr",
             "list",
             "--repo",
@@ -633,11 +651,14 @@ pub async fn pack_issue(issue_id: &str, repo: &str) -> Result<IssueContextPack> 
             issue_id,
             "--json",
             "number,title,state,url",
-        ])
-        .output()
-        .await
+        ],
+        10,
+    )
+    .await
     {
-        Ok(out) if out.status.success() => serde_json::from_slice(&out.stdout).unwrap_or_default(),
+        Some(out) if out.status.success() => {
+            serde_json::from_slice(&out.stdout).unwrap_or_default()
+        }
         _ => Vec::new(),
     };
 
@@ -694,12 +715,8 @@ pub async fn pack_issue(issue_id: &str, repo: &str) -> Result<IssueContextPack> 
     let memory_hits = Vec::new();
 
     // 5. Git diff
-    let diff = match tokio::process::Command::new("git")
-        .args(["diff", "HEAD~1"])
-        .output()
-        .await
-    {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).to_string(),
+    let diff = match command_output_timeout("git", &["diff", "HEAD~1"], 15).await {
+        Some(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).to_string(),
         _ => String::new(),
     };
 
@@ -851,9 +868,14 @@ mod tests {
         let src_dir = temp_path.join("src");
         std::fs::create_dir_all(&src_dir).expect("src dir");
 
-        // Create 25 files with symbols and multi-line content
+        // Keep the fixture small and deterministic: 8 files still exceeds the
+        // capped limits below (5/5/10) so truncation is exercised, but the
+        // test indexes in milliseconds instead of minutes on loaded CI
+        // runners. Full (non-incremental) index avoids the incremental
+        // metadata roundtrip, which has no benefit on a fresh in-memory DB.
+        const FIXTURE_FILES: usize = 8;
         let mut body = String::from("Fix issues across candidate files:\n");
-        for i in 0..25 {
+        for i in 0..FIXTURE_FILES {
             let file_name = format!("mod_{}.rs", i);
             let rel_path = format!("src/{}", file_name);
             let content = format!(
@@ -866,8 +888,42 @@ mod tests {
         }
 
         let db = Arc::new(CodeGraphDB::in_memory().expect("CodeGraphDB"));
+        // Hermetic parsing: the indexer auto-discovers `codegraph` /
+        // `parser-*` plugin binaries via PATH at construction time, and a
+        // stale or hung sidecar on the runner would make this test order-
+        // and machine-dependent (a hung plugin used to stall the whole CI
+        // job until runner shutdown). Clearing PATH before constructing the
+        // indexer forces the deterministic Native parser path. The CI gate
+        // runs `--test-threads=1`, so no other test runs concurrently; the
+        // guard restores PATH on drop (panic-safe).
+        struct ClearPathGuard {
+            prev: Option<String>,
+        }
+        impl Drop for ClearPathGuard {
+            fn drop(&mut self) {
+                match self.prev.take() {
+                    Some(v) => std::env::set_var("PATH", v),
+                    None => std::env::remove_var("PATH"),
+                }
+            }
+        }
+        let _path_guard = ClearPathGuard {
+            prev: std::env::var("PATH").ok(),
+        };
+        std::env::set_var("PATH", "");
         let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
-        indexer.index(temp_path, true).await.expect("index repo");
+        // Hard timeout: this fixture indexes in <1s locally; if the indexer
+        // ever regresses into a multi-minute hang, fail fast with a clear
+        // message instead of killing the whole CI job via runner shutdown.
+        let index_res = tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            indexer.index(temp_path, false),
+        )
+        .await;
+        drop(_path_guard);
+        index_res
+            .expect("indexer timed out after 60s")
+            .expect("index repo");
         let snapshot = SnapshotManager::new(temp_path);
 
         let limits = ContextLimits {

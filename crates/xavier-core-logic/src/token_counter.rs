@@ -10,7 +10,7 @@ pub fn estimate_tokens_utf8(text: &str) -> usize {
     if char_count == 0 {
         0
     } else {
-        (char_count + 3) / 4
+        char_count.div_ceil(4)
     }
 }
 
@@ -71,7 +71,10 @@ pub fn collapse_repeated_ast_snippets(text: &str) -> String {
 
         if repeat_count >= 3 {
             result.push(current_line.to_string());
-            result.push(format!("// [... repeated AST/diff line x{} ...]", repeat_count - 1));
+            result.push(format!(
+                "// [... repeated AST/diff line x{} ...]",
+                repeat_count - 1
+            ));
             idx += repeat_count;
             continue;
         }
@@ -86,7 +89,9 @@ pub fn collapse_repeated_ast_snippets(text: &str) -> String {
                 if block_a == block_b {
                     let mut block_repeats = 1;
                     while idx + (block_repeats + 1) * window_size <= lines.len()
-                        && &lines[idx + block_repeats * window_size..idx + (block_repeats + 1) * window_size] == block_a
+                        && &lines[idx + block_repeats * window_size
+                            ..idx + (block_repeats + 1) * window_size]
+                            == block_a
                     {
                         block_repeats += 1;
                     }
@@ -152,7 +157,8 @@ mod tests {
 
     #[test]
     fn test_collapse_repeated_ast_snippets_single_lines() {
-        let input = "fn main() {\n    let x = 1;\n    let x = 1;\n    let x = 1;\n    let x = 1;\n}\n";
+        let input =
+            "fn main() {\n    let x = 1;\n    let x = 1;\n    let x = 1;\n    let x = 1;\n}\n";
         let compressed = collapse_repeated_ast_snippets(input);
         assert!(compressed.contains("// [... repeated AST/diff line x3 ...]"));
         assert!(compressed.contains("let x = 1;"));

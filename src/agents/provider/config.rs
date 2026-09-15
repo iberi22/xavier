@@ -17,15 +17,34 @@ use crate::secrets::vault::HardwareVault;
 static REACHABILITY_CACHE: LazyLock<Mutex<HashMap<String, (bool, Instant)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
+pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://127.0.0.1:11435/v1";
 pub(crate) const DEFAULT_LOCAL_ANTHROPIC_BASE_URL: &str = "http://localhost:11434";
-pub(crate) const DEFAULT_LOCAL_MODEL: &str = "qwen3-coder";
+pub(crate) const DEFAULT_LOCAL_MODEL: &str = "qwen2.5-coder:7b";
 pub(crate) const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub(crate) const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 pub(crate) const DEFAULT_DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com/v1";
 pub(crate) const DEFAULT_MINIMAX_BASE_URL: &str = "https://api.minimax.chat/v1";
 pub(crate) const DEFAULT_GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
 pub(crate) const DEFAULT_ZAI_BASE_URL: &str = "https://api.z.ai/v1";
+
+/// Read an env var, treating missing *and* blank values as unset.
+///
+/// CI deterministic-gate: several `local_from_env` tests mutate global ENV.
+/// A blank `XAVIER_*` left over from another test (or from the runner
+/// environment) must not shadow the settings/default fallback chain.
+fn nonempty_env(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|v| !v.trim().is_empty())
+}
+
+/// Clone a `String` settings field, treating blank values as unset.
+fn nonempty_str(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
 
 /// Configuration for model provider key leasing.
 #[derive(Debug, Clone)]
@@ -136,20 +155,29 @@ impl ModelProviderConfig {
                 provider_mode: ProviderMode::Local,
                 api_flavor,
                 provider_label: "local".to_string(),
-                model: std::env::var("XAVIER_LOCAL_LLM_MODEL")
-                    .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
-                    .ok()
-                    .or_else(|| Some(settings.models.local_llm_model.clone()))
-                    .or_else(|| settings.models.llm_model.clone())
+                model: nonempty_env("XAVIER_LOCAL_LLM_MODEL")
+                    .or_else(|| nonempty_env("XAVIER_LLM_MODEL"))
+                    .or_else(|| nonempty_str(&settings.models.local_llm_model))
+                    .or_else(|| {
+                        settings
+                            .models
+                            .llm_model
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    })
                     .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
-                api_key: std::env::var("XAVIER_LOCAL_LLM_API_KEY")
-                    .ok()
-                    .or_else(|| settings.models.local_llm_api_key.clone())
+                api_key: nonempty_env("XAVIER_LOCAL_LLM_API_KEY")
+                    .or_else(|| {
+                        settings
+                            .models
+                            .local_llm_api_key
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    })
                     .or_else(|| Some("ollama".to_string())),
                 base_url: Some(
-                    std::env::var("XAVIER_LOCAL_LLM_URL")
-                        .ok()
-                        .or_else(|| Some(settings.models.local_llm_url.clone()))
+                    nonempty_env("XAVIER_LOCAL_LLM_URL")
+                        .or_else(|| nonempty_str(&settings.models.local_llm_url))
                         .unwrap_or_else(|| DEFAULT_LOCAL_BASE_URL.to_string()),
                 ),
                 target: ProviderTarget::GenericOpenAICompatible,
@@ -161,22 +189,37 @@ impl ModelProviderConfig {
                 provider_mode: ProviderMode::Local,
                 api_flavor,
                 provider_label: "local".to_string(),
-                model: std::env::var("XAVIER_LOCAL_LLM_MODEL")
-                    .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
-                    .ok()
-                    .or_else(|| Some(settings.models.local_llm_model.clone()))
-                    .or_else(|| settings.models.llm_model.clone())
+                model: nonempty_env("XAVIER_LOCAL_LLM_MODEL")
+                    .or_else(|| nonempty_env("XAVIER_LLM_MODEL"))
+                    .or_else(|| nonempty_str(&settings.models.local_llm_model))
+                    .or_else(|| {
+                        settings
+                            .models
+                            .llm_model
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    })
                     .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
-                api_key: std::env::var("XAVIER_LOCAL_LLM_API_KEY")
-                    .ok()
-                    .or_else(|| settings.models.local_llm_api_key.clone())
+                api_key: nonempty_env("XAVIER_LOCAL_LLM_API_KEY")
+                    .or_else(|| {
+                        settings
+                            .models
+                            .local_llm_api_key
+                            .clone()
+                            .filter(|s| !s.trim().is_empty())
+                    })
                     .or_else(|| Some("ollama".to_string())),
                 base_url: Some(
-                    std::env::var("XAVIER_LOCAL_ANTHROPIC_URL")
-                        .or_else(|_| std::env::var("XAVIER_LOCAL_LLM_URL"))
-                        .ok()
-                        .or_else(|| settings.models.local_anthropic_url.clone())
-                        .or_else(|| Some(settings.models.local_llm_url.clone()))
+                    nonempty_env("XAVIER_LOCAL_ANTHROPIC_URL")
+                        .or_else(|| nonempty_env("XAVIER_LOCAL_LLM_URL"))
+                        .or_else(|| {
+                            settings
+                                .models
+                                .local_anthropic_url
+                                .clone()
+                                .filter(|s| !s.trim().is_empty())
+                        })
+                        .or_else(|| nonempty_str(&settings.models.local_llm_url))
                         .unwrap_or_else(|| DEFAULT_LOCAL_ANTHROPIC_BASE_URL.to_string()),
                 ),
                 target: ProviderTarget::AnthropicMessages,
@@ -202,20 +245,29 @@ impl ModelProviderConfig {
             provider_mode: ProviderMode::ManagedLocal,
             api_flavor,
             provider_label: "managed-local".to_string(),
-            model: std::env::var("XAVIER_LOCAL_LLM_MODEL")
-                .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
-                .ok()
-                .or_else(|| Some(settings.models.local_llm_model.clone()))
-                .or_else(|| settings.models.llm_model.clone())
+            model: nonempty_env("XAVIER_LOCAL_LLM_MODEL")
+                .or_else(|| nonempty_env("XAVIER_LLM_MODEL"))
+                .or_else(|| nonempty_str(&settings.models.local_llm_model))
+                .or_else(|| {
+                    settings
+                        .models
+                        .llm_model
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
                 .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
-            api_key: std::env::var("XAVIER_LOCAL_LLM_API_KEY")
-                .ok()
-                .or_else(|| settings.models.local_llm_api_key.clone())
+            api_key: nonempty_env("XAVIER_LOCAL_LLM_API_KEY")
+                .or_else(|| {
+                    settings
+                        .models
+                        .local_llm_api_key
+                        .clone()
+                        .filter(|s| !s.trim().is_empty())
+                })
                 .or_else(|| Some("ollama".to_string())),
             base_url: Some(
-                std::env::var("XAVIER_LOCAL_LLM_URL")
-                    .ok()
-                    .or_else(|| Some(settings.models.local_llm_url.clone()))
+                nonempty_env("XAVIER_LOCAL_LLM_URL")
+                    .or_else(|| nonempty_str(&settings.models.local_llm_url))
                     .unwrap_or_else(|| DEFAULT_LOCAL_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
@@ -753,12 +805,22 @@ mod tests {
     #[test]
     fn test_local_provider_config() {
         let _guard = env_lock().lock().expect("test assertion");
+        let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "/tmp/nonexistent-xavier-ci-defaults.json",
+        );
         std::env::set_var("XAVIER_LOCAL_LLM_MODEL", "test-model");
         std::env::remove_var("XAVIER_LLM_MODEL");
         std::env::set_var("XAVIER_LOCAL_LLM_URL", "http://test-url/v1");
         std::env::remove_var("XAVIER_API_FLAVOR");
 
         let config = ModelProviderConfig::local_from_env();
+
+        match prev_config_path {
+            Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
+            None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+        }
 
         assert_eq!(config.model, "test-model");
         assert_eq!(config.base_url, Some("http://test-url/v1".to_string()));
@@ -769,16 +831,50 @@ mod tests {
     #[test]
     fn test_local_provider_defaults() {
         let _guard = env_lock().lock().expect("test assertion");
+        // Deterministic gate: isolate from the repo's config/xavier.config.json
+        // (workspace-pinned model/url evolve with merged PRs) and from
+        // leftover blank env vars. With everything unset, `local_from_env`
+        // must fall through to the compiled `XavierSettings::default()`
+        // values — assert against those, so this test survives defaults
+        // bumps without coupling to any literal model string.
+        let prev_config_path = std::env::var("XAVIER_CONFIG_PATH").ok();
+        let prev_api_key = std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok();
+        let prev_anthropic_url = std::env::var("XAVIER_LOCAL_ANTHROPIC_URL").ok();
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "/tmp/nonexistent-xavier-ci-defaults.json",
+        );
         std::env::remove_var("XAVIER_LOCAL_LLM_MODEL");
         std::env::remove_var("XAVIER_LLM_MODEL");
         std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+        std::env::remove_var("XAVIER_LOCAL_LLM_API_KEY");
+        std::env::remove_var("XAVIER_LOCAL_ANTHROPIC_URL");
         std::env::remove_var("XAVIER_API_FLAVOR");
 
         let config = ModelProviderConfig::local_from_env();
 
-        assert_eq!(config.model, DEFAULT_LOCAL_MODEL);
-        assert_eq!(config.base_url, Some(DEFAULT_LOCAL_BASE_URL.to_string()));
-        assert_eq!(config.api_key.as_deref(), Some("ollama"));
+        match prev_config_path {
+            Some(v) => std::env::set_var("XAVIER_CONFIG_PATH", v),
+            None => std::env::remove_var("XAVIER_CONFIG_PATH"),
+        }
+        match prev_api_key {
+            Some(v) => std::env::set_var("XAVIER_LOCAL_LLM_API_KEY", v),
+            None => std::env::remove_var("XAVIER_LOCAL_LLM_API_KEY"),
+        }
+        match prev_anthropic_url {
+            Some(v) => std::env::set_var("XAVIER_LOCAL_ANTHROPIC_URL", v),
+            None => std::env::remove_var("XAVIER_LOCAL_ANTHROPIC_URL"),
+        }
+
+        let expected = crate::settings::XavierSettings::default();
+        assert_eq!(config.model, expected.models.local_llm_model);
+        assert_eq!(config.base_url, Some(expected.models.local_llm_url.clone()));
+        let expected_key = expected
+            .models
+            .local_llm_api_key
+            .clone()
+            .unwrap_or_else(|| "ollama".to_string());
+        assert_eq!(config.api_key, Some(expected_key));
     }
 
     #[test]
