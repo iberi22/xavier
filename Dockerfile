@@ -37,11 +37,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source (minimal build context)
+# NOTE: must mirror every path dependency / workspace member used by
+# Cargo.toml, or `cargo build` fails with "failed to read ... Cargo.toml":
+# - codegraph-types/: used by code-graph + code-graph/parsers/*
+#   (path = "../codegraph-types" / "../../../codegraph-types")
+# - vendor/maloca-core/: used by root crate (maloca-core path dep)
 COPY Cargo.toml Cargo.lock ./
 COPY benches/ benches/
 COPY src/ src/
 COPY code-graph/ code-graph/
+COPY codegraph-types/ codegraph-types/
 COPY crates/ crates/
+COPY vendor/maloca-core/ vendor/maloca-core/
 COPY panel-ui/src-tauri/ panel-ui/src-tauri/
 
 # Build only xavier binary (skip bench, gui, tui for smaller image)
