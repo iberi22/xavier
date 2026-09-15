@@ -15,9 +15,18 @@ dist
 *.so
 *.a
 
-# Node modules (frontend builds happen inside container)
+# Node modules & frontend artifacts
 node_modules
 panel-ui/node_modules
+panel-ui/build
+panel-ui/dist
+
+# SQLite caches & database files
+*.db
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+.xavier
 
 # Test & benchmark results (not needed in container)
 tests
