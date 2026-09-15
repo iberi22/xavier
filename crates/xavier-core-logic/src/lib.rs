@@ -1,4 +1,4 @@
-//! Xavier Core Logic — Pure domain crate for BM25, RRF, retrieval scoring, and snippet processing.
+//! Xavier Core Logic — Pure domain crate for BM25, RRF, retrieval scoring, snippet processing, and token compression.
 //!
 //! Free of I/O, database dependencies, or async runtimes. WASM-ready.
 
@@ -6,6 +6,7 @@ pub mod bm25;
 pub mod rrf;
 pub mod scoring;
 pub mod snippet;
+pub mod token_counter;
 pub mod types;
 
 pub use bm25::{score_documents, Bm25Params};
@@ -15,4 +16,8 @@ pub use scoring::{
     score_single_working, WorkingScoringParams,
 };
 pub use snippet::{clip_chars, extract, Excerpt, SnippetBudget};
+pub use token_counter::{
+    collapse_repeated_ast_snippets, compress_and_calculate_stats, estimate_tokens_utf8,
+    CompressionStats,
+};
 pub use types::*;
