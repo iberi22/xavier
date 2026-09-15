@@ -135,6 +135,15 @@ Fixed it.
 
     #[tokio::test]
     async fn test_generate_requires_config() {
+        // Hermetic: point the local LLM at a closed port so the call fails fast
+        // regardless of the machine's live setup. (Regression: with a working
+        // local LLM at 127.0.0.1:11435 this test observed Ok and failed, while
+        // CI — no LLM at all — passed. The test must not depend on the host.)
+        let saved_url = std::env::var("XAVIER_LOCAL_LLM_URL").ok();
+        let saved_flavor = std::env::var("XAVIER_API_FLAVOR").ok();
+        std::env::set_var("XAVIER_LOCAL_LLM_URL", "http://127.0.0.1:9/v1");
+        std::env::set_var("XAVIER_API_FLAVOR", "openai-compatible");
+
         let generator = ChronicleGenerator::new();
         let input = ChronicleInput {
             date: "2023-10-27".to_string(),
@@ -145,8 +154,17 @@ Fixed it.
             raw_data: "test".to_string(),
         };
 
-        // This should fail because no LLM is configured in the test environment
         let result = generator.generate(input).await;
-        assert!(result.is_err());
+
+        match saved_url {
+            Some(value) => std::env::set_var("XAVIER_LOCAL_LLM_URL", value),
+            None => std::env::remove_var("XAVIER_LOCAL_LLM_URL"),
+        }
+        match saved_flavor {
+            Some(value) => std::env::set_var("XAVIER_API_FLAVOR", value),
+            None => std::env::remove_var("XAVIER_API_FLAVOR"),
+        }
+
+        assert!(result.is_err(), "expected an error with no reachable LLM");
     }
 }

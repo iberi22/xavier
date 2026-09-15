@@ -896,6 +896,7 @@ pub async fn handle_memory_update(
                         serde_json::to_string_pretty(&metadata)?
                     ),
                 })],
+                structured_content: None,
                 is_error: Some(false),
             })?)
         }
@@ -938,6 +939,7 @@ pub async fn handle_memory_update(
                     content_type: "text".to_string(),
                     text: format!("Id: {}\nPath: {}\nRevision: {}\nContent: {}\nContext: {:?}\nTags: {:?}\nMetadata: {}", record_id, path, revision, content, gestalt_context, tags, serde_json::to_string_pretty(&metadata)?),
                 })],
+                structured_content: None,
                 is_error: Some(false),
             })?)
         }
