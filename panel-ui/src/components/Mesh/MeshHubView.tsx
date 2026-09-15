@@ -102,6 +102,118 @@ const MOCK_PEER_HEALTH: PeerHealthInfo[] = [
  *         and ALL message items because they were rendered inline inside a .map().
  * 📊 Impact: Prevents O(N) re-renders of all chat messages during typing interaction.
  */
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted proposal row into MeshHubProposalItem and wrapped in React.memo()
+ * 🎯 Why: When user typed in the chat input, chatMessage changed causing full re-render of MeshHubView
+ *         and ALL proposal items because they were rendered inline inside a .map().
+ * 📊 Impact: Prevents O(N) re-renders of all proposal messages during typing interaction.
+ */
+const MeshHubProposalItem = React.memo(function MeshHubProposalItem({
+  prop,
+}: {
+  prop: GovernanceProposal;
+}) {
+  return (
+    <div
+      className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-4"
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-mono text-[#39ff14] uppercase tracking-wider">
+          {prop.id}
+        </span>
+        <span
+          className={`text-[10px] px-2 py-0.5 rounded-full font-mono uppercase ${
+            prop.status === "active"
+              ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+              : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+          }`}
+        >
+          {prop.status}
+        </span>
+      </div>
+      <h3 className="text-sm font-medium text-white">
+        {prop.title}
+      </h3>
+      <div className="flex items-center justify-between text-xs text-white/50 border-t border-white/5 pt-3">
+        <span>Proposer: {prop.proposer}</span>
+        <span>Votes: {prop.votesFor} For / {prop.votesAgainst} Against</span>
+      </div>
+    </div>
+  );
+});
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted peer health row into PeerHealthItem and wrapped in React.memo()
+ * 🎯 Why: When user typed in the chat input, chatMessage changed causing full re-render of MeshHubView
+ *         and ALL health items because they were rendered inline inside a .map().
+ * 📊 Impact: Prevents O(N) re-renders of all health items during typing interaction.
+ */
+const PeerHealthItem = React.memo(function PeerHealthItem({
+  peer,
+}: {
+  peer: PeerHealthInfo;
+}) {
+  return (
+    <div
+      className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+    >
+      <div className="flex items-center gap-3">
+        <Heart
+          className={`w-5 h-5 ${
+            peer.status === "Healthy"
+              ? "text-emerald-400"
+              : "text-amber-400 animate-bounce"
+          }`}
+          aria-hidden="true"
+        />
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-white">
+              {peer.alias}
+            </span>
+            <code className="text-[10px] text-white/40 font-mono">
+              {peer.nodeId}
+            </code>
+          </div>
+          <p className="text-xs text-white/40 mt-0.5">
+            Last seen: {peer.lastSeen}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4 text-xs">
+        <div className="text-right">
+          <span className="text-[10px] uppercase text-white/40 block font-mono">
+            Sync Lag
+          </span>
+          <span className="font-mono text-white/80">
+            {peer.syncLagSecs}s
+          </span>
+        </div>
+
+        <div className="text-right">
+          <span className="text-[10px] uppercase text-white/40 block font-mono">
+            Auto-Repair Decision
+          </span>
+          <span
+            className={`font-mono text-[11px] px-2 py-0.5 rounded ${
+              peer.status === "Healthy"
+                ? "bg-emerald-500/20 text-emerald-300"
+                : "bg-amber-500/20 text-amber-300"
+            }`}
+          >
+            {peer.status}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 const ChatMessageItem = React.memo(function ChatMessageItem({
   msg,
 }: {
@@ -400,32 +512,7 @@ export const MeshHubView: React.FC<MeshHubViewProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {MOCK_PROPOSALS.map((prop) => (
-                <div
-                  key={prop.id}
-                  className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-mono text-[#39ff14] uppercase tracking-wider">
-                      {prop.id}
-                    </span>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-mono uppercase ${
-                        prop.status === "active"
-                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                          : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                      }`}
-                    >
-                      {prop.status}
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-medium text-white">
-                    {prop.title}
-                  </h3>
-                  <div className="flex items-center justify-between text-xs text-white/50 border-t border-white/5 pt-3">
-                    <span>Proposer: {prop.proposer}</span>
-                    <span>Votes: {prop.votesFor} For / {prop.votesAgainst} Against</span>
-                  </div>
-                </div>
+                <MeshHubProposalItem key={prop.id} prop={prop} />
               ))}
             </div>
           </div>
@@ -496,60 +583,7 @@ export const MeshHubView: React.FC<MeshHubViewProps> = ({
 
             <div className="space-y-3">
               {MOCK_PEER_HEALTH.map((peer) => (
-                <div
-                  key={peer.nodeId}
-                  className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <Heart
-                      className={`w-5 h-5 ${
-                        peer.status === "Healthy"
-                          ? "text-emerald-400"
-                          : "text-amber-400 animate-bounce"
-                      }`}
-                      aria-hidden="true"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-white">
-                          {peer.alias}
-                        </span>
-                        <code className="text-[10px] text-white/40 font-mono">
-                          {peer.nodeId}
-                        </code>
-                      </div>
-                      <p className="text-xs text-white/40 mt-0.5">
-                        Last seen: {peer.lastSeen}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 text-xs">
-                    <div className="text-right">
-                      <span className="text-[10px] uppercase text-white/40 block font-mono">
-                        Sync Lag
-                      </span>
-                      <span className="font-mono text-white/80">
-                        {peer.syncLagSecs}s
-                      </span>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="text-[10px] uppercase text-white/40 block font-mono">
-                        Auto-Repair Decision
-                      </span>
-                      <span
-                        className={`font-mono text-[11px] px-2 py-0.5 rounded ${
-                          peer.status === "Healthy"
-                            ? "bg-emerald-500/20 text-emerald-300"
-                            : "bg-amber-500/20 text-amber-300"
-                        }`}
-                      >
-                        {peer.status}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                <PeerHealthItem key={peer.nodeId} peer={peer} />
               ))}
             </div>
           </div>

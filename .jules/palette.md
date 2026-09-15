@@ -19,3 +19,6 @@
 ## 2026-09-13 - Modal Decomposition & Consolidated Sidebar UX
 **Learning:** Monolithic status bars with nested inline modals create duplicate navigation paths and layout clutter. Extracting modal overlays into dedicated components (`NodeConnectionModal`, `SyncStatusPopover`) and consolidating multi-level settings into a single left sidebar improves readability, keyboard accessibility, and navigation predictability.
 **Action:** When refactoring complex control panels, replace top duplicate pill strips with a unified left sidebar and isolate dialogs into `src/components/modals/`.
+## 2026-09-14 - [Disabled states for control buttons in InputArea]
+**Learning:** During loading states (`isLoading`), control buttons like 'Open Control Node', 'Add project codebase', and 'Record audio' in `InputArea.tsx` should be disabled to prevent interactions while an operation is in progress. Adding `disabled:opacity-50`, `disabled:cursor-not-allowed`, and nullifying hover/active states (e.g., `disabled:hover:bg-transparent`, `disabled:hover:scale-100`) provides necessary visual feedback.
+**Action:** When working on UI components that dispatch asynchronous actions, thoroughly ensure that all adjacent interactive elements logically affected by the async state reflect their `disabled` status clearly in both DOM attributes and Tailwind classes.
