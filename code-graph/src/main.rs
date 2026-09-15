@@ -419,6 +419,24 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Re-entry guard & max recursion depth check to prevent fork bombs
+    let active = std::env::var("XAVIER_CODEGRAPH_ACTIVE").unwrap_or_default();
+    let depth: u32 = std::env::var("XAVIER_CODEGRAPH_DEPTH")
+        .ok()
+        .and_then(|d| d.parse().ok())
+        .unwrap_or(0);
+
+    if active == "1" || depth >= 2 {
+        eprintln!(
+            "WARN: Recursive codegraph execution detected (XAVIER_CODEGRAPH_ACTIVE={}, depth={}). Aborting to prevent fork bomb.",
+            active, depth
+        );
+        return Ok(());
+    }
+
+    std::env::set_var("XAVIER_CODEGRAPH_ACTIVE", "1");
+    std::env::set_var("XAVIER_CODEGRAPH_DEPTH", (depth + 1).to_string());
+
     let cli = Cli::parse();
 
     let db_path = cli

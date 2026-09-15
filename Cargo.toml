@@ -231,6 +231,10 @@ path = "tests/kernel_mcp_test.rs"
 name = "messaging_status"
 path = "tests/messaging_status.rs"
 
+[[test]]
+name = "codegraph_recursion_guard_test"
+path = "tests/codegraph_recursion_guard_test.rs"
+
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 code-graph = { path = "./code-graph" }
