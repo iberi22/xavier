@@ -405,7 +405,8 @@ pub fn resolve_metadata(
                 .and_then(|v| v.as_str())
                 .map(ClearanceLevel::parse)
         })
-        .unwrap_or(ClearanceLevel::TopSecret);
+        // Política: sin nivel declarado ⇒ default_clearance() (Internal por defecto).
+        .unwrap_or_else(crate::security::clearance::default_clearance);
 
     Ok(ResolvedMemoryMetadata {
         kind,
@@ -932,5 +933,24 @@ mod tests {
             .expect("test assertion");
         assert!(DateTime::parse_from_rfc3339(recorded_at).is_ok());
         assert_ne!(recorded_at, "not-a-date");
+    }
+
+    // ── Política de nivel por defecto (F2.1) ────────────────────────────────
+
+    #[test]
+    fn resolve_metadata_defaults_clearance_to_internal() {
+        // Sin nivel declarado ⇒ política (`Internal`), NO el viejo `TopSecret`.
+        let resolved =
+            resolve_metadata("docs/nota", &json!({}), "ws-1", None).expect("test assertion");
+        assert_eq!(
+            resolved.clearance,
+            crate::security::clearance::default_clearance()
+        );
+        assert_eq!(resolved.clearance, ClearanceLevel::Internal);
+
+        // Un nivel explícito se respeta.
+        let explicit = resolve_metadata("docs/nota", &json!({"clearance": "secret"}), "ws-1", None)
+            .expect("test assertion");
+        assert_eq!(explicit.clearance, ClearanceLevel::Secret);
     }
 }

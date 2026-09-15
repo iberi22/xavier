@@ -1975,7 +1975,7 @@
       "name": "Classified clearance bound to identity (internal lab plans)",
       "category": "security",
       "status": "planned",
-      "progress_pct": 40,
+      "progress_pct": 55,
       "description": "Clearance derivado de la identidad autenticada (no del header X-Clearance) y aplicado como frontera de seguridad; base para los planes internos top-secret del laboratorio (10%) con lectura por nodo/grupo.",
       "steps": [
         "F1: nivel desde Claims (role_clearance) + opt-in de header (XAVIER_CLEARANCE_TRUST_HEADER) + middleware cableado tras auth",
@@ -1993,6 +1993,12 @@
         "tests": "cargo test --release --lib --features ci-safe -- clearance → 21 passed / 0 failed (EXIT=0)",
         "clippy": "cargo clippy --all-targets --features ci-safe -- -D warnings → EXIT=0",
         "fmt": "rustfmt --edition 2021 --check → sin diffs"
+      },
+      "f2_1_evidence": {
+        "fmt": "cargo fmt --all -- --check → FMT=OK",
+        "tests": "cargo test --package xavier --lib --features ci-safe -- --test-threads=1 clearance → 25 passed / 0 failed",
+        "tests_parser": "cargo test ... -- parser → 2 passed / 0 failed",
+        "clippy": "cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings → clean (52.84s)"
       }
     }
   },

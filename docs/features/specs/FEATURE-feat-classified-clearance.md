@@ -43,10 +43,27 @@ auditoría), pero **no es una frontera de seguridad**:
 
 ### Fase 2 — Enforzar en las lecturas (pendiente)
 
-- Memoria/búsqueda: intersectar `filters.clearances` con el nivel del solicitante; redactar en lugar de
-  ocultar de forma inconsistente.
-- Corregir el default `TopSecret` → política por workspace (`default_clearance`, default `Internal`).
-- `GET /v1/memories/*` y `POST /memory/search` con redacción por nivel.
+#### F2.1 — Política de niveles y parseo direccional ✅ (implementado)
+
+- **Default corregido:** material sin nivel declarado ⇒ `default_clearance()` → **`Internal`**
+  (antes `TopSecret`, que invertía la política y habría ocultado todo al activar el filtro).
+  Override: `XAVIER_DEFAULT_CLEARANCE` (valor desconocido ⇒ `TopSecret`).
+- **Parseo direccional** (un solo matcher, dos políticas):
+  `parse_requester_level()` — desconocido ⇒ `Unclassified` (nunca otorga);
+  `parse_required_level()` — desconocido ⇒ `TopSecret` (nunca degrada).
+  Usados en el middleware y en la política de config; `ClearanceLevel::from(&str)` (fail-open) queda
+  fuera del camino de decisión.
+- **Criterios de aceptación:** `requester_parser_never_grants_on_unknown`,
+  `required_parser_fails_closed_on_unknown`, `default_clearance_is_internal_unless_overridden`,
+  `resolve_metadata_defaults_clearance_to_internal`.
+
+#### F2.2 — Enforcement en búsqueda/lectura (pendiente)
+
+- Memoria/búsqueda: intersectar el nivel del solicitante (extensiones) con el de cada entrada; redactar
+  en lugar de filtrar en silencio cuando el nivel sea insuficiente.
+- `GET /v1/memories/*` y `POST /memory/search` con el nivel derivado de la identidad (F1).
+- Migración: entradas existentes con el viejo default `TopSecret` → política nueva, con informe de
+  cuántas cambian.
 
 ### Fase 3 — Segmentos internos del laboratorio (pendiente)
 

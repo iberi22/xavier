@@ -5,7 +5,10 @@
 //! `ClearanceEnforcer` and inserts it into request extensions for downstream handlers.
 
 use crate::security::auth::Claims;
-use crate::security::clearance::{can_access, role_clearance, ClearanceEnforcer, ClearanceLevel};
+use crate::security::clearance::{
+    can_access, parse_requester_level, parse_required_level, role_clearance, ClearanceEnforcer,
+    ClearanceLevel,
+};
 use axum::{
     body::Body,
     http::{HeaderMap, Request, StatusCode},
@@ -56,7 +59,7 @@ pub fn resolve_requester_clearance(headers: &HeaderMap, claims: Option<&Claims>)
     if trusts_clearance_header() {
         if let Some(val) = headers.get(X_CLEARANCE_HEADER) {
             if let Ok(s) = val.to_str() {
-                return ClearanceLevel::from(s);
+                return parse_requester_level(s);
             }
         }
     }
@@ -87,7 +90,8 @@ pub async fn clearance_middleware(mut req: Request<Body>, next: Next) -> Respons
     // Enforce optional X-Required-Clearance check
     if let Some(required_hdr) = req.headers().get(X_REQUIRED_CLEARANCE_HEADER) {
         if let Ok(req_str) = required_hdr.to_str() {
-            let required_level = ClearanceLevel::from(req_str);
+            // Exigencia: valor desconocido restringe (fail-closed).
+            let required_level = parse_required_level(req_str);
             if !can_access(requester_level, required_level) {
                 return (
                     StatusCode::FORBIDDEN,
