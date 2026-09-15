@@ -76,9 +76,81 @@ async fn emit_operation_event(memory: &QmdMemory, operation: &str, path: &str, m
     tracing::info!("Auto-captured memory event: {:?}", event);
 }
 
+/// Helper to identify if a path/metadata represents a Gestalt bus execution event.
+pub fn is_gestalt_bus_execution(path: &str, metadata: &Value) -> bool {
+    path.starts_with("gestalt/bus/")
+        || path.starts_with("gestalt/bus/executions/")
+        || metadata
+            .get("gestalt_context")
+            .and_then(|v| v.as_str())
+            .is_some_and(|c| c == "bus" || c == "executions")
+        || metadata
+            .get("scope")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| s == "bus" || s == "executions")
+        || (metadata
+            .get("source_app")
+            .and_then(|v| v.as_str())
+            .is_some_and(|app| app == "gestalt")
+            && metadata
+                .get("source_type")
+                .and_then(|v| v.as_str())
+                .is_some_and(|st| st == "bus" || st == "executions"))
+}
+
+/// Enforces rate-limiting, deduplication, and max count capping for Gestalt bus execution events.
+/// Returns Ok(false) if the event was deduplicated/skipped, or Ok(true) if it should be saved.
+pub async fn bound_gestalt_bus_executions(
+    memory: &QmdMemory,
+    new_path: &str,
+    new_content: &str,
+) -> Result<bool> {
+    let max_execs = std::env::var("XAVIER_GESTALT_BUS_MAX_EXECUTIONS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(200);
+
+    let docs = memory.docs.read().await;
+    let mut bus_docs: Vec<_> = docs
+        .iter()
+        .filter(|d| is_gestalt_bus_execution(&d.path, &d.metadata))
+        .cloned()
+        .collect();
+    drop(docs);
+
+    // 1. Deduplication check: if identical content already exists in gestalt/bus/*, skip saving
+    for doc in &bus_docs {
+        if doc.content == new_content {
+            tracing::debug!(
+                "Deduplicated identical Gestalt bus execution event for path: {}",
+                new_path
+            );
+            return Ok(false);
+        }
+    }
+
+    // 2. Count bounding check: if count >= max_execs, prune oldest entries to make room
+    if bus_docs.len() >= max_execs {
+        bus_docs.sort_by(|a, b| a.path.cmp(&b.path));
+        let num_to_remove = bus_docs.len().saturating_sub(max_execs.saturating_sub(1));
+        for doc in bus_docs.iter().take(num_to_remove) {
+            let id_or_path = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+            let _ = delete(memory, &id_or_path).await;
+        }
+    }
+
+    Ok(true)
+}
+
 /// Add.
 pub async fn add(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
     emit_operation_event(memory, "add", &doc.path, &doc.metadata).await;
+
+    if is_gestalt_bus_execution(&doc.path, &doc.metadata) {
+        if !bound_gestalt_bus_executions(memory, &doc.path, &doc.content).await? {
+            return Ok(());
+        }
+    }
 
     let canonical_path = doc.path.starts_with("stability/") || doc.path.starts_with("features/");
     let mut updated_in_memory = false;
@@ -229,6 +301,13 @@ pub async fn add_document_typed_with_embedding(
         typed.as_ref(),
     )?;
     let metadata = normalize_locomo_metadata(&path, metadata);
+
+    if is_gestalt_bus_execution(&path, &metadata) {
+        if !bound_gestalt_bus_executions(memory, &path, &content).await? {
+            return Ok(id);
+        }
+    }
+
     let variants = expand_document_variants(&path, &content, &metadata);
     let is_locomo_benchmark = metadata
         .get("benchmark")

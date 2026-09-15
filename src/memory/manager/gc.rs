@@ -95,7 +95,10 @@ impl MemoryManager {
             stats.stale_metadata_cleaned += before - created.len();
         }
 
-        // Pass 3: Backend specific cleanup (orphaned vectors)
+        // Pass 3: Prune expired Gestalt bus execution events
+        let _ = self.prune_expired_bus_events().await;
+
+        // Pass 4: Backend specific cleanup (orphaned vectors)
         if let Some(store) = self.memory.store().await {
             if let Ok(orphans) = store.cleanup_orphans().await {
                 stats.orphaned_vectors_cleaned = orphans;

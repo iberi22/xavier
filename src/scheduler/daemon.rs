@@ -169,6 +169,7 @@ impl MemoryDaemon {
         });
 
         // Autonomous Self-Management Cron loop (Fase P3 & P4)
+        let manager_self = self.manager.clone();
         tokio::spawn(async move {
             let sleep_minutes = std::env::var("XAVIER_CRON_SLEEP_MINUTES")
                 .ok()
@@ -181,6 +182,9 @@ impl MemoryDaemon {
             loop {
                 sleep(Duration::from_secs(sleep_minutes * 60)).await;
                 info!("MemoryDaemon: Running scheduled self-management checks...");
+                if let Err(e) = manager_self.prune_expired_bus_events().await {
+                    error!("MemoryDaemon: Scheduled bus event pruning failed: {}", e);
+                }
                 if let Err(e) = run_self_manage_checks().await {
                     error!(
                         "MemoryDaemon: Scheduled self-management check failed: {}",
