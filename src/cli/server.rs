@@ -1713,7 +1713,7 @@ pub async fn start_http_server(
                     result.ollama.models.join(", ")
                 );
 
-                let default_model = "qwen3-coder";
+                let default_model = "qwen2.5-coder:7b";
                 if !result
                     .ollama
                     .models

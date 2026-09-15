@@ -91,3 +91,9 @@ data/*.db-shm
 data/*.db-wal
 data/*.sqlite3-shm
 data/*.sqlite3-wal
+
+# Agent scratch / build artifacts at repo root (never commit)
+/*.o
+/*.rcgu.*
+/patch_*.py
+/patch_*.rs
