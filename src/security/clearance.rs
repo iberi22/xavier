@@ -92,6 +92,87 @@ pub fn filter_by_clearance(
         .collect()
 }
 
+/// Todos los niveles conocidos, de menor a mayor privilegio.
+pub const ALL_LEVELS: [ClearanceLevel; 6] = [
+    ClearanceLevel::Unclassified,
+    ClearanceLevel::Internal,
+    ClearanceLevel::Restricted,
+    ClearanceLevel::Confidential,
+    ClearanceLevel::Secret,
+    ClearanceLevel::TopSecret,
+];
+
+/// Niveles que un solicitante puede leer (incluye el suyo).
+pub fn readable_levels(requester: ClearanceLevel) -> Vec<ClearanceLevel> {
+    ALL_LEVELS
+        .iter()
+        .copied()
+        .filter(|level| can_access(requester, *level))
+        .collect()
+}
+
+/// Nivel declarado por una entrada en su metadata.
+///
+/// Direccionalidad (F2.1): un valor **desconocido restringe** ⇒ `TopSecret`
+/// (`parse_required_level`). Un typo en la metadata ("TPOSECRET") no puede
+/// degradar material clasificado a público; el fallo siempre cierra.
+pub fn level_from_metadata(metadata: &serde_json::Value) -> ClearanceLevel {
+    metadata
+        .get("clearance")
+        .and_then(|v| v.as_str())
+        .map(parse_required_level)
+        .unwrap_or_else(default_clearance)
+}
+
+/// Intersección del filtro `clearances` pedido por el cliente con lo que el
+/// solicitante puede leer.
+///
+/// Sin pedido explícito ⇒ techo del solicitante. Un pedido con niveles por
+/// encima del techo se recorta (nunca se eleva el privilegio); un pedido en el
+/// que nada es legible ⇒ conjunto vacío (no se devuelve nada).
+pub fn intersect_clearance_filter(
+    requested: Option<&[ClearanceLevel]>,
+    requester: ClearanceLevel,
+) -> Vec<ClearanceLevel> {
+    let allowed = readable_levels(requester);
+    match requested {
+        None => allowed,
+        Some(levels) => {
+            let mut out: Vec<ClearanceLevel> = levels
+                .iter()
+                .copied()
+                .filter(|level| allowed.contains(level))
+                .collect();
+            out.sort();
+            out.dedup();
+            out
+        }
+    }
+}
+
+/// Aplica el techo de lectura a un lote de resultados.
+///
+/// Devuelve `(visibles, ocultos)`. Los `ocultos` solo se cuentan (telemetría):
+/// **la búsqueda no revela existencia** de material por encima del techo; la
+/// redacción se reserva para la lectura directa por id, donde el id ya actúa
+/// como capacidad.
+pub fn split_by_clearance<T>(
+    requester: ClearanceLevel,
+    items: Vec<T>,
+    level_of: impl Fn(&T) -> ClearanceLevel,
+) -> (Vec<T>, usize) {
+    let mut visible = Vec::with_capacity(items.len());
+    let mut hidden = 0usize;
+    for item in items {
+        if can_access(requester, level_of(&item)) {
+            visible.push(item);
+        } else {
+            hidden += 1;
+        }
+    }
+    (visible, hidden)
+}
+
 /// Clearance enforcer middleware — wraps read paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClearanceEnforcer {
@@ -127,6 +208,84 @@ mod tests {
         assert!(ClearanceLevel::Restricted < ClearanceLevel::Confidential);
         assert!(ClearanceLevel::Confidential < ClearanceLevel::Secret);
         assert!(ClearanceLevel::Secret < ClearanceLevel::TopSecret);
+    }
+
+    // ── F2.2: techo de lectura e intersección de filtros ─────────────────────
+
+    #[test]
+    fn test_readable_levels_capped_by_requester() {
+        assert_eq!(
+            readable_levels(ClearanceLevel::Internal),
+            vec![ClearanceLevel::Unclassified, ClearanceLevel::Internal]
+        );
+        assert_eq!(readable_levels(ClearanceLevel::TopSecret).len(), 6);
+        assert_eq!(
+            readable_levels(ClearanceLevel::Unclassified),
+            vec![ClearanceLevel::Unclassified]
+        );
+    }
+
+    #[test]
+    fn test_intersect_filter_never_elevates() {
+        // Operator (Secret) pide Internal + TopSecret: TopSecret se recorta.
+        let pedido = vec![ClearanceLevel::Internal, ClearanceLevel::TopSecret];
+        assert_eq!(
+            intersect_clearance_filter(Some(&pedido), ClearanceLevel::Secret),
+            vec![ClearanceLevel::Internal]
+        );
+        // Sin pedido ⇒ techo del solicitante completo.
+        assert_eq!(
+            intersect_clearance_filter(None, ClearanceLevel::Confidential).len(),
+            4
+        );
+        // Todo por encima del techo ⇒ vacío, no elevación.
+        let solo_alto = vec![ClearanceLevel::TopSecret];
+        assert!(intersect_clearance_filter(Some(&solo_alto), ClearanceLevel::Internal).is_empty());
+    }
+
+    #[test]
+    fn test_level_from_metadata_fail_closed() {
+        let typo = serde_json::json!({ "clearance": "tposedcret" });
+        assert_eq!(level_from_metadata(&typo), ClearanceLevel::TopSecret);
+
+        let explicito = serde_json::json!({ "clearance": "secret" });
+        assert_eq!(level_from_metadata(&explicito), ClearanceLevel::Secret);
+
+        let sin_nivel = serde_json::json!({ "kind": "document" });
+        assert_eq!(level_from_metadata(&sin_nivel), default_clearance());
+
+        let no_string = serde_json::json!({ "clearance": 4 });
+        assert_eq!(level_from_metadata(&no_string), default_clearance());
+    }
+
+    #[test]
+    fn test_split_by_clearance_hides_above_ceiling() {
+        let docs = vec![
+            (
+                "publico".to_string(),
+                ClearanceLevel::Internal,
+                "contenido normal".to_string(),
+            ),
+            (
+                "segmento-10".to_string(),
+                ClearanceLevel::Secret,
+                "PLAN INTERNO LAB: reparto por segmentos".to_string(),
+            ),
+        ];
+        let (visibles, ocultos) =
+            split_by_clearance(ClearanceLevel::Confidential, docs, |(_, lvl, _)| *lvl);
+        assert_eq!(visibles.len(), 1);
+        assert_eq!(ocultos, 1);
+        assert_eq!(visibles[0].0, "publico");
+
+        // Un Admin (TopSecret) sí ve los dos.
+        let docs2 = vec![
+            ("a".to_string(), ClearanceLevel::Secret, "x".to_string()),
+            ("b".to_string(), ClearanceLevel::TopSecret, "y".to_string()),
+        ];
+        let (v2, h2) = split_by_clearance(ClearanceLevel::TopSecret, docs2, |(_, lvl, _)| *lvl);
+        assert_eq!(v2.len(), 2);
+        assert_eq!(h2, 0);
     }
 
     #[test]

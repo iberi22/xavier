@@ -1974,8 +1974,8 @@
       "id": "feat-classified-clearance",
       "name": "Classified clearance bound to identity (internal lab plans)",
       "category": "security",
-      "status": "planned",
-      "progress_pct": 55,
+      "status": "in_progress",
+      "progress_pct": 78,
       "description": "Clearance derivado de la identidad autenticada (no del header X-Clearance) y aplicado como frontera de seguridad; base para los planes internos top-secret del laboratorio (10%) con lectura por nodo/grupo.",
       "steps": [
         "F1: nivel desde Claims (role_clearance) + opt-in de header (XAVIER_CLEARANCE_TRUST_HEADER) + middleware cableado tras auth",
@@ -1999,6 +1999,47 @@
         "tests": "cargo test --package xavier --lib --features ci-safe -- --test-threads=1 clearance → 25 passed / 0 failed",
         "tests_parser": "cargo test ... -- parser → 2 passed / 0 failed",
         "clippy": "cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings → clean (52.84s)"
+      },
+      "phases": {
+        "F0_plan": {
+          "status": "done"
+        },
+        "F1_nivel_por_identidad": {
+          "status": "done",
+          "commit": "f592b353"
+        },
+        "F2.1_politica_y_parseo_direccional": {
+          "status": "done",
+          "commit": "a934ee9b"
+        },
+        "F2.2_techo_de_lectura": {
+          "status": "done",
+          "criterios": [
+            "readable_levels / level_from_metadata (fail-closed) / intersect_clearance_filter / split_by_clearance",
+            "POST /memory/search (cli::handlers::memory::search_handler) con techo + hidden_by_clearance",
+            "POST /v1/memories/search con techo sobre documentos",
+            "handlers del adaptador tambien enforzados (defensa en profundidad)",
+            "bench benches/api_v1.rs actualizado a la firma nueva"
+          ],
+          "evidencia": {
+            "fmt": "cargo fmt --all -- --check => OK",
+            "tests": "cargo test --package xavier --lib --features ci-safe -- --test-threads=1 clearance => 29 passed / 0 failed",
+            "tests_schema": "22 passed / 0 failed",
+            "clippy": "cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings => exit 0 (5.52s)",
+            "log": "/tmp/swal_verify/f22_gate.log + f22_clippy.log"
+          }
+        },
+        "F3_segmentos_y_auditoria": {
+          "status": "pending"
+        },
+        "F4_e2e_y_promocion": {
+          "status": "pending"
+        },
+        "deuda_declarada": [
+          "exigencia de nivel por config de ruta (no header X-Required-Clearance)",
+          "AclManager/GroupManager necesitan store persistente para segmentos",
+          "migracion: informar cuantas entradas cambian de politica por el default nuevo"
+        ]
       }
     }
   },

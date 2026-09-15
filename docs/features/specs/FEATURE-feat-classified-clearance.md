@@ -1,6 +1,6 @@
 # FEATURE: Clasificación por identidad (clearance atado a la identidad + planes internos del laboratorio)
 
-**Status:** `planned` → **Fase 1 en curso** | **Tier:** núcleo (seguridad/gobernanza) | **Owner:** Belal + Hermes
+**Status:** F1 ✅ · F2.1 ✅ · F2.2 ✅ · F3 pendiente · F4 pendiente | **Tier:** núcleo (seguridad/gobernanza) | **Owner:** Belal + Hermes
 **Última actualización:** 2026-09-15
 
 ## Problema
@@ -57,13 +57,46 @@ auditoría), pero **no es una frontera de seguridad**:
   `required_parser_fails_closed_on_unknown`, `default_clearance_is_internal_unless_overridden`,
   `resolve_metadata_defaults_clearance_to_internal`.
 
-#### F2.2 — Enforcement en búsqueda/lectura (pendiente)
+#### F2.2 — Techo de lectura en búsqueda/lectura ✅ (implementado)
 
-- Memoria/búsqueda: intersectar el nivel del solicitante (extensiones) con el de cada entrada; redactar
-  en lugar de filtrar en silencio cuando el nivel sea insuficiente.
-- `GET /v1/memories/*` y `POST /memory/search` con el nivel derivado de la identidad (F1).
-- Migración: entradas existentes con el viejo default `TopSecret` → política nueva, con informe de
-  cuántas cambian.
+**Helpers (`src/security/clearance.rs`):**
+
+| Función | Semántica |
+|---|---|
+| `readable_levels(requester)` | niveles que el solicitante puede leer (≤ su nivel) |
+| `level_from_metadata(metadata)` | nivel declarado de una entrada; **fail-closed** (typo ⇒ `TopSecret`) |
+| `intersect_clearance_filter(pedido, requester)` | recorta el filtro del cliente a su techo; nunca eleva |
+| `split_by_clearance(requester, items, level_of)` | devuelve `(visibles, ocultos)`; los ocultos solo se cuentan |
+
+**Rutas enforzadas:**
+
+| Ruta | Handler vivo | Enforcement |
+|---|---|---|
+| `POST /memory/search` | `cli::handlers::memory::search_handler` | techo + intersección del filtro + `hidden_by_clearance` |
+| `POST /v1/memories/search` | `server::v1_api::v1_memories_search` | techo sobre los documentos devueltos |
+| `GET /v1/documents/{id}` | `server::f12_routes::get_document_handler` | redacción por nivel (F1) |
+
+**Semántica elegida (y por qué):**
+
+- **Búsqueda ⇒ exclusión**: el material por encima del techo no se lista. Devolverlo redactado
+  revelaría igualmente la existencia y la estructura de los planes internos. El conteo
+  `hidden_by_clearance` permite auditar sin revelar cuáles.
+- **Lectura directa por id ⇒ redacción**: el id ya actúa como capacidad; se devuelve el documento
+  con el contenido redactado (`[REDACTED: requires SECRET]`).
+- **Sin identidad** (ruta sin el middleware) el techo es `default_clearance()` (`Internal`), nunca un
+  nivel elevado y coherente con el default de ingesta. En modo abierto las `Claims` se insertan con
+  rol `User` (⇒ `Confidential`), así que el material normal se lee igual que antes.
+
+**Criterios de aceptación (F2.2):** `test_readable_levels_capped_by_requester`,
+`test_intersect_filter_never_elevates`, `test_level_from_metadata_fail_closed`,
+`test_split_by_clearance_hides_above_ceiling` (`cargo test --package xavier --lib --features ci-safe -- clearance`).
+
+**Nota de implementación:** la ruta viva `/memory/search` la sirve `src/cli/handlers/memory.rs`
+(no el módulo de adaptadores, que no está registrado en ningún router). El enforcement se aplicó ahí y
+también en `src/adapters/inbound/http/handlers/memory.rs` + `v1_api.rs` por defensa en profundidad.
+
+**Pendiente de F2.2 (migración):** informar cuántas entradas cambian de política por el default nuevo
+(`TopSecret` → `Internal`). No se reescribe contenido: el nivel efectivo se resuelve en lectura.
 
 ### Fase 3 — Segmentos internos del laboratorio (pendiente)
 

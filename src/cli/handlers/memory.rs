@@ -203,6 +203,7 @@ pub async fn export_pack_handler(
 /// Search handler.
 pub async fn search_handler(
     State(state): State<CliState>,
+    requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
     axum::Json(payload): axum::Json<SearchPayload>,
 ) -> impl axum::response::IntoResponse {
     let sec_result = state
@@ -240,9 +241,25 @@ pub async fn search_handler(
 
     let effective_query = sec_result.effective_input();
     let limit = payload.limit.clamp(1, 100);
-    info!("Search request: query={}, limit={}", effective_query, limit);
+
+    // F2.2: techo de lectura derivado de la identidad (F1). Sin extensión se
+    // asume el default del sistema (`Internal`), nunca un nivel elevado.
+    let requester_level = requester
+        .map(|axum::extract::Extension(level)| level)
+        .unwrap_or_else(xavier::security::clearance::default_clearance);
+    info!(
+        "Search request: query={}, limit={}, clearance={:?}",
+        effective_query, limit, requester_level
+    );
 
     let mut filters = payload.filters.clone().unwrap_or_default();
+    // El cliente no puede pedir por encima de su propio techo.
+    if filters.clearances.is_some() {
+        filters.clearances = Some(xavier::security::clearance::intersect_clearance_filter(
+            filters.clearances.as_deref(),
+            requester_level,
+        ));
+    }
     let zones = payload
         .active_zones
         .clone()
@@ -288,10 +305,20 @@ pub async fn search_handler(
             }
         };
 
+    // F2.2: techo de lectura — el material por encima del nivel del solicitante
+    // no se lista (la búsqueda no revela existencia; solo se cuenta).
+    let (search_results, hidden_by_clearance) =
+        xavier::security::clearance::split_by_clearance(requester_level, search_results, |item| {
+            xavier::security::clearance::level_from_metadata(
+                item.get("metadata").unwrap_or(&serde_json::Value::Null),
+            )
+        });
+
     axum::Json(serde_json::json!({
         "results": search_results,
         "query": payload.query,
         "count": search_results.len(),
+        "hidden_by_clearance": hidden_by_clearance,
         "workspace_id": state.workspace_id,
     }))
 }
