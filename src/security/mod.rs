@@ -377,7 +377,12 @@ impl SecurityService {
         let vault = crate::secrets::vault::HardwareVault::new("xavier");
         let password = match vault.get_secret(&self.config.master_key_name) {
             Ok(p) => p,
-            Err(_) => {
+            Err(e) => {
+                tracing::debug!(
+                    key_name = %self.config.master_key_name,
+                    error = %e,
+                    "Hardware vault key lookup failed or hardware token unavailable, falling back to MasterKeyManager derived key"
+                );
                 // If not found in vault, check MasterKeyManager fallback
                 if let Ok(mkm) = crate::security::encryption_keys::MasterKeyManager::load_or_init()
                 {
@@ -419,7 +424,12 @@ impl SecurityService {
         let vault = crate::secrets::vault::HardwareVault::new("xavier");
         let password = match vault.get_secret(&self.config.master_key_name) {
             Ok(p) => p,
-            Err(_) => {
+            Err(e) => {
+                tracing::debug!(
+                    key_name = %self.config.master_key_name,
+                    error = %e,
+                    "Hardware vault secret missing or unavailable for KEK, falling back to MasterKeyManager derived key"
+                );
                 let mkm = crate::security::encryption_keys::MasterKeyManager::load_or_init()?;
                 let mut key_buf = [0u8; 32];
                 mkm.derive_key(b"xavier-master-key-v1", &mut key_buf)?;

@@ -76,13 +76,22 @@ impl HardwareVault {
 
     /// Store secret.
     pub fn store_secret(&self, key: &str, value: &str) -> SecretResult<()> {
-        // Try keyring first
-        if let Err(e) = self.try_keyring_store(key, value) {
-            tracing::debug!("Keyring store failed, using fallback vault: {e}");
-            self.try_fallback_store(key, value)?;
+        // Try keyring first; in non-interactive/headless environments (e.g. macOS CI, SSH remotes),
+        // OS Keychain access may return permission denied or be unavailable.
+        let keyring_res = self.try_keyring_store(key, value);
+        if let Err(ref e) = keyring_res {
+            tracing::debug!(
+                service = %self.service_name,
+                key = %key,
+                error = %e,
+                "OS Keychain / hardware keystore unavailable or permission denied, using local encrypted fallback vault"
+            );
         }
-        // Always also store in fallback (belt and suspenders)
-        let _ = self.try_fallback_store(key, value);
+
+        let fallback_res = self.try_fallback_store(key, value);
+        if keyring_res.is_err() && fallback_res.is_err() {
+            return Err(fallback_res.unwrap_err());
+        }
         Ok(())
     }
 
@@ -92,7 +101,12 @@ impl HardwareVault {
         match self.try_keyring_get(key) {
             Ok(val) => return Ok(val),
             Err(e) => {
-                tracing::debug!("Keyring get failed, trying fallback vault: {e}");
+                tracing::debug!(
+                    service = %self.service_name,
+                    key = %key,
+                    error = %e,
+                    "OS Keychain / hardware keystore get failed, attempting local encrypted fallback vault"
+                );
             }
         }
         // Fallback to local encrypted vault
@@ -101,7 +115,16 @@ impl HardwareVault {
 
     /// Delete secret.
     pub fn delete_secret(&self, key: &str) -> SecretResult<()> {
-        let keyring_ok = self.try_keyring_delete(key).is_ok();
+        let keyring_res = self.try_keyring_delete(key);
+        if let Err(ref e) = keyring_res {
+            tracing::debug!(
+                service = %self.service_name,
+                key = %key,
+                error = %e,
+                "OS Keychain / hardware keystore delete failed, attempting fallback vault deletion"
+            );
+        }
+        let keyring_ok = keyring_res.is_ok();
         let fallback_ok = self.try_fallback_delete(key).is_ok();
         if keyring_ok || fallback_ok {
             Ok(())
@@ -172,10 +195,15 @@ impl HardwareVault {
         }
         let encrypted_data =
             std::fs::read(&path).map_err(|_| SecretError::NotFound(key.to_string()))?;
-        let decrypted = aes_decrypt(&encrypted_data, &backend.vault_key)
+        let mut decrypted = aes_decrypt(&encrypted_data, &backend.vault_key)
             .map_err(|e| SecretError::ProviderError(format!("Decryption failed: {e}")))?;
-        String::from_utf8(decrypted)
-            .map_err(|_| SecretError::ProviderError("Secret contains invalid UTF-8".to_string()))
+        let result = String::from_utf8(decrypted.clone())
+            .map_err(|_| SecretError::ProviderError("Secret contains invalid UTF-8".to_string()));
+        // Zeroize plaintext decrypted memory buffer to prevent secret leaks
+        for byte in decrypted.iter_mut() {
+            *byte = 0;
+        }
+        result
     }
 
     fn try_fallback_delete(&self, key: &str) -> SecretResult<()> {
@@ -205,6 +233,28 @@ mod tests {
         vault.store_secret(key, value).unwrap();
         assert_eq!(vault.get_secret(key).unwrap(), value);
         vault.delete_secret(key).unwrap();
+        assert!(vault.get_secret(key).is_err());
+    }
+
+    #[test]
+    fn test_hardware_vault_headless_fallback() {
+        let vault = HardwareVault::new("xavier-test-headless-vault");
+        let key = "headless-test-secret-key";
+        let value = "headless-secret-value-12345";
+
+        // Store secret (uses fallback store when keyring unavailable or also populates fallback)
+        vault.try_fallback_store(key, value).expect("Fallback store failed");
+
+        // Verify fallback get
+        let retrieved = vault.try_fallback_get(key).expect("Fallback get failed");
+        assert_eq!(retrieved, value);
+
+        // Verify public get_secret works via keyring or fallback
+        let retrieved_public = vault.get_secret(key).expect("get_secret failed");
+        assert_eq!(retrieved_public, value);
+
+        // Clean up secret
+        vault.delete_secret(key).expect("delete_secret failed");
         assert!(vault.get_secret(key).is_err());
     }
 }
