@@ -180,13 +180,23 @@ pub fn get_sidecar_health_status() -> SidecarStatusReport {
 /// - Precompiled download fallback: fetches binary archive for host target with SHA-256 verification and atomic write into `~/.local/bin/codegraph` or `~/.xavier/plugins/codegraph`.
 pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
     // Guard against runaway recursive builds during tests or subprocess cascades
-    if std::env::var("XAVIER_INSIDE_TEST").is_ok()
+    let is_test = std::env::var("XAVIER_INSIDE_TEST").is_ok()
         || std::env::var("CARGO_PKG_NAME")
             .map(|p| p == "code-graph")
-            .unwrap_or(false)
-    {
+            .unwrap_or(false);
+    let is_active = std::env::var("XAVIER_CODEGRAPH_ACTIVE").map(|v| v == "1").unwrap_or(false);
+    let depth: u32 = std::env::var("XAVIER_CODEGRAPH_DEPTH")
+        .ok()
+        .and_then(|d| d.parse().ok())
+        .unwrap_or(0);
+
+    if is_test || is_active || depth >= 1 {
         if let Some(existing) = resolve_codegraph_binary() {
             return Ok(existing);
+        } else {
+            return Err(anyhow!(
+                "code-graph sidecar binary not found. Automatic cargo build disabled during test or recursive execution to prevent fork bomb. Please build manually using 'cargo build --release -p code-graph --bin code-graph'."
+            ));
         }
     }
 

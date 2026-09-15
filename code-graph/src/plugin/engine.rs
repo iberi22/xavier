@@ -73,7 +73,14 @@ impl PluginEngine for ProcessEngine {
                 .filter(|v| *v > 0)
                 .unwrap_or(30);
 
+            let current_depth: u32 = std::env::var("XAVIER_CODEGRAPH_DEPTH")
+                .ok()
+                .and_then(|d| d.parse().ok())
+                .unwrap_or(0);
+
             let mut child = Command::new(&command)
+                .env("XAVIER_CODEGRAPH_ACTIVE", "1")
+                .env("XAVIER_CODEGRAPH_DEPTH", (current_depth + 1).to_string())
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
