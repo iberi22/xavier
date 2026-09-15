@@ -9,10 +9,13 @@ export default defineConfig({
 	expect: {
 		timeout: 15_000,
 	},
+	retries: process.env.CI ? 2 : 0,
 	fullyParallel: false,
 	reporter: [["list"]],
 	use: {
 		baseURL,
+		actionTimeout: 10_000,
+		viewport: { width: 1280, height: 720 },
 		trace: "on-first-retry",
 		screenshot: "only-on-failure",
 		video: "retain-on-failure",
