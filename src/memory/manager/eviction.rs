@@ -10,6 +10,50 @@ use super::core::MemoryManager;
 use super::types::{ManagementResult, MemoryManagementAction, MemoryPriority};
 
 impl MemoryManager {
+    /// Prune Gestalt bus execution events older than 7 days (or XAVIER_GESTALT_BUS_RETENTION_DAYS).
+    pub async fn prune_expired_bus_events(&self) -> Result<usize> {
+        let retention_days = std::env::var("XAVIER_GESTALT_BUS_RETENTION_DAYS")
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(7);
+
+        let docs = self.memory.all_documents().await;
+        let now = chrono::Utc::now();
+        let threshold = now - chrono::Duration::days(retention_days);
+        let mut pruned = 0;
+
+        for doc in docs {
+            if crate::memory::qmd::writer::is_gestalt_bus_execution(&doc.path, &doc.metadata) {
+                let doc_time = doc
+                    .metadata
+                    .get("created_at")
+                    .or_else(|| doc.metadata.get("provenance").and_then(|p| p.get("recorded_at")))
+                    .or_else(|| doc.metadata.get("provenance").and_then(|p| p.get("observed_at")))
+                    .or_else(|| doc.metadata.get("updated_at"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or(now);
+
+                if doc_time < threshold {
+                    let id_or_path = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+                    if self.memory.delete(&id_or_path).await?.is_some() {
+                        pruned += 1;
+                    }
+                }
+            }
+        }
+
+        if pruned > 0 {
+            info!(
+                "Pruned {} expired Gestalt bus execution documents older than {} days",
+                pruned, retention_days
+            );
+        }
+
+        Ok(pruned)
+    }
+
     /// Evict memories based on quality threshold and priority
     pub async fn evict_low_quality(&self) -> Result<ManagementResult> {
         let threshold = self.config.quality_threshold;
@@ -119,6 +163,11 @@ impl MemoryManager {
     /// Full auto-management cycle: decay → consolidate → evict → storage check
     pub async fn auto_manage(&self) -> Result<usize> {
         let mut total_actions = 0;
+
+        // First, prune expired Gestalt bus execution events
+        if let Ok(bus_pruned) = self.prune_expired_bus_events().await {
+            total_actions += bus_pruned;
+        }
 
         if self.config.auto_decay_enabled {
             let decay_result = self.decay_memories().await?;

@@ -23,8 +23,47 @@ pub enum MemoryPriority {
 }
 
 impl MemoryPriority {
+    /// From metadata and path.
+    pub fn from_metadata_and_path(metadata: &serde_json::Value, path: &str) -> Self {
+        if path.starts_with("gestalt/bus/")
+            || path.starts_with("gestalt/bus/executions/")
+            || metadata
+                .get("gestalt_context")
+                .and_then(|v| v.as_str())
+                .map_or(false, |c| c == "bus" || c == "executions")
+            || metadata
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .map_or(false, |s| s == "bus" || s == "executions")
+        {
+            return Self::Ephemeral;
+        }
+
+        Self::from_metadata(metadata)
+    }
+
     /// From metadata.
     pub fn from_metadata(metadata: &serde_json::Value) -> Self {
+        if metadata
+            .get("gestalt_context")
+            .and_then(|v| v.as_str())
+            .map_or(false, |c| c == "bus" || c == "executions")
+            || metadata
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .map_or(false, |s| s == "bus" || s == "executions")
+            || (metadata
+                .get("source_app")
+                .and_then(|v| v.as_str())
+                .map_or(false, |app| app == "gestalt")
+                && metadata
+                    .get("source_type")
+                    .and_then(|v| v.as_str())
+                    .map_or(false, |st| st == "bus" || st == "executions"))
+        {
+            return Self::Ephemeral;
+        }
+
         metadata
             .get("memory_priority")
             .and_then(|v| v.as_str())
