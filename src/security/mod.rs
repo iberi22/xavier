@@ -9,6 +9,7 @@ pub mod audit;
 pub mod auth;
 pub mod auth_store;
 pub mod clearance;
+pub mod clearance_audit;
 pub mod detections;
 pub mod encryption_keys;
 pub mod groups;
