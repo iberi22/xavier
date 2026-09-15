@@ -161,25 +161,17 @@ pub fn run_installer_interactive(args: InitArgs) -> Result<()> {
             ("Image", DataTypeKind::Image),
             ("Audio", DataTypeKind::Audio),
         ];
-        let items: Vec<&str> = available_profiles.iter().map(|(label, _)| *label).collect();
-        let defaults = vec![true, true, false, false, false];
-
-        let selected = MultiSelect::new()
-            .with_prompt(
-                "Select data modality profiles to configure (Space to select, Enter to confirm)",
-            )
-            .items(&items)
-            .defaults(&defaults)
-            .interact()?;
-
-        if selected.is_empty() {
-            vec![DataTypeKind::Code]
-        } else {
-            selected
-                .iter()
-                .map(|&idx| available_profiles[idx].1)
-                .collect()
-        }
+        let _items: Vec<&str> = available_profiles.iter().map(|(label, _)| *label).collect();
+        // Multimodal Auto-Detection has removed the need for manual onboarding selection.
+        // Xavier now deterministically detects and routes file types (Code, Image, Audio, etc) at runtime.
+        println!("🚀 Auto-Detection enabled: All modalities are supported and will be automatically routed via file extension/MIME type.");
+        vec![
+            DataTypeKind::Legal,
+            DataTypeKind::Code,
+            DataTypeKind::Video,
+            DataTypeKind::Image,
+            DataTypeKind::Audio,
+        ]
     };
 
     let storage_quota_gb = match args.storage_quota_gb {

@@ -21,3 +21,4 @@ pub use token_counter::{
     CompressionStats,
 };
 pub use types::*;
+pub mod benchmarks_plugin;
