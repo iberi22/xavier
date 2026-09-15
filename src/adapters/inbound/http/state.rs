@@ -5,6 +5,7 @@
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::Value;
+use subtle::ConstantTimeEq;
 
 use crate::ports::inbound::{
     AgentLifecyclePort, HealthPort, InputSecurityPort, MemoryQueryPort, SecurityScanPort,
@@ -33,7 +34,7 @@ pub struct AppState {
 pub fn check_auth(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCode, Json<Value>)> {
     // Try X-Xavier-Token first (xavier compatible)
     if let Some(token) = headers.get("X-Xavier-Token").and_then(|v| v.to_str().ok()) {
-        if token == state.auth_token {
+        if bool::from(token.as_bytes().ct_eq(state.auth_token.as_bytes())) {
             return Ok(());
         }
     }
@@ -41,7 +42,7 @@ pub fn check_auth(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCo
     if let Some(auth) = headers.get("Authorization").and_then(|v| v.to_str().ok()) {
         if auth.starts_with("Bearer ") {
             let token = auth.trim_start_matches("Bearer ").trim();
-            if token == state.auth_token {
+            if bool::from(token.as_bytes().ct_eq(state.auth_token.as_bytes())) {
                 return Ok(());
             }
         }
