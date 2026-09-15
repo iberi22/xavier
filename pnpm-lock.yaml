@@ -64,7 +64,7 @@ importers:
         version: 1.40.0(react@19.2.7)
       motion:
         specifier: 13.1.1
-        version: 13.1.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 13.1.1(react-dom@19.3.0(react@19.2.7))(react@19.2.7)
       prismjs:
         specifier: ^1.30.0
         version: 1.30.0
@@ -72,14 +72,14 @@ importers:
         specifier: ^19.1.0
         version: 19.2.7
       react-dom:
-        specifier: ^19.1.0
-        version: 19.2.7(react@19.2.7)
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.2.7)
       react-force-graph-2d:
         specifier: 1.29.1
         version: 1.29.1(react@19.2.7)
       recharts:
         specifier: ^3.8.1
-        version: 3.8.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react-is@18.3.1)(react@19.2.7)(redux@5.0.1)
+        version: 3.8.1(@types/react@19.2.17)(react-dom@19.3.0(react@19.2.7))(react-is@18.3.1)(react@19.2.7)(redux@5.0.1)
       sharp:
         specifier: ^0.35.3
         version: 0.35.4(@types/node@26.4.0)
@@ -110,13 +110,13 @@ importers:
         version: 7.0.1(@testing-library/dom@10.4.1)(vitest@4.1.11)
       '@testing-library/react':
         specifier: ^16.3.3
-        version: 16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.3.0(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.3.0(react@19.2.7))(react@19.2.7)
       '@types/react':
         specifier: ^19.1.8
         version: 19.2.17
       '@types/react-dom':
-        specifier: ^19.1.6
-        version: 19.2.3(@types/react@19.2.17)
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.2.17)
       '@vitejs/plugin-react':
         specifier: ^6.1.1
         version: 6.1.1(vite@8.0.16(@types/node@26.4.0)(esbuild@0.28.1)(jiti@2.7.0))
@@ -1961,10 +1961,10 @@ packages:
   '@types/node@26.4.0':
     resolution: {integrity: sha512-faiGnoIrLH/V8cibOMEAZ8pMw6oXqSukl29ra4mN8GdaB2ZewzeaLj+INpV5N+Z1eKWzY+IzaIZH2EIR6YZRNQ==}
 
-  '@types/react-dom@19.2.3':
-    resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
+  '@types/react-dom@19.3.0':
+    resolution: {integrity: sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q==}
     peerDependencies:
-      '@types/react': ^19.2.0
+      '@types/react': ^19.3.0
 
   '@types/react@19.2.17':
     resolution: {integrity: sha512-MXfmqaVPEVgkBT/aY0aGCkRWWtByiYQXo3xdQ8r5RzuFrPiRn8Gar2tQdXSUQ2GKV3bkXckek89V8wQBY2Q/Aw==}
@@ -2054,11 +2054,6 @@ packages:
 
   '@volar/typescript@2.4.28':
     resolution: {integrity: sha512-Ja6yvWrbis2QtN4ClAKreeUZPVYMARDYZl9LMEv1iQ1QdepB6wn0jTRxA9MftYmYa4DQ4k/DaSZpFPUfxl8giw==}
-    peerDependencies:
-      typescript: '*'
-    peerDependenciesMeta:
-      typescript:
-        optional: true
 
   accessor-fn@1.5.3:
     resolution: {integrity: sha512-rkAofCwe/FvYFUlMB0v0gWmhqtfAtV1IUkdPbfhTUyYniu5LrC0A0UJkTH0Jv3S8SvwkmfuAlY+mQIJATdocMA==}
@@ -3486,10 +3481,10 @@ packages:
     resolution: {integrity: sha512-Hrgsx+orqoygnmhFbKaHE6c296J+HTAQXoxEF6gNupROmmGJRoyzfG3ccAveqCBrwr/2yxQ5BVd/GTl5agOwSg==}
     engines: {node: '>= 0.6'}
 
-  react-dom@19.2.7:
-    resolution: {integrity: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==}
+  react-dom@19.3.0:
+    resolution: {integrity: sha512-JDk8dgif51OjFoDE70+OT9ICyYr+69HlmihNwp1+Nsfbna3t5sIiCa9ZJktDmQ4/1b/rn26hIAR2uYXDMr5r0Q==}
     peerDependencies:
-      react: ^19.2.7
+      react: ^19.3.0
 
   react-force-graph-2d@1.29.1:
     resolution: {integrity: sha512-1Rl/1Z3xy2iTHKj6a0jRXGyiI86xUti81K+jBQZ+Oe46csaMikp47L5AjrzA9hY9fNGD63X8ffrqnvaORukCuQ==}
@@ -3623,8 +3618,8 @@ packages:
     resolution: {integrity: sha512-xAg7SOnEhrm5zI3puOOKyy1OMcMlIJZYNJY7xLBwSze0UjhPLnWfj2GF2EpT0jmzaJKIWKHLsaSSajf35bcYnA==}
     engines: {node: '>=v12.22.7'}
 
-  scheduler@0.27.0:
-    resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
+  scheduler@0.28.0:
+    resolution: {integrity: sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw==}
 
   scule@1.3.0:
     resolution: {integrity: sha512-6FtHJEvt+pVMIB9IBY+IcCJ6Z5f1iQnytgyfKMhDKgmzYG+TeH/wx1y3l27rshSbLiSanrR9ffZDrEsmjlQF2g==}
@@ -5433,15 +5428,15 @@ snapshots:
     optionalDependencies:
       vitest: 4.1.11(@types/node@26.4.0)(@vitest/coverage-v8@5.0.0)(jsdom@30.0.1(@noble/hashes@2.2.0))(vite@8.0.16(@types/node@26.4.0)(esbuild@0.28.1)(jiti@2.7.0))
 
-  '@testing-library/react@16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@testing-library/react@16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.3.0(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.3.0(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@babel/runtime': 7.29.7
       '@testing-library/dom': 10.4.1
       react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
+      react-dom: 19.3.0(react@19.2.7)
     optionalDependencies:
       '@types/react': 19.2.17
-      '@types/react-dom': 19.2.3(@types/react@19.2.17)
+      '@types/react-dom': 19.3.0(@types/react@19.2.17)
 
   '@tweenjs/tween.js@25.0.0': {}
 
@@ -5621,7 +5616,7 @@ snapshots:
     dependencies:
       undici-types: 8.3.0
 
-  '@types/react-dom@19.2.3(@types/react@19.2.17)':
+  '@types/react-dom@19.3.0(@types/react@19.2.17)':
     dependencies:
       '@types/react': 19.2.17
 
@@ -5711,13 +5706,11 @@ snapshots:
 
   '@volar/source-map@2.4.28': {}
 
-  '@volar/typescript@2.4.28(typescript@5.9.3)':
+  '@volar/typescript@2.4.28':
     dependencies:
       '@volar/language-core': 2.4.28
       path-browserify: 1.0.1
       vscode-uri: 3.2.0
-    optionalDependencies:
-      typescript: 5.9.3
 
   accessor-fn@1.5.3: {}
 
@@ -6473,14 +6466,14 @@ snapshots:
       kapsule: 1.16.3
       lodash-es: 4.18.1
 
-  framer-motion@13.1.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  framer-motion@13.1.1(react-dom@19.3.0(react@19.2.7))(react@19.2.7):
     dependencies:
       motion-dom: 13.1.1
       motion-utils: 13.0.0
       tslib: 2.8.1
     optionalDependencies:
       react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
+      react-dom: 19.3.0(react@19.2.7)
 
   fresh@2.0.0: {}
 
@@ -7145,13 +7138,13 @@ snapshots:
 
   motion-utils@13.0.0: {}
 
-  motion@13.1.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  motion@13.1.1(react-dom@19.3.0(react@19.2.7))(react@19.2.7):
     dependencies:
-      framer-motion: 13.1.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      framer-motion: 13.1.1(react-dom@19.3.0(react@19.2.7))(react@19.2.7)
       tslib: 2.8.1
     optionalDependencies:
       react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
+      react-dom: 19.3.0(react@19.2.7)
 
   mri@1.2.0: {}
 
@@ -7343,10 +7336,10 @@ snapshots:
 
   range-parser@1.2.1: {}
 
-  react-dom@19.2.7(react@19.2.7):
+  react-dom@19.3.0(react@19.2.7):
     dependencies:
       react: 19.2.7
-      scheduler: 0.27.0
+      scheduler: 0.28.0
 
   react-force-graph-2d@1.29.1(react@19.2.7):
     dependencies:
@@ -7381,7 +7374,7 @@ snapshots:
 
   readdirp@5.0.0: {}
 
-  recharts@3.8.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react-is@18.3.1)(react@19.2.7)(redux@5.0.1):
+  recharts@3.8.1(@types/react@19.2.17)(react-dom@19.3.0(react@19.2.7))(react-is@18.3.1)(react@19.2.7)(redux@5.0.1):
     dependencies:
       '@reduxjs/toolkit': 2.12.0(react-redux@9.3.0(@types/react@19.2.17)(react@19.2.7)(redux@5.0.1))(react@19.2.7)
       clsx: 2.1.1
@@ -7390,7 +7383,7 @@ snapshots:
       eventemitter3: 5.0.4
       immer: 10.2.0
       react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
+      react-dom: 19.3.0(react@19.2.7)
       react-is: 18.3.1
       react-redux: 9.3.0(@types/react@19.2.17)(react@19.2.7)(redux@5.0.1)
       reselect: 5.1.1
@@ -7554,7 +7547,7 @@ snapshots:
     dependencies:
       xmlchars: 2.2.0
 
-  scheduler@0.27.0: {}
+  scheduler@0.28.0: {}
 
   scule@1.3.0: {}
 
@@ -7831,7 +7824,7 @@ snapshots:
   unplugin-dts@1.1.0(esbuild@0.28.2)(rolldown@1.2.6)(rollup@4.63.1)(supports-color@7.2.0)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.1)(jiti@2.7.0)):
     dependencies:
       '@rollup/pluginutils': 5.4.0(rollup@4.63.1)
-      '@volar/typescript': 2.4.28(typescript@5.9.3)
+      '@volar/typescript': 2.4.28
       compare-versions: 6.1.1
       debug: 4.4.3(supports-color@7.2.0)
       glob-to-regexp: 0.4.1
