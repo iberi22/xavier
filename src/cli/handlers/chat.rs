@@ -202,10 +202,7 @@ pub async fn execute_single_turn(
                 });
                 println!("{}", serde_json::to_string_pretty(&output)?);
             } else {
-                println!(
-                    "\n{}",
-                    "─".repeat(60).dimmed()
-                );
+                println!("\n{}", "─".repeat(60).dimmed());
                 println!("{} {}", "🧠 Xavier:".bold().cyan(), response_text);
                 if !memories.is_empty() {
                     println!(
@@ -215,12 +212,11 @@ pub async fn execute_single_turn(
                 }
                 println!(
                     "{}",
-                    format!("[RTK] {}", compression_stats.display_summary()).bold().green()
+                    format!("[RTK] {}", compression_stats.display_summary())
+                        .bold()
+                        .green()
                 );
-                println!(
-                    "{}\n",
-                    "─".repeat(60).dimmed()
-                );
+                println!("{}\n", "─".repeat(60).dimmed());
             }
         }
         Err(err) => {
@@ -236,10 +232,7 @@ pub async fn execute_single_turn(
                 });
                 println!("{}", serde_json::to_string_pretty(&output)?);
             } else {
-                println!(
-                    "\n{}",
-                    "─".repeat(60).dimmed()
-                );
+                println!("\n{}", "─".repeat(60).dimmed());
                 println!(
                     "{} {}",
                     "⚠️ Xavier [Modo Memoria Offline]:".bold().yellow(),
@@ -258,10 +251,7 @@ pub async fn execute_single_turn(
                         "\nNo se encontró memoria previa relacionada y el modelo LLM no está disponible."
                     );
                 }
-                println!(
-                    "{}\n",
-                    "─".repeat(60).dimmed()
-                );
+                println!("{}\n", "─".repeat(60).dimmed());
             }
         }
     }
@@ -463,7 +453,9 @@ async fn execute_turn_with_history(
             }
             println!(
                 "{}",
-                format!("[RTK] {}", compression_stats.display_summary()).bold().green()
+                format!("[RTK] {}", compression_stats.display_summary())
+                    .bold()
+                    .green()
             );
             println!("{}\n", "─".repeat(60).dimmed());
 

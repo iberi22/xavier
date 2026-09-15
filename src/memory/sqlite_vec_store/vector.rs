@@ -224,7 +224,7 @@ pub fn evaluate_quantization_metrics(
     let dataset_size = embeddings.len();
     let dims = embeddings.first().map_or(0, |v| v.len());
     let f32_bytes = dims * 4;
-    let i8_bytes = dims * 1 + 4; // 1 byte per dim + 4 byte scale
+    let i8_bytes = dims + 4; // 1 byte per dim + 4 byte scale
     let qjl_bytes = 16 + (dims * 2); // 16 bytes header + 2 bytes per dim (coarse + residual)
 
     let i8_memory_reduction_pct = if f32_bytes > 0 {
@@ -239,8 +239,12 @@ pub fn evaluate_quantization_metrics(
         0.0
     };
 
-    let i8_dataset: Vec<(Vec<i8>, f32)> = embeddings.iter().map(|e| quantize_scalar_i8(e)).collect();
-    let qjl_dataset: Vec<Vec<u8>> = embeddings.iter().map(|e| serialize_embedding_qjl(e)).collect();
+    let i8_dataset: Vec<(Vec<i8>, f32)> =
+        embeddings.iter().map(|e| quantize_scalar_i8(e)).collect();
+    let qjl_dataset: Vec<Vec<u8>> = embeddings
+        .iter()
+        .map(|e| serialize_embedding_qjl(e))
+        .collect();
 
     let mut total_i8_cosine_err = 0.0_f32;
     let mut total_qjl_cosine_err = 0.0_f32;
@@ -333,7 +337,12 @@ mod tests {
 
         assert_eq!(original.len(), reconstructed.len());
         for (orig, rec) in original.iter().zip(reconstructed.iter()) {
-            assert!((orig - rec).abs() < 0.02, "expected close fit: orig={}, rec={}", orig, rec);
+            assert!(
+                (orig - rec).abs() < 0.02,
+                "expected close fit: orig={}, rec={}",
+                orig,
+                rec
+            );
         }
     }
 
