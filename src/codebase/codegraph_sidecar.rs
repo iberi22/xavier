@@ -179,15 +179,50 @@ pub fn get_sidecar_health_status() -> SidecarStatusReport {
 ///   and installs/symlinks executable to `~/.local/bin/codegraph` and `~/.local/bin/code-graph`.
 /// - Precompiled download fallback: fetches binary archive for host target with SHA-256 verification and atomic write into `~/.local/bin/codegraph` or `~/.xavier/plugins/codegraph`.
 pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
-    // Guard against runaway recursive builds during tests or subprocess cascades
-    if std::env::var("XAVIER_INSIDE_TEST").is_ok()
-        || std::env::var("CARGO_PKG_NAME")
-            .map(|p| p == "code-graph")
-            .unwrap_or(false)
-    {
+    // 2026-09-15 (issue #2260): guard de reentrada duro.
+    //
+    // El guard anterior miraba `XAVIER_INSIDE_TEST` (que NADIE setea en el repo)
+    // y `CARGO_PKG_NAME == "code-graph"` (que vale `xavier` cuando corre un test
+    // o el servidor del crate xavier). Resultado: no aplicaba nunca al vector real
+    // (`ensure_codegraph_sidecar` desde `tests/codegraph_installer_e2e.rs` y desde
+    // `start_http_server`), y cada invocacion lanzaba un `cargo build --release -p
+    // code-graph` completo. En cascada (el sidecar re-resuelve el sidecar) eso produjo
+    // una fork bomb de 19 procesos `codegraph` y 59 `cargo` (load 27).
+    //
+    // Ahora: una variable de entorno HEREDABLE por los hijos marca "ya estamos dentro
+    // de una instalacion/construccion del sidecar". Si el hijo la ve, NO vuelve a
+    // construir; devuelve el binario existente o falla limpio con mensaje accionable.
+    const GUARD_ENV: &str = "XAVIER_CODEGRAPH_INSTALL_ACTIVE";
+    let already_installing = std::env::var(GUARD_ENV).is_ok();
+
+    if already_installing {
         if let Some(existing) = resolve_codegraph_binary() {
             return Ok(existing);
         }
+        return Err(anyhow!(
+            "recursive code-graph sidecar install blocked ({} is set) and no existing \
+             binary found; refusing to spawn a nested `cargo build` (issue #2260)",
+            GUARD_ENV
+        ));
+    }
+
+    // Guard contra tests y cascadas de subprocesos: nunca construir desde un test.
+    // `cfg!(test)` no aplica a integration tests, por eso ademas comprobamos las
+    // banderas de entorno que usa la maquinaria de tests de Rust/Cargo.
+    let inside_test = std::env::var("XAVIER_INSIDE_TEST").is_ok()
+        || std::env::var("CARGO_PKG_NAME")
+            .map(|p| p == "code-graph")
+            .unwrap_or(false)
+        || std::env::var("NEXTEST").is_ok()
+        || std::env::var("CARGO_TARGET_TMPDIR").is_ok();
+    if inside_test {
+        if let Some(existing) = resolve_codegraph_binary() {
+            return Ok(existing);
+        }
+        return Err(anyhow!(
+            "code-graph sidecar missing and install skipped inside a test \
+             (issue #2260); pre-install the sidecar or provide it on PATH"
+        ));
     }
 
     let home = dirs::home_dir().ok_or_else(|| anyhow!("Failed to locate home directory"))?;
@@ -209,6 +244,9 @@ pub async fn install_codegraph_sidecar(from_source: bool) -> Result<PathBuf> {
                 "code-graph",
             ])
             .env("XAVIER_INSIDE_BUILD", "1")
+            // Heredable por los hijos: cualquier proceso lanzado por este build
+            // vera la bandera y no volvera a construir (issue #2260).
+            .env(GUARD_ENV, "1")
             .status()?;
 
         ensure!(
@@ -479,6 +517,33 @@ mod tests {
                 installed,
                 home_override.join(".local").join("bin").join("codegraph")
             );
+        }
+    }
+
+    /// Regresión issue #2260: el guard de reentrada debe abortar la instalación
+    /// anidada en vez de lanzar otro `cargo build --release -p code-graph`.
+    ///
+    /// Sin el fix, esta llamada (con la bandera puesta) intentaría construir de
+    /// nuevo, que es exactamente lo que produjo la fork bomb (19 codegraph / 59 cargo).
+    #[tokio::test]
+    async fn test_recursive_install_is_blocked_by_guard() {
+        // Bandera heredable puesta => el hijo nunca debe construir.
+        std::env::set_var("XAVIER_CODEGRAPH_INSTALL_ACTIVE", "1");
+        let res = install_codegraph_sidecar(true).await;
+        std::env::remove_var("XAVIER_CODEGRAPH_INSTALL_ACTIVE");
+
+        match res {
+            // Si ya hay un binario resoluble, el guard lo devuelve sin construir.
+            Ok(path) => assert!(!path.as_os_str().is_empty()),
+            // Si no lo hay, debe fallar limpio con mensaje accionable, NO construir.
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("recursive") || msg.contains("refusing"),
+                    "el guard debe explicar el bloqueo de recursión, mensaje: {}",
+                    msg
+                );
+            }
         }
     }
 }
