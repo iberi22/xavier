@@ -117,7 +117,7 @@ mod tests {
     // 1. Test registration
     #[test]
     fn test_registration() {
-        let manager = Arc::new(PluginManager::new());
+        let manager = Arc::new(PluginManager::new_hermetic());
         let runtime = XavierPluginRuntime::new(manager.clone());
 
         let descriptor = PluginDescriptor {
@@ -213,7 +213,7 @@ echo '{"symbols": [{"name": "execute_test", "kind": "Function", "lang": "Python"
     // 4. Test fallback chain resolver interaction
     #[test]
     fn test_fallback() {
-        let manager = Arc::new(PluginManager::new());
+        let manager = Arc::new(PluginManager::new_hermetic());
         let runtime = XavierPluginRuntime::new(manager.clone());
 
         // Initially Python has default fallback: Native, NoOp

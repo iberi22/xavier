@@ -389,6 +389,7 @@ mod tests {
     use super::*;
     use crate::data_commons::maintainer::encrypt_for_maintainer;
     use crate::data_commons::telemetry_db::TelemetryDb;
+    use serial_test::serial;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -407,6 +408,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_export_logic_with_mock_db() {
         std::env::set_var(
             "XAVIER_MAINTAINER_PRIVATE_KEY_HEX",
@@ -447,6 +449,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_deterministic_split() {
         std::env::set_var(
             "XAVIER_MAINTAINER_PRIVATE_KEY_HEX",
@@ -530,6 +533,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_export_applies_privacy_scrubbing() {
         std::env::set_var(
             "XAVIER_MAINTAINER_PRIVATE_KEY_HEX",
@@ -599,6 +603,11 @@ mod tests {
             record_p4["wallet"],
             "0x71C84918370533a26017b3738b7156da7014EA52"
         );
-        assert_eq!(record_p4["message"], "Contact user@example.com for info");
+        // P4 is "Local Only": it bypasses the privacy pipeline entirely, so the
+        // file path embedded in the message is intentionally preserved.
+        assert_eq!(
+            record_p4["message"],
+            "Contact user@example.com for info at /home/belal/secret.rs"
+        );
     }
 }
