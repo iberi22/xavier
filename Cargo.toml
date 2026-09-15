@@ -134,6 +134,11 @@ name = "embedding_bench"
 path = "benches/embedding_bench.rs"
 harness = false
 
+[[bench]]
+name = "vector_search"
+path = "benches/vector_search.rs"
+harness = false
+
 [[test]]
 name = "auth_full_flow_test"
 path = "tests/integration/auth_full_flow_test.rs"
@@ -394,3 +399,8 @@ lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
 
+[profile.bench]
+opt-level = 3
+lto = false
+codegen-units = 16
+strip = "debuginfo"

@@ -32,6 +32,12 @@ pub mod vector;
 
 pub use config::*;
 pub use types::*;
+pub use vector::{
+    cosine_distance_f32, cosine_distance_i8, cosine_distance_qjl,
+    cosine_similarity_f32, cosine_similarity_i8, deserialize_embedding,
+    dequantize_scalar_i8, evaluate_quantization_metrics, quantize_scalar_i8,
+    serialize_embedding, serialize_embedding_qjl, QuantizationMetricsReport,
+};
 
 /// Vector-enabled SQLite memory store using libSQL for HNSW-like similarity search.
 #[derive(Clone)]
