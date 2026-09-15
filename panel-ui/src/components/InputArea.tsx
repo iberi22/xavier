@@ -126,8 +126,9 @@ export default React.memo(function InputArea({
         <button
           type="button"
           onClick={onOpenConfig}
+          disabled={isLoading}
           aria-label="Open Control Node"
-          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-[#39ff14] hover:scale-105 active:scale-95 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
+          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-[#39ff14] hover:scale-105 active:scale-95 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:scale-100 disabled:active:scale-100"
           title="Open Control Node"
         >
           <div className="absolute inset-1 rounded-full border border-transparent group-hover:border-[#39ff14]/40 group-hover:shadow-[inset_0_0_10px_rgba(57,255,20,0.2)] transition-all duration-300" />
@@ -141,8 +142,9 @@ export default React.memo(function InputArea({
         <button
           type="button"
           onClick={handleFolderClick}
+          disabled={isLoading}
           aria-label="Add project codebase"
-          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-white/60 hover:text-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
+          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-white/60 hover:text-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-white/60"
           title="Agregar Codebase (Proyecto Git)"
         >
           <FolderPlus className="w-5 h-5" aria-hidden="true" />
@@ -156,9 +158,10 @@ export default React.memo(function InputArea({
         <button
           type="button"
           onClick={handleMicClick}
+          disabled={isLoading}
           aria-label={isRecording ? "Stop recording" : "Record audio"}
           aria-pressed={isRecording}
-          className={`relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
+          className={`relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-white/60 ${
             isRecording
               ? "text-[#39ff14]"
               : "text-white/60 hover:text-[#39ff14]"
