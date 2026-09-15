@@ -1975,7 +1975,7 @@
       "name": "Classified clearance bound to identity (internal lab plans)",
       "category": "security",
       "status": "in_progress",
-      "progress_pct": 95,
+      "progress_pct": 97,
       "description": "Clearance derivado de la identidad autenticada (no del header X-Clearance) y aplicado como frontera de seguridad; base para los planes internos top-secret del laboratorio (10%) con lectura por nodo/grupo.",
       "steps": [
         "F1: nivel desde Claims (role_clearance) + opt-in de header (XAVIER_CLEARANCE_TRUST_HEADER) + middleware cableado tras auth",
@@ -2030,7 +2030,15 @@
           }
         },
         "F4_e2e_y_promocion": {
-          "status": "pending"
+          "status": "partial",
+          "hecho": [
+            "tests/clearance_e2e.rs: dos identidades contra el middleware real (2 passed / 0 failed) - Readonly->Internal, Admin->TopSecret, ruta SECRET rechaza Readonly 403 + denegacion auditada con sujeto y ruta, anonimo no eleva con header",
+            "docs/features/CLEARANCE_GUIA_OPERATIVA.md: guia operativa (segmentos, como escribir material, como exigir nivel por ruta, como leer la auditoria)"
+          ],
+          "pendiente": [
+            "E2E contra el SERVIDOR VIVO (bloqueado: xavier.service pausado por el perfil gaming mientras corre dota2)",
+            "PR a main (origin = github.com/iberi22/xavier, repo publico: requiere confirmacion explicita antes de push)"
+          ]
         },
         "deuda_declarada": [
           "exigencia de nivel por config de ruta (no header X-Required-Clearance)",
