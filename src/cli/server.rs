@@ -1713,15 +1713,31 @@ pub async fn start_http_server(
                     result.ollama.models.join(", ")
                 );
 
-                let default_model = "qwen2.5-coder:7b";
+                // El default NO se hard-codea a un modelo que puede no existir en el
+                // nodo (pasó con qwen3-coder y luego con qwen2.5-coder:7b: 122 avisos/
+                // día en cada nodo aunque el usuario tuviera otro modelo). Se lee el
+                // modelo realmente configurado, con el mismo orden de resolución que
+                // ollama_models.rs: env XAVIER_LOCAL_LLM_MODEL -> settings.local_llm_model
+                // -> DEFAULT_LOCAL_MODEL del crate.
+                let default_model = std::env::var("XAVIER_LOCAL_LLM_MODEL")
+                    .ok()
+                    .filter(|m| !m.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        let settings = crate::settings::XavierSettings::current();
+                        if settings.models.local_llm_model.trim().is_empty() {
+                            xavier::agents::provider::local::DEFAULT_LOCAL_MODEL.to_string()
+                        } else {
+                            settings.models.local_llm_model.clone()
+                        }
+                    });
                 if !result
                     .ollama
                     .models
                     .iter()
-                    .any(|m| m.contains(default_model))
+                    .any(|m| m.to_lowercase().contains(&default_model.to_lowercase()))
                 {
                     tracing::warn!(
-                        "⚠️ Default model '{}' not found in Ollama. Run: ollama pull {}",
+                        "⚠️ Configured local LLM '{}' not found in Ollama. Run: ollama pull {}",
                         default_model,
                         default_model
                     );
