@@ -10,6 +10,7 @@ pub struct TelemetryPayload {
     pub sanitized_message: String,
     pub error_stack: Option<String>,
     pub timestamp: u64,
+    pub classification: String,
 }
 
 static PII_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
@@ -48,7 +49,13 @@ impl TelemetryPayload {
             sanitized_message: scrub_pii(raw_message),
             error_stack: raw_stack.map(scrub_pii),
             timestamp,
+            classification: "INTERNAL".to_string(),
         }
+    }
+
+    /// Creates a new payload tagged as INTERNAL with PII scrubbed.
+    pub fn new_internal(event_kind: &str, raw_message: &str, raw_stack: Option<&str>) -> Self {
+        Self::new_scrubbed(event_kind, raw_message, raw_stack)
     }
 }
 
@@ -71,5 +78,33 @@ mod tests {
     fn test_telemetry_payload() {
         let payload = TelemetryPayload::new_scrubbed("panic", "Crash in /home/user/project", None);
         assert_eq!(payload.sanitized_message, "Crash in [REDACTED]");
+    }
+
+    #[test]
+    fn test_new_internal_classification_default() {
+        let payload = TelemetryPayload::new_internal("info", "System startup complete", None);
+        assert_eq!(payload.classification, "INTERNAL");
+        assert_eq!(payload.node_type, "xavier_client");
+        assert_eq!(payload.event_kind, "info");
+    }
+
+    #[test]
+    fn test_new_internal_pii_scrubbed() {
+        let payload = TelemetryPayload::new_internal(
+            "error",
+            "Failed connection to user@example.com at 10.0.0.1",
+            Some("Traceback at /home/user/app.rs"),
+        );
+        assert_eq!(payload.classification, "INTERNAL");
+        assert!(!payload.sanitized_message.contains("user@example.com"));
+        assert!(!payload.sanitized_message.contains("10.0.0.1"));
+        assert!(payload.sanitized_message.contains("[REDACTED]"));
+        assert!(payload.error_stack.is_some());
+        assert!(!payload
+            .error_stack
+            .as_ref()
+            .unwrap()
+            .contains("/home/user/app.rs"));
+        assert!(payload.error_stack.as_ref().unwrap().contains("[REDACTED]"));
     }
 }
