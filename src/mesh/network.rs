@@ -231,6 +231,29 @@ impl MeshNetwork {
     pub fn check_permission_bool(&self, node: &str, resource: &str) -> bool {
         self.check_permission(node, resource, &Permission::Read)
     }
+
+    /// Prune expired and revoked cross-grants from the network ACL.
+    ///
+    /// Removes grants where `revoked == true` OR (`expires_at` is set and `now > exp`).
+    /// Returns the count of removed grants, updates `updated_at = now`, and logs an audit line.
+    pub fn prune_expired_grants(&mut self, now: DateTime<Utc>) -> usize {
+        let initial_len = self.acl.grants.len();
+        self.acl.grants.retain(|g| {
+            if g.revoked {
+                return false;
+            }
+            if let Some(exp) = g.expires_at {
+                if now > exp {
+                    return false;
+                }
+            }
+            true
+        });
+        let pruned = initial_len - self.acl.grants.len();
+        self.updated_at = now;
+        tracing::info!("pruned {} expired grants from network {}", pruned, self.id);
+        pruned
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -450,5 +473,116 @@ mod tests {
         assert!(!n.check_permission("node-b", "any-res", &Permission::Write));
         // non-member should not get default
         assert!(!n.check_permission("node-z", "any-res", &Permission::Read));
+    }
+
+    #[test]
+    fn test_prune_expired_grants_expired() {
+        let mut n = net("net-1", "node-a");
+        let now = Utc::now();
+
+        // Expired grant
+        let past = now - Duration::hours(2);
+        n.grant_cross(
+            "res-1".to_string(),
+            "node-b".to_string(),
+            Permission::Read,
+            Some(past),
+        );
+
+        // Future grant (active)
+        let future = now + Duration::hours(2);
+        n.grant_cross(
+            "res-2".to_string(),
+            "node-b".to_string(),
+            Permission::Read,
+            Some(future),
+        );
+
+        let pruned = n.prune_expired_grants(now);
+        assert_eq!(pruned, 1);
+        assert_eq!(n.acl.grants.len(), 1);
+        assert!(!n.check_permission("node-b", "res-1", &Permission::Read));
+        assert!(n.check_permission("node-b", "res-2", &Permission::Read));
+    }
+
+    #[test]
+    fn test_prune_expired_grants_revoked() {
+        let mut n = net("net-1", "node-a");
+        let now = Utc::now();
+
+        // Grant 1: to be revoked
+        let g1 = n.grant_cross(
+            "res-1".to_string(),
+            "node-b".to_string(),
+            Permission::Read,
+            None,
+        );
+        n.revoke_grant(&g1.id).unwrap();
+
+        // Grant 2: active
+        n.grant_cross(
+            "res-2".to_string(),
+            "node-b".to_string(),
+            Permission::Write,
+            None,
+        );
+
+        let pruned = n.prune_expired_grants(now);
+        assert_eq!(pruned, 1);
+        assert_eq!(n.acl.grants.len(), 1);
+        assert!(!n.check_permission("node-b", "res-1", &Permission::Read));
+        assert!(n.check_permission("node-b", "res-2", &Permission::Write));
+    }
+
+    #[test]
+    fn test_prune_expired_grants_mixed_and_permission_check() {
+        let mut n = net("net-1", "node-a");
+        let now = Utc::now();
+
+        // 1. Expired grant
+        n.grant_cross(
+            "res-expired".to_string(),
+            "node-b".to_string(),
+            Permission::Read,
+            Some(now - Duration::hours(5)),
+        );
+
+        // 2. Active grant with future expiry
+        n.grant_cross(
+            "res-future".to_string(),
+            "node-b".to_string(),
+            Permission::Read,
+            Some(now + Duration::hours(5)),
+        );
+
+        // 3. Active grant with no expiry
+        n.grant_cross(
+            "res-no-expiry".to_string(),
+            "node-c".to_string(),
+            Permission::Manage,
+            None,
+        );
+
+        // 4. Revoked grant with future expiry
+        let g4 = n.grant_cross(
+            "res-revoked".to_string(),
+            "node-b".to_string(),
+            Permission::Delete,
+            Some(now + Duration::hours(5)),
+        );
+        n.revoke_grant(&g4.id).unwrap();
+
+        assert_eq!(n.acl.grants.len(), 4);
+
+        let pruned = n.prune_expired_grants(now);
+        assert_eq!(pruned, 2);
+        assert_eq!(n.acl.grants.len(), 2);
+        assert_eq!(n.updated_at, now);
+
+        // Permissions post-prune
+        assert!(!n.check_permission("node-b", "res-expired", &Permission::Read));
+        assert!(n.check_permission("node-b", "res-future", &Permission::Read));
+        assert!(n.check_permission("node-c", "res-no-expiry", &Permission::Manage));
+        assert!(!n.check_permission("node-b", "res-revoked", &Permission::Delete));
     }
 }
