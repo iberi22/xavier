@@ -56,6 +56,40 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingCodeData> {
     Ok(data)
 }
 
+/// Verify and consume a pairing JoinDecision against a PairingSecretRegistry.
+pub fn verify_join_decision(
+    decision: &crate::mesh::join::JoinDecision,
+    secret: &str,
+    registry: &mut crate::mesh::pairing_registry::PairingSecretRegistry,
+) -> Result<()> {
+    if !decision.approved {
+        let reason = decision
+            .reason
+            .as_deref()
+            .unwrap_or("Join decision was not approved");
+        anyhow::bail!("Join decision rejected: {}", reason);
+    }
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    if decision.is_expired(now) {
+        anyhow::bail!("Join decision has expired");
+    }
+
+    let valid = registry
+        .verify_and_remove(secret)
+        .context("Failed to verify pairing secret in registry")?;
+
+    if !valid {
+        anyhow::bail!("Invalid or expired pairing secret");
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,5 +130,138 @@ mod tests {
         let result = decode_pairing_code(&code);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "Pairing code has expired");
+    }
+
+    #[test]
+    fn test_verify_join_decision_valid() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage_path = temp_dir.path().join("secrets.json");
+        let mut registry =
+            crate::mesh::pairing_registry::PairingSecretRegistry::load_from(storage_path).unwrap();
+
+        let secret = "valid-secret-123".to_string();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        registry
+            .register_secret(secret.clone(), now + 3600)
+            .unwrap();
+
+        let decision = crate::mesh::join::JoinDecision {
+            network_id: "net-alpha".to_string(),
+            node_id: "node-101".to_string(),
+            approved: true,
+            reason: None,
+            expires_at: now + 3600,
+        };
+
+        // First verification succeeds
+        let res = verify_join_decision(&decision, &secret, &mut registry);
+        assert!(res.is_ok());
+
+        // Second verification fails because secret was consumed (single-use)
+        let res2 = verify_join_decision(&decision, &secret, &mut registry);
+        assert!(res2.is_err());
+        assert!(res2
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid or expired pairing secret"));
+    }
+
+    #[test]
+    fn test_verify_join_decision_expired() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage_path = temp_dir.path().join("secrets.json");
+        let mut registry =
+            crate::mesh::pairing_registry::PairingSecretRegistry::load_from(storage_path).unwrap();
+
+        let secret = "expired-secret".to_string();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        registry
+            .register_secret(secret.clone(), now + 3600)
+            .unwrap();
+
+        let decision = crate::mesh::join::JoinDecision {
+            network_id: "net-alpha".to_string(),
+            node_id: "node-101".to_string(),
+            approved: true,
+            reason: None,
+            expires_at: now.saturating_sub(100),
+        };
+
+        let res = verify_join_decision(&decision, &secret, &mut registry);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().to_string(), "Join decision has expired");
+    }
+
+    #[test]
+    fn test_verify_join_decision_rejected() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage_path = temp_dir.path().join("secrets.json");
+        let mut registry =
+            crate::mesh::pairing_registry::PairingSecretRegistry::load_from(storage_path).unwrap();
+
+        let secret = "rejected-secret".to_string();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        registry
+            .register_secret(secret.clone(), now + 3600)
+            .unwrap();
+
+        let decision = crate::mesh::join::JoinDecision {
+            network_id: "net-alpha".to_string(),
+            node_id: "node-101".to_string(),
+            approved: false,
+            reason: Some("Node is banned".to_string()),
+            expires_at: now + 3600,
+        };
+
+        let res = verify_join_decision(&decision, &secret, &mut registry);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "Join decision rejected: Node is banned"
+        );
+    }
+
+    #[test]
+    fn test_verify_join_decision_invalid_secret() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let storage_path = temp_dir.path().join("secrets.json");
+        let mut registry =
+            crate::mesh::pairing_registry::PairingSecretRegistry::load_from(storage_path).unwrap();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        registry
+            .register_secret("actual-secret".to_string(), now + 3600)
+            .unwrap();
+
+        let decision = crate::mesh::join::JoinDecision {
+            network_id: "net-alpha".to_string(),
+            node_id: "node-101".to_string(),
+            approved: true,
+            reason: None,
+            expires_at: now + 3600,
+        };
+
+        let res = verify_join_decision(&decision, "wrong-secret", &mut registry);
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid or expired pairing secret"));
     }
 }
