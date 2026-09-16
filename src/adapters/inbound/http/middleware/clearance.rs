@@ -6,8 +6,7 @@
 
 use crate::security::auth::Claims;
 use crate::security::clearance::{
-    can_access, parse_requester_level, parse_required_level, role_clearance, ClearanceEnforcer,
-    ClearanceLevel,
+    can_access, parse_requester_level, role_clearance, ClearanceEnforcer, ClearanceLevel,
 };
 use axum::{
     body::Body,
@@ -24,9 +23,6 @@ use serde_json::json;
 /// habilita explícitamente `XAVIER_CLEARANCE_TRUST_HEADER=1` (uso interno/loopback
 /// o tests). El nivel real se deriva de las `Claims` autenticadas.
 pub const X_CLEARANCE_HEADER: &str = "x-clearance";
-
-/// Header name used to specify the minimum clearance level required for a route.
-pub const X_REQUIRED_CLEARANCE_HEADER: &str = "x-required-clearance";
 
 /// Env flag that re-enables trusting the `X-Clearance` header (default: OFF).
 pub const TRUST_HEADER_ENV: &str = "XAVIER_CLEARANCE_TRUST_HEADER";
@@ -168,35 +164,25 @@ pub async fn clearance_session_middleware(mut req: Request<Body>, next: Next) ->
 }
 
 /// Axum middleware that extracts requester clearance, inserts a `ClearanceEnforcer`
-/// into request extensions, and enforces optional route-level clearance checks (`X-Required-Clearance`).
+/// into request extensions, and enforces route-level clearance checks from policy config.
+///
+/// Legacy sibling of `clearance_session_middleware`. Route clearance requirements come
+/// strictly from server policy config, NOT client headers.
 pub async fn clearance_middleware(mut req: Request<Body>, next: Next) -> Response {
     let claims = req.extensions().get::<Claims>().cloned();
     let requester_level = resolve_effective_clearance(req.headers(), claims.as_ref());
-    let enforcer = ClearanceEnforcer::new(requester_level);
 
-    // Enforce optional X-Required-Clearance check
-    if let Some(required_hdr) = req.headers().get(X_REQUIRED_CLEARANCE_HEADER) {
-        if let Ok(req_str) = required_hdr.to_str() {
-            // Exigencia: valor desconocido restringe (fail-closed).
-            let required_level = parse_required_level(req_str);
-            if !can_access(requester_level, required_level) {
-                return (
-                    StatusCode::FORBIDDEN,
-                    Json(json!({
-                        "status": "error",
-                        "message": format!(
-                            "Forbidden: Insufficient clearance ({:?}) for required level ({:?})",
-                            requester_level, required_level
-                        )
-                    })),
-                )
-                    .into_response();
-            }
-        }
+    if let Some(denied) = enforce_route_policy(req.uri().path(), requester_level, claims.as_ref()) {
+        return denied;
     }
 
     req.extensions_mut().insert(requester_level);
-    req.extensions_mut().insert(enforcer);
+    req.extensions_mut()
+        .insert(ClearanceEnforcer::new(requester_level));
+
+    let (subject, role) = crate::security::clearance_audit::subject_and_role(claims.as_ref());
+    req.extensions_mut()
+        .insert(RequesterIdentity { subject, role });
 
     next.run(req).await
 }
@@ -209,37 +195,64 @@ mod tests {
     use tower::ServiceExt;
 
     #[tokio::test]
-    async fn test_clearance_middleware_header() {
+    async fn test_clearance_middleware_route_policy_ignores_header() {
+        std::env::set_var(
+            crate::security::route_policy::ROUTE_POLICY_ENV,
+            r#"{"routes":[{"prefix":"/restricted","required":"SECRET"}]}"#,
+        );
+
         let app = Router::new()
             .route(
-                "/data",
-                get(|req: Request<Body>| async move {
-                    let enforcer = req.extensions().get::<ClearanceEnforcer>().unwrap();
-                    let redacted = enforcer.redact(ClearanceLevel::Secret, "super secret payload");
-                    Json(json!({ "content": redacted }))
-                }),
+                "/unrestricted",
+                get(|| async move { Json(json!({ "status": "ok" })) }),
+            )
+            .route(
+                "/restricted",
+                get(|| async move { Json(json!({ "status": "ok" })) }),
             )
             .layer(axum::middleware::from_fn(clearance_middleware));
 
-        // Request with Confidential clearance -> Secret content is redacted
+        // 1. Unrestricted route with X-Required-Clearance header: header changes nothing
         let req = Request::builder()
-            .uri("/data")
-            .header(X_CLEARANCE_HEADER, "CONFIDENTIAL")
+            .uri("/unrestricted")
+            .header("x-required-clearance", "TOP_SECRET")
             .body(Body::empty())
             .unwrap();
 
         let resp = app.clone().oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        // Request with TopSecret clearance -> Secret content is accessible
-        let req_ts = Request::builder()
-            .uri("/data")
-            .header(X_CLEARANCE_HEADER, "TOP_SECRET")
+        // 2. Restricted route without sufficient clearance: denied by route policy config
+        let mut req_denied = Request::builder()
+            .uri("/restricted")
             .body(Body::empty())
             .unwrap();
+        req_denied.extensions_mut().insert(Claims::new(
+            "user1".into(),
+            "user1@swal.dev".into(),
+            UserRole::User, // User -> Confidential < Secret
+            chrono::Duration::hours(1),
+        ));
 
-        let resp_ts = app.oneshot(req_ts).await.unwrap();
-        assert_eq!(resp_ts.status(), StatusCode::OK);
+        let resp_denied = app.clone().oneshot(req_denied).await.unwrap();
+        assert_eq!(resp_denied.status(), StatusCode::FORBIDDEN);
+
+        // 3. Restricted route with sufficient clearance (Admin -> TopSecret >= Secret): granted
+        let mut req_granted = Request::builder()
+            .uri("/restricted")
+            .body(Body::empty())
+            .unwrap();
+        req_granted.extensions_mut().insert(Claims::new(
+            "admin1".into(),
+            "admin1@swal.dev".into(),
+            UserRole::Admin,
+            chrono::Duration::hours(1),
+        ));
+
+        let resp_granted = app.oneshot(req_granted).await.unwrap();
+        assert_eq!(resp_granted.status(), StatusCode::OK);
+
+        std::env::remove_var(crate::security::route_policy::ROUTE_POLICY_ENV);
     }
 
     // ── Fase 1: el nivel sale de la identidad, no del header ─────────────────
