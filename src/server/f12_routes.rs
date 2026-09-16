@@ -22,13 +22,17 @@ use std::sync::Arc;
 
 use crate::codebase::snapshot::{discover_swal_repo_roots, SnapshotManager};
 use crate::curation::CurationQueue;
+use crate::mesh::join::JoinDecision;
 use crate::mesh::node::NodeId;
+use crate::mesh::pairing::verify_join_decision;
+use crate::mesh::pairing_registry::PairingSecretRegistry;
 use crate::mesh::private_mesh::{
     is_same_wallet, PrivateMemoryDelta, PrivateMeshRegistry, PrivateSyncPayload, WalletNode,
 };
 use crate::mesh::public_directory::PublicDirectory;
 use crate::mesh::public_rag::{search_public, PublicRagResult};
 use crate::mesh::service_network::{ServiceKind, ServiceRegistry, TelemetrySample};
+use crate::mesh::visibility::Visibility;
 use crate::security::groups::GroupRegistry;
 
 /// Shared F12 state: data dir paths + in-memory registries (lazy loaded).
@@ -231,6 +235,13 @@ pub struct CreateNetworkRequest {
 #[derive(Debug, Deserialize)]
 pub struct AddMemberRequest {
     pub node_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct JoinNetworkRequest {
+    pub node_id: String,
+    pub pairing_secret: String,
+    pub visibility: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -769,12 +780,115 @@ pub async fn list_networks(
     State(state): State<F12State>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
+    let target_vis = if let Some(v_str) = params.get("visibility") {
+        match v_str.to_lowercase().as_str() {
+            "public" => Some(Visibility::Public),
+            "private" => Some(Visibility::Private),
+            _ => return (StatusCode::BAD_REQUEST, "invalid visibility filter").into_response(),
+        }
+    } else {
+        None
+    };
+
     let reg = state.private_mesh_mut();
     let mesh = reg.private_mesh.as_ref().expect("mesh");
-    if let Some(caller) = params.get("node_id").or_else(|| params.get("caller")) {
-        Json(mesh.networks_for_node(caller)).into_response()
+
+    let networks = if let Some(caller) = params.get("node_id").or_else(|| params.get("caller")) {
+        mesh.networks_for_node(caller)
     } else {
-        Json(mesh.all_networks()).into_response()
+        mesh.all_networks()
+    };
+
+    if let Some(filter_vis) = target_vis {
+        // Filter is listing-only metadata filter, does NOT grant permissions or check ACL.
+        // MeshNetworks in PrivateMeshRegistry are private mesh networks by default (Visibility::Private).
+        let filtered: Vec<_> = networks
+            .into_iter()
+            .filter(|_net| filter_vis == Visibility::Private)
+            .collect();
+        Json(filtered).into_response()
+    } else {
+        Json(networks).into_response()
+    }
+}
+
+pub async fn join_network(
+    State(state): State<F12State>,
+    Path(id): Path<String>,
+    Json(req): Json<JoinNetworkRequest>,
+) -> impl IntoResponse {
+    // ID validation guard for network_id and node_id (alphanumeric + ._-, reject ..)
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || id.contains("..")
+        || !req
+            .node_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || req.node_id.contains("..")
+    {
+        return (StatusCode::BAD_REQUEST, "Invalid ID format").into_response();
+    }
+
+    if req.node_id.trim().is_empty() || req.pairing_secret.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            "node_id and pairing_secret required",
+        )
+            .into_response();
+    }
+
+    if let Some(ref v_str) = req.visibility {
+        if !v_str.eq_ignore_ascii_case("public") && !v_str.eq_ignore_ascii_case("private") {
+            return (StatusCode::BAD_REQUEST, "invalid visibility value").into_response();
+        }
+    }
+
+    // Load pairing secret registry
+    let mut pairing_reg =
+        PairingSecretRegistry::load_from(state.data_dir.join("mesh/pairing-secrets.json"))
+            .unwrap_or_else(|_| {
+                PairingSecretRegistry::load().unwrap_or_else(|_| {
+                    PairingSecretRegistry::load_from(
+                        state.data_dir.join("mesh_pairing_secrets.json"),
+                    )
+                    .unwrap()
+                })
+            });
+
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let decision = JoinDecision {
+        network_id: id.clone(),
+        node_id: req.node_id.clone(),
+        approved: true,
+        reason: None,
+        expires_at: now_secs + 3600,
+    };
+
+    if let Err(e) = verify_join_decision(&decision, &req.pairing_secret, &mut pairing_reg) {
+        return (StatusCode::FORBIDDEN, format!("Forbidden: {}", e)).into_response();
+    }
+
+    let mut reg = state.private_mesh_mut();
+    let mesh = reg.private_mesh.as_mut().expect("mesh");
+    match mesh.add_member(&id, req.node_id) {
+        Ok(_) => {
+            let net = mesh.get_network(&id).unwrap();
+            (StatusCode::OK, Json(net)).into_response()
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("not found") {
+                (StatusCode::NOT_FOUND, msg).into_response()
+            } else {
+                (StatusCode::CONFLICT, msg).into_response()
+            }
+        }
     }
 }
 
@@ -904,6 +1018,7 @@ pub fn router(state: F12State) -> Router {
         .route("/v1/f12/documents/{id}", get(get_document_handler))
         .route("/v1/f12/networks", post(create_network))
         .route("/v1/f12/networks", get(list_networks))
+        .route("/v1/f12/networks/{id}/join", post(join_network))
         .route("/v1/f12/networks/{id}/members", post(add_network_member))
         .route("/v1/f12/networks/{id}/grants", post(create_grant))
         .route(
@@ -924,7 +1039,11 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state() -> F12State {
-        let dir = std::env::temp_dir().join(format!("f12-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "f12-test-{}-{}",
+            std::process::id(),
+            ulid::Ulid::new()
+        ));
         std::fs::create_dir_all(dir.join("mesh")).ok();
         std::fs::create_dir_all(dir.join("security")).ok();
         std::fs::create_dir_all(dir.join("curation")).ok();
@@ -1420,5 +1539,201 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_join_network_success_and_failures() {
+        let state = test_state();
+        let app = router(state.clone());
+
+        // 1. Create a network
+        let create_req =
+            r#"{"id": "net-join-1", "name": "Join Test Net", "owner_node": "node-owner"}"#;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/networks")
+                    .header("content-type", "application/json")
+                    .body(Body::from(create_req))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        // 2. Register pairing secret in PairingSecretRegistry
+        let mut pairing_reg =
+            PairingSecretRegistry::load_from(state.data_dir.join("mesh/pairing-secrets.json"))
+                .unwrap();
+        let secret = "secret-valid-123".to_string();
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        pairing_reg
+            .register_secret(secret.clone(), now_secs + 3600)
+            .unwrap();
+
+        // 3. Test invalid ID format (path traversal or forbidden chars)
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/networks/net..bad/join")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"node_id": "node-join-1", "pairing_secret": "{}"}}"#,
+                        secret
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // 4. Test invalid visibility string
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/networks/net-join-1/join")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"node_id": "node-join-1", "pairing_secret": "{}", "visibility": "invalid_vis"}}"#,
+                        secret
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // 5. Test forbidden with invalid pairing secret
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/networks/net-join-1/join")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"node_id": "node-join-1", "pairing_secret": "wrong-secret"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+        // 6. Successful join with valid secret and visibility
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/networks/net-join-1/join")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"node_id": "node-join-1", "pairing_secret": "{}", "visibility": "public"}}"#,
+                        secret
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let net: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(net["id"], "net-join-1");
+        let members: Vec<String> = serde_json::from_value(net["members"].clone()).unwrap();
+        assert!(members.contains(&"node-join-1".to_string()));
+
+        // 7. Duplicate join attempt should fail with CONFLICT (since secret consumed, secret check fails first -> FORBIDDEN)
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/networks/net-join-1/join")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"node_id": "node-join-1", "pairing_secret": "{}"}}"#,
+                        secret
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_list_networks_with_visibility_query_filter() {
+        let app = router(test_state());
+
+        // Create network
+        let create_req = r#"{"id": "net-vis-1", "name": "Vis Net", "owner_node": "node-owner"}"#;
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/f12/networks")
+                    .header("content-type", "application/json")
+                    .body(Body::from(create_req))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        // Invalid visibility filter -> BAD_REQUEST
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/networks?visibility=unknown")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // Public visibility filter -> OK (returns empty list because private mesh networks are Private)
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/networks?visibility=public")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let pub_nets: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert!(pub_nets.is_empty());
+
+        // Private visibility filter -> OK (returns the created network)
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/f12/networks?visibility=private")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let priv_nets: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(priv_nets.len(), 1);
+        assert_eq!(priv_nets[0]["id"], "net-vis-1");
     }
 }
