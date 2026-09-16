@@ -53,6 +53,9 @@ use tokio::sync::OnceCell;
 /// ALPN identifier for the XMesh-Sync protocol over Iroh.
 pub const XMESH_ALPN: &[u8] = b"/xavier/mesh-sync/1";
 
+/// Default timeout for handshake operations (connect + round-trip).
+pub const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// A framed request envelope sent over a QUIC stream.
 ///
 /// `node_id` carries the local XMesh NodeID for signing/verification context;
@@ -149,10 +152,18 @@ impl IrohTransport {
     /// `PublicKey`). Falls back with an error if the peer has no Iroh address —
     /// callers should only route to `IrohTransport` when `iroh_addr.is_some()`.
     fn addr_from_peer(peer: &PeerInfo) -> Result<String> {
-        peer.iroh_addr
+        let addr = peer
+            .iroh_addr
             .clone()
             .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| anyhow!("peer {} has no iroh_addr", peer.node_id))
+            .ok_or_else(|| anyhow!("peer {} has no iroh_addr", peer.node_id))?;
+        if addr.chars().any(|c| c.is_control() || c.is_whitespace()) {
+            tracing::debug!(
+                "Rejected invalid peer iroh_addr containing control/whitespace chars: {addr}"
+            );
+            anyhow::bail!("invalid iroh peer addr: {addr}");
+        }
+        Ok(addr)
     }
 
     /// Dial a remote endpoint and return a (cheap, `Clone`) QUIC [`Connection`].
@@ -162,11 +173,15 @@ impl IrohTransport {
     /// wrapped in an `EndpointAddr`; the endpoint's address-lookup service
     /// resolves the relay/direct addresses needed to reach it.
     pub async fn connect(&self, peer_addr: &str) -> Result<Connection> {
-        let endpoint = self.endpoint().await?;
         let trimmed = peer_addr.trim();
+        if trimmed.is_empty() || peer_addr.chars().any(|c| c.is_control()) {
+            tracing::debug!("Rejected invalid iroh peer addr before IO: {peer_addr}");
+            anyhow::bail!("invalid iroh peer addr: {peer_addr}");
+        }
         let public_key = trimmed
             .parse::<iroh::PublicKey>()
             .with_context(|| format!("invalid iroh peer addr: {peer_addr}"))?;
+        let endpoint = self.endpoint().await?;
         let endpoint_addr = iroh::EndpointAddr::new(public_key);
         let conn = endpoint
             .connect(endpoint_addr, XMESH_ALPN)
@@ -225,23 +240,33 @@ impl IrohTransport {
         _token: &str,
         pairing_secret: Option<String>,
     ) -> Result<MeshHandshakeResponse> {
-        let conn = self.connect(peer_addr).await?;
-        let nonce = uuid::Uuid::new_v4().to_string();
-        let signature = self.local_identity.sign(nonce.as_bytes());
-        let body = MeshHandshake {
-            node_id: self.local_identity.node_id.clone(),
-            public_key_hex: crate::crypto::hex_encode(&self.local_identity.public_key),
-            xavier_version: env!("CARGO_PKG_VERSION").to_string(),
-            capabilities: vec!["sync-v1".to_string()],
-            timestamp: chrono::Utc::now().timestamp(),
-            nonce,
-            signature_hex: crate::crypto::hex_encode(signature),
-            pairing_secret,
+        let handshake_fut = async {
+            let conn = self.connect(peer_addr).await?;
+            let nonce = uuid::Uuid::new_v4().to_string();
+            let signature = self.local_identity.sign(nonce.as_bytes());
+            let body = MeshHandshake {
+                node_id: self.local_identity.node_id.clone(),
+                public_key_hex: crate::crypto::hex_encode(&self.local_identity.public_key),
+                xavier_version: env!("CARGO_PKG_VERSION").to_string(),
+                capabilities: vec!["sync-v1".to_string()],
+                timestamp: chrono::Utc::now().timestamp(),
+                nonce,
+                signature_hex: crate::crypto::hex_encode(signature),
+                pairing_secret,
+            };
+            let resp = self
+                .round_trip(&conn, &MeshRequest::Handshake { body })
+                .await?;
+            serde_json::from_value(resp).context("parse handshake response")
         };
-        let resp = self
-            .round_trip(&conn, &MeshRequest::Handshake { body })
-            .await?;
-        serde_json::from_value(resp).context("parse handshake response")
+
+        match tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake_fut).await {
+            Ok(res) => res,
+            Err(_) => {
+                tracing::warn!("Handshake timed out for peer {peer_addr}");
+                Err(anyhow!("handshake timed out for peer {peer_addr}"))
+            }
+        }
     }
 
     /// Fetch the sync manifest from a peer over Iroh. Reads the address out of
@@ -583,6 +608,7 @@ mod tests {
             iroh_addr: None,
             shared_workspace_ids: Vec::new(),
             shared_workspace_tokens: std::collections::HashMap::new(),
+            capabilities: Vec::new(),
         };
         assert!(IrohTransport::addr_from_peer(&peer).is_err());
 
@@ -606,10 +632,111 @@ mod tests {
             iroh_addr: Some("deadbeefdeadbeef".into()),
             shared_workspace_ids: Vec::new(),
             shared_workspace_tokens: std::collections::HashMap::new(),
+            capabilities: Vec::new(),
         };
         assert_eq!(
             IrohTransport::addr_from_peer(&peer).unwrap(),
             "deadbeefdeadbeef"
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_rejects_empty_whitespace_and_control_chars_without_io() {
+        let transport =
+            IrohTransport::new(Arc::new(test_identity()), test_store_with_records(vec![]));
+
+        let invalid_inputs = [
+            "",
+            "   ",
+            "key\nwith\nnewlines",
+            "key\twith\ttabs",
+            "key\r\nctrl",
+        ];
+        for input in invalid_inputs {
+            let res = transport.connect(input).await;
+            assert!(res.is_err(), "Expected error for input {:?}", input);
+            let err = res.unwrap_err().to_string();
+            assert!(
+                err.contains("invalid iroh peer addr"),
+                "Error string for {:?} was: {}",
+                input,
+                err
+            );
+        }
+
+        // Endpoint must NOT have been initialized/bound (zero IO occurred).
+        assert!(
+            transport.endpoint.get().is_none(),
+            "Endpoint must remain uninitialized on input guard rejection"
+        );
+    }
+
+    #[test]
+    fn addr_from_peer_rejects_control_chars() {
+        let peer = PeerInfo {
+            node_id: crate::mesh::node::NodeId("peer-ctrl".into()),
+            alias: None,
+            endpoint_url: String::new(),
+            public_key_hex: "aabb".into(),
+            added_at: 0,
+            last_seen_at: None,
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: Some("invalid\naddr\tcontrol".into()),
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: std::collections::HashMap::new(),
+            capabilities: Vec::new(),
+        };
+        let res = IrohTransport::addr_from_peer(&peer);
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("invalid iroh peer addr"));
+    }
+
+    #[test]
+    fn addr_from_peer_and_valid_key_format() {
+        let secret = iroh::SecretKey::generate();
+        let public_key = secret.public();
+        let pk_str = public_key.to_string();
+
+        let peer = PeerInfo {
+            node_id: crate::mesh::node::NodeId("peer-valid".into()),
+            alias: None,
+            endpoint_url: String::new(),
+            public_key_hex: "aabb".into(),
+            added_at: 0,
+            last_seen_at: None,
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: Some(pk_str.clone()),
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: std::collections::HashMap::new(),
+            capabilities: Vec::new(),
+        };
+
+        let resolved = IrohTransport::addr_from_peer(&peer).unwrap();
+        assert_eq!(resolved, pk_str);
+        assert!(resolved.parse::<iroh::PublicKey>().is_ok());
+    }
+
+    #[tokio::test]
+    async fn handshake_times_out_on_unroutable_addr() {
+        tokio::time::pause();
+        let transport =
+            IrohTransport::new(Arc::new(test_identity()), test_store_with_records(vec![]));
+
+        let secret = iroh::SecretKey::generate();
+        let unroutable_pk = secret.public().to_string();
+
+        let res = transport.handshake(&unroutable_pk, "token", None).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("handshake timed out for peer"),
+            "Error was: {}",
+            err_msg
         );
     }
 
