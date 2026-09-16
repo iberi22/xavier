@@ -69,6 +69,8 @@ Semántica: **búsqueda ⇒ exclusión** (no revela existencia) · **lectura por
 
 ## 5. Exigir nivel en una ruta (config del servidor)
 
+La exigencia de nivel por ruta es **exclusivamente configuración del servidor** (`route_clearance.json` o la variable `XAVIER_REQUIRED_CLEARANCE_ROUTES`). El antiguo header `X-Required-Clearance` **ha sido eliminado** y ya no existe; el cliente no puede declarar o alterar los requisitos de autorización de una ruta.
+
 Copiar `docs/features/route_clearance.example.json` a `<workspace>/data/security/route_clearance.json`
 y editar. Prioridad: `XAVIER_REQUIRED_CLEARANCE_ROUTES` (JSON inline) > archivo > reglas por defecto.
 Gana el prefijo más largo. Quien no llega recibe `403` y la denegación queda auditada.

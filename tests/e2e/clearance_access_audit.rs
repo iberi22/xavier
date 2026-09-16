@@ -108,11 +108,18 @@ async fn test_http_redaction_e2e() {
     use serde_json::{json, Value};
     use tower::ServiceExt;
     use xavier::adapters::inbound::http::middleware::clearance::{
-        clearance_middleware, X_CLEARANCE_HEADER, X_REQUIRED_CLEARANCE_HEADER,
+        clearance_middleware, TRUST_HEADER_ENV, X_CLEARANCE_HEADER,
     };
     use xavier::security::clearance::{
         ClearanceEnforcer, ClearanceLevel as SecurityClearanceLevel,
     };
+    use xavier::security::route_policy::ROUTE_POLICY_ENV;
+
+    std::env::set_var(TRUST_HEADER_ENV, "1");
+    std::env::set_var(
+        ROUTE_POLICY_ENV,
+        r#"{"routes":[{"prefix":"/api/v1/documents/topsecret_only","required":"TOPSECRET"}]}"#,
+    );
 
     let app = Router::new()
         .route(
@@ -167,7 +174,6 @@ async fn test_http_redaction_e2e() {
     let req_gate_deny = Request::builder()
         .uri("/api/v1/documents/topsecret_only")
         .header(X_CLEARANCE_HEADER, "CONFIDENTIAL")
-        .header(X_REQUIRED_CLEARANCE_HEADER, "TOP_SECRET")
         .body(Body::empty())
         .unwrap();
 
@@ -178,10 +184,12 @@ async fn test_http_redaction_e2e() {
     let req_gate_grant = Request::builder()
         .uri("/api/v1/documents/topsecret_only")
         .header(X_CLEARANCE_HEADER, "TOP_SECRET")
-        .header(X_REQUIRED_CLEARANCE_HEADER, "TOP_SECRET")
         .body(Body::empty())
         .unwrap();
 
     let resp_grant = app.oneshot(req_gate_grant).await.unwrap();
     assert_eq!(resp_grant.status(), StatusCode::OK);
+
+    std::env::remove_var(ROUTE_POLICY_ENV);
+    std::env::remove_var(TRUST_HEADER_ENV);
 }
