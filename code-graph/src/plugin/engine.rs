@@ -62,6 +62,17 @@ impl PluginEngine for ProcessEngine {
             let input = serde_json::to_string(&request)
                 .map_err(|e| GraphError::Parser(format!("failed to serialize request: {}", e)))?;
 
+            // Bound every plugin invocation: a misbehaving sidecar binary
+            // (stale version, waiting on a socket, saturated host) must never
+            // hang indexing forever. On timeout the child is killed and the
+            // caller falls back to the next parser in the chain (Native).
+            // Override with XAVIER_PLUGIN_PARSE_TIMEOUT_SECS (0 = use default).
+            let timeout_secs = std::env::var("XAVIER_PLUGIN_PARSE_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .filter(|v| *v > 0)
+                .unwrap_or(30);
+
             let mut child = Command::new(&command)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
@@ -71,54 +82,77 @@ impl PluginEngine for ProcessEngine {
                     GraphError::Parser(format!("failed to spawn plugin '{}': {}", command, e))
                 })?;
 
-            let mut stdin = child.stdin.take().unwrap();
-            stdin.write_all(input.as_bytes()).await.map_err(|e| {
-                GraphError::Parser(format!("failed to write to plugin stdin: {}", e))
-            })?;
-            drop(stdin);
+            let communicate = async {
+                let mut stdin = child
+                    .stdin
+                    .take()
+                    .ok_or_else(|| GraphError::Parser("plugin stdin unavailable".to_string()))?;
+                stdin.write_all(input.as_bytes()).await.map_err(|e| {
+                    GraphError::Parser(format!("failed to write to plugin stdin: {}", e))
+                })?;
+                drop(stdin);
 
-            let mut stdout = Vec::new();
-            child
-                .stdout
-                .take()
-                .unwrap()
-                .read_to_end(&mut stdout)
+                let mut stdout = Vec::new();
+                child
+                    .stdout
+                    .take()
+                    .ok_or_else(|| GraphError::Parser("plugin stdout unavailable".to_string()))?
+                    .read_to_end(&mut stdout)
+                    .await
+                    .map_err(|e| {
+                        GraphError::Parser(format!("failed to read plugin stdout: {}", e))
+                    })?;
+
+                let mut stderr = String::new();
+                if let Some(mut err_pipe) = child.stderr.take() {
+                    let _ = err_pipe.read_to_string(&mut stderr).await;
+                }
+
+                let status = child.wait().await.map_err(|e| {
+                    GraphError::Parser(format!("plugin process failed to exit: {}", e))
+                })?;
+
+                if !status.success() {
+                    return Err(GraphError::Parser(format!(
+                        "plugin '{}' exited with status {}: {}",
+                        command, status, stderr
+                    )));
+                }
+
+                let response: PluginResponse = serde_json::from_slice(&stdout).map_err(|e| {
+                    GraphError::Parser(format!(
+                        "failed to parse plugin response: {}\nOutput was: {}",
+                        e,
+                        String::from_utf8_lossy(&stdout)
+                    ))
+                })?;
+
+                Ok::<Vec<Symbol>, GraphError>(response.symbols)
+            };
+
+            match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), communicate)
                 .await
-                .map_err(|e| GraphError::Parser(format!("failed to read plugin stdout: {}", e)))?;
-
-            let mut stderr = String::new();
-            child
-                .stderr
-                .take()
-                .unwrap()
-                .read_to_string(&mut stderr)
-                .await
-                .ok();
-
-            let status = child
-                .wait()
-                .await
-                .map_err(|e| GraphError::Parser(format!("plugin process failed to exit: {}", e)))?;
-
-            if !status.success() {
-                let err = format!(
-                    "plugin '{}' exited with status {}: {}",
-                    command, status, stderr
-                );
-                engine.record_failure(&plugin_name, err.clone());
-                return Err(GraphError::Parser(err));
+            {
+                Ok(Ok(symbols)) => {
+                    engine.record_success(&plugin_name);
+                    Ok(symbols)
+                }
+                Ok(Err(e)) => {
+                    engine.record_failure(&plugin_name, e.to_string());
+                    Err(e)
+                }
+                Err(_) => {
+                    // Timeout: `communicate` is dropped (pipes closed), then
+                    // ensure the child cannot linger as an orphan.
+                    let _ = child.kill().await;
+                    let err = format!(
+                        "plugin '{}' parse timed out after {}s",
+                        command, timeout_secs
+                    );
+                    engine.record_failure(&plugin_name, err.clone());
+                    Err(GraphError::Parser(err))
+                }
             }
-
-            let response: PluginResponse = serde_json::from_slice(&stdout).map_err(|e| {
-                GraphError::Parser(format!(
-                    "failed to parse plugin response: {}\nOutput was: {}",
-                    e,
-                    String::from_utf8_lossy(&stdout)
-                ))
-            })?;
-
-            engine.record_success(&plugin_name);
-            Ok(response.symbols)
         })
     }
 

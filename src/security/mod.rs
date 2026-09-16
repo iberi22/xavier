@@ -9,6 +9,7 @@ pub mod audit;
 pub mod auth;
 pub mod auth_store;
 pub mod clearance;
+pub mod clearance_audit;
 pub mod detections;
 pub mod encryption_keys;
 pub mod groups;
@@ -19,6 +20,7 @@ pub mod prompt_guard;
 pub mod rate_limiter;
 pub mod recovery;
 pub mod redaction;
+pub mod route_policy;
 pub mod rsa_keys;
 pub mod scanner;
 pub mod sessions;
@@ -377,15 +379,33 @@ impl SecurityService {
         let vault = crate::secrets::vault::HardwareVault::new("xavier");
         let password = match vault.get_secret(&self.config.master_key_name) {
             Ok(p) => p,
-            Err(_) => {
-                // For development/initial setup, if not in vault, use a fallback or fail
-                // In production, we expect the key to be there.
-                // Let's generate a random one and store it if it's missing?
-                // Or maybe just return an error if encryption is mandatory.
-                return Err(anyhow!(
-                    "Master key not found in vault: {}",
-                    self.config.master_key_name
-                ));
+            Err(e) => {
+                tracing::debug!(
+                    key_name = %self.config.master_key_name,
+                    error = %e,
+                    "Hardware vault key lookup failed or hardware token unavailable, falling back to MasterKeyManager derived key"
+                );
+                // If not found in vault, check MasterKeyManager fallback
+                if let Ok(mkm) = crate::security::encryption_keys::MasterKeyManager::load_or_init()
+                {
+                    let mut key_buf = [0u8; 32];
+                    if mkm
+                        .derive_key(b"xavier-master-key-v1", &mut key_buf)
+                        .is_ok()
+                    {
+                        crate::utils::crypto::hex_encode(&key_buf)
+                    } else {
+                        return Err(anyhow!(
+                            "Master key not found in vault: {}",
+                            self.config.master_key_name
+                        ));
+                    }
+                } else {
+                    return Err(anyhow!(
+                        "Master key not found in vault: {}",
+                        self.config.master_key_name
+                    ));
+                }
             }
         };
 
@@ -404,7 +424,20 @@ impl SecurityService {
     pub fn get_kek(&self) -> Result<crate::crypto::keys::KEK> {
         let mgr = self.get_key_manager()?;
         let vault = crate::secrets::vault::HardwareVault::new("xavier");
-        let password = vault.get_secret(&self.config.master_key_name)?;
+        let password = match vault.get_secret(&self.config.master_key_name) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::debug!(
+                    key_name = %self.config.master_key_name,
+                    error = %e,
+                    "Hardware vault secret missing or unavailable for KEK, falling back to MasterKeyManager derived key"
+                );
+                let mkm = crate::security::encryption_keys::MasterKeyManager::load_or_init()?;
+                let mut key_buf = [0u8; 32];
+                mkm.derive_key(b"xavier-master-key-v1", &mut key_buf)?;
+                crate::utils::crypto::hex_encode(&key_buf)
+            }
+        };
         Ok(mgr.derive_kek(&password)?)
     }
 }

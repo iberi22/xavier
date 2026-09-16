@@ -2,18 +2,19 @@ import { Moon, Sun } from "lucide-react";
 import { useTheme } from "../lib/theme/theme-provider";
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme !== "studio-bone";
 
   return (
     <button
       type="button"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      onClick={() => setTheme(isDark ? "studio-bone" : "studio-dark")}
       aria-label="Toggle theme"
-      aria-pressed={theme === "dark"}
-      title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-      className="p-1.5 rounded-full bg-slate-200 dark:bg-[#0a0a0a]/80 text-slate-800 dark:text-white/80 hover:bg-slate-300 dark:hover:bg-white/10 border border-slate-300 dark:border-white/10 shadow-sm transition-colors flex items-center justify-center focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
+      aria-pressed={isDark}
+      title={isDark ? "Switch to light theme (Hueso Blanco)" : "Switch to dark theme (Studio Dark)"}
+      className="p-1.5 rounded-full bg-slate-200 dark:bg-[#191a1e] text-slate-800 dark:text-white/80 hover:bg-slate-300 dark:hover:bg-white/10 border border-slate-300 dark:border-white/10 shadow-sm transition-colors flex items-center justify-center focus-visible:ring-2 focus-visible:ring-blue-500/50"
     >
-      {theme === "dark" ? (
+      {isDark ? (
         <Sun className="w-4 h-4 text-amber-400" aria-hidden="true" />
       ) : (
         <Moon className="w-4 h-4 text-slate-700" aria-hidden="true" />

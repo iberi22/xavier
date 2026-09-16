@@ -1,6 +1,6 @@
 [package]
 name = "xavier"
-version = "0.2.1"
+version = "0.2.3"
 rust-version = "1.94"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
@@ -38,11 +38,19 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
+# NOTE (mitigación auditoría DX 2026-09): `panel-ui/src-tauri` y `xavier-core`
+# están EXCLUIDOS del workspace raíz. Tauri exige librerías GUI de escritorio
+# (webkit2gtk, gtk3, libsoup...) que rompen `cargo check/test --workspace` en
+# servidores headless, VPS y CI. El frontend Tauri se compila desde su propio
+# directorio; `xavier-core` es un refactor WIP que no compila (issue #542).
+exclude = [
+    "panel-ui/src-tauri",
+    "xavier-core",
+]
 members = [
     "code-graph",
     "crates/xavier-core-logic",
     "crates/xavier-wasm",
-    "panel-ui/src-tauri",
     "code-graph/parsers/parser-rust",
     "code-graph/parsers/parser-ts",
     "code-graph/parsers/parser-python",
@@ -51,11 +59,6 @@ members = [
     "code-graph/parsers/parser-c",
     "code-graph/parsers/parser-cpp",
 ]
-# NOTE: "xavier-core" is excluded from the workspace. It is an incomplete
-# WIP refactor (duplicates src/memory/sqlite_vec_store/) that does not compile
-# and is NOT consumed by any crate (xavier, code-graph, panel-ui). Re-add it
-# once its refactor is complete (see issue #542). Excluding is non-destructive:
-# the directory and its files remain in the repo.
 
 [features]
 default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage", "panel-ui"]
@@ -134,6 +137,11 @@ name = "embedding_bench"
 path = "benches/embedding_bench.rs"
 harness = false
 
+[[bench]]
+name = "vector_search"
+path = "benches/vector_search.rs"
+harness = false
+
 [[test]]
 name = "auth_full_flow_test"
 path = "tests/integration/auth_full_flow_test.rs"
@@ -157,6 +165,10 @@ path = "tests/e2e/mcp_e2e.rs"
 [[test]]
 name = "notification_e2e"
 path = "tests/e2e/notification_e2e.rs"
+
+[[test]]
+name = "notification_emitters"
+path = "tests/notification_emitters.rs"
 
 [[test]]
 name = "hormer_navigation_e2e"
@@ -218,6 +230,14 @@ path = "tests/kernel_proxy_test.rs"
 name = "kernel_mcp_test"
 path = "tests/kernel_mcp_test.rs"
 
+[[test]]
+name = "messaging_status"
+path = "tests/messaging_status.rs"
+
+[[test]]
+name = "clearance_audit_sqlite"
+path = "tests/clearance_audit_sqlite.rs"
+
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 code-graph = { path = "./code-graph" }
@@ -240,7 +260,7 @@ thiserror = "2.0.18"
 flate2 = "1.0"
 tokio = { version = "1.52.2", features = ["full"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 # Used by the MCP Streamable HTTP (SSE) transport to build the keepalive stream.
 # Also a transitive dependency of axum, so no extra version is pulled in.
 futures-util = "0.3"
@@ -386,3 +406,8 @@ lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
 
+[profile.bench]
+opt-level = 3
+lto = false
+codegen-units = 16
+strip = "debuginfo"
