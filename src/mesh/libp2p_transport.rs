@@ -10,11 +10,27 @@
 //! - When `--features libp2p` is enabled, real gossipsub types are available.
 //! - NAT traversal is documented via iroh fallback (already provides hole-punching).
 
-use anyhow::Result;
+use crate::mesh::maturity::MeshMaturityReport;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
+
+/// Error returned when attempting network operations on the deprecated libp2p transport stub.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[error("libp2p transport is deprecated (libp2p_percent: {libp2p_percent}%); use Iroh/HTTP; see MeshMaturityReport")]
+pub struct Libp2pDeprecated {
+    pub libp2p_percent: u8,
+}
+
+impl Default for Libp2pDeprecated {
+    fn default() -> Self {
+        Self {
+            libp2p_percent: MeshMaturityReport::default().libp2p_percent,
+        }
+    }
+}
 
 /// Mesh peer info for libp2p gossipsub
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,37 +115,32 @@ impl MeshLibp2pTransport {
         Self::new(GossipsubConfig::default(), NatTraversalConfig::default())
     }
 
-    /// Subscribe to a gossipsub topic
-    pub async fn subscribe(&self, topic: &str) -> Result<()> {
+    /// Subscribe to a gossipsub topic (deprecated)
+    pub async fn subscribe(&self, topic: &str) -> Result<(), Libp2pDeprecated> {
         let mut subs = self.topic_subscriptions.write().await;
         if !subs.contains(&topic.to_string()) {
             subs.push(topic.to_string());
         }
-        Ok(())
+        Err(Libp2pDeprecated::default())
     }
 
-    /// Unsubscribe from a gossipsub topic
-    pub async fn unsubscribe(&self, topic: &str) -> Result<()> {
+    /// Unsubscribe from a gossipsub topic (deprecated)
+    pub async fn unsubscribe(&self, topic: &str) -> Result<(), Libp2pDeprecated> {
         let mut subs = self.topic_subscriptions.write().await;
         subs.retain(|t| t != topic);
-        Ok(())
+        Err(Libp2pDeprecated::default())
     }
 
-    /// Publish a message to a gossipsub topic
-    pub async fn publish(&self, topic: &str, payload: &[u8]) -> Result<()> {
-        let subs = self.topic_subscriptions.read().await;
-        if !subs.contains(&topic.to_string()) {
-            anyhow::bail!("not subscribed to topic {}", topic);
-        }
-        // stub: in real libp2p this would call swarm.behaviour_mut().gossipsub.publish()
-        let _ = payload;
-        Ok(())
+    /// Publish a message to a gossipsub topic (deprecated)
+    pub async fn publish(&self, _topic: &str, _payload: &[u8]) -> Result<(), Libp2pDeprecated> {
+        Err(Libp2pDeprecated::default())
     }
 
-    /// Register a peer (simulates libp2p peer discovery)
-    pub async fn add_peer(&self, peer: MeshLibp2pPeer) {
+    /// Register a peer (simulates libp2p peer discovery; returns deprecation error)
+    pub async fn add_peer(&self, peer: MeshLibp2pPeer) -> Result<(), Libp2pDeprecated> {
         let mut peers = self.peers.write().await;
         peers.insert(peer.peer_id.clone(), peer);
+        Err(Libp2pDeprecated::default())
     }
 
     /// List known Mesh peers
@@ -142,24 +153,9 @@ impl MeshLibp2pTransport {
         self.peers.read().await.len()
     }
 
-    /// Dial a peer by multiaddr (NAT traversal aware)
-    pub async fn dial(&self, peer_id: &str) -> Result<()> {
-        let peers = self.peers.read().await;
-        let peer = peers
-            .get(peer_id)
-            .ok_or_else(|| anyhow::anyhow!("peer {} not found", peer_id))?;
-        // NAT traversal: try direct, fallback to relay
-        if self.nat.enable_direct {
-            // attempt direct dial
-            let _ = &peer.multiaddr;
-        } else if self.nat.enable_relay {
-            let _relay = self
-                .nat
-                .relay_addr
-                .as_deref()
-                .unwrap_or("/ip4/relay/tcp/4001");
-        }
-        Ok(())
+    /// Dial a peer by multiaddr (deprecated)
+    pub async fn dial(&self, _peer_id: &str) -> Result<(), Libp2pDeprecated> {
+        Err(Libp2pDeprecated::default())
     }
 
     pub fn gossipsub_config(&self) -> &GossipsubConfig {
@@ -180,7 +176,7 @@ impl Default for MeshLibp2pTransport {
 /// Helper to create a 1-peer mesh for testing/verification
 pub async fn single_peer_mesh(peer_id: &str, multiaddr: &str) -> Arc<MeshLibp2pTransport> {
     let transport = Arc::new(MeshLibp2pTransport::with_defaults());
-    transport
+    let _ = transport
         .add_peer(MeshLibp2pPeer {
             peer_id: peer_id.to_string(),
             multiaddr: multiaddr.to_string(),
@@ -206,17 +202,23 @@ mod tests {
     #[tokio::test]
     async fn test_gossipsub_subscribe_publish() {
         let m = MeshLibp2pTransport::with_defaults();
-        m.subscribe("xavier/test").await.unwrap();
-        m.publish("xavier/test", b"hello mesh").await.unwrap();
-        // unsubscribed topic should fail
-        assert!(m.publish("xavier/other", b"fail").await.is_err());
+        let sub_err = m.subscribe("xavier/test").await.unwrap_err();
+        assert_eq!(sub_err, Libp2pDeprecated::default());
+
+        let pub_err = m.publish("xavier/test", b"hello mesh").await.unwrap_err();
+        assert_eq!(pub_err.libp2p_percent, 10);
+        let msg = pub_err.to_string();
+        assert!(msg.contains("libp2p transport is deprecated"));
+        assert!(msg.contains("libp2p_percent: 10%"));
+        assert!(msg.contains("use Iroh/HTTP"));
+        assert!(msg.contains("see MeshMaturityReport"));
     }
 
     #[tokio::test]
     async fn test_nat_dial() {
         let m = single_peer_mesh("peer1", "/ip4/1.2.3.4/tcp/4001").await;
-        m.dial("peer1").await.unwrap();
-        assert!(m.dial("unknown").await.is_err());
+        let err = m.dial("peer1").await.unwrap_err();
+        assert_eq!(err, Libp2pDeprecated::default());
     }
 
     #[test]
