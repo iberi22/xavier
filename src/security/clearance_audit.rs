@@ -161,6 +161,40 @@ pub fn record_denied(
     entry
 }
 
+/// Espeja una decisión de lectura clasificada en el log canónico de auditoría
+/// SQLite a través de `AuditLogger` (WAVE-22.01).
+///
+/// Formato del permiso: `clearance:<action>:<route>`.
+/// Fail-open: un fallo del espejo se reporta por log y no interrumpe.
+pub async fn mirror_to_audit_logger(entry: &ClearanceReadAudit) -> anyhow::Result<()> {
+    let logger = super::audit::AuditLogger::new();
+    let permission = format!("clearance:{}:{}", entry.action, entry.route);
+    if let Err(e) = logger
+        .log_check(&entry.subject, &entry.role, &permission, entry.allowed)
+        .await
+    {
+        tracing::error!("Failed to mirror clearance audit check to SQLite: {}", e);
+    }
+    Ok(())
+}
+
+/// Añade al sink JSONL y espeja a SQLite si `XAVIER_CLEARANCE_AUDIT_SQLITE` != "0".
+/// Fail-open: los errores de escritura o espejo no se propagan ni interrumpen.
+pub async fn record_and_mirror(entry: ClearanceReadAudit) -> anyhow::Result<()> {
+    record(&entry);
+
+    let sqlite_enabled =
+        std::env::var("XAVIER_CLEARANCE_AUDIT_SQLITE").unwrap_or_else(|_| "1".to_string()) != "0";
+
+    if sqlite_enabled {
+        if let Err(e) = mirror_to_audit_logger(&entry).await {
+            tracing::error!("Failed to mirror clearance audit to SQLite: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
