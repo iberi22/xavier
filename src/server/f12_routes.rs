@@ -14,10 +14,11 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::codebase::snapshot::{discover_swal_repo_roots, SnapshotManager};
 use crate::curation::CurationQueue;
@@ -54,8 +55,8 @@ impl F12State {
         }
     }
 
-    fn groups_mut(&self) -> std::sync::MutexGuard<'_, F12Registries> {
-        let mut reg = self.registry.lock().unwrap();
+    fn groups_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
+        let mut reg = self.registry.lock();
         if reg.groups.is_none() {
             reg.groups = Some(
                 GroupRegistry::load_from(self.data_dir.join("security/groups.json"))
@@ -65,8 +66,8 @@ impl F12State {
         reg
     }
 
-    fn directory_mut(&self) -> std::sync::MutexGuard<'_, F12Registries> {
-        let mut reg = self.registry.lock().unwrap();
+    fn directory_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
+        let mut reg = self.registry.lock();
         if reg.directory.is_none() {
             reg.directory = Some(
                 PublicDirectory::load_from(self.data_dir.join("mesh/public-directory.json"))
@@ -76,8 +77,8 @@ impl F12State {
         reg
     }
 
-    fn private_mesh_mut(&self) -> std::sync::MutexGuard<'_, F12Registries> {
-        let mut reg = self.registry.lock().unwrap();
+    fn private_mesh_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
+        let mut reg = self.registry.lock();
         if reg.private_mesh.is_none() {
             reg.private_mesh = Some(
                 PrivateMeshRegistry::load_or_create(self.data_dir.join("mesh/private-mesh.json"))
@@ -92,8 +93,8 @@ impl F12State {
         reg
     }
 
-    fn curation_mut(&self) -> std::sync::MutexGuard<'_, F12Registries> {
-        let mut reg = self.registry.lock().unwrap();
+    fn curation_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
+        let mut reg = self.registry.lock();
         if reg.curation.is_none() {
             reg.curation = Some(CurationQueue::new_with_path(
                 self.data_dir.join("curation/queue.json"),
@@ -102,8 +103,8 @@ impl F12State {
         reg
     }
 
-    fn service_network_mut(&self) -> std::sync::MutexGuard<'_, F12Registries> {
-        let mut reg = self.registry.lock().unwrap();
+    fn service_network_mut(&self) -> parking_lot::MutexGuard<'_, F12Registries> {
+        let mut reg = self.registry.lock();
         if reg.service_network.is_none() {
             reg.service_network = Some(ServiceRegistry::new());
         }

@@ -214,9 +214,17 @@ impl CodeGraphDB {
 
         info!("Creating NEW database at {:?}", path);
 
-        // Remove existing file if present
+        // Remove existing file if present. SQLite in WAL mode keeps `-wal`
+        // and `-shm` sidecars: leaving stale ones behind makes the fresh DB
+        // open with "disk image is malformed" or resurrect old rows.
         if path.exists() {
             std::fs::remove_file(path).map_err(|e| GraphError::Database(e.to_string()))?;
+        }
+        for suffix in ["-wal", "-shm"] {
+            let sidecar = PathBuf::from(format!("{}{}", path.display(), suffix));
+            if sidecar.exists() {
+                std::fs::remove_file(&sidecar).map_err(|e| GraphError::Database(e.to_string()))?;
+            }
         }
 
         let conn = Connection::open(path).map_err(|e| GraphError::Database(e.to_string()))?;
