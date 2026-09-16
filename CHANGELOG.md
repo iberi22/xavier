@@ -4,6 +4,26 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-09-16
+
+### Security
+- **Recovery secrets now Argon2id**: `hash_seed_phrase` / `hash_backup_code` (`src/security/recovery.rs`) emitted unsalted SHA-256. They now emit salted Argon2id PHC strings via `crypto::password`, with new `verify_seed_phrase` / `verify_backup_code` helpers that still accept legacy SHA-256 hex as a migration fallback. All callers migrated (CLI recovery handlers, `auth2` register/reset/2FA, `verify_and_consume_backup_code` now matches the raw code in Rust instead of by SQL equality).
+- **FTS5 injection closed**: `search_code` (`src/codebase/db.rs`) and `search_logs` (`src/observability/service_log.rs`) passed raw user input to `MATCH`, turning FTS5 syntax into HTTP 500s. Both now sanitize through `sqlite_vec_store::fts::build_fts_query`; token-less queries return empty results.
+- **Dependency vulnerabilities patched**: `h2` 0.4.15 → 0.4.19 (RUSTSEC-2026-0258), `ruint` 1.19.0 → 1.20.1 (RUSTSEC-2026-0220), `rustls` 0.23.42 → 0.23.45 (RUSTSEC-2026-0285). `rsa` 0.9.10 (RUSTSEC-2023-0071, no fix available) risk-accepted: usage is JWT RS256 sign/verify only, no PKCS#1 v1.5 decryption.
+
+### Fixed
+- **Nested Tokio runtime panic**: `VecSqliteMemoryStore::init_schema` built a runtime inside `block_in_place` (panics on current-thread runtimes, stalls the scheduler). Now runs the async init on a dedicated OS thread via `thread::scope`.
+- **CodeGraph WAL corruption on recreate**: `CodeGraphDB::create_new` deleted the main file but left `-wal`/`-shm` sidecars behind (stale WAL → "disk image is malformed"). Sidecars are now removed too.
+- **Stdio MCP no longer requires HTTP token**: `validate_stdio_connection` rejected local sessions without `XAVIER_TOKEN`. Local stdio inherits OS process trust (warn + allow); HTTP/SSE transports still enforce token/JWT strictly.
+- **Mutex poisoning DoS**: `F12State` registry and `GoogleOAuthManager` used `std::sync::Mutex` with `.lock().unwrap()` in Axum handlers. Migrated to `parking_lot::Mutex` (already a dependency).
+- **Verify pipeline accepts `in_progress`**: `scripts/verify-pipeline.sh` aborted on the `feat-classified-clearance` status; the status tuple (schema gate + test selection) now includes it. `--check-only` green: 59 features, 54 stable, score 91.1%.
+- **Broken DX defaults**: removed `target-dir = "/tmp/xavier-target"` from `.cargo/config.toml` (docs say `./target/...`); excluded `panel-ui/src-tauri` (+ formal `xavier-core`) from the root workspace so headless/CI builds no longer require desktop GUI libs (also pruned ~800 lines of Tauri GUI deps from `Cargo.lock`); `.mcp.json` no longer references the nonexistent `gestalt-mcp` and uses repo-relative paths (`./scripts/mcp/xavier-mcp-cursor.sh`, no hardcoded `XAVIER_DATA_DIR_OVERRIDE` — the launcher auto-detects `REPO_ROOT/data`); `shell.nix` defaults to a local `./target` (`CARGO_TARGET_DIR="$(pwd)/target"`) instead of a forced `$HOME/.cargo/xavier-target` so nix-shell users find their binary at `./target/release/xavier`; `scripts/verify-pipeline.sh` is executable; repo-root runtime junk (`*.db*`, `*.o`, `patch_*`) removed (all gitignored, none tracked).
+
+## [0.2.2] — 2026-09-14 (retrospective)
+
+> **Note:** tag `v0.2.2` was cut on PR #2248 without a manifest bump (`Cargo.toml` / `package.json` stayed at `0.2.1`). This entry documents it retrospectively; the manifests jump directly to `0.2.3`.
+- **Docker BuildKit optimization release** (#2248): BuildKit cache mounts for pnpm store, Cargo registry and target in `Dockerfile`; release binary copied to `/app/xavier` inside the builder stage to survive the target cache mount; explicit `HEALTHCHECK` on `http://127.0.0.1:8006/health`; `.dockerignore` extended to exclude build artifacts, test results, docs, scripts, agent files and sqlite caches.
+
 ## [0.2.1] — 2026-09-13
 
 ### Added

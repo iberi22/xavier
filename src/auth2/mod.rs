@@ -24,7 +24,7 @@ use axum::{
 use qrcode::render::unicode; // usar unicode QR para evitar dependencia render svg
 use qrcode::QrCode;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::Digest; // trait for the refresh-token hasher below (fully-qualified sha2::Sha256)
 use std::time::{SystemTime, UNIX_EPOCH};
 use totp_rs::{Algorithm as TOTPAlgorithm, Builder, Secret, Totp};
 // use crate::cli::server::CliState;
@@ -32,6 +32,7 @@ use crate::auth2::db::{AuditLog, AuthDb, User};
 use crate::auth2::jwt::JwtManager;
 use crate::auth2::password::{hash_password, verify_password};
 use crate::auth2::refresh::RefreshTokenManager;
+use crate::security::recovery::RecoverySystem;
 use anyhow::Result;
 
 #[derive(Deserialize)]
@@ -300,11 +301,8 @@ where
         }
     };
 
-    let seed_hash = {
-        let mut hasher = Sha256::new();
-        hasher.update(seed_phrase_str.as_bytes());
-        crate::crypto::hex_encode(hasher.finalize())
-    };
+    // Recovery seed stored as salted Argon2id hash (never the raw phrase).
+    let seed_hash = RecoverySystem::hash_seed_phrase(&seed_phrase_str);
 
     let user = User {
         id: ulid::Ulid::new().to_string(),
@@ -646,11 +644,8 @@ where
         use rand::Rng;
         let code: u32 = rand::thread_rng().gen_range(10000000..99999999);
         let code_str = code.to_string();
-        let hash = {
-            let mut hasher = Sha256::new();
-            hasher.update(code_str.as_bytes());
-            crate::crypto::hex_encode(hasher.finalize())
-        };
+        // Salted Argon2id: 8-digit codes (~27 bits) must not use fast hashes.
+        let hash = RecoverySystem::hash_backup_code(&code_str);
         backup_codes.push(code_str);
         hashed_codes.push(hash);
     }
@@ -787,18 +782,13 @@ where
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Verify seed phrase
+    // Verify seed phrase (Argon2id; legacy SHA-256 hashes still accepted).
     let seed_hash = user
         .recovery_seed_hash
         .as_ref()
         .ok_or(StatusCode::BAD_REQUEST)?;
-    let input_hash = {
-        let mut hasher = Sha256::new();
-        hasher.update(payload.seed_phrase.as_bytes());
-        crate::crypto::hex_encode(hasher.finalize())
-    };
 
-    if &input_hash != seed_hash {
+    if !RecoverySystem::verify_seed_phrase(&payload.seed_phrase, seed_hash) {
         return Err(StatusCode::UNAUTHORIZED);
     }
 
