@@ -176,6 +176,36 @@ impl ServiceRegistry {
         })
     }
 
+    /// Publish a telemetry sample to the service network with strict INTERNAL-only guard.
+    /// INTERNAL|Telemetry classification & PII rejection enforcement
+    ///
+    /// Rejects non-INTERNAL classifications (Err, persists NOTHING) and rejects samples whose
+    /// raw payload contains PII signals detected via `TelemetrySanitizer` or `RedactionEngine`.
+    pub fn publish_telemetry_checked(
+        &mut self,
+        mut sample: TelemetrySample,
+    ) -> anyhow::Result<TelemetrySample> {
+        if sample.classification.trim() != ClearanceLevel::Internal.as_str().to_uppercase() {
+            anyhow::bail!(
+                "Telemetry rejected: classification must be INTERNAL, got '{}'",
+                sample.classification
+            );
+        }
+
+        let sanitizer = TelemetrySanitizer::default();
+        let sanitized = sanitizer.sanitize(&sample.payload);
+        if sanitized != sample.payload {
+            anyhow::bail!("Telemetry rejected: payload contains sensitive data or PII signals");
+        }
+
+        sample.payload = sanitized;
+        if sample.ts == 0 {
+            sample.ts = chrono::Utc::now().timestamp();
+        }
+        self.telemetry.push(sample.clone());
+        Ok(sample)
+    }
+
     /// Publish a telemetry sample to the service network.
     /// INTERNAL|Telemetry classification enforcement
     ///
@@ -520,5 +550,81 @@ mod tests {
         let routed =
             service_registry.route_service_with_registry(&ServiceKind::Memory, &peer_registry);
         assert_eq!(routed.map(|s| &s.node_id), Some(&node1));
+    }
+
+    #[test]
+    fn test_publish_telemetry_checked_rejects_non_internal_classification() {
+        let mut registry = ServiceRegistry::new();
+        let node_id = NodeId("xv1-test-node".to_string());
+
+        let sample = TelemetrySample {
+            node_id,
+            kind: ServiceKind::Memory,
+            payload: "Clean metric payload cpu=12.5% ram=45%".to_string(),
+            ts: 1000,
+            classification: "CONFIDENTIAL".to_string(),
+        };
+
+        let result = registry.publish_telemetry_checked(sample);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("must be INTERNAL"));
+        assert!(err_msg.contains("CONFIDENTIAL"));
+
+        // Assert nothing persisted
+        let consumed = registry.consume_telemetry(0);
+        assert!(consumed.is_empty());
+    }
+
+    #[test]
+    fn test_publish_telemetry_checked_rejects_pii_payload() {
+        let mut registry = ServiceRegistry::new();
+        let node_id = NodeId("xv1-test-node".to_string());
+
+        let sample = TelemetrySample {
+            node_id,
+            kind: ServiceKind::Memory,
+            payload: "Contact user alice@example.com for telemetry logs".to_string(),
+            ts: 1000,
+            classification: "INTERNAL".to_string(),
+        };
+
+        let result = registry.publish_telemetry_checked(sample);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("sensitive data or PII signals"));
+
+        // Assert nothing persisted
+        let consumed = registry.consume_telemetry(0);
+        assert!(consumed.is_empty());
+    }
+
+    #[test]
+    fn test_publish_telemetry_checked_accepts_valid_internal_clean_payload() {
+        let mut registry = ServiceRegistry::new();
+        let node_id = NodeId("xv1-test-node".to_string());
+
+        let sample = TelemetrySample {
+            node_id: node_id.clone(),
+            kind: ServiceKind::Memory,
+            payload: "System performance status=ok cache_hits=98%".to_string(),
+            ts: 1000,
+            classification: "INTERNAL".to_string(),
+        };
+
+        let result = registry.publish_telemetry_checked(sample);
+        assert!(result.is_ok());
+
+        let published = result.unwrap();
+        assert_eq!(published.classification, "INTERNAL");
+        assert_eq!(
+            published.payload,
+            "System performance status=ok cache_hits=98%"
+        );
+
+        // Assert persisted and consumable
+        let consumed = registry.consume_telemetry(0);
+        assert_eq!(consumed.len(), 1);
+        assert_eq!(consumed[0], published);
     }
 }
