@@ -131,6 +131,36 @@ impl TelemetryCollector {
         samples.push(sample);
     }
 
+    /// Record a new telemetry sample with an explicit timestamp, subject to the retention policy check before pushing.
+    pub fn record_with_timestamp_checked(
+        &self,
+        name: &str,
+        value: f64,
+        labels: HashMap<String, String>,
+        timestamp: i64,
+    ) -> bool {
+        if !self.retention_policy.should_retain(timestamp) {
+            return false;
+        }
+
+        let sample = TelemetrySample {
+            timestamp,
+            metric_name: name.to_string(),
+            value,
+            labels,
+        };
+
+        let mut store = self.collector.lock().expect("telemetry lock poisoned");
+        let samples = store.entry(name.to_string()).or_default();
+        samples.push(sample);
+        true
+    }
+
+    /// Record a new telemetry sample subject to the retention policy check before pushing.
+    pub fn record_checked(&self, name: &str, value: f64, labels: HashMap<String, String>) -> bool {
+        self.record_with_timestamp_checked(name, value, labels, Utc::now().timestamp())
+    }
+
     /// Query samples for a given metric recorded since the specified timestamp.
     pub fn query(&self, name: &str, since: i64) -> Vec<TelemetrySample> {
         let store = self.collector.lock().expect("telemetry lock poisoned");
@@ -275,5 +305,40 @@ mod tests {
         let policy = RetentionPolicy::Infinite;
         assert!(policy.should_retain(0));
         assert!(policy.should_retain(i64::MIN));
+    }
+
+    #[test]
+    fn test_record_checked_rejects_expired() {
+        let node_id = NodeId("xv1-test-node".to_string());
+        let mut collector = TelemetryCollector::new(node_id);
+        collector.set_retention_policy(RetentionPolicy::Standard { days: 7 });
+
+        let labels = HashMap::new();
+        let now = Utc::now().timestamp();
+        let old_ts = now - (8 * 86400);
+
+        let recorded =
+            collector.record_with_timestamp_checked("expired_metric", 42.0, labels.clone(), old_ts);
+        assert!(!recorded);
+        assert!(collector.query("expired_metric", 0).is_empty());
+
+        let recorded_recent = collector.record_checked("valid_metric", 100.0, labels);
+        assert!(recorded_recent);
+        assert_eq!(collector.query("valid_metric", 0).len(), 1);
+    }
+
+    #[test]
+    fn test_record_checked_accepts_recent_or_infinite() {
+        let node_id = NodeId("xv1-test-node".to_string());
+        let mut collector = TelemetryCollector::new(node_id);
+        collector.set_retention_policy(RetentionPolicy::Infinite);
+
+        let labels = HashMap::new();
+        let old_ts = 1000;
+
+        let recorded =
+            collector.record_with_timestamp_checked("infinite_metric", 99.0, labels, old_ts);
+        assert!(recorded);
+        assert_eq!(collector.query("infinite_metric", 0).len(), 1);
     }
 }
