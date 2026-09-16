@@ -16,7 +16,6 @@ import { MeshHubView } from "./components/Mesh/MeshHubView";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import SystemAlertBanner from "./components/SystemAlertBanner";
-import ThemeToggle from "./components/ThemeToggle";
 import TopStatusBar from "./components/TopStatusBar";
 import ErrorToast from "./components/ui/ErrorToast";
 import { initialBookmarks } from "./data";
@@ -560,11 +559,6 @@ function AppContent() {
 			/>
 			<ErrorToast message={error} onClose={() => setError(null)} />
 
-			{/* Floating Header Controls with Theme Toggle */}
-			<header className="absolute top-6 right-2 sm:right-4 md:right-6 z-[70] flex items-center gap-2 pointer-events-auto">
-				<ThemeToggle />
-			</header>
-
 			{/* Pinned Widgets Layer */}
 			<div className="absolute inset-0 pointer-events-none z-20">
 				<AnimatePresence>
@@ -587,7 +581,7 @@ function AppContent() {
 							initial={{ opacity: 0 }}
 							animate={{ opacity: 1 }}
 							exit={{ opacity: 0 }}
-							className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm p-2 sm:p-4 md:p-6"
+							className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 md:p-6"
 						>
 							<ConfigModal
 								key="modal"
@@ -636,7 +630,7 @@ function AppContent() {
 
 export default function App() {
 	return (
-		<ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+		<ThemeProvider defaultTheme="studio-dark" storageKey="vite-ui-theme">
 			<AppContent />
 		</ThemeProvider>
 	);

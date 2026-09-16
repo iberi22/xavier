@@ -1,5 +1,9 @@
 import { AnimatePresence, motion } from "motion/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useChatPreferences,
+  type ConversationWidth,
+} from "../hooks/useChatPreferences";
 import type { PanelMessage } from "../types";
 import LoadingSpinner from "./ui/LoadingSpinner";
 
@@ -7,6 +11,80 @@ interface ChatHistoryProps {
   messages: PanelMessage[];
   streamingMessageId: string | null;
   isLoading?: boolean;
+}
+
+const WIDTH_CLASSES: Record<ConversationWidth, string> = {
+  narrow: "max-w-xl",
+  default: "max-w-3xl",
+  wide: "max-w-5xl",
+};
+
+export function parseThinkingContent(
+  text: string,
+  metadata?: any
+): { thinkingText: string | null; mainText: string } {
+  let thinkingText: string | null = null;
+  let mainText = text || "";
+
+  const thinkRegex = /<(think|thought|thinking)>([\s\S]*?)<\/\1>/i;
+  const match = thinkRegex.exec(mainText);
+
+  if (match) {
+    thinkingText = match[2].trim();
+    mainText = mainText.replace(match[0], "").trim();
+  } else if (metadata && typeof metadata === "object") {
+    if (typeof metadata.thinking === "string" && metadata.thinking.trim()) {
+      thinkingText = metadata.thinking.trim();
+    } else if (typeof metadata.reasoning === "string" && metadata.reasoning.trim()) {
+      thinkingText = metadata.reasoning.trim();
+    } else if (typeof metadata.thought === "string" && metadata.thought.trim()) {
+      thinkingText = metadata.thought.trim();
+    }
+  }
+
+  return { thinkingText, mainText };
+}
+
+function CollapsibleThoughtProcess({
+  thinkingText,
+  verboseChat,
+}: {
+  thinkingText: string;
+  verboseChat: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(verboseChat);
+
+  useEffect(() => {
+    setIsOpen(verboseChat);
+  }, [verboseChat]);
+
+  return (
+    <div className="mb-2.5 rounded-lg border border-[#39ff14]/20 bg-[#39ff14]/[0.03] overflow-hidden text-xs">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-label="Toggle agent thinking process"
+        className="flex items-center justify-between w-full px-3 py-1.5 text-left font-mono text-[11px] text-[#39ff14]/80 hover:bg-[#39ff14]/[0.08] transition-colors cursor-pointer"
+      >
+        <span className="flex items-center gap-1.5 font-semibold">
+          <span>{isOpen ? "▼" : "▶"}</span>
+          <span>Proceso de Pensamiento</span>
+        </span>
+        <span className="text-[10px] opacity-60 uppercase font-mono">
+          {isOpen ? "Ocultar" : "Mostrar"}
+        </span>
+      </button>
+      {isOpen && (
+        <div
+          className="px-3 py-2 border-t border-[#39ff14]/15 font-mono text-[11px] leading-relaxed text-[#39ff14]/70 whitespace-pre-wrap bg-black/20"
+          data-testid="agent-thought-process"
+        >
+          {thinkingText}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function formatConfidence(value?: number) {
@@ -79,9 +157,11 @@ function StreamingMessageRenderer({
 const ChatMessageItem = memo(function ChatMessageItem({
   msg,
   isStreamingActive,
+  verboseChat,
 }: {
   msg: PanelMessage;
   isStreamingActive: boolean;
+  verboseChat: boolean;
 }) {
   const parsedMetadata = useMemo(() => {
     if (!msg.metadata) return null;
@@ -94,6 +174,16 @@ const ChatMessageItem = memo(function ChatMessageItem({
     }
     return msg.metadata;
   }, [msg.metadata]);
+
+  const { thinkingText, mainText } = useMemo(
+    () => parseThinkingContent(msg.plain_text, parsedMetadata),
+    [msg.plain_text, parsedMetadata]
+  );
+
+  const msgForStreaming = useMemo(
+    () => ({ ...msg, plain_text: mainText }),
+    [msg, mainText]
+  );
 
   return (
     <motion.div
@@ -160,9 +250,16 @@ const ChatMessageItem = memo(function ChatMessageItem({
               </div>
             )}
 
+          {msg.role === "assistant" && thinkingText && (
+            <CollapsibleThoughtProcess
+              thinkingText={thinkingText}
+              verboseChat={verboseChat}
+            />
+          )}
+
           {msg.role === "assistant" ? (
             <StreamingMessageRenderer
-              message={msg}
+              message={msgForStreaming}
               isStreamingActive={isStreamingActive}
             />
           ) : (
@@ -195,6 +292,8 @@ export default memo(function ChatHistory({
   streamingMessageId,
   isLoading = false,
 }: ChatHistoryProps) {
+  const { conversationWidth, verboseChat } = useChatPreferences();
+  const widthClass = WIDTH_CLASSES[conversationWidth] || WIDTH_CLASSES.default;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -208,7 +307,7 @@ export default memo(function ChatHistory({
   }, []);
 
   return (
-    <div className="absolute top-0 bottom-[120px] left-1/2 -translate-x-1/2 w-full max-w-4xl p-4 flex flex-col justify-end pointer-events-none z-10">
+    <div className={`absolute top-0 bottom-[120px] left-1/2 -translate-x-1/2 w-full ${widthClass} p-4 flex flex-col justify-end pointer-events-none z-10`}>
       <div
         ref={scrollRef}
         className="w-full overflow-y-auto flex flex-col gap-5 pointer-events-auto pb-4 scroll-smooth"
@@ -227,6 +326,7 @@ export default memo(function ChatHistory({
               key={msg.id}
               msg={msg}
               isStreamingActive={msg.id === streamingMessageId}
+              verboseChat={verboseChat}
             />
           ))}
           {isLoading && !streamingMessageId && (

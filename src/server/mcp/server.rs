@@ -116,6 +116,7 @@ pub fn mcp_text_result(text: impl Into<String>, is_error: bool) -> anyhow::Resul
             content_type: "text".to_string(),
             text: text.into(),
         })],
+        structured_content: None,
         is_error: Some(is_error),
     })?)
 }

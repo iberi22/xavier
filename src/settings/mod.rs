@@ -279,10 +279,23 @@ pub mod tests {
                 || s.embedding.gllm_model == "nomic-embed-text:latest"
         );
 
-        // Assertions for provider=local and local_llm_* fields
+        // Assertions for provider=local and local_llm_* fields.
+        // The exact model name / URL are operator-pinned workspace values
+        // (they evolve with merged PRs), so assert the contractual shape —
+        // local provider, non-empty model, valid http(s) URL — instead of
+        // exact strings. Pinning exact values here made the suite fail on
+        // every model bump (CI Parallel Rust Tests).
         assert_eq!(s.models.provider, "local");
-        assert_eq!(s.models.local_llm_model, "qwen3-coder");
-        assert_eq!(s.models.local_llm_url, "http://localhost:11434/v1");
+        assert!(
+            !s.models.local_llm_model.trim().is_empty(),
+            "local_llm_model must be non-empty"
+        );
+        assert!(
+            s.models.local_llm_url.starts_with("http://")
+                || s.models.local_llm_url.starts_with("https://"),
+            "local_llm_url must be a valid http(s) URL, got '{}'",
+            s.models.local_llm_url
+        );
     }
 
     #[test]

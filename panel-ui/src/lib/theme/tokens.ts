@@ -16,14 +16,14 @@ export interface ThemeColors {
 
 export const THEME_TOKENS: Record<ResolvedTheme, ThemeColors> = {
   "studio-dark": {
-    background: "#0d0e10",
-    surface: "#141518",
-    surfaceCard: "#1b1c20",
-    surfaceHover: "rgba(255, 255, 255, 0.04)",
-    surfaceActive: "rgba(255, 255, 255, 0.08)",
-    foreground: "#f3f3f5",
-    foregroundMuted: "#8f919a",
-    borderSubtle: "rgba(255, 255, 255, 0.07)",
+    background: "#111215",
+    surface: "#191a1e",
+    surfaceCard: "#212328",
+    surfaceHover: "rgba(255, 255, 255, 0.05)",
+    surfaceActive: "rgba(255, 255, 255, 0.09)",
+    foreground: "#e5e7eb",
+    foregroundMuted: "#8c909b",
+    borderSubtle: "rgba(255, 255, 255, 0.08)",
     borderFocus: "#3b82f6",
     accent: "#3b82f6",
     accentForeground: "#ffffff",

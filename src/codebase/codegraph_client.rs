@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(not(unix))]
+use tokio::net::TcpStream;
+#[cfg(unix)]
 use tokio::net::UnixStream;
 
 /// Representation of a code symbol returned by CodeGraph queries over UDS.
@@ -77,7 +80,11 @@ impl CodeGraphUdsClient {
             }
         }
 
+        #[cfg(unix)]
         let default_tmp = PathBuf::from("/tmp/codegraph.sock");
+        #[cfg(not(unix))]
+        let default_tmp = std::env::temp_dir().join("codegraph.sock");
+
         if default_tmp.exists() {
             return default_tmp;
         }
@@ -117,6 +124,7 @@ impl CodeGraphUdsClient {
     }
 
     /// Internal lightweight zero-overhead HTTP GET helper over Tokio UnixStream.
+    #[cfg(unix)]
     async fn send_get_request(&self, uri: &str) -> Result<Vec<u8>> {
         let mut stream = UnixStream::connect(&self.socket_path)
             .await
@@ -130,6 +138,33 @@ impl CodeGraphUdsClient {
         let request = format!(
             "GET {} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nAccept: application/json\r\n\r\n",
             uri
+        );
+
+        stream.write_all(request.as_bytes()).await?;
+        stream.flush().await?;
+
+        let mut raw_response = Vec::new();
+        stream.read_to_end(&mut raw_response).await?;
+
+        parse_http_body(&raw_response)
+    }
+
+    #[cfg(not(unix))]
+    async fn send_get_request(&self, uri: &str) -> Result<Vec<u8>> {
+        let host = std::env::var("CODE_GRAPH_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+        let port = std::env::var("CODE_GRAPH_PORT").unwrap_or_else(|_| "8080".to_string());
+        let addr = format!("{}:{}", host, port);
+
+        let mut stream = TcpStream::connect(&addr).await.with_context(|| {
+            format!(
+                "failed to connect to CodeGraph local HTTP service at {}",
+                addr
+            )
+        })?;
+
+        let request = format!(
+            "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nAccept: application/json\r\n\r\n",
+            uri, host
         );
 
         stream.write_all(request.as_bytes()).await?;
@@ -215,6 +250,7 @@ fn decode_chunked_body(mut body: &[u8]) -> Result<Vec<u8>> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+    #[cfg(unix)]
     use tokio::net::UnixListener;
 
     #[test]
@@ -248,6 +284,7 @@ mod tests {
         assert!(client.is_available());
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_find_symbols_over_mock_uds() {
         let temp_dir = tempdir().expect("tempdir failed");
@@ -296,6 +333,7 @@ mod tests {
         let _ = server_task.await;
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_get_stats_over_mock_uds() {
         let temp_dir = tempdir().expect("tempdir failed");
@@ -344,6 +382,7 @@ mod tests {
         let _ = server_task.await;
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_chunked_transfer_encoding_decoding() {
         let temp_dir = tempdir().expect("tempdir failed");
@@ -378,6 +417,7 @@ mod tests {
         let _ = server_task.await;
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_http_error_handling() {
         let temp_dir = tempdir().expect("tempdir failed");
@@ -407,5 +447,77 @@ mod tests {
         );
 
         let _ = server_task.await;
+    }
+
+    #[cfg(not(unix))]
+    #[tokio::test]
+    async fn test_find_symbols_over_mock_tcp() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind tcp listener");
+        let local_addr = listener.local_addr().unwrap();
+        std::env::set_var("CODE_GRAPH_HOST", "127.0.0.1");
+        std::env::set_var("CODE_GRAPH_PORT", local_addr.port().to_string());
+
+        let server_task = tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let n = stream.read(&mut buf).await.unwrap_or(0);
+                let req_text = String::from_utf8_lossy(&buf[..n]);
+
+                assert!(req_text.contains("GET /v1/symbols?q=win_query&limit=3 HTTP/1.1"));
+
+                let mock_symbols = vec![SymbolRecord {
+                    name: "win_fn".to_string(),
+                    kind: "function".to_string(),
+                    lang: "rust".to_string(),
+                    file_path: "src/main.rs".to_string(),
+                    start_line: 1,
+                    end_line: 10,
+                    signature: Some("fn win_fn()".to_string()),
+                }];
+
+                let json_body = serde_json::to_string(&mock_symbols).unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    json_body.len(),
+                    json_body
+                );
+
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            }
+        });
+
+        let client = CodeGraphUdsClient::new();
+        let symbols = client.find_symbols("win_query", 3).await.unwrap();
+
+        std::env::remove_var("CODE_GRAPH_HOST");
+        std::env::remove_var("CODE_GRAPH_PORT");
+
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "win_fn");
+
+        let _ = server_task.await;
+    }
+
+    #[cfg(not(unix))]
+    #[tokio::test]
+    async fn test_windows_fallback_connection_error() {
+        std::env::set_var("CODE_GRAPH_HOST", "127.0.0.1");
+        std::env::set_var("CODE_GRAPH_PORT", "59999");
+
+        let client = CodeGraphUdsClient::new();
+        let res = client.get_stats().await;
+
+        std::env::remove_var("CODE_GRAPH_HOST");
+        std::env::remove_var("CODE_GRAPH_PORT");
+
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg
+            .contains("failed to connect to CodeGraph local HTTP service at 127.0.0.1:59999"));
     }
 }

@@ -1,9 +1,24 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
 import path from "node:path";
 
-const ARTIFACT_DIR = "/home/belal/.gemini/antigravity/brain/93991307-c184-424b-87e0-d141afcaa915";
+const DEFAULT_ARTIFACT_DIR = path.join(process.cwd(), "test-results", "artifacts");
 
-test.describe.fixme("Xavier Studio Dark & Bone White E2E Visual Verification (pending wave-theme)", () => {
+function getWritableDir(target: string): string {
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    fs.accessSync(target, fs.constants.W_OK);
+    return target;
+  } catch {
+    fs.mkdirSync(DEFAULT_ARTIFACT_DIR, { recursive: true });
+    return DEFAULT_ARTIFACT_DIR;
+  }
+}
+
+const CALLER_ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || "/home/belal/.gemini/antigravity/brain/c0a3c8f4-05ed-4f34-a95f-0246711e76c1");
+const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || "/home/belal/.gemini/antigravity/brain/93991307-c184-424b-87e0-d141afcaa915");
+
+test.describe("Xavier Studio Dark & Antigravity Appearance E2E Verification", () => {
   test("loads Studio Dark by default, captures screenshots, and verifies theme switching", async ({
     page,
   }) => {
@@ -76,27 +91,37 @@ test.describe.fixme("Xavier Studio Dark & Bone White E2E Visual Verification (pe
     const modal = page.locator('button[aria-label="Cerrar ventana de configuración"]');
     await expect(modal).toBeVisible();
 
-    // Click on "Aspecto" tab
-    const appearanceTab = page.locator('button:has-text("Aspecto")');
-    await expect(appearanceTab).toBeVisible();
-    await appearanceTab.click();
-    await page.waitForTimeout(800);
+    // Verify Antigravity Sidebar sections
+    await expect(page.locator('text="Settings"').first()).toBeVisible();
+    await expect(page.locator('text="Projects"').first()).toBeVisible();
+    await expect(page.locator('text="Not in Project"').first()).toBeVisible();
+    await expect(page.locator('text="Shortcuts"').first()).toBeVisible();
+    await expect(page.locator('text="Provide Feedback"').first()).toBeVisible();
 
-    // Verify Appearance content
-    await expect(page.locator('h2:has-text("Aspecto y Temas")')).toBeVisible();
-    await expect(page.locator('span:has-text("Studio Dark")').first()).toBeVisible();
-    await expect(page.locator('span:has-text("Predeterminado")').first()).toBeVisible();
-    await expect(page.locator('span:has-text("Hueso Blanco")').first()).toBeVisible();
-    await expect(page.locator('span:has-text("Xavier Cyberpunk")').first()).toBeVisible();
+    // Appearance is default tab or switch to it
+    const appearanceSidebarBtn = page.locator('button:has-text("Appearance")').first();
+    await appearanceSidebarBtn.click();
+    await page.waitForTimeout(600);
 
-    // Take screenshot of Appearance settings modal in Studio Dark
+    // Verify Antigravity Appearance content
+    await expect(page.locator('h1:has-text("Appearance")')).toBeVisible();
+    await expect(page.locator('text="Verbose Agent Chat"')).toBeVisible();
+    await expect(page.locator('text="Conversation Width"')).toBeVisible();
+    await expect(page.locator('text="Light Theme"')).toBeVisible();
+    await expect(page.locator('text="Dark Theme"')).toBeVisible();
+
+    // Capture antigravity_modal_aligned.png in caller artifact dir
+    const antigravityAlignedPath = path.join(CALLER_ARTIFACT_DIR, "antigravity_modal_aligned.png");
+    await page.screenshot({ path: antigravityAlignedPath, fullPage: true });
+
+    // Also update appearance_modal_e2e.png
     const appearanceModalPath = path.join(ARTIFACT_DIR, "appearance_modal_e2e.png");
     await page.screenshot({ path: appearanceModalPath, fullPage: true });
 
-    // 4. Switch to "Hueso Blanco" (Bone White)
-    const boneCard = page.locator('div[role="button"]:has-text("Hueso Blanco")').first();
-    await boneCard.click();
-    await page.waitForTimeout(800);
+    // 4. Switch to Light Mode (Sun icon)
+    const sunBtn = page.locator('button[aria-label="Light theme"]');
+    await sunBtn.click();
+    await page.waitForTimeout(600);
 
     // Verify DOM theme attribute switched to studio-bone
     await expect(htmlElement).toHaveAttribute("data-theme", "studio-bone");
@@ -106,25 +131,16 @@ test.describe.fixme("Xavier Studio Dark & Bone White E2E Visual Verification (pe
     const boneWhitePath = path.join(ARTIFACT_DIR, "bone_white_e2e.png");
     await page.screenshot({ path: boneWhitePath, fullPage: true });
 
-    // 5. Switch to "Xavier Cyberpunk"
-    const cyberpunkCard = page.locator('div[role="button"]:has-text("Xavier Cyberpunk")').first();
-    await cyberpunkCard.click();
-    await page.waitForTimeout(800);
-    await expect(htmlElement).toHaveAttribute("data-theme", "cyberpunk");
-    await expect(htmlElement).toHaveClass(/cyberpunk/);
-
-    // Take screenshot in Cyberpunk
-    const cyberpunkPath = path.join(ARTIFACT_DIR, "cyberpunk_e2e.png");
-    await page.screenshot({ path: cyberpunkPath, fullPage: true });
-
-    // Switch back to Studio Dark (flagship default)
-    const studioDarkCard = page.locator('div[role="button"]:has-text("Studio Dark")').first();
-    await studioDarkCard.click();
+    // 5. Switch to Dark Mode (Moon icon)
+    const moonBtn = page.locator('button[aria-label="Dark theme"]');
+    await moonBtn.click();
     await page.waitForTimeout(600);
     await expect(htmlElement).toHaveAttribute("data-theme", "studio-dark");
+    await expect(htmlElement).toHaveClass(/studio-dark/);
 
     // Close modal
     await modal.click();
     await page.waitForTimeout(400);
   });
 });
+

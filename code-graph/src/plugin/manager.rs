@@ -141,6 +141,29 @@ impl PluginManager {
         }
     }
 
+    /// Build a manager with default chains and engine but **no PATH
+    /// auto-discovery**. Tests must use this so a plugin binary that happens to
+    /// be installed on the host (e.g. `codegraph`, `parser-python`) cannot leak
+    /// into the registry and break assertions that assume an empty manager.
+    pub fn new_hermetic() -> Self {
+        let engine = Arc::new(ProcessEngine::default());
+        let registry = Arc::new(DefaultRegistry::new());
+        let health = Arc::new(PluginHealthMonitor::new(std::time::Duration::from_secs(60)));
+        engine.set_monitor(Arc::clone(&health));
+
+        let installed: HashMap<Language, PluginDescriptor> = HashMap::new();
+        let fallback = FallbackChain::load_or_default();
+
+        Self {
+            installed: RwLock::new(installed),
+            by_name: RwLock::new(HashMap::new()),
+            fallback: RwLock::new(fallback),
+            engine,
+            registry,
+            health: RwLock::new(Some(health)),
+        }
+    }
+
     /// Register a plugin descriptor. Subsequent fallback-chain lookups for any
     /// of its languages will prefer the plugin before the native parser.
     pub fn register(&self, descriptor: PluginDescriptor) {

@@ -3,13 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-describe.sequential("Panel UI Build & Version Integration", () => {
-  test("should resolve __APP_VERSION__ equal to Cargo.toml version (0.1.1)", () => {
+describe("Panel UI Build & Version Integration", () => {
+  test("should resolve __APP_VERSION__ equal to Cargo.toml version (0.2.3)", () => {
     const cargoPath = path.resolve(__dirname, "../../Cargo.toml");
     const cargoContent = fs.readFileSync(cargoPath, "utf8");
     const expectedVersion = cargoContent.match(/^version = "(.+)"/m)?.[1];
 
-    expect(expectedVersion).toBe("0.1.1");
+    expect(expectedVersion).toBe("0.2.3");
 
     const viteConfigPath = path.resolve(__dirname, "../vite.config.ts");
     const viteConfigContent = fs.readFileSync(viteConfigPath, "utf8");
@@ -55,7 +55,7 @@ describe.sequential("Panel UI Build & Version Integration", () => {
       let foundVersion = false;
       for (const jsFile of jsFiles) {
         const content = fs.readFileSync(path.join(assetsDir, jsFile), "utf8");
-        if (content.includes("0.1.1")) {
+        if (content.includes("0.2.3")) {
           foundVersion = true;
           break;
         }

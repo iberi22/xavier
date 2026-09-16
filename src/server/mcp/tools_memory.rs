@@ -445,6 +445,51 @@ async fn handle_mem_search(
         })
         .collect();
 
+    // Record token accounting & search stats
+    let total_snippet_bytes: usize = candidates
+        .iter()
+        .map(|c| {
+            c.get("snippet")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .len()
+        })
+        .sum();
+    let total_full_bytes: usize = if include_content {
+        candidates
+            .iter()
+            .map(|c| {
+                c.get("content")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("")
+                    .len()
+            })
+            .sum()
+    } else {
+        0
+    };
+
+    if include_content {
+        crate::observability::token_accounting::SEARCH_STATS
+            .record_search("full", total_full_bytes);
+    } else {
+        crate::observability::token_accounting::SEARCH_STATS
+            .record_search("snippet", total_snippet_bytes);
+
+        let est_full_tokens = total_snippet_bytes.saturating_mul(5).div_ceil(4);
+        let est_snippet_tokens = total_snippet_bytes.div_ceil(4);
+        if est_full_tokens > est_snippet_tokens {
+            let session_id = filters
+                .session_id
+                .as_deref()
+                .unwrap_or("mcp_mem_search")
+                .to_string();
+            crate::observability::token_accounting::TRACKER
+                .track(session_id, est_full_tokens, est_snippet_tokens, 0.01)
+                .await;
+        }
+    }
+
     let payload = json!({
         "query": query,
         "include_content": include_content,
@@ -467,25 +512,32 @@ async fn handle_get_recent_fragments(
         .unwrap_or(10)
         .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
 
+    let agent_id = optional_memoryfragment_component(arguments, "agent_id", None)?;
+    let context = optional_memoryfragment_component(arguments, "context", None)?;
+
+    let mut filters = MemoryQueryFilters::default();
+    if let Some(aid) = agent_id {
+        filters.agent_id = Some(aid);
+    }
+    if let Some(ctx) = context {
+        filters.scope = Some(ctx);
+    }
+
     let records = workspace
         .workspace
-        .memory
-        .export(false)
-        .await?
-        .into_iter()
-        .take(limit)
-        .collect::<Vec<_>>();
+        .list_memory_records_filtered(filters, limit)
+        .await?;
 
     let candidates: Vec<Value> = records
         .into_iter()
-        .map(|doc| {
-            let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 200).to_string();
+        .map(|rec| {
+            let snippet: String = crate::memory::snippet::clip_chars(&rec.content, 200).to_string();
             json!({
-                "id": doc.id,
-                "path": doc.path,
+                "id": rec.id,
+                "path": rec.path,
                 "snippet": snippet,
-                "content": doc.content,
-                "metadata": doc.metadata,
+                "content": rec.content,
+                "metadata": rec.metadata,
             })
         })
         .collect();
@@ -844,6 +896,7 @@ pub async fn handle_memory_update(
                         serde_json::to_string_pretty(&metadata)?
                     ),
                 })],
+                structured_content: None,
                 is_error: Some(false),
             })?)
         }
@@ -886,35 +939,27 @@ pub async fn handle_memory_update(
                     content_type: "text".to_string(),
                     text: format!("Id: {}\nPath: {}\nRevision: {}\nContent: {}\nContext: {:?}\nTags: {:?}\nMetadata: {}", record_id, path, revision, content, gestalt_context, tags, serde_json::to_string_pretty(&metadata)?),
                 })],
+                structured_content: None,
                 is_error: Some(false),
             })?)
         }
         "stats" => {
-            let records = workspace.workspace.list_memory_records().await?;
-            let projects = records
-                .iter()
-                .filter_map(|r| {
-                    r.metadata
-                        .get("namespace")
-                        .and_then(|n| n.get("project"))
-                        .and_then(|p| p.as_str())
-                        .map(|p| p.to_string())
-                })
-                .collect::<std::collections::HashSet<_>>();
-            let agents = records
-                .iter()
-                .filter_map(|r| {
-                    r.metadata
-                        .get("namespace")
-                        .and_then(|n| n.get("agent_id"))
-                        .and_then(|a| a.as_str())
-                        .map(|a| a.to_string())
-                })
-                .collect::<std::collections::HashSet<_>>();
             let entity_count = workspace.workspace.entity_graph.all_entities().await.len();
             let semantic_stats = workspace.workspace.semantic_memory.stats().await;
+            let working_mem_len = workspace.workspace.working_memory.read().await.len();
+            let usage = workspace.workspace.memory.usage().await;
 
-            super::server::mcp_text_result(serde_json::json!({ "total_memories": records.len(), "projects": projects.len(), "agents": agents.len(), "total_entities": entity_count, "semantic_entities": semantic_stats.total_entities, "semantic_relations": semantic_stats.total_relations }).to_string(), false)
+            super::server::mcp_text_result(
+                serde_json::json!({
+                    "total_memories": usage.document_count.max(working_mem_len),
+                    "storage_bytes": usage.storage_bytes,
+                    "total_entities": entity_count,
+                    "semantic_entities": semantic_stats.total_entities,
+                    "semantic_relations": semantic_stats.total_relations,
+                })
+                .to_string(),
+                false,
+            )
         }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
     }
@@ -1020,6 +1065,9 @@ pub async fn handle_memory_delete(
                     metadata: src.metadata,
                 })
                 .collect();
+
+            crate::observability::token_accounting::SEARCH_STATS
+                .record_search("ids", mem_ctx.total_chars);
 
             let payload = MCPContextResult {
                 total_chars: mem_ctx.total_chars,

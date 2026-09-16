@@ -66,10 +66,16 @@ async fn test_full_recovery_flow() {
 
     user_store.add_user(user.clone()).await.unwrap();
 
-    // 3. Verify seed phrase
+    // 3. Verify seed phrase (salted Argon2id: verify, don't compare hashes)
     let provided_seed = seed_phrase.clone();
-    let verified_hash = RecoverySystem::hash_seed_phrase(&provided_seed);
-    assert_eq!(user.recovery_seed_hash, verified_hash);
+    assert!(RecoverySystem::verify_seed_phrase(
+        &provided_seed,
+        &user.recovery_seed_hash
+    ));
+    assert!(!RecoverySystem::verify_seed_phrase(
+        "palabra incorrecta",
+        &user.recovery_seed_hash
+    ));
 
     // 4. Reset password
     let new_password = "newpassword456";
@@ -111,11 +117,10 @@ async fn test_full_recovery_flow() {
         10
     );
 
-    // Use a backup code
+    // Use a backup code (raw code; matching happens against salted hashes)
     let first_code = &codes[0];
-    let first_code_hash = RecoverySystem::hash_backup_code(first_code);
     let success = user_store
-        .verify_and_consume_backup_code(&user.id, &first_code_hash)
+        .verify_and_consume_backup_code(&user.id, first_code)
         .await
         .unwrap();
     assert!(success);
@@ -130,7 +135,7 @@ async fn test_full_recovery_flow() {
 
     // Try to use same code again
     let success_again = user_store
-        .verify_and_consume_backup_code(&user.id, &first_code_hash)
+        .verify_and_consume_backup_code(&user.id, first_code)
         .await
         .unwrap();
     assert!(!success_again);

@@ -1320,6 +1320,10 @@ pub async fn start_http_server(
             get(crate::cli::handlers::notifications::list_notifications_handler),
         )
         .route(
+            "/notifications/stream",
+            get(crate::cli::handlers::notifications::stream_notifications_handler),
+        )
+        .route(
             "/notifications/{id}/read",
             axum::routing::patch(
                 crate::cli::handlers::notifications::mark_notification_read_handler,
@@ -1351,6 +1355,10 @@ pub async fn start_http_server(
             state.clone(),
             rate_limit_middleware,
         ))
+        // Clearance derivado de la identidad autenticada (corre DESPUÉS de auth).
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::clearance::clearance_session_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -1370,6 +1378,10 @@ pub async fn start_http_server(
         .layer(middleware::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,
+        ))
+        // Clearance derivado de la identidad autenticada (corre DESPUÉS de auth).
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::clearance::clearance_session_middleware,
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -1439,6 +1451,10 @@ pub async fn start_http_server(
         .route(
             "/system/alerts",
             get(crate::cli::handlers::system::system_alerts_handler),
+        )
+        .route(
+            "/v1/messaging/status",
+            get(crate::cli::handlers::config::get_messaging_status_handler),
         )
         .route("/v1/version", get(version_handler))
         .route("/build", get(build_handler))
@@ -1705,15 +1721,31 @@ pub async fn start_http_server(
                     result.ollama.models.join(", ")
                 );
 
-                let default_model = "qwen3-coder";
+                // El default NO se hard-codea a un modelo que puede no existir en el
+                // nodo (pasó con qwen3-coder y luego con qwen2.5-coder:7b: 122 avisos/
+                // día en cada nodo aunque el usuario tuviera otro modelo). Se lee el
+                // modelo realmente configurado, con el mismo orden de resolución que
+                // ollama_models.rs: env XAVIER_LOCAL_LLM_MODEL -> settings.local_llm_model
+                // -> DEFAULT_LOCAL_MODEL del crate.
+                let default_model = std::env::var("XAVIER_LOCAL_LLM_MODEL")
+                    .ok()
+                    .filter(|m| !m.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        let settings = crate::settings::XavierSettings::current();
+                        if settings.models.local_llm_model.trim().is_empty() {
+                            xavier::agents::provider::local::DEFAULT_LOCAL_MODEL.to_string()
+                        } else {
+                            settings.models.local_llm_model.clone()
+                        }
+                    });
                 if !result
                     .ollama
                     .models
                     .iter()
-                    .any(|m| m.contains(default_model))
+                    .any(|m| m.to_lowercase().contains(&default_model.to_lowercase()))
                 {
                     tracing::warn!(
-                        "⚠️ Default model '{}' not found in Ollama. Run: ollama pull {}",
+                        "⚠️ Configured local LLM '{}' not found in Ollama. Run: ollama pull {}",
                         default_model,
                         default_model
                     );

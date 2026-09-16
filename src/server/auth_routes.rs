@@ -15,8 +15,9 @@ use axum::{
     routing::{delete, get},
     Json, Router,
 };
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Configuration for Google OAuth2.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,7 +211,7 @@ pub fn extract_email_from_jwt(id_token: &str) -> Option<String> {
 /// GET /auth/google/status
 /// Returns connection status, connection boolean, and connected user email.
 pub async fn status_handler(State(state): State<GoogleOAuthState>) -> impl IntoResponse {
-    let mgr = state.manager.lock().unwrap();
+    let mgr = state.manager.lock();
     let status = mgr.status_string();
     let connected = status == "connected";
     let email = mgr.email.clone();
@@ -230,7 +231,7 @@ pub async fn status_handler(State(state): State<GoogleOAuthState>) -> impl IntoR
 pub async fn connect_handler(State(state): State<GoogleOAuthState>) -> impl IntoResponse {
     let state_token = format!("{:x}", rand::random::<u128>());
     {
-        let mut mgr = state.manager.lock().unwrap();
+        let mut mgr = state.manager.lock();
         mgr.state_token = Some(state_token.clone());
     }
 
@@ -272,7 +273,7 @@ pub async fn callback_handler(
 
     // Validate state token to prevent CSRF
     let expected_state = {
-        let mut mgr = state.manager.lock().unwrap();
+        let mut mgr = state.manager.lock();
         mgr.state_token.take()
     };
 
@@ -378,7 +379,7 @@ pub async fn callback_handler(
         .unwrap_or(0);
 
     {
-        let mut mgr = state.manager.lock().unwrap();
+        let mut mgr = state.manager.lock();
         mgr.is_connected = true;
         mgr.access_token = access_token;
         mgr.refresh_token = refresh_token;
@@ -393,7 +394,7 @@ pub async fn callback_handler(
 /// DELETE /auth/google/disconnect
 /// Clears Google OAuth2 token state and returns 200 OK.
 pub async fn disconnect_handler(State(state): State<GoogleOAuthState>) -> impl IntoResponse {
-    let mut mgr = state.manager.lock().unwrap();
+    let mut mgr = state.manager.lock();
     mgr.disconnect();
 
     (
