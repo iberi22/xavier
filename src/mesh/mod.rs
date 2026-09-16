@@ -51,6 +51,7 @@ pub mod governance;
 pub mod heartbeat;
 #[cfg(feature = "mesh")]
 pub mod iroh_transport;
+pub mod join;
 pub mod keystore;
 pub mod libp2p_transport;
 pub mod maturity;
@@ -72,6 +73,7 @@ pub mod telemetry;
 pub mod telemetry_collector;
 pub mod tokenomics;
 pub mod transport;
+pub mod visibility;
 
 pub use acl::{MeshAcl, NamespaceAclEntry, NodeAclEntry};
 #[cfg(feature = "mesh")]
@@ -84,6 +86,7 @@ pub use discovery::{discover_mdns_peers, register_mdns_service, MeshNodeScanner,
 pub use fallback_transport::FallbackMeshTransport;
 #[cfg(feature = "mesh")]
 pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService, HeartbeatStatus};
+pub use join::{JoinDecision, JoinRequest};
 pub use maturity::MeshMaturityReport;
 pub use network::{CrossGrant, MeshNetwork, NetworkAcl};
 pub use node::{NodeId, NodeIdentity};
@@ -106,6 +109,7 @@ pub use tokenomics::{
     WalletBalance,
 };
 pub use transport::MeshTransport;
+pub use visibility::Visibility;
 
 #[cfg(feature = "mesh")]
 pub use iroh_transport::IrohTransport;
