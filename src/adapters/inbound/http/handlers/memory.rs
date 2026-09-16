@@ -7,7 +7,7 @@ use crate::adapters::inbound::http::state::check_auth;
 use crate::adapters::inbound::http::AppState;
 use crate::domain::memory::{MemoryQueryFilters, MemoryRecord as DomainMemoryRecord};
 use axum::{
-    extract::{Query, State},
+    extract::{Extension, Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
@@ -93,6 +93,7 @@ fn default_limit() -> usize {
 /// Search get handler.
 pub async fn search_get_handler(
     headers: HeaderMap,
+    requester: Option<Extension<crate::security::clearance::ClearanceLevel>>,
     State(state): State<AppState>,
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
@@ -108,16 +109,24 @@ pub async fn search_get_handler(
         depth: query.depth.unwrap_or(0),
     };
 
-    search_handler(headers, State(state), Json(payload)).await
+    search_handler(headers, requester, State(state), Json(payload)).await
 }
 
 /// Search handler.
 pub async fn search_handler(
     headers: HeaderMap,
+    requester: Option<Extension<crate::security::clearance::ClearanceLevel>>,
     State(state): State<AppState>,
     Json(payload): Json<SearchPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_auth(&headers, &state)?;
+
+    // F2.2: techo de lectura derivado de la identidad autenticada (F1). Sin
+    // extensión (rutas sin el middleware de clearance) se asume el default del
+    // sistema (`Internal`), nunca un nivel elevado.
+    let requester_level = requester
+        .map(|Extension(level)| level)
+        .unwrap_or_else(crate::security::clearance::default_clearance);
     // Security scan on query before searching
     let sec_result = match state.security.process_input(&payload.query).await {
         Ok(res) => res,
@@ -157,11 +166,26 @@ pub async fn search_handler(
         .as_deref()
         .unwrap_or(&sec_result.original_input);
     let limit = payload.limit.clamp(1, 100);
-    info!("Search request: query={}, limit={}", effective_query, limit);
+
+    // F2.2: si el cliente pide niveles, se recortan a su techo; no puede pedir
+    // por encima de su identidad ni forzar la lectura de material clasificado.
+    let filters = payload.filters.clone().map(|mut f| {
+        if f.clearances.is_some() {
+            f.clearances = Some(crate::security::clearance::intersect_clearance_filter(
+                f.clearances.as_deref(),
+                requester_level,
+            ));
+        }
+        f
+    });
+    info!(
+        "Search request: query={}, limit={}, clearance={:?}",
+        effective_query, limit, requester_level
+    );
 
     match state
         .memory
-        .search(effective_query, limit, payload.filters.clone())
+        .search(effective_query, limit, filters.clone())
         .await
     {
         Ok(mut results) => {
@@ -169,10 +193,17 @@ pub async fn search_handler(
             if payload.depth > 0 {
                 results = state
                     .memory
-                    .expand_depth(&results, payload.depth, payload.filters)
+                    .expand_depth(&results, payload.depth, filters)
                     .await
                     .unwrap_or(results);
             }
+
+            // F2.2: techo de lectura — lo que supera el nivel del solicitante no
+            // se lista (la búsqueda no revela existencia; solo se cuenta).
+            let (results, hidden_by_clearance) =
+                crate::security::clearance::split_by_clearance(requester_level, results, |doc| {
+                    crate::security::clearance::level_from_metadata(&doc.metadata)
+                });
 
             let documents: Vec<_> = results
                 .into_iter()
@@ -191,6 +222,7 @@ pub async fn search_handler(
                 "status": "ok",
                 "query": payload.query,
                 "count": documents.len(),
+                "hidden_by_clearance": hidden_by_clearance,
                 "results": documents,
                 "workspace_id": state.workspace_id,
             })))

@@ -96,8 +96,7 @@ pub async fn seed_verify_handler(
         }
     };
 
-    let seed_hash = RecoverySystem::hash_seed_phrase(&payload.seed_phrase);
-    if user.recovery_seed_hash != seed_hash {
+    if !RecoverySystem::verify_seed_phrase(&payload.seed_phrase, &user.recovery_seed_hash) {
         return json_response(
             StatusCode::UNAUTHORIZED,
             serde_json::json!({"error": "Invalid seed phrase"}),
@@ -123,8 +122,7 @@ pub async fn password_reset_handler(
         }
     };
 
-    let seed_hash = RecoverySystem::hash_seed_phrase(&payload.seed_phrase);
-    if user.recovery_seed_hash != seed_hash {
+    if !RecoverySystem::verify_seed_phrase(&payload.seed_phrase, &user.recovery_seed_hash) {
         return json_response(
             StatusCode::UNAUTHORIZED,
             serde_json::json!({"error": "Invalid seed phrase"}),
@@ -199,8 +197,7 @@ pub async fn backup_codes_generate_handler(
         }
     };
 
-    let seed_hash = RecoverySystem::hash_seed_phrase(&payload.seed_phrase);
-    if user.recovery_seed_hash != seed_hash {
+    if !RecoverySystem::verify_seed_phrase(&payload.seed_phrase, &user.recovery_seed_hash) {
         return json_response(
             StatusCode::UNAUTHORIZED,
             serde_json::json!({"error": "Invalid seed phrase"}),

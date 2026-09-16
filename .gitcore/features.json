@@ -1969,6 +1969,128 @@
         "auth2::google_oauth::tests"
       ],
       "added": "2026-09-12"
+    },
+    "feat-classified-clearance": {
+      "id": "feat-classified-clearance",
+      "name": "Classified clearance bound to identity (internal lab plans)",
+      "category": "security",
+      "status": "in_progress",
+      "progress_pct": 97,
+      "description": "Clearance derivado de la identidad autenticada (no del header X-Clearance) y aplicado como frontera de seguridad; base para los planes internos top-secret del laboratorio (10%) con lectura por nodo/grupo.",
+      "steps": [
+        "F1: nivel desde Claims (role_clearance) + opt-in de header (XAVIER_CLEARANCE_TRUST_HEADER) + middleware cableado tras auth",
+        "F1: /v1/documents/{id} usa el nivel de la identidad; tests de precedencia y de no-confianza del header",
+        "F2: enforzar nivel en busquedas/lecturas de memoria y corregir default de clearance",
+        "F3: grupos por segmento interno (admin/research/ops/legal) + auditoria de lecturas clasificadas",
+        "F4: E2E con dos identidades + guia operativa + promocion a stable con pipeline verde"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "github_issue": null,
+      "last_updated": "2026-09-15",
+      "spec": "docs/features/specs/FEATURE-feat-classified-clearance.md",
+      "f1_evidence": {
+        "tests": "cargo test --release --lib --features ci-safe -- clearance → 21 passed / 0 failed (EXIT=0)",
+        "clippy": "cargo clippy --all-targets --features ci-safe -- -D warnings → EXIT=0",
+        "fmt": "rustfmt --edition 2021 --check → sin diffs"
+      },
+      "f2_1_evidence": {
+        "fmt": "cargo fmt --all -- --check → FMT=OK",
+        "tests": "cargo test --package xavier --lib --features ci-safe -- --test-threads=1 clearance → 25 passed / 0 failed",
+        "tests_parser": "cargo test ... -- parser → 2 passed / 0 failed",
+        "clippy": "cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings → clean (52.84s)"
+      },
+      "phases": {
+        "F0_plan": {
+          "status": "done"
+        },
+        "F1_nivel_por_identidad": {
+          "status": "done",
+          "commit": "f592b353"
+        },
+        "F2.1_politica_y_parseo_direccional": {
+          "status": "done",
+          "commit": "a934ee9b"
+        },
+        "F2.2_techo_de_lectura": {
+          "status": "done",
+          "criterios": [
+            "readable_levels / level_from_metadata (fail-closed) / intersect_clearance_filter / split_by_clearance",
+            "POST /memory/search (cli::handlers::memory::search_handler) con techo + hidden_by_clearance",
+            "POST /v1/memories/search con techo sobre documentos",
+            "handlers del adaptador tambien enforzados (defensa en profundidad)",
+            "bench benches/api_v1.rs actualizado a la firma nueva"
+          ],
+          "evidencia": {
+            "fmt": "cargo fmt --all -- --check => OK",
+            "tests": "cargo test --package xavier --lib --features ci-safe -- --test-threads=1 clearance => 29 passed / 0 failed",
+            "tests_schema": "22 passed / 0 failed",
+            "clippy": "cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings => exit 0 (5.52s)",
+            "log": "/tmp/swal_verify/f22_gate.log + f22_clippy.log"
+          }
+        },
+        "F4_e2e_y_promocion": {
+          "status": "partial",
+          "hecho": [
+            "tests/clearance_e2e.rs: dos identidades contra el middleware real (2 passed / 0 failed) - Readonly->Internal, Admin->TopSecret, ruta SECRET rechaza Readonly 403 + denegacion auditada con sujeto y ruta, anonimo no eleva con header",
+            "docs/features/CLEARANCE_GUIA_OPERATIVA.md: guia operativa (segmentos, como escribir material, como exigir nivel por ruta, como leer la auditoria)"
+          ],
+          "pendiente": [
+            "E2E contra el SERVIDOR VIVO (bloqueado: xavier.service pausado por el perfil gaming mientras corre dota2)",
+            "PR a main (origin = github.com/iberi22/xavier, repo publico: requiere confirmacion explicita antes de push)"
+          ]
+        },
+        "deuda_declarada": [
+          "exigencia de nivel por config de ruta (no header X-Required-Clearance)",
+          "AclManager/GroupManager necesitan store persistente para segmentos",
+          "migracion: informar cuantas entradas cambian de politica por el default nuevo"
+        ],
+        "F3.1_techo_por_segmento": {
+          "status": "done",
+          "criterios": [
+            "InfoGroup.clearance (serde default = default_clearance, sin nivel no eleva)",
+            "GroupRegistry::member_ceiling = max de segmentos donde el miembro tiene acl.read",
+            "shared_member_ceiling con cache por mtime+len (camino de lectura)",
+            "resolve_effective_clearance: rol UNION segmentos; anonimo nunca eleva",
+            "LAB_SEGMENTS + ensure_lab_segments (4 segmentos, sin miembros)",
+            "POST /v1/f12/groups acepta clearance opcional"
+          ],
+          "evidencia": {
+            "fmt": "OK",
+            "groups": "cargo test ... -- security::groups => 18 passed / 0 failed",
+            "clearance": "cargo test ... -- clearance => 32 passed / 0 failed",
+            "clippy": "cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings => exit 0 (1m17s)",
+            "suite_completa_f2_2": "2323 passed / 0 failed / 1 ignored (326s)",
+            "log": "/tmp/swal_verify/f31_gate.log, f22_fullsuite.log"
+          }
+        },
+        "F3.2_config_de_ruta_y_auditoria": {
+          "status": "done",
+          "entregables": [
+            "route_policy.rs: exigencia por prefijo de ruta (env > archivo > defaults), fail-closed en config invalida",
+            "enforce_route_policy() en clearance_session_middleware: 403 + denegacion auditada (defaults cubren /memory/export*)",
+            "clearance_audit.rs: JSONL append-only con query_hash, subject/role, nivel, ruta, visible/hidden, allowed",
+            "RequesterIdentity en extensiones para auditar sin filtrar la identidad al handler",
+            "segment_level_from_path + resolve_metadata: namespace segments/<seg> fija el PISO de nivel (metadata no puede degradar)",
+            "docs/features/route_clearance.example.json versionado"
+          ],
+          "deuda_declarada": [
+            "P1: los endpoints de export devuelven memoria en bloque SIN filtrar por nivel de entrada (mitigado a INTERNAL, no cerrado)",
+            "unificar el sumidero JSONL con security::audit::AuditLogger (SQLite) en una sola superficie de consulta",
+            "espacio de documentos dedicado al 10% (hoy es convencion de namespace, no un store aparte)"
+          ],
+          "evidencia": {
+            "fmt": "OK",
+            "route_policy": "6 passed / 0 failed",
+            "clearance_audit": "4 passed / 0 failed",
+            "groups": "19 passed / 0 failed",
+            "clearance": "37 passed / 0 failed",
+            "schema": "23 passed / 0 failed",
+            "clippy": "cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings => Finished (3m48s), sin warnings",
+            "log": "/tmp/swal_verify/f32_gate.log"
+          }
+        }
+      }
     }
   },
   "verification_commands": {

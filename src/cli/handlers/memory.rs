@@ -203,6 +203,12 @@ pub async fn export_pack_handler(
 /// Search handler.
 pub async fn search_handler(
     State(state): State<CliState>,
+    requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
+    identity: Option<
+        axum::extract::Extension<
+            xavier::adapters::inbound::http::middleware::clearance::RequesterIdentity,
+        >,
+    >,
     axum::Json(payload): axum::Json<SearchPayload>,
 ) -> impl axum::response::IntoResponse {
     let sec_result = state
@@ -240,9 +246,25 @@ pub async fn search_handler(
 
     let effective_query = sec_result.effective_input();
     let limit = payload.limit.clamp(1, 100);
-    info!("Search request: query={}, limit={}", effective_query, limit);
+
+    // F2.2: techo de lectura derivado de la identidad (F1). Sin extensión se
+    // asume el default del sistema (`Internal`), nunca un nivel elevado.
+    let requester_level = requester
+        .map(|axum::extract::Extension(level)| level)
+        .unwrap_or_else(xavier::security::clearance::default_clearance);
+    info!(
+        "Search request: query={}, limit={}, clearance={:?}",
+        effective_query, limit, requester_level
+    );
 
     let mut filters = payload.filters.clone().unwrap_or_default();
+    // El cliente no puede pedir por encima de su propio techo.
+    if filters.clearances.is_some() {
+        filters.clearances = Some(xavier::security::clearance::intersect_clearance_filter(
+            filters.clearances.as_deref(),
+            requester_level,
+        ));
+    }
     let zones = payload
         .active_zones
         .clone()
@@ -288,10 +310,38 @@ pub async fn search_handler(
             }
         };
 
+    // F2.2: techo de lectura — el material por encima del nivel del solicitante
+    // no se lista (la búsqueda no revela existencia; solo se cuenta).
+    let (search_results, hidden_by_clearance) =
+        xavier::security::clearance::split_by_clearance(requester_level, search_results, |item| {
+            xavier::security::clearance::level_from_metadata(
+                item.get("metadata").unwrap_or(&serde_json::Value::Null),
+            )
+        });
+
+    // F3.2: la lectura queda auditada (hash de la query, nunca el texto crudo).
+    let (subject, role) = identity
+        .map(|axum::extract::Extension(id)| (id.subject, id.role))
+        .unwrap_or_else(|| ("anonymous".to_string(), "none".to_string()));
+    xavier::security::clearance_audit::record(
+        &xavier::security::clearance_audit::ClearanceReadAudit::new(
+            subject,
+            role,
+            requester_level,
+            "/memory/search",
+            "search",
+            effective_query,
+            search_results.len(),
+            hidden_by_clearance,
+            true,
+        ),
+    );
+
     axum::Json(serde_json::json!({
         "results": search_results,
         "query": payload.query,
         "count": search_results.len(),
+        "hidden_by_clearance": hidden_by_clearance,
         "workspace_id": state.workspace_id,
     }))
 }
@@ -697,11 +747,45 @@ pub struct ExportMarkdownQuery {
 /// Export markdown HTTP handler for CLI HTTP server.
 pub async fn export_markdown_handler(
     State(state): State<CliState>,
+    requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
+    identity: Option<
+        axum::extract::Extension<
+            xavier::adapters::inbound::http::middleware::clearance::RequesterIdentity,
+        >,
+    >,
     Query(params): Query<ExportMarkdownQuery>,
 ) -> impl IntoResponse {
     let public_only = params.public_only.unwrap_or(false);
+    let requester_level = requester
+        .map(|axum::extract::Extension(level)| level)
+        .unwrap_or_else(xavier::security::clearance::default_clearance);
+    let (subject, role) = identity
+        .map(|axum::extract::Extension(id)| (id.subject, id.role))
+        .unwrap_or_else(|| ("anonymous".to_string(), "none".to_string()));
+
     match state.memory.export(public_only).await {
         Ok(records) => {
+            // Un export devuelve memoria en bloque: sin este techo se saltaría el
+            // nivel de cada entrada (el hueco que F3.2 dejó declarado y aquí se cierra).
+            let (records, hidden_by_clearance) = xavier::security::clearance::split_by_clearance(
+                requester_level,
+                records,
+                |record| xavier::security::clearance::level_from_metadata(&record.metadata),
+            );
+            xavier::security::clearance_audit::record(
+                &xavier::security::clearance_audit::ClearanceReadAudit::new(
+                    subject,
+                    role,
+                    requester_level,
+                    "/memory/export-markdown",
+                    "export",
+                    "",
+                    records.len(),
+                    hidden_by_clearance,
+                    true,
+                ),
+            );
+
             let exported: Vec<_> = records
                 .into_iter()
                 .map(|r| {
@@ -742,6 +826,7 @@ pub async fn export_markdown_handler(
             Json(serde_json::json!({
                 "status": "ok",
                 "count": exported.len(),
+                "hidden_by_clearance": hidden_by_clearance,
                 "notes": exported,
                 "workspace_id": state.workspace_id,
             }))
@@ -1509,11 +1594,46 @@ async fn offline_add_memory(
 /// Export handler.
 pub async fn export_handler(
     State(state): State<CliState>,
+    requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
+    identity: Option<
+        axum::extract::Extension<
+            xavier::adapters::inbound::http::middleware::clearance::RequesterIdentity,
+        >,
+    >,
     Query(params): Query<ExportPayload>,
 ) -> impl IntoResponse {
     let public_only = params.public.unwrap_or(false);
+    let requester_level = requester
+        .map(|axum::extract::Extension(level)| level)
+        .unwrap_or_else(xavier::security::clearance::default_clearance);
+    let (subject, role) = identity
+        .map(|axum::extract::Extension(id)| (id.subject, id.role))
+        .unwrap_or_else(|| ("anonymous".to_string(), "none".to_string()));
+
     match state.memory.export(public_only).await {
-        Ok(docs) => Json(docs).into_response(),
+        Ok(docs) => {
+            // Mismo techo que en la búsqueda. La respuesta mantiene el contrato
+            // (array de documentos) para no romper a los consumidores; el conteo de
+            // lo oculto queda en la auditoría.
+            let (docs, hidden_by_clearance) =
+                xavier::security::clearance::split_by_clearance(requester_level, docs, |doc| {
+                    xavier::security::clearance::level_from_metadata(&doc.metadata)
+                });
+            xavier::security::clearance_audit::record(
+                &xavier::security::clearance_audit::ClearanceReadAudit::new(
+                    subject,
+                    role,
+                    requester_level,
+                    "/memory/export",
+                    "export",
+                    "",
+                    docs.len(),
+                    hidden_by_clearance,
+                    true,
+                ),
+            );
+            Json(docs).into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({

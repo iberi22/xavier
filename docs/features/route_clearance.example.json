@@ -1,0 +1,20 @@
+{
+  "_comentario": [
+    "Política de nivel exigido por ruta (F3.2 del feature feat-classified-clearance).",
+    "Copiar a  <workspace>/data/security/route_clearance.json  para activarla.",
+    "Prioridad: XAVIER_REQUIRED_CLEARANCE_ROUTES (JSON inline) > este archivo > reglas por defecto del binario.",
+    "Semántica: gana el PREFIJO MÁS LARGO; un nivel ilegible en la config exige TopSecret (cierra, no abre).",
+    "Niveles válidos: UNCLASSIFIED < INTERNAL < RESTRICTED < CONFIDENTIAL < SECRET < TOPSECRET.",
+    "Las reglas por defecto del binario (si este archivo no existe) ya exigen INTERNAL en /memory/export*,",
+    "porque los exports devuelven memoria en bloque sin aplicar el nivel de cada entrada."
+  ],
+  "routes": [
+    { "prefix": "/memory/export", "required": "INTERNAL" },
+    { "prefix": "/v1/memory/export-markdown", "required": "INTERNAL" }
+  ],
+  "_ejemplos": [
+    { "prefix": "/segments", "required": "SECRET" },
+    { "prefix": "/v1/admin", "required": "TOPSECRET" },
+    { "prefix": "/ruta-desactivada", "required": "SECRET", "enabled": false }
+  ]
+}

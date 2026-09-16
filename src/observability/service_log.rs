@@ -376,8 +376,15 @@ impl ServiceLogStore {
     }
 
     /// Full-text search across log messages and metadata.
+    ///
+    /// Sanitized via `build_fts_query` so raw FTS5 syntax in the user query
+    /// cannot crash the SQLite parser (would surface as HTTP 500). A query
+    /// with no usable tokens yields an empty result instead of an error.
     pub async fn search_logs(&self, query: &str, limit: u32) -> Result<Vec<LogEntry>> {
-        let query = query.to_string();
+        let Some(safe_query) = crate::memory::sqlite_vec_store::fts::build_fts_query(query) else {
+            return Ok(Vec::new());
+        };
+        let query = safe_query;
         self.conn
             .with_conn(&self.project_id, move |conn| {
                 let mut stmt = conn.prepare(

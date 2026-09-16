@@ -485,8 +485,16 @@ impl CodebaseDb {
     // ------------------------------------------------------------------
 
     /// Full-text search over code via the FTS5 virtual table.
+    ///
+    /// The raw user query is sanitized through `build_fts_query` first:
+    /// unsanitized FTS5 syntax (`"`, `:`, `AND`, `*`, ...) makes the SQLite
+    /// parser fail and would surface as HTTP 500. A query with no usable
+    /// tokens yields an empty result instead of an error.
     pub async fn search_code(&self, query: &str, limit: usize) -> Result<Vec<CodeSearchResult>> {
-        let query = query.to_string();
+        let Some(safe_query) = crate::memory::sqlite_vec_store::fts::build_fts_query(query) else {
+            return Ok(Vec::new());
+        };
+        let query = safe_query;
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
                 let sql = "SELECT path, content, code_tokens, rank

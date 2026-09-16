@@ -1,5 +1,9 @@
 [build]
-target-dir = "/tmp/xavier-target"
+# NOTE (mitigación auditoría DX 2026-09): NO fijar `target-dir` aquí.
+# La documentación (README, QUICKSTART) indica `./target/release/xavier`;
+# un target-dir en /tmp rompe esos comandos y pierde la caché incremental
+# en cada reinicio. Quien necesite RAM disk persistente puede exportar
+# CARGO_TARGET_DIR en su shell (ver shell.nix).
 
 # [target.x86_64-unknown-linux-gnu]
 # rustflags = ["-C", "link-arg=-fuse-ld=mold"]

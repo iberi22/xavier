@@ -397,7 +397,7 @@ pub fn resolve_metadata(
         })
         .unwrap_or_else(|| infer_zone_from_kind_and_level(kind, typed.level));
 
-    let clearance = typed
+    let declared_clearance = typed
         .clearance
         .or_else(|| {
             metadata
@@ -405,7 +405,16 @@ pub fn resolve_metadata(
                 .and_then(|v| v.as_str())
                 .map(ClearanceLevel::parse)
         })
-        .unwrap_or(ClearanceLevel::TopSecret);
+        // Política: sin nivel declarado ⇒ default_clearance() (Internal por defecto).
+        .unwrap_or_else(crate::security::clearance::default_clearance);
+
+    // Piso por namespace de segmento (F3.2): material escrito en
+    // `segments/<seg-id>/...` no puede quedar por debajo del nivel del segmento,
+    // aunque la metadata diga otra cosa (o no diga nada).
+    let clearance = match crate::security::groups::segment_level_from_path(path) {
+        Some(segment_level) => declared_clearance.max(segment_level),
+        None => declared_clearance,
+    };
 
     Ok(ResolvedMemoryMetadata {
         kind,
@@ -932,5 +941,74 @@ mod tests {
             .expect("test assertion");
         assert!(DateTime::parse_from_rfc3339(recorded_at).is_ok());
         assert_ne!(recorded_at, "not-a-date");
+    }
+
+    // ── Política de nivel por defecto (F2.1) ────────────────────────────────
+
+    #[test]
+    fn resolve_metadata_defaults_clearance_to_internal() {
+        // Sin nivel declarado ⇒ política (`Internal`), NO el viejo `TopSecret`.
+        let resolved =
+            resolve_metadata("docs/nota", &json!({}), "ws-1", None).expect("test assertion");
+        assert_eq!(
+            resolved.clearance,
+            crate::security::clearance::default_clearance()
+        );
+        assert_eq!(resolved.clearance, ClearanceLevel::Internal);
+
+        // Un nivel explícito se respeta.
+        let explicit = resolve_metadata("docs/nota", &json!({"clearance": "secret"}), "ws-1", None)
+            .expect("test assertion");
+        assert_eq!(explicit.clearance, ClearanceLevel::Secret);
+    }
+
+    // ── Piso por namespace de segmento (F3.2) ───────────────────────────────
+
+    #[test]
+    fn resolve_metadata_applies_segment_namespace_floor() {
+        // Sin declarar nivel, el namespace del segmento lo fija.
+        let admin = resolve_metadata("segments/seg-admin/plan-10pct", &json!({}), "ws-1", None)
+            .expect("test assertion");
+        assert_eq!(
+            admin.clearance,
+            ClearanceLevel::TopSecret,
+            "seg-admin exige TopSecret por el solo hecho de vivir en su namespace"
+        );
+
+        let ops = resolve_metadata("segments/seg-ops/nota", &json!({}), "ws-1", None)
+            .expect("test assertion");
+        assert_eq!(ops.clearance, ClearanceLevel::Confidential);
+
+        // Intento de degradar por metadata: el namespace es piso, no techo.
+        let downgrade = resolve_metadata(
+            "segments/seg-admin/plan",
+            &json!({"clearance": "unclassified"}),
+            "ws-1",
+            None,
+        )
+        .expect("test assertion");
+        assert_eq!(
+            downgrade.clearance,
+            ClearanceLevel::TopSecret,
+            "la metadata no puede rebajar el nivel del segmento"
+        );
+
+        // Declarar más alto sí se respeta (el piso no limita hacia arriba).
+        let higher = resolve_metadata(
+            "segments/seg-ops/plan",
+            &json!({"clearance": "topsecret"}),
+            "ws-1",
+            None,
+        )
+        .expect("test assertion");
+        assert_eq!(higher.clearance, ClearanceLevel::TopSecret);
+
+        // Fuera de los namespaces conocidos, la política normal sigue igual.
+        let normal = resolve_metadata("segments/otro/plan", &json!({}), "ws-1", None)
+            .expect("test assertion");
+        assert_eq!(normal.clearance, ClearanceLevel::Internal);
+
+        let docs = resolve_metadata("docs/nota", &json!({}), "ws-1", None).expect("test assertion");
+        assert_eq!(docs.clearance, ClearanceLevel::Internal);
     }
 }

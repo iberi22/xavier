@@ -26,18 +26,28 @@ impl Drop for ReindexRunningGuard {
 
 impl SchemaInitializer for VecSqliteMemoryStore {
     fn init_schema(&self) -> Result<()> {
-        match tokio::runtime::Handle::try_current() {
-            Ok(_) => tokio::task::block_in_place(|| {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .build()
-                    .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
-                rt.block_on(self.init_schema_async())
-            }),
-            Err(_) => {
-                let runtime = tokio::runtime::Runtime::new()
-                    .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
-                runtime.block_on(self.init_schema_async())
-            }
+        // Never build a nested Tokio runtime via `block_in_place` inside a
+        // running runtime: it panics on current-thread runtimes (incl. async
+        // tests) and can stall the multi-thread scheduler. Run the async init
+        // on a dedicated OS thread with its own runtime instead.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            std::thread::scope(|s| {
+                s.spawn(|| {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|e| {
+                            anyhow::anyhow!("failed to create temporary runtime: {}", e)
+                        })?;
+                    rt.block_on(self.init_schema_async())
+                })
+                .join()
+                .map_err(|_| anyhow::anyhow!("schema init thread panicked"))?
+            })
+        } else {
+            let runtime = tokio::runtime::Runtime::new()
+                .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
+            runtime.block_on(self.init_schema_async())
         }
     }
 }

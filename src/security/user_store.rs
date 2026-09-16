@@ -173,26 +173,33 @@ impl UserStore {
             .await
     }
 
-    /// Verify and consume backup code.
-    pub async fn verify_and_consume_backup_code(
-        &self,
-        user_id: &str,
-        code_hash: &str,
-    ) -> Result<bool> {
+    /// Verify and consume a backup code.
+    ///
+    /// Takes the raw code (hashes are salted Argon2id, so matching must
+    /// happen in Rust, not in SQL). Consumes the first unused matching code.
+    pub async fn verify_and_consume_backup_code(&self, user_id: &str, code: &str) -> Result<bool> {
         let user_id = user_id.to_string();
-        let code_hash = code_hash.to_string();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id FROM backup_codes WHERE user_id = ? AND code_hash = ? AND used = 0 LIMIT 1"
-            )?;
-            let mut rows = stmt.query(params![user_id, code_hash])?;
-            if let Some(row) = rows.next()? {
-                let id: String = row.get(0)?;
-                conn.execute("UPDATE backup_codes SET used = 1 WHERE id = ?", params![id])?;
-                Ok(true)
-            } else {
+        let code = code.to_string();
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, code_hash FROM backup_codes WHERE user_id = ? AND used = 0",
+                )?;
+                let rows: Vec<(String, String)> = stmt
+                    .query_map(params![user_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                for (id, stored_hash) in rows {
+                    if crate::security::recovery::RecoverySystem::verify_backup_code(
+                        &code,
+                        &stored_hash,
+                    ) {
+                        conn.execute("UPDATE backup_codes SET used = 1 WHERE id = ?", params![id])?;
+                        return Ok(true);
+                    }
+                }
                 Ok(false)
-            }
-        }).await
+            })
+            .await
     }
 }

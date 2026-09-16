@@ -1355,6 +1355,10 @@ pub async fn start_http_server(
             state.clone(),
             rate_limit_middleware,
         ))
+        // Clearance derivado de la identidad autenticada (corre DESPUÉS de auth).
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::clearance::clearance_session_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -1374,6 +1378,10 @@ pub async fn start_http_server(
         .layer(middleware::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,
+        ))
+        // Clearance derivado de la identidad autenticada (corre DESPUÉS de auth).
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::clearance::clearance_session_middleware,
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
