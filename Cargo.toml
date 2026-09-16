@@ -235,6 +235,10 @@ name = "messaging_status"
 path = "tests/messaging_status.rs"
 
 [[test]]
+name = "segment_space"
+path = "tests/segment_space.rs"
+
+[[test]]
 name = "clearance_audit_sqlite"
 path = "tests/clearance_audit_sqlite.rs"
 
