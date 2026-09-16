@@ -594,4 +594,56 @@ mod tests {
         assert_eq!(synced.memories[0].content, "Shared wallet state delta");
         assert_eq!(synced.snapshots, vec!["snap_swal_repo"]);
     }
+
+    #[test]
+    fn test_isolation_cross_wallet() {
+        let file = NamedTempFile::new().unwrap();
+        let path = file.path().to_path_buf();
+
+        let mut registry = PrivateMeshRegistry::load_or_create(path).unwrap();
+
+        let wallet_a = "wallet_alpha_111";
+        let wallet_b = "wallet_beta_222";
+
+        let node_a1 = make_test_node("xv1-alpha1", wallet_a, "Alpha Node 1");
+        let node_a2 = make_test_node("xv1-alpha2", wallet_a, "Alpha Node 2");
+        let node_b1 = make_test_node("xv1-beta1", wallet_b, "Beta Node 1");
+
+        // (a) Register A1 and A2 under wallet_a, B1 under wallet_b
+        registry.register_wallet_node(node_a1, wallet_a).unwrap();
+        registry.register_wallet_node(node_a2, wallet_a).unwrap();
+        registry
+            .register_wallet_node(node_b1.clone(), wallet_b)
+            .unwrap();
+
+        // (b) Assert get_nodes_by_wallet isolation both directions
+        let nodes_a = registry.get_nodes_by_wallet(wallet_a);
+        let nodes_b = registry.get_nodes_by_wallet(wallet_b);
+
+        assert_eq!(nodes_a.len(), 2);
+        assert_eq!(nodes_b.len(), 1);
+        assert!(nodes_a.iter().all(|n| n.wallet_id == wallet_a));
+        assert!(nodes_b.iter().all(|n| n.wallet_id == wallet_b));
+        assert!(!nodes_a.iter().any(|n| n.wallet_id == wallet_b));
+        assert!(!nodes_b.iter().any(|n| n.wallet_id == wallet_a));
+
+        // (c) Assert sync_deltas(wallet_a, wallet_b, payload) is Err with "Cross-wallet sync rejected"
+        let payload = PrivateSyncPayload {
+            memories: vec![PrivateMemoryDelta {
+                path: "fact/isolated_memory".to_string(),
+                content: "Cross-wallet payload".to_string(),
+                metadata: serde_json::json!({"isolated": true}),
+                created_at: Utc::now().timestamp(),
+            }],
+            snapshots: vec![],
+        };
+        let sync_res = registry.sync_deltas(wallet_a, wallet_b, payload);
+        assert!(sync_res.is_err());
+        let err_msg = sync_res.unwrap_err().to_string();
+        assert!(err_msg.contains("Cross-wallet sync rejected"));
+
+        // (d) Assert B-node register_wallet_node(node_b, wallet_a) is Err
+        let register_mismatch = registry.register_wallet_node(node_b1, wallet_a);
+        assert!(register_mismatch.is_err());
+    }
 }
