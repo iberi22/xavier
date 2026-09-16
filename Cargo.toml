@@ -238,6 +238,10 @@ path = "tests/messaging_status.rs"
 name = "segment_space"
 path = "tests/segment_space.rs"
 
+[[test]]
+name = "clearance_audit_sqlite"
+path = "tests/clearance_audit_sqlite.rs"
+
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 code-graph = { path = "./code-graph" }
