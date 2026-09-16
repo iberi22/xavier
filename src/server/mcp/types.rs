@@ -61,15 +61,18 @@ pub struct MCPResource {
     pub mime_type: String,
 }
 
-// ── Content types (MCP 2025-2026 structuredContent support) ─────────
+// ── Content types (MCP ContentBlock union) ──────────────────────────
 
-/// Unified MCP content variant — supports legacy text, structured JSON,
-/// and resource URIs.
+/// Unified MCP content variant — text and resource URIs only.
+///
+/// `content[]` is validated by clients against the closed ContentBlock
+/// union (text/image/audio/resource_link/resource). Structured payloads
+/// travel in the top-level `structuredContent` field of the result
+/// envelope — never as a content item.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MCPContent {
     Text(MCPTextContent),
-    Structured(MCPStructuredContent),
     Resource(MCPResourceContent),
 }
 
@@ -78,16 +81,6 @@ pub struct MCPTextContent {
     #[serde(rename = "type")]
     pub content_type: String,
     pub text: String,
-}
-
-/// Structured content with an explicit output_schema (MCP spec 2025-06-18).
-/// The `structuredContent` field carries the actual typed payload.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MCPStructuredContent {
-    #[serde(rename = "type")]
-    pub content_type: String,
-    #[serde(rename = "structuredContent")]
-    pub structured_content: Value,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -110,6 +103,14 @@ pub struct MCPResourceRef {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MCPToolResult {
     pub content: Vec<MCPContent>,
+    /// Top-level structured payload (MCP spec 2025-06-18+).
+    ///
+    /// `structuredContent` is a sibling of `content` in `CallToolResult`,
+    /// NOT a content item: strict clients (e.g. the `mcp` 2.x Python SDK
+    /// used by Hermes) validate `content[]` against the ContentBlock union
+    /// and reject the whole result if it contains an unknown item type.
+    #[serde(rename = "structuredContent", skip_serializing_if = "Option::is_none")]
+    pub structured_content: Option<Value>,
     #[serde(rename = "isError")]
     pub is_error: Option<bool>,
 }
@@ -185,28 +186,27 @@ impl MCPToolResult {
                 content_type: "text".to_string(),
                 text: text.into(),
             })],
+            structured_content: None,
             is_error: Some(is_error),
         }
     }
 
-    /// Structured (MCP 2025-06-18): structuredContent FIRST so typed
-    /// clients and contract tests read content[0] as structured; the
-    /// text JSON fallback rides second for plain-text clients.
-    /// (Regression note 2026-09-09: commit 7fe73173 prepended Text,
-    /// breaking every content[0]==structuredContent assertion.)
+    /// Structured (MCP 2025-06-18+): the typed payload travels in the
+    /// top-level `structuredContent` field (sibling of `content`);
+    /// `content[0]` carries the serialized JSON as a plain-text fallback
+    /// for clients that ignore structured content.
+    ///
+    /// (Regression note 2026-09-11: emitting a `{"type":"structuredContent"}`
+    /// content item — as done until now — violates the ContentBlock union
+    /// and made strict clients such as Hermes reject the entire result.)
     pub fn structured(payload: Value, is_error: bool) -> Self {
         let text_fallback = payload.to_string();
         MCPToolResult {
-            content: vec![
-                MCPContent::Structured(MCPStructuredContent {
-                    content_type: "structuredContent".to_string(),
-                    structured_content: payload,
-                }),
-                MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: text_fallback,
-                }),
-            ],
+            content: vec![MCPContent::Text(MCPTextContent {
+                content_type: "text".to_string(),
+                text: text_fallback,
+            })],
+            structured_content: Some(payload),
             is_error: Some(is_error),
         }
     }

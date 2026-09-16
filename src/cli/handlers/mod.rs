@@ -10,6 +10,7 @@ pub mod billing;
 pub mod chat;
 pub mod cloud;
 pub mod code;
+pub mod config;
 pub mod doctor;
 pub mod export;
 pub mod headless_api;

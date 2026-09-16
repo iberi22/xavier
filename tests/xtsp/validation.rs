@@ -371,7 +371,7 @@ async fn xtsp_page_in() {
     assert_eq!(search_res.status(), StatusCode::OK);
 
     let search_body = get_json_body(search_res).await;
-    let candidates_val = &search_body["result"]["content"][0]["structuredContent"]["candidates"];
+    let candidates_val = &search_body["result"]["structuredContent"]["candidates"];
     let candidates = candidates_val
         .as_array()
         .expect("candidates should be array");
