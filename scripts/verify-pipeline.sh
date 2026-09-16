@@ -68,7 +68,7 @@ for f in feats:
     assert fid, f"feature missing id: {f}"
     assert fid not in ids, f"duplicate id: {fid}"
     ids.add(fid)
-    assert f.get("status") in ("planned", "beta", "stable", "active", "implemented"), \
+    assert f.get("status") in ("planned", "beta", "stable", "active", "implemented", "in_progress"), \
         f"{fid}: bad status {f.get('status')}"
     assert isinstance(norm_list(f.get("tests")), list), f"{fid}: tests must be a list or string"
     assert isinstance(norm_list(f.get("implemented_in")), list), f"{fid}: implemented_in must be a list or string"
@@ -135,7 +135,7 @@ ledger = json.load(open(sys.argv[1]))
 raw = ledger.get("features", [])
 feats = list(raw.values()) if isinstance(raw, dict) else raw
 for f in feats:
-    if f.get("status") in ("stable", "beta", "implemented", "active"):
+    if f.get("status") in ("stable", "beta", "implemented", "active", "in_progress"):
         tests = f.get("tests")
         tests = tests if isinstance(tests, list) else ([tests] if tests else [])
         for t in tests:

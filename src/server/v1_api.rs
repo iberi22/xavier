@@ -1120,6 +1120,7 @@ where
 /// V1 memories search.
 pub async fn v1_memories_search(
     Extension(workspace): Extension<WorkspaceContext>,
+    requester: Option<Extension<crate::security::clearance::ClearanceLevel>>,
     Json(payload): Json<V1SearchRequest>,
 ) -> impl IntoResponse {
     let limit = payload.limit.unwrap_or(10);
@@ -1147,10 +1148,22 @@ pub async fn v1_memories_search(
         },
     );
     let degraded = search_result.degraded;
+
+    // F2.2: techo de lectura derivado de la identidad (F1). Sin extensión se
+    // asume el default del sistema (`Internal`), nunca un nivel elevado.
+    let requester_level = requester
+        .map(|Extension(level)| level)
+        .unwrap_or_else(crate::security::clearance::default_clearance);
     let documents = search_result
         .documents
         .into_iter()
         .filter(|doc| is_primary_memory(&doc.metadata))
+        .filter(|doc| {
+            crate::security::clearance::can_access(
+                requester_level,
+                crate::security::clearance::level_from_metadata(&doc.metadata),
+            )
+        })
         .collect::<Vec<_>>();
 
     let mode = payload.mode.as_deref().unwrap_or("full");
