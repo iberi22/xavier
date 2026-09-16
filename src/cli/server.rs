@@ -77,6 +77,52 @@ pub async fn metrics_handler() -> axum::response::Response {
     autometrics::prometheus_exporter::encode_http_response().into_response()
 }
 
+/// Handler to list lab segments with clearance levels (WAVE-22.02)
+pub async fn list_segments_handler() -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let segments: Vec<serde_json::Value> = xavier::security::groups::LAB_SEGMENTS
+        .iter()
+        .map(|(id, name, level)| {
+            serde_json::json!({
+                "id": id,
+                "name": name,
+                "clearance": level.as_str(),
+            })
+        })
+        .collect();
+    (
+        axum::http::StatusCode::OK,
+        axum::Json(serde_json::json!({ "segments": segments })),
+    )
+        .into_response()
+}
+
+/// Handler to list documents under a segment space (WAVE-22.02)
+pub async fn get_segment_documents_handler(
+    axum::extract::State(state): axum::extract::State<CliState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let space = xavier::memory::segments::SegmentSpace::new(state.memory.as_ref());
+    match space.list(&id, 100).await {
+        Ok(docs) => (
+            axum::http::StatusCode::OK,
+            axum::Json(serde_json::json!({
+                "segment_id": id,
+                "documents": docs,
+            })),
+        )
+            .into_response(),
+        Err(_) => (
+            axum::http::StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({
+                "error": format!("Segment '{}' not found", id)
+            })),
+        )
+            .into_response(),
+    }
+}
+
 /// Start http server.
 pub async fn start_http_server(
     port: u16,
@@ -737,6 +783,11 @@ pub async fn start_http_server(
         )
         .route("/memory/manage", post(manage_handler))
         .route("/memory/timeline/query", post(timeline_query_handler))
+        .route("/v1/segments", get(list_segments_handler))
+        .route(
+            "/v1/segments/{id}/documents",
+            get(get_segment_documents_handler),
+        )
         .route(
             "/v1/memories",
             post(
