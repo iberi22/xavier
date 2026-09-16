@@ -9,7 +9,6 @@
 
 use reqwest::Client;
 use serde_json::{json, Value};
-use std::fs;
 use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
