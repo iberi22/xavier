@@ -9,10 +9,14 @@ pub mod dispatcher;
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::sqlite_store::TABLE_NOTIFICATIONS;
 use anyhow::Result;
+use axum::response::sse::Event;
 use chrono::{DateTime, Utc};
+use futures_util::stream::Stream;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +286,19 @@ impl NotificationManager {
         self.event_tx.subscribe()
     }
 
+    /// Create an SSE stream with standard 15s keepalive ping and 3s reconnect retry.
+    pub fn create_sse_stream(&self) -> impl Stream<Item = Result<Event, Infallible>> + Send {
+        create_notification_sse_stream_with_keepalive(Duration::from_secs(15))
+    }
+
+    /// Create an SSE stream with custom keepalive ping interval and 3s reconnect retry.
+    pub fn create_sse_stream_with_keepalive(
+        &self,
+        keepalive_duration: Duration,
+    ) -> impl Stream<Item = Result<Event, Infallible>> + Send {
+        create_notification_sse_stream_with_keepalive(keepalive_duration)
+    }
+
     /// Forward notifications to the Tauri webview.
     ///
     /// Safe to call from the Tauri setup hook (which is **not** on a Tokio
@@ -518,6 +535,114 @@ impl Default for NotificationManager {
 
 pub static NOTIFICATIONS: std::sync::LazyLock<NotificationManager> =
     std::sync::LazyLock::new(NotificationManager::new);
+
+/// Creates an SSE stream for notification events with default 15s keepalive ping and 3s reconnect retry.
+pub fn create_notification_sse_stream() -> impl Stream<Item = Result<Event, Infallible>> + Send {
+    create_notification_sse_stream_with_keepalive(Duration::from_secs(15))
+}
+
+/// Creates an SSE stream for notification events with configurable keepalive ping interval and 3s reconnect retry.
+pub fn create_notification_sse_stream_with_keepalive(
+    keepalive_duration: Duration,
+) -> impl Stream<Item = Result<Event, Infallible>> + Send {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(100);
+
+    tokio::spawn(async move {
+        // 1. Handshake event with retry: 3000ms
+        let handshake_event = Event::default()
+            .comment("connected")
+            .retry(Duration::from_millis(3000));
+        if tx.send(Ok(handshake_event)).await.is_err() {
+            return;
+        }
+
+        let mut bcast_rx = NOTIFICATIONS.subscribe();
+        let mut interval = tokio::time::interval(keepalive_duration);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // Skip initial immediate tick
+        interval.tick().await;
+
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    let keepalive_event = Event::default().comment("keepalive");
+                    if tx.send(Ok(keepalive_event)).await.is_err() {
+                        break;
+                    }
+                }
+                item = bcast_rx.recv() => {
+                    match item {
+                        Ok(notification) => {
+                            let data = serde_json::to_string(&notification).unwrap_or_default();
+                            let event = Event::default()
+                                .event("notification")
+                                .id(notification.id.clone())
+                                .data(data)
+                                .retry(Duration::from_millis(3000));
+                            if tx.send(Ok(event)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            tracing::warn!(skipped, "Notifications SSE stream lagged");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    tokio_stream::wrappers::ReceiverStream::new(rx)
+}
+
+/// Emits a notification to the specified island asynchronously.
+pub async fn emit_island_event(
+    island_id: IslandId,
+    title: &str,
+    body: &str,
+    severity: &str,
+) -> Result<Notification> {
+    NOTIFICATIONS.notify(island_id, title, body, severity).await
+}
+
+/// Emits a notification to the specified island synchronously without blocking the calling thread.
+///
+/// Spawns an async task on the current Tokio runtime (or a new thread/runtime if none is running).
+pub fn emit_island_event_sync(
+    island_id: IslandId,
+    title: impl Into<String>,
+    body: impl Into<String>,
+    severity: impl Into<String>,
+) {
+    let title = title.into();
+    let body = body.into();
+    let severity = severity.into();
+
+    let fut = async move {
+        let _ = NOTIFICATIONS
+            .notify(island_id, &title, &body, &severity)
+            .await;
+    };
+
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(fut);
+    } else {
+        std::thread::Builder::new()
+            .name("xavier-notify-event".into())
+            .spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    rt.block_on(fut);
+                }
+            })
+            .ok();
+    }
+}
 
 #[cfg(test)]
 mod tests {

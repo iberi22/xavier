@@ -402,15 +402,65 @@ pub async fn handle_core_tool(
             }
 
             if content_parts.is_empty() {
+                if records.is_empty() {
+                    return Ok(serde_json::to_value(MCPToolResult::structured(
+                        json!(MCPContextResult {
+                            total_chars: 0,
+                            total_records: 0,
+                            truncated: false,
+                            truncated_reason: None,
+                            content: format!("No context found for project {project_id}."),
+                            sources: vec![],
+                            estimated_tokens: 0,
+                        }),
+                        false,
+                    ))?);
+                }
+
+                // Records DO exist but even the first entry exceeds max_chars:
+                // answering "No context found" here is a lie that misleads
+                // agents (regression 2026-09-12: max_chars=1200 against a
+                // 1219-char state entry made Hermes read "No context found"
+                // and conclude the store was empty). Return the first entry
+                // clipped to the budget, flagged as truncated.
+                let first = &records[0];
+                let full_entry = format!(
+                    "Id: {}\nPath: {}\nRevision: {}\nContent: {}",
+                    first.id, first.path, first.revision, first.content
+                );
+                let clipped =
+                    crate::memory::snippet::clip_chars(&full_entry, max_chars).to_string();
+                sources.push(MCPSearchResult {
+                    id: first.id.clone(),
+                    path: first.path.clone(),
+                    score: 0.0,
+                    snippet: crate::memory::snippet::clip_chars(&first.content, 200).to_string(),
+                    provenance: MCPProvenance {
+                        source: "memory_store".to_string(),
+                        retrieved_at: chrono::Utc::now().to_rfc3339(),
+                        retrieval_method: "exact".to_string(),
+                        embedding_model: None,
+                        version: Some(
+                            option_env!("XAVIER_VERSION")
+                                .unwrap_or("development")
+                                .to_string(),
+                        ),
+                    },
+                    metadata: first.metadata.clone(),
+                });
                 return Ok(serde_json::to_value(MCPToolResult::structured(
                     json!(MCPContextResult {
-                        total_chars: 0,
-                        total_records: 0,
-                        truncated: false,
-                        truncated_reason: None,
-                        content: format!("No context found for project {project_id}."),
-                        sources: vec![],
-                        estimated_tokens: 0,
+                        total_chars: clipped.len(),
+                        total_records: 1,
+                        truncated: true,
+                        truncated_reason: Some(format!(
+                            "first entry exceeded max_chars ({} > {}), clipped to budget",
+                            full_entry.len(),
+                            max_chars
+                        )),
+                        content: clipped.clone(),
+                        sources,
+                        estimated_tokens: crate::context::estimate_tokens(&clipped),
                     }),
                     false,
                 ))?);
@@ -526,9 +576,12 @@ pub async fn handle_core_tool(
                 mcp_protocol: "2026-07-28".to_string(),
             };
 
+            // MCP `isError` = tool EXECUTION failure (spec 2025-06-18+), not host
+            // state: warn/degraded alerts ride inside the payload. Only a hard
+            // unhealthy/critical state marks the result as an error.
             Ok(serde_json::to_value(MCPToolResult::structured(
                 serde_json::to_value(&result)?,
-                health.status != "healthy",
+                matches!(health.status.as_str(), "unhealthy" | "critical"),
             ))?)
         }
         "sys_health" => {
@@ -576,7 +629,7 @@ pub async fn handle_core_tool(
 
             Ok(serde_json::to_value(MCPToolResult::structured(
                 output,
-                overall_alert != "healthy",
+                overall_alert == "critical",
             ))?)
         }
         "log_scan" => {
@@ -625,7 +678,7 @@ pub async fn handle_core_tool(
             let result = crate::self_manage::env_status(args);
             Ok(serde_json::to_value(MCPToolResult::structured(
                 serde_json::to_value(&result)?,
-                result.overall != "healthy",
+                result.overall == "critical",
             ))?)
         }
         "ticket_create" => {
@@ -724,6 +777,7 @@ pub async fn handle_core_tool(
                         content_type: "text".to_string(),
                         text: serde_json::to_string(&dump)?,
                     })],
+                    structured_content: None,
                     is_error: Some(false),
                 })?);
             }

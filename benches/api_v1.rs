@@ -100,7 +100,8 @@ fn bench_v1_api(c: &mut Criterion) {
                     active_zones: None,
                     mode: None,
                 };
-                v1_memories_search(Extension(context.clone()), Json(payload)).await
+                // F2.2: la búsqueda exige el techo del solicitante; el bench usa el default.
+                v1_memories_search(Extension(context.clone()), None, Json(payload)).await
             })
         });
     });

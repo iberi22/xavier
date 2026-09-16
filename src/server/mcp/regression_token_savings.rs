@@ -38,7 +38,7 @@ mod tests {
         )
         .await;
         let body_fat = get_json_body(resp_fat).await;
-        let candidates_fat = body_fat["result"]["content"][0]["structuredContent"]["candidates"]
+        let candidates_fat = body_fat["result"]["structuredContent"]["candidates"]
             .as_array()
             .unwrap();
         assert!(!candidates_fat.is_empty());
@@ -57,7 +57,7 @@ mod tests {
         )
         .await;
         let body_full = get_json_body(resp_full).await;
-        let candidates_full = body_full["result"]["content"][0]["structuredContent"]["candidates"]
+        let candidates_full = body_full["result"]["structuredContent"]["candidates"]
             .as_array()
             .unwrap();
         assert!(!candidates_full.is_empty());
@@ -115,8 +115,7 @@ mod tests {
         )
         .await;
         let body_search = get_json_body(resp_search).await;
-        let candidates_search = body_search["result"]["content"][0]["structuredContent"]
-            ["candidates"]
+        let candidates_search = body_search["result"]["structuredContent"]["candidates"]
             .as_array()
             .unwrap();
         assert!(!candidates_search.is_empty());
@@ -132,7 +131,7 @@ mod tests {
         )
         .await;
         let body_context = get_json_body(resp_context).await;
-        let sc = &body_context["result"]["content"][0]["structuredContent"];
+        let sc = &body_context["result"]["structuredContent"];
         let content = sc["content"].as_str().unwrap();
 
         assert!(
@@ -188,5 +187,63 @@ mod tests {
             optimized_tokens, expected_tokens,
             "Token estimation should be honest (chars / 4)"
         );
+    }
+
+    #[tokio::test]
+    async fn regression_token_savings_accounting_e2e() {
+        let (state, workspace) = test_state().await;
+        let router = test_router(state, workspace.clone());
+
+        // 1. Seed memory
+        post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {
+                    "name": "create_memory",
+                    "arguments": {
+                        "path": "accounting-test/doc1",
+                        "content": "This is a detailed document about software architecture and token compression."
+                    }
+                }
+            }),
+        )
+        .await;
+
+        // 2. Perform snippet search
+        let resp_search = post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {
+                    "name": "mem_search",
+                    "arguments": { "query": "compression" }
+                }
+            }),
+        )
+        .await;
+        assert_eq!(resp_search.status(), axum::http::StatusCode::OK);
+
+        // 3. Check xavier_token_savings tool
+        let resp_savings = post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": {
+                    "name": "xavier_token_savings",
+                    "arguments": {}
+                }
+            }),
+        )
+        .await;
+        let body_savings = get_json_body(resp_savings).await;
+        let text = body_savings["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let payload: serde_json::Value = serde_json::from_str(text).unwrap();
+
+        let search_stats = &payload["search_progressive_disclosure"];
+        assert!(search_stats["searches_total"].as_u64().unwrap_or(0) >= 1);
+        assert!(search_stats["by_mode"]["snippet"].as_u64().unwrap_or(0) >= 1);
     }
 }

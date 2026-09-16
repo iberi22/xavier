@@ -35,6 +35,7 @@ pub mod qmd;
 pub mod qmd_memory;
 pub mod query_engine;
 pub mod schema;
+pub mod segments;
 pub mod semantic;
 pub mod semantic_cache;
 pub mod simple_index;

@@ -5,9 +5,17 @@ use crate::cli::state::CliState;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::Response,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     Json,
 };
+use std::convert::Infallible;
+use std::time::Duration;
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamExt;
 use xavier::notifications::NOTIFICATIONS;
 
 /// List notifications handler.
@@ -22,6 +30,29 @@ pub async fn list_notifications_handler(State(_state): State<CliState>) -> Respo
             serde_json::json!({ "error": e.to_string() }),
         ),
     }
+}
+
+/// Server-Sent Events (SSE) streaming notifications handler.
+pub async fn stream_notifications_handler(State(_state): State<CliState>) -> impl IntoResponse {
+    let rx = NOTIFICATIONS.subscribe();
+    let stream = BroadcastStream::new(rx).filter_map(|item| match item {
+        Ok(notification) => {
+            let data = serde_json::to_string(&notification).unwrap_or_default();
+            Some(Ok::<Event, Infallible>(
+                Event::default().event("notification").data(data),
+            ))
+        }
+        Err(BroadcastStreamRecvError::Lagged(skipped)) => {
+            tracing::warn!(skipped, "Notifications SSE stream lagged");
+            None
+        }
+    });
+
+    Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive"),
+    )
 }
 
 #[cfg(test)]

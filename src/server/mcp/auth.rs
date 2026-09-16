@@ -118,12 +118,18 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
     (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
 }
 
-/// Validates an incoming Stdio connection
+/// Validates an incoming Stdio connection.
+///
+/// Stdio runs over a local OS pipe to the process that spawned us (the MCP
+/// client): there is no network boundary, so the HTTP bearer token is not
+/// required here — this matches the stdio convention of MCP servers. The
+/// HTTP/SSE transports above still enforce `XAVIER_TOKEN`/JWT strictly.
 pub fn validate_stdio_connection() -> anyhow::Result<()> {
     if resolve_xavier_token().is_empty() {
-        return Err(anyhow::anyhow!(
-            "Stdio MCP connection rejected: XAVIER_TOKEN not set. Security enforcement enabled."
-        ));
+        tracing::warn!(
+            "XAVIER_TOKEN not set: allowing local stdio MCP session without HTTP token \
+             (stdio inherits OS process trust; HTTP/SSE transports still require auth)."
+        );
     }
     Ok(())
 }
