@@ -16,7 +16,7 @@ use crate::crypto::encryption::{decrypt_data, encrypt_data, NonceBytes};
 use crate::crypto::keys::{KeyManager, KeySalt};
 use crate::data_commons::types::*;
 use bip39::{Language, Mnemonic};
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use oqs::kem::{Algorithm as KemAlg, Kem};
 use oqs::sig::{Algorithm as SigAlg, Sig};
 use serde::{Deserialize, Serialize};
@@ -473,6 +473,36 @@ impl XavierWallet {
     }
 }
 
+/// Verificar un challenge efímero ed25519 sin i/o ni reloj oculto.
+///
+/// Devuelve `Ok(true)` si la firma es válida y `now_secs <= expires_at`.
+/// Formato canónico de bytes: `swal-wallet-ephemeral-challenge-v1|{session_id}|{nonce}|{peer_node_id}|{issued_at}|{expires_at}`
+pub fn verify_ephemeral_challenge(
+    session_id: &str,
+    nonce: &str,
+    peer_node_id: &str,
+    issued_at: u64,
+    expires_at: u64,
+    public_key_bytes: &[u8; 32],
+    signature_bytes: &[u8; 64],
+    now_secs: u64,
+) -> Result<bool, WalletError> {
+    if now_secs > expires_at {
+        return Ok(false);
+    }
+
+    let verifying_key =
+        VerifyingKey::from_bytes(public_key_bytes).map_err(|_| WalletError::SignatureFailed)?;
+    let signature = Signature::from_bytes(signature_bytes);
+
+    let payload = format!(
+        "swal-wallet-ephemeral-challenge-v1|{}|{}|{}|{}|{}",
+        session_id, nonce, peer_node_id, issued_at, expires_at
+    );
+
+    Ok(verifying_key.verify(payload.as_bytes(), &signature).is_ok())
+}
+
 /// Derivar dirección bech32 desde clave pública Dilithium
 fn derive_address(pk: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -620,5 +650,126 @@ mod tests {
 
         assert_eq!(binding.node_id, node_id);
         assert_eq!(wallet.state.as_ref().unwrap().nodes.len(), 1);
+    }
+
+    #[test]
+    fn test_verify_ephemeral_challenge_valid() {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let verifying_key = signing_key.verifying_key();
+        let public_key_bytes = verifying_key.to_bytes();
+
+        let session_id = "sess_fixed_123";
+        let nonce = "nonce_fixed_456";
+        let peer_node_id = "xv1-peer-fixed";
+        let issued_at = 1700000000;
+        let expires_at = 1700000300;
+        let now_secs = 1700000100;
+
+        let payload = format!(
+            "swal-wallet-ephemeral-challenge-v1|{}|{}|{}|{}|{}",
+            session_id, nonce, peer_node_id, issued_at, expires_at
+        );
+        let sig: Signature = signing_key.sign(payload.as_bytes());
+        let signature_bytes = sig.to_bytes();
+
+        let res = verify_ephemeral_challenge(
+            session_id,
+            nonce,
+            peer_node_id,
+            issued_at,
+            expires_at,
+            &public_key_bytes,
+            &signature_bytes,
+            now_secs,
+        )
+        .unwrap();
+
+        assert!(res);
+    }
+
+    #[test]
+    fn test_verify_ephemeral_challenge_tampered() {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let verifying_key = signing_key.verifying_key();
+        let public_key_bytes = verifying_key.to_bytes();
+
+        let session_id = "sess_fixed_123";
+        let nonce = "nonce_fixed_456";
+        let peer_node_id = "xv1-peer-fixed";
+        let issued_at = 1700000000;
+        let expires_at = 1700000300;
+        let now_secs = 1700000100;
+
+        let payload = format!(
+            "swal-wallet-ephemeral-challenge-v1|{}|{}|{}|{}|{}",
+            session_id, nonce, peer_node_id, issued_at, expires_at
+        );
+        let sig: Signature = signing_key.sign(payload.as_bytes());
+        let mut signature_bytes = sig.to_bytes();
+        signature_bytes[0] ^= 0xFF;
+
+        let res_tampered_sig = verify_ephemeral_challenge(
+            session_id,
+            nonce,
+            peer_node_id,
+            issued_at,
+            expires_at,
+            &public_key_bytes,
+            &signature_bytes,
+            now_secs,
+        )
+        .unwrap();
+
+        assert!(!res_tampered_sig);
+
+        let valid_sig_bytes = sig.to_bytes();
+        let res_tampered_nonce = verify_ephemeral_challenge(
+            session_id,
+            "wrong_nonce",
+            peer_node_id,
+            issued_at,
+            expires_at,
+            &public_key_bytes,
+            &valid_sig_bytes,
+            now_secs,
+        )
+        .unwrap();
+
+        assert!(!res_tampered_nonce);
+    }
+
+    #[test]
+    fn test_verify_ephemeral_challenge_expired() {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let verifying_key = signing_key.verifying_key();
+        let public_key_bytes = verifying_key.to_bytes();
+
+        let session_id = "sess_fixed_123";
+        let nonce = "nonce_fixed_456";
+        let peer_node_id = "xv1-peer-fixed";
+        let issued_at = 1700000000;
+        let expires_at = 1700000300;
+        let now_secs = 1700000301;
+
+        let payload = format!(
+            "swal-wallet-ephemeral-challenge-v1|{}|{}|{}|{}|{}",
+            session_id, nonce, peer_node_id, issued_at, expires_at
+        );
+        let sig: Signature = signing_key.sign(payload.as_bytes());
+        let signature_bytes = sig.to_bytes();
+
+        let res = verify_ephemeral_challenge(
+            session_id,
+            nonce,
+            peer_node_id,
+            issued_at,
+            expires_at,
+            &public_key_bytes,
+            &signature_bytes,
+            now_secs,
+        )
+        .unwrap();
+
+        assert!(!res);
     }
 }
