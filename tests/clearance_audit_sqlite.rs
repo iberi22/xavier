@@ -1,11 +1,14 @@
 use std::fs;
 use tempfile::tempdir;
 
+use serial_test::serial;
 use xavier::codebase::connection_manager::ConnectionManager;
 use xavier::security::audit::AuditLogger;
-use xavier::security::clearance_audit::{query_hash, record_and_mirror, ClearanceReadAudit};
+use xavier::security::clearance::ClearanceLevel;
+use xavier::security::clearance_audit::{record_and_mirror, ClearanceReadAudit};
 
 #[tokio::test]
+#[serial]
 async fn test_allowed_search_entry_mirrored_to_sqlite() {
     let temp = tempdir().unwrap();
     let project_id = "security";
@@ -25,11 +28,13 @@ async fn test_allowed_search_entry_mirrored_to_sqlite() {
     let entry = ClearanceReadAudit::new(
         "usr-001",
         "analyst",
-        "search",
+        ClearanceLevel::Confidential,
         "/v1/memory/search",
+        "search",
+        "confidential research",
+        1,
+        0,
         true,
-        None,
-        Some(query_hash("confidential research")),
     );
 
     record_and_mirror(entry).await.unwrap();
@@ -56,6 +61,7 @@ async fn test_allowed_search_entry_mirrored_to_sqlite() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_denied_route_entry_mirrored_with_deny_result() {
     let temp = tempdir().unwrap();
     let project_id = "security";
@@ -75,11 +81,13 @@ async fn test_denied_route_entry_mirrored_with_deny_result() {
     let entry = ClearanceReadAudit::new(
         "usr-002",
         "guest",
-        "read",
+        ClearanceLevel::Restricted,
         "/v1/classified/restricted",
+        "read",
+        "",
+        0,
+        1,
         false,
-        Some("insufficient clearance level".into()),
-        None,
     );
 
     record_and_mirror(entry).await.unwrap();
@@ -97,7 +105,7 @@ async fn test_denied_route_entry_mirrored_with_deny_result() {
     let jsonl_content = fs::read_to_string(&jsonl_file).unwrap();
     assert!(jsonl_content.contains("\"subject\":\"usr-002\""));
     assert!(jsonl_content.contains("\"allowed\":false"));
-    assert!(jsonl_content.contains("insufficient clearance level"));
+    assert!(jsonl_content.contains("\"hidden_by_clearance\":1"));
 
     ConnectionManager::global().disconnect(project_id);
     std::env::remove_var("XAVIER_CLEARANCE_AUDIT_PATH");
@@ -105,6 +113,7 @@ async fn test_denied_route_entry_mirrored_with_deny_result() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_sqlite_disabled_skips_mirror_but_writes_jsonl() {
     let temp = tempdir().unwrap();
     let project_id = "security";
@@ -124,11 +133,13 @@ async fn test_sqlite_disabled_skips_mirror_but_writes_jsonl() {
     let entry = ClearanceReadAudit::new(
         "usr-003",
         "operator",
-        "export",
+        ClearanceLevel::Confidential,
         "/v1/memory/export",
+        "export",
+        "",
+        1,
+        0,
         true,
-        None,
-        None,
     );
 
     record_and_mirror(entry).await.unwrap();
@@ -152,6 +163,7 @@ async fn test_sqlite_disabled_skips_mirror_but_writes_jsonl() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_uninitialized_sqlite_fails_open() {
     let temp = tempdir().unwrap();
 
@@ -165,11 +177,13 @@ async fn test_uninitialized_sqlite_fails_open() {
     let entry = ClearanceReadAudit::new(
         "usr-004",
         "admin",
-        "query",
+        ClearanceLevel::TopSecret,
         "/v1/admin/audit",
+        "query",
+        "",
+        0,
+        0,
         false,
-        Some("unauthorized".into()),
-        None,
     );
 
     // Call record_and_mirror - should fail-open without panicking or returning Err

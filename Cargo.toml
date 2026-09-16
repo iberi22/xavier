@@ -1,6 +1,6 @@
 [package]
 name = "xavier"
-version = "0.2.1"
+version = "0.2.3"
 rust-version = "1.94"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
@@ -38,11 +38,19 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
+# NOTE (mitigación auditoría DX 2026-09): `panel-ui/src-tauri` y `xavier-core`
+# están EXCLUIDOS del workspace raíz. Tauri exige librerías GUI de escritorio
+# (webkit2gtk, gtk3, libsoup...) que rompen `cargo check/test --workspace` en
+# servidores headless, VPS y CI. El frontend Tauri se compila desde su propio
+# directorio; `xavier-core` es un refactor WIP que no compila (issue #542).
+exclude = [
+    "panel-ui/src-tauri",
+    "xavier-core",
+]
 members = [
     "code-graph",
     "crates/xavier-core-logic",
     "crates/xavier-wasm",
-    "panel-ui/src-tauri",
     "code-graph/parsers/parser-rust",
     "code-graph/parsers/parser-ts",
     "code-graph/parsers/parser-python",
@@ -51,11 +59,6 @@ members = [
     "code-graph/parsers/parser-c",
     "code-graph/parsers/parser-cpp",
 ]
-# NOTE: "xavier-core" is excluded from the workspace. It is an incomplete
-# WIP refactor (duplicates src/memory/sqlite_vec_store/) that does not compile
-# and is NOT consumed by any crate (xavier, code-graph, panel-ui). Re-add it
-# once its refactor is complete (see issue #542). Excluding is non-destructive:
-# the directory and its files remain in the repo.
 
 [features]
 default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage", "panel-ui"]

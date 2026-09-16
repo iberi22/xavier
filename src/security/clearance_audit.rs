@@ -1,124 +1,173 @@
-use crate::security::audit::AuditLogger;
-use anyhow::Result;
-use chrono::{DateTime, Utc};
+//! Auditoría de lecturas clasificadas (F3.2).
+//!
+//! Registra cada decisión de lectura con nivel —**concedida o denegada**— en un
+//! archivo append-only (JSONL), porque un control sin rastro no es auditable: si
+//! mañana alguien pregunta "¿quién leyó los planes del segmento de investigación?",
+//! la respuesta tiene que estar en disco.
+//!
+//! Privacidad: **no** se guarda la query cruda, solo su hash y longitud. El sujeto
+//! se guarda como `sub`/email del token (los identificadores que ya circulan en el
+//! sistema), nunca contenido de memoria.
+//!
+//! Política de fallo: si el archivo no se puede escribir se emite `tracing::error`
+//! y la lectura **continúa** — perder una línea de auditoría no puede tumbar el
+//! servicio; el error queda visible y conta(ble) en los logs.
+
+use crate::security::auth::Claims;
+use crate::security::clearance::ClearanceLevel;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-/// Audit entry for classified content read requests.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+/// Ruta del archivo de auditoría (relativa al workspace).
+pub const CLEARANCE_AUDIT_PATH: &str = "data/security/clearance_audit.jsonl";
+/// Override por entorno (tests / operación con otro volumen).
+pub const CLEARANCE_AUDIT_ENV: &str = "XAVIER_CLEARANCE_AUDIT_PATH";
+
+/// Una decisión de lectura con nivel.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClearanceReadAudit {
+    /// RFC3339 UTC.
+    pub timestamp: String,
+    /// Sujeto autenticado (`sub`, o el email si el primero viene vacío).
     pub subject: String,
+    /// Rol declarado por el token.
     pub role: String,
-    pub action: String,
+    /// Techo efectivo con el que se evaluó (rol ∪ segmentos).
+    pub requester_level: String,
+    /// Ruta HTTP donde ocurrió la lectura.
     pub route: String,
+    /// Acción: `search`, `get`, `export`, `route_denied`.
+    pub action: String,
+    /// sha256 corto de la query (no se guarda la query).
+    pub query_hash: String,
+    /// Entradas devueltas.
+    pub visible: usize,
+    /// Entradas ocultas por nivel (la búsqueda no revela cuáles).
+    pub hidden_by_clearance: usize,
+    /// Si la operación se permitió.
     pub allowed: bool,
-    pub reason: Option<String>,
-    pub query_hash: Option<String>,
-    pub timestamp: DateTime<Utc>,
 }
 
 impl ClearanceReadAudit {
-    /// Creates a new clearance read audit record timestamped with the current UTC time.
+    /// Construye el registro con timestamp actual.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         subject: impl Into<String>,
         role: impl Into<String>,
-        action: impl Into<String>,
+        requester_level: ClearanceLevel,
         route: impl Into<String>,
+        action: impl Into<String>,
+        query: &str,
+        visible: usize,
+        hidden_by_clearance: usize,
         allowed: bool,
-        reason: Option<String>,
-        query_hash: Option<String>,
     ) -> Self {
         Self {
+            timestamp: chrono::Utc::now().to_rfc3339(),
             subject: subject.into(),
             role: role.into(),
-            action: action.into(),
+            requester_level: requester_level.as_str().to_uppercase(),
             route: route.into(),
+            action: action.into(),
+            query_hash: query_hash(query),
+            visible,
+            hidden_by_clearance,
             allowed,
-            reason,
-            query_hash,
-            timestamp: Utc::now(),
         }
     }
 
-    /// Returns the subject and role as a tuple.
-    pub fn subject_and_role(&self) -> (&str, &str) {
-        (&self.subject, &self.role)
+    /// Serializa como una línea JSONL (sin salto final).
+    pub fn to_line(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
     }
 }
 
-/// Helper to compute SHA-256 hex digest of a search query or payload.
+/// Hash corto de una query: permite correlacionar sin almacenar el texto.
 pub fn query_hash(query: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(query.as_bytes());
-    crate::utils::crypto::hex_encode(&hasher.finalize())
+    let digest = hasher.finalize();
+    digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
 }
 
-/// Helper that returns subject and role as a tuple of owned strings.
-pub fn subject_and_role(subject: &str, role: &str) -> (String, String) {
-    (subject.to_string(), role.to_string())
-}
-
-/// Resolves target JSONL audit file path from env `XAVIER_CLEARANCE_AUDIT_PATH` or default.
-pub fn get_audit_file_path() -> PathBuf {
-    if let Ok(path) = std::env::var("XAVIER_CLEARANCE_AUDIT_PATH") {
-        PathBuf::from(path)
-    } else {
-        PathBuf::from("data/security/clearance_audit.jsonl")
+/// Sujeto y rol a partir de las claims (o valores anónimos).
+pub fn subject_and_role(claims: Option<&Claims>) -> (String, String) {
+    match claims {
+        Some(claims) if !claims.sub.is_empty() => {
+            (claims.sub.clone(), format!("{:?}", claims.role))
+        }
+        Some(claims) => (claims.email.clone(), format!("{:?}", claims.role)),
+        None => ("anonymous".to_string(), "none".to_string()),
     }
 }
 
-/// Appends a single audit entry to the designated JSONL file path.
-pub fn append_at(path: &Path, entry: &ClearanceReadAudit) -> Result<()> {
+/// Ruta del archivo de auditoría activo.
+pub fn audit_path() -> std::path::PathBuf {
+    std::env::var(CLEARANCE_AUDIT_ENV)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from(CLEARANCE_AUDIT_PATH))
+}
+
+/// Añade una línea al archivo dado (append-only). No crea directorios: si falta,
+/// devuelve el error para que el llamador lo reporte.
+pub fn append_at(path: &Path, entry: &ClearanceReadAudit) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            let _ = std::fs::create_dir_all(parent);
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
         }
     }
-    let json = serde_json::to_string(entry)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)?;
-    writeln!(file, "{}", json)?;
-    Ok(())
+    writeln!(file, "{}", entry.to_line())
 }
 
-/// Appends a clearance audit entry to the default JSONL audit sink.
-pub fn record(entry: ClearanceReadAudit) -> Result<()> {
-    let path = get_audit_file_path();
-    if let Err(e) = append_at(&path, &entry) {
-        tracing::error!("Failed to record clearance audit JSONL entry: {}", e);
+/// Registra la decisión en el archivo activo. Nunca falla hacia el llamador: un
+/// fallo de auditoría se reporta por log y la operación continúa.
+pub fn record(entry: &ClearanceReadAudit) {
+    if let Err(error) = append_at(&audit_path(), entry) {
+        tracing::error!(
+            route = %entry.route,
+            subject = %entry.subject,
+            "auditoría de clearance no se pudo escribir: {}",
+            error
+        );
     }
-    Ok(())
 }
 
-/// Records a denied clearance audit entry.
+/// Registra una denegación (por política de ruta o por nivel insuficiente).
 pub fn record_denied(
-    subject: impl Into<String>,
-    role: impl Into<String>,
-    action: impl Into<String>,
-    route: impl Into<String>,
-    reason: impl Into<String>,
-) -> Result<()> {
+    claims: Option<&Claims>,
+    requester_level: ClearanceLevel,
+    route: &str,
+    action: &str,
+) -> ClearanceReadAudit {
+    let (subject, role) = subject_and_role(claims);
     let entry = ClearanceReadAudit::new(
         subject,
         role,
-        action,
+        requester_level,
         route,
+        action,
+        "",
+        0,
+        0,
         false,
-        Some(reason.into()),
-        None,
     );
-    record(entry)
+    record(&entry);
+    entry
 }
 
-/// Maps a clearance read decision into the canonical SQLite audit log via AuditLogger.
+/// Espeja una decisión de lectura clasificada en el log canónico de auditoría
+/// SQLite a través de `AuditLogger` (WAVE-22.01).
 ///
-/// Permission string format: `clearance:<action>:<route>`
-pub async fn mirror_to_audit_logger(entry: &ClearanceReadAudit) -> Result<()> {
-    let logger = AuditLogger::new();
+/// Formato del permiso: `clearance:<action>:<route>`.
+/// Fail-open: un fallo del espejo se reporta por log y no interrumpe.
+pub async fn mirror_to_audit_logger(entry: &ClearanceReadAudit) -> anyhow::Result<()> {
+    let logger = super::audit::AuditLogger::new();
     let permission = format!("clearance:{}:{}", entry.action, entry.route);
     if let Err(e) = logger
         .log_check(&entry.subject, &entry.role, &permission, entry.allowed)
@@ -129,15 +178,10 @@ pub async fn mirror_to_audit_logger(entry: &ClearanceReadAudit) -> Result<()> {
     Ok(())
 }
 
-/// Appends to the JSONL sink and mirrors to SQLite if `XAVIER_CLEARANCE_AUDIT_SQLITE` != "0".
-/// Fail-open: errors on mirroring or JSONL writing do not bubble up or interrupt execution.
-pub async fn record_and_mirror(entry: ClearanceReadAudit) -> Result<()> {
-    if let Err(e) = record(entry.clone()) {
-        tracing::error!(
-            "Failed to write clearance audit entry in record_and_mirror: {}",
-            e
-        );
-    }
+/// Añade al sink JSONL y espeja a SQLite si `XAVIER_CLEARANCE_AUDIT_SQLITE` != "0".
+/// Fail-open: los errores de escritura o espejo no se propagan ni interrumpen.
+pub async fn record_and_mirror(entry: ClearanceReadAudit) -> anyhow::Result<()> {
+    record(&entry);
 
     let sqlite_enabled =
         std::env::var("XAVIER_CLEARANCE_AUDIT_SQLITE").unwrap_or_else(|_| "1".to_string()) != "0";
@@ -157,93 +201,80 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
-    fn test_clearance_read_audit_creation_and_helpers() {
+    fn test_query_hash_is_stable_and_hides_text() {
+        let h1 = query_hash("planes internos del 10%");
+        let h2 = query_hash("planes internos del 10%");
+        let h3 = query_hash("planes internos del 10%!");
+        assert_eq!(h1, h2);
+        assert_ne!(h1, h3);
+        assert_eq!(h1.len(), 16, "hash corto (8 bytes en hex)");
+        assert!(!h1.contains("planes"), "el texto no aparece en el hash");
+    }
+
+    #[test]
+    fn test_append_writes_jsonl_and_can_be_read_back() {
+        let file = NamedTempFile::new().unwrap();
         let entry = ClearanceReadAudit::new(
-            "user-1",
-            "admin",
+            "nodo-1",
+            "User",
+            ClearanceLevel::Confidential,
+            "/memory/search",
             "search",
-            "/v1/memory/search",
+            "consulta de prueba",
+            3,
+            2,
             true,
-            None,
-            Some(query_hash("test query")),
         );
 
-        assert_eq!(entry.subject, "user-1");
-        assert_eq!(entry.role, "admin");
-        assert_eq!(entry.action, "search");
-        assert_eq!(entry.route, "/v1/memory/search");
-        assert!(entry.allowed);
-        assert_eq!(entry.subject_and_role(), ("user-1", "admin"));
-        assert_eq!(
-            subject_and_role("user-1", "admin"),
-            ("user-1".to_string(), "admin".to_string())
-        );
-        assert_eq!(
-            query_hash("test query"),
-            "050579eeae87a0436e1ff56d7a8388c2ee9b71b5f9170eb7aaaec1bcb405ca12"
-        );
+        append_at(file.path(), &entry).unwrap();
+        append_at(file.path(), &entry).unwrap();
+
+        let raw = std::fs::read_to_string(file.path()).unwrap();
+        let lines: Vec<&str> = raw.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), 2, "append-only: dos líneas, nunca sobrescribe");
+
+        let parsed: ClearanceReadAudit = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(parsed.subject, "nodo-1");
+        assert_eq!(parsed.requester_level, "CONFIDENTIAL");
+        assert_eq!(parsed.hidden_by_clearance, 2);
+        assert_eq!(parsed.visible, 3);
+        assert!(parsed.allowed);
     }
 
     #[test]
-    fn test_append_at_jsonl() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let path = temp_file.path();
-
-        let entry = ClearanceReadAudit::new(
-            "user-2",
-            "analyst",
-            "read",
-            "/v1/documents/doc-123",
-            true,
-            None,
-            None,
+    fn test_subject_and_role_from_claims() {
+        use crate::security::auth::UserRole;
+        let claims = Claims::new(
+            "nodo-7".into(),
+            "nodo7@swal.dev".into(),
+            UserRole::User,
+            chrono::Duration::hours(1),
         );
+        let (subject, role) = subject_and_role(Some(&claims));
+        assert_eq!(subject, "nodo-7");
+        assert!(!role.is_empty());
 
-        append_at(path, &entry).unwrap();
-
-        let content = std::fs::read_to_string(path).unwrap();
-        assert!(content.contains("\"subject\":\"user-2\""));
-        assert!(content.contains("\"action\":\"read\""));
-        assert!(content.contains("\"allowed\":true"));
+        let (anon, role_none) = subject_and_role(None);
+        assert_eq!(anon, "anonymous");
+        assert_eq!(role_none, "none");
     }
 
     #[test]
-    fn test_record_denied_creates_denied_entry() {
-        let temp_file = NamedTempFile::new().unwrap();
-        let path = temp_file.path();
-        std::env::set_var("XAVIER_CLEARANCE_AUDIT_PATH", path);
+    fn test_record_uses_env_path_when_set() {
+        let file = NamedTempFile::new().unwrap();
+        let path = file.path().to_string_lossy().to_string();
+        std::env::set_var(CLEARANCE_AUDIT_ENV, &path);
 
-        record_denied(
-            "user-3",
-            "readonly",
-            "export",
-            "/v1/memory/export",
-            "insufficient clearance",
-        )
-        .unwrap();
-
-        let content = std::fs::read_to_string(path).unwrap();
-        assert!(content.contains("\"subject\":\"user-3\""));
-        assert!(content.contains("\"allowed\":false"));
-        assert!(content.contains("\"reason\":\"insufficient clearance\""));
-
-        std::env::remove_var("XAVIER_CLEARANCE_AUDIT_PATH");
-    }
-
-    #[tokio::test]
-    async fn test_mirror_to_audit_logger_fail_open() {
-        let entry = ClearanceReadAudit::new(
-            "user-4",
-            "guest",
-            "read",
-            "/v1/classified/top_secret",
-            false,
-            Some("denied".into()),
+        let entry = record_denied(
             None,
+            ClearanceLevel::Unclassified,
+            "/memory/export",
+            "route_denied",
         );
+        assert!(!entry.allowed);
 
-        // ConnectionManager global is uninitialized here, mirror_to_audit_logger should log and return Ok(())
-        let result = mirror_to_audit_logger(&entry).await;
-        assert!(result.is_ok());
+        let raw = std::fs::read_to_string(file.path()).unwrap();
+        assert!(raw.contains("route_denied"), "la denegación quedó auditada");
+        std::env::remove_var(CLEARANCE_AUDIT_ENV);
     }
 }

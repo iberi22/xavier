@@ -20,6 +20,7 @@ pub mod prompt_guard;
 pub mod rate_limiter;
 pub mod recovery;
 pub mod redaction;
+pub mod route_policy;
 pub mod rsa_keys;
 pub mod scanner;
 pub mod sessions;
