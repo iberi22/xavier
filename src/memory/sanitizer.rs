@@ -149,7 +149,10 @@ impl Sanitizer {
 
         // 5. Collapse tool outputs (cargo / git / grep)
         if self.cfg.collapse_tool_output {
-            if processed.contains("test result:") || processed.contains("... ok\n") || processed.contains("... FAILED\n") {
+            if processed.contains("test result:")
+                || processed.contains("... ok\n")
+                || processed.contains("... FAILED\n")
+            {
                 let filtered = filter_cargo(&processed);
                 if filtered.len() < processed.len() {
                     stats.tool_collapsed = true;
@@ -161,7 +164,9 @@ impl Sanitizer {
                     stats.tool_collapsed = true;
                     processed = filtered;
                 }
-            } else if processed.lines().count() > 60 && processed.lines().take(5).any(|l| l.contains(':')) {
+            } else if processed.lines().count() > 60
+                && processed.lines().take(5).any(|l| l.contains(':'))
+            {
                 let filtered = filter_grep(&processed);
                 if filtered.len() < processed.len() {
                     stats.tool_collapsed = true;

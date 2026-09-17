@@ -45,7 +45,25 @@ if [ -n "$STAGED_UI" ]; then
     fi
 fi
 
-# 4. Harvest chronicle si existe
+# 4. Secret scan — catches credentials before they reach origin
+if [ -f "scripts/check-secrets.sh" ]; then
+    echo "🔐 [Pre-Commit] Ejecutando escaneo de secretos..."
+    bash scripts/check-secrets.sh || {
+        echo "❌ [Pre-Commit] Fallo en secret scan. Elimina credenciales antes de commitear."
+        exit 1
+    }
+fi
+
+# 5. Guard: never commit SQLite runtime databases or WAL/SHM files
+STAGED_DBS=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(db|sqlite|sqlite3|sqlite-wal|sqlite-shm|db-wal|db-shm)$' || true)
+if [ -n "$STAGED_DBS" ]; then
+    echo "❌ [Pre-Commit] SQLite/DB runtime files detectados en staged:"
+    echo "$STAGED_DBS"
+    echo "   Estos archivos son runtime caches y NUNCA deben commitearse (AGENTS.md §10)."
+    exit 1
+fi
+
+# 6. Harvest chronicle si existe
 if [ -f "./scripts/pre-commit-chronicle.sh" ]; then
     ./scripts/pre-commit-chronicle.sh || true
 fi
