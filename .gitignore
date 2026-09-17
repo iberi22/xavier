@@ -51,6 +51,8 @@ file_35---*.txt
 closed_issues.json
 issues_output.json
 optimization-result.json
+SUBAGENT-OUT/
+feedback/
 
 # Runtime state
 state/auth-profiles.json
