@@ -1,0 +1,13 @@
+# Cargo nextest configuration for Xavier
+# Reference: SUBAGENT-OUT/wave24-modularization-phase0.md
+
+[profile.ci]
+slow-timeout = { period = "120s", terminate-after = 3 }
+test-threads = "num-cpus"
+fail-fast = false
+retries = 1
+
+# Tests that mutate global ENV must run with a single thread
+[[profile.ci.overrides]]
+filter = "test(schema_impl) or test(embedding_provider_mode)"
+test-threads = "1"

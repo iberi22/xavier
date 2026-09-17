@@ -12,9 +12,46 @@ env:
   CARGO_TARGET_DIR: target
 
 jobs:
+  # Path filtering to avoid running slow Rust builds on frontend/docs-only PRs
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src/**'
+              - 'crates/**'
+              - 'code-graph/**'
+              - 'vendor/maloca-core/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'code-graph/**/Cargo.toml'
+              - 'crates/**/Cargo.toml'
+              - '.cargo/**'
+              - 'tests/**'
+              - 'benches/**'
+              - 'build.rs'
+              - '**/build.rs'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'panel-ui/**'
+              - 'pnpm-workspace.yaml'
+              - 'pnpm-lock.yaml'
+              - 'package.json'
+              - '.github/workflows/ci.yml'
+
   # Job 1: Rust Format Check
   rust-fmt:
     name: Rust Format
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -32,6 +69,8 @@ jobs:
   # Job 2: Rust Clippy & Check
   rust-clippy:
     name: Rust Clippy & Check
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -55,6 +94,8 @@ jobs:
   # Job MSRV: Minimum Supported Rust Version Check
   rust-msrv:
     name: Rust MSRV Check
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -75,6 +116,8 @@ jobs:
   # Job 3: Parallel Rust Tests
   rust-test:
     name: Parallel Rust Tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -127,6 +170,8 @@ jobs:
   # Job 5: Frontend Build & Security Audit
   frontend-build-audit:
     name: Frontend Build & Security Audit
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
