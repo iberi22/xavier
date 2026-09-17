@@ -265,6 +265,50 @@ impl OpenClawAgentScanner {
         logs.sort_by(|a, b| a.date.cmp(&b.date));
         logs
     }
+
+    /// Scan all discovered agent directories for JSONL session chat transcripts in `sessions/`.
+    pub async fn scan_all_sessions(&self) -> Vec<(String, PathBuf)> {
+        let mut session_files = Vec::new();
+
+        for agents_dir in &self.agents_dirs {
+            if !fs::try_exists(agents_dir).await.unwrap_or(false) {
+                continue;
+            }
+
+            let mut entries = match fs::read_dir(agents_dir).await {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let agent_path = entry.path();
+                if !agent_path.is_dir() {
+                    continue;
+                }
+
+                let agent_id = agent_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                let sessions_dir = agent_path.join("sessions");
+                if fs::try_exists(&sessions_dir).await.unwrap_or(false) {
+                    if let Ok(mut s_entries) = fs::read_dir(&sessions_dir).await {
+                        while let Ok(Some(s_entry)) = s_entries.next_entry().await {
+                            let s_path = s_entry.path();
+                            let ext = s_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                            if ext == "jsonl" || ext == "json" {
+                                session_files.push((agent_id.clone(), s_path));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        session_files
+    }
 }
 
 #[cfg(test)]

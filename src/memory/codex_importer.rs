@@ -78,15 +78,23 @@ impl CodexImporter {
             return PathBuf::from(dir);
         }
         if let Ok(home) = std::env::var("HOME") {
-            let path = PathBuf::from(home).join(".codex").join("sessions");
+            let path = PathBuf::from(home.clone()).join(".codex").join("sessions");
             if path.exists() {
                 return path;
+            }
+            let path_archived = PathBuf::from(home.clone()).join(".codex").join("archived");
+            if path_archived.exists() {
+                return path_archived;
+            }
+            let path_root = PathBuf::from(home).join(".codex");
+            if path_root.exists() {
+                return path_root;
             }
         }
         PathBuf::from(".codex/sessions")
     }
 
-    /// Scan `sessions_dir` and parse all `.json` and `.jsonl` session files.
+    /// Scan `sessions_dir` and parse all `.json` and `.jsonl` session files recursively.
     pub async fn scan_sessions(&self) -> Result<Vec<CodexSession>> {
         let mut sessions = Vec::new();
 
@@ -98,34 +106,42 @@ impl CodexImporter {
             return Ok(sessions);
         }
 
-        let mut entries = match fs::read_dir(&self.sessions_dir).await {
-            Ok(e) => e,
-            Err(e) => {
-                warn!("Could not read directory {:?}: {}", self.sessions_dir, e);
-                return Ok(sessions);
-            }
-        };
+        let mut dirs_to_visit = vec![self.sessions_dir.clone()];
+        while let Some(current_dir) = dirs_to_visit.pop() {
+            let mut entries = match fs::read_dir(&current_dir).await {
+                Ok(e) => e,
+                Err(e) => {
+                    warn!("Could not read directory {:?}: {}", current_dir, e);
+                    continue;
+                }
+            };
 
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                if path.is_dir() {
+                    dirs_to_visit.push(path);
+                    continue;
+                }
+                if !path.is_file() {
+                    continue;
+                }
 
-            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-            if ext != "json" && ext != "jsonl" {
-                continue;
-            }
+                let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if ext != "json" && ext != "jsonl" && !file_name.starts_with("rollout-") {
+                    continue;
+                }
 
-            let file_stem = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string();
+                let file_stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
 
-            if let Ok(content) = fs::read_to_string(&path).await {
-                if let Ok(session) = Self::parse_session_content(&file_stem, &content) {
-                    sessions.push(session);
+                if let Ok(content) = fs::read_to_string(&path).await {
+                    if let Ok(session) = Self::parse_session_content(&file_stem, &content) {
+                        sessions.push(session);
+                    }
                 }
             }
         }

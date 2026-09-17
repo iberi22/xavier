@@ -668,6 +668,63 @@ pub async fn start_http_server(
     let (_sync_handle, _sync_stop) = sync_service.spawn_background_sync(vec![]);
     tracing::info!("Background memory sync loop spawned");
 
+    // ── Universal Agent Session Ingestion Background Loop ────────────────
+    // Periodically ingests transcripts from Antigravity, OpenCode, Hermes, and Codex.
+    let ingestion_store = state.store.clone();
+    let ingestion_embedder = state.embedder.clone();
+    tokio::spawn(async move {
+        // Initial grace period to allow server start
+        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+        loop {
+            tracing::info!("🔄 Running universal agent session ingestion cycle...");
+            
+            // 1. Antigravity
+            let ag_importer = if let Some(ref emb) = ingestion_embedder {
+                xavier::memory::antigravity_importer::AntigravityImporter::new().with_embedder(emb.clone())
+            } else {
+                xavier::memory::antigravity_importer::AntigravityImporter::new()
+            };
+            if let Err(e) = ag_importer.import_all(ingestion_store.as_ref()).await {
+                tracing::debug!("Antigravity ingestion note: {}", e);
+            }
+
+            // 2. OpenCode
+            let oc_importer = if let Some(ref emb) = ingestion_embedder {
+                xavier::memory::opencode_importer::OpenCodeImporter::new().with_embedder(emb.clone())
+            } else {
+                xavier::memory::opencode_importer::OpenCodeImporter::new()
+            };
+            if let Err(e) = oc_importer.import_all(ingestion_store.as_ref()).await {
+                tracing::debug!("OpenCode ingestion note: {}", e);
+            }
+
+            // 3. Hermes
+            let hermes_importer = if let Some(ref emb) = ingestion_embedder {
+                xavier::memory::hermes_importer::HermesImporter::new().with_embedder(emb.clone())
+            } else {
+                xavier::memory::hermes_importer::HermesImporter::new()
+            };
+            if let Err(e) = hermes_importer.import_all(ingestion_store.as_ref()).await {
+                tracing::debug!("Hermes ingestion note: {}", e);
+            }
+
+            // 4. Codex
+            let codex_importer = if let Some(ref emb) = ingestion_embedder {
+                xavier::memory::codex_importer::CodexImporter::new().with_embedder(emb.clone())
+            } else {
+                xavier::memory::codex_importer::CodexImporter::new()
+            };
+            if let Ok(sessions) = codex_importer.scan_sessions().await {
+                for s in &sessions {
+                    let _ = codex_importer.import_session(s, ingestion_store.as_ref()).await;
+                }
+            }
+
+            // Ingest every 10 minutes
+            tokio::time::sleep(tokio::time::Duration::from_secs(600)).await;
+        }
+    });
+
     let protected_routes = Router::new()
         .merge(
             xavier::server::training_routes::router(

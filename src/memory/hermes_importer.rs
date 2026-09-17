@@ -73,7 +73,12 @@ impl HermesImporter {
             let path = entry.path();
             if path.is_file() {
                 let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                if ext == "db"
+                if ext == "json" {
+                    match self.import_json_file(&path, store).await {
+                        Ok(mut records) => imported_records.append(&mut records),
+                        Err(e) => warn!("Failed to import Hermes session json {:?}: {}", path, e),
+                    }
+                } else if ext == "db"
                     || ext == "sqlite"
                     || ext == "sqlite3"
                     || path
@@ -219,6 +224,91 @@ impl HermesImporter {
             record.id = stable_key("memory", &[&record.workspace_id, &record.path]);
             store.put(record.clone()).await?;
             final_records.push(record);
+        }
+
+        Ok(final_records)
+    }
+
+    async fn import_json_file(
+        &self,
+        json_path: &Path,
+        store: &dyn MemoryStore,
+    ) -> Result<Vec<MemoryRecord>> {
+        let content = tokio::fs::read_to_string(json_path).await?;
+        let val: serde_json::Value = serde_json::from_str(&content)?;
+
+        let session_id = val
+            .get("session_id")
+            .and_then(|s| s.as_str())
+            .unwrap_or_else(|| {
+                json_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+            })
+            .to_string();
+
+        let model = val
+            .pointer("/request/body/model")
+            .and_then(|m| m.as_str())
+            .unwrap_or("hermes-unknown");
+
+        let mut final_records = Vec::new();
+
+        if let Some(messages) = val.pointer("/request/body/messages").and_then(|m| m.as_array()) {
+            for (idx, msg) in messages.iter().enumerate() {
+                let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+                let msg_content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                if msg_content.trim().is_empty() {
+                    continue;
+                }
+
+                let record_path = format!("hermes/sessions/{}/{}", session_id, idx);
+                let workspace_id = "agent:hermes".to_string();
+
+                let mut record = MemoryRecord {
+                    id: String::new(),
+                    workspace_id: workspace_id.clone(),
+                    path: record_path.clone(),
+                    content: msg_content.to_string(),
+                    metadata: json!({
+                        "source_app": "hermes",
+                        "agent_id": "hermes",
+                        "session_id": session_id,
+                        "role": role,
+                        "model": model,
+                        "turn_index": idx,
+                        "importer_version": env!("CARGO_PKG_VERSION"),
+                    }),
+                    embedding: vec![],
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                    revision: 1,
+                    primary: true,
+                    parent_id: None,
+                    cluster_id: None,
+                    level: MemoryLevel::Raw,
+                    relation: None,
+                    score: 0.0,
+                    deleted_at: None,
+                    clearance: Default::default(),
+                    revisions: vec![],
+                    encrypted_dek: None,
+                    content_iv: None,
+                    metadata_iv: None,
+                    ..Default::default()
+                };
+
+                if let Some(embedder) = &self.embedder {
+                    if let Ok(emb) = embedder.encode(msg_content).await {
+                        record.embedding = emb;
+                    }
+                }
+
+                record.id = stable_key("memory", &[&record.workspace_id, &record.path]);
+                store.put(record.clone()).await?;
+                final_records.push(record);
+            }
         }
 
         Ok(final_records)
