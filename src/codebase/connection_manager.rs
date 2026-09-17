@@ -241,20 +241,37 @@ impl ConnectionManager {
         self.with_conn(&active_id, f).await
     }
 
+    /// Get an existing pool or lazily resurrect / reconnect it if evicted.
+    pub fn get_or_reconnect_pool(
+        &self,
+        project_id: &str,
+    ) -> Result<Arc<Pool<SqliteConnectionManager>>> {
+        {
+            let mut pools = self.pools.write();
+            if let Some(entry) = pools.get_mut(project_id) {
+                entry.activated_at = Instant::now();
+                return Ok(entry.pool.clone());
+            }
+        }
+
+        // Pool was evicted or not yet connected; attempt on-demand resurrection.
+        self.connect(project_id, ".")?;
+
+        let mut pools = self.pools.write();
+        let entry = pools.get_mut(project_id).ok_or_else(|| {
+            anyhow::anyhow!("pool for {} not found after reconnect attempt", project_id)
+        })?;
+        entry.activated_at = Instant::now();
+        Ok(entry.pool.clone())
+    }
+
     /// Execute a query closure using a connection from a specific project's pool.
     pub async fn with_conn<F, T>(&self, project_id: &str, f: F) -> Result<T>
     where
         F: FnOnce(&Connection) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        let pool = {
-            let mut pools = self.pools.write();
-            let entry = pools
-                .get_mut(project_id)
-                .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
-            entry.activated_at = Instant::now();
-            entry.pool.clone()
-        };
+        let pool = self.get_or_reconnect_pool(project_id)?;
 
         tokio::task::spawn_blocking(move || {
             let conn = pool.get().context("failed to get connection from pool")?;
@@ -270,14 +287,7 @@ impl ConnectionManager {
         F: FnOnce(&Pool<SqliteConnectionManager>) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        let pool = {
-            let mut pools = self.pools.write();
-            let entry = pools
-                .get_mut(project_id)
-                .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
-            entry.activated_at = Instant::now();
-            entry.pool.clone()
-        };
+        let pool = self.get_or_reconnect_pool(project_id)?;
 
         tokio::task::spawn_blocking(move || f(&pool))
             .await
@@ -392,5 +402,30 @@ mod tests {
             .await;
 
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_eviction_and_resurrection() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        let project_root = dir.path().to_str().unwrap();
+
+        cm.connect("conv_test_resurrect", project_root).unwrap();
+        assert!(cm.pools.read().contains_key("conv_test_resurrect"));
+
+        // Force eviction
+        cm.disconnect("conv_test_resurrect");
+        assert!(!cm.pools.read().contains_key("conv_test_resurrect"));
+
+        // with_conn should automatically reconnect / resurrect
+        let res = cm
+            .with_conn("conv_test_resurrect", |conn| {
+                conn.execute("CREATE TABLE IF NOT EXISTS t_res(id INT)", [])?;
+                Ok(())
+            })
+            .await;
+
+        assert!(res.is_ok());
+        assert!(cm.pools.read().contains_key("conv_test_resurrect"));
     }
 }

@@ -174,6 +174,10 @@ CREATE INDEX IF NOT EXISTS idx_memories_columnar_parent
 -- Index for cluster analysis.
 CREATE INDEX IF NOT EXISTS idx_memories_columnar_cluster
     ON memory_records (workspace_id, cluster_id, level);
+
+-- Index for kind-based filtering and temporal pruning.
+CREATE INDEX IF NOT EXISTS idx_memories_kind_updated
+    ON memory_records (workspace_id, updated_at);
 "#;
 
 // ===========================================================================

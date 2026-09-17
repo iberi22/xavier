@@ -47,6 +47,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
+                    "page": { "type": "number", "description": "Page number (1-based, default: 1)", "default": 1 },
                     "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
                     "include_content": { "type": "boolean", "description": "Include full document body in each candidate (default false — prefer memory_context page-in by ids)", "default": false },
                     "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid BM25+vector+RRF pipeline. Kept for forward-compatibility.", "default": "hybrid" },
@@ -62,6 +63,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
+                    "page": { "type": "number", "description": "Page number (1-based, default: 1)", "default": 1 },
                     "limit": { "type": "number", "description": "Maximum results", "default": 10 },
                     "include_content": { "type": "boolean", "description": "Whether to include full content in results (default: false)", "default": false },
                     "filters": { "type": "object", "description": "Optional filters" }
@@ -228,6 +230,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
+                    "page": { "type": "number", "description": "Page number (1-based, default: 1)", "default": 1 },
                     "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
                     "include_content": { "type": "boolean", "description": "Include full document body in each candidate (default false — prefer memory_context page-in by ids)", "default": false },
                     "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
@@ -353,6 +356,11 @@ async fn handle_mem_search(
         .get("query")
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let page = arguments
+        .get("page")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1)
+        .max(1) as usize;
     let limit = arguments
         .get("limit")
         .and_then(|v| v.as_u64())
@@ -402,10 +410,11 @@ async fn handle_mem_search(
         || filters.path_prefix.is_some();
     let filter_ref = if has_filters { Some(&filters) } else { None };
 
+    let fetch_limit = (page * limit).saturating_add(1);
     let results = workspace
         .workspace
         .memory
-        .search_filtered(query, limit, filter_ref)
+        .search_filtered(query, fetch_limit, filter_ref)
         .await?;
 
     let results = if depth > 0 {
@@ -418,8 +427,20 @@ async fn handle_mem_search(
         results
     };
 
+    let offset = (page - 1) * limit;
+    let total_matched = results.len();
+    let has_more = total_matched > page * limit;
+    let paged_results: Vec<_> = results.into_iter().skip(offset).take(limit).collect();
+    let total_pages = if total_matched == 0 {
+        0
+    } else if has_more {
+        page + 1
+    } else {
+        total_matched.div_ceil(limit)
+    };
+
     // Progressive disclosure: fat index by default (structured candidates).
-    let candidates: Vec<Value> = results
+    let candidates: Vec<Value> = paged_results
         .into_iter()
         .map(|doc| {
             let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
@@ -493,6 +514,10 @@ async fn handle_mem_search(
     let payload = json!({
         "query": query,
         "include_content": include_content,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "has_more": has_more,
         "count": candidates.len(),
         "candidates": candidates,
     });
@@ -1077,6 +1102,10 @@ pub async fn handle_memory_delete(
                 content: mem_ctx.content,
                 sources: mcp_sources,
                 estimated_tokens: mem_ctx.estimated_tokens,
+                page: None,
+                limit: Some(limit),
+                total_pages: None,
+                has_more: None,
             };
 
             Ok(serde_json::to_value(MCPToolResult::structured(
@@ -1235,6 +1264,10 @@ pub async fn handle_memory_context(
                     content: "No relevant context found for query/ids".to_string(),
                     sources: Vec::new(),
                     estimated_tokens: 0,
+                    page: None,
+                    limit: Some(limit),
+                    total_pages: Some(0),
+                    has_more: Some(false),
                 };
                 return Ok(serde_json::to_value(MCPToolResult::structured(
                     serde_json::to_value(payload)?,
@@ -1331,6 +1364,10 @@ pub async fn handle_memory_context(
                 content: context,
                 sources,
                 estimated_tokens,
+                page: None,
+                limit: Some(limit),
+                total_pages: None,
+                has_more: None,
             };
             Ok(serde_json::to_value(MCPToolResult::structured(
                 serde_json::to_value(payload)?,
@@ -1487,4 +1524,41 @@ fn get_doc_last_accessed(
         }
     }
     chrono::Utc::now()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pagination_offset_calculation() {
+        let page: usize = 2;
+        let limit: usize = 5;
+        let total_items = 12;
+        let items: Vec<usize> = (0..total_items).collect();
+
+        let offset = (page - 1) * limit;
+        let paged: Vec<usize> = items.into_iter().skip(offset).take(limit).collect();
+
+        assert_eq!(paged, vec![5, 6, 7, 8, 9]);
+        assert_eq!(paged.len(), 5);
+
+        let has_more = total_items > page * limit;
+        assert!(has_more);
+
+        let total_pages = total_items.div_ceil(limit);
+        assert_eq!(total_pages, 3);
+    }
+
+    #[test]
+    fn test_parse_namespace_arg() {
+        let str_arg = json!({ "namespace": "swal_project" });
+        let parsed = parse_namespace_arg(&str_arg).unwrap().unwrap();
+        assert_eq!(parsed.project.as_deref(), Some("swal_project"));
+
+        let obj_arg = json!({ "namespace": { "project": "xavier", "agent_id": "antigravity" } });
+        let parsed = parse_namespace_arg(&obj_arg).unwrap().unwrap();
+        assert_eq!(parsed.project.as_deref(), Some("xavier"));
+        assert_eq!(parsed.agent_id.as_deref(), Some("antigravity"));
+    }
 }
