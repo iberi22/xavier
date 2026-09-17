@@ -4,6 +4,7 @@
 //! providing the public API surface for module consumers.
 pub mod agent_indexer;
 pub mod agent_scanner;
+pub mod antigravity_importer;
 pub mod belief_graph;
 pub mod bridge;
 pub mod checkpoint_summary;
@@ -27,6 +28,7 @@ pub mod languages;
 pub mod layers_config;
 pub mod manager;
 pub mod multimodal_vec_store;
+pub mod opencode_importer;
 pub mod openclaw_indexer;
 pub mod openclaw_scanner;
 pub mod pack;
@@ -34,6 +36,7 @@ pub mod postgres_store;
 pub mod qmd;
 pub mod qmd_memory;
 pub mod query_engine;
+pub mod sanitizer;
 pub mod schema;
 pub mod segments;
 pub mod semantic;
