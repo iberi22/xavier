@@ -99,7 +99,7 @@ graph TD
    Captures interactive execution steps: user instructions, internal monologue, tool calls (arguments, output code, execution status), and file modifications. Trajectories are tagged with clearance levels and session identifiers.
 
 2. **Semantic Memory (`src/memory/qmd_memory/`)**:
-   Indexed using [`sqlite-vec`](file:///home/belal/proyectosSWAL/apps/xavier/docs/adr/006-vector-store-local-sqlite-vec.md) embeddings. Stores fragments of past solutions, debugging hypotheses, and documentation snippets. Retrieved using Reciprocal Rank Fusion (RRF) and Cross-Encoder reranking.
+   Indexed using [`sqlite-vec`](../../docs/adr/006-vector-store-local-sqlite-vec.md) embeddings. Stores fragments of past solutions, debugging hypotheses, and documentation snippets. Retrieved using Reciprocal Rank Fusion (RRF) and Cross-Encoder reranking.
 
 3. **AST Code-Graph (`code-graph/` & `src/memory/snippet_writethrough.rs`)**:
    Extracts AST symbols (functions, structs, traits, method signatures) across languages (Rust, TypeScript, Python, Go). Maintains caller/callee directed graphs and calculates transitive blast radius when modifying symbols.
@@ -130,7 +130,7 @@ Positive training instances must satisfy:
 
 ### 3.2. Curation Gate Implementation
 
-The Curation Gate enforces quality and truthfulness before training bundle export. Implemented in [`src/humanchallenge/curation_gate.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/humanchallenge/curation_gate.rs):
+The Curation Gate enforces quality and truthfulness before training bundle export. Implemented in [`src/humanchallenge/curation_gate.rs`](../../src/humanchallenge/curation_gate.rs):
 
 ```rust
 // Core structs from src/humanchallenge/types.rs and curation_gate.rs
@@ -156,7 +156,7 @@ If `check_readiness()` yields `is_ready: false`, bundle export is blocked, preve
 
 ## 3.3. Human Introspection & Pre-Training Refinement Module
 
-Para evitar que los modelos pequeños (SLMs) sobreajusten o aprendan heurísticas superficiales de código o razonamiento, Xavier cuenta con un **Módulo de Afinamiento e Introspección Guiada por el Usuario** implementado en [`src/humanchallenge/introspection.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/humanchallenge/introspection.rs) y expuesto vía REST en [`src/server/maloca/introspection_routes.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/server/maloca/introspection_routes.rs).
+Para evitar que los modelos pequeños (SLMs) sobreajusten o aprendan heurísticas superficiales de código o razonamiento, Xavier cuenta con un **Módulo de Afinamiento e Introspección Guiada por el Usuario** implementado en [`src/humanchallenge/introspection.rs`](../../src/humanchallenge/introspection.rs) y expuesto vía REST en [`src/server/maloca/introspection_routes.rs`](../../src/server/maloca/introspection_routes.rs).
 
 ### 3.3.1. Filosofía: El LLM Facilita, el Humano Destila el Insight
 A diferencia de los enfoques donde un LLM grande simplemente "alucina" datos sintéticos, Xavier utiliza al agente como un **facilitador socrático**. El humano es quien profundiza, cuestiona supuestos y genera el razonamiento fundamental (*ground truth*) antes de que los ejemplos ingresen al datalake.
@@ -259,7 +259,7 @@ Toda la sesión de introspección se almacena en SQLite local (`introspection_se
 
 ## 4. Multi-Tier Privacy & Anonymization Engine
 
-Xavier implements a multi-tier privacy architecture in [`src/data_commons/privacy.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/data_commons/privacy.rs).
+Xavier implements a multi-tier privacy architecture in [`src/data_commons/privacy.rs`](../../src/data_commons/privacy.rs).
 
 ### 4.1. Privacy Levels
 
@@ -290,7 +290,7 @@ flowchart TD
 
 1. **Filesystem Paths**:
    Converts system paths to sanitized tokens:
-   - `/home/belal/proyectosSWAL/apps/xavier/src/main.rs` $\longrightarrow$ `/home/[USER]/proyectosSWAL/apps/xavier/src/main.rs`
+   - `/home/user/proyectosSWAL/apps/xavier/src/main.rs` $\longrightarrow$ `/home/[USER]/proyectosSWAL/apps/xavier/src/main.rs`
    - `/Users/dev/repo/...` $\longrightarrow$ `/home/[USER]/repo/...`
    - Windows drives `C:\Users\username\...` $\longrightarrow$ `[DRIVE]/[USER]/...`
 
@@ -311,7 +311,7 @@ flowchart TD
 - **Laplace Differential Privacy**:
   For quantitative metadata (token usage, latency metrics, confidence scores), numerical values undergo perturbation using the Laplace mechanism:
   $$M(x) = x + \text{Lap}\left(\frac{\Delta f}{\epsilon}\right)$$
-  Where $\Delta f$ is the sensitivity and $\epsilon$ represents the privacy budget. Deterministic noise generation utilizes [`rand_chacha::ChaCha8Rng`](file:///home/belal/proyectosSWAL/apps/xavier/src/data_commons/training.rs#L5-L7) keyed by a user-provided seed.
+  Where $\Delta f$ is the sensitivity and $\epsilon$ represents the privacy budget. Deterministic noise generation utilizes [`rand_chacha::ChaCha8Rng`](../../src/data_commons/training.rs#L5-L7) keyed by a user-provided seed.
 
 - **$k$-Anonymity Verification**:
   Records are clustered by quasi-identifiers: `(challenge_type, domain_tag)`. The dataset is approved for export if and only if:
@@ -322,7 +322,7 @@ flowchart TD
 
 ## 5. Training Bundle Export Specification
 
-When invoked via [`TrainingExporter::generate_bundle`](file:///home/belal/proyectosSWAL/apps/xavier/src/data_commons/training.rs#L51-L144), Xavier emits four primary artifacts into the destination directory:
+When invoked via [`TrainingExporter::generate_bundle`](../../src/data_commons/training.rs#L51-L144), Xavier emits four primary artifacts into the destination directory:
 
 ```
 dataset_dir/
@@ -375,7 +375,7 @@ Each line is an independently parsable JSON object tailored for standard causal 
 
 ### 5.3. `anonymization_audit.json` Schema
 
-Emitted from [`PrivacyAuditReport`](file:///home/belal/proyectosSWAL/apps/xavier/src/data_commons/privacy.rs#L50-L69):
+Emitted from [`PrivacyAuditReport`](../../src/data_commons/privacy.rs#L50-L69):
 
 ```json
 {
@@ -441,12 +441,12 @@ For confidential environments where code cannot leave the local workstation:
   1. Xavier exports bundle locally using `PrivacyLevel::LocalOnly`.
   2. Local daemon executes fine-tuning on consumer GPU or unified memory.
   3. Weights are merged directly into a local `.gguf` file.
-  4. Registered in [`MiniExpertRegistry`](file:///home/belal/proyectosSWAL/apps/xavier/src/agents/mini_experts.rs#L63-L89) without network interaction.
+  4. Registered in [`MiniExpertRegistry`](../../src/agents/mini_experts.rs#L63-L89) without network interaction.
 
 ### Track B: Ephemeral Cloud Pipeline (P3 Google Colab Free / Pro)
 
 For fast training utilizing remote hardware (NVIDIA T4 or A100):
-- **Script**: [`scripts/training/train_lora_colab.py`](file:///home/belal/proyectosSWAL/apps/xavier/scripts/training/train_lora_colab.py)
+- **Script**: [`scripts/training/train_lora_colab.py`](../../scripts/training/train_lora_colab.py)
 - **Features**:
   - Uses Unsloth or Hugging Face PEFT with 4-bit bitsandbytes quantization.
   - Pulls anonymized dataset via `/v1/training/datasets/{id}/train`.
@@ -461,7 +461,7 @@ For fast training utilizing remote hardware (NVIDIA T4 or A100):
 
 ### 8.1. The Mini-Expert Registry
 
-Mini-Experts are registered in persistent storage via [`MiniExpertRegistry`](file:///home/belal/proyectosSWAL/apps/xavier/src/agents/mini_experts.rs#L63-L89) stored at `.xavier/mini_experts.json` or `data/mini_experts.json`:
+Mini-Experts are registered in persistent storage via [`MiniExpertRegistry`](../../src/agents/mini_experts.rs#L63-L89) stored at `.xavier/mini_experts.json` or `data/mini_experts.json`:
 
 ```rust
 pub struct MiniExpertEntry {
@@ -479,7 +479,7 @@ pub struct MiniExpertEntry {
 
 ### 8.2. Local Serving via Ollama
 
-The automated pipeline in [`scripts/mini-expert-train.sh`](file:///home/belal/proyectosSWAL/apps/xavier/scripts/mini-expert-train.sh) generates an Ollama `Modelfile` and publishes the model to the local daemon:
+The automated pipeline in [`scripts/mini-expert-train.sh`](../../scripts/mini-expert-train.sh) generates an Ollama `Modelfile` and publishes the model to the local daemon:
 
 ```dockerfile
 FROM /path/to/build/mini-experts/ast-radius-expert/model-q4_k_m.gguf
@@ -501,7 +501,7 @@ Once loaded, Xavier's internal `ProviderRouter` routes task-specific queries to 
 
 ### 9.1. REST API Endpoints
 
-Mounted under `/v1/training/*` and `/v1/curation/*` in [`src/server/training_routes.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/server/training_routes.rs):
+Mounted under `/v1/training/*` and `/v1/curation/*` in [`src/server/training_routes.rs`](../../src/server/training_routes.rs):
 
 | Method | Route | Description |
 |---|---|---|
@@ -531,7 +531,7 @@ curl -X POST http://localhost:8006/v1/training/export \
 
 ### 9.2. CLI Commands
 
-Managed via [`src/cli/handlers/mini_experts.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/cli/handlers/mini_experts.rs) and [`scripts/mini-expert-train.sh`](file:///home/belal/proyectosSWAL/apps/xavier/scripts/mini-expert-train.sh):
+Managed via [`src/cli/handlers/mini_experts.rs`](../../src/cli/handlers/mini_experts.rs) and [`scripts/mini-expert-train.sh`](../../scripts/mini-expert-train.sh):
 
 ```bash
 # 1. Register a newly trained micro-expert in Xavier's registry
@@ -576,7 +576,7 @@ All dataset records carry a `clearance` attribute (0 through 5, corresponding to
 
 To maintain traceability without exposing source identities:
 - Every record in `train.jsonl` contains `original_id_hash = SHA256(source_id + salt)`.
-- Telemetry origins in [`src/data_commons/training.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/data_commons/training.rs#L146-L152) use:
+- Telemetry origins in [`src/data_commons/training.rs`](../../src/data_commons/training.rs#L146-L152) use:
   $$\text{AnonymizedID} = \text{Hex}(\text{SHA256}(\text{wallet\_bytes} \,\|\, \text{seed\_bytes}))[0..16]$$
 - Revocation lists allow a contributor to withdraw their wallet; upon subsequent bundle exports, matching records are excluded without needing to decrypt the historic payloads.
 
@@ -586,12 +586,12 @@ To maintain traceability without exposing source identities:
 
 This specification operationalizes the following modules in the Xavier architecture:
 
-- [`src/data_commons/training.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/data_commons/training.rs): Deterministic training bundle exporter, ChaCha8 RNG splitting, and dataset scanning.
-- [`src/data_commons/privacy.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/data_commons/privacy.rs): Three-level privacy pipeline, Laplace DP noise generator, and $k$-anonymity verification.
-- [`src/humanchallenge/curation_gate.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/humanchallenge/curation_gate.rs): Human-in-the-loop quality threshold verification.
-- [`src/agents/mini_experts.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/agents/mini_experts.rs): Persistent registry for local mini-experts.
-- [`src/models/mini_expert.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/models/mini_expert.rs): Data structures, clearance mappings, and serialization formats.
-- [`src/server/training_routes.rs`](file:///home/belal/proyectosSWAL/apps/xavier/src/server/training_routes.rs): Axum REST API exposing dataset streaming, curation queues, and bundle exports.
-- [`scripts/training/train_lora_colab.py`](file:///home/belal/proyectosSWAL/apps/xavier/scripts/training/train_lora_colab.py): Remote T4/A100 GPU LoRA fine-tuning and GGUF quantization.
-- [`scripts/mini-expert-train.sh`](file:///home/belal/proyectosSWAL/apps/xavier/scripts/mini-expert-train.sh): CLI orchestration pipeline connecting export, training, GGUF conversion, and Ollama deployment.
-- [`docs/FEATURE_STATUS.md`](file:///home/belal/proyectosSWAL/apps/xavier/docs/FEATURE_STATUS.md): Repository feature status tracking WAVE-4 and WAVE-5 milestones.
+- [`src/data_commons/training.rs`](../../src/data_commons/training.rs): Deterministic training bundle exporter, ChaCha8 RNG splitting, and dataset scanning.
+- [`src/data_commons/privacy.rs`](../../src/data_commons/privacy.rs): Three-level privacy pipeline, Laplace DP noise generator, and $k$-anonymity verification.
+- [`src/humanchallenge/curation_gate.rs`](../../src/humanchallenge/curation_gate.rs): Human-in-the-loop quality threshold verification.
+- [`src/agents/mini_experts.rs`](../../src/agents/mini_experts.rs): Persistent registry for local mini-experts.
+- [`src/models/mini_expert.rs`](../../src/models/mini_expert.rs): Data structures, clearance mappings, and serialization formats.
+- [`src/server/training_routes.rs`](../../src/server/training_routes.rs): Axum REST API exposing dataset streaming, curation queues, and bundle exports.
+- [`scripts/training/train_lora_colab.py`](../../scripts/training/train_lora_colab.py): Remote T4/A100 GPU LoRA fine-tuning and GGUF quantization.
+- [`scripts/mini-expert-train.sh`](../../scripts/mini-expert-train.sh): CLI orchestration pipeline connecting export, training, GGUF conversion, and Ollama deployment.
+- [`docs/FEATURE_STATUS.md`](../../docs/FEATURE_STATUS.md): Repository feature status tracking WAVE-4 and WAVE-5 milestones.

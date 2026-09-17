@@ -13,7 +13,7 @@
 
 Accepted. Non-negotiable architectural mandate by the Owner, verified 2026-09-16.
 
-This ADR is canonical for the `main` branch of `/home/belal/proyectosSWAL/apps/xavier`.
+This ADR is canonical for the `main` branch of the repository.
 It defines the hard boundary between the Xavier core and all out-of-core
 plugins/sidecars. No code in `src/`, `Cargo.toml`, or `.gitcore/features.json`
 is modified by this ADR; it is a design record only.
