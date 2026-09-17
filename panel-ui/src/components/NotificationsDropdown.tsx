@@ -79,7 +79,14 @@ function formatRelativeTime(dateInput: Date | string): string {
 	return `${Math.floor(diff / 86400)}d ago`;
 }
 
-function NotificationItem({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted notification list item into a memoized component wrapper.
+ * 🎯 Why: When changing the active island tab in NotificationsDropdown, all NotificationItem components would re-render due to the inline map causing O(N) operations.
+ * 📊 Impact: Prevents O(N) re-renders for unchanged notification items during UI interactions (e.g. clicking tabs or marking a single notification as read).
+ */
+const NotificationItem = React.memo(function NotificationItem({
 	notif,
 	onRead,
 }: {
@@ -138,7 +145,7 @@ function NotificationItem({
 			)}
 		</motion.div>
 	);
-}
+});
 
 interface NotificationsDropdownProps {
 	onClose: () => void;
