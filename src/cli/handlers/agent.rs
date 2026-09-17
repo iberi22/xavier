@@ -183,7 +183,8 @@ pub async fn jules_index_handler(
 pub async fn antigravity_index_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
-    let importer = crate::memory::antigravity_importer::AntigravityImporter::new();
+    let importer = crate::memory::antigravity_importer::AntigravityImporter::new()
+        .with_embedder(state.embedder.clone());
     match importer.import_all(state.store.as_ref()).await {
         Ok(records) => axum::Json(serde_json::json!({
             "status": "ok",
@@ -200,7 +201,8 @@ pub async fn antigravity_index_handler(
 pub async fn opencode_index_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
-    let importer = crate::memory::opencode_importer::OpenCodeImporter::new();
+    let importer = crate::memory::opencode_importer::OpenCodeImporter::new()
+        .with_embedder(state.embedder.clone());
     match importer.import_all(state.store.as_ref()).await {
         Ok(records) => axum::Json(serde_json::json!({
             "status": "ok",

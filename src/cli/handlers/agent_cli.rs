@@ -4,7 +4,7 @@ use anyhow::Result;
 use colored::*;
 use serde_json::json;
 
-use crate::cli::commands::enums::{AgentCommand, CLI_HTTP_CLIENT};
+use crate::cli::commands::enums::{AgentCommand, CLI_HTTP_CLIENT, CODE_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
 
 /// Handle agent commands.
@@ -129,7 +129,7 @@ async fn handle_agent_index(
 ) -> Result<()> {
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
-    let client = CLI_HTTP_CLIENT.clone();
+    let client = CODE_HTTP_CLIENT.clone();
 
     let mut targets = Vec::new();
     if codex {

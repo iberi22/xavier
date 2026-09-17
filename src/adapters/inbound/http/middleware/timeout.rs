@@ -17,6 +17,8 @@ use tokio::time::timeout;
 
 /// Default timeout duration in seconds when XAVIER_HTTP_TIMEOUT_SECS is not specified.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 10;
+/// Default timeout duration for bulk operations (e.g. agent index, code-graph scan, sync, prune).
+pub const DEFAULT_BULK_TIMEOUT_SECS: u64 = 600;
 
 /// Resolves the timeout duration from `XAVIER_HTTP_TIMEOUT_SECS` or falls back to `DEFAULT_TIMEOUT_SECS`.
 pub fn resolve_timeout_duration() -> Duration {
@@ -27,10 +29,34 @@ pub fn resolve_timeout_duration() -> Duration {
     Duration::from_secs(secs)
 }
 
-/// Axum middleware that limits request processing time to `resolve_timeout_duration()`.
+/// Resolves the timeout duration for bulk operations from `XAVIER_BULK_TIMEOUT_SECS` or falls back to `DEFAULT_BULK_TIMEOUT_SECS`.
+pub fn resolve_bulk_timeout_duration() -> Duration {
+    let secs = std::env::var("XAVIER_BULK_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_BULK_TIMEOUT_SECS);
+    Duration::from_secs(secs)
+}
+
+/// Determines if an HTTP path represents a long-running administrative or bulk operation.
+pub fn is_bulk_path(path: &str) -> bool {
+    path.ends_with("/index")
+        || path.contains("/scan")
+        || path.contains("/reindex")
+        || path.contains("/sync")
+        || path.contains("/vacuum")
+        || path.contains("/prune")
+}
+
+/// Axum middleware that limits request processing time to `resolve_timeout_duration()`
+/// (or `resolve_bulk_timeout_duration()` for bulk routes).
 /// If downstream handler execution exceeds the timeout, returns an HTTP 504 Gateway Timeout.
 pub async fn timeout_middleware(req: Request<Body>, next: Next) -> Response {
-    let duration = resolve_timeout_duration();
+    let duration = if is_bulk_path(req.uri().path()) {
+        resolve_bulk_timeout_duration()
+    } else {
+        resolve_timeout_duration()
+    };
     match timeout(duration, next.run(req)).await {
         Ok(response) => response,
         Err(_) => (
@@ -79,5 +105,15 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::GATEWAY_TIMEOUT);
+    }
+
+    #[test]
+    fn test_is_bulk_path_detection() {
+        assert!(is_bulk_path("/xavier/antigravity/index"));
+        assert!(is_bulk_path("/xavier/opencode/index"));
+        assert!(is_bulk_path("/code-graph/scan"));
+        assert!(is_bulk_path("/memory/prune"));
+        assert!(!is_bulk_path("/health"));
+        assert!(!is_bulk_path("/memory/search"));
     }
 }
