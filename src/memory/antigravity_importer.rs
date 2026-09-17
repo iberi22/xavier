@@ -138,8 +138,7 @@ impl AntigravityImporter {
             for part in parts {
                 if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
                     content.push_str(txt);
-                    content.push('
-');
+                    content.push('\n');
                 }
             }
         }
