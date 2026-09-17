@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Extension, Router,
 };
+use serial_test::serial;
 use std::sync::Arc;
 use tempfile::tempdir;
 use tokio::net::TcpListener;
@@ -15,7 +16,10 @@ use xavier::enterprise::rbac::Role;
 use xavier::memory::qmd_memory::MemoryDocument;
 use xavier::memory::schema::ClearanceLevel;
 use xavier::memory::store::MemoryBackend;
+use xavier::mesh::pairing_registry::PairingSecretRegistry;
+use xavier::mesh::service_network::{ServiceKind, ServiceRegistry, TelemetrySample};
 use xavier::mesh::{MeshTransport, NodeIdentity, PeerInfo};
+use xavier::server::f12_routes::{self, F12State};
 use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
 
 async fn start_test_server() -> (String, String, Arc<WorkspaceState>) {
@@ -380,4 +384,214 @@ mod iroh_tests {
         assert_eq!(payload.peer_count, 42);
         assert_eq!(payload.node_id.as_str(), "test-node-hb");
     }
+}
+
+async fn start_f12_server() -> (String, tempfile::TempDir, F12State) {
+    let temp_dir = tempdir().unwrap();
+    std::fs::create_dir_all(temp_dir.path().join("mesh")).ok();
+    std::fs::create_dir_all(temp_dir.path().join("security")).ok();
+    std::fs::create_dir_all(temp_dir.path().join("curation")).ok();
+
+    let state = F12State::new(temp_dir.path().to_path_buf());
+    let app = f12_routes::router(state.clone());
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let url = format!("http://{}", addr);
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    (url, temp_dir, state)
+}
+
+#[tokio::test]
+#[serial]
+async fn test_e2e_cross_wallet_rejected_live() {
+    let (url, _dir, _state) = start_f12_server().await;
+    let client = reqwest::Client::new();
+
+    // Register node A under wallet-a
+    let reg_a = client
+        .post(format!("{}/v1/f12/private-mesh/nodes", url))
+        .json(&serde_json::json!({
+            "node_id": "node-a",
+            "wallet_id": "wallet-a",
+            "name": "Node A",
+            "iroh_addr": "addr-a"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reg_a.status(), reqwest::StatusCode::CREATED);
+
+    // Register node B under wallet-b
+    let reg_b = client
+        .post(format!("{}/v1/f12/private-mesh/nodes", url))
+        .json(&serde_json::json!({
+            "node_id": "node-b",
+            "wallet_id": "wallet-b",
+            "name": "Node B",
+            "iroh_addr": "addr-b"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reg_b.status(), reqwest::StatusCode::CREATED);
+
+    // Attempt sync targeting node B using wallet-a -> 403 Forbidden
+    let sync_res = client
+        .post(format!("{}/v1/f12/private-mesh/sync", url))
+        .json(&serde_json::json!({
+            "wallet_id": "wallet-a",
+            "target_node": "node-b"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(sync_res.status(), reqwest::StatusCode::FORBIDDEN);
+    let err_body = sync_res.text().await.unwrap();
+    assert!(
+        err_body.contains("Cross-wallet sync rejected"),
+        "Expected error message to contain 'Cross-wallet sync rejected', got: {}",
+        err_body
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn test_e2e_publish_non_internal_rejected_live() {
+    // 1. Direct ServiceRegistry behavior check: publish_telemetry_checked rejects non-INTERNAL or PII
+    let mut reg = ServiceRegistry::new();
+    let node_id = xavier::mesh::node::NodeId("node-pub".to_string());
+
+    let non_internal_sample = TelemetrySample {
+        node_id: node_id.clone(),
+        kind: ServiceKind::Memory,
+        payload: "clean metric".to_string(),
+        ts: 1000,
+        classification: "PUBLIC".to_string(),
+    };
+    let err_res = reg.publish_telemetry_checked(non_internal_sample);
+    assert!(err_res.is_err());
+    let err_msg = err_res.unwrap_err().to_string();
+    assert!(err_msg.contains("must be INTERNAL"));
+    assert!(reg.consume_telemetry(0).is_empty());
+
+    let pii_sample = TelemetrySample {
+        node_id: node_id.clone(),
+        kind: ServiceKind::Memory,
+        payload: "user contact alice@example.com".to_string(),
+        ts: 1000,
+        classification: "INTERNAL".to_string(),
+    };
+    let pii_err = reg.publish_telemetry_checked(pii_sample);
+    assert!(pii_err.is_err());
+    assert!(reg.consume_telemetry(0).is_empty());
+
+    // 2. HTTP endpoint check: POST /v1/f12/service-network/telemetry scrubs PII and forces INTERNAL
+    let (url, _dir, _state) = start_f12_server().await;
+    let client = reqwest::Client::new();
+
+    let pub_res = client
+        .post(format!("{}/v1/f12/service-network/telemetry", url))
+        .json(&serde_json::json!({
+            "node_id": "node-pub",
+            "payload": "user user@example.com path /home/user/secret.txt"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pub_res.status(), reqwest::StatusCode::OK);
+    let pub_json: serde_json::Value = pub_res.json().await.unwrap();
+    assert_eq!(pub_json["classification"], "INTERNAL");
+    let payload_str = pub_json["payload"].as_str().unwrap();
+    assert!(!payload_str.contains("user@example.com"));
+    assert!(!payload_str.contains("/home/user/secret.txt"));
+    assert!(payload_str.contains("[EMAIL]"));
+    assert!(payload_str.contains("[PATH]"));
+
+    // Verify GET consume returns no raw PII
+    let get_res = client
+        .get(format!("{}/v1/f12/service-network/telemetry?since=0", url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(get_res.status(), reqwest::StatusCode::OK);
+    let samples: Vec<serde_json::Value> = get_res.json().await.unwrap();
+    assert_eq!(samples.len(), 1);
+    let consumed_payload = samples[0]["payload"].as_str().unwrap();
+    assert!(!consumed_payload.contains("user@example.com"));
+}
+
+#[tokio::test]
+#[serial]
+async fn test_e2e_join_roundtrip_live() {
+    let (url, dir, _state) = start_f12_server().await;
+    let client = reqwest::Client::new();
+
+    // 1. Create network
+    let create_res = client
+        .post(format!("{}/v1/f12/networks", url))
+        .json(&serde_json::json!({
+            "id": "net-e2e-1",
+            "name": "E2E Mesh Network",
+            "owner_node": "owner-node"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create_res.status(), reqwest::StatusCode::CREATED);
+
+    // 2. Register secret in PairingSecretRegistry
+    let secret = "secret-e2e-valid-456".to_string();
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let mut pairing_reg =
+        PairingSecretRegistry::load_from(dir.path().join("mesh/pairing-secrets.json")).unwrap();
+    pairing_reg
+        .register_secret(secret.clone(), now_secs + 3600)
+        .unwrap();
+
+    // 3. POST join network with secret
+    let join_res = client
+        .post(format!("{}/v1/f12/networks/net-e2e-1/join", url))
+        .json(&serde_json::json!({
+            "node_id": "joining-node",
+            "pairing_secret": secret,
+            "visibility": "private"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(join_res.status(), reqwest::StatusCode::OK);
+    let net_json: serde_json::Value = join_res.json().await.unwrap();
+    assert_eq!(net_json["id"], "net-e2e-1");
+    let members: Vec<String> = serde_json::from_value(net_json["members"].clone()).unwrap();
+    assert!(members.contains(&"joining-node".to_string()));
+
+    // 4. GET ?visibility= filter listing
+    let list_priv = client
+        .get(format!("{}/v1/f12/networks?visibility=private", url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(list_priv.status(), reqwest::StatusCode::OK);
+    let priv_nets: Vec<serde_json::Value> = list_priv.json().await.unwrap();
+    assert_eq!(priv_nets.len(), 1);
+    assert_eq!(priv_nets[0]["id"], "net-e2e-1");
+
+    let list_pub = client
+        .get(format!("{}/v1/f12/networks?visibility=public", url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(list_pub.status(), reqwest::StatusCode::OK);
+    let pub_nets: Vec<serde_json::Value> = list_pub.json().await.unwrap();
+    assert!(pub_nets.is_empty());
 }
