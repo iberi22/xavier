@@ -331,6 +331,8 @@ export default React.memo(function GraphView({
       <div className="absolute top-6 left-6 z-10 pointer-events-auto">
         <div className="bg-[#050505]/80 backdrop-blur border border-white/10 rounded-xl overflow-hidden transition-all duration-300 shadow-xl">
           <button
+            type="button"
+            aria-expanded={showStats}
             onClick={() => setShowStats(!showStats)}
             className="px-4 py-3 text-xs text-white/80 hover:text-white flex items-center justify-between w-full min-w-[220px]"
           >
@@ -524,6 +526,7 @@ export default React.memo(function GraphView({
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
+            type="button"
             className="w-full text-left px-4 py-2 text-sm text-white/80 hover:bg-white/10 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
@@ -534,6 +537,7 @@ export default React.memo(function GraphView({
             Edit Metadata
           </button>
           <button
+            type="button"
             className="w-full text-left px-4 py-2 text-sm text-white/80 hover:bg-white/10 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
@@ -544,6 +548,7 @@ export default React.memo(function GraphView({
           </button>
           <div className="h-px w-full bg-white/5 my-1" />
           <button
+            type="button"
             className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-400/10 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
@@ -593,12 +598,14 @@ export default React.memo(function GraphView({
               </div>
               <div className="flex gap-3 mt-6">
                 <button
+                  type="button"
                   onClick={() => setEditNode(null)}
                   className="flex-1 px-4 py-2 rounded-lg bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition-colors text-sm"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     const label = (
                       document.getElementById(
