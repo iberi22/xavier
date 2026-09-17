@@ -179,6 +179,40 @@ pub async fn jules_index_handler(
     }
 }
 
+/// Antigravity index handler.
+pub async fn antigravity_index_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let importer = crate::memory::antigravity_importer::AntigravityImporter::new();
+    match importer.import_all(state.store.as_ref()).await {
+        Ok(records) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "indexed_count": records.len(),
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to index Antigravity sessions: {}", e),
+        })),
+    }
+}
+
+/// OpenCode index handler.
+pub async fn opencode_index_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let importer = crate::memory::opencode_importer::OpenCodeImporter::new();
+    match importer.import_all(state.store.as_ref()).await {
+        Ok(records) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "indexed_count": records.len(),
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to index OpenCode sessions: {}", e),
+        })),
+    }
+}
+
 /// Agent unregister handler.
 pub async fn agent_unregister_handler(
     State(state): State<CliState>,

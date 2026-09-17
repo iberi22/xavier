@@ -110,7 +110,7 @@ pub fn auto_save_event(event: SessionEvent) {
     }
     
     // Skip if missing content
-    let content = match event.content {
+    let raw_content = match event.content {
         Some(ref c) if !c.is_empty() => c.clone(),
         _ => {
             info!(
@@ -120,7 +120,19 @@ pub fn auto_save_event(event: SessionEvent) {
             return;
         }
     };
-    
+
+    // Strip terminal ANSI escapes and cap oversized tool results to prevent index noise
+    let stripped = crate::kernel::filters::strip_ansi(&raw_content);
+    let content = if matches!(event.event_type, SessionEventType::ToolResult) && stripped.len() > 2000 {
+        format!(
+            "{}... [tool output truncated, {} bytes total]",
+            &stripped[..2000],
+            stripped.len()
+        )
+    } else {
+        stripped
+    };
+
     // Spawn fire-and-forget task
     tokio::spawn(async move {
         let start = Instant::now();
@@ -207,6 +219,7 @@ async fn save_and_verify(
             "session_id": session_id,
             "source": "auto-save",
             "auto_verify": config.auto_verify,
+            "dedup": true,
         }
     });
     

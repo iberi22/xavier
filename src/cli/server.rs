@@ -1061,6 +1061,14 @@ pub async fn start_http_server(
             "/xavier/jules/index",
             post(crate::cli::handlers::agent::jules_index_handler),
         )
+        .route(
+            "/xavier/antigravity/index",
+            post(crate::cli::handlers::agent::antigravity_index_handler),
+        )
+        .route(
+            "/xavier/opencode/index",
+            post(crate::cli::handlers::agent::opencode_index_handler),
+        )
         .route("/xavier/agents/sync", post(agent_sync_handler))
         .route(
             "/xavier/agents/{id}/heartbeat",

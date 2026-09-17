@@ -15,8 +15,10 @@ pub async fn handle_agent_command(cmd: AgentCommand) -> Result<()> {
             agent,
             codex,
             jules,
+            antigravity,
+            opencode,
             json,
-        } => handle_agent_index(agent, codex, jules, json).await,
+        } => handle_agent_index(agent, codex, jules, antigravity, opencode, json).await,
         AgentCommand::Push { agent, json } => handle_agent_sync(agent, false, json).await,
         AgentCommand::Pull { agent, json } => handle_agent_sync(agent, true, json).await,
         AgentCommand::Chat {
@@ -121,6 +123,8 @@ async fn handle_agent_index(
     _agent_filter: Option<String>,
     codex: bool,
     jules: bool,
+    antigravity: bool,
+    opencode: bool,
     as_json: bool,
 ) -> Result<()> {
     let base_url = resolve_base_url();
@@ -133,6 +137,15 @@ async fn handle_agent_index(
     }
     if jules {
         targets.push(("Jules", format!("{}/xavier/jules/index", base_url)));
+    }
+    if antigravity {
+        targets.push((
+            "Antigravity",
+            format!("{}/xavier/antigravity/index", base_url),
+        ));
+    }
+    if opencode {
+        targets.push(("OpenCode", format!("{}/xavier/opencode/index", base_url)));
     }
     if targets.is_empty() {
         targets.push(("OpenClaw", format!("{}/xavier/openclaw/index", base_url)));
@@ -277,12 +290,16 @@ mod tests {
                         agent,
                         codex,
                         jules,
+                        antigravity,
+                        opencode,
                         json,
                     },
             }) => {
                 assert_eq!(agent, None);
                 assert!(codex);
                 assert!(jules);
+                assert!(!antigravity);
+                assert!(!opencode);
                 assert!(json);
             }
             _ => panic!("Expected AgentCommand::Index"),
@@ -415,13 +432,13 @@ mod tests {
             .create_async()
             .await;
 
-        let res = handle_agent_index(None, true, true, true).await;
+        let res = handle_agent_index(None, true, true, false, false, true).await;
         assert!(res.is_ok());
 
         mock_codex.assert_async().await;
         mock_jules.assert_async().await;
 
-        // Default openclaw target when codex=false and jules=false
+        // Default openclaw target when other flags are false
         let mock_openclaw = server
             .mock("POST", "/xavier/openclaw/index")
             .with_status(200)
@@ -430,7 +447,7 @@ mod tests {
             .create_async()
             .await;
 
-        let res_default = handle_agent_index(None, false, false, false).await;
+        let res_default = handle_agent_index(None, false, false, false, false, false).await;
         assert!(res_default.is_ok());
 
         mock_openclaw.assert_async().await;
@@ -453,7 +470,7 @@ mod tests {
             .create_async()
             .await;
 
-        let res = handle_agent_index(None, false, false, false).await;
+        let res = handle_agent_index(None, false, false, false, false, false).await;
         assert!(res.is_ok());
 
         mock.assert_async().await;

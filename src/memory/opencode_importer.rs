@@ -1,24 +1,42 @@
-//! OpenCode Session & Chat History Importer
+//! OpenCode Sessions Importer
 //!
-//! Scans ~/.local/share/opencode/opencode.db (or OPENCODE_DB_PATH)
-//! and imports session transcripts into Xavier MemoryStore under opencode:// paths.
+//! Connects to ~/.local/share/opencode/opencode.db (or `OPENCODE_DB_PATH` env var)
+//! and imports OpenCode sessions, messages, and text parts into Xavier `MemoryStore`
+//! under `opencode://` paths.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::embedding::Embedder;
-use crate::memory::sanitizer::{RawTurn, SanitizeConfig, Sanitizer};
+use crate::kernel::filters::strip_ansi;
 use crate::memory::store::{stable_key, MemoryRecord, MemoryStore};
 
-/// Importer for OpenCode session databases.
+/// A single message turn in an OpenCode session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenCodeTurn {
+    pub role: String,
+    pub content: String,
+}
+
+/// A parsed OpenCode session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenCodeSession {
+    pub session_id: String,
+    pub title: Option<String>,
+    pub agent: Option<String>,
+    pub model: Option<String>,
+    pub time_created: Option<i64>,
+    pub turns: Vec<OpenCodeTurn>,
+}
+
 pub struct OpenCodeImporter {
     db_path: PathBuf,
     embedder: Option<Arc<dyn Embedder>>,
-    sanitizer: Sanitizer,
 }
 
 impl Default for OpenCodeImporter {
@@ -33,15 +51,6 @@ impl OpenCodeImporter {
         Self {
             db_path,
             embedder: None,
-            sanitizer: Sanitizer::new(SanitizeConfig::default()),
-        }
-    }
-
-    pub fn with_path<P: AsRef<Path>>(path: P) -> Self {
-        Self {
-            db_path: path.as_ref().to_path_buf(),
-            embedder: None,
-            sanitizer: Sanitizer::new(SanitizeConfig::default()),
         }
     }
 
@@ -50,12 +59,26 @@ impl OpenCodeImporter {
         self
     }
 
+    pub fn with_path<P: AsRef<Path>>(path: P) -> Self {
+        Self {
+            db_path: path.as_ref().to_path_buf(),
+            embedder: None,
+        }
+    }
+
+    pub fn with_path_and_embedder<P: AsRef<Path>>(path: P, embedder: Arc<dyn Embedder>) -> Self {
+        Self {
+            db_path: path.as_ref().to_path_buf(),
+            embedder: Some(embedder),
+        }
+    }
+
     fn resolve_db_path() -> PathBuf {
         if let Ok(path) = std::env::var("OPENCODE_DB_PATH") {
             return PathBuf::from(path);
         }
         if let Ok(home) = std::env::var("HOME") {
-            let path = PathBuf::from(home)
+            let path = PathBuf::from(home.clone())
                 .join(".local")
                 .join("share")
                 .join("opencode")
@@ -63,183 +86,281 @@ impl OpenCodeImporter {
             if path.exists() {
                 return path;
             }
+            let path_config = PathBuf::from(home)
+                .join(".config")
+                .join("opencode")
+                .join("opencode.db");
+            if path_config.exists() {
+                return path_config;
+            }
         }
         PathBuf::from(".local/share/opencode/opencode.db")
     }
 
-    /// Read raw turns from OpenCode SQLite database via spawn_blocking.
-    async fn read_turns(&self) -> Result<Vec<RawTurn>> {
-        let db_path = self.db_path.clone();
-        if !tokio::fs::try_exists(&db_path).await.unwrap_or(false) {
-            debug!("OpenCode database {:?} does not exist", db_path);
+    /// Read sessions, messages, and parts from `opencode.db`.
+    pub fn read_sessions(&self) -> Result<Vec<OpenCodeSession>> {
+        if !self.db_path.exists() {
+            debug!(
+                "OpenCode db path {:?} does not exist. Skipping.",
+                self.db_path
+            );
             return Ok(Vec::new());
         }
 
-        tokio::task::spawn_blocking(move || -> Result<Vec<RawTurn>> {
-            let conn = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let conn = Connection::open_with_flags(
+            &self.db_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+        )?;
 
-            let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table'")?;
-            let tables: Vec<String> = stmt
-                .query_map([], |row| row.get(0))?
-                .filter_map(|r| r.ok())
-                .collect();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, agent, model, time_created FROM session ORDER BY time_created DESC",
+        )?;
 
-            if !tables.contains(&"message".to_string()) && !tables.contains(&"messages".to_string()) {
-                debug!("No message table found in OpenCode db");
-                return Ok(Vec::new());
-            }
+        let mut sessions = Vec::new();
+        let session_rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<i64>>(4)?,
+            ))
+        })?;
 
-            let msg_table = if tables.contains(&"message".to_string()) { "message" } else { "messages" };
-            let has_session = tables.contains(&"session".to_string()) || tables.contains(&"sessions".to_string());
-            let sess_table = if tables.contains(&"session".to_string()) { "session" } else { "sessions" };
+        for s_res in session_rows {
+            let (session_id, title, agent, model_raw, time_created) = s_res?;
 
-            // Introspect columns in message table
-            let pragma_query = format!("PRAGMA table_info({})", msg_table);
-            let mut pragma_stmt = conn.prepare(&pragma_query)?;
-            let cols: Vec<String> = pragma_stmt
-                .query_map([], |row| row.get(1))?
-                .filter_map(|r| r.ok())
-                .collect();
+            // Extract model name from JSON string if needed
+            let model_name = model_raw.as_deref().and_then(|m| {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(m) {
+                    v["id"].as_str().map(|s| s.to_string())
+                } else {
+                    Some(m.to_string())
+                }
+            });
 
-            let content_col = if cols.contains(&"content".to_string()) {
-                "content"
-            } else if cols.contains(&"data".to_string()) {
-                "data"
-            } else if cols.contains(&"body".to_string()) {
-                "body"
-            } else {
-                "id"
-            };
+            // Fetch messages for this session
+            let mut msg_stmt = conn.prepare(
+                "SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created ASC",
+            )?;
 
-            let query = if has_session {
-                format!(
-                    "SELECT m.id, m.session_id, m.role, m.{}, s.title, s.cwd, s.model                      FROM {} m LEFT JOIN {} s ON s.id = m.session_id                      WHERE m.{} IS NOT NULL AND m.{} != '' LIMIT 20000",
-                    content_col, msg_table, sess_table, content_col, content_col
-                )
-            } else {
-                format!(
-                    "SELECT m.id, m.session_id, m.role, m.{}, '', '', ''                      FROM {} m                      WHERE m.{} IS NOT NULL AND m.{} != '' LIMIT 20000",
-                    content_col, msg_table, content_col, content_col
-                )
-            };
-
-            let mut query_stmt = conn.prepare(&query)?;
-            let rows = query_stmt.query_map([], |row| {
-                let msg_id: String = row.get(0).unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
-                let session_id: String = row.get(1).unwrap_or_else(|_| "opencode-default".to_string());
-                let role: String = row.get(2).unwrap_or_else(|_| "user".to_string());
-                let raw_content: String = row.get(3).unwrap_or_default();
-                let title: String = row.get(4).unwrap_or_default();
-                let cwd: String = row.get(5).unwrap_or_default();
-                let model: String = row.get(6).unwrap_or_default();
-
-                Ok((msg_id, session_id, role, raw_content, title, cwd, model))
+            let msg_rows = msg_stmt.query_map([&session_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?;
 
             let mut turns = Vec::new();
-            for (idx, r) in rows.flatten().enumerate() {
-                let (msg_id, session_id, role, raw_content, title, cwd, model) = r;
-                let mut content = raw_content.clone();
+            for m_res in msg_rows {
+                let (msg_id, msg_data_str) = m_res?;
+                let role = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg_data_str) {
+                    v["role"].as_str().unwrap_or("user").to_string()
+                } else {
+                    "user".to_string()
+                };
 
-                // If content is structured JSON, extract text parts
-                if let Ok(val) = serde_json::from_str::<Value>(&raw_content) {
-                    if let Some(parts) = val.get("parts").and_then(|p| p.as_array()) {
-                        let mut extracted = String::new();
-                        for part in parts {
-                            if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
-                                extracted.push_str(txt);
-                                extracted.push('\n');
+                // Fetch text parts for this message
+                let mut part_stmt = conn.prepare(
+                    "SELECT data FROM part WHERE message_id = ? ORDER BY time_created ASC",
+                )?;
+
+                let part_rows = part_stmt.query_map([&msg_id], |row| row.get::<_, String>(0))?;
+
+                let mut combined_text = String::new();
+                for p_res in part_rows {
+                    let part_data_str = p_res?;
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&part_data_str) {
+                        let p_type = v["type"].as_str().unwrap_or("");
+                        if p_type == "text" {
+                            if let Some(txt) = v["text"].as_str() {
+                                let cleaned = strip_ansi(txt).trim().to_string();
+                                if !cleaned.is_empty() {
+                                    if !combined_text.is_empty() {
+                                        combined_text.push('\n');
+                                    }
+                                    combined_text.push_str(&cleaned);
+                                }
                             }
-                        }
-                        if !extracted.trim().is_empty() {
-                            content = extracted;
                         }
                     }
                 }
 
-                let project = if !cwd.is_empty() {
-                    cwd
-                } else if !title.is_empty() {
-                    title
-                } else {
-                    session_id.clone()
-                };
-
-                let model_str = if !model.is_empty() { Some(model) } else { None };
-
-                turns.push(RawTurn {
-                    session_id: session_id.clone(),
-                    turn_index: idx,
-                    role,
-                    content,
-                    timestamp: None,
-                    model: model_str,
-                    file_paths: vec![],
-                    meta: serde_json::json!({
-                        "source_app": "opencode",
-                        "message_id": msg_id,
-                        "project": project,
-                    }),
-                });
-            }
-
-            Ok(turns)
-        }).await?
-    }
-
-    /// Import all OpenCode sessions into the given MemoryStore.
-    pub async fn import_all(&self, store: &dyn MemoryStore) -> Result<Vec<MemoryRecord>> {
-        let mut raw_turns = self.read_turns().await?;
-        let report = self.sanitizer.sanitize_turns(&mut raw_turns);
-        debug!(
-            "OpenCode sanitization report: {} kept, {} dropped",
-            report.kept, report.dropped_boilerplate
-        );
-
-        let mut all_imported = Vec::new();
-        let workspace_id = "agent:opencode".to_string();
-
-        for turn in raw_turns {
-            let record_path = format!(
-                "opencode://sessions/{}/{}",
-                turn.session_id, turn.turn_index
-            );
-            let mut record = MemoryRecord {
-                workspace_id: workspace_id.clone(),
-                path: record_path.clone(),
-                content: turn.content.clone(),
-                metadata: serde_json::json!({
-                    "source_app": "opencode",
-                    "agent_id": "opencode",
-                    "project": turn.meta.get("project").and_then(|p| p.as_str()).unwrap_or("unknown"),
-                    "model": turn.model.unwrap_or_else(|| "opencode-unknown".to_string()),
-                    "session_id": turn.session_id,
-                    "turn_index": turn.turn_index,
-                    "file_paths": turn.file_paths,
-                    "importer_version": env!("CARGO_PKG_VERSION"),
-                }),
-                ..Default::default()
-            };
-
-            record.id = stable_key("memory", &[&workspace_id, &record_path]);
-
-            if let Some(embedder) = &self.embedder {
-                if let Ok(emb) = embedder.encode(&record.content).await {
-                    record.embedding = emb;
+                if !combined_text.is_empty() {
+                    turns.push(OpenCodeTurn {
+                        role,
+                        content: combined_text,
+                    });
                 }
             }
 
-            store
-                .put(record.clone())
-                .await
-                .context("put opencode record")?;
-            all_imported.push(record);
+            if !turns.is_empty() {
+                sessions.push(OpenCodeSession {
+                    session_id,
+                    title,
+                    agent,
+                    model: model_name,
+                    time_created,
+                    turns,
+                });
+            }
         }
 
         info!(
-            "✅ Successfully imported {} OpenCode turns",
-            all_imported.len()
+            "🔍 OpenCodeImporter read {} valid sessions from {:?}",
+            sessions.len(),
+            self.db_path
         );
-        Ok(all_imported)
+        Ok(sessions)
+    }
+
+    /// Import a single OpenCode session into Xavier `MemoryStore`.
+    pub async fn import_session(
+        &self,
+        session: &OpenCodeSession,
+        store: &dyn MemoryStore,
+    ) -> Result<Vec<MemoryRecord>> {
+        let mut records = Vec::new();
+        let path = format!("opencode://sessions/{}", session.session_id);
+        let workspace_id = "agent:opencode".to_string();
+
+        let mut full_text = format!(
+            "# OpenCode Session: {}\n\n",
+            session.title.as_deref().unwrap_or(&session.session_id)
+        );
+
+        if let Some(m) = &session.model {
+            full_text.push_str(&format!("**Model**: {}\n", m));
+        }
+        if let Some(a) = &session.agent {
+            full_text.push_str(&format!("**Agent**: {}\n", a));
+        }
+        full_text.push('\n');
+
+        for turn in &session.turns {
+            full_text.push_str(&format!("### [{}]\n{}\n\n", turn.role, turn.content));
+        }
+
+        let mut record = MemoryRecord {
+            workspace_id: workspace_id.clone(),
+            path: path.clone(),
+            content: full_text,
+            metadata: json!({
+                "source_app": "opencode",
+                "agent_id": "opencode",
+                "session_id": session.session_id,
+                "title": session.title,
+                "model": session.model,
+                "agent": session.agent,
+                "turn_count": session.turns.len(),
+                "time_created": session.time_created,
+                "dedup": true,
+            }),
+            ..Default::default()
+        };
+
+        record.id = stable_key("memory", &[&workspace_id, &path]);
+
+        if let Some(embedder) = &self.embedder {
+            if let Ok(emb) = embedder.encode(&record.content).await {
+                record.embedding = emb;
+            }
+        }
+
+        store.put(record.clone()).await?;
+        records.push(record);
+
+        Ok(records)
+    }
+
+    /// Import all OpenCode sessions into the given `MemoryStore`.
+    pub async fn import_all(&self, store: &dyn MemoryStore) -> Result<Vec<MemoryRecord>> {
+        let sessions = self.read_sessions()?;
+        let mut imported = Vec::new();
+
+        for s in sessions {
+            match self.import_session(&s, store).await {
+                Ok(recs) => imported.extend(recs),
+                Err(e) => warn!("Failed to import OpenCode session {}: {}", s.session_id, e),
+            }
+        }
+
+        info!(
+            "✅ Successfully imported {} OpenCode session records",
+            imported.len()
+        );
+        Ok(imported)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::store::InMemoryMemoryStore;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_read_and_import_opencode_sqlite() -> Result<()> {
+        let dir = tempdir()?;
+        let db_file = dir.path().join("opencode.db");
+
+        // Create mock opencode schema and rows
+        let conn = Connection::open(&db_file)?;
+        conn.execute_batch(
+            "CREATE TABLE session (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                agent TEXT,
+                model TEXT,
+                time_created INTEGER
+            );
+            CREATE TABLE message (
+                id TEXT PRIMARY KEY,
+                session_id TEXT,
+                time_created INTEGER,
+                data TEXT
+            );
+            CREATE TABLE part (
+                id TEXT PRIMARY KEY,
+                message_id TEXT,
+                session_id TEXT,
+                time_created INTEGER,
+                data TEXT
+            );
+            INSERT INTO session VALUES ('ses_001', 'Fixing login bug', 'coder', '{\"id\":\"qwen-coder\"}', 1780000000);
+            INSERT INTO message VALUES ('msg_001', 'ses_001', 1780000001, '{\"role\":\"user\"}');
+            INSERT INTO message VALUES ('msg_002', 'ses_001', 1780000002, '{\"role\":\"assistant\"}');
+            ",
+        )?;
+
+        let part1_json = serde_json::json!({
+            "type": "text",
+            "text": "Please fix the auth loop"
+        })
+        .to_string();
+        let part2_json = serde_json::json!({
+            "type": "text",
+            "text": "\x1B[32mAuth loop fixed!\x1B[0m"
+        })
+        .to_string();
+
+        conn.execute(
+            "INSERT INTO part VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["prt_001", "msg_001", "ses_001", 1780000001, part1_json],
+        )?;
+        conn.execute(
+            "INSERT INTO part VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["prt_002", "msg_002", "ses_001", 1780000002, part2_json],
+        )?;
+
+        let importer = OpenCodeImporter::with_path(&db_file);
+        let store = InMemoryMemoryStore::new();
+
+        let imported = importer.import_all(&store).await?;
+        assert_eq!(imported.len(), 1);
+        assert_eq!(imported[0].path, "opencode://sessions/ses_001");
+        assert!(imported[0].content.contains("Fixing login bug"));
+        assert!(imported[0].content.contains("Please fix the auth loop"));
+        assert!(imported[0].content.contains("Auth loop fixed!"));
+        assert!(!imported[0].content.contains("\x1B[32m")); // ANSI stripped!
+
+        Ok(())
     }
 }
