@@ -38,14 +38,12 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
-# NOTE (mitigación auditoría DX 2026-09): `panel-ui/src-tauri` y `xavier-core`
-# están EXCLUIDOS del workspace raíz. Tauri exige librerías GUI de escritorio
-# (webkit2gtk, gtk3, libsoup...) que rompen `cargo check/test --workspace` en
-# servidores headless, VPS y CI. El frontend Tauri se compila desde su propio
-# directorio; `xavier-core` es un refactor WIP que no compila (issue #542).
+# NOTE (mitigación auditoría DX 2026-09): `panel-ui/src-tauri` está EXCLUIDO
+# del workspace raíz. Tauri exige librerías GUI de escritorio (webkit2gtk,
+# gtk3, libsoup...) que rompen `cargo check/test --workspace` en servidores
+# headless, VPS y CI. El frontend Tauri se compila desde su propio directorio.
 exclude = [
     "panel-ui/src-tauri",
-    "xavier-core",
 ]
 members = [
     "code-graph",

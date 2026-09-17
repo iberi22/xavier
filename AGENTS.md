@@ -11,7 +11,7 @@ This file is a contract for anyone — human or AI agent — working on this rep
 - **GOAL:** Defined in `.gitcore/docs/SWAL_GOAL.md`. Decoupled, local-first, privacy-preserving AI context & memory architecture.
 - **PROJECT MAP:**
   - `src/` — Main Rust domain logic, HTTP/MCP servers, security, and storage adapters.
-  - `xavier-core/` — Core vector store & embedding calculation primitives.
+  - `crates/xavier-core-logic/` — Core vector store & embedding calculation primitives.
   - `code-graph/` — Static AST code indexer & symbol graph engine.
   - `panel-ui/` — React frontend presentation layer & Maloca web portal.
   - `.gitcore/` — GitCore protocol ledger (`features.json`, `MANIFEST.json`, `AGENT_INDEX.md`).
