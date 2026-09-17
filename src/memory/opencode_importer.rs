@@ -94,7 +94,7 @@ impl OpenCodeImporter {
             let sess_table = if tables.contains(&"session".to_string()) { "session" } else { "sessions" };
 
             // Introspect columns in message table
-            let pragma_query = format!("PRAGMA table_info({})");
+            let pragma_query = format!("PRAGMA table_info({})", msg_table);
             let mut pragma_stmt = conn.prepare(&pragma_query)?;
             let cols: Vec<String> = pragma_stmt
                 .query_map([], |row| row.get(1))?
@@ -148,8 +148,7 @@ impl OpenCodeImporter {
                         for part in parts {
                             if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
                                 extracted.push_str(txt);
-                                extracted.push('
-');
+                                extracted.push('\n');
                             }
                         }
                         if !extracted.trim().is_empty() {
