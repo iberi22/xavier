@@ -158,6 +158,18 @@ pub struct MCPContextResult {
     pub sources: Vec<MCPSearchResult>,
     #[serde(rename = "estimatedTokens")]
     pub estimated_tokens: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    #[serde(
+        rename = "totalPages",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub total_pages: Option<usize>,
+    #[serde(rename = "hasMore", default, skip_serializing_if = "Option::is_none")]
+    pub has_more: Option<bool>,
 }
 
 /// Structured health result for the health_check tool.

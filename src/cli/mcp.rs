@@ -49,7 +49,36 @@ pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::Workspace
     let security_service = Arc::new(SecurityService::new());
     let workspace_registry = Arc::new(WorkspaceRegistry::new());
 
-    let code_db = Arc::new(code_graph::db::CodeGraphDB::in_memory()?);
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let local_code_db = cwd.join(".xavier").join("code_graph.db");
+    let resolved_code_db = xavier::codebase::codegraph_paths::code_graph_db_path_for(&cwd);
+    let code_db_path = if local_code_db.exists() {
+        local_code_db
+    } else {
+        resolved_code_db
+    };
+
+    let code_db = if code_db_path.exists() {
+        match code_graph::db::CodeGraphDB::new(&code_db_path) {
+            Ok(db) => {
+                tracing::info!(
+                    "MCP loaded persistent CodeGraphDB from {}",
+                    code_db_path.display()
+                );
+                Arc::new(db)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to open persistent CodeGraphDB at {}, falling back to in_memory: {}",
+                    code_db_path.display(),
+                    e
+                );
+                Arc::new(code_graph::db::CodeGraphDB::in_memory()?)
+            }
+        }
+    } else {
+        Arc::new(code_graph::db::CodeGraphDB::in_memory()?)
+    };
     let code_indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
     let code_query = Arc::new(code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
 
@@ -69,10 +98,9 @@ pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::Workspace
             ),
         ),
         security_service,
-        code_graph_dump_path: Some({
-            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-            xavier::codebase::codegraph_paths::codegraph_dump_path_for(&cwd)
-        }),
+        code_graph_dump_path: Some(xavier::codebase::codegraph_paths::codegraph_dump_path_for(
+            &cwd,
+        )),
     };
 
     let workspace = WorkspaceState::new(

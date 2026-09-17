@@ -120,20 +120,54 @@ If integrating via Model Context Protocol (stdio or SSE on `:8100`):
 
 | Tool | Purpose |
 |---|---|
-| `mem_search` | Candidate search with scores, snippets, and provenance metadata. |
-| `mem_context` | Budget-bounded memory context block. |
-| `mem_add` | Ingest memory fragments into the vector store. |
-| `xavier_context_save` | Save snapshot of session state. |
-| `xavier_context_restore`| Rehydrate session context within token limits. |
+| `mem_search` / `memory_search` | Progressive disclosure candidate search (`page`, `limit`, `total_pages`, `has_more`, scores, snippets, provenance). |
+| `mem_context` / `memory_context` | Budget-bounded memory context block with character/token estimation. |
+| `save_fragment` / `memory_save` | Ingest memory fragments into the vector store with structured provenance & namespaces. |
+| `xavier_context_save` | Save snapshot of session state across workspace pools. |
+| `xavier_context_restore`| Rehydrate session context within token limits with auto-resurrection. |
 | `xavier_issue_context_package` | Formulate a GitHub issue context bundle. |
+| `codegraph_explore` / `trace_path` | Persistent CodeGraph AST symbol exploration & dependency tracing. |
 
 ---
 
-## 6. Anti-Patterns & Best Practices
+## 6. Universal Agent Importer Architecture
+
+To guarantee comprehensive observability and cross-agent context sharing across the SWAL mesh, Xavier interfaces directly with heterogeneous agent runtimes:
+
+```
+┌─────────────────────────┐  ┌─────────────────────────┐  ┌─────────────────────────┐
+│     Hermes Sessions     │  │   Google Antigravity    │  │        OpenCode         │
+│  ~/.hermes/sessions/*.json  │  │   ~/.gemini/antigravity │  │ ~/.local/share/opencode │
+│  (HermesImporter)       │  │   (AntigravityImporter) │  │ (OpenCodeImporter)      │
+└────────────┬────────────┘  └────────────┬────────────┘  └────────────┬────────────┘
+             │                            │                            │
+             └───────────────────┬────────┴────────────────────────────┘
+                                 ▼
+                 ┌───────────────────────────────┐
+                 │   Xavier Agent Session VFS    │
+                 │   - Semantic compression      │
+                 │   - ANSI / Base64 noise strip │
+                 │   - Structured checkpointing  │
+                 │   - Provenance attribution    │
+                 └───────────────┬───────────────┘
+                                 ▼
+                     SQLite-vec & BM25 Storage
+```
+
+### Supported Transcripts & Format Matrix:
+1. **Hermes:** Structured JSON transcripts with tool call trees and session events.
+2. **Google Antigravity:** JSONL step streams (`~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`) capturing `USER_INPUT`, `PLANNER_RESPONSE`, and tool executions.
+3. **OpenCode:** Local SQLite stores (`~/.local/share/opencode/opencode.db` / `history.jsonl`).
+4. **OpenClaw & Codex:** Workspace task chronologies and incremental session diffs.
+
+---
+
+## 7. Anti-Patterns & Best Practices
 
 | Anti-Pattern | Recommended Practice |
 |---|---|
 | ❌ Storing high-frequency ephemeral logs in memory | ✅ Ingest only condensed summaries, decisions, and outcomes. |
-| ❌ Querying unbudgeted full memories per turn | ✅ Use `/v1/context/package` or snippet mode with a token budget. |
+| ❌ Querying unbudgeted full memories per turn | ✅ Use progressive disclosure (`page`, `limit`) with a token budget. |
 | ❌ Hardcoding tokens in source code | ✅ Export `XAVIER_TOKEN` in environment files. |
 | ❌ Ingesting duplicate records without path/ID | ✅ Assign canonical paths (e.g. `decisions/YYYY-MM-DD/...`). |
+

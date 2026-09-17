@@ -113,6 +113,11 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                         "type": "string",
                         "description": "Project identifier"
                     },
+                    "page": {
+                        "type": "number",
+                        "description": "Page number (1-based, default: 1)",
+                        "default": 1
+                    },
                     "max_records": {
                         "type": "number",
                         "description": "Maximum records to return (default: 10, max: 50)",
@@ -329,8 +334,14 @@ pub async fn handle_core_tool(
                 .get("project_id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Missing project_id"))?;
+            let page = arguments
+                .get("page")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1)
+                .max(1) as usize;
             let max_records = arguments
                 .get("max_records")
+                .or_else(|| arguments.get("limit"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(10)
                 .clamp(1, 50) as usize;
@@ -345,16 +356,33 @@ pub async fn handle_core_tool(
                 .unwrap_or(0)
                 .clamp(0, 2) as usize;
 
-            let records = workspace
+            let fetch_limit = (page * max_records).saturating_add(1);
+            let all_records = workspace
                 .workspace
                 .list_memory_records_filtered(
                     MemoryQueryFilters {
                         project: Some(project_id.to_string()),
                         ..Default::default()
                     },
-                    max_records,
+                    fetch_limit,
                 )
                 .await?;
+
+            let offset = (page - 1) * max_records;
+            let total_fetched = all_records.len();
+            let has_more = total_fetched > page * max_records;
+            let records: Vec<_> = all_records
+                .into_iter()
+                .skip(offset)
+                .take(max_records)
+                .collect();
+            let total_pages = if total_fetched == 0 {
+                0
+            } else if has_more {
+                page + 1
+            } else {
+                total_fetched.div_ceil(max_records)
+            };
 
             let mut total_chars = 0usize;
             let mut truncated = false;
@@ -412,6 +440,10 @@ pub async fn handle_core_tool(
                             content: format!("No context found for project {project_id}."),
                             sources: vec![],
                             estimated_tokens: 0,
+                            page: Some(page),
+                            limit: Some(max_records),
+                            total_pages: Some(total_pages),
+                            has_more: Some(has_more),
                         }),
                         false,
                     ))?);
@@ -461,6 +493,10 @@ pub async fn handle_core_tool(
                         content: clipped.clone(),
                         sources,
                         estimated_tokens: crate::context::estimate_tokens(&clipped),
+                        page: Some(page),
+                        limit: Some(max_records),
+                        total_pages: Some(total_pages),
+                        has_more: Some(has_more),
                     }),
                     false,
                 ))?);
@@ -479,6 +515,10 @@ pub async fn handle_core_tool(
                     content,
                     sources,
                     estimated_tokens,
+                    page: Some(page),
+                    limit: Some(max_records),
+                    total_pages: Some(total_pages),
+                    has_more: Some(has_more),
                 }),
                 false,
             ))?)
@@ -727,7 +767,7 @@ pub async fn handle_core_tool(
                     match crate::self_manage::ticket_create(args) {
                         Ok(result) => Ok(serde_json::to_value(MCPToolResult::structured(
                             serde_json::to_value(&result)?,
-                            result.deduplicated,
+                            false,
                         ))?),
                         Err(error) => Err(error),
                     }
