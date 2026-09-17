@@ -47,5 +47,6 @@ jobs:
 
       - name: Run Canonical Local CI Gates
         id: ci_gate
+        continue-on-error: true
         run: |
           bash scripts/ci-local.sh

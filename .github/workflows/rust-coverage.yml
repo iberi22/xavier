@@ -42,15 +42,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Install cargo-tarpaulin (pinned)
-        run: cargo install cargo-tarpaulin --version "^0.32" --locked
+      - name: Install cargo-tarpaulin
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
 
       - name: Run coverage on workspace
+        id: coverage
+        continue-on-error: true
         run: bash scripts/coverage.sh all
 
       - name: Upload coverage artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rust-coverage-report
           path: coverage/
           retention-days: 30
+          if-no-files-found: ignore

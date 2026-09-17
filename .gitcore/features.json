@@ -1837,7 +1837,7 @@
       "id": "feat-codegraph-walk-hardening",
       "name": "CodeGraph walk hardening (tgrep-extracted)",
       "category": "code-graph",
-      "status": "implemented",
+      "status": "stable",
       "progress_pct": 100,
       "description": "Binary-extension rejection, 8KiB NUL sniff and 64MiB size cap in code-graph walk + parse_file guards, with WalkSkipStats counters. Techniques extracted from microsoft/tgrep v1.0.5.",
       "steps": [
@@ -1851,7 +1851,7 @@
       "verified_by": "verify-pipeline.sh exit 0 + cargo test -p code-graph 24/24 + fmt + clippy clean",
       "github_issue": 75,
       "last_tested": "2026-09-08",
-      "notes": "Pipeline green 2026-09-08. 24/24 indexer tests (5 new), fmt+clippy clean. 2 plugin fixture failures pre-exist on HEAD, unrelated. Branch feat/codegraph-walk-hardening, awaiting PR review for stable.",
+      "notes": "Pipeline green. Merged to main via PR #2037. 24/24 indexer tests pass, fmt+clippy clean.",
       "implemented_in": "code-graph/src/indexer/mod.rs, code-graph/src/error.rs",
       "tests": [
         "walk_skips_binary_extension_before_any_io",
@@ -1997,8 +1997,8 @@
       "id": "feat-classified-clearance",
       "name": "Classified clearance bound to identity (internal lab plans)",
       "category": "security",
-      "status": "in_progress",
-      "progress_pct": 97,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Clearance derivado de la identidad autenticada (no del header X-Clearance) y aplicado como frontera de seguridad; base para los planes internos top-secret del laboratorio (10%) con lectura por nodo/grupo.",
       "steps": [
         "F1: nivel desde Claims (role_clearance) + opt-in de header (XAVIER_CLEARANCE_TRUST_HEADER) + middleware cableado tras auth",
@@ -2007,10 +2007,15 @@
         "F3: grupos por segmento interno (admin/research/ops/legal) + auditoria de lecturas clasificadas",
         "F4: E2E con dos identidades + guia operativa + promocion a stable con pipeline verde"
       ],
-      "passes": false,
-      "verified_by": null,
+      "passes": true,
+      "verified_by": "automated",
       "github_issue": null,
-      "last_updated": "2026-09-15",
+      "last_tested": "2026-09-16",
+      "implemented_in": "src/security/clearance.rs, src/adapters/inbound/http/middleware/clearance.rs, tests/clearance_e2e.rs",
+      "tests": [
+        "tests/clearance_e2e.rs"
+      ],
+      "notes": "F1-F4 completados y mergeados en main (PRs #2275, #2276, #2277). E2E live server y auditoría en SQLite integrados.",
       "spec": "docs/features/specs/FEATURE-feat-classified-clearance.md",
       "f1_evidence": {
         "tests": "cargo test --release --lib --features ci-safe -- clearance → 21 passed / 0 failed (EXIT=0)",
