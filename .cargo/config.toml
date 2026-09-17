@@ -16,3 +16,7 @@ offline = false
 [env]
 RUST_MIN_STACK = "16777216"
 RUST_TEST_THREADS = "1"
+# Optional local build acceleration via sccache (Wave-24 Phase 0):
+# export RUSTC_WRAPPER=sccache
+# export SCCACHE_CACHE_SIZE=10G
+
