@@ -552,6 +552,12 @@ pub enum AgentCommand {
         /// Index Jules sessions / issues
         #[arg(long, default_value_t = false)]
         jules: bool,
+        /// Index Google Antigravity sessions (~/.gemini/antigravity/brain)
+        #[arg(long, default_value_t = false)]
+        antigravity: bool,
+        /// Index OpenCode sessions (~/.local/share/opencode/opencode.db)
+        #[arg(long, default_value_t = false)]
+        opencode: bool,
         /// Output in JSON format
         #[arg(long)]
         json: bool,
