@@ -91,8 +91,10 @@ impl Sanitizer {
     }
 
     fn sanitize_turn_with_stats(&self, raw: &str) -> (Option<String>, TurnSanitizeStats) {
-        let mut stats = TurnSanitizeStats::default();
-        stats.chars_in = raw.len();
+        let mut stats = TurnSanitizeStats {
+            chars_in: raw.len(),
+            ..Default::default()
+        };
 
         if raw.is_empty() {
             return (None, stats);
@@ -128,11 +130,12 @@ impl Sanitizer {
         }
 
         // 3. Drop boilerplate (cron triggers, heartbeats) unless errors/decisions exist
-        if self.cfg.drop_cron_boilerplate && BOILERPLATE_REGEX.is_match(trimmed_text) {
-            if !IMPORTANT_KEYWORD_REGEX.is_match(trimmed_text) {
-                stats.dropped_boilerplate = true;
-                return (None, stats);
-            }
+        if self.cfg.drop_cron_boilerplate
+            && BOILERPLATE_REGEX.is_match(trimmed_text)
+            && !IMPORTANT_KEYWORD_REGEX.is_match(trimmed_text)
+        {
+            stats.dropped_boilerplate = true;
+            return (None, stats);
         }
 
         // 4. Truncate long Base64 runs
