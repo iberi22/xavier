@@ -255,7 +255,10 @@ impl HermesImporter {
 
         let mut final_records = Vec::new();
 
-        if let Some(messages) = val.pointer("/request/body/messages").and_then(|m| m.as_array()) {
+        if let Some(messages) = val
+            .pointer("/request/body/messages")
+            .and_then(|m| m.as_array())
+        {
             for (idx, msg) in messages.iter().enumerate() {
                 let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
                 let msg_content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");

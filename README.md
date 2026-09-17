@@ -251,11 +251,13 @@ Xavier exposes standard MCP tools for integration with Cursor, Claude Desktop, a
 - `trace_path`: Trace forward dependencies or caller chains for code symbols.
 
 #### Memory Management Tools
-- `mem_search`: Candidate memory retrieval with similarity scores, snippets, and provenance.
-- `mem_context`: Packaged memory context injection bounded by `max_records` and `max_chars`.
-- `mem_add`: Store semantic, episodic, or procedural memory records.
-- `mem_update`: Update existing memory records by path or ID.
-- `mem_delete`: Remove memory records from vector store.
+- `mem_search`: Progressive disclosure search returning candidate headers, snippets, and provenance (without full body by default).
+- `mem_context` / `memory_context`: Page-in full or partial memory content bounded by `max_chars` and per-doc limits.
+- `create_memory`: Store structured memory documents with path, content, kind, and provenance.
+- `save_fragment` (`memoryfragment_save`): Save atomic memory fragments tagged with importance and agent context.
+- `memory_save`: Store free-form text memories with optional metadata and namespace.
+- `get_memory` / `memoryfragment_get`: Retrieve specific memory documents or fragments by ID.
+- `memory_prune`: Prune stale or duplicate memories by kind, age, or path prefix (supports `dry_run`).
 
 #### Context & Issue Tools
 - `xavier_context_save`: Create session context checkpoints.

@@ -191,13 +191,19 @@ impl OpenCodeImporter {
     pub async fn import_all(&self, store: &dyn MemoryStore) -> Result<Vec<MemoryRecord>> {
         let mut raw_turns = self.read_turns().await?;
         let report = self.sanitizer.sanitize_turns(&mut raw_turns);
-        debug!("OpenCode sanitization report: {} kept, {} dropped", report.kept, report.dropped_boilerplate);
+        debug!(
+            "OpenCode sanitization report: {} kept, {} dropped",
+            report.kept, report.dropped_boilerplate
+        );
 
         let mut all_imported = Vec::new();
         let workspace_id = "agent:opencode".to_string();
 
         for turn in raw_turns {
-            let record_path = format!("opencode://sessions/{}/{}", turn.session_id, turn.turn_index);
+            let record_path = format!(
+                "opencode://sessions/{}/{}",
+                turn.session_id, turn.turn_index
+            );
             let mut record = MemoryRecord {
                 workspace_id: workspace_id.clone(),
                 path: record_path.clone(),
@@ -223,11 +229,17 @@ impl OpenCodeImporter {
                 }
             }
 
-            store.put(record.clone()).await.context("put opencode record")?;
+            store
+                .put(record.clone())
+                .await
+                .context("put opencode record")?;
             all_imported.push(record);
         }
 
-        info!("✅ Successfully imported {} OpenCode turns", all_imported.len());
+        info!(
+            "✅ Successfully imported {} OpenCode turns",
+            all_imported.len()
+        );
         Ok(all_imported)
     }
 }

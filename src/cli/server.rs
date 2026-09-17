@@ -677,46 +677,37 @@ pub async fn start_http_server(
         tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
         loop {
             tracing::info!("🔄 Running universal agent session ingestion cycle...");
-            
+
             // 1. Antigravity
-            let ag_importer = if let Some(ref emb) = ingestion_embedder {
-                xavier::memory::antigravity_importer::AntigravityImporter::new().with_embedder(emb.clone())
-            } else {
-                xavier::memory::antigravity_importer::AntigravityImporter::new()
-            };
+            let ag_importer = xavier::memory::antigravity_importer::AntigravityImporter::new()
+                .with_embedder(ingestion_embedder.clone());
             if let Err(e) = ag_importer.import_all(ingestion_store.as_ref()).await {
                 tracing::debug!("Antigravity ingestion note: {}", e);
             }
 
             // 2. OpenCode
-            let oc_importer = if let Some(ref emb) = ingestion_embedder {
-                xavier::memory::opencode_importer::OpenCodeImporter::new().with_embedder(emb.clone())
-            } else {
-                xavier::memory::opencode_importer::OpenCodeImporter::new()
-            };
+            let oc_importer = xavier::memory::opencode_importer::OpenCodeImporter::new()
+                .with_embedder(ingestion_embedder.clone());
             if let Err(e) = oc_importer.import_all(ingestion_store.as_ref()).await {
                 tracing::debug!("OpenCode ingestion note: {}", e);
             }
 
             // 3. Hermes
-            let hermes_importer = if let Some(ref emb) = ingestion_embedder {
-                xavier::memory::hermes_importer::HermesImporter::new().with_embedder(emb.clone())
-            } else {
-                xavier::memory::hermes_importer::HermesImporter::new()
-            };
+            let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
+                .with_embedder(ingestion_embedder.clone());
             if let Err(e) = hermes_importer.import_all(ingestion_store.as_ref()).await {
                 tracing::debug!("Hermes ingestion note: {}", e);
             }
 
-            // 4. Codex
-            let codex_importer = if let Some(ref emb) = ingestion_embedder {
-                xavier::memory::codex_importer::CodexImporter::new().with_embedder(emb.clone())
-            } else {
-                xavier::memory::codex_importer::CodexImporter::new()
-            };
+            // 4. Codex — with_embedder is an associated fn (not a builder method)
+            let codex_importer = xavier::memory::codex_importer::CodexImporter::with_embedder(
+                ingestion_embedder.clone(),
+            );
             if let Ok(sessions) = codex_importer.scan_sessions().await {
                 for s in &sessions {
-                    let _ = codex_importer.import_session(s, ingestion_store.as_ref()).await;
+                    let _ = codex_importer
+                        .import_session(s, ingestion_store.as_ref())
+                        .await;
                 }
             }
 

@@ -245,7 +245,8 @@ mod iroh_tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let identity = Arc::new(NodeIdentity::generate());
-            let transport = xavier::mesh::init_active_transport(identity, xavier::mesh::dummy_store());
+            let transport =
+                xavier::mesh::init_active_transport(identity, xavier::mesh::dummy_store());
             let addr = transport.my_addr_string().await;
             assert!(addr.is_ok());
             let addr_str = addr.unwrap();
@@ -291,12 +292,18 @@ mod iroh_tests {
                 capabilities: Vec::new(),
             };
 
-            let res_ok =
-                SyncTransport::for_peer(&peer_with_iroh, Arc::new(NodeIdentity::generate()), xavier::mesh::dummy_store());
+            let res_ok = SyncTransport::for_peer(
+                &peer_with_iroh,
+                Arc::new(NodeIdentity::generate()),
+                xavier::mesh::dummy_store(),
+            );
             assert!(res_ok.is_ok());
 
-            let res_err =
-                SyncTransport::for_peer(&peer_no_iroh, Arc::new(NodeIdentity::generate()), xavier::mesh::dummy_store());
+            let res_err = SyncTransport::for_peer(
+                &peer_no_iroh,
+                Arc::new(NodeIdentity::generate()),
+                xavier::mesh::dummy_store(),
+            );
             assert!(res_err.is_ok());
         });
     }
@@ -306,7 +313,8 @@ mod iroh_tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let identity = Arc::new(NodeIdentity::generate());
-            let transport = xavier::mesh::init_active_transport(identity.clone(), xavier::mesh::dummy_store());
+            let transport =
+                xavier::mesh::init_active_transport(identity.clone(), xavier::mesh::dummy_store());
             let request =
                 transport.signed_sync_request(vec!["hash-1".to_string(), "hash-2".to_string()]);
 
@@ -325,7 +333,8 @@ mod iroh_tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let identity = Arc::new(NodeIdentity::generate());
-            let transport = xavier::mesh::init_active_transport(identity, xavier::mesh::dummy_store());
+            let transport =
+                xavier::mesh::init_active_transport(identity, xavier::mesh::dummy_store());
             let addr1 = transport.my_addr_string().await.unwrap();
             let addr2 = transport.my_addr_string().await.unwrap();
             assert_eq!(addr1, addr2);
@@ -363,7 +372,8 @@ mod iroh_tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let identity = Arc::new(NodeIdentity::generate());
-            let transport = xavier::mesh::init_active_transport(identity, xavier::mesh::dummy_store());
+            let transport =
+                xavier::mesh::init_active_transport(identity, xavier::mesh::dummy_store());
 
             let invalid_key_res =
                 xavier::mesh::connect_active_transport(&transport, "not-a-valid-key").await;

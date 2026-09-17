@@ -71,7 +71,10 @@ impl AntigravityImporter {
     pub async fn scan_transcripts(&self) -> Result<Vec<PathBuf>> {
         let mut transcripts = Vec::new();
         if !fs::try_exists(&self.brains_dir).await.unwrap_or(false) {
-            debug!("Antigravity brains dir {:?} does not exist", self.brains_dir);
+            debug!(
+                "Antigravity brains dir {:?} does not exist",
+                self.brains_dir
+            );
             return Ok(transcripts);
         }
 
@@ -104,7 +107,10 @@ impl AntigravityImporter {
             }
         }
 
-        info!("🔍 Discovered {} Antigravity transcript files", transcripts.len());
+        info!(
+            "🔍 Discovered {} Antigravity transcript files",
+            transcripts.len()
+        );
         Ok(transcripts)
     }
 
@@ -115,7 +121,8 @@ impl AntigravityImporter {
             return None;
         }
 
-        let role = val.get("role")
+        let role = val
+            .get("role")
             .or_else(|| val.get("type"))
             .and_then(|v| v.as_str())
             .unwrap_or("user");
@@ -147,14 +154,22 @@ impl AntigravityImporter {
             return None;
         }
 
-        let model = val.get("model").and_then(|m| m.as_str()).map(|s| s.to_string());
-        let project = val.get("cwd")
+        let model = val
+            .get("model")
+            .and_then(|m| m.as_str())
+            .map(|s| s.to_string());
+        let project = val
+            .get("cwd")
             .or_else(|| val.get("project"))
             .and_then(|p| p.as_str())
             .unwrap_or(session_id);
 
         let mut file_paths = Vec::new();
-        if let Some(files) = val.get("files").or_else(|| val.get("attachments")).and_then(|a| a.as_array()) {
+        if let Some(files) = val
+            .get("files")
+            .or_else(|| val.get("attachments"))
+            .and_then(|a| a.as_array())
+        {
             for f in files {
                 if let Some(path_str) = f.as_str() {
                     file_paths.push(path_str.to_string());
@@ -213,11 +228,15 @@ impl AntigravityImporter {
             }
 
             let report = self.sanitizer.sanitize_turns(&mut raw_turns);
-            debug!("Antigravity session {} sanitized: {} kept, {} dropped", session_id, report.kept, report.dropped_boilerplate);
+            debug!(
+                "Antigravity session {} sanitized: {} kept, {} dropped",
+                session_id, report.kept, report.dropped_boilerplate
+            );
 
             let workspace_id = "agent:antigravity".to_string();
             for turn in raw_turns {
-                let record_path = format!("antigravity://sessions/{}/{}", session_id, turn.turn_index);
+                let record_path =
+                    format!("antigravity://sessions/{}/{}", session_id, turn.turn_index);
                 let mut record = MemoryRecord {
                     workspace_id: workspace_id.clone(),
                     path: record_path.clone(),
@@ -248,7 +267,10 @@ impl AntigravityImporter {
             }
         }
 
-        info!("✅ Successfully imported {} Antigravity turns", all_imported.len());
+        info!(
+            "✅ Successfully imported {} Antigravity turns",
+            all_imported.len()
+        );
         Ok(all_imported)
     }
 }
