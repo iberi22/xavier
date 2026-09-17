@@ -49,7 +49,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # HTTP Server
 axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.7", features = ["cors"] }
 hyper = "1"
 hyper-util = "0.1"
 
