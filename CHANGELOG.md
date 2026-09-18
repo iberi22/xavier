@@ -4,7 +4,19 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
-## [0.2.3] — 2026-09-16
+## [0.2.4] — 2026-09-17
+
+### Added
+- **True Hybrid RRF & Reciprocal Rank Fusion**: Full hybrid retrieval pipeline fusing BM25 lexical and vector embeddings with RRF rank scoring (`src/memory/qmd/search/hybrid.rs`).
+- **Temporal Half-Life Decay**: Recency weighting in candidate scoring using exponential decay (`(-age_days / half_life_days).exp()`) in `src/memory/qmd/search/scoring.rs`.
+- **TGD Path-Based Utility Heuristics**: Automatic categorization and low-utility scoring for ephemeral execution traces, periodic crons, and synthetic agent memory paths in `src/memory/tgd.rs`.
+- **Autonomous Memory Pruner CLI**: New `xavier memory prune` CLI with `--dry-run`, `--yes`, `--older-than-days`, and category-level reporting (`src/cli/commands/memory.rs`).
+- **Word-Boundary Smart Snippet Clipping**: Punctuation- and word-boundary aware search preview clipping avoiding mid-token cutoffs in `src/memory/snippet.rs`.
+
+### Fixed
+- **MCP Process Memory Duplication & Bloat**: Eliminated redundant eager memory document pool loading in `build_mcp_state` (`src/cli/mcp.rs`), preventing duplicate 40k+ document arrays and freeing ~5.5 GB RAM.
+- **Corpus Garbage Collection**: Pruned 28,043 stale records (~77.5 MB) via TGD utility pruner, reducing working set size by 64% and stabilizing dual HTTP/MCP runtimes.
+- **Resilient Store Decryption**: Graceful fallback and error recovery during workspace state migration with encrypted payloads.
 
 ### Security
 - **Recovery secrets now Argon2id**: `hash_seed_phrase` / `hash_backup_code` (`src/security/recovery.rs`) emitted unsalted SHA-256. They now emit salted Argon2id PHC strings via `crypto::password`, with new `verify_seed_phrase` / `verify_backup_code` helpers that still accept legacy SHA-256 hex as a migration fallback. All callers migrated (CLI recovery handlers, `auth2` register/reset/2FA, `verify_and_consume_backup_code` now matches the raw code in Rust instead of by SQL equality).

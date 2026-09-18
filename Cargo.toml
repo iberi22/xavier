@@ -1,6 +1,6 @@
 [package]
 name = "xavier"
-version = "0.2.3"
+version = "0.2.4"
 rust-version = "1.94"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"

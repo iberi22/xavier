@@ -8,11 +8,7 @@
 
 use anyhow::Result;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use xavier::app::security_service::SecurityService;
-use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
-use xavier::memory::sqlite_vec_store::VecSqliteMemoryStore;
-use xavier::memory::store::{MemoryRecord, MemoryStore};
 use xavier::server::mcp::transport::start_mcp_http_server;
 use xavier::server::mcp_stdio::run_stdio_loop;
 use xavier::workspace::{WorkspaceConfig, WorkspaceRegistry, WorkspaceState};
@@ -28,21 +24,8 @@ pub const DEFAULT_MCP_PORT: u16 = 8100;
 /// Used by both the stdio and HTTP+SSE transports so they share identical
 /// initialization and core wiring (memory store, security service, workspace).
 pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::WorkspaceContext)> {
-    // Initialize memory store (same as HTTP server)
-    let store: Arc<dyn MemoryStore> = Arc::new(VecSqliteMemoryStore::from_env().await?);
     let workspace_id =
         std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
-    let durable_state = store.load_workspace_state(&workspace_id).await?;
-    let docs = Arc::new(RwLock::new(
-        durable_state
-            .memories
-            .iter()
-            .map(MemoryRecord::to_document)
-            .collect::<Vec<MemoryDocument>>(),
-    ));
-    let memory = Arc::new(QmdMemory::new_with_workspace(docs, workspace_id.clone()));
-    memory.set_store(Arc::clone(&store)).await;
-    memory.init().await?;
 
     // Build the shared application state so the unified MCP dispatcher has
     // everything it needs (security service, workspace registry, etc.).
