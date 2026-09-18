@@ -30,6 +30,35 @@ impl Confidence {
     }
 }
 
+/// Backfill historical score floats onto the O1 discrete rubric (ADR-032 / REQ-053).
+///
+/// Converts free-form legacy belief scores into standardized O1 confidence tiers.
+/// Mapping Rule Table (verbatim from ADR-032 / `code_graph::confidence::normalize_score`):
+/// | Evidence / Tier    | Legacy Raw Score | Backfill O1 Tier | Tie-break Action    |
+/// |--------------------|------------------|------------------|---------------------|
+/// | ImportMap          | 0.95             | 0.95             | Exact match         |
+/// | SameModule         | 0.90             | 0.85             | Tie goes DOWN       |
+/// | ImportMapSuffix    | 0.85             | 0.85             | Exact match         |
+/// | Imports            | 0.80             | 0.75             | Tie goes DOWN       |
+/// | UniqueName         | 0.75             | 0.75             | Exact match         |
+/// | SuffixMatch        | 0.55             | 0.55             | Exact match         |
+/// | Fuzzy              | ≤0.40            | Ambiguous        | Below ceiling       |
+///
+/// Discarded Alternative:
+/// Nearest-tier rounding (e.g. 0.90 -> 0.95) was explicitly discarded in favor of conservative
+/// tie-down (0.90 -> 0.85) to prevent over-estimating confidence on inferred relationship bounds
+/// per ADR-032.
+pub fn o1_backfill(score: f32) -> f32 {
+    let normalized = code_graph::confidence::Confidence::classify(score).value();
+    debug_assert!(
+        normalized == 1.0
+            || code_graph::confidence::RUBRIC_RUNGS.contains(&normalized)
+            || normalized < code_graph::confidence::AMBIGUOUS_CEILING,
+        "o1_backfill produces valid O1 rubric score"
+    );
+    normalized
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Belief {
     pub subject: String,
@@ -81,6 +110,8 @@ impl BeliefGraph {
         if self.get_node(&concept_norm).is_some() {
             return;
         }
+
+        let confidence = o1_backfill(confidence);
 
         let id = ulid::Ulid::new().to_string();
         let node = BeliefNode {
@@ -225,7 +256,11 @@ impl BeliefGraph {
             .expect("belief_graph: nodes read lock poisoned")
             .values()
             .find(|node| node.concept == concept_norm)
-            .cloned()
+            .map(|node| {
+                let mut n = node.clone();
+                n.confidence = o1_backfill(n.confidence);
+                n
+            })
     }
 
     /// List nodes.
@@ -234,7 +269,11 @@ impl BeliefGraph {
             .read()
             .expect("belief_graph: nodes read lock poisoned")
             .values()
-            .cloned()
+            .map(|node| {
+                let mut n = node.clone();
+                n.confidence = o1_backfill(n.confidence);
+                n
+            })
             .collect()
     }
 
@@ -600,7 +639,7 @@ mod grounding_tests {
     async fn test_validate_grounding_semantic() {
         let graph = BeliefGraph::new();
         graph.add_node("Xavier".to_string(), 0.9, None);
-        graph.add_node("Rust".to_string(), 0.4, None);
+        graph.add_node("Rust".to_string(), 0.35, None);
 
         let docs = vec![MemoryDocument {
             id: Some("doc-1".to_string()),
@@ -647,5 +686,49 @@ mod grounding_tests {
         // Should only have 1 node due to normalization
         assert_eq!(nodes.len(), 1);
         assert_eq!(nodes[0].concept, "my_concept");
+    }
+}
+
+#[cfg(test)]
+mod o1_backfill_tests {
+    use super::*;
+
+    #[test]
+    fn test_o1_backfill_exact_tiers() {
+        // 0.95 -> 0.95, 0.85 -> 0.85, 0.75 -> 0.75, 0.55 -> 0.55
+        assert_eq!(o1_backfill(0.95), 0.95);
+        assert_eq!(o1_backfill(0.85), 0.85);
+        assert_eq!(o1_backfill(0.75), 0.75);
+        assert_eq!(o1_backfill(0.55), 0.55);
+    }
+
+    #[test]
+    fn test_o1_backfill_ties_down() {
+        // SameModule 0.90 ties DOWN to 0.85 per ADR-032
+        assert_eq!(o1_backfill(0.90), 0.85);
+        // Imports 0.80 ties DOWN to 0.75 per ADR-032
+        assert_eq!(o1_backfill(0.80), 0.75);
+    }
+
+    #[test]
+    fn test_o1_backfill_ambiguous_ceiling() {
+        // Scores below AMBIGUOUS_CEILING (0.40) map to raw score (< 0.40)
+        let ambiguous_score = o1_backfill(0.30);
+        assert!(ambiguous_score < 0.4);
+        assert_eq!(ambiguous_score, 0.30);
+    }
+
+    #[test]
+    fn test_o1_backfill_round_trip() {
+        let graph = BeliefGraph::new();
+        graph.add_node("concept_a".to_string(), 0.90, None);
+
+        // Inbound 0.90 is normalized to 0.85 on write
+        let node = graph.get_node("concept_a").expect("node should exist");
+        assert_eq!(node.confidence, 0.85);
+
+        let list = graph.list_nodes();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].confidence, 0.85);
     }
 }
