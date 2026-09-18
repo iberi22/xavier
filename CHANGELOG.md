@@ -4,6 +4,23 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+### Added
+- **Code-graph O1–O7 suite** (`code-graph/`, wave-24): unified honest-confidence rubric (`confidence.rs`), language registry (`language.rs`), blast radius + test gate (`query`), incremental IDs with content-hash reindex (`indexer`, `db.file_hashes`), token-budget queries (`budget.rs`), PageRank router (`rank.rs`, petgraph 0.8), contracts + architecture signals (`query`, `contracts.rs`).
+- **MCP `codegraph_route` + `codegraph_gods` tools** (`src/server/mcp/tools_core.rs`): query routing with confidence margin/refusal/`est_tokens` and hub-node listing, 16 core tools total (was 12).
+- **CLI `code situ`** (`src/cli/handlers/code.rs`): `git diff --name-only HEAD` → `symbols_for_files` → `test_gate`, with honest refusal on clean trees.
+- **O4 hash parity + rewire table** (`code-graph/src/indexer/mod.rs`, `db/mod.rs`): `verify_hash_parity` reconciles `file_hashes` with disk on every `apply_paths`; `stable_id_rewrites` maps legacy `default`-project IDs to project-scoped IDs.
+- **O1 rubric in retrieval + belief** (`src/retrieval/gating.rs`, `src/memory/belief_graph.rs`): `weights_from_confidence` / `o1_backfill` per ADR-032 with tie-down, legacy fallbacks preserved.
+- **Parser dispersion arbitration** (`code-graph/src/parser/mod.rs`): deterministic winner + disclosed losers for multi-parser collisions.
+
+### Fixed
+- **Plugin tests hermetic** (`code-graph/src/plugin/`): 3 pre-existing env-dependent failures fixed via test seams (132+3 → 148 green, zero regressions).
+- **Version sync drift**: `package.json` + `panel-ui/package.json` 0.2.3 → 0.2.4 (Version Sync Gate green); `build-version.test.ts` derives the version from `Cargo.toml` instead of hardcoding, build-test timeouts 30s → 120s.
+- **Indexer fast-path**: known extensions skip the per-file plugin discovery probe in `parse_file` and `apply_paths` (output pinned by identity test 35/2470/13686).
+
+### Security
+- **CTEQ length-check DoS guards** (`src/crypto/hmac.rs`, `src/security/recovery.rs`, `src/server/headless/auth.rs`, `src/server/mcp/auth.rs`, `src/cli/http_setup.rs`): length check + dummy constant-time op before `ct_eq`, preventing `subtle` panics on attacker-controlled lengths.
+- **Training path traversal queued**: `training.rs` joins raw dataset `id` to disk (`..` passes the char filter); scoped fix approved, `state.rs`/`session.rs` verified unaffected.
+
 ## [0.2.4] — 2026-09-17
 
 ### Added

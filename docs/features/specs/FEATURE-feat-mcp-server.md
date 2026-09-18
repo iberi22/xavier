@@ -14,7 +14,7 @@ The MCP Server conforms strictly to the Model Context Protocol specifications. I
 - `src/cli/server.rs` (server CLI launching and capability configuration)
 
 ## Sub-features
-- **mcp-tools-core:** Implements definitions and execution handlers for 12 core tools (including `mem_search`, `memory_context`, and codebase symbols).
+- **mcp-tools-core:** Implements definitions and execution handlers for 16 core tools (including `mem_search`, `memory_context`, codebase symbols, plus `codegraph_route` and `codegraph_gods` since wave-24).
 - **mcp-progressive:** Features the Progressive Disclosure pattern for token optimization (relying on structured, lightweight `mem_search` followed by a targeted `memory_context` fetch).
 - **mcp-auth:** Token-based authentication integration for secure endpoint access.
 
