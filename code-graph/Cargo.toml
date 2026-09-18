@@ -69,8 +69,8 @@ rusqlite = { version = "0.32.0", features = ["bundled"] }
 notify = "6.1.1"
 tempfile = "3"
 
-# Graph ranking (O6 pagerank-router; pinned to the version already in Cargo.lock)
-petgraph = "0.6"
+# Graph ranking (O6 pagerank-router; uses stable DiGraph/NodeIndex/Direction APIs)
+petgraph = "0.8"
 
 [dev-dependencies]
 
