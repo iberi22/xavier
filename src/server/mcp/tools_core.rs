@@ -237,6 +237,39 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
             }),
         },
         MCPTool {
+            name: "codegraph_route".to_string(),
+            description: "Route a search query through the code graph, combining exact matches and centrality-ranked symbol candidates with confidence margin reporting".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query or symbol name to route"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum symbols to return (default: 10, max: 100)",
+                        "default": 10
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+        MCPTool {
+            name: "codegraph_gods".to_string(),
+            description: "Get god/hub nodes (top structurally central and connected symbols excluding builtins) in the code graph".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum hub nodes to return (default: 10, max: 100)",
+                        "default": 10
+                    }
+                }
+            }),
+        },
+        MCPTool {
             name: "espacio_channel_list".to_string(),
             description: "List channels/messages for a specified space".to_string(),
             input_schema: json!({
@@ -287,6 +320,8 @@ pub fn is_core_tool(name: &str) -> bool {
             | "xavier_local_status"
             | "codegraph_explore"
             | "trace_path"
+            | "codegraph_route"
+            | "codegraph_gods"
             | "espacio_channel_list"
             | "espacio_channel_create"
     )
@@ -936,6 +971,65 @@ pub async fn handle_core_tool(
                 "symbol": symbol,
                 "direction": direction,
                 "edges": edges,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
+        }
+        "codegraph_route" => {
+            let query = arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing query"))?;
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10)
+                .clamp(1, 100) as usize;
+
+            let report = _state.code_query.route_query(query, limit)?;
+
+            let hits_json: Vec<Value> = report
+                .hits
+                .iter()
+                .map(|h| {
+                    json!({
+                        "symbol": h.symbol,
+                        "score": h.score
+                    })
+                })
+                .collect();
+
+            let mode_str = match report.mode {
+                code_graph::query::RouteMode::ExactName => "ExactName",
+                code_graph::query::RouteMode::GraphRanked => "GraphRanked",
+            };
+
+            let val = json!({
+                "mode": mode_str,
+                "margin": report.margin_pct,
+                "confident": report.confident,
+                "refusal": !report.confident,
+                "est_tokens": report.meta.est_tokens,
+                "total": report.meta.total,
+                "shown": report.meta.shown,
+                "hits": hits_json,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
+        }
+        "codegraph_gods" => {
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10)
+                .clamp(1, 100) as usize;
+
+            let hubs = _state.code_query.god_nodes(limit)?;
+            let returned = hubs.len();
+
+            let val = json!({
+                "returned": returned,
+                "god_nodes": hubs,
             });
 
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)

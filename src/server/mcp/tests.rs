@@ -1072,6 +1072,8 @@ async fn list_tools_includes_new_memory_and_health_tools() {
         "mem_context",
         "mem_search",
         "health_check",
+        "codegraph_route",
+        "codegraph_gods",
     ] {
         assert!(
             names.contains(&required),
@@ -2076,4 +2078,88 @@ async fn espacio_channel_mcp_tools_schema_and_dispatch() {
     assert_eq!(sc["count"], 0);
     let msgs = sc["messages"].as_array().expect("messages array");
     assert_eq!(msgs.len(), 0);
+}
+
+#[tokio::test]
+async fn codegraph_route_and_gods_mcp_tools_dispatch() {
+    let (state, workspace) = test_state().await;
+
+    // Index a small temp codebase
+    let dir = unique_test_path("xavier-mcp-route-gods", "dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("lib.rs"),
+        "pub fn core_engine() { sub_process(); }\nfn sub_process() {}\n",
+    )
+    .unwrap();
+
+    state
+        .code_indexer
+        .index(&dir, false)
+        .await
+        .expect("index test codebase");
+
+    let router = test_router(state, workspace);
+
+    // 1. Dispatch codegraph_route
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "codegraph_route",
+                "arguments": {
+                    "query": "core_engine",
+                    "limit": 5
+                }
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert!(body["result"]["structuredContent"].is_object());
+    let sc = &body["result"]["structuredContent"];
+    assert!(sc["mode"].is_string());
+    assert!(sc["margin"].is_number());
+    assert!(sc["refusal"].is_boolean());
+    assert!(sc["confident"].is_boolean());
+    assert!(sc["hits"].is_array());
+    let hits = sc["hits"].as_array().unwrap();
+    assert!(!hits.is_empty());
+    assert!(hits[0]["symbol"]["name"]
+        .as_str()
+        .unwrap()
+        .contains("core_engine"));
+
+    // 2. Dispatch codegraph_gods
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "codegraph_gods",
+                "arguments": {
+                    "limit": 10
+                }
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert!(body["result"]["structuredContent"].is_object());
+    let sc = &body["result"]["structuredContent"];
+    assert!(sc["returned"].is_number());
+    assert!(sc["god_nodes"].is_array());
+
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
