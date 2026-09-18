@@ -23,7 +23,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "2.7.3",
-    "lucide-react": "1.45.0",
+    "lucide-react": "1.46.0",
     "motion": "13.2.0",
     "prismjs": "^1.30.0",
     "react": "^19.3.0",
