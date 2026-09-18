@@ -170,7 +170,8 @@ impl System1Retriever {
             query.to_string()
         };
 
-        let selected_search_type = search_type.unwrap_or(self.config.default_search_type.clone());
+        let selected_search_type =
+            search_type.unwrap_or_else(|| self.config.default_search_type.clone());
         let keyword_search = || async {
             self.memory
                 .search_with_cache_filtered(&search_query, self.config.max_results, filters)

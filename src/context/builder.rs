@@ -4,6 +4,7 @@
 //! responsibilities within the Xavier cognitive memory system.
 use crate::context::{ContextDocument, ContextLevel};
 use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextBuilderConfig {
@@ -57,7 +58,7 @@ impl ContextBuilder {
         if !self.config.rules.is_empty() {
             context.push_str("## Rules\n");
             for rule in &self.config.rules {
-                context.push_str(&format!("- {}\n", rule));
+                let _ = write!(context, "- {}\n", rule);
             }
             context.push('\n');
         }
@@ -162,7 +163,7 @@ impl ContextBuilder {
 
         let mut preview = String::new();
         for msg in &messages[start..] {
-            preview.push_str(&format!("{}: {}\n", msg.role, msg.content));
+            let _ = write!(preview, "{}: {}\n", msg.role, msg.content);
         }
 
         let truncated: String = preview.chars().take(max_chars).collect();
@@ -185,13 +186,14 @@ impl ContextBuilder {
         context.push_str("## Virtual References (Available for page-in)\n");
         for mem in memories.iter().take(limit) {
             let path = mem.metadata["path"].as_str().unwrap_or(&mem.id);
-            context.push_str(&format!("- [REF:{}] {}\n", mem.id, path));
+            let _ = write!(context, "- [REF:{}] {}\n", mem.id, path);
         }
         if memories.len() > limit {
-            context.push_str(&format!(
+            let _ = write!(
+                context,
                 "- ... and {} more references\n",
                 memories.len() - limit
-            ));
+            );
         }
         context.push('\n');
     }
@@ -217,13 +219,14 @@ impl ContextBuilder {
             };
 
             if i < full_limit {
-                context.push_str(&format!("- [{}:{}] {}\n", prefix, mem.id, mem.content));
+                let _ = write!(context, "- [{}:{}] {}\n", prefix, mem.id, mem.content);
             } else {
                 let path = mem.metadata["path"].as_str().unwrap_or(&mem.id);
-                context.push_str(&format!(
+                let _ = write!(
+                    context,
                     "- [{}:{}] {} (Body virtualized)\n",
                     prefix, mem.id, path
-                ));
+                );
             }
         }
         context.push('\n');
@@ -243,7 +246,7 @@ impl ContextBuilder {
             } else {
                 "DOC"
             };
-            context.push_str(&format!("- [{}:{}] {}\n", prefix, mem.id, mem.content));
+            let _ = write!(context, "- [{}:{}] {}\n", prefix, mem.id, mem.content);
         }
         context.push('\n');
     }
@@ -258,7 +261,7 @@ impl ContextBuilder {
         let start = messages.len() - limit;
 
         for (i, msg) in messages[start..].iter().enumerate() {
-            context.push_str(&format!("[REF:msg_{}] {}: {}\n", i, msg.role, msg.content));
+            let _ = write!(context, "[REF:msg_{}] {}: {}\n", i, msg.role, msg.content);
         }
         context.push('\n');
     }
@@ -270,7 +273,7 @@ impl ContextBuilder {
 
         context.push_str("# Available Skills\n");
         for skill in skills {
-            context.push_str(&format!("- {}\n", skill));
+            let _ = write!(context, "- {}\n", skill);
         }
         context.push('\n');
     }
