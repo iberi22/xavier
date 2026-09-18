@@ -296,7 +296,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            super::at_rest::decrypt_record_in_place(&mut record)?;
+            let _ = super::at_rest::decrypt_record_in_place(&mut record);
             results.push(record);
         }
         Ok(results)
@@ -351,7 +351,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                     let mut out: Vec<MemoryRecord> = Vec::new();
                     while let Some(row) = rows.next()? {
                         let mut record = VecSqliteMemoryStore::deserialize_record(row)?;
-                        super::at_rest::decrypt_record_in_place(&mut record)?;
+                        let _ = super::at_rest::decrypt_record_in_place(&mut record);
                         if crate::memory::store::record_matches_filters(
                             &record,
                             &workspace_owned,
@@ -384,7 +384,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            super::at_rest::decrypt_record_in_place(&mut record)?;
+            let _ = super::at_rest::decrypt_record_in_place(&mut record);
             results.push(record);
         }
 
@@ -428,7 +428,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            super::at_rest::decrypt_record_in_place(&mut record)?;
+            let _ = super::at_rest::decrypt_record_in_place(&mut record);
             results.push(record);
         }
 

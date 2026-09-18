@@ -1,4 +1,4 @@
-﻿//! Hybrid search combining keyword (lexical) and vector retrieval.
+//! Hybrid search combining keyword (lexical) and vector retrieval.
 //!
 //! Uses reciprocal rank fusion (RRF) to merge keyword and vector results,
 //! plus multi-hop context expansion and re-ranking.
@@ -30,6 +30,7 @@ pub async fn search_hybrid_optimized(
     let query_bundle = query_builder::build_query_bundle_internal(query_text);
     let mut candidate_scores: HashMap<String, (f32, MemoryDocument, f32)> = HashMap::new();
 
+    // 1. Lexical retrieval across query variants
     for expanded_query in &query_bundle.variants {
         let cache_hit = memory
             .search_with_cache_filtered(expanded_query, limit.max(3), filters)
@@ -38,8 +39,41 @@ pub async fn search_hybrid_optimized(
             &mut candidate_scores,
             cache_hit.documents,
             expanded_query,
-            query_bundle.weight_for(expanded_query),
+            query_bundle.weight_for(expanded_query) * KEYWORD_WEIGHT,
         );
+    }
+
+    // 2. Vector retrieval (when embedder is configured)
+    if crate::memory::embedder::EmbeddingClient::is_configured_from_env()
+        || std::env::var("XAVIER_EMBEDDING_URL").is_ok()
+    {
+        if let Ok(vector) =
+            crate::memory::qmd_memory::reader::generate_embedding(&query_bundle.normalized_query)
+                .await
+        {
+            if !vector.is_empty() {
+                if let Ok(vector_hits) = vsearch(memory, vector, limit.max(5)).await {
+                    let filtered_hits: Vec<MemoryDocument> = vector_hits
+                        .into_iter()
+                        .filter(|doc| {
+                            crate::memory::schema::matches_filters(
+                                &doc.path,
+                                &doc.metadata,
+                                &memory.workspace_id,
+                                filters,
+                            )
+                        })
+                        .collect();
+
+                    merge_ranked_candidates(
+                        &mut candidate_scores,
+                        filtered_hits,
+                        &query_bundle.normalized_query,
+                        SEMANTIC_WEIGHT,
+                    );
+                }
+            }
+        }
     }
 
     if candidate_scores.is_empty() {
@@ -101,18 +135,34 @@ pub async fn search_hybrid_optimized(
         .collect())
 }
 
-/// Merge ranked candidates using RRF + contextual boost.
+/// Merge ranked candidates using RRF + contextual boost + temporal decay.
 pub fn merge_ranked_candidates(
     candidate_scores: &mut HashMap<String, (f32, MemoryDocument, f32)>,
     documents: Vec<MemoryDocument>,
     query: &str,
     query_weight: f32,
 ) {
+    let half_life_days = std::env::var("XAVIER_TEMPORAL_HALF_LIFE_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(30.0);
+
     for (rank, doc) in documents.into_iter().enumerate() {
         let key = doc.id.clone().unwrap_or_else(|| doc.path.clone());
         let rrf_score = 1.0 / (RRF_K + (rank as f32) + 1.0);
         let rerank = contextual_boost(query, &doc, query_weight);
-        let combined = (rrf_score * query_weight) + rerank;
+        let created_at = doc
+            .metadata
+            .get("created_at")
+            .or_else(|| doc.metadata.get("timestamp"))
+            .or_else(|| doc.metadata.get("updated_at"))
+            .and_then(|v| v.as_str());
+        let decay = if is_locomo_document(&doc.path, &doc.metadata) {
+            1.0
+        } else {
+            super::scoring::temporal_decay_multiplier(created_at, half_life_days)
+        };
+        let combined = ((rrf_score * query_weight) + rerank) * decay;
         candidate_scores
             .entry(key)
             .and_modify(|entry| {
@@ -353,4 +403,63 @@ pub async fn multi_hop_context(
     }
 
     expanded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_ranked_candidates_rrf_and_decay() {
+        let mut candidate_scores: HashMap<String, (f32, MemoryDocument, f32)> = HashMap::new();
+
+        let fresh_now = chrono::Utc::now().to_rfc3339();
+        let stale_old = (chrono::Utc::now() - chrono::Duration::days(120)).to_rfc3339();
+
+        let doc_fresh = MemoryDocument {
+            id: Some("doc_fresh".to_string()),
+            path: "notes/rust_performance.md".to_string(),
+            content: "Rust memory management and async runtime optimization".to_string(),
+            metadata: serde_json::json!({
+                "created_at": fresh_now
+            }),
+            ..Default::default()
+        };
+
+        let doc_stale = MemoryDocument {
+            id: Some("doc_stale".to_string()),
+            path: "notes/legacy_notes.md".to_string(),
+            content: "Rust memory management and async runtime optimization".to_string(),
+            metadata: serde_json::json!({
+                "created_at": stale_old
+            }),
+            ..Default::default()
+        };
+
+        // Pass 1: Lexical rank list (both present at rank 0 and 1)
+        merge_ranked_candidates(
+            &mut candidate_scores,
+            vec![doc_stale.clone(), doc_fresh.clone()],
+            "rust memory",
+            1.0,
+        );
+
+        // Pass 2: Vector rank list where doc_fresh is present
+        merge_ranked_candidates(
+            &mut candidate_scores,
+            vec![doc_fresh.clone()],
+            "rust memory",
+            0.5,
+        );
+
+        let fresh_score = candidate_scores.get("doc_fresh").unwrap().0;
+        let stale_score = candidate_scores.get("doc_stale").unwrap().0;
+
+        assert!(
+            fresh_score > stale_score,
+            "Fresh record with dual lexical+vector RRF votes should rank higher than stale record (fresh: {}, stale: {})",
+            fresh_score,
+            stale_score
+        );
+    }
 }

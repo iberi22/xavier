@@ -1394,6 +1394,25 @@ pub mod memory {
             #[arg(long)]
             public_only: Option<bool>,
         },
+
+        /// Prune low-utility or stale memories
+        Prune {
+            /// Filter memories by path prefix
+            #[arg(long)]
+            prefix: Option<String>,
+            /// Only prune memories older than this number of days
+            #[arg(long)]
+            older_than_days: Option<u64>,
+            /// Perform a dry run without deleting memories
+            #[arg(long)]
+            dry_run: bool,
+            /// Skip confirmation prompt
+            #[arg(short = 'y', long)]
+            yes: bool,
+            /// Output result in JSON format
+            #[arg(long)]
+            json: bool,
+        },
     }
 }
 

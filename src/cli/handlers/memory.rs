@@ -682,18 +682,18 @@ pub async fn offline_consolidate(workspace_id: Option<&str>) -> anyhow::Result<s
         std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string())
     });
 
-    let store: Arc<dyn MemoryStore> = match SqliteMemoryStore::from_env().await {
-        Ok(s) => Arc::new(s),
-        Err(e) => {
-            tracing::warn!(
-                "Failed to instantiate SqliteMemoryStore ({}), attempting VecSqliteMemoryStore...",
-                e
-            );
-            let vec_store =
-                crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await?;
-            Arc::new(vec_store)
-        }
-    };
+    let store: Arc<dyn MemoryStore> =
+        match crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await {
+            Ok(vec_store) => Arc::new(vec_store),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to instantiate VecSqliteMemoryStore ({}), attempting SqliteMemoryStore...",
+                    e
+                );
+                let s = SqliteMemoryStore::from_env().await?;
+                Arc::new(s)
+            }
+        };
 
     let consolidator = KnowledgeConsolidator::default();
     let cons_report = consolidator.run_consolidation(&*store, &ws_id).await?;
@@ -720,6 +720,168 @@ pub async fn offline_consolidate(workspace_id: Option<&str>) -> anyhow::Result<s
     });
 
     Ok(res_json)
+}
+
+/// Prunes memories matching filters or low-utility criteria.
+pub async fn offline_prune(
+    workspace_id: Option<&str>,
+    prefix: Option<&str>,
+    older_than_days: Option<u64>,
+    dry_run: bool,
+) -> anyhow::Result<serde_json::Value> {
+    use crate::memory::sqlite_store::SqliteMemoryStore;
+    use crate::memory::store::MemoryStore;
+    use crate::memory::tgd::TgdUtilityPruner;
+
+    let ws_id = workspace_id.map(|s| s.to_string()).unwrap_or_else(|| {
+        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string())
+    });
+
+    let store: Arc<dyn MemoryStore> =
+        match crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await {
+            Ok(vec_store) => Arc::new(vec_store),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to instantiate VecSqliteMemoryStore ({}), attempting SqliteMemoryStore...",
+                    e
+                );
+                let s = SqliteMemoryStore::from_env().await?;
+                Arc::new(s)
+            }
+        };
+
+    if prefix.is_none() && older_than_days.is_none() {
+        let pruner = TgdUtilityPruner::with_defaults();
+        if dry_run {
+            let records = store.list(&ws_id).await?;
+            let total_processed = records.len();
+            let mut candidate_ids = Vec::new();
+            let mut reclaimed_bytes = 0u64;
+            let now = chrono::Utc::now();
+            for r in &records {
+                let age = (now - r.updated_at).num_seconds() as f32 / 86400.0;
+                if age > 7.0 {
+                    let size = r.content.len() as u64
+                        + serde_json::to_string(&r.metadata)
+                            .map(|s| s.len() as u64)
+                            .unwrap_or(0);
+                    candidate_ids.push(r.id.clone());
+                    reclaimed_bytes += size;
+                }
+            }
+            return Ok(serde_json::json!({
+                "status": "ok",
+                "offline": true,
+                "dry_run": true,
+                "workspace_id": ws_id,
+                "total_processed": total_processed,
+                "pruned_count": candidate_ids.len(),
+                "reclaimed_bytes": reclaimed_bytes,
+                "pruned_ids": candidate_ids,
+                "vacuumed": false,
+            }));
+        }
+
+        let prune_summary = pruner.prune_memories(&*store, &ws_id).await?;
+        let vacuum_res = store.compact().await;
+        return Ok(serde_json::json!({
+            "status": "ok",
+            "offline": true,
+            "dry_run": false,
+            "workspace_id": ws_id,
+            "total_processed": prune_summary.total_processed,
+            "pruned_count": prune_summary.pruned_count,
+            "reclaimed_bytes": prune_summary.reclaimed_bytes,
+            "pruned_ids": prune_summary.pruned_ids,
+            "vacuumed": vacuum_res.is_ok(),
+        }));
+    }
+
+    let records = store.list(&ws_id).await?;
+    let total_processed = records.len();
+    let now = chrono::Utc::now();
+
+    let mut candidate_ids = Vec::new();
+    let mut reclaimed_bytes = 0u64;
+
+    for record in &records {
+        if let Some(pfx) = prefix {
+            if !record.path.starts_with(pfx) {
+                continue;
+            }
+        }
+
+        if let Some(days) = older_than_days {
+            let age_days = (now - record.updated_at).num_seconds() as f64 / 86400.0;
+            if age_days < days as f64 {
+                continue;
+            }
+        }
+
+        let size = record.content.len() as u64
+            + serde_json::to_string(&record.metadata)
+                .map(|s| s.len() as u64)
+                .unwrap_or(0);
+        candidate_ids.push(record.id.clone());
+        reclaimed_bytes += size;
+    }
+
+    let mut pruned_ids = Vec::new();
+    let mut vacuum_ok = false;
+
+    if !dry_run {
+        for id in &candidate_ids {
+            if let Err(e) = store.delete(&ws_id, id).await {
+                tracing::warn!("Failed to delete record {}: {:?}", id, e);
+            } else {
+                pruned_ids.push(id.clone());
+            }
+        }
+        vacuum_ok = store.compact().await.is_ok();
+    } else {
+        pruned_ids = candidate_ids;
+    }
+
+    Ok(serde_json::json!({
+        "status": "ok",
+        "offline": true,
+        "dry_run": dry_run,
+        "workspace_id": ws_id,
+        "total_processed": total_processed,
+        "pruned_count": pruned_ids.len(),
+        "reclaimed_bytes": reclaimed_bytes,
+        "pruned_ids": pruned_ids,
+        "vacuumed": vacuum_ok,
+    }))
+}
+
+/// Handler for POST /memory/prune
+pub async fn memory_prune_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+    axum::extract::Json(payload): axum::extract::Json<serde_json::Value>,
+) -> Response {
+    if let Err(r) = check_cli_token(&headers) {
+        return r;
+    }
+
+    let prefix = payload
+        .get("prefix")
+        .or_else(|| payload.get("path_prefix"))
+        .and_then(|v| v.as_str());
+    let older_than_days = payload.get("older_than_days").and_then(|v| v.as_u64());
+    let dry_run = payload
+        .get("dry_run")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    match offline_prune(Some(&state.workspace_id), prefix, older_than_days, dry_run).await {
+        Ok(val) => json_response(StatusCode::OK, val),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "status": "error", "message": e.to_string() }),
+        ),
+    }
 }
 
 /// GET /v1/memory/manifest

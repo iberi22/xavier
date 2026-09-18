@@ -51,6 +51,31 @@ pub struct TgdPruneSummary {
     pub pruned_ids: Vec<String>,
 }
 
+/// Helper function to categorize a path for logging and heuristics.
+pub fn categorize_path(path: &str) -> &'static str {
+    if path.contains("gestalt/bus/executions") {
+        "gestalt_bus_execution"
+    } else if path.contains("session/cron_") {
+        "session_cron"
+    } else if path.starts_with("test/") || path.starts_with("xtsp/") {
+        "test_artifact"
+    } else if path.starts_with("agent_memory://JSON_Agent/") {
+        "json_agent"
+    } else if path.starts_with("docs/")
+        || path.contains("/docs/")
+        || path.starts_with("knowledge/")
+        || path.contains("/knowledge/")
+        || path.starts_with("kb/")
+        || path.contains("/kb/")
+        || path.contains("docs")
+        || path.contains("knowledge")
+    {
+        "docs_knowledge"
+    } else {
+        "general"
+    }
+}
+
 /// Helper function to retrieve the effective utility score of a MemoryRecord.
 pub fn get_utility_score(record: &MemoryRecord) -> f32 {
     if let serde_json::Value::Object(ref map) = record.metadata {
@@ -67,10 +92,36 @@ pub fn get_utility_score(record: &MemoryRecord) -> f32 {
     }
 
     if record.score > 0.0 {
-        record.score
-    } else {
-        1.0
+        return record.score;
     }
+
+    // Path-based heuristics before falling back to 1.0:
+    let path = &record.path;
+    if path.contains("gestalt/bus/executions") {
+        return 0.10;
+    }
+    if path.contains("session/cron_") {
+        return 0.15;
+    }
+    if path.starts_with("test/") || path.starts_with("xtsp/") {
+        return 0.05;
+    }
+    if path.starts_with("agent_memory://JSON_Agent/") {
+        return 0.20;
+    }
+    if path.starts_with("docs/")
+        || path.contains("/docs/")
+        || path.starts_with("knowledge/")
+        || path.contains("/knowledge/")
+        || path.starts_with("kb/")
+        || path.contains("/kb/")
+        || path.contains("docs")
+        || path.contains("knowledge")
+    {
+        return 0.80;
+    }
+
+    1.0
 }
 
 /// Helper function to check whether a MemoryRecord is pinned or critical.
@@ -159,7 +210,8 @@ impl TgdUtilityPruner {
             let utility = get_utility_score(record);
             let age_days = get_record_age_days(record, now);
 
-            if utility < self.config.utility_threshold && age_days > self.config.min_age_days {
+            // Respect min_age_days: records younger than min_age_days are strictly preserved
+            if utility < self.config.utility_threshold && age_days >= self.config.min_age_days {
                 candidate_indices.push((idx, utility, age_days));
             }
         }
@@ -180,16 +232,19 @@ impl TgdUtilityPruner {
             ..Default::default()
         };
 
+        let mut category_counts = std::collections::HashMap::new();
+
         for (idx, utility, age_days) in candidate_indices.into_iter().take(prunes_to_execute) {
             let record = &records[idx];
+            let category = categorize_path(&record.path);
             let rec_bytes = record.content.len() as u64
                 + serde_json::to_string(&record.metadata)
                     .map(|s| s.len() as u64)
                     .unwrap_or(0);
 
             info!(
-                "TGD Pruning low-utility memory: ID={}, Path={}, Utility={:.4}, AgeDays={:.1}, SizeBytes={}",
-                record.id, record.path, utility, age_days, rec_bytes
+                "TGD Pruning low-utility memory: ID={}, Path={}, Category={}, Utility={:.4}, AgeDays={:.1}, SizeBytes={}",
+                record.id, record.path, category, utility, age_days, rec_bytes
             );
 
             if let Err(e) = store.delete(workspace_id, &record.id).await {
@@ -198,7 +253,12 @@ impl TgdUtilityPruner {
                 summary.pruned_count += 1;
                 summary.reclaimed_bytes += rec_bytes;
                 summary.pruned_ids.push(record.id.clone());
+                *category_counts.entry(category).or_insert(0usize) += 1;
             }
+        }
+
+        if !category_counts.is_empty() {
+            info!("TGD Pruning summary by category: {:?}", category_counts);
         }
 
         summary.retained_count = total_processed.saturating_sub(summary.pruned_count);
@@ -331,5 +391,67 @@ mod tests {
         // Verify r8_fresh was NOT pruned
         let r8 = store.get(workspace_id, "r8_fresh").await.unwrap();
         assert!(r8.is_some(), "Fresh record must be preserved");
+    }
+
+    #[test]
+    fn test_tgd_path_heuristics_gestalt_bus() {
+        let bus_record = MemoryRecord {
+            id: "bus_1".to_string(),
+            path: "gestalt/bus/executions/task_123.json".to_string(),
+            ..Default::default()
+        };
+        let bus_score = get_utility_score(&bus_record);
+        assert!(
+            (bus_score - 0.10).abs() < 1e-4,
+            "gestalt/bus/executions should receive utility 0.10, got {}",
+            bus_score
+        );
+        assert!(
+            bus_score < 0.30,
+            "gestalt/bus/executions utility {:.2} must be strictly below 0.30 threshold",
+            bus_score
+        );
+
+        let cron_record = MemoryRecord {
+            id: "cron_1".to_string(),
+            path: "session/cron_daily_backup".to_string(),
+            ..Default::default()
+        };
+        assert!((get_utility_score(&cron_record) - 0.15).abs() < 1e-4);
+
+        let test_record = MemoryRecord {
+            id: "test_1".to_string(),
+            path: "test/temp_run.json".to_string(),
+            ..Default::default()
+        };
+        assert!((get_utility_score(&test_record) - 0.05).abs() < 1e-4);
+
+        let xtsp_record = MemoryRecord {
+            id: "xtsp_1".to_string(),
+            path: "xtsp/benchmark_fixture.json".to_string(),
+            ..Default::default()
+        };
+        assert!((get_utility_score(&xtsp_record) - 0.05).abs() < 1e-4);
+
+        let json_agent_record = MemoryRecord {
+            id: "agent_1".to_string(),
+            path: "agent_memory://JSON_Agent/memory.json".to_string(),
+            ..Default::default()
+        };
+        assert!((get_utility_score(&json_agent_record) - 0.20).abs() < 1e-4);
+
+        let docs_record = MemoryRecord {
+            id: "docs_1".to_string(),
+            path: "docs/manual.md".to_string(),
+            ..Default::default()
+        };
+        assert!((get_utility_score(&docs_record) - 0.80).abs() < 1e-4);
+
+        let general_record = MemoryRecord {
+            id: "gen_1".to_string(),
+            path: "general/user_notes.md".to_string(),
+            ..Default::default()
+        };
+        assert!((get_utility_score(&general_record) - 1.0).abs() < 1e-4);
     }
 }

@@ -24,6 +24,12 @@ pub struct GCStats {
     pub duration_ms: u64,
     /// Number of orphaned vectors cleaned from the backend
     pub orphaned_vectors_cleaned: usize,
+    /// Number of low-utility records pruned by TgdUtilityPruner
+    #[serde(default)]
+    pub low_utility_pruned: usize,
+    /// Status of SQLite incremental vacuum / store compaction
+    #[serde(default)]
+    pub vacuum_ok: bool,
 }
 
 impl MemoryManager {
@@ -32,6 +38,7 @@ impl MemoryManager {
     /// 1. Remove documents with empty content
     /// 2. Remove documents with no ID
     /// 3. Clean stale tracking entries (access times, relevance scores)
+    /// 4. Clean orphaned vectors, prune low-utility records with TgdUtilityPruner, and vacuum/compact
     pub async fn garbage_collect(&self) -> Result<GCStats> {
         let start = std::time::Instant::now();
         let mut stats = GCStats::default();
@@ -95,11 +102,31 @@ impl MemoryManager {
             stats.stale_metadata_cleaned += before - created.len();
         }
 
-        // Pass 3: Backend specific cleanup (orphaned vectors)
+        // Pass 3: Backend specific cleanup (orphaned vectors, low-utility pruning via TGD, compaction)
         if let Some(store) = self.memory.store().await {
             if let Ok(orphans) = store.cleanup_orphans().await {
                 stats.orphaned_vectors_cleaned = orphans;
             }
+
+            // TGD Utility Pruner for stale/low-utility records
+            let pruner = crate::memory::tgd::TgdUtilityPruner::with_defaults();
+            let workspaces = store.list_workspaces().await.unwrap_or_else(|_| {
+                vec![std::env::var("XAVIER_DEFAULT_WORKSPACE_ID")
+                    .unwrap_or_else(|_| "default".to_string())]
+            });
+            let mut total_pruned = 0;
+            let mut total_reclaimed = 0;
+            for ws in &workspaces {
+                if let Ok(summary) = pruner.prune_memories(&*store, ws).await {
+                    total_pruned += summary.pruned_count;
+                    total_reclaimed += summary.reclaimed_bytes;
+                }
+            }
+            stats.low_utility_pruned = total_pruned;
+            stats.bytes_freed += total_reclaimed;
+
+            // Perform SQLite incremental vacuum / store compaction
+            stats.vacuum_ok = store.compact().await.is_ok();
         }
 
         stats.duration_ms = start.elapsed().as_millis() as u64;
@@ -109,6 +136,8 @@ impl MemoryManager {
             zero_removed = stats.zero_content_removed,
             stale_cleaned = stats.stale_metadata_cleaned,
             orphans_cleaned = stats.orphaned_vectors_cleaned,
+            low_utility_pruned = stats.low_utility_pruned,
+            vacuum_ok = stats.vacuum_ok,
             bytes_freed = stats.bytes_freed,
             duration_ms = stats.duration_ms,
             "Garbage collection complete"
