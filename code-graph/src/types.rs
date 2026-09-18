@@ -157,6 +157,13 @@ pub enum SymbolKind {
     Symbol, // Fallback
 }
 
+impl SymbolKind {
+    /// Returns `true` if this symbol kind represents a function or method.
+    pub fn is_function_like(&self) -> bool {
+        matches!(self, SymbolKind::Function | SymbolKind::Method)
+    }
+}
+
 /// Relationship type between indexed code entities.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum EdgeType {
@@ -314,6 +321,15 @@ fn normalize_signature(sig: &str) -> String {
 #[cfg(test)]
 mod stable_id_tests {
     use super::*;
+
+    #[test]
+    fn test_is_function_like() {
+        assert!(SymbolKind::Function.is_function_like());
+        assert!(SymbolKind::Method.is_function_like());
+        assert!(!SymbolKind::Struct.is_function_like());
+        assert!(!SymbolKind::Class.is_function_like());
+        assert!(!SymbolKind::Variable.is_function_like());
+    }
 
     #[test]
     fn structural_id_stable_across_line_moves() {

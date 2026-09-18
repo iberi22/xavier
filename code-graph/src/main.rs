@@ -461,7 +461,7 @@ async fn main() -> anyhow::Result<()> {
             .token
             .clone()
             .or_else(|| std::env::var("CODE_GRAPH_TOKEN").ok())
-            .unwrap_or(default_token.clone());
+            .unwrap_or_else(|| default_token.clone());
 
         if token == default_token {
             if is_loopback {

@@ -260,7 +260,9 @@ impl GoParser {
     fn push_symbol(&self, symbols: &mut Vec<Symbol>, args: PushSymbolArgs<'_>) {
         let start = args.node.start_position();
         let end = args.node.end_position();
-        let complexity = matches!(args.kind, SymbolKind::Function | SymbolKind::Method)
+        let complexity = args
+            .kind
+            .is_function_like()
             .then(|| cyclomatic_complexity(args.node, args.source));
         symbols.push(Symbol {
             id: None,

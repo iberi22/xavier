@@ -240,8 +240,8 @@ impl WorkingMemory {
     /// Returns the evicted item if any.
     pub fn push(&mut self, item: MemoryItem) -> Option<MemoryItem> {
         // If item with same ID exists, update it instead
-        if self.items.contains_key(&item.id) {
-            let existing = self.items.get_mut(&item.id).expect("test assertion");
+        if let std::collections::hash_map::Entry::Occupied(mut entry) = self.items.entry(item.id.clone()) {
+            let existing = entry.get_mut();
             *existing = item;
             existing.record_access();
             return None;
