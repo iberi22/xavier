@@ -21,6 +21,7 @@ pub fn validate_token(provided_token: &str) -> bool {
     let expected_bytes = expected_token.as_bytes();
 
     if provided_bytes.len() != expected_bytes.len() {
+        let _ = expected_bytes.ct_eq(expected_bytes);
         return false;
     }
 
