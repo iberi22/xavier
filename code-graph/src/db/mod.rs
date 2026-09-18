@@ -358,6 +358,13 @@ impl CodeGraphDB {
                 hash TEXT NOT NULL
             );
 
+            -- O4: legacy default-project stable_id -> current project-scoped id.
+            CREATE TABLE IF NOT EXISTS stable_id_rewrites (
+                legacy_id TEXT PRIMARY KEY,
+                current_id TEXT NOT NULL,
+                project_id TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS symbol_embeddings (
                 stable_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL,
@@ -1579,6 +1586,106 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// O4: delete only `file_hashes` rows (symbols/edges untouched).
+    ///
+    /// Used by hash-parity repair for files missing on disk: the index rows
+    /// were already pruned by [`Self::batch_delete_file_data`], only the
+    /// stale hash row remains.
+    pub fn delete_file_hash_rows(&self, paths: &[String]) -> Result<()> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        {
+            let mut stmt = tx
+                .prepare("DELETE FROM file_hashes WHERE path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            for path in paths {
+                stmt.execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// O4: record legacy (`default` project) stable_id -> current id rewrites.
+    ///
+    /// Written on every persist for non-default projects so old references
+    /// (edges, memory links, external callers) keep resolving after a
+    /// project rename or multi-project split.
+    pub fn record_stable_id_rewrites(&self, rows: &[(String, String, String)]) -> Result<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO stable_id_rewrites (legacy_id, current_id, project_id)
+                     VALUES (?1, ?2, ?3)
+                     ON CONFLICT(legacy_id) DO UPDATE SET
+                       current_id = excluded.current_id,
+                       project_id = excluded.project_id",
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            for (legacy_id, current_id, project_id) in rows {
+                stmt.execute(params![legacy_id, current_id, project_id])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// O4: resolve a legacy stable_id to `(current_id, project_id), if known.
+    pub fn resolve_stable_id_rewrite(&self, legacy_id: &str) -> Result<Option<(String, String)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare("SELECT current_id, project_id FROM stable_id_rewrites WHERE legacy_id = ?1")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let mut rows = stmt
+            .query_map(params![legacy_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        match rows.next() {
+            Some(Ok(pair)) => Ok(Some(pair)),
+            Some(Err(error)) => Err(GraphError::Database(error.to_string())),
+            None => Ok(None),
+        }
     }
 
     /// Delete edges whose `to_symbol` matches any of the given stable_ids.
