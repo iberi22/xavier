@@ -88,10 +88,15 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
         .unwrap_or("")
         .to_string();
 
-    let is_match: bool = provided_token_str
-        .as_bytes()
-        .ct_eq(expected_token.as_bytes())
-        .into();
+    let provided_bytes = provided_token_str.as_bytes();
+    let expected_bytes = expected_token.as_bytes();
+
+    let is_match: bool = if provided_bytes.len() != expected_bytes.len() {
+        let _ = expected_bytes.ct_eq(expected_bytes);
+        false
+    } else {
+        provided_bytes.ct_eq(expected_bytes).into()
+    };
 
     let mut req = req;
     if is_match {
