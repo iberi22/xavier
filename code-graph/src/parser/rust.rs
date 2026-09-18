@@ -189,6 +189,32 @@ impl RustParser {
                     );
                 }
             }
+            "use_declaration" => {
+                // Dogfood fix (review 2026-09-18): `use` names feed the
+                // import map, which powers the top two resolution
+                // strategies (ImportMap 0.95, ImportMapSuffix 0.85).
+                if let Some(argument) = node.child_by_field_name("argument") {
+                    for (name, name_node) in self.extract_use_names(argument, source) {
+                        let start = name_node.start_position();
+                        let end = name_node.end_position();
+                        symbols.push(Symbol {
+                            id: None,
+                            stable_id: None,
+                            name,
+                            kind: SymbolKind::Import,
+                            lang: Language::Rust,
+                            file_path: file_path.to_string(),
+                            start_line: (start.row + 1) as u32,
+                            end_line: (end.row + 1) as u32,
+                            start_col: start.column as u32,
+                            end_col: end.column as u32,
+                            signature: None,
+                            parent: parent.clone(),
+                            complexity: None,
+                        });
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -196,6 +222,52 @@ impl RustParser {
         for child in node.children(&mut cursor) {
             self.extract_symbols_from_node(child, source, file_path, symbols, parent.clone());
         }
+    }
+
+    /// Names a `use` tree actually binds: last segment of each path,
+    /// alias of each `as` clause. Wildcards bind nothing. Returns
+    /// `(name, identifier_node)` for span attribution.
+    fn extract_use_names<'a>(&self, node: Node<'a>, source: &str) -> Vec<(String, Node<'a>)> {
+        let mut out = Vec::new();
+        match node.kind() {
+            "identifier" => {
+                if let Ok(text) = node.utf8_text(source.as_bytes()) {
+                    out.push((text.to_string(), node));
+                }
+            }
+            "use_as_clause" => {
+                // `path as Alias` binds the alias.
+                if let Some(alias) = node.child_by_field_name("alias") {
+                    out.extend(self.extract_use_names(alias, source));
+                }
+            }
+            "scoped_identifier" => {
+                // Only the last segment is bound (`a::b::C` binds `C`).
+                if let Some(name) = node.child_by_field_name("name") {
+                    out.extend(self.extract_use_names(name, source));
+                }
+            }
+            "scoped_use_list" => {
+                // `a::b::{C, D}` binds the list; path segments are modules.
+                if let Some(list) = node.child_by_field_name("list") {
+                    out.extend(self.extract_use_names(list, source));
+                }
+            }
+            "use_list" => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    out.extend(self.extract_use_names(child, source));
+                }
+            }
+            "use_declaration" => {
+                if let Some(argument) = node.child_by_field_name("argument") {
+                    out.extend(self.extract_use_names(argument, source));
+                }
+            }
+            // `use_wildcard` (`*`), `self`, delimiters: bind nothing usable.
+            _ => {}
+        }
+        out
     }
 
     fn extract_call_route(
@@ -485,6 +557,33 @@ impl Default for RustParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extracts_use_declarations_as_imports() {
+        // Dogfood fix (review 2026-09-18): without `use` extraction the
+        // ImportMap strategies (0.95/0.85) can never fire on Rust code.
+        let mut parser = RustParser::new().unwrap();
+        let symbols = parser
+            .parse(
+                "use std::collections::HashMap;\nuse crate::query::{QueryEngine, BlastHit};\nuse foo::Bar as Baz;\nuse wild::*;\nfn main() {}\n",
+                "main.rs",
+            )
+            .expect("test assertion");
+        let imports: Vec<&str> = symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Import)
+            .map(|s| s.name.as_str())
+            .collect();
+        for want in ["HashMap", "QueryEngine", "BlastHit", "Baz"] {
+            assert!(imports.contains(&want), "missing {want}: {imports:?}");
+        }
+        assert!(
+            !imports
+                .iter()
+                .any(|n| n.contains('*') || *n == "std" || *n == "crate"),
+            "path segments and wildcards are not imports: {imports:?}"
+        );
+    }
 
     #[test]
     fn extracts_compact_function_signature_without_body() {

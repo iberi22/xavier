@@ -15,7 +15,8 @@ use crate::plugin_host::PluginHost;
 use crate::types::{CodeEdge, EdgeType, IndexStats, Language, Symbol, SymbolEmbedder, SymbolKind};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
-use std::collections::HashMap;
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -144,6 +145,9 @@ pub struct Indexer {
     max_concurrent: usize,
     plugin_host: Arc<PluginHost>,
     embedder: Option<Arc<dyn SymbolEmbedder>>,
+    /// O4 (ADR-033): project namespace segment of stable IDs.
+    /// `"default"` preserves legacy byte-identical IDs.
+    project_id: String,
 }
 
 impl Indexer {
@@ -153,7 +157,22 @@ impl Indexer {
             max_concurrent: 8,
             plugin_host: Arc::new(PluginHost::new()),
             embedder: None,
+            project_id: "default".to_string(),
         }
+    }
+
+    /// O4 (US-107): namespace this indexer under a real project id
+    /// (`swal/{app_id}/{instance_id}` upstream) so identical paths in
+    /// different projects never collide.
+    pub fn with_project_id(db: Arc<CodeGraphDB>, project_id: &str) -> Self {
+        let mut this = Self::new(db);
+        this.project_id = project_id.to_string();
+        this
+    }
+
+    /// O4: retarget the project namespace (affects subsequently indexed symbols only).
+    pub fn set_project_id(&mut self, project_id: &str) {
+        self.project_id = project_id.to_string();
     }
 
     pub fn with_embedder(db: Arc<CodeGraphDB>, embedder: Arc<dyn SymbolEmbedder>) -> Self {
@@ -162,6 +181,7 @@ impl Indexer {
             max_concurrent: 8,
             plugin_host: Arc::new(PluginHost::new()),
             embedder: Some(embedder),
+            project_id: "default".to_string(),
         }
     }
 
@@ -202,7 +222,9 @@ impl Indexer {
             }
         } else {
             let existing_metadata = self.db.get_all_file_metadata()?;
+            let existing_hashes = self.db.get_all_file_hashes().unwrap_or_default();
             let mut current_files = std::collections::HashSet::new();
+            let mut hash_upserts: HashMap<String, String> = HashMap::new();
 
             for file_path in all_files {
                 let (relative_path, mtime) = get_file_info(root, &file_path);
@@ -210,6 +232,18 @@ impl Indexer {
 
                 if let Some(&old_mtime) = existing_metadata.get(&relative_path) {
                     if old_mtime != mtime {
+                        // O4 (G3): mtime is a hint; content hash decides.
+                        let content = std::fs::read(&file_path).unwrap_or_default();
+                        let hash = content_hash(&content);
+                        hash_upserts.insert(relative_path.clone(), hash);
+                        if hash_unchanged(existing_hashes.get(&relative_path), &content) {
+                            debug!(
+                                "File mtime touched, content identical (hash-skip): {}",
+                                relative_path
+                            );
+                            files_to_mtime.insert(relative_path, mtime);
+                            continue;
+                        }
                         debug!("File changed: {}", relative_path);
                         files_to_delete.push(relative_path.clone());
                         files_to_index.push(file_path);
@@ -228,6 +262,10 @@ impl Indexer {
                     files_to_delete.push(path.clone());
                 }
             }
+
+            // O4: persist content hashes decided above (changed files) so the
+            // next walk can hash-skip mtime-only touches.
+            self.db.batch_upsert_file_hashes(&hash_upserts)?;
 
             if files_to_index.is_empty() && files_to_delete.is_empty() {
                 info!("No changes detected, skipping index update.");
@@ -416,7 +454,7 @@ impl Indexer {
             }
         }
 
-        assign_stable_ids(&mut new_symbols);
+        assign_stable_ids(&mut new_symbols, &self.project_id);
 
         let all_symbols = if incremental && !new_symbols.is_empty() {
             let mut all = self.db.get_all_symbols()?;
@@ -426,7 +464,7 @@ impl Indexer {
             new_symbols.clone()
         };
 
-        let edges = build_edges(&new_symbols, &all_symbols, &sources);
+        let edges = build_edges(&new_symbols, &all_symbols, &sources, &self.project_id);
         let edges_len = edges.len();
         let new_symbols_len = new_symbols.len();
 
@@ -451,6 +489,11 @@ impl Indexer {
         }
 
         let db = Arc::clone(&self.db);
+        // O4: hash every freshly parsed file so later walks hash-skip.
+        let parsed_hashes: HashMap<String, String> = sources
+            .iter()
+            .map(|(path, source)| (path.clone(), content_hash(source.as_bytes())))
+            .collect();
         let stats = tokio::task::spawn_blocking(move || {
             db.insert_symbols(&new_symbols)?;
             db.insert_edges(&edges)?;
@@ -462,6 +505,7 @@ impl Indexer {
                 let _ = db.insert_symbol_embeddings_batch(&batch_refs);
             }
             db.batch_upsert_file_metadata(files_to_mtime)?;
+            db.batch_upsert_file_hashes(&parsed_hashes)?;
             db.checkpoint_wal()?;
             db.stats()
         })
@@ -634,18 +678,33 @@ async fn parse_file(
     })
 }
 
-fn assign_stable_ids(symbols: &mut [Symbol]) {
+fn assign_stable_ids(symbols: &mut [Symbol], project_id: &str) {
     for symbol in symbols {
         if symbol.stable_id.is_none() {
-            symbol.stable_id = Some(symbol.deterministic_id("default"));
+            symbol.stable_id = Some(symbol.deterministic_id(project_id));
         }
     }
+}
+
+/// O4 god-guard (G4): low-confidence guesses scattered across more files
+/// than this are dropped instead of emitted as edges. A guess split over
+/// many files is noise, not signal.
+const GOD_GUARD_MAX_FILES: usize = 3;
+
+/// Strategies strong enough to survive the god-guard: exact or narrowly
+/// scoped evidence (graphify G4 phase-2 conservatism).
+fn is_strong_strategy(strategy: &str) -> bool {
+    matches!(
+        strategy,
+        "ImportMap" | "ImportMapSuffix" | "SameModule" | "UniqueName"
+    )
 }
 
 fn build_edges(
     new_symbols: &[Symbol],
     all_symbols: &[Symbol],
     sources: &HashMap<String, String>,
+    project_id: &str,
 ) -> Vec<CodeEdge> {
     let mut edges = Vec::new();
 
@@ -653,7 +712,7 @@ fn build_edges(
         let symbol_id = symbol
             .stable_id
             .clone()
-            .unwrap_or_else(|| symbol.deterministic_id("default"));
+            .unwrap_or_else(|| symbol.deterministic_id(project_id));
         let file_node = format!("file:{}", symbol.file_path);
 
         edges.push(CodeEdge {
@@ -703,7 +762,7 @@ fn build_edges(
         .map(|(k, v)| (k.as_str(), v.lines().collect()))
         .collect();
 
-    let resolver = CallResolver::new(all_symbols, sources);
+    let resolver = CallResolver::new(all_symbols, sources, project_id);
 
     for caller in &new_callable_symbols {
         let Some(lines) = source_lines.get(caller.file_path.as_str()) else {
@@ -712,7 +771,7 @@ fn build_edges(
         let caller_id = caller
             .stable_id
             .clone()
-            .unwrap_or_else(|| caller.deterministic_id("default"));
+            .unwrap_or_else(|| caller.deterministic_id(project_id));
 
         let start = caller.start_line.saturating_sub(1) as usize;
         let end = caller.end_line as usize;
@@ -728,8 +787,19 @@ fn build_edges(
 
         for name in callee_names {
             let resolved = resolver.resolve(&caller.file_path, &name);
+            // O4 god-guard: drop low-confidence guesses scattered over many
+            // files; strong strategies always survive.
+            let low_files: HashSet<&str> = resolved
+                .iter()
+                .filter(|r| !is_strong_strategy(r.strategy))
+                .map(|r| r.file_path.as_str())
+                .collect();
+            let drop_low = low_files.len() > GOD_GUARD_MAX_FILES;
             for res in resolved {
                 if res.stable_id == caller_id {
+                    continue;
+                }
+                if drop_low && !is_strong_strategy(res.strategy) {
                     continue;
                 }
                 edges.push(CodeEdge {
@@ -833,6 +903,20 @@ fn contains_call(source: &str, name: &str) -> bool {
         from = abs + needle_bytes.len();
     }
     false
+}
+
+/// O4 (G3): content hash of file bytes (sha256 hex). mtime is a hint;
+/// this decides whether a reindex is needed.
+pub fn content_hash(content: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(content);
+    hex::encode(hasher.finalize())
+}
+
+/// O4: pure skip decision — reindex unless a known hash matches current content.
+/// `None` (never hashed) always reindexes: conservative on first sight.
+pub fn hash_unchanged(known: Option<&String>, content: &[u8]) -> bool {
+    known.map(|h| h == &content_hash(content)).unwrap_or(false)
 }
 
 fn get_file_info(root: &Path, file_path: &Path) -> (String, i64) {
@@ -1314,7 +1398,7 @@ mod tests {
         }
 
         let start = std::time::Instant::now();
-        let edges = build_edges(&symbols, &symbols, &sources);
+        let edges = build_edges(&symbols, &symbols, &sources, "default");
         let duration = start.elapsed();
 
         println!(
@@ -1326,6 +1410,191 @@ mod tests {
             duration.as_secs_f64() < 5.0,
             "build_edges took {:.2}s, expected < 5s (O(n) hash-map; original double-loop ~40s+)",
             duration.as_secs_f64()
+        );
+    }
+
+    // ---- O4 (feat-cg-incremental-ids) ----
+
+    #[test]
+    fn test_default_project_keeps_legacy_ids() {
+        // O4: default project must stay byte-identical to legacy IDs (ADR-033).
+        let mut sym = Symbol {
+            name: "main".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "main.rs".to_string(),
+            start_line: 1,
+            end_line: 3,
+            ..Default::default()
+        };
+        let mut v = vec![sym.clone()];
+        assign_stable_ids(&mut v, "default");
+        sym.stable_id = None;
+        assert_eq!(
+            v[0].stable_id.clone().unwrap(),
+            sym.deterministic_id("default")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_custom_project_namespaces_ids() {
+        // O4 (US-107): same path+symbol in another project never collides.
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").expect("write");
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        Indexer::with_project_id(db.clone(), "acme")
+            .index(dir.path(), false)
+            .await
+            .expect("index");
+        let syms = db.get_all_symbols().expect("symbols");
+        assert_eq!(syms.len(), 1);
+        assert_eq!(
+            syms[0].stable_id.clone().unwrap(),
+            syms[0].deterministic_id("acme")
+        );
+        assert_ne!(
+            syms[0].stable_id.clone().unwrap(),
+            syms[0].deterministic_id("default")
+        );
+    }
+
+    #[test]
+    fn test_content_hash_stable_and_sensitive() {
+        // O4: sha256 hex of file bytes; stable fixture for the skip path.
+        assert_eq!(
+            content_hash(b"fn main() {}\n"),
+            content_hash(b"fn main() {}\n")
+        );
+        assert_ne!(
+            content_hash(b"fn main() {}\n"),
+            content_hash(b"fn other() {}\n")
+        );
+        assert_eq!(content_hash(b"").len(), 64);
+    }
+
+    #[test]
+    fn test_known_hash_match_skips_reindex_decision() {
+        // O4: pure decision rule — equal hash skips, anything else reindexes.
+        let content = b"fn main() {}\n";
+        let hash = content_hash(content);
+        assert!(hash_unchanged(Some(&hash), content));
+        assert!(!hash_unchanged(Some(&hash), b"fn other() {}\n"));
+        assert!(!hash_unchanged(None, content));
+    }
+
+    #[tokio::test]
+    async fn test_mtime_touch_without_content_change_skips_reextract() {
+        // O4 (US-108): mtime is a hint, content hash decides. Rewrite with
+        // identical bytes after 1s (mtime granularity) and totals, IDs and
+        // the stored hash must prove the skip path ran without corruption.
+        let dir = TempDir::new().expect("temp dir");
+        let fp = dir.path().join("main.rs");
+        std::fs::write(&fp, "fn main() {}\n").expect("write");
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+        indexer.index(dir.path(), true).await.expect("first");
+        let ids1: Vec<String> = db
+            .get_all_symbols()
+            .expect("symbols")
+            .into_iter()
+            .map(|s| s.stable_id.unwrap())
+            .collect();
+        assert_eq!(ids1.len(), 1);
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::fs::write(&fp, "fn main() {}\n").expect("rewrite identical");
+        let stats2 = indexer.index(dir.path(), true).await.expect("second");
+        assert_eq!(stats2.total_files, 1);
+        let ids2: Vec<String> = db
+            .get_all_symbols()
+            .expect("symbols")
+            .into_iter()
+            .map(|s| s.stable_id.unwrap())
+            .collect();
+        assert_eq!(ids1, ids2);
+        let hashes = db.get_all_file_hashes().expect("hashes");
+        assert_eq!(
+            hashes.get("main.rs").map(String::as_str),
+            Some(content_hash(b"fn main() {}\n").as_str())
+        );
+    }
+
+    fn o4_scattered_fixture(n_decoys: usize) -> (Symbol, Vec<Symbol>, HashMap<String, String>) {
+        // One caller invoking `helper()`; the name is defined in N files.
+        let caller = Symbol {
+            name: "caller".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/caller.rs".to_string(),
+            start_line: 1,
+            end_line: 3,
+            stable_id: Some("caller-id".to_string()),
+            ..Default::default()
+        };
+        let mut all = vec![caller.clone()];
+        let mut sources = HashMap::new();
+        sources.insert(
+            "src/caller.rs".to_string(),
+            "fn caller() {\n    helper();\n}\n".to_string(),
+        );
+        for i in 0..n_decoys {
+            let file = format!("src/mod{}/helper.rs", i);
+            all.push(Symbol {
+                name: "helper".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: file.clone(),
+                start_line: 1,
+                end_line: 3,
+                stable_id: Some(format!("helper-id-{}", i)),
+                ..Default::default()
+            });
+            sources.insert(file, "fn helper() {}\n".to_string());
+        }
+        (caller, all, sources)
+    }
+
+    #[test]
+    fn test_god_guard_drops_scattered_low_confidence() {
+        // O4 (G4 god-guard): `helper` in 5 files, no imports — emitting 5
+        // guessed Calls edges is noise, not signal. Drop them all.
+        let (caller, all, sources) = o4_scattered_fixture(5);
+        let edges = build_edges(&[caller], &all, &sources, "default");
+        let guessed: Vec<_> = edges
+            .iter()
+            .filter(|e| e.edge_type == EdgeType::Calls || e.edge_type == EdgeType::References)
+            .collect();
+        assert!(
+            guessed.is_empty(),
+            "scattered low-confidence guesses must be dropped, got {guessed:?}"
+        );
+    }
+
+    #[test]
+    fn test_strong_strategies_survive_god_guard() {
+        // O4: a same-directory definition (SameModule 0.90) is strong
+        // evidence and survives even with scattered same-name decoys.
+        let (caller, mut all, mut sources) = o4_scattered_fixture(3);
+        all.push(Symbol {
+            name: "helper".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/nearby.rs".to_string(),
+            start_line: 1,
+            end_line: 3,
+            stable_id: Some("helper-nearby".to_string()),
+            ..Default::default()
+        });
+        // caller lives in src/ — nearby.rs shares the directory.
+        let _ = &mut sources;
+        let edges = build_edges(&[caller], &all, &sources, "default");
+        let calls: Vec<_> = edges
+            .iter()
+            .filter(|e| e.edge_type == EdgeType::Calls)
+            .collect();
+        assert!(
+            calls.iter().any(|e| e.to_symbol == "helper-nearby"),
+            "SameModule hit must survive the god-guard, got {calls:?}"
         );
     }
 }

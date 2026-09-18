@@ -22,6 +22,15 @@ pub enum GraphError {
     #[error("Symbol not found: {0}")]
     SymbolNotFound(String),
 
+    /// O1 honesty (US-101, ripwire R1 refuse-vs-empty): the selector matched
+    /// nothing. Callers must surface `suggestions` instead of treating this
+    /// as an empty result — zero means "none found", never "none exists".
+    #[error("Unknown symbol: {name}")]
+    UnknownSymbol {
+        name: String,
+        suggestions: Vec<String>,
+    },
+
     #[error("Query error: {0}")]
     Query(String),
 

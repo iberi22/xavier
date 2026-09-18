@@ -6,15 +6,19 @@
 //! Note: Storage - use SQLite for standalone CLI, or SurrealDB via Xavier integration
 
 pub mod api;
+pub mod budget;
+pub mod confidence;
 pub mod db;
 pub mod debug;
 // pub mod impact;
 pub mod indexer;
+pub mod language;
 pub mod mcp;
 pub mod parser;
 pub mod plugin;
 pub mod plugin_host;
 pub mod query;
+pub mod rank;
 
 pub use error::GraphError;
 pub use types::*;
