@@ -1,11 +1,4 @@
-//! SQLite Write-Ahead Logging (WAL) continuous replication and recovery module.
+//! SQLite Write-Ahead Logging (WAL) backup module.
 //!
-//! Provides continuous database replication, periodic full snapshotting,
-//! incremental WAL segment streaming, and point-in-time recovery for Issue #1445.
-
-pub mod wal_streamer;
-
-pub use wal_streamer::{
-    wal_path_for_db, BackupManifest, RecoveryReport, SnapshotMetadata, WalSegmentMetadata,
-    WalStreamer, WalStreamerConfig,
-};
+//! Note: Unreferenced custom WAL streamer was removed in WAVE-25.01.
+//! For WAL handling, use canonical `checkpoint_wal` / `maybe_wal_checkpoint` in storage/code-graph stores.
