@@ -18,6 +18,8 @@ pub struct ResolvedCall {
     pub stable_id: String,
     pub confidence: f32,
     pub strategy: &'static str,
+    /// O4: file owning the candidate — feeds the god-guard's file spread.
+    pub file_path: String,
 }
 
 pub struct CallResolver {
@@ -48,7 +50,7 @@ struct SymbolRef {
 }
 
 impl CallResolver {
-    pub fn new(symbols: &[Symbol], _sources: &HashMap<String, String>) -> Self {
+    pub fn new(symbols: &[Symbol], _sources: &HashMap<String, String>, project_id: &str) -> Self {
         let mut symbol_index: HashMap<String, Vec<SymbolRef>> = HashMap::new();
 
         // Build symbol index
@@ -60,7 +62,7 @@ impl CallResolver {
                 stable_id: s
                     .stable_id
                     .clone()
-                    .unwrap_or_else(|| s.deterministic_id("default")),
+                    .unwrap_or_else(|| s.deterministic_id(project_id)),
                 name: s.name.clone(),
                 file_path: s.file_path.clone(),
                 module_path: s.parent.clone(),
@@ -116,6 +118,7 @@ impl CallResolver {
                         stable_id: import.stable_id.clone(),
                         confidence: 0.95,
                         strategy: "ImportMap",
+                        file_path: import.source_path.clone(),
                     });
                 }
             }
@@ -135,6 +138,7 @@ impl CallResolver {
                         stable_id: import.stable_id.clone(),
                         confidence: 0.85,
                         strategy: "ImportMapSuffix",
+                        file_path: import.source_path.clone(),
                     });
                 }
             }
@@ -154,6 +158,7 @@ impl CallResolver {
                         stable_id: cand.stable_id.clone(),
                         confidence: 0.90,
                         strategy: "SameModule",
+                        file_path: cand.file_path.clone(),
                     });
                 }
             }
@@ -169,6 +174,7 @@ impl CallResolver {
                     stable_id: candidates[0].stable_id.clone(),
                     confidence: 0.75,
                     strategy: "UniqueName",
+                    file_path: candidates[0].file_path.clone(),
                 });
                 return results;
             }
@@ -183,6 +189,7 @@ impl CallResolver {
                     stable_id: cand.stable_id.clone(),
                     confidence: 0.55,
                     strategy: "SuffixMatch",
+                    file_path: cand.file_path.clone(),
                 });
             }
         }
@@ -214,6 +221,7 @@ impl CallResolver {
                                     stable_id: cand.stable_id.clone(),
                                     confidence: 0.30 + (similarity * 0.1),
                                     strategy: "Fuzzy",
+                                    file_path: cand.file_path.clone(),
                                 });
                             }
                         }
@@ -304,7 +312,7 @@ mod tests {
         ];
         let sources = HashMap::new();
 
-        let resolver = CallResolver::new(&symbols, &sources);
+        let resolver = CallResolver::new(&symbols, &sources, "default");
         let results = resolver.resolve("/src/main.rs", "process_data");
 
         assert_eq!(results.len(), 1);
@@ -319,7 +327,7 @@ mod tests {
             symbol("models::User", "/src/main.rs", SymbolKind::Import),
         ];
         let sources = HashMap::new();
-        let resolver = CallResolver::new(&symbols, &sources);
+        let resolver = CallResolver::new(&symbols, &sources, "default");
         let results = resolver.resolve("/src/main.rs", "User");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].strategy, "ImportMapSuffix");
@@ -333,7 +341,7 @@ mod tests {
             symbol("caller", "/src/utils/caller.rs", SymbolKind::Function),
         ];
         let sources = HashMap::new();
-        let resolver = CallResolver::new(&symbols, &sources);
+        let resolver = CallResolver::new(&symbols, &sources, "default");
         let results = resolver.resolve("/src/utils/caller.rs", "helper");
         assert!(results.iter().any(|r| r.strategy == "SameModule"));
     }
@@ -346,7 +354,7 @@ mod tests {
         ];
         let sources = HashMap::new();
 
-        let resolver = CallResolver::new(&symbols, &sources);
+        let resolver = CallResolver::new(&symbols, &sources, "default");
         let results = resolver.resolve("/src/main.rs", "helper");
 
         assert_eq!(results.len(), 1);
@@ -358,7 +366,7 @@ mod tests {
     fn call_resolution_fuzzy_match() {
         let symbols = vec![symbol("initialize", "/src/lib.rs", SymbolKind::Function)];
         let sources = HashMap::new();
-        let resolver = CallResolver::new(&symbols, &sources);
+        let resolver = CallResolver::new(&symbols, &sources, "default");
         let results = resolver.resolve("/src/main.rs", "initializ");
         assert!(results.iter().any(|r| r.strategy == "Fuzzy"));
     }
@@ -368,7 +376,7 @@ mod tests {
         let symbols = vec![symbol("main", "/src/main.rs", SymbolKind::Function)];
         let sources = HashMap::new();
 
-        let resolver = CallResolver::new(&symbols, &sources);
+        let resolver = CallResolver::new(&symbols, &sources, "default");
         let results = resolver.resolve("/src/main.rs", "nonexistent_function");
 
         assert!(results.is_empty());

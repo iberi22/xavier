@@ -353,6 +353,11 @@ impl CodeGraphDB {
                 project_root TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS file_hashes (
+                path TEXT PRIMARY KEY,
+                hash TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS symbol_embeddings (
                 stable_id TEXT PRIMARY KEY,
                 embedding BLOB NOT NULL,
@@ -1126,6 +1131,40 @@ impl CodeGraphDB {
         Ok(rows.filter_map(|row| row.ok()).collect())
     }
 
+    /// O3 situ core: all symbols defined in one file (exact path match).
+    pub fn symbols_in_file(&self, file_path: &str) -> Result<Vec<Symbol>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                   FROM symbols WHERE file_path = ?1"#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![file_path], |row| {
+                Ok(Symbol {
+                    id: Some(row.get(0)?),
+                    stable_id: Some(row.get(1)?),
+                    name: row.get(2)?,
+                    kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                    lang: parse_language(&row.get::<_, String>(4)?),
+                    file_path: row.get(5)?,
+                    start_line: row.get(6)?,
+                    end_line: row.get(7)?,
+                    start_col: row.get(8)?,
+                    end_col: row.get(9)?,
+                    signature: row.get(10)?,
+                    parent: row.get(11)?,
+                    complexity: row.get(12)?,
+                })
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(rows.filter_map(|row| row.ok()).collect())
+    }
+
     pub fn symbol_by_stable_id(&self, stable_id: &str) -> Result<Option<Symbol>> {
         let conn = self
             .conn
@@ -1480,6 +1519,68 @@ impl CodeGraphDB {
         Ok(deleted)
     }
 
+    /// O4 (G3): all stored content hashes (sha256 hex) by relative path.
+    pub fn get_all_file_hashes(&self) -> Result<std::collections::HashMap<String, String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare("SELECT path, hash FROM file_hashes")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let mut hashes = std::collections::HashMap::new();
+        for (path, hash) in rows.flatten() {
+            hashes.insert(path, hash);
+        }
+
+        Ok(hashes)
+    }
+
+    /// O4 (G3): upsert content hashes in batch.
+    pub fn batch_upsert_file_hashes(
+        &self,
+        hashes: &std::collections::HashMap<String, String>,
+    ) -> Result<()> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO file_hashes (path, hash) VALUES (?1, ?2)
+                     ON CONFLICT(path) DO UPDATE SET hash = excluded.hash",
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            for (path, hash) in hashes {
+                stmt.execute(params![path, hash])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Delete edges whose `to_symbol` matches any of the given stable_ids.
     ///
     /// Prefer [`Self::delete_edges_referencing_symbols`] for full incident cleanup.
@@ -1619,6 +1720,10 @@ impl CodeGraphDB {
             let mut stmt_meta = tx
                 .prepare("DELETE FROM file_metadata WHERE path = ?1")
                 .map_err(|e| GraphError::Database(e.to_string()))?;
+            // O4: hashes live beside metadata; stale rows must go with the file.
+            let mut stmt_hashes = tx
+                .prepare("DELETE FROM file_hashes WHERE path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
 
             for path in file_paths {
                 stmt_embeddings
@@ -1640,6 +1745,9 @@ impl CodeGraphDB {
                     .execute(params![path])
                     .map_err(|e| GraphError::Database(e.to_string()))?;
                 stmt_meta
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_hashes
                     .execute(params![path])
                     .map_err(|e| GraphError::Database(e.to_string()))?;
             }

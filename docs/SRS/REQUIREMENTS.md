@@ -972,5 +972,145 @@ a consent dialog explaining the privacy implications and requiring explicit user
 
 ---
 
-*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, enterprise ZDR, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui.*
+## REQ-053: Code-Graph Honest Confidence (O1)
+
+- **Category:** Non-functional (trust)
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Files:** `code-graph/src/query/mod.rs`, `code-graph/src/indexer/call_resolution.rs`, `src/retrieval/gating.rs`, `src/memory/belief_graph.rs`
+- **Features:** `feat-cg-honest-confidence`
+
+### Description
+
+All code-graph answers SHALL use one confidence rubric (`EXTRACTED=1.0`, `INFERRED ∈ {0.95,0.85,0.75,0.65,0.55}`, `AMBIGUOUS ∈ 0.1-0.3`) and label honesty (`floor/total`, `shown/total/capped`, `amb`). Zero means "none found", never "none exists". Sources: ripwire R1, graphify G1. See ADR-032.
+
+### Acceptance criteria
+
+- [ ] Every graph count declares floor vs total; truncations disclosed
+- [ ] Unknown selectors refuse with suggestion instead of silent empty
+- [ ] Belief/integer scores mapped to the rubric with documented backfill
+
+---
+
+## REQ-054: Code-Graph Language Registry (O2)
+
+- **Category:** Functional
+- **Priority:** Medium
+- **SRS Status:** `planned`
+- **Files:** `code-graph/src/parser/mod.rs`, `code-graph/src/types.rs`, `code-graph/parsers/`
+- **Features:** `feat-cg-language-registry`
+
+### Description
+
+Languages SHALL plug in via a unified `LanguageConfig` plus a suffix-ordered resolver registry without touching indexer core. Source: graphify G2.
+
+### Acceptance criteria
+
+- [ ] New language = 1 config + 1 fixture + tests (proven by re-registering one language)
+- [ ] Builtin globals excluded from hub rankings
+- [ ] Unsupported languages reported as `unindexed`, never as empty
+
+---
+
+## REQ-055: Code-Graph Blast Radius + Test Gate (O3)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Files:** `code-graph/src/query/mod.rs`, `src/cli/handlers/code.rs`, `src/server/mcp/tools_core.rs`
+- **Features:** `feat-cg-blast-testgate`
+
+### Description
+
+`blast_radius` SHALL return the transitive reach set with use roles and tested/untested split; a test gate SHALL fail when changed radius lacks coverage. Source: ripwire R2.
+
+### Acceptance criteria
+
+- [ ] Transitive `reaches` with per-site roles (call/read/write/import/extends/type)
+- [ ] Tests-to-run listed with derivable `run=` only (never invented)
+- [ ] Gate exits non-zero on untested radius; `situ` reads `git diff` plus co-change partners
+
+---
+
+## REQ-056: Code-Graph Incremental IDs (O4)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Files:** `code-graph/src/types.rs`, `code-graph/src/db/mod.rs`, `code-graph/src/indexer/`
+- **Features:** `feat-cg-incremental-ids`
+
+### Description
+
+Stable IDs SHALL carry the real project namespace; reindex SHALL key on content hash (manifest + cache); call resolution SHALL run in two phases with god-guard. Sources: graphify G3+G4. See ADR-033.
+
+### Acceptance criteria
+
+- [ ] Same path+symbol in different projects never collide; legacy `default` IDs rewired via versioned table
+- [ ] Content-unchanged files skip re-extraction; deleted files prune symbols+edges
+- [ ] Cross-file precision ≥ current baseline on fixture, ambiguous hubs skipped by god-guard
+
+---
+
+## REQ-057: Code-Graph Budget Query (O5)
+
+- **Category:** Non-functional (efficiency)
+- **Priority:** High
+- **SRS Status:** `planned`
+- **Files:** `src/memory/pack.rs`, `src/context/orchestrator.rs`, `code-graph/src/query/`
+- **Features:** `feat-cg-budget-query`
+
+### Description
+
+Orientation answers SHALL default to compact signature bundles with declared `est_tokens` under an enforced budget gate; natural-language queries SHALL expand against repo vocabulary before vector spend. Sources: ripwire R3, graphify G6.
+
+### Acceptance criteria
+
+- [ ] Compact bundles carry no bodies; every answer declares `est_tokens`
+- [ ] Over-budget answers gate explicitly, never truncate silently
+- [ ] Zero-vocab queries stop explicitly; BFS3/DFS6 semantics on fixture
+
+---
+
+## REQ-058: Code-Graph PageRank Router (O6)
+
+- **Category:** Functional
+- **Priority:** Medium
+- **SRS Status:** `planned`
+- **Files:** `code-graph/src/rank.rs`, `code-graph/src/db/mod.rs`, `src/retrieval/gating.rs`
+- **Features:** `feat-cg-pagerank-router`
+
+### Description
+
+Ranking SHALL combine edge weights with deterministic PageRank plus a lexical exact→BM25→subtoken router carrying confidence/margin. Source: ripwire R4. Requires O1.
+
+### Acceptance criteria
+
+- [ ] PageRank byte-deterministic across runs; edge-weight formula as specified with cap
+- [ ] Router reports `confidence/margin_pct`; flat rankings read as starting points
+- [ ] Change-teleport re-ranks without reindexing
+
+---
+
+## REQ-059: Code-Graph Contracts + Architecture Signals (O7)
+
+- **Category:** Functional
+- **Priority:** Medium
+- **SRS Status:** `planned`
+- **Files:** `code-graph/src/query/`, `code-graph/src/parser/`, `src/server/mcp/tools_core.rs`, `panel-ui/`
+- **Features:** `feat-cg-contracts-arch`
+
+### Description
+
+Pre-merge contracts (`edit-check`, `safe-delete`, three-valued `verify`) plus architecture signals (god-nodes, surprising links, import cycles, rationale nodes) SHALL be exposed via MCP/CLI/UI. Sources: ripwire R5, graphify G7. Requires O1+O3. Leiden clustering tracked as optional O8.
+
+### Acceptance criteria
+
+- [ ] Contract changes vs HEAD detected with incompatible call-sites flagged; delete risks named without verdicts
+- [ ] Verify returns confirmed/refuted/not-established with evidence; zero never refutes
+- [ ] Rationale comments indexed as nodes linked to code
+
+---
+
+*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, enterprise ZDR, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui. WAVE-9 (2026-09-18): REQ-053..059 added (ripwire+graphify extraction O1-O7: honest-confidence, language-registry, blast-testgate, incremental-ids, budget-query, pagerank-router, contracts-arch; US-101..US-114; specs docs/features/specs/FEATURE-feat-cg-*.md; doc docs/EXTRACTION-RIPWIRE-GRAPHIFY.md; ADR-032/033).*
 

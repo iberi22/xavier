@@ -6,11 +6,11 @@
     "version": "1.0.0",
     "created": "2026-03-05",
     "last_verified": "2026-09-17",
-    "total_features": 60,
+    "total_features": 67,
     "features_complete": 57,
     "features_beta": 0,
     "features_draft": 0,
-    "features_planned": 0,
+    "features_planned": 7,
     "features_designed": 0,
     "features_stable": 55,
     "overall_progress_pct": 100.0,
@@ -2155,6 +2155,240 @@
       ],
       "user_stories": [
         "US-001"
+      ]
+    },
+    "feat-cg-honest-confidence": {
+      "id": "feat-cg-honest-confidence",
+      "name": "Code-Graph Honest Confidence (O1)",
+      "category": "code-graph",
+      "status": "planned",
+      "progress_pct": 80,
+      "description": "Single confidence rubric (EXTRACTED 1.0 / INFERRED 0.95-0.55 / AMBIGUOUS) plus labeled honesty (floors, caps, amb, refuse-vs-empty) on all graph answers. Sources: ripwire R1 + graphify G1. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md, ADR-032.",
+      "steps": [
+        "Define unified rubric + mapping table for belief/integer scores",
+        "Add floor/total/capped/amb to query response contract",
+        "Refuse-with-suggestion on unknown selectors",
+        "Backfill historical values with documented rule"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Wave O1. Spec: docs/features/specs/FEATURE-feat-cg-honest-confidence.md. TDD red-first. IMPLEMENTED 2026-09-18: code-graph/src/confidence.rs (rubric+suggest+ResponseMeta, 6 tests), UnknownSymbol refusal in blast_radius + suggestions in HTTP handler (1 test). Package: 92 pass, 3 pre-existing plugin failures identical on clean tree (zero regression). fmt+clippy+workspace-check clean. Pending: verify-pipeline promotion planned->stable + belief/integer score backfill table.",
+      "implemented_in": "code-graph/src/query/mod.rs, code-graph/src/indexer/call_resolution.rs, src/retrieval/gating.rs, src/memory/belief_graph.rs",
+      "tests": [
+        "test_zero_means_none_found_not_none_exists",
+        "test_counts_carry_floor_flag",
+        "test_confidence_rubric_mapping",
+        "test_truncation_discloses_caps"
+      ],
+      "req_ids": [
+        "REQ-053"
+      ],
+      "user_stories": [
+        "US-101",
+        "US-102"
+      ]
+    },
+    "feat-cg-language-registry": {
+      "id": "feat-cg-language-registry",
+      "name": "Code-Graph Language Registry (O2)",
+      "category": "code-graph",
+      "status": "planned",
+      "progress_pct": 80,
+      "description": "Unified LanguageConfig plus suffix-ordered resolver registry so new languages plug in without touching indexer core. Source: graphify G2. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.",
+      "steps": [
+        "Define LanguageConfig struct (grammar, node types, accessors, import handler, builtins)",
+        "Build suffix-ordered resolver registry with warn-and-continue",
+        "Report unindexed languages in map header",
+        "Re-register one language using only the registry as proof"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Wave O2. Spec: docs/features/specs/FEATURE-feat-cg-language-registry.md. TDD red-first. IMPLEMENTED 2026-09-18: code-graph/src/language.rs (LanguageConfig + LanguageRegistry with_builtins/register/resolve/globals/unindexed, LanguageDiscovery impl, 4 tests). Package: 96 pass, 3 pre-existing plugin failures identical on clean tree (zero regression). fmt+clippy clean. REVIEW 2026-09-18 dogfood fixes: Rust use_declaration->Import extraction (unlocks ImportMap 0.95/0.85 on Rust; live index imports 0->373) + method-noise globals per language (len/iter/new/...+append/push/get...; god_nodes cleaned live). Pending: verify-pipeline promotion planned->stable.",
+      "implemented_in": "code-graph/src/parser/mod.rs, code-graph/src/types.rs, code-graph/parsers/",
+      "tests": [
+        "test_register_language_without_touching_core",
+        "test_builtin_globals_excluded_from_hubs",
+        "test_unindexed_language_reported_not_empty",
+        "test_resolver_warn_and_continue"
+      ],
+      "req_ids": [
+        "REQ-054"
+      ],
+      "user_stories": [
+        "US-103",
+        "US-104"
+      ]
+    },
+    "feat-cg-blast-testgate": {
+      "id": "feat-cg-blast-testgate",
+      "name": "Code-Graph Blast Radius + Test Gate (O3)",
+      "category": "code-graph",
+      "status": "planned",
+      "progress_pct": 80,
+      "description": "Transitive blast radius with use roles plus tests-to-run mapping and pre-merge test gate (exit 4 on untested radius). Source: ripwire R2. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.",
+      "steps": [
+        "Extend blast_radius with transitive set + tested/untested + roles",
+        "Map symbols to covering tests with derivable run commands",
+        "Implement test-gate with non-zero exit on obligation",
+        "Add situ from git diff plus co-change partners"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Wave O3. Spec: docs/features/specs/FEATURE-feat-cg-blast-testgate.md. TDD red-first. IMPLEMENTED 2026-09-18: BlastHit/BlastReport/TestGate + is_test_symbol + blast_radius_ex/tests_for/test_gate/symbols_for_files in code-graph/src/query/mod.rs, db.symbols_in_file, 4 tests. Roles derived 1:1 from EdgeType (no invented read/write: honesty deviation documented). Gate obligation scoped to uncovered seeds. Package: 100 pass, 3 pre-existing plugin failures identical on clean tree (zero regression). fmt+clippy clean. Pending: verify-pipeline promotion + CLI situ wiring (git diff -> symbols_for_files).",
+      "implemented_in": "code-graph/src/query/mod.rs, src/cli/handlers/code.rs, src/server/mcp/tools_core.rs",
+      "tests": [
+        "test_impact_transitive_two_hops",
+        "test_uses_roles_distinguish_read_write_call",
+        "test_testgate_exit4_on_untested_radius",
+        "test_run_command_only_when_derivable"
+      ],
+      "req_ids": [
+        "REQ-055"
+      ],
+      "user_stories": [
+        "US-105",
+        "US-106"
+      ]
+    },
+    "feat-cg-incremental-ids": {
+      "id": "feat-cg-incremental-ids",
+      "name": "Code-Graph Incremental IDs (O4)",
+      "category": "code-graph",
+      "status": "planned",
+      "progress_pct": 80,
+      "description": "Real multi-project stable IDs plus content-hash incremental reindex plus 2-phase call resolution with god-guard. Sources: graphify G3+G4. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md, ADR-033.",
+      "steps": [
+        "Real project_id in stable IDs plus versioned rewire table",
+        "Manifest plus content-hash cache, mtime as negative fast-path",
+        "Two-phase raw_calls resolution with god-guard",
+        "Prune deleted files plus reparse callers"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Wave O4. Spec: docs/features/specs/FEATURE-feat-cg-incremental-ids.md. TDD red-first. IMPLEMENTED 2026-09-18: Indexer project_id (default preserves legacy IDs) + file_hashes table with get/upsert + hash-skip in index() + hash flush in parse_and_persist + hash prune in batch_delete + ResolvedCall.file_path + god-guard (drop LOW scattered over >3 files) in build_edges. 7 new tests. Package: 107 pass, 3 pre-existing plugin failures identical on clean tree (zero regression). fmt+clippy clean. Pending: verify-pipeline promotion + apply_paths hash parity + legacy default-ID rewire table.",
+      "implemented_in": "code-graph/src/types.rs, code-graph/src/db/mod.rs, code-graph/src/indexer/mod.rs, code-graph/src/indexer/call_resolution.rs",
+      "tests": [
+        "test_ids_unique_across_projects",
+        "test_mtime_touch_without_content_change_skips_reextract",
+        "test_deleted_file_prunes_symbols_and_edges",
+        "test_cross_file_god_guard_skips_ambiguous_hub",
+        "test_legacy_default_ids_rewired"
+      ],
+      "req_ids": [
+        "REQ-056"
+      ],
+      "user_stories": [
+        "US-107",
+        "US-108"
+      ]
+    },
+    "feat-cg-budget-query": {
+      "id": "feat-cg-budget-query",
+      "name": "Code-Graph Budget Query (O5)",
+      "category": "search",
+      "status": "planned",
+      "progress_pct": 80,
+      "description": "Token budget with gate plus cheap pre-vector query (vocab expansion, bounded BFS/DFS). Sources: ripwire R3 + graphify G6. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.",
+      "steps": [
+        "Compact bundles by default with declared est_tokens",
+        "Budget gate with documented exit, no silent truncation",
+        "Vocab-constrained query expansion with empty-stop",
+        "Bounded BFS/DFS traversals with budget"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Wave O5. Spec: docs/features/specs/FEATURE-feat-cg-budget-query.md. TDD red-first. IMPLEMENTED 2026-09-18: code-graph/src/budget.rs (estimate_tokens bytes/4, symbol_cost, Budget gate with refusal books, TraversalMode Bfs3/Dfs6, expand_query vocab-capped-12, split/build_vocab, compact_to_budget with disclosed cap; 6 tests) + ResponseMeta.est_tokens declared in blast_radius_ex + est_tokens test. Package: 114 pass, 3 pre-existing plugin failures identical on clean tree (zero regression). fmt+clippy clean. Pending: verify-pipeline promotion.",
+      "implemented_in": "src/memory/pack.rs, src/context/orchestrator.rs, code-graph/src/query/",
+      "tests": [
+        "test_compact_bundle_has_no_bodies",
+        "test_budget_gate_triggers_over_limit",
+        "test_vocab_expansion_empty_query_stops",
+        "test_bfs_depth3_vs_dfs_depth6_semantics"
+      ],
+      "req_ids": [
+        "REQ-057"
+      ],
+      "user_stories": [
+        "US-109",
+        "US-110"
+      ]
+    },
+    "feat-cg-pagerank-router": {
+      "id": "feat-cg-pagerank-router",
+      "name": "Code-Graph PageRank Router (O6)",
+      "category": "search",
+      "status": "planned",
+      "progress_pct": 80,
+      "description": "Structural ranking (edge weights plus deterministic PageRank) plus lexical router with confidence margin. Source: ripwire R4. Needs petgraph as direct dependency. See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.",
+      "steps": [
+        "Add petgraph dependency and rank module",
+        "Edge weights plus deterministic PageRank with change teleport",
+        "Exact-to-BM25-to-subtoken router with confidence margin",
+        "Fuse with existing RRF gating weights"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Wave O6, requires O1. Spec: docs/features/specs/FEATURE-feat-cg-pagerank-router.md. TDD red-first. IMPLEMENTED 2026-09-18: code-graph/src/rank.rs (aggregate_weight mean*sqrt cap8, sorted DiGraph, weighted PageRank alpha .85 tol 1e-6, uniform + map-diff-beta-.7 teleport, ranking_margin floor 5pct, index-order export; 5 tests incl. 2k-node determinism+latency) + QueryEngine route_query/top_central_symbols (ExactName vs GraphRanked, refusal, est_tokens; 4 tests) + petgraph 0.6 direct dep (already in lock/cache, offline-safe). Package: 123 pass, 3 pre-existing plugin failures identical on clean tree (zero regression). fmt+clippy clean. Pending: verify-pipeline promotion.",
+      "implemented_in": "code-graph/src/rank.rs, code-graph/src/db/mod.rs, src/retrieval/gating.rs",
+      "tests": [
+        "test_pagerank_deterministic_bytes",
+        "test_edge_weight_formula",
+        "test_router_confidence_margin",
+        "test_map_diff_teleport_reranks"
+      ],
+      "req_ids": [
+        "REQ-058"
+      ],
+      "user_stories": [
+        "US-111",
+        "US-112"
+      ]
+    },
+    "feat-cg-contracts-arch": {
+      "id": "feat-cg-contracts-arch",
+      "name": "Code-Graph Contracts + Architecture Signals (O7)",
+      "category": "cognitive",
+      "status": "planned",
+      "progress_pct": 80,
+      "description": "Pre-merge contracts (edit-check, safe-delete, 3-valued verify) plus architecture signals (god-nodes, surprising links, import cycles, rationale nodes). Sources: ripwire R5 + graphify G7 (+G5 Leiden as optional O8). See docs/EXTRACTION-RIPWIRE-GRAPHIFY.md.",
+      "steps": [
+        "Edit-check vs HEAD with incompatible call-site flags",
+        "Safe-delete risk naming without verdicts",
+        "Three-valued verify with evidence",
+        "God-nodes, surprising links, import cycles, rationale nodes"
+      ],
+      "passes": false,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Wave O7, requires O1+O3. Spec: docs/features/specs/FEATURE-feat-cg-contracts-arch.md. TDD red-first. IMPLEMENTED 2026-09-18: contract_fingerprint/compare_contract, safe_delete with DeleteRisk (never a verdict), verify_calls/verify_defines 3-valued, god_nodes minus builtins, call_cycles bounded, extract_rationale + rationale_for; 6 tests. REVIEW 2026-09-18 dogfood fix: MAX_CYCLES=512 cap shortest-first (live dense graph went 219201->512 cycles, wall 11s->4s). Package: 129 pass, 3 pre-existing plugin failures identical on clean tree (zero regression). fmt+clippy clean. Deviations: file-level call cycles (module import resolution deferred), git-HEAD wiring deferred to CLI. Pending: verify-pipeline promotion + optional O8 Leiden.",
+      "implemented_in": "code-graph/src/query/, code-graph/src/parser/, src/server/mcp/tools_core.rs, panel-ui/",
+      "tests": [
+        "test_edit_check_contract_change_detects_arity_break",
+        "test_safe_delete_names_risk_never_verdict",
+        "test_verify_three_valued_with_evidence",
+        "test_god_nodes_exclude_builtins",
+        "test_import_cycles_found_length_bounded",
+        "test_rationale_note_linked_to_symbol"
+      ],
+      "req_ids": [
+        "REQ-059"
+      ],
+      "user_stories": [
+        "US-113",
+        "US-114"
       ]
     }
   },

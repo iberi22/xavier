@@ -1404,10 +1404,15 @@ pub async fn code_blast_radius_handler(
                 "results": json_results,
             }))
         }
-        Err(error) => axum::Json(serde_json::json!({
-            "status": "error",
-            "message": error.to_string(),
-        })),
+        Err(error) => {
+            // O1 honesty (US-101): surface UnknownSymbol suggestions so API
+            // consumers get the refusal *with* did-you-mean, not just a name.
+            let mut body = serde_json::json!({ "status": "error", "message": error.to_string() });
+            if let code_graph::GraphError::UnknownSymbol { suggestions, .. } = &error {
+                body["suggestions"] = serde_json::json!(suggestions);
+            }
+            axum::Json(body)
+        }
     }
 }
 
