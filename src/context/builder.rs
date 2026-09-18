@@ -274,6 +274,60 @@ impl ContextBuilder {
         }
         context.push('\n');
     }
+
+    /// Filter documents matching the given project_id with hierarchical path fallback.
+    pub fn get_project_context(
+        &self,
+        documents: &[ContextDocument],
+        project_id: &str,
+    ) -> Vec<ContextDocument> {
+        get_project_context(documents, project_id)
+    }
+}
+
+/// Helper to determine if a document matches the project_id.
+/// Checks `metadata.namespace.project == project_id` first.
+/// If missing, falls back to hierarchical path matching:
+/// - `doc.path.starts_with(&format!("gitcore/{}/", project_id))`
+/// - `doc.path.starts_with(&format!("workspaces/{}/", project_id))`
+/// - `doc.path.contains(&format!("/{}/", project_id))`
+pub fn matches_project_context(doc: &ContextDocument, project_id: &str) -> bool {
+    let meta_project = doc
+        .metadata
+        .get("namespace")
+        .and_then(|ns| ns.get("project"))
+        .and_then(|p| p.as_str())
+        .or_else(|| doc.metadata.get("project").and_then(|p| p.as_str()));
+
+    if let Some(proj) = meta_project {
+        return proj == project_id;
+    }
+
+    let path = if !doc.path.is_empty() {
+        doc.path.as_str()
+    } else {
+        doc.metadata
+            .get("path")
+            .and_then(|p| p.as_str())
+            .unwrap_or("")
+    };
+
+    path.starts_with(&format!("gitcore/{}/", project_id))
+        || path.starts_with(&format!("workspaces/{}/", project_id))
+        || path.contains(&format!("/{}/", project_id))
+}
+
+/// Filter documents matching the given project_id, taking advantage of
+/// hierarchical path fallback if metadata is not explicitly populated.
+pub fn get_project_context(
+    documents: &[ContextDocument],
+    project_id: &str,
+) -> Vec<ContextDocument> {
+    documents
+        .iter()
+        .filter(|doc| matches_project_context(doc, project_id))
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]
@@ -311,5 +365,52 @@ mod tests {
         assert!(test_ctx.contains("Critical Error:"));
         assert!(!test_ctx.contains("Some boring content"));
         assert!(test_ctx.contains("CONTEXT_CHUNK_START:v1:extractive-compressed"));
+    }
+
+    #[test]
+    fn test_hierarchical_project_context_matching() {
+        let mut doc1 = ContextDocument::new("1", "s1", "doc", "content");
+        doc1.path = "gitcore/xavier/README.md".to_string();
+        assert!(matches_project_context(&doc1, "xavier"));
+
+        let mut doc2 = ContextDocument::new("2", "s1", "doc", "content");
+        doc2.path = "workspaces/xavier/src/main.rs".to_string();
+        assert!(matches_project_context(&doc2, "xavier"));
+
+        let mut doc3 = ContextDocument::new("3", "s1", "doc", "content");
+        doc3.path = "other/sub/xavier/file.txt".to_string();
+        assert!(matches_project_context(&doc3, "xavier"));
+
+        let mut doc4 = ContextDocument::new("4", "s1", "doc", "content");
+        doc4.path = "gitcore/other/README.md".to_string();
+        assert!(!matches_project_context(&doc4, "xavier"));
+
+        // Explicit metadata matches
+        let mut doc_meta = ContextDocument::new("5", "s1", "doc", "content");
+        doc_meta.metadata = serde_json::json!({
+            "namespace": { "project": "xavier" }
+        });
+        doc_meta.path = "some/unrelated/path.md".to_string();
+        assert!(matches_project_context(&doc_meta, "xavier"));
+
+        // Explicit metadata mismatch overrides path
+        let mut doc_meta_diff = ContextDocument::new("6", "s1", "doc", "content");
+        doc_meta_diff.metadata = serde_json::json!({
+            "namespace": { "project": "other" }
+        });
+        doc_meta_diff.path = "gitcore/xavier/README.md".to_string();
+        assert!(!matches_project_context(&doc_meta_diff, "xavier"));
+    }
+
+    #[test]
+    fn test_get_project_context() {
+        let mut doc1 = ContextDocument::new("1", "s1", "doc", "c1");
+        doc1.path = "gitcore/xavier/README.md".to_string();
+        let mut doc2 = ContextDocument::new("2", "s1", "doc", "c2");
+        doc2.path = "gitcore/other/README.md".to_string();
+
+        let filtered = get_project_context(&[doc1, doc2], "xavier");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "1");
     }
 }

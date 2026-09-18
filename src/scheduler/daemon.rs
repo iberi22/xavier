@@ -94,7 +94,13 @@ impl MemoryDaemon {
                 sleep(Duration::from_secs(24 * 3600)).await;
                 info!("MemoryDaemon: Running scheduled garbage_collect()");
                 match manager_gc.garbage_collect().await {
-                    Ok(stats) => info!("MemoryDaemon: Scheduled GC completed. Bytes freed: {}, Orphans cleaned: {}", stats.bytes_freed, stats.orphaned_vectors_cleaned),
+                    Ok(stats) => info!(
+                        "MemoryDaemon: Scheduled GC completed. Bytes freed: {}, Low-utility pruned: {}, Orphans cleaned: {}, Vacuum status: {}",
+                        stats.bytes_freed,
+                        stats.low_utility_pruned,
+                        stats.orphaned_vectors_cleaned,
+                        if stats.vacuum_ok { "success" } else { "skipped/failed" }
+                    ),
                     Err(e) => error!("MemoryDaemon: Scheduled GC failed: {}", e),
                 }
             }

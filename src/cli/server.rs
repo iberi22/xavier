@@ -822,6 +822,12 @@ pub async fn start_http_server(
                 r.can_delete_memory()
             }))),
         )
+        .route(
+            "/memory/prune",
+            post(memory_prune_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
         .route("/memory/index-self", post(memory_index_self_handler))
         .route(
             "/memory/evict",

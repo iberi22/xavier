@@ -288,7 +288,9 @@ impl QmdMemory {
                 .documents);
         }
 
-        if std::env::var("XAVIER_EMBEDDING_URL").is_ok() {
+        if std::env::var("XAVIER_EMBEDDING_URL").is_ok()
+            || crate::memory::embedder::EmbeddingClient::is_configured_from_env()
+        {
             if let Ok(results) =
                 query_with_embedding_filtered(self, query_text, limit, filters).await
             {

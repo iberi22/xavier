@@ -140,7 +140,19 @@ pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
         _ => {}
     }
 
-    score
+    let created_at = doc
+        .metadata
+        .get("created_at")
+        .or_else(|| doc.metadata.get("timestamp"))
+        .or_else(|| doc.metadata.get("updated_at"))
+        .and_then(|value| value.as_str());
+    let half_life_days = std::env::var("XAVIER_TEMPORAL_HALF_LIFE_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(30.0);
+    let decay = temporal_decay_multiplier(created_at, half_life_days);
+
+    score * decay
 }
 
 /// Lexical scoring for LOCOMO documents with structured metadata.
@@ -448,7 +460,53 @@ pub fn contextual_boost(query: &str, document: &MemoryDocument, weight: f32) -> 
             score += 0.20 * weight;
         }
     }
-    score + memory_importance_score(document) + memory_decay_penalty(document)
+    let raw = score + memory_importance_score(document) + memory_decay_penalty(document);
+    let created_at = document
+        .metadata
+        .get("created_at")
+        .or_else(|| document.metadata.get("timestamp"))
+        .or_else(|| document.metadata.get("updated_at"))
+        .and_then(|value| value.as_str());
+    let half_life_days = std::env::var("XAVIER_TEMPORAL_HALF_LIFE_DAYS")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(30.0);
+    let decay = temporal_decay_multiplier(created_at, half_life_days);
+    raw * decay
+}
+
+/// Computes an exponential decay multiplier based on the record's age in days.
+///
+/// Formula: `(-age_days / half_life_days).exp()`.
+/// If `created_at` is missing, unparseable, or `half_life_days <= 0.0`, returns 1.0.
+pub fn temporal_decay_multiplier(created_at: Option<&str>, half_life_days: f32) -> f32 {
+    let Some(raw_date) = created_at else {
+        return 1.0;
+    };
+    if half_life_days <= 0.0 {
+        return 1.0;
+    }
+
+    let parsed_time = chrono::DateTime::parse_from_rfc3339(raw_date)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(raw_date, "%Y-%m-%d %H:%M:%S")
+                .map(|ndt| ndt.and_utc())
+        })
+        .or_else(|_| {
+            chrono::NaiveDate::parse_from_str(raw_date, "%Y-%m-%d")
+                .map(|nd| nd.and_hms_opt(0, 0, 0).unwrap().and_utc())
+        });
+
+    let Ok(created_utc) = parsed_time else {
+        return 1.0;
+    };
+
+    let now = chrono::Utc::now();
+    let age_seconds = (now - created_utc).num_seconds().max(0);
+    let age_days = age_seconds as f32 / 86400.0;
+
+    (-age_days / half_life_days).exp()
 }
 
 /// Extract the importance score from document metadata.
@@ -483,4 +541,46 @@ pub fn memory_decay_penalty(document: &MemoryDocument) -> f32 {
     use chrono::Utc;
     let age_days = (Utc::now() - parsed.with_timezone(&Utc)).num_days().max(0) as f32;
     -(age_days / 365.0).min(1.0) * 0.15
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_temporal_decay_multiplier_math() {
+        // Missing date returns 1.0
+        assert_eq!(temporal_decay_multiplier(None, 30.0), 1.0);
+
+        // Invalid date returns 1.0
+        assert_eq!(temporal_decay_multiplier(Some("not-a-date"), 30.0), 1.0);
+
+        // Zero or negative half life returns 1.0
+        assert_eq!(
+            temporal_decay_multiplier(Some("2026-01-01T00:00:00Z"), 0.0),
+            1.0
+        );
+
+        // Brand new timestamp (now) should yield ~1.0
+        let now_str = chrono::Utc::now().to_rfc3339();
+        let fresh_mult = temporal_decay_multiplier(Some(&now_str), 30.0);
+        assert!((fresh_mult - 1.0).abs() < 1e-3);
+
+        // Exactly 30 days old with 30-day half-life -> exp(-1) = 0.367879...
+        let thirty_days_ago = (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339();
+        let half_life_mult = temporal_decay_multiplier(Some(&thirty_days_ago), 30.0);
+        let expected_exp = (-1.0_f32).exp();
+        assert!(
+            (half_life_mult - expected_exp).abs() < 0.02,
+            "expected ~{:.4}, got {:.4}",
+            expected_exp,
+            half_life_mult
+        );
+
+        // 60 days old -> exp(-2) = 0.135335...
+        let sixty_days_ago = (chrono::Utc::now() - chrono::Duration::days(60)).to_rfc3339();
+        let double_half_life_mult = temporal_decay_multiplier(Some(&sixty_days_ago), 30.0);
+        assert!(double_half_life_mult < half_life_mult);
+        assert!(half_life_mult < fresh_mult);
+    }
 }

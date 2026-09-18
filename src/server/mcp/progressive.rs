@@ -231,7 +231,6 @@ mod tests {
             .as_array()
             .unwrap();
         let id_python = candidates_python[0]["id"].as_str().unwrap();
-
         // Ensure we retrieved two different valid IDs
         assert_ne!(
             id_rust, id_python,

@@ -21,6 +21,38 @@ static IMPORTANT_KEYWORD_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(error|failed|failure|completed|todo|decision|decided|panic)\b").unwrap()
 });
 
+/// Helper function to detect periodic heartbeat and cronjob ticks.
+///
+/// Returns true if the content or path represents periodic heartbeat/cron activity,
+/// such as `[tick] cronjob`, `gestalt-thinking-loop ejecutado`, or `cron 30m ejecutado`.
+pub fn is_heartbeat_tick(content: &str, path: &str) -> bool {
+    let lower_p = path.to_lowercase();
+    if lower_p.contains("session/cron_")
+        || lower_p.contains("heartbeat")
+        || lower_p.contains("gestalt/bus/executions")
+    {
+        return true;
+    }
+
+    let trimmed = content.trim();
+    let lower_c = trimmed.to_lowercase();
+
+    if lower_c.contains("[tick]")
+        || lower_c.contains("gestalt-thinking-loop ejecutado")
+        || lower_c.contains("cron 30m ejecutado")
+        || lower_c.contains("cronjob")
+        || (lower_c.contains("ejecutado")
+            && (lower_c.contains("cron")
+                || lower_c.contains("thinking-loop")
+                || lower_c.contains("tick")
+                || lower_c.contains("loop")))
+    {
+        return true;
+    }
+
+    BOILERPLATE_REGEX.is_match(trimmed)
+}
+
 /// Raw turn representation before sanitization and vectorization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawTurn {
@@ -131,7 +163,7 @@ impl Sanitizer {
 
         // 3. Drop boilerplate (cron triggers, heartbeats) unless errors/decisions exist
         if self.cfg.drop_cron_boilerplate
-            && BOILERPLATE_REGEX.is_match(trimmed_text)
+            && (BOILERPLATE_REGEX.is_match(trimmed_text) || is_heartbeat_tick(trimmed_text, ""))
             && !IMPORTANT_KEYWORD_REGEX.is_match(trimmed_text)
         {
             stats.dropped_boilerplate = true;
@@ -328,5 +360,22 @@ mod tests {
         assert_eq!(report.kept, 1);
         assert_eq!(report.dropped_dedup, 1);
         assert_eq!(turns.len(), 1);
+    }
+
+    #[test]
+    fn test_is_heartbeat_tick() {
+        assert!(is_heartbeat_tick("[tick] cronjob", ""));
+        assert!(is_heartbeat_tick("gestalt-thinking-loop ejecutado", ""));
+        assert!(is_heartbeat_tick("cron 30m ejecutado", ""));
+        assert!(is_heartbeat_tick("arbitrary text", "session/cron_sync"));
+        assert!(is_heartbeat_tick(
+            "arbitrary text",
+            "gestalt/bus/executions/step1.json"
+        ));
+        assert!(is_heartbeat_tick("arbitrary text", "nodes/heartbeat.json"));
+        assert!(!is_heartbeat_tick(
+            "User asked how to solve quadratic equation",
+            "session/user_chat_1"
+        ));
     }
 }

@@ -27,7 +27,9 @@ mod tests_query_router;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-pub use builder::{ContextBuilder, ContextBuilderConfig};
+pub use builder::{
+    get_project_context, matches_project_context, ContextBuilder, ContextBuilderConfig,
+};
 pub use classifier::{ContextClassifier, ContextLevel};
 pub use executor::SkillExecutor;
 pub use indexer::ContextIndexer;
@@ -54,6 +56,8 @@ pub struct ContextDocument {
     pub role: String,
     pub content: String,
     #[serde(default)]
+    pub path: String,
+    #[serde(default)]
     pub tool_calls: Vec<String>,
     #[serde(default)]
     pub metadata: serde_json::Value,
@@ -77,10 +81,22 @@ impl ContextDocument {
             role: role.into(),
             token_count,
             content,
+            path: String::new(),
             tool_calls: Vec::new(),
             metadata: serde_json::Value::Null,
             created_at: Utc::now(),
         }
+    }
+
+    /// With path.
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.path = path.into();
+        self
+    }
+
+    /// Checks if this document matches the given project_id.
+    pub fn matches_project(&self, project_id: &str) -> bool {
+        builder::matches_project_context(self, project_id)
     }
 
     /// With tool calls.

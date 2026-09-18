@@ -3,7 +3,9 @@
 //! Fase 1: post-session-save — Fire-and-forget con 3s timeout.
 //! Fase 2: auto-verify — SAVE → RETRIEVE → COMPARE automático.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +15,56 @@ use tracing::{info, warn, error};
 
 use crate::session::types::{SessionEvent, SessionEventType};
 use crate::verification::auto_verifier::AutoVerifier;
+
+static HEARTBEAT_CACHE: LazyLock<Mutex<HashMap<String, Instant>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+const HEARTBEAT_DEDUP_WINDOW: Duration = Duration::from_secs(15 * 60); // 15 minutes
+
+/// Check if a heartbeat with the same signature for the same session/job arrived within 15 minutes.
+/// If it did, returns true (duplicate to skip). Otherwise, updates the cache and returns false.
+pub fn is_recent_duplicate_heartbeat(session_id: &str, content: &str) -> bool {
+    let sig = extract_heartbeat_signature(session_id, content);
+    let now = Instant::now();
+    let mut cache = match HEARTBEAT_CACHE.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+
+    // Periodically prune stale entries older than the window
+    if cache.len() > 1024 {
+        cache.retain(|_, last_seen| now.duration_since(*last_seen) < HEARTBEAT_DEDUP_WINDOW);
+    }
+
+    if let Some(last_seen) = cache.get(&sig) {
+        if now.duration_since(*last_seen) < HEARTBEAT_DEDUP_WINDOW {
+            return true;
+        }
+    }
+
+    cache.insert(sig, now);
+    false
+}
+
+/// Normalizes and extracts a heartbeat signature by collapsing variable digits/timestamps.
+pub fn extract_heartbeat_signature(session_id: &str, content: &str) -> String {
+    let mut norm_sid = session_id.trim().to_lowercase();
+    let mut norm_content = content.trim().to_lowercase();
+
+    if let Ok(re) = regex::Regex::new(r"\d+") {
+        norm_sid = re.replace_all(&norm_sid, "#").to_string();
+        norm_content = re.replace_all(&norm_content, "#").to_string();
+    }
+
+    format!("{}:{}", norm_sid, norm_content)
+}
+
+#[cfg(test)]
+pub fn clear_heartbeat_cache() {
+    if let Ok(mut cache) = HEARTBEAT_CACHE.lock() {
+        cache.clear();
+    }
+}
 
 /// Configuration for auto-save behavior
 #[derive(Debug, Clone)]
@@ -132,6 +184,19 @@ pub fn auto_save_event(event: SessionEvent) {
     } else {
         stripped
     };
+
+    // Heartbeat sliding window deduplication: skip insertion if the same heartbeat
+    // arrived within 15 minutes to prevent duplicate accumulation.
+    let check_path = format!("sessions/{}", event.session_id);
+    if crate::memory::sanitizer::is_heartbeat_tick(&content, &check_path)
+        && is_recent_duplicate_heartbeat(&event.session_id, &content)
+    {
+        info!(
+            session_id = %event.session_id,
+            "auto-save: skipping duplicate heartbeat tick within 15m window"
+        );
+        return;
+    }
 
     // Spawn fire-and-forget task
     tokio::spawn(async move {
@@ -447,5 +512,22 @@ mod tests {
         assert!(file_content.contains("250"));
 
         let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+    }
+
+    #[test]
+    fn test_heartbeat_sliding_window_dedup() {
+        clear_heartbeat_cache();
+        let sid = "session-cron-test";
+        let content1 = "[tick] cronjob #1 executed";
+        let content2 = "[tick] cronjob #2 executed";
+
+        // First heartbeat passes
+        assert!(!is_recent_duplicate_heartbeat(sid, content1));
+
+        // Second heartbeat with same pattern within 15 mins is identified as duplicate
+        assert!(is_recent_duplicate_heartbeat(sid, content2));
+
+        // Different session/job passes
+        assert!(!is_recent_duplicate_heartbeat("other-job", content1));
     }
 }

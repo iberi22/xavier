@@ -35,6 +35,13 @@ pub async fn handle_memory_command(
         crate::cli::commands::enums::memory::MemoryCommand::ExportMarkdown { dir, public_only } => {
             run_export_markdown(&dir, public_only.unwrap_or(false)).await
         }
+        crate::cli::commands::enums::memory::MemoryCommand::Prune {
+            prefix,
+            older_than_days,
+            dry_run,
+            yes,
+            json,
+        } => run_prune(prefix, older_than_days, dry_run, yes, json).await,
     }
 }
 
@@ -229,6 +236,175 @@ async fn run_nightly_consolidation() -> Result<()> {
                 e
             );
             run_offline_consolidation_cli().await
+        }
+    }
+}
+
+async fn run_prune(
+    prefix: Option<String>,
+    older_than_days: Option<u64>,
+    dry_run: bool,
+    yes: bool,
+    json: bool,
+) -> Result<()> {
+    if !dry_run && !yes {
+        print!("⚠️ Are you sure you want to permanently prune memories? [y/N]: ");
+        std::io::Write::flush(&mut std::io::stdout())?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+        if !trimmed.eq_ignore_ascii_case("y") && !trimmed.eq_ignore_ascii_case("yes") {
+            println!("Prune cancelled.");
+            return Ok(());
+        }
+    }
+
+    if !json {
+        if dry_run {
+            println!("🔍 Simulating memory pruning (dry-run mode)...");
+        } else {
+            println!("🧹 Running memory pruning...");
+        }
+    }
+
+    let base_url = resolve_base_url();
+    let token = require_xavier_token().unwrap_or_default();
+    let client = CLI_HTTP_CLIENT.clone();
+
+    let req_body = serde_json::json!({
+        "prefix": prefix,
+        "path_prefix": prefix,
+        "older_than_days": older_than_days,
+        "dry_run": dry_run,
+    });
+
+    let response = client
+        .post(format!("{}/memory/prune", base_url))
+        .header("X-Xavier-Token", &token)
+        .json(&req_body)
+        .send()
+        .await;
+
+    let result_json = match response {
+        Ok(resp) if resp.status().is_success() => {
+            resp.json::<serde_json::Value>().await.unwrap_or_default()
+        }
+        _ => {
+            let v1_resp = client
+                .post(format!("{}/v1/memories/prune", base_url))
+                .header("X-Xavier-Token", &token)
+                .json(&req_body)
+                .send()
+                .await;
+
+            match v1_resp {
+                Ok(resp) if resp.status().is_success() => {
+                    resp.json::<serde_json::Value>().await.unwrap_or_default()
+                }
+                _ => {
+                    crate::cli::handlers::memory::offline_prune(
+                        None,
+                        prefix.as_deref(),
+                        older_than_days,
+                        dry_run,
+                    )
+                    .await?
+                }
+            }
+        }
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&result_json)?);
+    } else {
+        let count = result_json
+            .get("pruned_count")
+            .or_else(|| result_json.get("deleted_count"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let bytes = result_json
+            .get("reclaimed_bytes")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let mode_str = if dry_run {
+            "Dry-run simulation complete"
+        } else {
+            "Prune complete"
+        };
+        println!(
+            "✅ {}: {} memories identified/pruned, {} bytes reclaimed.",
+            mode_str, count, bytes
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::commands::enums::memory::MemoryCommand;
+    use clap::Parser;
+
+    #[derive(Parser, Debug)]
+    struct CliTest {
+        #[command(subcommand)]
+        cmd: MemoryCommand,
+    }
+
+    #[test]
+    fn test_memory_prune_args_parsing() {
+        let parsed = CliTest::try_parse_from([
+            "test",
+            "prune",
+            "--prefix",
+            "gitcore/xavier",
+            "--older-than-days",
+            "30",
+            "--dry-run",
+            "--yes",
+            "--json",
+        ])
+        .expect("should parse prune args");
+
+        match parsed.cmd {
+            MemoryCommand::Prune {
+                prefix,
+                older_than_days,
+                dry_run,
+                yes,
+                json,
+            } => {
+                assert_eq!(prefix.as_deref(), Some("gitcore/xavier"));
+                assert_eq!(older_than_days, Some(30));
+                assert!(dry_run);
+                assert!(yes);
+                assert!(json);
+            }
+            _ => panic!("Expected Prune variant"),
+        }
+    }
+
+    #[test]
+    fn test_memory_prune_defaults() {
+        let parsed =
+            CliTest::try_parse_from(["test", "prune"]).expect("should parse default prune args");
+
+        match parsed.cmd {
+            MemoryCommand::Prune {
+                prefix,
+                older_than_days,
+                dry_run,
+                yes,
+                json,
+            } => {
+                assert!(prefix.is_none());
+                assert!(older_than_days.is_none());
+                assert!(!dry_run);
+                assert!(!yes);
+                assert!(!json);
+            }
+            _ => panic!("Expected Prune variant"),
         }
     }
 }
