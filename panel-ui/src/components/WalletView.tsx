@@ -261,8 +261,11 @@ export const WalletView: React.FC<WalletViewProps> = ({ onClose }) => {
 
               <button
                 type="button"
+                role="switch"
+                aria-checked={agentDelegationEnabled}
+                aria-label="Gestión Autónoma Delegada al Agente"
                 onClick={handleToggleDelegation}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 ${
                   agentDelegationEnabled ? "bg-emerald-500" : "bg-white/20"
                 }`}
               >
