@@ -120,11 +120,17 @@ pub fn verify_webhook_secret(
     use subtle::ConstantTimeEq;
     if let Some(expected) = webhook_secret {
         match provided_token {
-            Some(token)
-                if expected.as_bytes().len() == token.as_bytes().len()
-                    && expected.as_bytes().ct_eq(token.as_bytes()).into() =>
-            {
-                Ok(())
+            Some(token) => {
+                let expected_bytes = expected.as_bytes();
+                let token_bytes = token.as_bytes();
+                if expected_bytes.len() != token_bytes.len() {
+                    let _ = expected_bytes.ct_eq(expected_bytes);
+                    Err(axum::http::StatusCode::UNAUTHORIZED)
+                } else if expected_bytes.ct_eq(token_bytes).into() {
+                    Ok(())
+                } else {
+                    Err(axum::http::StatusCode::UNAUTHORIZED)
+                }
             }
             _ => Err(axum::http::StatusCode::UNAUTHORIZED),
         }

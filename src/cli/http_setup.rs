@@ -66,7 +66,12 @@ pub async fn auth_middleware(
     use subtle::ConstantTimeEq;
     let provided_bytes = provided_token_str.as_bytes();
     let expected_bytes = expected_token.as_bytes();
-    let is_match: bool = provided_bytes.ct_eq(expected_bytes).into();
+    let is_match: bool = if provided_bytes.len() != expected_bytes.len() {
+        let _ = expected_bytes.ct_eq(expected_bytes);
+        false
+    } else {
+        provided_bytes.ct_eq(expected_bytes).into()
+    };
 
     if is_match {
         // Root token bypasses RBAC for now as "Super Admin"

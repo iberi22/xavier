@@ -103,7 +103,13 @@ fn argon2_verify(secret: &str, stored_hash: &str) -> bool {
         return crate::crypto::password::verify(secret, stored_hash).unwrap_or(false);
     }
     let legacy = sha256_hex(secret.as_bytes());
-    legacy.as_bytes().ct_eq(stored_hash.as_bytes()).into()
+    let legacy_bytes = legacy.as_bytes();
+    let stored_bytes = stored_hash.as_bytes();
+    if legacy_bytes.len() != stored_bytes.len() {
+        let _ = stored_bytes.ct_eq(stored_bytes);
+        return false;
+    }
+    legacy_bytes.ct_eq(stored_bytes).into()
 }
 
 #[cfg(test)]
