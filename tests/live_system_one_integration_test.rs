@@ -1,5 +1,5 @@
 use std::time::Instant;
-use xavier::agents::fast_router_poc::{FastRouter, Route, SystemOneDecision};
+use xavier::agents::fast_router_poc::{FastRouter, Route};
 
 #[test]
 fn test_live_system_one_scenarios_and_benchmark() {
