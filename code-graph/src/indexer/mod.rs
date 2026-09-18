@@ -604,8 +604,9 @@ impl Indexer {
                 skips.skipped_binary_content += 1;
                 continue;
             }
-            if Language::from_extension_with_plugins(&ext, self.plugin_host.discovery())
-                == Language::Unknown
+            let lang = Language::from_extension(&ext);
+            if lang == Language::Unknown
+                && self.plugin_host.discovery().language_for_extension(&ext) == Language::Unknown
             {
                 continue;
             }
@@ -628,10 +629,13 @@ async fn parse_file(
     plugin_host: Option<&PluginHost>,
 ) -> Result<ParsedFile> {
     let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang = if let Some(host) = plugin_host {
-        Language::from_extension_with_plugins(ext, host.discovery())
+    let builtin_lang = Language::from_extension(ext);
+    let lang = if builtin_lang != Language::Unknown {
+        builtin_lang
+    } else if let Some(host) = plugin_host {
+        host.discovery().language_for_extension(ext)
     } else {
-        Language::from_extension(ext)
+        Language::Unknown
     };
 
     // We try to parse even if lang is Unknown because a plugin might handle it by extension
@@ -1216,6 +1220,25 @@ mod tests {
 
         let res = parse_file(dir.path(), &big_path, None).await;
         assert!(matches!(res, Err(GraphError::Skipped(_))));
+    }
+
+    #[tokio::test]
+    async fn test_fixture_index_output_identity() {
+        let fixture_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let db = Arc::new(CodeGraphDB::in_memory().expect("in memory db"));
+        let indexer = Indexer::new(db.clone());
+
+        let stats = indexer
+            .index(&fixture_dir, false)
+            .await
+            .expect("indexing fixture failed");
+        let edges_count = db.get_all_edges().expect("get edges").len();
+
+        // Baseline counts for code-graph/src fixture (measured 2026-09-19,
+        // post contracts.rs + builtin-first language fast-path)
+        assert_eq!(stats.total_files, 35, "file count mismatch");
+        assert_eq!(stats.total_symbols, 2437, "symbol count mismatch");
+        assert_eq!(edges_count, 13476, "edge count mismatch");
     }
 
     #[tokio::test]

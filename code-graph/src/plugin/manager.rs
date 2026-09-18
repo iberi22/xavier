@@ -553,7 +553,7 @@ mod tests {
 
     #[test]
     fn chain_prefers_installed_plugin_for_a_language() {
-        let manager = PluginManager::new();
+        let manager = PluginManager::new_hermetic();
         manager.fallback().write().clear(&Language::Python);
         assert_eq!(
             manager.chain_for(&Language::Python),
@@ -586,7 +586,7 @@ mod tests {
 
     #[test]
     fn descriptor_for_and_by_name_resolve_after_register() {
-        let manager = PluginManager::new();
+        let manager = PluginManager::new_hermetic();
         manager.register(PluginDescriptor {
             name: "parser-py".into(),
             version: "1.0.0".into(),

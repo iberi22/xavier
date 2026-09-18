@@ -262,6 +262,22 @@ fn file_of_symbol(db: &CodeGraphDB, stable_id: &str) -> Result<Option<String>> {
     Ok(db.symbol_by_stable_id(stable_id)?.map(|s| s.file_path))
 }
 
+/// Provenance of a cycle edge resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CycleEdgeProvenance {
+    /// Resolved via typed module import resolution (ImportMap / ImportMapSuffix strategy).
+    TypedImport,
+    /// Co-location / bare file-level matching fallback.
+    FileFallback,
+}
+
+/// A simple cycle with edge provenance disclosure (Section B honest disclosure).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CycleReport {
+    pub cycle: Vec<String>,
+    pub provenance: CycleEdgeProvenance,
+}
+
 /// Dogfood ceiling (review 2026-09-18): dense file graphs enumerate
 /// hundreds of thousands of simple cycles. Output is capped, shortest
 /// first, deterministically — budgets beat completeness here (O5).
@@ -888,15 +904,16 @@ impl QueryEngine {
             .collect())
     }
 
-    /// O7 (G7 import-cycles, honest file-level form): simple file cycles
-    /// over `Calls` edges, bounded by `max_len`. Self-file calls are not
-    /// cycles. Module-level import resolution stays deferred (documented
-    /// in the O7 spec): this reports where control can loop, not proof of
-    /// import cycles.
-    pub fn call_cycles(&self, max_len: usize) -> Result<Vec<Vec<String>>> {
+    /// O7 (G7 import-cycles): simple file cycles over `Calls` edges,
+    /// bounded by `max_len`. Resolves cycle edges through typed module
+    /// imports (`ImportMap` / `ImportMapSuffix`) with honest provenance disclosure.
+    pub fn call_cycles_ex(&self, max_len: usize) -> Result<Vec<CycleReport>> {
         let max_len = max_len.clamp(2, 12);
         let mut adj: std::collections::HashMap<String, Vec<String>> =
             std::collections::HashMap::new();
+        let mut edge_provenance: std::collections::HashMap<(String, String), CycleEdgeProvenance> =
+            std::collections::HashMap::new();
+
         for edge in self.db.get_all_edges()? {
             if edge.edge_type != EdgeType::Calls {
                 continue;
@@ -909,18 +926,65 @@ impl QueryEngine {
             if from_file == to_file {
                 continue;
             }
+
+            let is_typed = edge
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("strategy"))
+                .and_then(|v| v.as_str())
+                .map(|s| s == "ImportMap" || s == "ImportMapSuffix")
+                .unwrap_or(false);
+
+            let prov = if is_typed {
+                CycleEdgeProvenance::TypedImport
+            } else {
+                CycleEdgeProvenance::FileFallback
+            };
+
+            let key = (from_file.clone(), to_file.clone());
+            edge_provenance
+                .entry(key)
+                .and_modify(|p| {
+                    if *p == CycleEdgeProvenance::FileFallback && is_typed {
+                        *p = CycleEdgeProvenance::TypedImport;
+                    }
+                })
+                .or_insert(prov);
+
             adj.entry(from_file.clone()).or_default().push(to_file);
         }
-        for targets in adj.values_mut() {
-            targets.sort();
+
+        for (from, targets) in adj.iter_mut() {
+            targets.sort_by(|a, b| {
+                let prov_a = edge_provenance
+                    .get(&(from.clone(), a.clone()))
+                    .copied()
+                    .unwrap_or(CycleEdgeProvenance::FileFallback);
+                let prov_b = edge_provenance
+                    .get(&(from.clone(), b.clone()))
+                    .copied()
+                    .unwrap_or(CycleEdgeProvenance::FileFallback);
+                let order_a = if prov_a == CycleEdgeProvenance::TypedImport {
+                    0
+                } else {
+                    1
+                };
+                let order_b = if prov_b == CycleEdgeProvenance::TypedImport {
+                    0
+                } else {
+                    1
+                };
+                order_a.cmp(&order_b).then_with(|| a.cmp(b))
+            });
             targets.dedup();
         }
+
         let mut starts: Vec<String> = adj.keys().cloned().collect();
         starts.sort();
         let mut seen = std::collections::HashSet::new();
-        let mut cycles = Vec::new();
+        let mut raw_cycles = Vec::new();
         for start in &starts {
-            if cycles.len() >= MAX_CYCLES {
+            if raw_cycles.len() >= MAX_CYCLES {
                 break;
             }
             let mut path = vec![start.clone()];
@@ -932,14 +996,60 @@ impl QueryEngine {
                 MAX_CYCLES,
                 &mut path,
                 &mut seen,
-                &mut cycles,
+                &mut raw_cycles,
             );
         }
-        // Shortest first, then lexicographic: the cap keeps the cheapest
-        // evidence, deterministically.
-        cycles.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
-        cycles.truncate(MAX_CYCLES);
-        Ok(cycles)
+
+        let mut reports: Vec<CycleReport> = raw_cycles
+            .into_iter()
+            .map(|cycle| {
+                let mut cycle_prov = CycleEdgeProvenance::TypedImport;
+                for i in 0..cycle.len() {
+                    let from = &cycle[i];
+                    let to = &cycle[(i + 1) % cycle.len()];
+                    if let Some(&p) = edge_provenance.get(&(from.clone(), to.clone())) {
+                        if p == CycleEdgeProvenance::FileFallback {
+                            cycle_prov = CycleEdgeProvenance::FileFallback;
+                            break;
+                        }
+                    } else {
+                        cycle_prov = CycleEdgeProvenance::FileFallback;
+                        break;
+                    }
+                }
+                CycleReport {
+                    cycle,
+                    provenance: cycle_prov,
+                }
+            })
+            .collect();
+
+        // Shortest first, then typed before fallback, then lexicographic:
+        // keeps the cheapest evidence deterministically.
+        reports.sort_by(|a, b| {
+            a.cycle.len().cmp(&b.cycle.len()).then_with(|| {
+                let order_a = if a.provenance == CycleEdgeProvenance::TypedImport {
+                    0
+                } else {
+                    1
+                };
+                let order_b = if b.provenance == CycleEdgeProvenance::TypedImport {
+                    0
+                } else {
+                    1
+                };
+                order_a.cmp(&order_b).then_with(|| a.cycle.cmp(&b.cycle))
+            })
+        });
+        reports.truncate(MAX_CYCLES);
+        Ok(reports)
+    }
+
+    /// O7: simple file cycles over `Calls` edges, bounded by `max_len`.
+    /// Backwards-compatible wrapper over [`call_cycles_ex`].
+    pub fn call_cycles(&self, max_len: usize) -> Result<Vec<Vec<String>>> {
+        let reports = self.call_cycles_ex(max_len)?;
+        Ok(reports.into_iter().map(|r| r.cycle).collect())
     }
 
     /// O7 (G7 rationale): `NOTE:`/`WHY:`/`HACK:` tags in the target's file,
@@ -1344,5 +1454,196 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         0.0
     } else {
         dot / (norm_a * norm_b)
+    }
+}
+
+#[cfg(test)]
+mod inline_typed_cycle_tests {
+    use super::*;
+
+    fn mk_sym(name: &str, file: &str) -> Symbol {
+        Symbol {
+            name: name.to_string(),
+            kind: SymbolKind::Function,
+            lang: crate::types::Language::Rust,
+            file_path: file.to_string(),
+            start_line: 1,
+            end_line: 5,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_typed_import_cycle_resolution() {
+        let db = CodeGraphDB::in_memory().expect("in-memory db");
+        let fa = mk_sym("fn_a", "/src/a.rs");
+        let fb = mk_sym("fn_b", "/src/b.rs");
+        db.insert_symbol(&fa).expect("insert fa");
+        db.insert_symbol(&fb).expect("insert fb");
+
+        let aid = db.find_by_name("fn_a", 1).unwrap()[0]
+            .stable_id
+            .clone()
+            .unwrap();
+        let bid = db.find_by_name("fn_b", 1).unwrap()[0]
+            .stable_id
+            .clone()
+            .unwrap();
+
+        // Edge A -> B via ImportMap strategy (typed import)
+        db.insert_edge(&CodeEdge {
+            id: None,
+            from_symbol: aid.clone(),
+            to_symbol: bid.clone(),
+            edge_type: EdgeType::Calls,
+            file_path: "/src/a.rs".to_string(),
+            line: 2,
+            confidence: 0.95,
+            metadata: Some(serde_json::json!({ "strategy": "ImportMap" })),
+        })
+        .expect("edge ab");
+
+        // Edge B -> A via ImportMapSuffix strategy (typed import)
+        db.insert_edge(&CodeEdge {
+            id: None,
+            from_symbol: bid,
+            to_symbol: aid,
+            edge_type: EdgeType::Calls,
+            file_path: "/src/b.rs".to_string(),
+            line: 2,
+            confidence: 0.85,
+            metadata: Some(serde_json::json!({ "strategy": "ImportMapSuffix" })),
+        })
+        .expect("edge ba");
+
+        let query = QueryEngine::new(Arc::new(db));
+        let reports = query.call_cycles_ex(4).expect("cycles ex");
+
+        assert!(!reports.is_empty(), "expected at least one cycle report");
+        assert_eq!(
+            reports[0].provenance,
+            CycleEdgeProvenance::TypedImport,
+            "expected TypedImport provenance"
+        );
+        assert_eq!(reports[0].cycle.len(), 2);
+    }
+
+    #[test]
+    fn test_no_import_fallback_frozen() {
+        let db = CodeGraphDB::in_memory().expect("in-memory db");
+        let fa = mk_sym("fn_a", "/src/a.rs");
+        let fb = mk_sym("fn_b", "/src/b.rs");
+        db.insert_symbol(&fa).expect("insert fa");
+        db.insert_symbol(&fb).expect("insert fb");
+
+        let aid = db.find_by_name("fn_a", 1).unwrap()[0]
+            .stable_id
+            .clone()
+            .unwrap();
+        let bid = db.find_by_name("fn_b", 1).unwrap()[0]
+            .stable_id
+            .clone()
+            .unwrap();
+
+        // Edge A -> B without strategy metadata (fallback)
+        db.insert_edge(&CodeEdge {
+            id: None,
+            from_symbol: aid.clone(),
+            to_symbol: bid.clone(),
+            edge_type: EdgeType::Calls,
+            file_path: "/src/a.rs".to_string(),
+            line: 2,
+            confidence: 0.75,
+            metadata: None,
+        })
+        .expect("edge ab");
+
+        // Edge B -> A without strategy metadata (fallback)
+        db.insert_edge(&CodeEdge {
+            id: None,
+            from_symbol: bid,
+            to_symbol: aid,
+            edge_type: EdgeType::Calls,
+            file_path: "/src/b.rs".to_string(),
+            line: 2,
+            confidence: 0.75,
+            metadata: None,
+        })
+        .expect("edge ba");
+
+        let query = QueryEngine::new(Arc::new(db));
+        let reports = query.call_cycles_ex(4).expect("cycles ex");
+        let cycles_legacy = query.call_cycles(4).expect("cycles legacy");
+
+        assert!(!reports.is_empty(), "expected cycle report");
+        assert_eq!(
+            reports[0].provenance,
+            CycleEdgeProvenance::FileFallback,
+            "expected FileFallback provenance"
+        );
+        assert_eq!(
+            cycles_legacy,
+            vec![reports[0].cycle.clone()],
+            "legacy wrapper output must match"
+        );
+    }
+
+    #[test]
+    fn test_call_cycles_dense_cap_and_ordering() {
+        let db = CodeGraphDB::in_memory().expect("in-memory db");
+        for i in 0..10 {
+            db.insert_symbol(&mk_sym(&format!("fn_{}", i), &format!("/src/mod_{}.rs", i)))
+                .expect("sym");
+        }
+        let ids: Vec<String> = (0..10)
+            .map(|i| {
+                db.find_by_name(&format!("fn_{}", i), 1).unwrap()[0]
+                    .stable_id
+                    .clone()
+                    .unwrap()
+            })
+            .collect();
+
+        for (a, aid) in ids.iter().enumerate() {
+            for (b, bid) in ids.iter().enumerate() {
+                if a == b {
+                    continue;
+                }
+                db.insert_edge(&CodeEdge {
+                    id: None,
+                    from_symbol: aid.clone(),
+                    to_symbol: bid.clone(),
+                    edge_type: EdgeType::Calls,
+                    file_path: format!("/src/mod_{}.rs", a),
+                    line: 2,
+                    confidence: 0.95,
+                    metadata: Some(serde_json::json!({ "strategy": "ImportMap" })),
+                })
+                .expect("edge");
+            }
+        }
+
+        let start_time = std::time::Instant::now();
+        let query = QueryEngine::new(Arc::new(db));
+        let reports = query.call_cycles_ex(6).expect("call cycles ex");
+        let elapsed = start_time.elapsed();
+
+        assert!(
+            reports.len() <= MAX_CYCLES,
+            "must respect MAX_CYCLES cap of {}",
+            MAX_CYCLES
+        );
+        assert!(
+            elapsed.as_secs_f64() <= 4.0,
+            "performance regression: expected <= 4.0s wall time, got {:.2}s",
+            elapsed.as_secs_f64()
+        );
+        // Shortest-first ordering
+        for window in reports.windows(2) {
+            assert!(
+                window[0].cycle.len() <= window[1].cycle.len(),
+                "reports must be ordered shortest-first"
+            );
+        }
     }
 }

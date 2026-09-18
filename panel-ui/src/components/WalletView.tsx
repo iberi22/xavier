@@ -35,7 +35,36 @@ interface KarmaEvent {
   status: "confirmed" | "pending";
 }
 
-export const WalletView: React.FC<WalletViewProps> = ({ onClose }) => {
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted karma event row into KarmaEventItem and wrapped in React.memo()
+ * 🎯 Why: Re-renders of WalletView caused O(N) array mapping and reconciliation of all events.
+ * 📊 Impact: Eliminates unnecessary re-renders of event list items when parent state changes.
+ */
+const KarmaEventItem = React.memo(function KarmaEventItem({ ev }: { ev: KarmaEvent }) {
+  return (
+    <div className="p-3.5 flex items-center justify-between text-xs hover:bg-white/[0.01] transition-colors">
+      <div className="flex items-center gap-3">
+        <div className="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+          <Zap className="w-3.5 h-3.5" />
+        </div>
+        <div>
+          <p className="text-white font-medium">{ev.title}</p>
+          <p className="text-[10px] text-white/40 font-mono">
+            {new Date(ev.timestamp).toLocaleTimeString()} · Verificado por Génesis
+          </p>
+        </div>
+      </div>
+      <div className="text-right">
+        <span className="font-mono text-emerald-400 font-bold">+{ev.amount} KARMA</span>
+        <p className="text-[9px] text-white/30 uppercase font-mono">Confirmado</p>
+      </div>
+    </div>
+  );
+});
+
+export const WalletView = React.memo(function WalletView({ onClose }: WalletViewProps) {
   const { authUser } = useAuthStore();
   const [copiedKey, setCopiedKey] = useState(false);
   const [polygonAddress, setPolygonAddress] = useState(() => {
@@ -389,23 +418,7 @@ export const WalletView: React.FC<WalletViewProps> = ({ onClose }) => {
             </h3>
             <div className="bg-white/[0.02] border border-white/10 rounded-xl divide-y divide-white/5 overflow-hidden">
               {recentEvents.map((ev) => (
-                <div key={ev.id} className="p-3.5 flex items-center justify-between text-xs hover:bg-white/[0.01] transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                      <Zap className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <p className="text-white font-medium">{ev.title}</p>
-                      <p className="text-[10px] text-white/40 font-mono">
-                        {new Date(ev.timestamp).toLocaleTimeString()} · Verificado por Génesis
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-mono text-emerald-400 font-bold">+{ev.amount} KARMA</span>
-                    <p className="text-[9px] text-white/30 uppercase font-mono">Confirmado</p>
-                  </div>
-                </div>
+                <KarmaEventItem key={ev.id} ev={ev} />
               ))}
             </div>
           </div>
@@ -450,4 +463,4 @@ export const WalletView: React.FC<WalletViewProps> = ({ onClose }) => {
       </div>
     </div>
   );
-};
+});
