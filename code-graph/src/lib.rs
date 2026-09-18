@@ -8,6 +8,7 @@
 pub mod api;
 pub mod budget;
 pub mod confidence;
+pub mod contracts;
 pub mod db;
 pub mod debug;
 // pub mod impact;

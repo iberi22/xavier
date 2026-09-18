@@ -21,7 +21,7 @@ use crate::search::rrf::{reciprocal_rank_fusion, ScoredResult};
 
 /// Layer weights for multi-layer retrieval fusion.
 /// These control how much each memory layer contributes to final results.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LayerWeights {
     /// Weight for working memory layer (default 0.3)
     pub working: f32,
@@ -74,6 +74,11 @@ impl LayerWeights {
         }
     }
 
+    /// Derive layer weights from an O1 confidence score via [`weights_from_confidence`].
+    pub fn from_confidence(score: f32) -> Self {
+        weights_from_confidence(score)
+    }
+
     /// Validate that weights sum to approximately 1.0
     pub fn is_valid(&self) -> bool {
         let sum = self.working + self.episodic + self.semantic;
@@ -88,6 +93,48 @@ impl LayerWeights {
             "semantic" => self.semantic,
             _ => 0.0,
         }
+    }
+}
+
+/// Pure mapping function that translates an O1 confidence score into [`LayerWeights`].
+///
+/// Implements the ADR-032 / O1 confidence rubric mapping using [`code_graph::confidence::Confidence::classify`].
+///
+/// | Tier / Rubric Rung | Input Score / Example | Classified Rubric | `LayerWeights` (working, episodic, semantic) |
+/// |--------------------|----------------------|-------------------|--------------------------------------------|
+/// | Extracted          | `1.0`                | `Extracted`       | `(0.10, 0.10, 0.80)`                       |
+/// | Inferred (>=0.95)   | `0.95` (ImportMap)   | `Inferred(0.95)`  | `(0.15, 0.15, 0.70)`                       |
+/// | Inferred (>=0.85)   | `0.90` (SameModule 0.90 tie-down -> 0.85) | `Inferred(0.85)` | `(0.20, 0.20, 0.60)`        |
+/// | Inferred (>=0.85)   | `0.85` (ImportMapSuffix) | `Inferred(0.85)` | `(0.20, 0.20, 0.60)`                   |
+/// | Inferred (>=0.75)   | `0.80` (Imports 0.80 tie-down -> 0.75) | `Inferred(0.75)` | `(0.25, 0.25, 0.50)`             |
+/// | Inferred (>=0.75)   | `0.75` (UniqueName)  | `Inferred(0.75)`  | `(0.25, 0.25, 0.50)`                       |
+/// | Inferred (>=0.65)   | `0.65`               | `Inferred(0.65)`  | `(0.30, 0.30, 0.40)`                       |
+/// | Inferred (>=0.55)   | `0.55` (SuffixMatch) | `Inferred(0.55)`  | `(0.35, 0.35, 0.30)`                       |
+/// | Ambiguous (<0.40)   | `<0.40`, `0.0`, unknown | `Ambiguous`   | `(0.40, 0.40, 0.20)`                       |
+///
+/// Documented backfill mapping (ADR-032): `ImportMap 0.95->0.95`, `SameModule 0.90->0.85` (tie-down),
+/// `ImportMapSuffix 0.85->0.85`, `Imports 0.80->0.75` (tie-down), `UniqueName 0.75->0.75`,
+/// `SuffixMatch 0.55->0.55`, `Fuzzy <=0.40->Ambiguous`.
+pub fn weights_from_confidence(score: f32) -> LayerWeights {
+    let classified = code_graph::confidence::Confidence::classify(score);
+    match classified {
+        code_graph::confidence::Confidence::Extracted => LayerWeights::new(0.10, 0.10, 0.80),
+        code_graph::confidence::Confidence::Inferred { score: norm } => {
+            if norm >= 0.95 {
+                LayerWeights::new(0.15, 0.15, 0.70)
+            } else if norm >= 0.85 {
+                LayerWeights::new(0.20, 0.20, 0.60)
+            } else if norm >= 0.75 {
+                LayerWeights::new(0.25, 0.25, 0.50)
+            } else if norm >= 0.65 {
+                LayerWeights::new(0.30, 0.30, 0.40)
+            } else if norm >= 0.55 {
+                LayerWeights::new(0.35, 0.35, 0.30)
+            } else {
+                LayerWeights::new(0.40, 0.40, 0.20)
+            }
+        }
+        code_graph::confidence::Confidence::Ambiguous { .. } => LayerWeights::new(0.40, 0.40, 0.20),
     }
 }
 
@@ -950,6 +997,21 @@ impl AdaptiveGating {
         self.config.relevance_threshold = threshold.clamp(0.0, 1.0);
     }
 
+    /// Derives entry weights and threshold for code-graph-backed searches from an O1 confidence score.
+    ///
+    /// When `opt_score` is `Some(score)`, computes layer weights via [`weights_from_confidence`]
+    /// and scales the relevance threshold proportionately (e.g. `score * 0.5`, clamped to `0.1..=0.8`).
+    /// When `opt_score` is `None` (legacy or non-code search path), falls back to default layer weights
+    /// and config relevance threshold with zero behavior changes.
+    pub fn with_code_graph_confidence(&mut self, opt_score: Option<f32>) -> &mut Self {
+        if let Some(score) = opt_score {
+            self.config.layer_weights = LayerWeights::from_confidence(score);
+            let target_threshold = (score * 0.5).clamp(0.1, 0.8);
+            self.set_threshold(target_threshold);
+        }
+        self
+    }
+
     /// Perform multi-layer retrieval and return a LayeredSearchResult (for context pack export)
     pub async fn retrieve_layered(
         &self,
@@ -1635,5 +1697,74 @@ mod tests {
         // With <5 data points, should use base (not adapted)
         assert!((boost - 1.5).abs() < 0.01);
         assert!((penalty - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_weights_from_confidence_o1_rubric() {
+        // Extracted (1.0)
+        let w_extracted = weights_from_confidence(1.0);
+        assert_eq!(w_extracted, LayerWeights::new(0.10, 0.10, 0.80));
+
+        // ImportMap (0.95) -> Inferred top tier
+        let w_import_map = weights_from_confidence(0.95);
+        assert_eq!(w_import_map, LayerWeights::new(0.15, 0.15, 0.70));
+
+        // Mid/lower tiers: 0.85, 0.75, 0.65, 0.55
+        let w_085 = weights_from_confidence(0.85);
+        assert_eq!(w_085, LayerWeights::new(0.20, 0.20, 0.60));
+
+        let w_075 = weights_from_confidence(0.75);
+        assert_eq!(w_075, LayerWeights::new(0.25, 0.25, 0.50));
+
+        let w_055 = weights_from_confidence(0.55);
+        assert_eq!(w_055, LayerWeights::new(0.35, 0.35, 0.30));
+
+        // Unknown / 0.0 maps to floor/ambiguous tier
+        let w_zero = weights_from_confidence(0.0);
+        assert_eq!(w_zero, LayerWeights::new(0.40, 0.40, 0.20));
+
+        let w_amb = weights_from_confidence(0.38);
+        assert_eq!(w_amb, LayerWeights::new(0.40, 0.40, 0.20));
+    }
+
+    #[test]
+    fn test_same_module_ties_down() {
+        // ADR-032 tie-down rule: SameModule legacy score 0.90 falls on the exact midpoint
+        // between 0.95 and 0.85, so it ties DOWN to 0.85 (upper-mid tier), not 0.95 (top tier).
+        let w_same_module = weights_from_confidence(0.90);
+        assert_eq!(
+            w_same_module,
+            LayerWeights::new(0.20, 0.20, 0.60),
+            "0.90 SameModule must tie DOWN to 0.85 rung (0.20, 0.20, 0.60)"
+        );
+
+        // Imports legacy score 0.80 falls on exact midpoint between 0.85 and 0.75,
+        // so it ties DOWN to 0.75 (mid tier).
+        let w_imports = weights_from_confidence(0.80);
+        assert_eq!(
+            w_imports,
+            LayerWeights::new(0.25, 0.25, 0.50),
+            "0.80 Imports must tie DOWN to 0.75 rung (0.25, 0.25, 0.50)"
+        );
+    }
+
+    #[test]
+    fn test_code_graph_score_fallback() {
+        let mut gating = AdaptiveGating::new(GatingConfig::default());
+        let default_weights = gating.config().layer_weights;
+        let default_threshold = gating.config().relevance_threshold;
+
+        // When opt_score is None, config remains completely unchanged
+        gating.with_code_graph_confidence(None);
+        assert_eq!(gating.config().layer_weights, default_weights);
+        assert_eq!(gating.config().relevance_threshold, default_threshold);
+
+        // When opt_score is Some(0.95), config updates according to O1 confidence rubric
+        gating.with_code_graph_confidence(Some(0.95));
+        assert_eq!(
+            gating.config().layer_weights,
+            LayerWeights::new(0.15, 0.15, 0.70)
+        );
+        assert!((gating.config().relevance_threshold - 0.475).abs() < 0.001);
     }
 }

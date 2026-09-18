@@ -60,6 +60,15 @@ impl PluginHost {
         }
     }
 
+    /// Build a hermetic `PluginHost` backed by a hermetic `PluginManager`
+    /// without PATH auto-discovery or host config loading.
+    pub fn new_hermetic() -> Self {
+        let manager = PluginManager::new_hermetic();
+        Self {
+            manager: Arc::new(manager),
+        }
+    }
+
     /// Access the underlying manager (for callers migrating off the wrapper).
     pub fn manager(&self) -> &PluginManager {
         &self.manager
@@ -124,7 +133,7 @@ mod tests {
     #[test]
     #[allow(deprecated)]
     fn plugin_host_delegates_to_manager_and_drops_rust_hardcode() {
-        let host = PluginHost::new();
+        let host = PluginHost::new_hermetic();
 
         // Rust used to short-circuit to Native; now it follows the chain.
         match host.parser_for(&Language::Rust) {
