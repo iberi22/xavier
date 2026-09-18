@@ -26,6 +26,19 @@ use tracing::{debug, error, info, warn};
 pub mod call_resolution;
 use call_resolution::{extract_call_names, CallResolver};
 
+/// Outcome of [`Indexer::verify_hash_parity`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ParityReport {
+    /// Hash rows examined.
+    pub checked: usize,
+    /// Rows whose on-disk content still matches.
+    pub matched: usize,
+    /// Files changed on disk without a `PathChange`: hash refreshed in place.
+    pub rehashed: usize,
+    /// Files gone from disk: stale hash rows deleted.
+    pub pruned_missing: usize,
+}
+
 /// Kind of path-level change for [`Indexer::apply_paths`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PathChangeKind {
@@ -394,6 +407,13 @@ impl Indexer {
             if pruned > 0 {
                 debug!("Pruned {} dangling edges after path deletes", pruned);
             }
+            // O4: deletes already pruned hashes via batch_delete_file_data;
+            // parity sweep drops rows for files vanished off-track.
+            let parity = self.verify_hash_parity(root)?;
+            debug!(
+                "Hash parity after deletes: {} checked, {} matched, {} rehashed, {} pruned",
+                parity.checked, parity.matched, parity.rehashed, parity.pruned_missing
+            );
             let mut stats = self.db.stats()?;
             stats.duration_ms = start.elapsed().as_millis() as u64;
             return Ok(stats);
@@ -406,6 +426,13 @@ impl Indexer {
         if pruned > 0 {
             debug!("Pruned {} dangling edges after apply_paths", pruned);
         }
+        // O4: re-parsed files flushed fresh hashes; sweep the rest so the
+        // cache agrees with disk before the next hash-skip walk.
+        let parity = self.verify_hash_parity(root)?;
+        debug!(
+            "Hash parity after apply_paths: {} checked, {} matched, {} rehashed, {} pruned",
+            parity.checked, parity.matched, parity.rehashed, parity.pruned_missing
+        );
         stats.duration_ms = start.elapsed().as_millis() as u64;
         Ok(stats)
     }
@@ -417,6 +444,50 @@ impl Indexer {
         changes: &[PathChange],
     ) -> Result<IndexStats> {
         self.apply_paths(root, changes).await
+    }
+
+    /// O4: reconcile `file_hashes` with disk truth (hash parity).
+    ///
+    /// `index()` hash-skips and `apply_paths()` deletes-then-reparses, but a
+    /// file can change (or vanish) on disk without any `PathChange` ever
+    /// arriving. This walk makes the hash cache agree with the filesystem
+    /// again: mismatches are re-hashed in place (symbols stay untouched —
+    /// the next `index()` walk will see the fresh hash and skip correctly),
+    /// missing files lose their stale hash row (their index rows were
+    /// already pruned by [`crate::db::CodeGraphDB::batch_delete_file_data`]
+    /// whenever the delete went through a tracked path).
+    pub fn verify_hash_parity(&self, root: &Path) -> Result<ParityReport> {
+        let stored = self.db.get_all_file_hashes()?;
+        let mut report = ParityReport {
+            checked: stored.len(),
+            ..Default::default()
+        };
+        let mut refreshed = HashMap::new();
+        let mut pruned = Vec::new();
+        for (rel, hash) in &stored {
+            let abs = root.join(rel);
+            match std::fs::read(&abs) {
+                Ok(bytes) => {
+                    if content_hash(&bytes) == *hash {
+                        report.matched += 1;
+                    } else {
+                        refreshed.insert(rel.clone(), content_hash(&bytes));
+                        report.rehashed += 1;
+                    }
+                }
+                Err(_) => {
+                    pruned.push(rel.clone());
+                    report.pruned_missing += 1;
+                }
+            }
+        }
+        if !refreshed.is_empty() {
+            self.db.batch_upsert_file_hashes(&refreshed)?;
+        }
+        if !pruned.is_empty() {
+            self.db.delete_file_hash_rows(&pruned)?;
+        }
+        Ok(report)
     }
 
     /// Shared parse → edges → persist pipeline used by full and path-list index.
@@ -494,6 +565,21 @@ impl Indexer {
             .iter()
             .map(|(path, source)| (path.clone(), content_hash(source.as_bytes())))
             .collect();
+        // O4: legacy ("default" project) -> current id rewrites, recorded so
+        // old references keep resolving after multi-project splits. Empty for
+        // the default project (legacy ids ARE the current ids there).
+        let rewire_rows: Vec<(String, String, String)> = if self.project_id == "default" {
+            Vec::new()
+        } else {
+            new_symbols
+                .iter()
+                .filter_map(|symbol| {
+                    let current = symbol.stable_id.clone()?;
+                    let legacy = symbol.deterministic_id("default");
+                    (legacy != current).then(|| (legacy, current, self.project_id.clone()))
+                })
+                .collect()
+        };
         let stats = tokio::task::spawn_blocking(move || {
             db.insert_symbols(&new_symbols)?;
             db.insert_edges(&edges)?;
@@ -506,6 +592,7 @@ impl Indexer {
             }
             db.batch_upsert_file_metadata(files_to_mtime)?;
             db.batch_upsert_file_hashes(&parsed_hashes)?;
+            db.record_stable_id_rewrites(&rewire_rows)?;
             db.checkpoint_wal()?;
             db.stats()
         })
@@ -1235,10 +1322,10 @@ mod tests {
         let edges_count = db.get_all_edges().expect("get edges").len();
 
         // Baseline counts for code-graph/src fixture (measured 2026-09-19,
-        // post contracts.rs + builtin-first language fast-path)
+        // post O4 parity+rewire code)
         assert_eq!(stats.total_files, 35, "file count mismatch");
-        assert_eq!(stats.total_symbols, 2437, "symbol count mismatch");
-        assert_eq!(edges_count, 13476, "edge count mismatch");
+        assert_eq!(stats.total_symbols, 2469, "symbol count mismatch");
+        assert_eq!(edges_count, 13674, "edge count mismatch");
     }
 
     #[tokio::test]
@@ -1319,6 +1406,96 @@ mod tests {
         assert_eq!(stats3.total_files, 1);
         let symbols = db.get_all_symbols().expect("symbols");
         assert!(symbols.iter().all(|s| s.file_path == "a.rs"));
+    }
+
+    #[tokio::test]
+    async fn verify_hash_parity_repairs_tamper_and_vanish() {
+        let dir = TempDir::new().expect("temp dir");
+        let a = dir.path().join("a.rs");
+        let b = dir.path().join("b.rs");
+        std::fs::write(&a, "fn alpha() {}\n").expect("write a");
+        std::fs::write(&b, "fn beta() {}\n").expect("write b");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+        indexer
+            .apply_paths(
+                dir.path(),
+                &[PathChange::added("a.rs"), PathChange::added("b.rs")],
+            )
+            .await
+            .expect("add");
+
+        // Drift with NO PathChange: tamper a.rs, vanish b.rs from disk.
+        std::fs::write(&a, "fn alpha() {}\nfn alpha_tampered() {}\n").expect("tamper a");
+        std::fs::remove_file(&b).expect("vanish b");
+
+        let report = indexer.verify_hash_parity(dir.path()).expect("parity");
+        assert_eq!(report.checked, 2);
+        assert_eq!(report.matched, 0);
+        assert_eq!(report.rehashed, 1, "tampered file must be re-hashed");
+        assert_eq!(
+            report.pruned_missing, 1,
+            "vanished file must lose its hash row"
+        );
+
+        let hashes = db.get_all_file_hashes().expect("hashes");
+        assert_eq!(hashes.len(), 1, "only a.rs keeps a hash row");
+        let on_disk = content_hash(&std::fs::read(&a).expect("read tampered a"));
+        assert_eq!(hashes.get("a.rs").expect("a hash"), &on_disk);
+
+        // Second sweep is a clean no-op: cache agrees with disk again.
+        let report2 = indexer.verify_hash_parity(dir.path()).expect("parity2");
+        assert_eq!(report2.matched, 1);
+        assert_eq!(report2.rehashed, 0);
+        assert_eq!(report2.pruned_missing, 0);
+    }
+
+    #[tokio::test]
+    async fn rewire_table_maps_legacy_ids_for_custom_project() {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("w.rs"), "fn widget() {}\n").expect("write");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::with_project_id(db.clone(), "proj-a");
+        indexer
+            .apply_paths(dir.path(), &[PathChange::added("w.rs")])
+            .await
+            .expect("add");
+
+        let symbols = db.get_all_symbols().expect("symbols");
+        let widget = symbols.iter().find(|s| s.name == "widget").expect("widget");
+        let current = widget.stable_id.clone().expect("current id");
+        // project_id feeds the v2 hash input, so custom-project ids differ
+        // from legacy "default" ids by construction (asserted below).
+
+        let legacy = widget.deterministic_id("default");
+        assert_ne!(legacy, current, "fixture needs distinct legacy/current ids");
+        let resolved = db
+            .resolve_stable_id_rewrite(&legacy)
+            .expect("resolve")
+            .expect("rewrite row must exist");
+        assert_eq!(resolved.0, current);
+        assert_eq!(resolved.1, "proj-a");
+
+        // Default project records nothing (legacy IS current there).
+        let db2 = Arc::new(CodeGraphDB::in_memory().expect("db2"));
+        let indexer2 = Indexer::new(db2.clone());
+        indexer2
+            .apply_paths(dir.path(), &[PathChange::added("w.rs")])
+            .await
+            .expect("add default");
+        let symbols2 = db2.get_all_symbols().expect("symbols2");
+        let widget2 = symbols2
+            .iter()
+            .find(|s| s.name == "widget")
+            .expect("widget2");
+        let legacy2 = widget2.deterministic_id("default");
+        assert_eq!(
+            db2.resolve_stable_id_rewrite(&legacy2).expect("resolve2"),
+            None,
+            "default project must not write rewrite rows"
+        );
     }
 
     #[tokio::test]
