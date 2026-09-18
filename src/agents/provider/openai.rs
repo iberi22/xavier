@@ -80,7 +80,7 @@ pub(crate) async fn generate_openai_compatible(
 
     if config.provider_label == "openrouter" {
         request = request
-            .header("HTTP-Referer", "https://xavier.swal.dev")
+            .header("HTTP-Referer", "https://xavier.swal.network")
             .header("X-Title", "Xavier Cognitive Memory");
     }
 
