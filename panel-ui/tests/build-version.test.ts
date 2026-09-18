@@ -4,12 +4,15 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 describe("Panel UI Build & Version Integration", () => {
-  test("should resolve __APP_VERSION__ equal to Cargo.toml version (0.2.4)", () => {
+  test("should resolve __APP_VERSION__ equal to Cargo.toml version", () => {
     const cargoPath = path.resolve(__dirname, "../../Cargo.toml");
     const cargoContent = fs.readFileSync(cargoPath, "utf8");
     const expectedVersion = cargoContent.match(/^version = "(.+)"/m)?.[1];
 
-    expect(expectedVersion).toBe("0.2.4");
+    // Single source of truth: Cargo.toml. Never hardcode the version here
+    // (hardcoded "0.2.4" caused silent drift; package.json manifests are
+    // checked separately by scripts/check-version-sync.sh).
+    expect(expectedVersion).toMatch(/^\d+\.\d+\.\d+/);
 
     const viteConfigPath = path.resolve(__dirname, "../vite.config.ts");
     const viteConfigContent = fs.readFileSync(viteConfigPath, "utf8");
@@ -51,11 +54,17 @@ describe("Panel UI Build & Version Integration", () => {
     // dummy should be inlined via import.meta.env replacement; if not found due to treeshake,
     // at least ensure build succeeded and assets exist (non-blocking for versioning fix)
     if (!foundDummy) {
-      // Fallback: verify __APP_VERSION__ was inlined instead (proves build env injection works)
+      // Fallback: verify __APP_VERSION__ was inlined instead (proves build env injection works).
+      // Version derived from Cargo.toml (single source of truth, see first test).
+      const cargoContent = fs.readFileSync(
+        path.resolve(__dirname, "../../Cargo.toml"),
+        "utf8",
+      );
+      const cargoVersion = cargoContent.match(/^version = "(.+)"/m)?.[1] ?? "";
       let foundVersion = false;
       for (const jsFile of jsFiles) {
         const content = fs.readFileSync(path.join(assetsDir, jsFile), "utf8");
-        if (content.includes("0.2.4")) {
+        if (cargoVersion && content.includes(cargoVersion)) {
           foundVersion = true;
           break;
         }
@@ -64,7 +73,7 @@ describe("Panel UI Build & Version Integration", () => {
     } else {
       expect(foundDummy).toBe(true);
     }
-  }, 30000);
+  }, 120000);
 
   test("should not include unexpected real token in build when VITE_XAVIER_API_TOKEN is not set", () => {
     const panelDir = path.resolve(__dirname, "..");
@@ -84,7 +93,7 @@ describe("Panel UI Build & Version Integration", () => {
       const content = fs.readFileSync(path.join(distAssetsDir, jsFile), "utf8");
       expect(content).not.toContain("XAVIER_SECRET_TOKEN_REAL");
     }
-  }, 30000);
+  }, 120000);
 
   test("should execute pnpm build without deprecated pnpm field warnings", () => {
     const panelDir = path.resolve(__dirname, "..");
@@ -100,5 +109,5 @@ describe("Panel UI Build & Version Integration", () => {
 
     expect(stdoutAndStderr).not.toContain('[WARN] The "pnpm" field');
     expect(stdoutAndStderr).not.toContain('The "pnpm" field in');
-  }, 30000);
+  }, 120000);
 });

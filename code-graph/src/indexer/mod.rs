@@ -385,8 +385,11 @@ impl Indexer {
                 continue;
             }
             let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if Language::from_extension_with_plugins(ext, self.plugin_host.discovery())
-                == Language::Unknown
+            // O4/fast-path (matches parse_file): builtins first so the
+            // per-file plugin discovery probe only runs for unknown extensions.
+            let builtin_lang = Language::from_extension(ext);
+            if builtin_lang == Language::Unknown
+                && self.plugin_host.discovery().language_for_extension(ext) == Language::Unknown
             {
                 continue;
             }
@@ -1321,11 +1324,11 @@ mod tests {
             .expect("indexing fixture failed");
         let edges_count = db.get_all_edges().expect("get edges").len();
 
-        // Baseline counts for code-graph/src fixture (measured 2026-09-19,
-        // post O4 parity+rewire code)
+        // Baseline counts for code-graph/src fixture (measured 2026-09-18,
+        // post O4 parity+rewire + apply_paths fast-path)
         assert_eq!(stats.total_files, 35, "file count mismatch");
-        assert_eq!(stats.total_symbols, 2469, "symbol count mismatch");
-        assert_eq!(edges_count, 13674, "edge count mismatch");
+        assert_eq!(stats.total_symbols, 2470, "symbol count mismatch");
+        assert_eq!(edges_count, 13686, "edge count mismatch");
     }
 
     #[tokio::test]
