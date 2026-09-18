@@ -848,7 +848,7 @@ fn build_edges(
     // Only build edges FROM new symbols
     let new_callable_symbols: Vec<&Symbol> = new_symbols
         .iter()
-        .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
+        .filter(|symbol| symbol.kind.is_function_like())
         .collect();
 
     let source_lines: HashMap<&str, Vec<&str>> = sources

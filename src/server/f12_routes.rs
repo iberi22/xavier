@@ -589,7 +589,9 @@ pub async fn publish_service_telemetry(
 ) -> impl IntoResponse {
     let sample = TelemetrySample {
         node_id: NodeId(req.node_id),
-        kind: req.kind.unwrap_or(ServiceKind::Custom("ops".to_string())),
+        kind: req
+            .kind
+            .unwrap_or_else(|| ServiceKind::Custom("ops".to_string())),
         payload: req.payload,
         ts: req.ts.unwrap_or(0),
         classification: "INTERNAL".to_string(),
