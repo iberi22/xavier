@@ -226,7 +226,8 @@ impl PythonParser {
             args.kind
         };
 
-        let complexity = matches!(final_kind, SymbolKind::Function | SymbolKind::Method)
+        let complexity = final_kind
+            .is_function_like()
             .then(|| cyclomatic_complexity(args.node, args.source));
         symbols.push(Symbol {
             id: None,
