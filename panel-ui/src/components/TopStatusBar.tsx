@@ -487,6 +487,7 @@ export default React.memo(function TopStatusBar({
                       key={key}
                       onClick={() => toggleModule(key as keyof typeof modules)}
                       className="flex items-center justify-between px-2 py-1.5 hover:bg-white/5 rounded-lg transition-colors group/btn outline-none"
+                      aria-label={`Toggle ${label} module`}
                     >
                       <span className="text-xs text-white/80 font-mono">{label}</span>
                       <div className={`w-3 h-3 rounded-sm border flex items-center justify-center transition-colors ${modules[key as keyof typeof modules] ? "bg-[#39ff14]/20 border-[#39ff14]/50" : "border-white/20 group-hover/btn:border-white/40"}`}>
@@ -544,6 +545,7 @@ export default React.memo(function TopStatusBar({
             onClick={() => { window.location.hash = "#/maloca"; }}
             className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 hover:border-emerald-400/30 hover:bg-emerald-500/5 transition-colors"
             title="Abrir Maloca (ops workspace)"
+            aria-label="Abrir Maloca (ops workspace)"
           >
             <Home className="w-3 h-3 text-emerald-300/80" />
             <span className="font-mono text-[9px] text-emerald-200/80 uppercase tracking-wide hidden sm:inline-block">
