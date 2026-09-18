@@ -644,6 +644,8 @@ impl Indexer {
             .git_exclude(true)
             .ignore(true)
             .require_git(false)
+            .parents(false)
+            .git_global(false)
             .build();
 
         for entry in walker {
@@ -1313,6 +1315,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reproduce_backup_drop_and_verify_repo_completeness() {
+        let parent_dir = TempDir::new().expect("temp dir");
+        let repo_dir = parent_dir.path().join("repo");
+        let backup_dir = repo_dir.join("src/storage/backup");
+        let build_adjacent_file = repo_dir.join("src/build_helper.rs");
+        let config_file = repo_dir.join(".config/settings.rs");
+
+        std::fs::create_dir_all(&backup_dir).expect("mkdir backup");
+        std::fs::create_dir_all(repo_dir.join(".config")).expect("mkdir config");
+
+        std::fs::write(backup_dir.join("mod.rs"), "pub mod wal_streamer;\n").expect("write");
+        std::fs::write(
+            backup_dir.join("wal_streamer.rs"),
+            "pub fn stream_wal() {}\n",
+        )
+        .expect("write");
+        std::fs::write(build_adjacent_file, "pub fn build_tool() {}\n").expect("write");
+        std::fs::write(config_file, "pub fn load_config() {}\n").expect("write");
+
+        // Write a parent .gitignore containing "backup", "backup/", "build" above the repo
+        std::fs::write(
+            parent_dir.path().join(".gitignore"),
+            "backup\nbackup/\nbuild\n",
+        )
+        .expect("parent gitignore");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+
+        let (files, skips) = indexer.collect_files(&repo_dir).expect("collect");
+        assert_eq!(
+            files.len(),
+            4,
+            "Parent .gitignore must not cause repo files under backup/ or build-adjacent to be dropped"
+        );
+        assert_eq!(skips.total(), 0);
+
+        let stats = indexer
+            .index(&repo_dir, false)
+            .await
+            .expect("index repo fixture");
+        assert_eq!(stats.total_files, 4);
+
+        let symbols = db.get_all_symbols().expect("get symbols");
+        let distinct_file_paths: HashSet<_> = symbols.iter().map(|s| s.file_path.clone()).collect();
+        assert_eq!(
+            distinct_file_paths.len() as u64,
+            stats.total_files,
+            "file count in == distinct file_path count in symbols"
+        );
+        assert!(distinct_file_paths.contains("src/storage/backup/mod.rs"));
+        assert!(distinct_file_paths.contains("src/storage/backup/wal_streamer.rs"));
+        assert!(distinct_file_paths.contains("src/build_helper.rs"));
+        assert!(distinct_file_paths.contains(".config/settings.rs"));
+    }
+
+    #[tokio::test]
     async fn test_fixture_index_output_identity() {
         let fixture_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let db = Arc::new(CodeGraphDB::in_memory().expect("in memory db"));
@@ -1324,11 +1383,15 @@ mod tests {
             .expect("indexing fixture failed");
         let edges_count = db.get_all_edges().expect("get edges").len();
 
+        println!(
+            "Fixture stats: files={}, symbols={}, edges={}",
+            stats.total_files, stats.total_symbols, edges_count
+        );
         // Baseline counts for code-graph/src fixture (measured 2026-09-18,
         // post O4 parity+rewire + apply_paths fast-path)
         assert_eq!(stats.total_files, 35, "file count mismatch");
-        assert_eq!(stats.total_symbols, 2470, "symbol count mismatch");
-        assert_eq!(edges_count, 13686, "edge count mismatch");
+        assert_eq!(stats.total_symbols, 2480, "symbol count mismatch");
+        assert_eq!(edges_count, 13750, "edge count mismatch");
     }
 
     #[tokio::test]
