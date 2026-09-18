@@ -52,6 +52,10 @@ impl HmacSha256 {
     /// Verify.
     pub fn verify(key: &[u8], data: &[u8], signature: &[u8]) -> bool {
         let actual = hmac_sha256(key, data);
+        if actual.len() != signature.len() {
+            let _ = signature.ct_eq(signature);
+            return false;
+        }
         actual.ct_eq(signature).into()
     }
 }
