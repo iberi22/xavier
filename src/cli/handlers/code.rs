@@ -1333,6 +1333,155 @@ pub async fn code_call_chain_handler(
     code_graph_edges_response(&state, payload, false, true).await
 }
 
+/// Payload for the code situ handler.
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct CodeSituPayload {
+    #[serde(default = "default_graph_depth")]
+    pub depth: usize,
+    #[serde(default)]
+    pub files: Option<Vec<String>>,
+    #[serde(default)]
+    pub json: Option<bool>,
+}
+
+/// Helper function to parse `git diff --name-only` output into a list of file path strings.
+pub fn parse_git_diff_output(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
+        .collect()
+}
+
+/// Code situ handler — assesses changed files (from git diff or payload) against code graph symbols and covering tests.
+pub async fn code_situ_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeSituPayload>,
+) -> impl axum::response::IntoResponse {
+    let files = match payload.files {
+        Some(f) => f,
+        None => {
+            let output = std::process::Command::new("git")
+                .args(["diff", "--name-only", "HEAD"])
+                .output();
+
+            match output {
+                Ok(out) if out.status.success() => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    parse_git_diff_output(&stdout)
+                }
+                _ => Vec::new(),
+            }
+        }
+    };
+
+    if files.is_empty() {
+        return axum::Json(serde_json::json!({
+            "status": "refusal",
+            "message": "working tree clean vs HEAD — nothing to assess",
+            "changed_files": 0,
+            "changed_symbols": 0,
+            "covering_tests": 0,
+        }));
+    }
+
+    let depth = payload.depth.clamp(1, 8);
+    let code_graph = state.code_graph.read().await;
+
+    let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
+
+    let symbols = match code_graph.query.symbols_for_files(&file_refs) {
+        Ok(syms) => syms,
+        Err(error) => {
+            return axum::Json(serde_json::json!({
+                "status": "error",
+                "message": error.to_string(),
+            }));
+        }
+    };
+
+    let symbol_names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+
+    let test_gate = match code_graph.query.test_gate(&symbol_names, depth) {
+        Ok(gate) => gate,
+        Err(error) => {
+            return axum::Json(serde_json::json!({
+                "status": "error",
+                "message": error.to_string(),
+            }));
+        }
+    };
+
+    let json_symbols: Vec<_> = symbols
+        .iter()
+        .map(|sym| {
+            serde_json::json!({
+                "symbol": sym.name,
+                "symbol_type": format!("{:?}", sym.kind),
+                "path": sym.file_path,
+                "line": sym.start_line,
+                "end_line": sym.end_line,
+                "stable_id": sym.stable_id,
+            })
+        })
+        .collect();
+
+    let json_tests: Vec<_> = test_gate
+        .tests_to_run
+        .iter()
+        .map(|sym| {
+            serde_json::json!({
+                "symbol": sym.name,
+                "symbol_type": format!("{:?}", sym.kind),
+                "path": sym.file_path,
+                "line": sym.start_line,
+                "end_line": sym.end_line,
+                "stable_id": sym.stable_id,
+            })
+        })
+        .collect();
+
+    let json_untested: Vec<_> = test_gate
+        .untested
+        .iter()
+        .map(|hit| {
+            serde_json::json!({
+                "symbol": hit.symbol.name,
+                "symbol_type": format!("{:?}", hit.symbol.kind),
+                "path": hit.symbol.file_path,
+                "depth": hit.depth,
+            })
+        })
+        .collect();
+
+    let json_uncovered_changed: Vec<_> = test_gate
+        .uncovered_changed
+        .iter()
+        .map(|sym| {
+            serde_json::json!({
+                "symbol": sym.name,
+                "symbol_type": format!("{:?}", sym.kind),
+                "path": sym.file_path,
+            })
+        })
+        .collect();
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "depth": depth,
+        "files": files,
+        "changed_files": files.len(),
+        "changed_symbols": json_symbols,
+        "changed_symbols_count": json_symbols.len(),
+        "covering_tests": json_tests,
+        "covering_tests_count": json_tests.len(),
+        "untested_reach": json_untested,
+        "uncovered_changed": json_uncovered_changed,
+        "has_obligation": test_gate.has_obligation(),
+    }))
+}
+
 /// Code blast radius handler.
 pub async fn code_blast_radius_handler(
     State(state): State<CliState>,
@@ -2805,5 +2954,62 @@ mod tests {
         assert!(res.get("status").is_some());
         assert!(res.get("available").is_some());
         assert!(res.get("message").is_some());
+    }
+
+    #[test]
+    fn test_parse_git_diff_output() {
+        let sample = "src/cli/handlers/code.rs\nsrc/main.rs\n\n  \ncode-graph/src/query/mod.rs\n";
+        let parsed = parse_git_diff_output(sample);
+        assert_eq!(
+            parsed,
+            vec![
+                "src/cli/handlers/code.rs".to_string(),
+                "src/main.rs".to_string(),
+                "code-graph/src/query/mod.rs".to_string(),
+            ]
+        );
+
+        let empty_sample = "   \n\n";
+        let empty_parsed = parse_git_diff_output(empty_sample);
+        assert!(empty_parsed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_code_situ_handler_empty_diff_refusal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = xav01_test_state(tmp.path().to_path_buf()).await;
+
+        let payload = axum::Json(CodeSituPayload {
+            depth: 2,
+            files: Some(vec![]),
+            json: Some(true),
+        });
+
+        let res = xav01_body(code_situ_handler(State(state.clone()), payload)).await;
+        assert_eq!(res["status"], "refusal");
+        assert_eq!(
+            res["message"],
+            "working tree clean vs HEAD — nothing to assess"
+        );
+        assert_eq!(res["changed_files"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_code_situ_handler_with_explicit_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = xav01_test_state(tmp.path().to_path_buf()).await;
+
+        let payload = axum::Json(CodeSituPayload {
+            depth: 3,
+            files: Some(vec!["src/cli/handlers/code.rs".to_string()]),
+            json: Some(true),
+        });
+
+        let res = xav01_body(code_situ_handler(State(state.clone()), payload)).await;
+        assert_eq!(res["status"], "ok");
+        assert_eq!(res["depth"], 3);
+        assert_eq!(res["changed_files"], 1);
+        assert!(res.get("changed_symbols").is_some());
+        assert!(res.get("covering_tests").is_some());
     }
 }
