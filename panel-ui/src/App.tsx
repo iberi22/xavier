@@ -20,6 +20,7 @@ import TopStatusBar from "./components/TopStatusBar";
 import ErrorToast from "./components/ui/ErrorToast";
 import { initialBookmarks } from "./data";
 import { ThemeProvider } from "./lib/theme/theme-provider";
+import { XavierLandingView } from "./components/XavierLandingView";
 import { MalocaView } from "./maloca";
 import type {
 	BackendGraphData,
@@ -523,6 +524,16 @@ function AppContent() {
 				</div>
 			</div>
 		);
+	}
+
+	const isLandingDomain =
+		typeof window !== "undefined" &&
+		(window.location.hostname === "xavier.swal.network" ||
+			window.location.hostname === "xavier.localhost" ||
+			hash === "#/landing");
+
+	if (isLandingDomain && !isAuthenticated && hash !== "#/login" && hash !== "#/register") {
+		return <XavierLandingView />;
 	}
 
 	if (showOnboarding) {
