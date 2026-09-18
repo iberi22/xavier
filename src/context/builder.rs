@@ -58,7 +58,7 @@ impl ContextBuilder {
         if !self.config.rules.is_empty() {
             context.push_str("## Rules\n");
             for rule in &self.config.rules {
-                let _ = write!(context, "- {}\n", rule);
+                let _ = writeln!(context, "- {}", rule);
             }
             context.push('\n');
         }
@@ -163,7 +163,7 @@ impl ContextBuilder {
 
         let mut preview = String::new();
         for msg in &messages[start..] {
-            let _ = write!(preview, "{}: {}\n", msg.role, msg.content);
+            let _ = writeln!(preview, "{}: {}", msg.role, msg.content);
         }
 
         let truncated: String = preview.chars().take(max_chars).collect();
@@ -186,12 +186,12 @@ impl ContextBuilder {
         context.push_str("## Virtual References (Available for page-in)\n");
         for mem in memories.iter().take(limit) {
             let path = mem.metadata["path"].as_str().unwrap_or(&mem.id);
-            let _ = write!(context, "- [REF:{}] {}\n", mem.id, path);
+            let _ = writeln!(context, "- [REF:{}] {}", mem.id, path);
         }
         if memories.len() > limit {
-            let _ = write!(
+            let _ = writeln!(
                 context,
-                "- ... and {} more references\n",
+                "- ... and {} more references",
                 memories.len() - limit
             );
         }
@@ -219,12 +219,12 @@ impl ContextBuilder {
             };
 
             if i < full_limit {
-                let _ = write!(context, "- [{}:{}] {}\n", prefix, mem.id, mem.content);
+                let _ = writeln!(context, "- [{}:{}] {}", prefix, mem.id, mem.content);
             } else {
                 let path = mem.metadata["path"].as_str().unwrap_or(&mem.id);
-                let _ = write!(
+                let _ = writeln!(
                     context,
-                    "- [{}:{}] {} (Body virtualized)\n",
+                    "- [{}:{}] {} (Body virtualized)",
                     prefix, mem.id, path
                 );
             }
@@ -246,7 +246,7 @@ impl ContextBuilder {
             } else {
                 "DOC"
             };
-            let _ = write!(context, "- [{}:{}] {}\n", prefix, mem.id, mem.content);
+            let _ = writeln!(context, "- [{}:{}] {}", prefix, mem.id, mem.content);
         }
         context.push('\n');
     }
@@ -261,7 +261,7 @@ impl ContextBuilder {
         let start = messages.len() - limit;
 
         for (i, msg) in messages[start..].iter().enumerate() {
-            let _ = write!(context, "[REF:msg_{}] {}: {}\n", i, msg.role, msg.content);
+            let _ = writeln!(context, "[REF:msg_{}] {}: {}", i, msg.role, msg.content);
         }
         context.push('\n');
     }
@@ -273,7 +273,7 @@ impl ContextBuilder {
 
         context.push_str("# Available Skills\n");
         for skill in skills {
-            let _ = write!(context, "- {}\n", skill);
+            let _ = writeln!(context, "- {}", skill);
         }
         context.push('\n');
     }
