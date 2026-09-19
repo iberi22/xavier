@@ -484,6 +484,16 @@ function AppContent() {
 		[],
 	);
 
+	const isLandingDomain =
+		typeof window !== "undefined" &&
+		(window.location.hostname === "xavier.swal.network" ||
+			window.location.hostname === "xavier.localhost" ||
+			hash === "#/landing");
+
+	if (isLandingDomain && !isAuthenticated && hash !== "#/login" && hash !== "#/register") {
+		return <XavierLandingView />;
+	}
+
 	if (health === "offline") {
 		return (
 			<div className="w-full h-screen bg-[#050505] flex items-center justify-center text-emerald-400 font-mono p-4 sm:p-6 md:p-8 relative">
@@ -524,16 +534,6 @@ function AppContent() {
 				</div>
 			</div>
 		);
-	}
-
-	const isLandingDomain =
-		typeof window !== "undefined" &&
-		(window.location.hostname === "xavier.swal.network" ||
-			window.location.hostname === "xavier.localhost" ||
-			hash === "#/landing");
-
-	if (isLandingDomain && !isAuthenticated && hash !== "#/login" && hash !== "#/register") {
-		return <XavierLandingView />;
 	}
 
 	if (showOnboarding) {
