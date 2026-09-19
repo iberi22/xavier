@@ -745,6 +745,43 @@ pub async fn start_http_server(
             )
             .with_state(()),
         )
+        // ── DocBot & Document Management API ────────────────────────────────
+        .nest(
+            "/api/docbot/v1",
+            {
+                let docbot_db_path = state
+                    .workspace_dir
+                    .clone()
+                    .join("data/docbot_collections.db");
+                if let Some(parent) = docbot_db_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let docbot_store = Arc::new(
+                    xavier::collections::store::CollectionStore::open(&docbot_db_path)
+                        .unwrap_or_else(|_| {
+                            let mem_path =
+                                std::env::temp_dir().join("docbot_collections_fallback.db");
+                            xavier::collections::store::CollectionStore::open(&mem_path)
+                                .expect("fallback docbot store")
+                        }),
+                );
+                let docbot_pipeline = Arc::new(xavier::rag::pipeline::DocBotPipeline::new(
+                    docbot_store.clone(),
+                    xavier::rag::llm_adapter::LlmConfig {
+                        backend: xavier::rag::llm_adapter::LlmBackend::RetrievalOnly,
+                        ..Default::default()
+                    },
+                    xavier::rag::pipeline::PipelineConfig::default(),
+                ));
+                let docbot_state = xavier::server::docbot_routes::DocBotState {
+                    store: docbot_store,
+                    pipeline: docbot_pipeline,
+                    chunk_config: xavier::collections::indexer::ChunkConfig::default(),
+                };
+                xavier::server::docbot_routes::docbot_router(docbot_state)
+            }
+            .with_state(()),
+        )
         // ── Memory Sync endpoints ──────────────────────────────────────────
         .route(
             "/v1/memory/manifest",

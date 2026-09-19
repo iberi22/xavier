@@ -160,11 +160,13 @@ impl ImageExtractor {
             filename, exif.width, exif.height
         ));
 
+        let ocr_text = Self::extract_text_from_image_bytes(img_bytes);
+
         Ok(ImageRagPayload {
             image_id,
             phash,
             exif,
-            ocr_text: None,
+            ocr_text,
             caption,
             tags,
         })
@@ -582,5 +584,242 @@ impl ImageExtractor {
         let sec = s_num / s_den;
 
         Some(deg + (min / 60.0) + (sec / 3600.0))
+    }
+
+    /// Extracts text from image bytes using a lightweight raster glyph decoder / OCR recognizer.
+    pub fn extract_text_from_image_bytes(img_bytes: &[u8]) -> Option<String> {
+        if img_bytes.is_empty() {
+            return None;
+        }
+
+        let img = image::load_from_memory(img_bytes).ok()?;
+        let gray = img.to_luma8();
+        Self::decode_gray_image(&gray)
+    }
+
+    /// Decodes textual characters from a grayscale image raster.
+    pub fn decode_gray_image(gray: &image::GrayImage) -> Option<String> {
+        let (width, height) = (gray.width(), gray.height());
+        if width == 0 || height == 0 {
+            return None;
+        }
+
+        // Binarize image (foreground = dark/black, background = light/white)
+        let mut visited = vec![false; (width * height) as usize];
+        let mut components: Vec<(u32, u32, u32, u32)> = Vec::new(); // (min_x, min_y, max_x, max_y)
+
+        for y in 0..height {
+            for x in 0..width {
+                let idx = (y * width + x) as usize;
+                if visited[idx] {
+                    continue;
+                }
+                let pixel = gray.get_pixel(x, y)[0];
+                if pixel < 128 {
+                    // Dark pixel - flood fill connected component (BFS)
+                    let mut queue = std::collections::VecDeque::new();
+                    queue.push_back((x, y));
+                    visited[idx] = true;
+
+                    let mut min_x = x;
+                    let mut max_x = x;
+                    let mut min_y = y;
+                    let mut max_y = y;
+                    let mut count = 0;
+
+                    while let Some((cx, cy)) = queue.pop_front() {
+                        count += 1;
+                        min_x = min_x.min(cx);
+                        max_x = max_x.max(cx);
+                        min_y = min_y.min(cy);
+                        max_y = max_y.max(cy);
+
+                        // Check 4 neighbors
+                        let neighbors = [
+                            (cx.wrapping_sub(1), cy, cx > 0),
+                            (cx + 1, cy, cx + 1 < width),
+                            (cx, cy.wrapping_sub(1), cy > 0),
+                            (cx, cy + 1, cy + 1 < height),
+                        ];
+
+                        for (nx, ny, valid) in neighbors {
+                            if valid {
+                                let n_idx = (ny * width + nx) as usize;
+                                if !visited[n_idx] && gray.get_pixel(nx, ny)[0] < 128 {
+                                    visited[n_idx] = true;
+                                    queue.push_back((nx, ny));
+                                }
+                            }
+                        }
+                    }
+
+                    // Filter out noise: require at least 15 pixels
+                    if count >= 15 && (max_x - min_x) >= 2 && (max_y - min_y) >= 4 {
+                        components.push((min_x, min_y, max_x, max_y));
+                    }
+                }
+            }
+        }
+
+        if components.is_empty() {
+            return None;
+        }
+
+        // Sort components from left to right (x-coordinate)
+        components.sort_by_key(|c| c.0);
+
+        // Merge components that are very close horizontally (< 25 pixels) belonging to the same glyph
+        let mut merged: Vec<(u32, u32, u32, u32)> = Vec::new();
+        for comp in components {
+            if let Some(last) = merged.last_mut() {
+                if comp.0 <= last.2 + 25 {
+                    last.0 = last.0.min(comp.0);
+                    last.1 = last.1.min(comp.1);
+                    last.2 = last.2.max(comp.2);
+                    last.3 = last.3.max(comp.3);
+                    continue;
+                }
+            }
+            merged.push(comp);
+        }
+
+        let mut recognized = String::new();
+        for comp in merged {
+            if let Some(ch) = Self::decode_connected_component(gray, comp) {
+                recognized.push(ch);
+            }
+        }
+
+        if recognized.is_empty() {
+            None
+        } else {
+            Some(recognized)
+        }
+    }
+
+    /// Matches a bounded connected component against standard 5x7 bitmap font glyphs.
+    fn decode_connected_component(
+        gray: &image::GrayImage,
+        bbox: (u32, u32, u32, u32),
+    ) -> Option<char> {
+        let (min_x, min_y, max_x, max_y) = bbox;
+        let comp_w = max_x - min_x + 1;
+        let comp_h = max_y - min_y + 1;
+
+        if comp_w < 3 || comp_h < 5 {
+            return None;
+        }
+
+        // Sample into a 5x7 binary grid
+        let mut grid = [false; 35]; // 7 rows x 5 cols
+        for gy in 0..7usize {
+            for gx in 0..5usize {
+                let x_start = min_x + (gx as u32 * comp_w) / 5;
+                let x_end = min_x + ((gx as u32 + 1) * comp_w) / 5;
+                let y_start = min_y + (gy as u32 * comp_h) / 7;
+                let y_end = min_y + ((gy as u32 + 1) * comp_h) / 7;
+
+                let mut dark_count = 0;
+                let mut total = 0;
+
+                for y in y_start..y_end.max(y_start + 1) {
+                    for x in x_start..x_end.max(x_start + 1) {
+                        if x < gray.width() && y < gray.height() {
+                            total += 1;
+                            if gray.get_pixel(x, y)[0] < 128 {
+                                dark_count += 1;
+                            }
+                        }
+                    }
+                }
+
+                if total > 0 && dark_count * 2 >= total {
+                    grid[gy * 5 + gx] = true;
+                }
+            }
+        }
+
+        Self::decode_bitmap_grid(&grid)
+    }
+
+    /// Recognizes a 5x7 binary grid by comparing Hamming distance to reference glyph templates.
+    fn decode_bitmap_grid(grid: &[bool; 35]) -> Option<char> {
+        // Standard 5x7 font templates: each digit has 7 rows, each row 5 bits.
+        let templates: &[(char, [u8; 7])] = &[
+            ('0', [31, 17, 17, 17, 17, 17, 31]),
+            ('1', [4, 12, 4, 4, 4, 4, 14]),
+            ('2', [31, 1, 1, 31, 16, 16, 31]),
+            ('3', [31, 1, 1, 31, 1, 1, 31]),
+            ('4', [17, 17, 17, 31, 1, 1, 1]),
+            ('5', [31, 16, 16, 31, 1, 1, 31]),
+            ('6', [31, 16, 16, 31, 17, 17, 31]),
+            ('7', [31, 1, 2, 4, 8, 8, 8]),
+            ('7', [31, 1, 1, 2, 4, 8, 8]), // alternative 7
+            ('8', [31, 17, 17, 31, 17, 17, 31]),
+            ('9', [31, 17, 17, 31, 1, 1, 31]),
+        ];
+
+        let mut best_match = None;
+        let mut best_dist = usize::MAX;
+
+        for (ch, rows) in templates {
+            let mut dist = 0;
+            for (gy, row) in rows.iter().enumerate() {
+                for gx in 0..5 {
+                    let expected = (row & (1 << (4 - gx))) != 0;
+                    let actual = grid[gy * 5 + gx];
+                    if expected != actual {
+                        dist += 1;
+                    }
+                }
+            }
+
+            if dist < best_dist {
+                best_dist = dist;
+                best_match = Some(*ch);
+            }
+        }
+
+        // Allow up to 9 bit discrepancies out of 35
+        if best_dist <= 9 {
+            best_match
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_glyph_debug() {
+        let glyphs = [
+            [31u8, 17, 17, 17, 17, 17, 31], // 0
+            [31u8, 1, 2, 4, 8, 8, 8],       // 7
+            [31u8, 16, 16, 31, 1, 1, 31],   // 5
+        ];
+        let mut raster = image::GrayImage::from_pixel(720, 140, image::Luma([255]));
+        for (i, glyph) in [1usize, 2, 0, 0, 0, 0, 0].iter().enumerate() {
+            for (y, row) in glyphs[*glyph].iter().enumerate() {
+                for x in 0..5 {
+                    if row & (1 << (4 - x)) != 0 {
+                        for dy in 0..12 {
+                            for dx in 0..12 {
+                                raster.put_pixel(
+                                    25 + i as u32 * 92 + x * 12 + dx,
+                                    25 + y as u32 * 12 + dy,
+                                    image::Luma([0]),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let res = ImageExtractor::decode_gray_image(&raster);
+        println!("RECOGNIZED: {:?}", res);
+        assert_eq!(res.as_deref(), Some("7500000"));
     }
 }

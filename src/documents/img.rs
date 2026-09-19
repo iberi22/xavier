@@ -89,10 +89,18 @@ pub fn extract_image_document(path: &Path, bytes: &[u8]) -> Result<ExtractedImag
     let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("image");
     let aspect_ratio = calculate_aspect_ratio(width, height);
 
-    let summary_text = format!(
+    let ocr_text =
+        crate::documents::image_extractor::ImageExtractor::extract_text_from_image_bytes(bytes);
+
+    let mut summary_text = format!(
         "[IMAGE DOCUMENT: {}]\nResolution: {}x{} | Ratio: {}\nColor Space: {}\nPerceptual dHash: {}\nSHA-256: {}\nByte Size: {} bytes\nStatus: Visual asset indexed for cognitive retrieval.",
         filename, width, height, aspect_ratio, color_format, dhash_hex, sha256_hex, bytes.len()
     );
+
+    if let Some(ref text) = ocr_text {
+        summary_text.push_str("\n\n[OCR EXTRACTED TEXT]\n");
+        summary_text.push_str(text);
+    }
 
     let chunk = ExtractedChunk {
         index: 0,
@@ -108,6 +116,7 @@ pub fn extract_image_document(path: &Path, bytes: &[u8]) -> Result<ExtractedImag
             "dhash": dhash_hex,
             "sha256": sha256_hex,
             "file": filename,
+            "ocr_text": ocr_text,
         }),
     };
 

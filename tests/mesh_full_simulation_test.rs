@@ -382,6 +382,7 @@ fn test_private_mesh_wallet_isolation_and_session_encryption() {
             metadata: serde_json::json!({"encrypted": true, "wallet": wallet_id_a}),
             created_at: 1725000000,
         }],
+        vectors: vec![],
         snapshots: vec!["snapshot-block-109".to_string()],
     };
 

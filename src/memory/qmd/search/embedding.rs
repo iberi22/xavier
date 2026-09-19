@@ -12,7 +12,7 @@ use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::MemoryQueryFilters;
 
 use super::hybrid::query_filtered;
-use super::vector::vsearch;
+use super::vector::{vsearch, vsearch_filtered};
 
 /// Embedding-based search without filters.
 pub async fn query_with_embedding(
@@ -202,7 +202,7 @@ async fn query_with_embedding_filtered_inner(
 
     // Stage 3: Hybrid vector retrieval
     let stage3_start = std::time::Instant::now();
-    let initial_results = vsearch(memory, query_vector.clone(), 3)
+    let initial_results = vsearch_filtered(memory, query_vector.clone(), 3, filters)
         .await
         .unwrap_or_default();
     let stage3_duration = stage3_start.elapsed();

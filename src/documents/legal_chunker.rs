@@ -50,7 +50,7 @@ impl Default for LegalHierarchicalChunker {
 
 /// Structural heading classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HeaderKind {
+pub(crate) enum HeaderKind {
     Chapter,
     Article,
     Clause,
@@ -58,10 +58,10 @@ enum HeaderKind {
     Preamble,
 }
 
-struct ParsedHeader {
-    kind: HeaderKind,
-    raw_title: String,
-    clause_number: Option<u32>,
+pub(crate) struct ParsedHeader {
+    pub(crate) kind: HeaderKind,
+    pub(crate) raw_title: String,
+    pub(crate) clause_number: Option<u32>,
 }
 
 static CHAPTER_REGEX: OnceLock<Regex> = OnceLock::new();
@@ -201,7 +201,7 @@ fn parse_number_from_text(s: &str) -> Option<u32> {
     None
 }
 
-fn detect_header(line: &str) -> Option<ParsedHeader> {
+pub(crate) fn detect_header(line: &str) -> Option<ParsedHeader> {
     let normalized = clean_whitespace(line);
 
     if get_preamble_regex().is_match(&normalized) || get_preamble_regex().is_match(line) {
