@@ -81,7 +81,7 @@ pub fn semantic_chunk(text: &str, config: &ChunkConfig) -> Vec<String> {
 
     if text.len() <= target {
         let trimmed = text.trim().to_string();
-        return if trimmed.len() >= config.min_chars {
+        return if !trimmed.is_empty() {
             vec![trimmed]
         } else {
             vec![]

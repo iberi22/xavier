@@ -422,6 +422,17 @@ pub fn extract_pdf_document(path: &Path, bytes: &[u8]) -> Result<ExtractedPdfDoc
         ordered_page_ids = all_pages;
     }
 
+    // Secondary fallback: if still no /Page objects found, take objects with streams as pages
+    if ordered_page_ids.is_empty() {
+        let mut stream_objs: Vec<u32> = objects
+            .iter()
+            .filter(|(_, obj)| obj.stream.is_some())
+            .map(|(&id, _)| id)
+            .collect();
+        stream_objs.sort();
+        ordered_page_ids = stream_objs;
+    }
+
     let mut full_text = String::new();
     let mut chunks = Vec::new();
 
@@ -462,6 +473,10 @@ pub fn extract_pdf_document(path: &Path, bytes: &[u8]) -> Result<ExtractedPdfDoc
                         }
                     }
                 }
+            }
+
+            if content_stream_ids.is_empty() && page_obj.stream.is_some() {
+                content_stream_ids.push(page_id);
             }
 
             let mut page_text = String::new();
@@ -575,7 +590,30 @@ pub fn extract_pdf_document(path: &Path, bytes: &[u8]) -> Result<ExtractedPdfDoc
             }
         }
 
-        let is_scanned = full_text.trim().len() < 20;
+        let mut is_scanned = full_text.trim().len() < 20;
+
+        if is_scanned {
+            full_text = format!(
+                "[DOCUMENTO PDF ESCANEADO / RASTER: {}]\nPáginas detectadas: {}\nAtención: No se detectaron capas de texto vectorial embebidas (posible documento escaneado/imagen).\nRecomendación: Procesar mediante OCR / Vision Model para transcripción textual completa.",
+                filename, total_pages
+            );
+
+            if chunks.is_empty() {
+                chunks.push(ExtractedChunk {
+                    index: 0,
+                    content: full_text.clone(),
+                    page: Some(1),
+                    start_line: 0,
+                    end_line: full_text.lines().count(),
+                    metadata: serde_json::json!({
+                        "type": "pdf_scanned",
+                        "is_scanned": true,
+                        "file": filename,
+                    }),
+                });
+            }
+            is_scanned = true;
+        }
 
         let metadata = serde_json::json!({
             "type": "pdf",
