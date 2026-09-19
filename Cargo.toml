@@ -240,6 +240,10 @@ path = "tests/segment_space.rs"
 name = "clearance_audit_sqlite"
 path = "tests/clearance_audit_sqlite.rs"
 
+[[test]]
+name = "telecom_simulation_test"
+path = "tests/telecom_simulation_test.rs"
+
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 code-graph = { path = "./code-graph" }
