@@ -104,14 +104,19 @@ pub fn semantic_chunk(text: &str, config: &ChunkConfig) -> Vec<String> {
             chunks.push(chunk.to_string());
         }
 
-        // Next window starts with overlap
+        // Next window starts with overlap, but must guarantee forward progress
         if break_at <= start {
             // Safety: avoid infinite loop on degenerate input
             start = end;
         } else {
             let next = break_at.saturating_sub(overlap);
             // Align to char boundary
-            start = align_char_boundary(text, next);
+            let candidate = align_char_boundary(text, next);
+            if candidate <= start {
+                start = break_at;
+            } else {
+                start = candidate;
+            }
         }
     }
 
