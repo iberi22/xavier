@@ -1419,6 +1419,7 @@ pub struct V1ContextPackageRankingMeta {
 /// One-shot fat-search to ranked-snippet context for agents (XW10.03 #1636).
 pub async fn v1_context_package(
     Extension(workspace): Extension<WorkspaceContext>,
+    requester: Option<Extension<crate::security::clearance::ClearanceLevel>>,
     Json(payload): Json<V1ContextPackageRequest>,
 ) -> impl IntoResponse {
     let query = payload.query.trim();
@@ -1453,8 +1454,19 @@ pub async fn v1_context_package(
     .map(|r| r.documents)
     .unwrap_or_default();
 
+    let requester_level = requester
+        .map(|Extension(level)| level)
+        .unwrap_or_else(crate::security::clearance::default_clearance);
+
     let filtered_docs = raw_docs
         .into_iter()
+        .filter(|doc| is_primary_memory(&doc.metadata))
+        .filter(|doc| {
+            crate::security::clearance::can_access(
+                requester_level,
+                crate::security::clearance::level_from_metadata(&doc.metadata),
+            )
+        })
         .filter(|doc| {
             if let Some(ref kinds) = payload.kinds {
                 let doc_kind = doc
@@ -1784,6 +1796,7 @@ fn split_markdown_by_sections_with_levels(content: &str) -> Vec<(String, String,
 /// V1 memories get.
 pub async fn v1_memories_get(
     Extension(workspace): Extension<WorkspaceContext>,
+    requester: Option<Extension<crate::security::clearance::ClearanceLevel>>,
     Path(id): Path<String>,
     Query(params): Query<V1GetParams>,
 ) -> impl IntoResponse {
@@ -1794,8 +1807,21 @@ pub async fn v1_memories_get(
         return crate::error::ApiError::bad_request("Invalid memory ID").into_ok_response();
     }
 
+    let requester_level = requester
+        .map(|Extension(level)| level)
+        .unwrap_or_else(crate::security::clearance::default_clearance);
+
     match workspace.workspace.memory.get(&id).await {
         Ok(Some(doc)) if is_primary_memory(&doc.metadata) => {
+            if !crate::security::clearance::can_access(
+                requester_level,
+                crate::security::clearance::level_from_metadata(&doc.metadata),
+            ) {
+                return crate::error::ApiError::forbidden(
+                    "Access denied by classification clearance",
+                )
+                .into_ok_response();
+            }
             let mut final_content = doc.content.clone();
             if let Some(ref s) = params.sections {
                 let sections_list = split_markdown_by_sections(&final_content);

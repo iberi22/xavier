@@ -192,6 +192,7 @@ impl MigrationRunner {
     ///   up to [`LATEST_SCHEMA_VERSION`] and returns.
     /// - Otherwise applies each pending migration in its own transaction.
     pub fn run(&self, conn: &Connection) -> Result<()> {
+        let _ = apply_pragmas(conn);
         // Detect legacy DB *before* creating the bookkeeping table so we can
         // backfill rather than re-run DDL.
         if Self::is_legacy_db(conn)? {

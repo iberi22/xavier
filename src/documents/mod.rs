@@ -124,7 +124,11 @@ impl GenericDocumentExtractor {
                     DocumentKind::Text
                 };
 
-                let chunks = self.generate_text_chunks(text);
+                let chunks = if self.is_legal_document(text) {
+                    self.generate_legal_chunks(&path_str, text)
+                } else {
+                    self.generate_text_chunks(text)
+                };
 
                 Ok(ExtractedDocument {
                     path: path_str,
@@ -191,6 +195,65 @@ impl GenericDocumentExtractor {
         }
 
         chunks
+    }
+
+    /// Checks if text content contains legal contract structural markers.
+    fn is_legal_document(&self, content: &str) -> bool {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && legal_chunker::detect_header(trimmed).is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Uses `LegalHierarchicalChunker` to chunk legal text and attach clause metadata.
+    fn generate_legal_chunks(&self, doc_id: &str, content: &str) -> Vec<ExtractedChunk> {
+        let chunker = legal_chunker::LegalHierarchicalChunker::default();
+        let legal_chunks = chunker.chunk_document(doc_id, content);
+
+        let lines: Vec<&str> = content.lines().collect();
+
+        legal_chunks
+            .into_iter()
+            .enumerate()
+            .map(|(i, lc)| {
+                // Approximate line boundaries
+                let start_line = lines
+                    .iter()
+                    .position(|l| l.contains(lc.text.lines().next().unwrap_or("").trim()))
+                    .unwrap_or(0);
+                let end_line = start_line + lc.text.lines().count();
+
+                let mut meta_map = serde_json::Map::new();
+                meta_map.insert("type".to_string(), serde_json::json!("legal_chunk"));
+                meta_map.insert("full_path".to_string(), serde_json::json!(lc.full_path));
+                meta_map.insert(
+                    "clause_title".to_string(),
+                    serde_json::json!(lc.clause_title),
+                );
+
+                if let Some(num) = lc.clause_number {
+                    meta_map.insert("clause_number".to_string(), serde_json::json!(num));
+                }
+
+                for (k, v) in lc.metadata {
+                    if k != "full_path" && k != "clause_title" && k != "clause_number" {
+                        meta_map.insert(k, serde_json::json!(v));
+                    }
+                }
+
+                ExtractedChunk {
+                    index: i,
+                    content: lc.text,
+                    page: None,
+                    start_line,
+                    end_line,
+                    metadata: serde_json::Value::Object(meta_map),
+                }
+            })
+            .collect()
     }
 }
 

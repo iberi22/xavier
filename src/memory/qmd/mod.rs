@@ -363,6 +363,16 @@ impl QmdMemory {
         search::vsearch(self, query_vector, limit).await
     }
 
+    /// Vsearch filtered by criteria before truncation.
+    pub async fn vsearch_filtered(
+        &self,
+        query_vector: Vec<f32>,
+        limit: usize,
+        filters: Option<&crate::memory::schema::MemoryQueryFilters>,
+    ) -> Result<Vec<MemoryDocument>> {
+        search::vsearch_filtered(self, query_vector, limit, filters).await
+    }
+
     /// Query with hybrid search.
     pub async fn query_with_hybrid_search(
         &self,

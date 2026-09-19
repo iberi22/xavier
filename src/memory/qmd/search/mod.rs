@@ -35,4 +35,4 @@ pub use scoring::{
     contextual_boost, lexical_score, locomo_lexical_score, memory_decay_penalty,
     memory_importance_score,
 };
-pub use vector::vsearch;
+pub use vector::{vsearch, vsearch_filtered};

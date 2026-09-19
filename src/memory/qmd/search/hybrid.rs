@@ -17,7 +17,7 @@ use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::MemoryQueryFilters;
 
 use super::scoring::{contextual_boost, lexical_score};
-use super::vector::vsearch;
+use super::vector::{vsearch, vsearch_filtered};
 
 /// Hybrid search with variant expansion, multi-hop context, and RRF re-ranking.
 #[autometrics]
@@ -52,19 +52,9 @@ pub async fn search_hybrid_optimized(
                 .await
         {
             if !vector.is_empty() {
-                if let Ok(vector_hits) = vsearch(memory, vector, limit.max(5)).await {
-                    let filtered_hits: Vec<MemoryDocument> = vector_hits
-                        .into_iter()
-                        .filter(|doc| {
-                            crate::memory::schema::matches_filters(
-                                &doc.path,
-                                &doc.metadata,
-                                &memory.workspace_id,
-                                filters,
-                            )
-                        })
-                        .collect();
-
+                if let Ok(filtered_hits) =
+                    vsearch_filtered(memory, vector, limit.max(5), filters).await
+                {
                     merge_ranked_candidates(
                         &mut candidate_scores,
                         filtered_hits,
@@ -289,22 +279,12 @@ pub async fn query_filtered(
     let vector_results = if query_vector.is_empty() {
         Vec::new()
     } else {
-        vsearch(memory, query_vector.clone(), limit)
+        vsearch_filtered(memory, query_vector.clone(), limit, filters)
             .await
             .unwrap_or_default()
-            .into_iter()
-            .filter(|doc| {
-                crate::memory::schema::matches_filters(
-                    &doc.path,
-                    &doc.metadata,
-                    &memory.workspace_id,
-                    filters,
-                )
-            })
-            .collect()
     };
 
-    if vector_results.is_empty() && query_vector.is_empty() {
+    if vector_results.is_empty() {
         return Ok(keyword_results.into_iter().take(limit).collect());
     }
 

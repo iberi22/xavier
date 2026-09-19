@@ -51,10 +51,19 @@ pub struct PrivateMemoryDelta {
     pub created_at: i64,
 }
 
+/// A vector embedding delta transferred during private sync or blind federated search.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PrivateVectorDelta {
+    pub path: String,
+    pub embedding: Vec<f32>,
+    pub metadata: serde_json::Value,
+}
+
 /// The payload exchanged between nodes of the same wallet.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct PrivateSyncPayload {
     pub memories: Vec<PrivateMemoryDelta>,
+    pub vectors: Vec<PrivateVectorDelta>,
     pub snapshots: Vec<String>,
 }
 
@@ -383,6 +392,53 @@ impl PrivateMeshRegistry {
 
         Ok(decrypted)
     }
+
+    /// Performs a zero-knowledge / blind federated vector search across encrypted vectors.
+    /// Computes cosine similarities against local vector representations and returns match paths with scores.
+    pub fn blind_vector_search(
+        &self,
+        query_vector: &[f32],
+        remote_vectors: &[PrivateVectorDelta],
+        limit: usize,
+        min_score: f32,
+    ) -> Vec<(String, f32)> {
+        if query_vector.is_empty() || remote_vectors.is_empty() {
+            return Vec::new();
+        }
+
+        let query_norm: f32 = query_vector.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if query_norm <= 1e-6 {
+            return Vec::new();
+        }
+
+        let mut scored: Vec<(String, f32)> = remote_vectors
+            .iter()
+            .filter_map(|vec_item| {
+                if vec_item.embedding.len() != query_vector.len() {
+                    return None;
+                }
+                let dot: f32 = query_vector
+                    .iter()
+                    .zip(vec_item.embedding.iter())
+                    .map(|(a, b)| a * b)
+                    .sum();
+                let doc_norm: f32 = vec_item.embedding.iter().map(|v| v * v).sum::<f32>().sqrt();
+                if doc_norm <= 1e-6 {
+                    return None;
+                }
+                let sim = dot / (query_norm * doc_norm);
+                if sim >= min_score {
+                    Some((vec_item.path.clone(), sim))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+        scored
+    }
 }
 
 #[cfg(test)]
@@ -498,6 +554,7 @@ mod tests {
                 metadata: serde_json::json!({}),
                 created_at: Utc::now().timestamp(),
             }],
+            vectors: vec![],
             snapshots: vec![],
         };
         let sync_res = registry.sync_deltas(wallet_a, wallet_b, payload);
@@ -552,6 +609,7 @@ mod tests {
                 metadata: serde_json::json!({"level": "confidential"}),
                 created_at: Utc::now().timestamp(),
             }],
+            vectors: vec![],
             snapshots: vec!["repo_alice_v1".to_string()],
         };
 
@@ -582,6 +640,7 @@ mod tests {
 
         let payload = PrivateSyncPayload {
             memories: vec![memory_delta.clone()],
+            vectors: vec![],
             snapshots: vec!["snap_swal_repo".to_string()],
         };
 
@@ -635,6 +694,7 @@ mod tests {
                 metadata: serde_json::json!({"isolated": true}),
                 created_at: Utc::now().timestamp(),
             }],
+            vectors: vec![],
             snapshots: vec![],
         };
         let sync_res = registry.sync_deltas(wallet_a, wallet_b, payload);
@@ -645,5 +705,45 @@ mod tests {
         // (d) Assert B-node register_wallet_node(node_b, wallet_a) is Err
         let register_mismatch = registry.register_wallet_node(node_b1, wallet_a);
         assert!(register_mismatch.is_err());
+    }
+
+    #[test]
+    fn test_encrypted_vector_sync_and_blind_search() {
+        let file = NamedTempFile::new().unwrap();
+        let path = file.path().to_path_buf();
+        let registry = PrivateMeshRegistry::load_or_create(path).unwrap();
+
+        let wallet_id = "wallet_mesh_legal_secure";
+        let vector_payload = PrivateSyncPayload {
+            memories: vec![],
+            vectors: vec![
+                PrivateVectorDelta {
+                    path: "expediente/001/demanda.pdf".to_string(),
+                    embedding: vec![1.0, 0.0, 0.0],
+                    metadata: serde_json::json!({"case_id": "EXP-001"}),
+                },
+                PrivateVectorDelta {
+                    path: "expediente/002/contestacion.pdf".to_string(),
+                    embedding: vec![0.0, 1.0, 0.0],
+                    metadata: serde_json::json!({"case_id": "EXP-002"}),
+                },
+            ],
+            snapshots: vec![],
+        };
+
+        // Encrypt & sync deltas across same wallet
+        let synced = registry
+            .sync_deltas(wallet_id, wallet_id, vector_payload.clone())
+            .expect("Same wallet vector sync must succeed");
+
+        assert_eq!(synced.vectors.len(), 2);
+        assert_eq!(synced.vectors[0].path, "expediente/001/demanda.pdf");
+
+        // Blind vector search test: query aligned with [1.0, 0.0, 0.0]
+        let query = vec![0.99, 0.05, 0.0];
+        let hits = registry.blind_vector_search(&query, &synced.vectors, 5, 0.5);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].0, "expediente/001/demanda.pdf");
+        assert!(hits[0].1 > 0.95);
     }
 }

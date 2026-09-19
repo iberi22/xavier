@@ -422,6 +422,7 @@ pub async fn private_mesh_sync(
 
     let payload = PrivateSyncPayload {
         memories: memories.clone(),
+        vectors: Vec::new(),
         snapshots: snapshots.clone(),
     };
 

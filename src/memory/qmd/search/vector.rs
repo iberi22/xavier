@@ -1,4 +1,4 @@
-﻿//! Vector search ÔÇö cosine similarity search over document embeddings.
+//! Vector search ÔÇö cosine similarity search over document embeddings.
 
 use anyhow::Result;
 
@@ -12,6 +12,16 @@ pub async fn vsearch(
     query_vector: Vec<f32>,
     limit: usize,
 ) -> Result<Vec<MemoryDocument>> {
+    vsearch_filtered(memory, query_vector, limit, None).await
+}
+
+/// Perform vector similarity search against documents matching filters before truncation.
+pub async fn vsearch_filtered(
+    memory: &QmdMemory,
+    query_vector: Vec<f32>,
+    limit: usize,
+    filters: Option<&crate::memory::schema::MemoryQueryFilters>,
+) -> Result<Vec<MemoryDocument>> {
     if query_vector.is_empty() {
         return Ok(Vec::new());
     }
@@ -20,6 +30,14 @@ pub async fn vsearch(
 
     let mut similarities: Vec<(f32, MemoryDocument)> = docs
         .iter()
+        .filter(|doc| {
+            crate::memory::schema::matches_filters(
+                &doc.path,
+                &doc.metadata,
+                &memory.workspace_id,
+                filters,
+            )
+        })
         .filter_map(|doc| {
             let score = cosine_similarity(&query_vector, &doc.embedding);
             if score > 0.0 {

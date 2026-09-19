@@ -208,23 +208,9 @@ impl HybridSearcher {
         }
 
         let documents = memory
-            .vsearch(query_vector, limit)
+            .vsearch_filtered(query_vector, limit, filters)
             .await
-            .map_err(|error| SearchError::Search(error.to_string()))?
-            .into_iter()
-            .filter(|doc| {
-                filters
-                    .map(|filters| {
-                        crate::memory::schema::matches_filters(
-                            &doc.path,
-                            &doc.metadata,
-                            memory.workspace_id(),
-                            Some(filters),
-                        )
-                    })
-                    .unwrap_or(true)
-            })
-            .collect::<Vec<_>>();
+            .map_err(|error| SearchError::Search(error.to_string()))?;
 
         Ok(self.convert_documents(documents, "vector"))
     }
