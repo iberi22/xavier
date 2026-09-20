@@ -1,5 +1,6 @@
 //! Private Telecom and Node-to-Node Encrypted Communication System
 pub mod agent_responder;
+pub mod audit_logger;
 pub mod chat;
 pub mod clearance_gate;
 pub mod crypto;
