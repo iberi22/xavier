@@ -1,5 +1,7 @@
-use criterion::{criterion_group, criterion_main, Criterion, Throughput, BenchmarkId};
-use xavier::telecom::crypto::{TelecomKeypair, SessionRatchet, ratchet_encrypt, ratchet_decrypt, derive_shared_secret};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use xavier::telecom::crypto::{
+    derive_shared_secret, ratchet_decrypt, ratchet_encrypt, SessionRatchet, TelecomKeypair,
+};
 
 fn bench_encrypt_decrypt(c: &mut Criterion) {
     let mut group = c.benchmark_group("telecom_crypto_throughput");
@@ -34,9 +36,7 @@ fn bench_encrypt_decrypt(c: &mut Criterion) {
         let frame = ratchet_encrypt(&key, channel, alice_ratchet.sequence(), &payload).unwrap();
 
         group.bench_with_input(BenchmarkId::new("decrypt", size), &size, |b, &_s| {
-            b.iter(|| {
-                ratchet_decrypt(&key, &frame).unwrap()
-            })
+            b.iter(|| ratchet_decrypt(&key, &frame).unwrap())
         });
     }
 
@@ -46,28 +46,20 @@ fn bench_encrypt_decrypt(c: &mut Criterion) {
 fn bench_key_derivation(c: &mut Criterion) {
     let mut group = c.benchmark_group("telecom_key_derivation");
 
-    group.bench_function("generate_keypair", |b| {
-        b.iter(|| {
-            TelecomKeypair::generate()
-        })
-    });
+    group.bench_function("generate_keypair", |b| b.iter(TelecomKeypair::generate));
 
     let alice = TelecomKeypair::generate();
     let bob = TelecomKeypair::generate();
 
     group.bench_function("diffie_hellman", |b| {
         let bob_pub = bob.public_key_bytes();
-        b.iter(|| {
-            alice.diffie_hellman(&bob_pub)
-        })
+        b.iter(|| alice.diffie_hellman(&bob_pub))
     });
 
     let shared = alice.diffie_hellman(&bob.public_key_bytes());
 
     group.bench_function("derive_shared_secret", |b| {
-        b.iter(|| {
-            derive_shared_secret(&shared, b"bench-context")
-        })
+        b.iter(|| derive_shared_secret(&shared, b"bench-context"))
     });
 
     group.finish();

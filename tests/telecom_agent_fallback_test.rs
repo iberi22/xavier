@@ -1,9 +1,7 @@
 use chrono::Utc;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
-use xavier::telecom::agent_responder::{
-    AgentParticipant, AgentResponsePayload, DispatchPolicy,
-};
+use xavier::telecom::agent_responder::{AgentParticipant, AgentResponsePayload, DispatchPolicy};
 
 // Mock function that simulates a slow agent response (taking longer than 5000ms)
 async fn slow_agent_dispatch(
@@ -84,12 +82,16 @@ async fn test_telecom_agent_fallback_on_timeout() {
     let prompt = "Urgent request";
 
     // Dispatch the request using the wrapper that enforces the timeout and fallback
-    let fallback_error_payload = dispatch_with_fallback(&agent, room_id, incoming_msg_id, prompt).await;
+    let fallback_error_payload =
+        dispatch_with_fallback(&agent, room_id, incoming_msg_id, prompt).await;
 
     // Assert the fallback payload structure
     assert_eq!(fallback_error_payload.agent_id, "auto-responder-1");
     assert_eq!(fallback_error_payload.room_id, "test-room-123");
-    assert_eq!(fallback_error_payload.replying_to_message_id.unwrap(), "msg-001");
+    assert_eq!(
+        fallback_error_payload.replying_to_message_id.unwrap(),
+        "msg-001"
+    );
     assert!(fallback_error_payload.content.contains(">5000ms"));
     assert!(fallback_error_payload.content.contains("offline"));
 }
