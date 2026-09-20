@@ -39,6 +39,7 @@ pub mod secrets;
 pub mod session;
 pub mod spawn;
 pub mod tasks;
+pub mod telecom;
 pub mod token;
 pub mod usage;
 pub mod users;
@@ -179,6 +180,7 @@ impl Cli {
                 http::reindex_memories().await
             }
             Command::Code { cmd } => code::handle_code_command(cmd.clone()).await,
+            Command::Telecom(args) => telecom::execute_telecom_command(args.clone()).await,
             Command::Exec {
                 command,
                 session,

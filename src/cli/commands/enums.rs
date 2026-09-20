@@ -149,6 +149,8 @@ pub enum Command {
         #[command(subcommand)]
         cmd: CodeCommand,
     },
+    /// Private Telecom node-to-node communications
+    Telecom(crate::cli::commands::telecom::TelecomArgs),
     /// Execute a shell command via Xavier RTK Kernel Proxy with token reduction
     Exec {
         /// Command and arguments to execute
