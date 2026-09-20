@@ -217,6 +217,11 @@ impl TelecomStore {
         )?;
         Ok(())
     }
+
+    /// Access the underlying SQLite connection wrapper.
+    pub fn connection(&self) -> Arc<Mutex<Connection>> {
+        self.conn.clone()
+    }
 }
 
 #[cfg(test)]
