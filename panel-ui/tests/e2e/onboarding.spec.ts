@@ -1,6 +1,23 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
-test.describe.fixme("Onboarding Flow (pending wave-theme)", () => {
+const DEFAULT_ARTIFACT_DIR = path.join(process.cwd(), "test-results", "artifacts");
+
+function getWritableDir(target: string): string {
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    fs.accessSync(target, fs.constants.W_OK);
+    return target;
+  } catch {
+    fs.mkdirSync(DEFAULT_ARTIFACT_DIR, { recursive: true });
+    return DEFAULT_ARTIFACT_DIR;
+  }
+}
+
+const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
+
+test.describe("Onboarding Flow (pending wave-theme)", () => {
   test.beforeEach(async ({ page }) => {
     // Mock health endpoint
     await page.route("**/health", async (route) => {
@@ -49,19 +66,31 @@ test.describe.fixme("Onboarding Flow (pending wave-theme)", () => {
     // Step 0: Welcome Step in Studio Dark
     const html = page.locator("html");
     await expect(html).toHaveAttribute("data-theme", "studio-dark");
-    await expect(page.getByText("Memoria Cognitiva & Red Soberana")).toBeVisible();
-    await page.getByRole("button", { name: /Comenzar Configuración/i }).click();
+    await expect(page.getByText("INITIALIZING XAVIER_")).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, "onboarding_step_0_welcome.png"), fullPage: true });
+    await page.getByRole("button", { name: /BEGIN_SCAN/i }).click();
 
-    // Step 1: Cloud Hub Step (Workstation binario, Sub-Socio SWAL, MCP Mesh)
-    await expect(page.getByText("Xavier Enterprise & Sesión Soberana")).toBeVisible();
-    await page.getByRole("button", { name: /Continuar a Integraciones/i }).click();
+    // Step 1: System Scan
+    await expect(page.getByText("SYSTEM_DIAGNOSTICS")).toBeVisible();
+    await expect(page.getByText("> Initiating deep system scan...")).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, "tauri_step_1_system_scan.png"), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, "onboarding_step_1_system_scan.png"), fullPage: true });
 
-    // Step 2: Integrations Step
+    // Step 2: Hardware Step
+    await expect(page.getByText("NEURAL_EXECUTION_PLAN")).toBeVisible({
+      timeout: 10000,
+    });
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, "onboarding_step_2_hardware.png"), fullPage: true });
+    await page.getByRole("button", { name: "CONFIRM_ALLOCATION" }).click();
+
+    // Step 3: Integrations Step
     await expect(page.getByText("EXTERNAL_UPLINK")).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, "onboarding_step_3_integrations.png"), fullPage: true });
     await page.getByRole("button", { name: "INITIALIZE_SYSTEM" }).click();
 
-    // Step 3: Auth Step
+    // Step 4: Auth Step
     await expect(page.getByText("Create Account")).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, "onboarding_step_4_auth.png"), fullPage: true });
     await page.getByRole("button", { name: "Skip" }).click();
 
     // Verification: Onboarding completed flag set
@@ -105,8 +134,8 @@ test.describe.fixme("Onboarding Flow (pending wave-theme)", () => {
     await page.goto("/");
 
     // Step 0: Welcome Step
-    await expect(page.getByText("Memoria Cognitiva & Red Soberana")).toBeVisible();
-    await page.getByRole("button", { name: /Comenzar Configuración/i }).click();
+    await expect(page.getByText("INITIALIZING XAVIER_")).toBeVisible();
+    await page.getByRole("button", { name: /BEGIN_SCAN/i }).click();
 
     // Step 1: System Scan
     await expect(page.getByText("SYSTEM_DIAGNOSTICS")).toBeVisible();
@@ -116,16 +145,21 @@ test.describe.fixme("Onboarding Flow (pending wave-theme)", () => {
     await expect(page.getByText("NEURAL_EXECUTION_PLAN")).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByText("GPU Accleration")).toBeVisible();
+    // Wait for the mock to resolve, and UI to update
+    await expect(page.getByText("GPU Accleration")).toBeVisible({ timeout: 10000 });
+
+    // CPU fallback
     await page.getByText("CPU Fallback").click();
     await page.getByRole("button", { name: "CONFIRM_ALLOCATION" }).click();
 
     // Step 3: Integrations Step
     await expect(page.getByText("EXTERNAL_UPLINK")).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, "tauri_step_3_integrations.png"), fullPage: true });
     await page.getByRole("button", { name: "INITIALIZE_SYSTEM" }).click();
 
     // Step 4: Auth Step
     await expect(page.getByText("Create Account")).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, "tauri_step_4_auth.png"), fullPage: true });
     await page.getByRole("button", { name: "Skip" }).click();
 
     await expect
