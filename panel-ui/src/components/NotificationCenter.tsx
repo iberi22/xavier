@@ -12,7 +12,7 @@ import {
 	Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getApiUrl } from "../api/client";
 import { getApiTokenSync } from "../hooks/useApiToken";
 
@@ -352,7 +352,7 @@ export function NotificationCenter({
 		[notifications],
 	);
 
-	const markRead = async (id: string) => {
+	const markRead = useCallback(async (id: string) => {
 		setNotifications((prev) =>
 			prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
 		);
@@ -366,7 +366,7 @@ export function NotificationCenter({
 		} catch (err) {
 			console.error("Failed to mark notification as read:", err);
 		}
-	};
+	}, []);
 
 	const markAllRead = async () => {
 		setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
@@ -396,13 +396,13 @@ export function NotificationCenter({
 		}
 	};
 
-	const dismissNotification = (id: string) => {
+	const dismissNotification = useCallback((id: string) => {
 		setNotifications((prev) => prev.filter((n) => n.id !== id));
-	};
+	}, []);
 
-	const dismissToast = (id: string) => {
+	const dismissToast = useCallback((id: string) => {
 		setToasts((prev) => prev.filter((t) => t.id !== id));
-	};
+	}, []);
 
 	const filteredNotifications = useMemo(() => {
 		return activeIsland === "all"
