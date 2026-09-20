@@ -43,7 +43,7 @@ pub use reranker::*;
 pub use skill_dispatcher::{
     ContextPack, SkillDispatchRequest, SkillDispatchResult, SkillDispatcher,
 };
-pub use skill_registry::{IndexedSkill, SkillRegistry};
+pub use skill_registry::{cosine_similarity, skill_embed_text, IndexedSkill, SkillRegistry};
 pub use skills::{Skill, SkillLoader};
 pub use timeline::{TimeSlice, TimelineEngine, TimelineEventSummary, TimelineQuery};
 pub use token_estimate::estimate_tokens;
