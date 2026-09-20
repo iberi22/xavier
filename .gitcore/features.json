@@ -2390,6 +2390,186 @@
         "US-113",
         "US-114"
       ]
+    },
+    "feat-skill-scan-paths": {
+      "id": "feat-skill-scan-paths",
+      "name": "Skill Registry Scans Canonical Store",
+      "category": "context",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "SkillRegistry indexes ~/.hermes/skills (canonical 349-skill store) with symlink-cycle-safe traversal and Hermes disabled-list respect",
+      "steps": [
+        "Resolve $HOME without hardcoding personal paths",
+        "WalkDir with visited device+inode set (no infinite symlink loops)",
+        "Honor skills.disabled names from Hermes config when readable",
+        "Keep hash-based incremental reindex"
+      ],
+      "passes": false,
+      "verified_by": "",
+      "github_issue": 301,
+      "last_tested": "",
+      "notes": "Wave skill-injection #301. Live evidence 2026-09-20: GET /skills count=0 because with_defaults only scans workspace skills/ + .agents/skills.",
+      "implemented_in": "src/context/skill_registry.rs",
+      "tests": [
+        "test_registry_scans_hermes_canonical_store",
+        "test_registry_symlink_cycle_terminates",
+        "test_registry_honors_disabled_list"
+      ],
+      "req_ids": [
+        "REQ-060"
+      ],
+      "user_stories": [
+        "US-115"
+      ]
+    },
+    "feat-skill-semantic-rank": {
+      "id": "feat-skill-semantic-rank",
+      "name": "Semantic Skill Ranking via Local Embeddings",
+      "category": "context",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Rank skills by cosine similarity over local embeddings (EmbeddingPort + sqlite-vec) with keyword score as tiebreak and calibrated 0-1 confidence",
+      "steps": [
+        "Embed name + first 200 chars of description at index time",
+        "Persist vectors in existing sqlite-vec store",
+        "Cosine top-K retrieval, keyword score tiebreak",
+        "Offline eval harness: 20+ labeled queries, Recall@3 >= 0.8 + MRR"
+      ],
+      "passes": false,
+      "verified_by": "",
+      "github_issue": 302,
+      "last_tested": "",
+      "notes": "Wave skill-injection #302. 100% local: no cloud calls. Embedder behind existing port so tests run with mocked vectors, zero network.",
+      "implemented_in": "src/context/skill_registry.rs, src/memory/embedder.rs",
+      "tests": [
+        "test_semantic_rank_recall_at_3",
+        "test_confidence_calibration_range",
+        "test_ranking_offline_no_network"
+      ],
+      "req_ids": [
+        "REQ-061"
+      ],
+      "user_stories": [
+        "US-116"
+      ]
+    },
+    "feat-skill-loader-fix": {
+      "id": "feat-skill-loader-fix",
+      "name": "SkillLoader Frontmatter Validation or Removal",
+      "category": "context",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Decide SkillLoader fate: validate real SKILL.md frontmatter (name:) or delete module and migrate its tests to the registry",
+      "steps": [
+        "Probe: load_all over real skills dir, count results",
+        "Either fix validate_skill to frontmatter name: + dir-name fallback, or delete module",
+        "No dead code remains either way"
+      ],
+      "passes": false,
+      "verified_by": "",
+      "github_issue": 303,
+      "last_tested": "",
+      "notes": "Wave skill-injection #303. Current gate requires '# Purpose' which no real SKILL.md contains: effective dead code.",
+      "implemented_in": "src/context/skills.rs",
+      "tests": [
+        "test_loader_loads_real_skill_format_or_module_removed"
+      ],
+      "req_ids": [
+        "REQ-062"
+      ],
+      "user_stories": [
+        "US-117"
+      ]
+    },
+    "feat-skill-context-fusion": {
+      "id": "feat-skill-context-fusion",
+      "name": "Session Context Fusion Injects Matched Skills",
+      "category": "context",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "session/compact path injects top-1 skill content within remaining token budget on ContextLevel::Maximum with confidence >= 0.5, injects nothing below threshold or on trivial prompts",
+      "steps": [
+        "Call dispatcher from http context flow on Maximum level only",
+        "Apply compacted_content against remaining budget",
+        "Confidence gate 0.5 + trivial-prompt ack gate (no dispatch)",
+        "Remove the empty-skills TODO comment when wired"
+      ],
+      "passes": false,
+      "verified_by": "",
+      "github_issue": 304,
+      "last_tested": "",
+      "notes": "Wave skill-injection #304. Replaces server/http/context.rs:128 empty-skills placeholder. Depends on #301 + #302.",
+      "implemented_in": "src/server/http/context.rs, src/context/builder.rs",
+      "tests": [
+        "test_fusion_injects_skill_on_maximum",
+        "test_fusion_skips_below_confidence",
+        "test_fusion_skips_trivial_prompt",
+        "test_fusion_respects_token_budget"
+      ],
+      "req_ids": [
+        "REQ-063"
+      ],
+      "user_stories": [
+        "US-118"
+      ]
+    },
+    "feat-skill-mcp-tool": {
+      "id": "feat-skill-mcp-tool",
+      "name": "MCP Skill Dispatch Tools",
+      "category": "mcp",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Expose xavier_dispatch_skill {task, max_tokens?, project?} and xavier_skill_list MCP tools wrapping the same dispatcher as the REST endpoints",
+      "steps": [
+        "Register tools in get_xavier_context_tools with JSON schemas",
+        "Handle dispatch + list in handle_context_tool",
+        "Reuse MemoryRefResponse shape from api::skills",
+        "Round-trip test through MCP transport"
+      ],
+      "passes": false,
+      "verified_by": "",
+      "github_issue": 305,
+      "last_tested": "",
+      "notes": "Wave skill-injection #305. Same dispatcher, second surface. Depends on #301 + #302.",
+      "implemented_in": "src/server/mcp/tools_context.rs",
+      "tests": [
+        "test_mcp_dispatch_tool_roundtrip",
+        "test_mcp_skill_list_announced"
+      ],
+      "req_ids": [
+        "REQ-064"
+      ],
+      "user_stories": [
+        "US-119"
+      ]
+    },
+    "feat-skill-ledger-docs": {
+      "id": "feat-skill-ledger-docs",
+      "name": "Skill Wave Ledger, SRS and Ack-Gate Docs",
+      "category": "docs",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Add REQ-060..065 to SRS, polish wave specs, document local trivial-prompt ack gate; close wave only on green verify-pipeline",
+      "steps": [
+        "Append REQ-060..REQ-065 to docs/SRS/REQUIREMENTS.md with code evidence",
+        "Document ack-gate rule (greetings/acks skip dispatch)",
+        "Wave close checklist: fmt + clippy + workspace tests + pipeline green"
+      ],
+      "passes": false,
+      "verified_by": "",
+      "github_issue": 306,
+      "last_tested": "",
+      "notes": "Wave skill-injection #306, closes last. No status hand-promotion: green run promotes.",
+      "implemented_in": "docs/SRS/REQUIREMENTS.md, docs/features/specs/",
+      "tests": [
+        "test_ledger_skill_entries_valid"
+      ],
+      "req_ids": [
+        "REQ-065"
+      ],
+      "user_stories": [
+        "US-120"
+      ]
     }
   },
   "verification_commands": {
