@@ -31,8 +31,8 @@ async fn test_e2e_10mb_file_transfer_with_dropped_chunks_recovery() -> Result<()
     // 1. Generate 10MB synthetic payload
     let payload_size = 10 * 1024 * 1024;
     let mut payload = vec![0u8; payload_size];
-    for i in 0..payload_size {
-        payload[i] = (i % 256) as u8;
+    for (i, byte) in payload.iter_mut().enumerate() {
+        *byte = (i % 256) as u8;
     }
 
     // 2. Compute full SHA256 hash
@@ -67,7 +67,7 @@ async fn test_e2e_10mb_file_transfer_with_dropped_chunks_recovery() -> Result<()
                 .unwrap();
 
             // Intentionally drop 3 chunks: indices 2, 5, 8
-            let dropped_indices = vec![2, 5, 8];
+            let dropped_indices = [2, 5, 8];
 
             for (i, slice) in payload_sender.chunks(chunk_size).enumerate() {
                 if dropped_indices.contains(&i) {

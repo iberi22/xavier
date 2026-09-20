@@ -12,13 +12,8 @@ fn create_valid_packet() -> TelecomPacket {
         sequence: 42,
         channel_id: "test-room".to_string(),
     };
-    TelecomPacket::new_chat_packet(
-        "node-alpha",
-        "node-beta",
-        101,
-        1710000000,
-        frame,
-    ).expect("valid packet created")
+    TelecomPacket::new_chat_packet("node-alpha", "node-beta", 101, 1710000000, frame)
+        .expect("valid packet created")
 }
 
 proptest! {
@@ -62,7 +57,8 @@ fn test_invalid_crc32_checksum() {
 fn test_corrupted_chacha_tags() {
     let mut packet = create_valid_packet();
     // Simulate corrupted ChaCha tag by modifying the ciphertext of an EncryptedFrame
-    if let xavier::telecom::protocol::PacketPayload::EncryptedFrame(ref mut frame) = packet.payload {
+    if let xavier::telecom::protocol::PacketPayload::EncryptedFrame(ref mut frame) = packet.payload
+    {
         if !frame.ciphertext.is_empty() {
             frame.ciphertext[0] ^= 0xFF;
         }
