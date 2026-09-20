@@ -5,21 +5,53 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 ## [Unreleased]
 
 ### Added
-- **Code-graph O1–O7 suite** (`code-graph/`, wave-24): unified honest-confidence rubric (`confidence.rs`), language registry (`language.rs`), blast radius + test gate (`query`), incremental IDs with content-hash reindex (`indexer`, `db.file_hashes`), token-budget queries (`budget.rs`), PageRank router (`rank.rs`, petgraph 0.8), contracts + architecture signals (`query`, `contracts.rs`).
-- **MCP `codegraph_route` + `codegraph_gods` tools** (`src/server/mcp/tools_core.rs`): query routing with confidence margin/refusal/`est_tokens` and hub-node listing, 16 core tools total (was 12).
-- **CLI `code situ`** (`src/cli/handlers/code.rs`): `git diff --name-only HEAD` → `symbols_for_files` → `test_gate`, with honest refusal on clean trees.
-- **O4 hash parity + rewire table** (`code-graph/src/indexer/mod.rs`, `db/mod.rs`): `verify_hash_parity` reconciles `file_hashes` with disk on every `apply_paths`; `stable_id_rewrites` maps legacy `default`-project IDs to project-scoped IDs.
-- **O1 rubric in retrieval + belief** (`src/retrieval/gating.rs`, `src/memory/belief_graph.rs`): `weights_from_confidence` / `o1_backfill` per ADR-032 with tie-down, legacy fallbacks preserved.
-- **Parser dispersion arbitration** (`code-graph/src/parser/mod.rs`): deterministic winner + disclosed losers for multi-parser collisions.
+- Wave skill-injection: 6 planned issues (301-306) and ledger scaffolding.
+
+## [0.2.5] — 2026-09-20
+
+### Added
+- **Telecom & Mesh Communication Runtime** (`src/telecom/`, Wave 26 & 27): Full peer-to-peer and relayed encrypted communication layer for multi-agent swarms.
+  - X25519 / ChaCha20-Poly1305 double-ratchet session encryption (`crypto.rs`).
+  - Wire framing and zero-copy packet serialization (`protocol.rs`).
+  - Peer session state management with keep-alive beacons and heartbeat monitoring (`session.rs`).
+  - Direct routes and fallback mesh relay routing (`routing.rs`).
+  - Role-based clearance gate with Ed25519 wallet signature verification (`clearance_gate.rs`).
+  - Chunked file transfer engine with SHA-256 verification and dropped chunk recovery (`file_transfer.rs`, `chunk_assembler.rs`).
+  - Multi-party encrypted group chat rooms with epoch key rotation (`group_rooms.rs`).
+  - Cognitive agent responder binding with policy evaluation triggers (`agent_responder.rs`).
+  - Ephemeral message auto-cleanup worker (`ephemeral_cleanup.rs`).
+  - NAT hole punching with STUN fallback (`nat_punch.rs`).
+  - LZ4 payload compression with auto-thresholding (`payload_compression.rs`).
+  - Sliding-window rate limiting (`rate_limiter.rs`).
+  - Structured security audit logger for clearance rejections & signature verification (`audit_logger.rs`).
+  - Native Prometheus metrics exporter (`metrics.rs`).
+  - Stdio & HTTP MCP telecom tools integration (`src/server/mcp/telecom_tools.rs`).
+  - Full CLI interface `xavier telecom` (listen, send, ping, rooms).
+- **Panel UI Telecom Suite** (`panel-ui/`):
+  - Multi-channel container `TelecomHubView` and 1-to-1 encrypted chat `DirectChatView`.
+  - Group room viewer with topic editor and roster `GroupRoomView`.
+  - Security timeline and audit view `TelecomAuditTrailView`.
+  - Interactive file transfer drawer with progress and SHA-256 validation `FileTransferDrawer`.
+  - Node latency & ping status monitor `PeerDiscoveryCard`.
+  - Clearance level badge and classification visualizer `ClearanceBadge`.
+  - Voice note audio player with waveform visualizer `VoiceNotePlayer`.
+  - Ephemeral message toggle `EphemeralMessageToggle`.
+  - Agent responder selector `AgentResponderSelect`.
+  - Real-time WebSocket hook with exponential backoff `useTelecomSocket`.
+  - Reactive room store hook with optimistic updates `useTelecomRooms`.
+  - Streaming agent responder hook `useTelecomAgentResponse`.
+- **Jules Multi-Account Autonomous Protocol v2.0**:
+  - Centralized multi-account orchestration via dual keys (`JULES_API_KEY` & `JULES_API_KEY_2`).
+  - Mandatory 3-phase internal execution workflow per issue (Types -> Core Logic -> Isolated Tests & PR Delivery).
+  - Anti-Ambiguity / anti-`"?"` unblock rule preventing Google Labs VM sandbox resets and timeouts.
+  - Automated blocker recovery through web research and findings documentation.
+  - Autonomous unblocking daemon `jules-auto-unblock.py`.
 
 ### Fixed
-- **Plugin tests hermetic** (`code-graph/src/plugin/`): 3 pre-existing env-dependent failures fixed via test seams (132+3 → 148 green, zero regressions).
-- **Version sync drift**: `package.json` + `panel-ui/package.json` 0.2.3 → 0.2.4 (Version Sync Gate green); `build-version.test.ts` derives the version from `Cargo.toml` instead of hardcoding, build-test timeouts 30s → 120s.
-- **Indexer fast-path**: known extensions skip the per-file plugin discovery probe in `parse_file` and `apply_paths` (output pinned by identity test 35/2470/13686).
-
-### Security
-- **CTEQ length-check DoS guards** (`src/crypto/hmac.rs`, `src/security/recovery.rs`, `src/server/headless/auth.rs`, `src/server/mcp/auth.rs`, `src/cli/http_setup.rs`): length check + dummy constant-time op before `ct_eq`, preventing `subtle` panics on attacker-controlled lengths.
-- **Training path traversal queued**: `training.rs` joins raw dataset `id` to disk (`..` passes the char filter); scoped fix approved, `state.rs`/`session.rs` verified unaffected.
+- **Constant-Time Equality DoS**: Applied constant-time token comparison across CLI memory handlers and headless endpoints.
+- **UI Reactivity**: Memoized notification center callbacks and `KarmaEventItem` in `WalletView`.
+- **Indexer Reliability**: Resolved silent directory drop on backup folders during full-repo AST indexing.
+- **Version Sync**: Enforced automated preflight gate across `Cargo.toml`, `package.json`, and `panel-ui/package.json`.
 
 ## [0.2.4] — 2026-09-17
 
