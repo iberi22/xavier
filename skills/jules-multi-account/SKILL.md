@@ -1,0 +1,117 @@
+---
+name: jules-multi-account
+title: Jules Multi-Account REST Orchestration Protocol
+description: Canonical protocol for high-throughput, multi-account Jules dispatch (JULES_API_KEY + JULES_API_KEY_2) with deterministic REST API routing, fail-secure PR verification, and disjoint file islands.
+version: 2.0.0
+author: Hermes + BELA + Antigravity
+tags:
+  - jules
+  - multi-account
+  - rest-api
+  - wave-orchestration
+  - gitcore
+  - swal
+category: orchestration
+---
+
+# Jules Multi-Account REST Orchestration Protocol (v2.0.0)
+
+> **MANDATORY FOR ALL SWAL AGENTS (Hermes, Jules, Antigravity, Claude, Codex)**
+> Use this protocol whenever dispatching or orchestrating tasks across Google Labs Jules accounts to achieve maximum parallel throughput without triggering rate limits or context collisions.
+
+---
+
+## 1. Credentials & Key Discovery
+
+Keys reside **strictly** in `~/.hermes/.env` (mode 600) or environment variables. **NEVER commit keys or log full values.**
+
+| Key Alias | Environment Variable | Role | Quirk / Behavior |
+|-----------|----------------------|------|------------------|
+| **Cuenta A** | `JULES_API_KEY` | Frontend, UI, a11y, Realtime Hooks | Standard account. Supports `/sources` and `/sessions` list. |
+| **Cuenta B** | `JULES_API_KEY_2` | Backend, Hardening, CLI, MCP, E2E | Quirk: `/sessions` list can timeout/empty. Must query sessions via direct `GET /sessions/{id}`. |
+
+### Safe Key Discovery Pattern:
+```bash
+for n in JULES_API_KEY JULES_API_KEY_2; do
+  v="${!n}"; [ -n "$v" ] && echo "$n prefijo=${v:0:14}... len=${#v}"
+done
+```
+
+---
+
+## 2. Why REST API over CLI / GitHub Labels?
+
+1. **CLI (`jules new`)**: Uses a single local OAuth token; completely ignores secondary API keys in the environment.
+2. **GitHub Labels (`gh issue edit --add-label jules`)**: Non-deterministic routing. You cannot control which account or queue takes the task.
+3. **Deterministic REST API**: The only verified method for multi-account execution. One API key = One isolated Google Labs VM = 100% predictable workload distribution.
+
+---
+
+## 3. Canonical Session Creation Payload
+
+```http
+POST https://jules.googleapis.com/v1alpha/sessions
+X-Goog-Api-Key: <KEY>
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "[WAVE-27.XX] feat-kebab-case — Human readable summary",
+  "prompt": "Resolve GitHub Issue #<NUM> in repository <owner>/<repo>.\n\nSPECIFICATION:\n<FULL_CANONICAL_ISSUE_BODY>",
+  "sourceContext": {
+    "source": "sources/github/<owner>/<repo>",
+    "githubRepoContext": { "startingBranch": "main" }
+  },
+  "automationMode": "AUTO_CREATE_PR"
+}
+```
+
+> ⚠️ **CRITICAL RULES**:
+> 1. `githubRepoContext.startingBranch`: **Mandatory**. Omitting it returns `400 INVALID_ARGUMENT`.
+> 2. `automationMode`: Must be `"AUTO_CREATE_PR"`.
+> 3. Response: Contains `{"name": "sessions/<id>", "url": "https://jules.google.com/session/<id>"}`. The agent must comment on the corresponding GitHub issue linking this URL.
+
+---
+
+## 4. Multi-Account Dispatch Tool (`jules-multi-dispatch.py`)
+
+A centralized, hardened CLI tool lives in `~/.hermes/scripts/jules-multi-dispatch.py`:
+
+```bash
+# Dispatch batch to Cuenta A (Frontend):
+python3 ~/.hermes/scripts/jules-multi-dispatch.py \
+  --repo iberi22/xavier --account A --start 2379 --end 2393 \
+  --wave-dir .gitcore/waves/wave-27 --offset-file 0
+
+# Dispatch batch to Cuenta B (Backend):
+python3 ~/.hermes/scripts/jules-multi-dispatch.py \
+  --repo iberi22/xavier --account B --start 2394 --end 2408 \
+  --wave-dir .gitcore/waves/wave-27 --offset-file 15
+```
+
+---
+
+## 5. Interaction & Feedback Protocol
+
+When Jules requests user input (`AWAITING_USER_FEEDBACK`):
+
+```http
+POST https://jules.googleapis.com/v1alpha/sessions/{id}:sendMessage
+X-Goog-Api-Key: <KEY>
+Content-Type: application/json
+
+{
+  "prompt": "Direct, concrete instruction with real file paths and zero ambiguity."
+}
+```
+> ⚠️ **WARNING**: The field name **MUST be `"prompt"`**. Fields like `message`, `text`, `content`, or `input` do not exist and will fail with `400 INVALID_ARGUMENT`.
+
+---
+
+## 6. Disjoint File Island Guarantee (Anti-Collision)
+
+When running 30 concurrent sessions across two accounts on the **SAME repository**:
+1. **Zero Intersection**: No two issues may touch the same file path.
+2. **Pre-requisites in Main**: All shared types/primitives must already be merged into `main` before dispatching dependents.
+3. **No Features Reconcile**: Subagents must NEVER touch `.gitcore/features.json`. Only the orchestrator reconciles the ledger post-merge.
