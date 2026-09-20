@@ -1,0 +1,24 @@
+--- src/cli/handlers/memory.rs
++++ src/cli/handlers/memory.rs
+@@ -19,6 +19,21 @@
+ use xavier::memory::schema::MemoryLevel;
+ use xavier::memory::store::MemoryRecord;
+ use xavier::ports::inbound::input_security_port::SecureInputResult;
++use subtle::ConstantTimeEq;
++
++/// Constant-time string comparison resistant to timing side-channel attacks.
++pub fn constant_time_compare(provided: &str, expected: &str) -> bool {
++    let prov_bytes = provided.as_bytes();
++    let exp_bytes = expected.as_bytes();
++
++    if prov_bytes.len() != exp_bytes.len() {
++        // Perform dummy check against expected to maintain constant timing profile
++        let _ = exp_bytes.ct_eq(exp_bytes);
++        return false;
++    }
++
++    prov_bytes.ct_eq(exp_bytes).into()
++}
+
+ /// Extracts the presented auth token from the canonical request headers.
+ ///

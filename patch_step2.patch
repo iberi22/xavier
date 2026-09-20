@@ -1,0 +1,29 @@
+--- src/cli/handlers/memory.rs
++++ src/cli/handlers/memory.rs
+@@ -571,7 +571,7 @@
+     };
+
+     match presented_token(&headers) {
+-        Some(token) if token == expected_token => {}
++        Some(token) if constant_time_compare(token, &expected_token) => {}
+         _ => {
+             return json_response(
+                 StatusCode::UNAUTHORIZED,
+@@ -1109,7 +1109,7 @@
+     };
+
+     match presented_token(&headers) {
+-        Some(token) if token == expected_token => {}
++        Some(token) if constant_time_compare(token, &expected_token) => {}
+         _ => {
+             return json_response(
+                 StatusCode::UNAUTHORIZED,
+@@ -1836,7 +1836,7 @@
+     };
+
+     match presented_token(headers) {
+-        Some(token) if token == expected_token => Ok(()),
++        Some(token) if constant_time_compare(token, &expected_token) => Ok(()),
+         _ => Err(json_response(
+             StatusCode::UNAUTHORIZED,
+             serde_json::json!({"status":"error","message":"Unauthorized"}),
