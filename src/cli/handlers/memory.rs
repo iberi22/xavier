@@ -1821,7 +1821,9 @@ pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
     };
 
     match presented_token(headers) {
-        Some(token) if token == expected_token => Ok(()),
+        Some(token) if xavier::server::http::api::constant_time_compare(token, &expected_token) => {
+            Ok(())
+        }
         _ => Err(json_response(
             StatusCode::UNAUTHORIZED,
             serde_json::json!({"status":"error","message":"Unauthorized"}),
