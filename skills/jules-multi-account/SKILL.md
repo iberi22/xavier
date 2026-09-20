@@ -92,26 +92,44 @@ python3 ~/.hermes/scripts/jules-multi-dispatch.py \
 
 ---
 
-## 5. Interaction & Feedback Protocol
+## 5. Automated Interaction & Unblock Daemon (`jules-auto-unblock.py`)
 
-When Jules requests user input (`AWAITING_USER_FEEDBACK`):
-
+When Jules agents pause or enter `AWAITING_USER_FEEDBACK`:
+1. **Never wait for human interaction**: Agents must not stay blocked waiting for a human. Use the centralized daemon `~/.hermes/scripts/jules-auto-unblock.py`.
+2. **Automated Feedback Format**:
 ```http
 POST https://jules.googleapis.com/v1alpha/sessions/{id}:sendMessage
 X-Goog-Api-Key: <KEY>
 Content-Type: application/json
 
 {
-  "prompt": "Direct, concrete instruction with real file paths and zero ambiguity."
+  "prompt": "Direct concrete feedback: proceed with the implementation in the designated target file, follow existing patterns, and create the PR."
 }
 ```
-> ⚠️ **WARNING**: The field name **MUST be `"prompt"`**. Fields like `message`, `text`, `content`, or `input` do not exist and will fail with `400 INVALID_ARGUMENT`.
+> ⚠️ **CRITICAL**: The field name **MUST be `"prompt"`** (`"message"` or `"content"` returns `400 INVALID_ARGUMENT`).
+3. **Daemon usage**:
+```bash
+# Sweep all active sessions across Cuenta A and B and auto-unblock:
+python3 ~/.hermes/scripts/jules-auto-unblock.py
+
+# Continuous watchdog:
+python3 ~/.hermes/scripts/jules-auto-unblock.py --watch --interval 30
+```
 
 ---
 
-## 6. Disjoint File Island Guarantee (Anti-Collision)
+## 6. Micro-Tasking Architecture (Anti-Failure Strategy)
 
-When running 30 concurrent sessions across two accounts on the **SAME repository**:
+To maximize completion rates and prevent agent hallucination or timeouts:
+1. **Micro-Scopes**: Do NOT overload single issues with multiple modules. Each issue must target **ONE isolated file** and define **3 to 4 sequential internal steps** (TDD: types -> core logic -> unit tests -> exports).
+2. **Web Research Mandatory**: If an implementation detail is non-trivial (e.g. Tokio async broadcast, Axum 0.8 handler, DashMap concurrency), the issue prompt must instruct the agent to run web queries before writing code.
+3. **Self-Contained Imports**: Ensure that any dependencies required by the issue already exist in `Cargo.toml` or `package.json` in `main`.
+
+---
+
+## 7. Disjoint File Island Guarantee (Anti-Collision)
+
+When running concurrent sessions across two accounts on the **SAME repository**:
 1. **Zero Intersection**: No two issues may touch the same file path.
 2. **Pre-requisites in Main**: All shared types/primitives must already be merged into `main` before dispatching dependents.
 3. **No Features Reconcile**: Subagents must NEVER touch `.gitcore/features.json`. Only the orchestrator reconciles the ledger post-merge.

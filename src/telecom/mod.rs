@@ -8,6 +8,7 @@ pub mod gateway_api;
 pub mod group_rooms;
 pub mod mcp_tools;
 pub mod protocol;
+pub mod rate_limiter;
 pub mod routing;
 pub mod session;
 pub mod store;
