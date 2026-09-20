@@ -35,7 +35,10 @@ pub use xavier_lib::crypto;
 pub use xavier_lib::kernel;
 pub use xavier_lib::memory;
 pub use xavier_lib::secrets;
+pub use xavier_lib::security;
+pub use xavier_lib::storage;
 pub use xavier_lib::system;
+pub use xavier_lib::telecom;
 pub use xavier_lib::workspace;
 
 use crate::settings::XavierSettings;
