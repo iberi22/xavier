@@ -12,7 +12,7 @@ import {
 	Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getApiUrl } from "../api/client";
 import { getApiTokenSync } from "../hooks/useApiToken";
 
@@ -228,12 +228,13 @@ export function NotificationCenter({
 	enableWebSocket = true,
 	wsUrl,
 }: NotificationCenterProps) {
-	const [notifications, setNotifications] = useState<Notification[]>(
-		initialNotifications,
-	);
+	const [notifications, setNotifications] =
+		useState<Notification[]>(initialNotifications);
 	const [toasts, setToasts] = useState<Notification[]>([]);
 	const [activeIsland, setActiveIsland] = useState<IslandId | "all">("all");
-	const [isLoading, setIsLoading] = useState<boolean>(initialNotifications.length === 0);
+	const [isLoading, setIsLoading] = useState<boolean>(
+		initialNotifications.length === 0,
+	);
 
 	useEffect(() => {
 		if (initialNotifications.length > 0) {
@@ -264,7 +265,9 @@ export function NotificationCenter({
 						setNotifications((prev) => {
 							if (prev.length === 0) return data;
 							const existingIds = new Set(prev.map((n) => n.id));
-							const newItems = data.filter((n: Notification) => !existingIds.has(n.id));
+							const newItems = data.filter(
+								(n: Notification) => !existingIds.has(n.id),
+							);
 							return [...newItems, ...prev];
 						});
 					}
@@ -307,8 +310,7 @@ export function NotificationCenter({
 		if (enableWebSocket) {
 			try {
 				const targetWsUrl =
-					wsUrl ||
-					getApiUrl("/v1/maloca/live-sync").replace(/^http/, "ws");
+					wsUrl || getApiUrl("/v1/maloca/live-sync").replace(/^http/, "ws");
 				ws = new WebSocket(targetWsUrl);
 
 				ws.onmessage = (event) => {
@@ -317,7 +319,9 @@ export function NotificationCenter({
 						const raw = JSON.parse(event.data);
 						if (raw && (raw.title || raw.body || raw.type === "notification")) {
 							const newNotif: Notification = {
-								id: raw.id || `ws-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+								id:
+									raw.id ||
+									`ws-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
 								islandId: raw.islandId || raw.island_id || "system",
 								title: raw.title || raw.event_type || "System Alert",
 								body: raw.body || raw.message || JSON.stringify(raw),
@@ -352,7 +356,14 @@ export function NotificationCenter({
 		[notifications],
 	);
 
-	const markRead = async (id: string) => {
+	/**
+	 * ⚡ Bolt Performance Optimization
+	 *
+	 * 💡 What: Wrapped markRead in useCallback with empty dependency array
+	 * 🎯 Why: Preventing re-creation of this function on every render, which caused all memoized NotificationItem components to re-render (O(N)).
+	 * 📊 Impact: Reduces array rendering complexity from O(N) to O(1) during state updates (e.g. typing or receiving new notifications).
+	 */
+	const markRead = useCallback(async (id: string) => {
 		setNotifications((prev) =>
 			prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
 		);
@@ -366,7 +377,7 @@ export function NotificationCenter({
 		} catch (err) {
 			console.error("Failed to mark notification as read:", err);
 		}
-	};
+	}, []);
 
 	const markAllRead = async () => {
 		setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
@@ -396,13 +407,27 @@ export function NotificationCenter({
 		}
 	};
 
-	const dismissNotification = (id: string) => {
+	/**
+	 * ⚡ Bolt Performance Optimization
+	 *
+	 * 💡 What: Wrapped dismissNotification in useCallback with empty dependency array
+	 * 🎯 Why: Preventing re-creation of this function on every render, which caused all memoized NotificationItem components to re-render (O(N)).
+	 * 📊 Impact: Reduces array rendering complexity from O(N) to O(1) during state updates.
+	 */
+	const dismissNotification = useCallback((id: string) => {
 		setNotifications((prev) => prev.filter((n) => n.id !== id));
-	};
+	}, []);
 
-	const dismissToast = (id: string) => {
+	/**
+	 * ⚡ Bolt Performance Optimization
+	 *
+	 * 💡 What: Wrapped dismissToast in useCallback with empty dependency array
+	 * 🎯 Why: Preventing re-creation of this function on every render, which caused all memoized ToastBanner components to re-render (O(N)).
+	 * 📊 Impact: Reduces array rendering complexity from O(N) to O(1) during state updates.
+	 */
+	const dismissToast = useCallback((id: string) => {
 		setToasts((prev) => prev.filter((t) => t.id !== id));
-	};
+	}, []);
 
 	const filteredNotifications = useMemo(() => {
 		return activeIsland === "all"
