@@ -17,6 +17,8 @@ import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import SystemAlertBanner from "./components/SystemAlertBanner";
 import DirectChatView from "./components/Telecom/DirectChatView";
+import GroupRoomView from "./components/Telecom/GroupRoomView";
+import { AgentResponderSelect } from "./components/Telecom/AgentResponderSelect";
 import TelecomHubView from "./components/Telecom/TelecomHubView";
 import TopStatusBar from "./components/TopStatusBar";
 import ErrorToast from "./components/ui/ErrorToast";
@@ -572,6 +574,18 @@ function AppContent() {
 
 	if (hash === "#/telecom/direct" || hash.startsWith("#/telecom/direct/")) {
 		return <DirectChatView onBack={handleCloseMesh} />;
+	}
+
+	if (hash === "#/telecom-group-room" || hash.startsWith("#/telecom-group-room/")) {
+		return <GroupRoomView onClose={handleCloseMesh} />;
+	}
+
+	if (hash === "#/telecom/agent-responder" || hash.startsWith("#/telecom/agent-responder/")) {
+		return (
+			<div className="p-8 max-w-xl mx-auto">
+				<AgentResponderSelect />
+			</div>
+		);
 	}
 
 	return (
