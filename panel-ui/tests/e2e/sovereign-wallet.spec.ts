@@ -1,6 +1,23 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
-test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E (pending wave-theme)", () => {
+const DEFAULT_ARTIFACT_DIR = path.join(process.cwd(), "test-results", "artifacts");
+
+function getWritableDir(target: string): string {
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    fs.accessSync(target, fs.constants.W_OK);
+    return target;
+  } catch {
+    fs.mkdirSync(DEFAULT_ARTIFACT_DIR, { recursive: true });
+    return DEFAULT_ARTIFACT_DIR;
+  }
+}
+
+const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
+
+test.describe("Sovereign Wallet & Autonomous Agent Delegation E2E", () => {
   test.beforeEach(async ({ page }) => {
     // Mock Genesis Node endpoints
     await page.route("**/v1/auth/challenge", async (route) => {
@@ -81,6 +98,10 @@ test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E (pending
     await expect(page.getByText("Karma Acumulado", { exact: true })).toBeVisible();
     await expect(page.locator("text=Capa 1 (Polygon PoS)")).toBeVisible();
     await expect(page.locator("text=xaviercloud.swal.network")).toBeVisible();
+
+    // Capture screenshot of sovereign wallet
+    const walletArtifact = path.join(ARTIFACT_DIR, "sovereign_wallet_e2e.png");
+    await page.screenshot({ path: walletArtifact, fullPage: true });
 
     // Close modal via close button
     const closeBtn = page.locator("button[aria-label='Cerrar Billetera']");

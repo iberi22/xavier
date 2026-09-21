@@ -17,7 +17,7 @@ function getWritableDir(target: string): string {
 
 const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
 
-test.describe("Telecom Hub Rooms E2E", () => {
+test.describe("Telecom Agent Responder E2E", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept health and auth requests
     await page.route("**/health", async (route) => {
@@ -86,68 +86,48 @@ test.describe("Telecom Hub Rooms E2E", () => {
     });
   });
 
-  test("renders TelecomHubView, navigates categories, sends optimistic message, and captures artifacts", async ({ page }) => {
-    // Navigate to Telecom Hub route
-    await page.goto("/#/telecom");
+  test("renders AgentResponderSelect, toggles auto-responder state, opens dropdown, and captures artifacts", async ({ page }) => {
+    // Navigate to Agent Responder route
+    await page.goto("/#/telecom/agent-responder");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(500);
 
-    // Verify main header
-    const hubHeader = page.locator("h1", { hasText: "Sovereign Mesh Telecom" });
-    await expect(hubHeader).toBeVisible();
+    // Verify initial component rendering
+    const headerTitle = page.locator("text=Automated Cognitive Responder");
+    await expect(headerTitle).toBeVisible();
 
-    // Verify channel tabs
-    const directTab = page.locator('button[role="tab"]', { hasText: "Direct (1:1)" });
-    const groupsTab = page.locator('button[role="tab"]', { hasText: "Groups" });
-    const peersTab = page.locator('button[role="tab"]', { hasText: "Peers" });
+    const activeBadge = page.locator("text=Active");
+    await expect(activeBadge).toBeVisible();
 
-    await expect(directTab).toBeVisible();
-    await expect(groupsTab).toBeVisible();
-    await expect(peersTab).toBeVisible();
+    // Verify initial selected agent
+    const defaultAgent = page.locator("text=Legal & Compliance Sentinel");
+    await expect(defaultAgent).toBeVisible();
 
-    // Verify initial selected room (Strategic Operations Council)
-    const selectedTitle = page.locator("h2", { hasText: "Strategic Operations Council" });
-    await expect(selectedTitle).toBeVisible();
+    // Capture initial configuration screenshot
+    const initialConfigArtifact = path.join(ARTIFACT_DIR, "telecom_agent_responder_config_e2e.png");
+    await page.screenshot({ path: initialConfigArtifact, fullPage: true });
 
-    // Capture initial hub view
-    const initialHubArtifact = path.join(ARTIFACT_DIR, "telecom_hub_rooms_e2e.png");
-    await page.screenshot({ path: initialHubArtifact, fullPage: true });
+    // Open dropdown to select another cognitive agent
+    const triggerBtn = page.locator('button[aria-label="Select cognitive agent responder"]');
+    await expect(triggerBtn).toBeVisible();
+    await triggerBtn.click();
 
-    // Switch to Direct Tab
-    await directTab.click();
-    const vanguardChannel = page.locator("button", { hasText: "Vanguard Prime" });
-    await expect(vanguardChannel).toBeVisible();
-    await vanguardChannel.click();
+    // Check dropdown options
+    const sentinelOption = page.locator("text=Sentinel Threat Monitor");
+    await expect(sentinelOption).toBeVisible();
+    await sentinelOption.click();
 
-    // Verify active room switched to Vanguard Prime
-    const activeDirectRoom = page.locator("h2", { hasText: "Vanguard Prime" });
-    await expect(activeDirectRoom).toBeVisible();
+    // Verify updated selected agent
+    const updatedAgent = page.locator("h4", { hasText: "Sentinel Threat Monitor" });
+    await expect(updatedAgent).toBeVisible();
 
-    // Send an optimistic message in the room
-    const messageInput = page.locator('input[placeholder*="Send encrypted message"]');
-    await expect(messageInput).toBeVisible();
-    await messageInput.fill("Telecom Hub Optimistic Dispatch Test");
+    // Toggle master switch
+    const toggleSwitch = page.locator('button[role="switch"]');
+    await expect(toggleSwitch).toBeVisible();
+    await toggleSwitch.click();
 
-    const sendBtn = page.locator('button[aria-label="Send Message"]');
-    await expect(sendBtn).toBeEnabled();
-    await sendBtn.click();
-
-    // Assert optimistic message appeared in chat feed
-    const sentMsg = page.locator("text=Telecom Hub Optimistic Dispatch Test");
-    await expect(sentMsg).toBeVisible();
-
-    // Switch to Peers Tab
-    await peersTab.click();
-    const peerNode = page.locator("button", { hasText: "node-delta-9e" });
-    await expect(peerNode).toBeVisible();
-    await peerNode.click();
-
-    // Verify peer card in sidebar is visible
-    const securitySidebar = page.locator("h3", { hasText: "Security & Key Info" });
-    await expect(securitySidebar).toBeVisible();
-
-    // Capture final state
-    const finalStateArtifact = path.join(ARTIFACT_DIR, "telecom_hub_peers_e2e.png");
-    await page.screenshot({ path: finalStateArtifact, fullPage: true });
+    // Capture updated state screenshot
+    const updatedStateArtifact = path.join(ARTIFACT_DIR, "telecom_agent_responder_active_e2e.png");
+    await page.screenshot({ path: updatedStateArtifact, fullPage: true });
   });
 });

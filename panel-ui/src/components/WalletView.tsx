@@ -65,7 +65,7 @@ const KarmaEventItem = React.memo(function KarmaEventItem({ ev }: { ev: KarmaEve
 });
 
 export const WalletView = React.memo(function WalletView({ onClose }: WalletViewProps) {
-  const { authUser } = useAuthStore();
+  const { user } = useAuthStore();
   const [copiedKey, setCopiedKey] = useState(false);
   const [polygonAddress, setPolygonAddress] = useState(() => {
     return typeof localStorage !== "undefined"
@@ -91,8 +91,10 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
   const [showRecovery, setShowRecovery] = useState(false);
   const mnemonic = "abandon amount abandon amount abandon amount abandon amount abandon amount abandon announce";
 
-  const karma = authUser?.karma ?? 10;
-  const nodeId = authUser?.node_id || (typeof authUser?.id === "string" ? authUser.id : "node_ed0fe57d1f71cbf6");
+  const karma = (user as unknown as { karma?: number })?.karma ?? 10;
+  const nodeId =
+    (user as unknown as { node_id?: string })?.node_id ||
+    (typeof user?.id === "string" ? user.id : "node_ed0fe57d1f71cbf6");
   const genesisNode = "xaviercloud.swal.network";
 
   const handleCopyNodeId = () => {
@@ -464,3 +466,5 @@ export const WalletView = React.memo(function WalletView({ onClose }: WalletView
     </div>
   );
 });
+
+export default WalletView;

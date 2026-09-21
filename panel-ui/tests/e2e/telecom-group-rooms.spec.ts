@@ -17,7 +17,7 @@ function getWritableDir(target: string): string {
 
 const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
 
-test.describe("Telecom Hub Rooms E2E", () => {
+test.describe("Telecom Group Rooms View", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept health and auth requests
     await page.route("**/health", async (route) => {
@@ -28,6 +28,7 @@ test.describe("Telecom Hub Rooms E2E", () => {
       });
     });
 
+    // We also need to mock config/providers to avoid proxy error taking too long
     await page.route("**/v1/config/providers", async (route) => {
       await route.fulfill({
         status: 200,
@@ -36,6 +37,7 @@ test.describe("Telecom Hub Rooms E2E", () => {
       });
     });
 
+    // and /auth/refresh
     await page.route("**/auth/refresh", async (route) => {
       await route.fulfill({
         status: 200,
@@ -55,9 +57,12 @@ test.describe("Telecom Hub Rooms E2E", () => {
       });
     });
 
+    // Mock initial threads
     await page.route("**/panel/api/threads", async (route) => {
       await route.fulfill({ json: [] });
     });
+
+    // Mock other common endpoints
     await page.route("**/panel/api/bookmarks", async (route) => {
       await route.fulfill({ json: [] });
     });
@@ -86,68 +91,57 @@ test.describe("Telecom Hub Rooms E2E", () => {
     });
   });
 
-  test("renders TelecomHubView, navigates categories, sends optimistic message, and captures artifacts", async ({ page }) => {
-    // Navigate to Telecom Hub route
-    await page.goto("/#/telecom");
+  test("renders GroupRoomView, allows topic edit, and toggles roster", async ({ page }) => {
+    // Phase 1: Go to the test route
+    await page.goto("/#/telecom-group-room");
     await page.waitForLoadState("domcontentloaded");
+
+    // Sometimes components need a short time to animate or load initial state
     await page.waitForTimeout(500);
 
-    // Verify main header
-    const hubHeader = page.locator("h1", { hasText: "Sovereign Mesh Telecom" });
-    await expect(hubHeader).toBeVisible();
+    // Check loading GroupRoomView: We should see the room name from DEFAULT_ROOM
+    const heading = page.locator('h1', { hasText: 'Strategic-Ops-Council' });
+    await expect(heading).toBeVisible();
 
-    // Verify channel tabs
-    const directTab = page.locator('button[role="tab"]', { hasText: "Direct (1:1)" });
-    const groupsTab = page.locator('button[role="tab"]', { hasText: "Groups" });
-    const peersTab = page.locator('button[role="tab"]', { hasText: "Peers" });
+    const participantCount = page.locator('text=4 Active');
+    await expect(participantCount).toBeVisible();
 
-    await expect(directTab).toBeVisible();
-    await expect(groupsTab).toBeVisible();
-    await expect(peersTab).toBeVisible();
+    // Take screenshot of group room
+    const fullRoomPath = path.join(ARTIFACT_DIR, "telecom_group_room_e2e.png");
+    await page.screenshot({ path: fullRoomPath, fullPage: true });
 
-    // Verify initial selected room (Strategic Operations Council)
-    const selectedTitle = page.locator("h2", { hasText: "Strategic Operations Council" });
-    await expect(selectedTitle).toBeVisible();
+    // Phase 2: Edit topic
+    const topicHeading = page.locator('text=Multi-Node Mesh Consensus & Zero-Trust Protocol Synchronization v2.4');
+    await expect(topicHeading).toBeVisible();
 
-    // Capture initial hub view
-    const initialHubArtifact = path.join(ARTIFACT_DIR, "telecom_hub_rooms_e2e.png");
-    await page.screenshot({ path: initialHubArtifact, fullPage: true });
+    const editTopicBtn = page.locator('button[aria-label="Edit room topic"]');
+    await expect(editTopicBtn).toBeVisible();
+    await editTopicBtn.click();
 
-    // Switch to Direct Tab
-    await directTab.click();
-    const vanguardChannel = page.locator("button", { hasText: "Vanguard Prime" });
-    await expect(vanguardChannel).toBeVisible();
-    await vanguardChannel.click();
+    const topicModalTitle = page.locator('h3', { hasText: 'Update Room Topic & Objective' });
+    await expect(topicModalTitle).toBeVisible();
 
-    // Verify active room switched to Vanguard Prime
-    const activeDirectRoom = page.locator("h2", { hasText: "Vanguard Prime" });
-    await expect(activeDirectRoom).toBeVisible();
+    const topicInput = page.locator('textarea#room-topic-input');
+    await expect(topicInput).toBeVisible();
 
-    // Send an optimistic message in the room
-    const messageInput = page.locator('input[placeholder*="Send encrypted message"]');
-    await expect(messageInput).toBeVisible();
-    await messageInput.fill("Telecom Hub Optimistic Dispatch Test");
+    await topicInput.fill('Updated Room Topic E2E');
+    const saveBtn = page.locator('button', { hasText: 'Save Topic' });
+    await saveBtn.click();
 
-    const sendBtn = page.locator('button[aria-label="Send Message"]');
-    await expect(sendBtn).toBeEnabled();
-    await sendBtn.click();
+    const newTopic = page.locator('text=Updated Room Topic E2E');
+    await expect(newTopic).toBeVisible();
 
-    // Assert optimistic message appeared in chat feed
-    const sentMsg = page.locator("text=Telecom Hub Optimistic Dispatch Test");
-    await expect(sentMsg).toBeVisible();
+    // Phase 3: Roster toggle
+    // On mobile we click toggle, on desktop it's already there
+    // We can just verify the roster is visible
+    const rosterHeader = page.locator('h3', { hasText: 'Member Roster' });
+    await expect(rosterHeader).toBeVisible();
 
-    // Switch to Peers Tab
-    await peersTab.click();
-    const peerNode = page.locator("button", { hasText: "node-delta-9e" });
-    await expect(peerNode).toBeVisible();
-    await peerNode.click();
+    const nodeAlpha = page.locator('span', { hasText: 'node-alpha-8f' }).first();
+    await expect(nodeAlpha).toBeVisible();
 
-    // Verify peer card in sidebar is visible
-    const securitySidebar = page.locator("h3", { hasText: "Security & Key Info" });
-    await expect(securitySidebar).toBeVisible();
-
-    // Capture final state
-    const finalStateArtifact = path.join(ARTIFACT_DIR, "telecom_hub_peers_e2e.png");
-    await page.screenshot({ path: finalStateArtifact, fullPage: true });
+    // Take a screenshot of the state
+    const topicEditPath = path.join(ARTIFACT_DIR, "telecom_group_room_roster_e2e.png");
+    await page.screenshot({ path: topicEditPath, fullPage: true });
   });
 });

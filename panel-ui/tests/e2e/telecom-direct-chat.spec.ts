@@ -17,7 +17,7 @@ function getWritableDir(target: string): string {
 
 const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
 
-test.describe("Telecom Hub Rooms E2E", () => {
+test.describe("Telecom Direct Chat E2E", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept health and auth requests
     await page.route("**/health", async (route) => {
@@ -86,68 +86,57 @@ test.describe("Telecom Hub Rooms E2E", () => {
     });
   });
 
-  test("renders TelecomHubView, navigates categories, sends optimistic message, and captures artifacts", async ({ page }) => {
-    // Navigate to Telecom Hub route
-    await page.goto("/#/telecom");
+  test("renders DirectChatView, validates peer identity, sends message, and checks receipts", async ({ page }) => {
+    // Navigate to Direct Chat route
+    await page.goto("/#/telecom/direct");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(500);
 
-    // Verify main header
-    const hubHeader = page.locator("h1", { hasText: "Sovereign Mesh Telecom" });
-    await expect(hubHeader).toBeVisible();
+    // Verify peer identity & online status indicator
+    const peerHeading = page.locator("h2", { hasText: "Vanguard Prime" });
+    await expect(peerHeading).toBeVisible();
 
-    // Verify channel tabs
-    const directTab = page.locator('button[role="tab"]', { hasText: "Direct (1:1)" });
-    const groupsTab = page.locator('button[role="tab"]', { hasText: "Groups" });
-    const peersTab = page.locator('button[role="tab"]', { hasText: "Peers" });
+    const statusBadge = page.locator("text=Online · Direct Link Active");
+    await expect(statusBadge).toBeVisible();
 
-    await expect(directTab).toBeVisible();
-    await expect(groupsTab).toBeVisible();
-    await expect(peersTab).toBeVisible();
+    const cipherBadge = page.locator("text=ChaCha20-Poly1305");
+    await expect(cipherBadge).toBeVisible();
 
-    // Verify initial selected room (Strategic Operations Council)
-    const selectedTitle = page.locator("h2", { hasText: "Strategic Operations Council" });
-    await expect(selectedTitle).toBeVisible();
+    // Verify existing pre-seeded message rendering
+    const existingMsg = page.locator("text=Secure telecom handshake established.");
+    await expect(existingMsg).toBeVisible();
 
-    // Capture initial hub view
-    const initialHubArtifact = path.join(ARTIFACT_DIR, "telecom_hub_rooms_e2e.png");
-    await page.screenshot({ path: initialHubArtifact, fullPage: true });
+    // Take screenshot of direct chat room
+    const chatRoomArtifact = path.join(ARTIFACT_DIR, "telecom_direct_chat_e2e.png");
+    await page.screenshot({ path: chatRoomArtifact, fullPage: true });
 
-    // Switch to Direct Tab
-    await directTab.click();
-    const vanguardChannel = page.locator("button", { hasText: "Vanguard Prime" });
-    await expect(vanguardChannel).toBeVisible();
-    await vanguardChannel.click();
-
-    // Verify active room switched to Vanguard Prime
-    const activeDirectRoom = page.locator("h2", { hasText: "Vanguard Prime" });
-    await expect(activeDirectRoom).toBeVisible();
-
-    // Send an optimistic message in the room
+    // Type and send a new encrypted direct message
     const messageInput = page.locator('input[placeholder*="Send encrypted message"]');
     await expect(messageInput).toBeVisible();
-    await messageInput.fill("Telecom Hub Optimistic Dispatch Test");
 
-    const sendBtn = page.locator('button[aria-label="Send Message"]');
-    await expect(sendBtn).toBeEnabled();
-    await sendBtn.click();
+    await messageInput.fill("E2E Test Encrypted Message with Receipt Verification");
+    const sendButton = page.locator('button[aria-label="Send direct message"]');
+    await expect(sendButton).toBeEnabled();
+    await sendButton.click();
 
-    // Assert optimistic message appeared in chat feed
-    const sentMsg = page.locator("text=Telecom Hub Optimistic Dispatch Test");
+    // Verify outgoing message appears in stream
+    const sentMsg = page.locator("text=E2E Test Encrypted Message with Receipt Verification");
     await expect(sentMsg).toBeVisible();
 
-    // Switch to Peers Tab
-    await peersTab.click();
-    const peerNode = page.locator("button", { hasText: "node-delta-9e" });
-    await expect(peerNode).toBeVisible();
-    await peerNode.click();
+    // Verify delivery receipt indicator
+    const receiptIndicator = page.locator('span[title*="Status:"]');
+    await expect(receiptIndicator.first()).toBeVisible();
 
-    // Verify peer card in sidebar is visible
-    const securitySidebar = page.locator("h3", { hasText: "Security & Key Info" });
-    await expect(securitySidebar).toBeVisible();
+    // Toggle Search conversation bar
+    const searchBtn = page.locator('button[aria-label="Search conversation messages"]');
+    await searchBtn.click();
 
-    // Capture final state
-    const finalStateArtifact = path.join(ARTIFACT_DIR, "telecom_hub_peers_e2e.png");
-    await page.screenshot({ path: finalStateArtifact, fullPage: true });
+    const searchInput = page.locator('input[placeholder="Search messages in this channel..."]');
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill("handshake");
+
+    // Capture search filter state
+    const searchArtifact = path.join(ARTIFACT_DIR, "telecom_direct_chat_search_e2e.png");
+    await page.screenshot({ path: searchArtifact, fullPage: true });
   });
 });
