@@ -46,7 +46,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "5.0.0",
-    "astro": "^7.3.2",
+    "astro": "^7.3.3",
     "defu": "^6.1.5",
     "jsdom": "^30.0.1",
     "picomatch": "^4.0.7",
