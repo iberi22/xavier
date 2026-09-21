@@ -17,7 +17,7 @@ function getWritableDir(target: string): string {
 
 const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
 
-test.describe("Telecom Direct Chat E2E", () => {
+test.describe("Telecom Group Rooms View", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept health and auth requests
     await page.route("**/health", async (route) => {
@@ -28,6 +28,7 @@ test.describe("Telecom Direct Chat E2E", () => {
       });
     });
 
+    // We also need to mock config/providers to avoid proxy error taking too long
     await page.route("**/v1/config/providers", async (route) => {
       await route.fulfill({
         status: 200,
@@ -36,6 +37,7 @@ test.describe("Telecom Direct Chat E2E", () => {
       });
     });
 
+    // and /auth/refresh
     await page.route("**/auth/refresh", async (route) => {
       await route.fulfill({
         status: 200,
@@ -55,9 +57,12 @@ test.describe("Telecom Direct Chat E2E", () => {
       });
     });
 
+    // Mock initial threads
     await page.route("**/panel/api/threads", async (route) => {
       await route.fulfill({ json: [] });
     });
+
+    // Mock other common endpoints
     await page.route("**/panel/api/bookmarks", async (route) => {
       await route.fulfill({ json: [] });
     });
@@ -86,57 +91,57 @@ test.describe("Telecom Direct Chat E2E", () => {
     });
   });
 
-  test("renders DirectChatView, validates peer identity, sends message, and checks receipts", async ({ page }) => {
-    // Navigate to Direct Chat route
-    await page.goto("/#/telecom/direct");
+  test("renders GroupRoomView, allows topic edit, and toggles roster", async ({ page }) => {
+    // Phase 1: Go to the test route
+    await page.goto("/#/telecom-group-room");
     await page.waitForLoadState("domcontentloaded");
+
+    // Sometimes components need a short time to animate or load initial state
     await page.waitForTimeout(500);
 
-    // Verify peer identity & online status indicator
-    const peerHeading = page.locator("h2", { hasText: "Vanguard Prime" });
-    await expect(peerHeading).toBeVisible();
+    // Check loading GroupRoomView: We should see the room name from DEFAULT_ROOM
+    const heading = page.locator('h1', { hasText: 'Strategic-Ops-Council' });
+    await expect(heading).toBeVisible();
 
-    const statusBadge = page.locator("text=Online · Direct Link Active");
-    await expect(statusBadge).toBeVisible();
+    const participantCount = page.locator('text=4 Active');
+    await expect(participantCount).toBeVisible();
 
-    const cipherBadge = page.locator("text=ChaCha20-Poly1305");
-    await expect(cipherBadge).toBeVisible();
+    // Take screenshot of group room
+    const fullRoomPath = path.join(ARTIFACT_DIR, "telecom_group_room_e2e.png");
+    await page.screenshot({ path: fullRoomPath, fullPage: true });
 
-    // Verify existing pre-seeded message rendering
-    const existingMsg = page.locator("text=Secure telecom handshake established.");
-    await expect(existingMsg).toBeVisible();
+    // Phase 2: Edit topic
+    const topicHeading = page.locator('text=Multi-Node Mesh Consensus & Zero-Trust Protocol Synchronization v2.4');
+    await expect(topicHeading).toBeVisible();
 
-    // Take screenshot of direct chat room
-    const chatRoomArtifact = path.join(ARTIFACT_DIR, "telecom_direct_chat_e2e.png");
-    await page.screenshot({ path: chatRoomArtifact, fullPage: true });
+    const editTopicBtn = page.locator('button[aria-label="Edit room topic"]');
+    await expect(editTopicBtn).toBeVisible();
+    await editTopicBtn.click();
 
-    // Type and send a new encrypted direct message
-    const messageInput = page.locator('input[placeholder*="Send encrypted message"]');
-    await expect(messageInput).toBeVisible();
+    const topicModalTitle = page.locator('h3', { hasText: 'Update Room Topic & Objective' });
+    await expect(topicModalTitle).toBeVisible();
 
-    await messageInput.fill("E2E Test Encrypted Message with Receipt Verification");
-    const sendButton = page.locator('button[aria-label="Send direct message"]');
-    await expect(sendButton).toBeEnabled();
-    await sendButton.click();
+    const topicInput = page.locator('textarea#room-topic-input');
+    await expect(topicInput).toBeVisible();
 
-    // Verify outgoing message appears in stream
-    const sentMsg = page.locator("text=E2E Test Encrypted Message with Receipt Verification");
-    await expect(sentMsg).toBeVisible();
+    await topicInput.fill('Updated Room Topic E2E');
+    const saveBtn = page.locator('button', { hasText: 'Save Topic' });
+    await saveBtn.click();
 
-    // Verify delivery receipt indicator
-    const receiptIndicator = page.locator('span[title*="Status:"]');
-    await expect(receiptIndicator.first()).toBeVisible();
+    const newTopic = page.locator('text=Updated Room Topic E2E');
+    await expect(newTopic).toBeVisible();
 
-    // Toggle Search conversation bar
-    const searchBtn = page.locator('button[aria-label="Search conversation messages"]');
-    await searchBtn.click();
+    // Phase 3: Roster toggle
+    // On mobile we click toggle, on desktop it's already there
+    // We can just verify the roster is visible
+    const rosterHeader = page.locator('h3', { hasText: 'Member Roster' });
+    await expect(rosterHeader).toBeVisible();
 
-    const searchInput = page.locator('input[placeholder="Search messages in this channel..."]');
-    await expect(searchInput).toBeVisible();
-    await searchInput.fill("handshake");
+    const nodeAlpha = page.locator('span', { hasText: 'node-alpha-8f' }).first();
+    await expect(nodeAlpha).toBeVisible();
 
-    // Capture search filter state
-    const searchArtifact = path.join(ARTIFACT_DIR, "telecom_direct_chat_search_e2e.png");
-    await page.screenshot({ path: searchArtifact, fullPage: true });
+    // Take a screenshot of the state
+    const topicEditPath = path.join(ARTIFACT_DIR, "telecom_group_room_roster_e2e.png");
+    await page.screenshot({ path: topicEditPath, fullPage: true });
   });
 });

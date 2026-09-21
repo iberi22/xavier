@@ -17,7 +17,7 @@ function getWritableDir(target: string): string {
 
 const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
 
-test.describe("Telecom Direct Chat E2E", () => {
+test.describe("Telecom Agent Responder E2E", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept health and auth requests
     await page.route("**/health", async (route) => {
@@ -86,57 +86,48 @@ test.describe("Telecom Direct Chat E2E", () => {
     });
   });
 
-  test("renders DirectChatView, validates peer identity, sends message, and checks receipts", async ({ page }) => {
-    // Navigate to Direct Chat route
-    await page.goto("/#/telecom/direct");
+  test("renders AgentResponderSelect, toggles auto-responder state, opens dropdown, and captures artifacts", async ({ page }) => {
+    // Navigate to Agent Responder route
+    await page.goto("/#/telecom/agent-responder");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(500);
 
-    // Verify peer identity & online status indicator
-    const peerHeading = page.locator("h2", { hasText: "Vanguard Prime" });
-    await expect(peerHeading).toBeVisible();
+    // Verify initial component rendering
+    const headerTitle = page.locator("text=Automated Cognitive Responder");
+    await expect(headerTitle).toBeVisible();
 
-    const statusBadge = page.locator("text=Online · Direct Link Active");
-    await expect(statusBadge).toBeVisible();
+    const activeBadge = page.locator("text=Active");
+    await expect(activeBadge).toBeVisible();
 
-    const cipherBadge = page.locator("text=ChaCha20-Poly1305");
-    await expect(cipherBadge).toBeVisible();
+    // Verify initial selected agent
+    const defaultAgent = page.locator("text=Legal & Compliance Sentinel");
+    await expect(defaultAgent).toBeVisible();
 
-    // Verify existing pre-seeded message rendering
-    const existingMsg = page.locator("text=Secure telecom handshake established.");
-    await expect(existingMsg).toBeVisible();
+    // Capture initial configuration screenshot
+    const initialConfigArtifact = path.join(ARTIFACT_DIR, "telecom_agent_responder_config_e2e.png");
+    await page.screenshot({ path: initialConfigArtifact, fullPage: true });
 
-    // Take screenshot of direct chat room
-    const chatRoomArtifact = path.join(ARTIFACT_DIR, "telecom_direct_chat_e2e.png");
-    await page.screenshot({ path: chatRoomArtifact, fullPage: true });
+    // Open dropdown to select another cognitive agent
+    const triggerBtn = page.locator('button[aria-label="Select cognitive agent responder"]');
+    await expect(triggerBtn).toBeVisible();
+    await triggerBtn.click();
 
-    // Type and send a new encrypted direct message
-    const messageInput = page.locator('input[placeholder*="Send encrypted message"]');
-    await expect(messageInput).toBeVisible();
+    // Check dropdown options
+    const sentinelOption = page.locator("text=Sentinel Threat Monitor");
+    await expect(sentinelOption).toBeVisible();
+    await sentinelOption.click();
 
-    await messageInput.fill("E2E Test Encrypted Message with Receipt Verification");
-    const sendButton = page.locator('button[aria-label="Send direct message"]');
-    await expect(sendButton).toBeEnabled();
-    await sendButton.click();
+    // Verify updated selected agent
+    const updatedAgent = page.locator("h4", { hasText: "Sentinel Threat Monitor" });
+    await expect(updatedAgent).toBeVisible();
 
-    // Verify outgoing message appears in stream
-    const sentMsg = page.locator("text=E2E Test Encrypted Message with Receipt Verification");
-    await expect(sentMsg).toBeVisible();
+    // Toggle master switch
+    const toggleSwitch = page.locator('button[role="switch"]');
+    await expect(toggleSwitch).toBeVisible();
+    await toggleSwitch.click();
 
-    // Verify delivery receipt indicator
-    const receiptIndicator = page.locator('span[title*="Status:"]');
-    await expect(receiptIndicator.first()).toBeVisible();
-
-    // Toggle Search conversation bar
-    const searchBtn = page.locator('button[aria-label="Search conversation messages"]');
-    await searchBtn.click();
-
-    const searchInput = page.locator('input[placeholder="Search messages in this channel..."]');
-    await expect(searchInput).toBeVisible();
-    await searchInput.fill("handshake");
-
-    // Capture search filter state
-    const searchArtifact = path.join(ARTIFACT_DIR, "telecom_direct_chat_search_e2e.png");
-    await page.screenshot({ path: searchArtifact, fullPage: true });
+    // Capture updated state screenshot
+    const updatedStateArtifact = path.join(ARTIFACT_DIR, "telecom_agent_responder_active_e2e.png");
+    await page.screenshot({ path: updatedStateArtifact, fullPage: true });
   });
 });

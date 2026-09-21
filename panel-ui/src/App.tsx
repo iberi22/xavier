@@ -16,6 +16,12 @@ import { MeshHubView } from "./components/Mesh/MeshHubView";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import SystemAlertBanner from "./components/SystemAlertBanner";
+import DirectChatView from "./components/Telecom/DirectChatView";
+import GroupRoomView from "./components/Telecom/GroupRoomView";
+import { AgentResponderSelect } from "./components/Telecom/AgentResponderSelect";
+import TelecomHubView from "./components/Telecom/TelecomHubView";
+import WalletView from "./components/WalletView";
+import { RecoveryModal } from "./components/RecoveryModal";
 import TopStatusBar from "./components/TopStatusBar";
 import ErrorToast from "./components/ui/ErrorToast";
 import { XavierLandingView } from "./components/XavierLandingView";
@@ -562,6 +568,45 @@ function AppContent() {
 
 	if (hash === "#/mesh" || hash.startsWith("#/mesh/")) {
 		return <MeshHubView token={token || undefined} onClose={handleCloseMesh} />;
+	}
+
+	if (hash === "#/telecom" || hash.startsWith("#/telecom/hub")) {
+		return <TelecomHubView token={token || undefined} onClose={handleCloseMesh} />;
+	}
+
+	if (hash === "#/telecom/direct" || hash.startsWith("#/telecom/direct/")) {
+		return <DirectChatView onBack={handleCloseMesh} />;
+	}
+
+	if (hash === "#/telecom-group-room" || hash.startsWith("#/telecom-group-room/")) {
+		return <GroupRoomView onClose={handleCloseMesh} />;
+	}
+
+	if (hash === "#/telecom/agent-responder" || hash.startsWith("#/telecom/agent-responder/")) {
+		return (
+			<div className="p-8 max-w-xl mx-auto">
+				<AgentResponderSelect />
+			</div>
+		);
+	}
+
+	if (hash === "#/wallet" || hash.startsWith("#/wallet/")) {
+		return (
+			<div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+				<WalletView onClose={handleCloseMesh} />
+			</div>
+		);
+	}
+
+	if (hash === "#/disaster-recovery" || hash.startsWith("#/disaster-recovery/")) {
+		return (
+			<RecoveryModal
+				isOpen={true}
+				onClose={handleCloseMesh}
+				mnemonic="alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu"
+				onRestore={() => {}}
+			/>
+		);
 	}
 
 	return (

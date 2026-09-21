@@ -30,11 +30,8 @@ pub fn score_documents(
         return Vec::new();
     }
 
-    let query_terms: Vec<String> = query
-        .to_lowercase()
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect();
+    let query_lower = query.to_lowercase();
+    let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
 
     if query_terms.is_empty() {
         return Vec::new();
@@ -54,7 +51,11 @@ pub fn score_documents(
 
         let mut term_freqs = std::collections::HashMap::new();
         for token in tokens {
-            *term_freqs.entry(token.to_string()).or_insert(0) += 1;
+            if let Some(count) = term_freqs.get_mut(token) {
+                *count += 1;
+            } else {
+                term_freqs.insert(token.to_string(), 1);
+            }
         }
         doc_term_freqs.push(term_freqs);
     }
@@ -63,12 +64,15 @@ pub fn score_documents(
 
     let mut scores = Vec::with_capacity(documents.len());
 
-    // Optimization: Calculate n_qi for each query term once
-    let mut query_term_nqi = std::collections::HashMap::new();
-    for term in &query_terms {
-        let n_qi = documents
+    // Optimization: Calculate n_qi for each query term once, reusing the
+    // per-document term frequencies built above so no document content needs to
+    // be re-lowercased per query term. A document contains the term iff its
+    // frequency map has an entry for it.
+    let mut query_term_nqi = std::collections::HashMap::with_capacity(query_terms.len());
+    for &term in &query_terms {
+        let n_qi = doc_term_freqs
             .iter()
-            .filter(|d| d.content.to_lowercase().contains(term))
+            .filter(|tf| tf.contains_key(term))
             .count() as f32;
         query_term_nqi.insert(term, n_qi);
     }
@@ -79,12 +83,12 @@ pub fn score_documents(
         let term_freqs = &doc_term_freqs[i];
 
         for term in &query_terms {
-            let n_qi = *query_term_nqi.get(term).unwrap_or(&0.0);
+            let n_qi = *query_term_nqi.get(*term).unwrap_or(&0.0);
 
             // IDF calculation
             let idf = ((n - n_qi + 0.5) / (n_qi + 0.5) + 1.0).ln();
 
-            let f_qi = *term_freqs.get(term).unwrap_or(&0) as f32;
+            let f_qi = *term_freqs.get(*term).unwrap_or(&0) as f32;
 
             // BM25 term score
             let tf_component = (f_qi * (params.k1 + 1.0))
