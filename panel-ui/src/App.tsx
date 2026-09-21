@@ -16,6 +16,8 @@ import { MeshHubView } from "./components/Mesh/MeshHubView";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import SystemAlertBanner from "./components/SystemAlertBanner";
+import DirectChatView from "./components/Telecom/DirectChatView";
+import TelecomHubView from "./components/Telecom/TelecomHubView";
 import TopStatusBar from "./components/TopStatusBar";
 import ErrorToast from "./components/ui/ErrorToast";
 import { XavierLandingView } from "./components/XavierLandingView";
@@ -562,6 +564,14 @@ function AppContent() {
 
 	if (hash === "#/mesh" || hash.startsWith("#/mesh/")) {
 		return <MeshHubView token={token || undefined} onClose={handleCloseMesh} />;
+	}
+
+	if (hash === "#/telecom" || hash.startsWith("#/telecom/hub")) {
+		return <TelecomHubView token={token || undefined} onClose={handleCloseMesh} />;
+	}
+
+	if (hash === "#/telecom/direct" || hash.startsWith("#/telecom/direct/")) {
+		return <DirectChatView onBack={handleCloseMesh} />;
 	}
 
 	return (
