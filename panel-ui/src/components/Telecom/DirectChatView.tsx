@@ -157,24 +157,27 @@ export const MessageItem = React.memo(function MessageItem({
 		switch (msg.status) {
 			case "sending":
 				return (
-					<Clock
-						className="w-3 h-3 text-zinc-500 animate-spin"
-						title="Sending..."
-					/>
+					<span title="Sending...">
+						<Clock className="w-3 h-3 text-zinc-500 animate-spin" />
+					</span>
 				);
 			case "sent":
-				return <Check className="w-3.5 h-3.5 text-zinc-400" title="Sent" />;
+				return (
+					<span title="Sent">
+						<Check className="w-3.5 h-3.5 text-zinc-400" />
+					</span>
+				);
 			case "delivered":
 				return (
-					<CheckCheck className="w-3.5 h-3.5 text-zinc-400" title="Delivered" />
+					<span title="Delivered">
+						<CheckCheck className="w-3.5 h-3.5 text-zinc-400" />
+					</span>
 				);
 			case "read":
 				return (
-					<CheckCheck
-						className="w-3.5 h-3.5 text-emerald-400"
-						title="Read"
-						aria-label="Read receipt confirmed"
-					/>
+					<span title="Read" aria-label="Read receipt confirmed">
+						<CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
+					</span>
 				);
 			default:
 				return null;
