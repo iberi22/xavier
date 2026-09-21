@@ -278,7 +278,9 @@ pub async fn callback_handler(
     };
 
     match (query.state.as_deref(), expected_state.as_deref()) {
-        (Some(received), Some(expected)) if !received.is_empty() && received == expected => {}
+        (Some(received), Some(expected))
+            if !received.is_empty()
+                && crate::server::http::api::constant_time_compare(received, expected) => {}
         _ => {
             return (
                 StatusCode::BAD_REQUEST,

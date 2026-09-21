@@ -25,3 +25,7 @@
 **Vulnerability:** A previous patch applied `subtle::ConstantTimeEq` using `ct_eq` on token slices of differing lengths without manually checking the lengths first. In Rust's `subtle` crate, calling `ct_eq` on slices of differing lengths causes a panic, introducing a critical Denial of Service (DoS) vulnerability.
 **Learning:** Constant-time string comparisons on arbitrary length inputs are tricky. If standard functions panic on length mismatch, attackers can crash the server by supplying tokens of incorrect lengths.
 **Prevention:** Explicitly check lengths first. If lengths differ, perform a dummy constant-time calculation on the correct length token to normalize computation time without panicking.
+## 2026-09-16 - Timing Attack Vulnerability in Token Equality Checks
+**Vulnerability:** The legacy `==` operator was used to compare authentication tokens and OAuth states in `src/server/auth_routes.rs` and `src/cli/handlers/memory.rs`.
+**Learning:** String equality (`==`) is short-circuiting and leaks information about the matching characters through execution time differences, allowing attackers to incrementally guess valid tokens.
+**Prevention:** Use a wrapper around `subtle::ConstantTimeEq` (such as `xavier::server::http::api::constant_time_compare` in this codebase) for comparing any secret material or tokens.
