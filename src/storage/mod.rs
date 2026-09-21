@@ -15,7 +15,9 @@ pub mod multi_db;
 pub mod pragma;
 
 pub use migrations::{checkpoint, checkpoint_dir, WAL_CHECKPOINT_THRESHOLD_BYTES};
-pub use pragma::apply_pragmas;
+pub use pragma::{
+    apply_acquire_pragmas, apply_connection_pragmas, apply_pragmas, maybe_wal_checkpoint,
+};
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
@@ -240,16 +242,30 @@ impl MigrationRunner {
             })?;
 
             let now = chrono::Utc::now().to_rfc3339();
-            tx.execute(
-                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-                rusqlite::params![migration.version as i64, migration.name.as_str(), now],
-            )
-            .with_context(|| {
-                format!(
-                    "Failed to record migration v{} ({})",
-                    migration.version, migration.name
+            // `OR IGNORE`: a second runner may have recorded this version after
+            // we computed `current_version` (e.g. two concurrent
+            // `MultiDbManager::create_database` calls initialising the same new
+            // file). The DDL above is idempotent, so losing that race is not an
+            // error and the `version` primary key stays authoritative.
+            let recorded = tx
+                .execute(
+                    "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at) \
+                     VALUES (?, ?, ?)",
+                    rusqlite::params![migration.version as i64, migration.name.as_str(), now],
                 )
-            })?;
+                .with_context(|| {
+                    format!(
+                        "Failed to record migration v{} ({})",
+                        migration.version, migration.name
+                    )
+                })?;
+            if recorded == 0 {
+                warn!(
+                    "Migration v{} ({}) was already recorded by another runner; \
+                     keeping the existing bookkeeping row",
+                    migration.version, migration.name
+                );
+            }
 
             tx.commit().with_context(|| {
                 format!(
@@ -344,8 +360,11 @@ impl MigrationManager {
                     m.description()
                 )
             })?;
+            // `OR IGNORE` mirrors [`MigrationRunner::run`]: a concurrent runner
+            // recording the same version must not fail the initialisation.
             tx.execute(
-                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at) \
+                 VALUES (?, ?, ?)",
                 rusqlite::params![
                     m.version() as i64,
                     m.description(),

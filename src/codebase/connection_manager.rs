@@ -36,14 +36,29 @@ struct ProjectPool {
 struct PragmaCustomizer;
 
 impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer {
+    /// Only applies the cheap, connection-local PRAGMA layer because this
+    /// callback can run on every acquire.
+    ///
+    /// The heavy settings are applied once per connection by the
+    /// [`SqliteConnectionManager::with_init`] callback installed in
+    /// [`ConnectionManager::connect_with_path`], and no layer checkpoints the
+    /// WAL. Acquiring a pooled connection therefore never blocks behind another
+    /// connection's readers (previously a `wal_checkpoint(TRUNCATE)` could stall
+    /// every acquire for up to `busy_timeout`).
     fn on_acquire(&self, conn: &mut Connection) -> std::result::Result<(), rusqlite::Error> {
-        crate::storage::apply_pragmas(conn).map_err(|e| {
+        crate::storage::apply_acquire_pragmas(conn).map_err(|e| {
             eprintln!("PragmaCustomizer: PRAGMA error: {}", e);
             e
         })
     }
 }
 
+/// One-time SQLite/WAL setup for a database file, run when its pool is built.
+///
+/// Applies the full (heavy) PRAGMA layer and switches the file to WAL mode,
+/// retrying briefly when another process holds a conflicting lock. Does not
+/// checkpoint the WAL: that is maintenance work, not connection setup (see
+/// `crate::storage::pragma`).
 fn initialize_wal_mode(conn: &Connection, db_path: &PathBuf) -> Result<()> {
     let _guard = WAL_INIT_LOCK
         .lock()
@@ -54,7 +69,7 @@ fn initialize_wal_mode(conn: &Connection, db_path: &PathBuf) -> Result<()> {
 
     for attempt in 1..=WAL_INIT_ATTEMPTS {
         match conn.execute_batch("PRAGMA journal_mode=WAL;") {
-            Ok(()) => return Ok(()),
+            Ok(()) => break,
             Err(err) if is_sqlite_lock_error(&err) && attempt < WAL_INIT_ATTEMPTS => {
                 std::thread::sleep(WAL_INIT_RETRY_DELAY);
             }
@@ -63,7 +78,7 @@ fn initialize_wal_mode(conn: &Connection, db_path: &PathBuf) -> Result<()> {
                     "ConnectionManager: SQLite WAL initialization skipped for {:?}: {}",
                     db_path, err
                 );
-                return Ok(());
+                break;
             }
             Err(err) => {
                 return Err(err).with_context(|| {
@@ -72,6 +87,13 @@ fn initialize_wal_mode(conn: &Connection, db_path: &PathBuf) -> Result<()> {
             }
         }
     }
+
+    // Opportunistic WAL truncation, moved out of the pool *acquire* path: it runs
+    // once per pool construction and only when the WAL exceeded the threshold
+    // (a `wal_checkpoint(TRUNCATE)` waits for every reader of the file, so running
+    // it per acquire could stall every checkout behind a long-running read).
+    let _ =
+        crate::storage::maybe_wal_checkpoint(conn, crate::storage::WAL_CHECKPOINT_THRESHOLD_BYTES);
 
     Ok(())
 }
@@ -171,7 +193,12 @@ impl ConnectionManager {
             initialize_wal_mode(&init_conn, &db_path)?;
             drop(init_conn);
 
-            let manager = SqliteConnectionManager::file(db_path);
+            // Heavy PRAGMAs are applied once per connection, when the pool opens
+            // it; `PragmaCustomizer` only re-applies the cheap layer on acquire.
+            let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
+                crate::storage::apply_connection_pragmas(conn)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+            });
             let pool = Pool::builder()
                 .max_size(10)
                 .connection_customizer(Box::new(PragmaCustomizer))
@@ -353,6 +380,37 @@ mod tests {
         assert_eq!(cm.pools.read().len(), 2);
         assert!(cm.pools.read().contains_key("p1"));
         assert!(cm.pools.read().contains_key("p2"));
+    }
+
+    /// Pool acquires must still hand out fully configured connections after the
+    /// pragma split: the one-time layer is applied when the pool is built and the
+    /// cheap acquire layer on every checkout.
+    #[tokio::test]
+    async fn test_pooled_connections_carry_both_pragma_layers() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("pragma_layers.db");
+
+        cm.connect_with_path("pragma_layers", db_path).unwrap();
+
+        let pragmas = cm
+            .with_conn("pragma_layers", |conn| {
+                Ok((
+                    conn.query_row("PRAGMA busy_timeout;", [], |r| r.get::<_, i64>(0))?,
+                    conn.query_row("PRAGMA foreign_keys;", [], |r| r.get::<_, i64>(0))?,
+                    conn.query_row("PRAGMA cache_size;", [], |r| r.get::<_, i64>(0))?,
+                    conn.query_row("PRAGMA temp_store;", [], |r| r.get::<_, i64>(0))?,
+                ))
+            })
+            .await
+            .unwrap();
+
+        // Acquire layer.
+        assert_eq!(pragmas.0, 5000, "busy_timeout must be applied on acquire");
+        assert_eq!(pragmas.1, 1, "foreign_keys must be applied on acquire");
+        // One-time layer.
+        assert_eq!(pragmas.2, -8000, "cache_size must be set at pool build");
+        assert_eq!(pragmas.3, 2, "temp_store=MEMORY must be set at pool build");
     }
 
     #[tokio::test]
