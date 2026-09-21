@@ -7,6 +7,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 ### Added
 - Wave skill-injection: 6 planned issues (301-306) and ledger scaffolding.
 
+### Changed
+- **Storage PRAGMA layering** (`src/storage/pragma.rs`, `src/codebase/connection_manager.rs`): pooled connections now only re-apply the cheap per-connection pragmas (`busy_timeout`, `foreign_keys`) on acquire; the heavy settings are applied once per connection at pool construction and the opportunistic WAL checkpoint moved off the acquire path. This removes the `wal_checkpoint(TRUNCATE)` stalls that could block every checkout behind a long-running read.
+- **Workspace store caching** (`src/storage/multi_db.rs`): `MultiDbManager::get_store` now returns a clone of the already-initialised store instead of re-opening the database file and replaying the migration set on every call; entries are invalidated by `delete_database`.
+- **Idempotent migration bookkeeping** (`src/storage/mod.rs`): migration versions are recorded with `INSERT OR IGNORE`, so two concurrent initialisations of the same database no longer fail with a `schema_migrations` primary-key violation.
+
 ## [0.2.5] — 2026-09-20
 
 ### Added

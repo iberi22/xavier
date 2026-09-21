@@ -834,6 +834,46 @@ mod tests {
         );
     }
 
+    /// Simulates the concurrent-initialisation race listed in §8.2 of
+    /// `docs/storage-memory-concurrency-analysis.md`: while this runner is
+    /// applying a migration, a second runner records the very same version (as a
+    /// concurrent `MultiDbManager::create_database` on the same new file does).
+    /// Recording the version must be tolerated, not fail with a PRIMARY KEY
+    /// violation, and the first writer's row must win.
+    #[test]
+    fn concurrent_runner_recording_same_version_is_ignored() {
+        let migrations = vec![
+            Migration::new(1, "one", "CREATE TABLE IF NOT EXISTS t_one (x INTEGER);"),
+            Migration::new(
+                2,
+                "two",
+                "CREATE TABLE IF NOT EXISTS t_two (x INTEGER);\n\
+                 INSERT OR IGNORE INTO schema_migrations (version, name, applied_at) \
+                 VALUES (2, 'other-runner', '2026-01-01T00:00:00Z');",
+            ),
+        ];
+
+        let conn = mem_conn();
+        MigrationRunner::new(migrations)
+            .run(&conn)
+            .expect("a version recorded by a concurrent runner must be ignored, not fatal");
+
+        assert_version(&conn, 2);
+        let recorded: i64 = conn
+            .query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(recorded, 2, "v1 and v2 must each be recorded exactly once");
+
+        let name: String = conn
+            .query_row(
+                "SELECT name FROM schema_migrations WHERE version = 2",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(name, "other-runner", "the first writer's row wins");
+    }
+
     #[test]
     fn migrations_run_in_version_order() {
         // Register migrations out of order; runner should sort and apply ascending.
