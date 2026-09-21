@@ -1,4 +1,21 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+
+const DEFAULT_ARTIFACT_DIR = path.join(process.cwd(), "test-results", "artifacts");
+
+function getWritableDir(target: string): string {
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    fs.accessSync(target, fs.constants.W_OK);
+    return target;
+  } catch {
+    fs.mkdirSync(DEFAULT_ARTIFACT_DIR, { recursive: true });
+    return DEFAULT_ARTIFACT_DIR;
+  }
+}
+
+const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
 
 /**
  * End-to-End Test Suite for WebAuthn PRF Hardware Bridge & Node Identity Fallback.
@@ -6,7 +23,7 @@ import { expect, test } from "@playwright/test";
  * deterministic seed generation, cancellation rejection handling, and Ed25519 software fallback.
  */
 
-test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server integration)", () => {
+test.describe("WebAuthn PRF Hardware Bridge E2E Suite", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept standard routes so page loads smoothly without network errors
     await page.route("**/health*", async (route) => {
@@ -161,7 +178,7 @@ test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server 
     expect(result).toBeNull();
   });
 
-  test.fixme(
+  test(
     "getOrCreateNodeIdentity provides software Ed25519 keypair fallback when hardware PRF fails or is bypassed",
     async ({ page }) => {
     // Clear any existing stored identity
@@ -187,5 +204,9 @@ test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server 
     expect(identityResult.hasPrivKey).toBe(true);
     expect(identityResult.hasPubKey).toBe(true);
     expect(identityResult.keyAlgorithm).toBe("Ed25519");
+
+    // Capture screenshot of webauthn-prf test state
+    const prfArtifact = path.join(ARTIFACT_DIR, "webauthn_prf_auth_e2e.png");
+    await page.screenshot({ path: prfArtifact, fullPage: true });
   });
 });
