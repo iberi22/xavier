@@ -47,14 +47,14 @@ pub fn baseline_migrations() -> Vec<Migration> {
 /// Threshold in bytes for automatic startup WAL checkpointing (50MB).
 pub const WAL_CHECKPOINT_THRESHOLD_BYTES: u64 = 50 * 1024 * 1024;
 
-/// Runs WAL checkpoint (`TRUNCATE`) and `VACUUM` on SQLite database files in data_dir
+/// Runs a WAL checkpoint (`TRUNCATE`) on SQLite database files in data_dir
 /// if their WAL file size exceeds 50MB.
 pub fn checkpoint() -> Result<()> {
     let data_dir = crate::settings::XavierSettings::resolve_data_dir();
     checkpoint_dir(&data_dir, WAL_CHECKPOINT_THRESHOLD_BYTES)
 }
 
-/// Runs WAL checkpoint (`TRUNCATE`) and `VACUUM` on databases in `dir` whose WAL exceeds `threshold_bytes`.
+/// Runs a WAL checkpoint (`TRUNCATE`) on databases in `dir` whose WAL exceeds `threshold_bytes`.
 pub fn checkpoint_dir(dir: &std::path::Path, threshold_bytes: u64) -> Result<()> {
     if !dir.exists() {
         return Ok(());
@@ -73,7 +73,11 @@ pub fn checkpoint_dir(dir: &std::path::Path, threshold_bytes: u64) -> Result<()>
                 let wal_size = std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
                 if wal_size >= threshold_bytes {
                     if let Ok(conn) = rusqlite::Connection::open(&path) {
-                        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
+                        // No `VACUUM` here: it rewrites the entire database under an
+                        // exclusive lock and would silently fail (`SQLITE_BUSY`) on this
+                        // connection, which has no `busy_timeout`. Truncating the WAL is
+                        // all the startup housekeeping needs.
+                        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
                     }
                 }
             }
@@ -90,7 +94,10 @@ pub fn run(conn: &Connection) -> Result<()> {
         .unwrap_or(0);
     let approx_wal_bytes = (wal_frames.max(0) as u64) * 4096;
     if approx_wal_bytes >= WAL_CHECKPOINT_THRESHOLD_BYTES {
-        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
+        // Checkpoint only — `VACUUM` is deliberately avoided on this hot path (see
+        // `checkpoint_dir`): it rebuilds the whole database under an exclusive lock
+        // and adds nothing to WAL truncation.
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
     }
     MigrationRunner::new(baseline_migrations()).run(conn)
 }

@@ -1,6 +1,7 @@
 //! Token counting, UTF-8 safety estimation, and streaming diff/AST token compression utilities.
 
 use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
 
 /// Estimate the token count of a given text in a UTF-8 multi-byte safe manner.
 ///
@@ -57,7 +58,10 @@ pub fn collapse_repeated_ast_snippets(text: &str) -> String {
         return String::new();
     }
 
-    let mut result = Vec::new();
+    // Accumulate the compressed output directly into one `String` instead of
+    // collecting owned lines in a `Vec<String>` and `join`ing them afterwards,
+    // which halved peak memory (no per-line `String` plus full copy on join).
+    let mut compressed = String::with_capacity(text.len());
     let mut idx = 0;
 
     while idx < lines.len() {
@@ -70,11 +74,13 @@ pub fn collapse_repeated_ast_snippets(text: &str) -> String {
         }
 
         if repeat_count >= 3 {
-            result.push(current_line.to_string());
-            result.push(format!(
+            compressed.push_str(current_line);
+            compressed.push('\n');
+            let _ = writeln!(
+                compressed,
                 "// [... repeated AST/diff line x{} ...]",
                 repeat_count - 1
-            ));
+            );
             idx += repeat_count;
             continue;
         }
@@ -98,13 +104,15 @@ pub fn collapse_repeated_ast_snippets(text: &str) -> String {
 
                     if block_repeats >= 2 {
                         for line in block_a {
-                            result.push(line.to_string());
+                            compressed.push_str(line);
+                            compressed.push('\n');
                         }
-                        result.push(format!(
+                        let _ = writeln!(
+                            compressed,
                             "// [... repeated AST pattern x{} ({}-line block) ...]",
                             block_repeats - 1,
                             window_size
-                        ));
+                        );
                         idx += block_repeats * window_size;
                         block_collapsed = true;
                         break;
@@ -114,13 +122,18 @@ pub fn collapse_repeated_ast_snippets(text: &str) -> String {
         }
 
         if !block_collapsed {
-            result.push(current_line.to_string());
+            compressed.push_str(current_line);
+            compressed.push('\n');
             idx += 1;
         }
     }
 
+    // Every line above was terminated with '\n'; drop the final terminator to
+    // match the previous `result.join("\n")` output exactly.
+    debug_assert!(compressed.ends_with('\n'));
+    compressed.pop();
+
     // Preserve trailing newline if present in original input
-    let mut compressed = result.join("\n");
     if text.ends_with('\n') {
         compressed.push('\n');
     }
