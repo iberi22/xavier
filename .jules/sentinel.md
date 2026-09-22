@@ -25,3 +25,8 @@
 **Vulnerability:** A previous patch applied `subtle::ConstantTimeEq` using `ct_eq` on token slices of differing lengths without manually checking the lengths first. In Rust's `subtle` crate, calling `ct_eq` on slices of differing lengths causes a panic, introducing a critical Denial of Service (DoS) vulnerability.
 **Learning:** Constant-time string comparisons on arbitrary length inputs are tricky. If standard functions panic on length mismatch, attackers can crash the server by supplying tokens of incorrect lengths.
 **Prevention:** Explicitly check lengths first. If lengths differ, perform a dummy constant-time calculation on the correct length token to normalize computation time without panicking.
+
+## 2026-09-17 - Fix timing attack in auth and CSRF token comparison
+**Vulnerability:** Found timing attack vulnerabilities in `src/cli/handlers/memory.rs` and `src/server/auth_routes.rs` where the `==` operator was used to compare the provided tokens (auth token and CSRF state token) with the expected tokens.
+**Learning:** The `==` operator for strings performs a short-circuiting comparison, leaking timing information that an attacker can use to incrementally guess the token character by character. Although a previous fix addressed this in some files, other areas like the memory CLI handlers and OAuth callback were still vulnerable.
+**Prevention:** Always use constant-time comparison mechanisms (e.g., `xavier::server::http::api::constant_time_compare`) to compare secrets, tokens, or hashes to prevent timing side channels.

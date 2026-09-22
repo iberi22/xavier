@@ -556,7 +556,7 @@ pub async fn update_handler(
     };
 
     match presented_token(&headers) {
-        Some(token) if token == expected_token => {}
+        Some(token) if xavier::server::http::api::constant_time_compare(token, &expected_token) => {}
         _ => {
             return json_response(
                 StatusCode::UNAUTHORIZED,
@@ -1094,7 +1094,7 @@ pub async fn delete_handler(
     };
 
     match presented_token(&headers) {
-        Some(token) if token == expected_token => {}
+        Some(token) if xavier::server::http::api::constant_time_compare(token, &expected_token) => {}
         _ => {
             return json_response(
                 StatusCode::UNAUTHORIZED,
