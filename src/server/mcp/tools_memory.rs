@@ -736,6 +736,15 @@ async fn handle_create_memory(
     let content_owned = content.to_string();
     let path_owned = path.to_string();
     tokio::spawn(async move {
+        // Stability: the bus auto-capture quota in `writer::add` would drop
+        // this re-ingest — skip the GPU embedding instead of wasting it.
+        if crate::memory::qmd::writer::bus_quota_exhausted(&path_owned) {
+            tracing::debug!(
+                path = %path_owned,
+                "skipping background embedding: bus quota exhausted"
+            );
+            return;
+        }
         if let Ok(vector) =
             crate::memory::qmd_memory::reader::generate_embedding(&content_owned).await
         {

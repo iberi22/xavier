@@ -80,6 +80,23 @@ async fn emit_operation_event(memory: &QmdMemory, operation: &str, path: &str, m
 /// what drove xavier RSS to multi-GB peaks (see #2264).
 const BUS_PATH_PREFIX: &str = "gestalt/bus/";
 
+/// Shared sliding-window state for the bus auto-capture quota.
+/// `(window_start_unix, admitted_in_window)`.
+static BUS_WINDOW: std::sync::OnceLock<std::sync::Mutex<(i64, usize)>> = std::sync::OnceLock::new();
+
+/// Quota tuning knobs (shared by the consuming check and the read-only peek).
+fn bus_quota_config() -> (usize, i64) {
+    let per_window: usize = std::env::var("XAVIER_BUS_QUOTA_PER_WINDOW")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+    let window_secs: i64 = std::env::var("XAVIER_BUS_QUOTA_WINDOW_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3600);
+    (per_window, window_secs)
+}
+
 /// Sliding-window quota for bus auto-capture.
 ///
 /// Returns `true` when the document should be dropped because the configured
@@ -93,20 +110,11 @@ fn bus_quota_exceeded(path: &str) -> bool {
     if !path.starts_with(BUS_PATH_PREFIX) {
         return false;
     }
-    let per_window: usize = std::env::var("XAVIER_BUS_QUOTA_PER_WINDOW")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(60);
+    let (per_window, window_secs) = bus_quota_config();
     if per_window == 0 {
         return false;
     }
-    let window_secs: i64 = std::env::var("XAVIER_BUS_QUOTA_WINDOW_SECS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(3600);
 
-    static BUS_WINDOW: std::sync::OnceLock<std::sync::Mutex<(i64, usize)>> =
-        std::sync::OnceLock::new();
     let cell = BUS_WINDOW.get_or_init(|| std::sync::Mutex::new((0, 0)));
     let now = chrono::Utc::now().timestamp();
     let Ok(mut guard) = cell.lock() else {
@@ -128,6 +136,34 @@ fn bus_quota_exceeded(path: &str) -> bool {
     }
     *guard = (window_start, count + 1);
     false
+}
+
+/// Read-only quota peek for callers that compute embeddings BEFORE `add`.
+///
+/// Returns `true` when the bus auto-capture window budget is already
+/// exhausted for `path`. Unlike [`bus_quota_exceeded`], it never consumes
+/// quota: use it to skip GPU embedding work whose result the quota check
+/// inside [`add`] would drop anyway. The consuming check in `add` remains
+/// the single source of truth, so a `false` here can still lose a race and
+/// be dropped later — safe, just not free.
+pub fn bus_quota_exhausted(path: &str) -> bool {
+    if !path.starts_with(BUS_PATH_PREFIX) {
+        return false;
+    }
+    let (per_window, window_secs) = bus_quota_config();
+    if per_window == 0 {
+        return false;
+    }
+    let cell = BUS_WINDOW.get_or_init(|| std::sync::Mutex::new((0, 0)));
+    let now = chrono::Utc::now().timestamp();
+    let Ok(guard) = cell.lock() else {
+        return false;
+    };
+    let (window_start, count) = *guard;
+    if window_start == 0 || now - window_start >= window_secs {
+        return false;
+    }
+    count >= per_window
 }
 
 /// Add.
@@ -296,6 +332,10 @@ pub async fn add_document_typed_with_embedding(
         Vec::new()
     } else if let Some(embedding) = embedding.clone() {
         embedding
+    } else if bus_quota_exhausted(&path) {
+        // Stability: the quota check in `add` below will drop this bus
+        // event — skip the GPU embedding instead of wasting it.
+        Vec::new()
     } else {
         generate_embedding(&content)
             .await
@@ -647,7 +687,7 @@ fn dedupe_variants(variants: Vec<(String, String, Value)>) -> Vec<(String, Strin
 
 #[cfg(test)]
 mod bus_quota_tests {
-    use super::bus_quota_exceeded;
+    use super::{bus_quota_exceeded, bus_quota_exhausted};
 
     #[test]
     fn non_bus_paths_are_never_capped() {
@@ -673,5 +713,31 @@ mod bus_quota_tests {
         for i in 0..100 {
             assert!(!bus_quota_exceeded(&format!("gestalt/bus/executions/{i}")));
         }
+    }
+
+    #[test]
+    fn quota_peek_never_consumes() {
+        std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "1000000");
+        std::env::set_var("XAVIER_BUS_QUOTA_WINDOW_SECS", "3600");
+        for i in 0..100 {
+            assert!(!bus_quota_exhausted(&format!("gestalt/bus/peek-probe/{i}")));
+        }
+        // If the peek above had consumed quota, a tight window would now be
+        // exhausted. With a 1M budget the admit below proves it did not.
+        assert!(!bus_quota_exceeded("gestalt/bus/peek-probe/admit"));
+    }
+
+    #[test]
+    fn quota_peek_reports_a_full_window() {
+        std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "1");
+        std::env::set_var("XAVIER_BUS_QUOTA_WINDOW_SECS", "3600");
+        // Fill the single slot (or observe it already full): either way the
+        // window is exhausted afterwards.
+        let _ = bus_quota_exceeded("gestalt/bus/peek-probe/fill");
+        assert!(bus_quota_exhausted("gestalt/bus/peek-probe/any"));
+        // Non-bus paths and a disabled cap are never reported exhausted.
+        assert!(!bus_quota_exhausted("projects/xavier/overview"));
+        std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "0");
+        assert!(!bus_quota_exhausted("gestalt/bus/peek-probe/any"));
     }
 }
