@@ -132,14 +132,35 @@ fn is_skill_file_name(path: &Path) -> bool {
 
 /// Collect skill markdown files under `root` without following symlink cycles.
 ///
-/// Tracks visited `(device, inode)` pairs and skips already-seen dirs, so a
+/// Tracks visited directory identities and skips already-seen dirs, so a
 /// symlink cycle (A -> B -> A) always terminates. File symlinks are still
 /// followed (repo convention for shared skill stores).
-fn collect_skill_files(root: &Path) -> Vec<PathBuf> {
-    use std::os::unix::fs::MetadataExt;
+///
+/// Identity is `(device, inode)` on unix; on other platforms (Windows has no
+/// stable dev/ino via std) it falls back to the canonicalized path, which
+/// still terminates cycles (a link and its target share one canonical path).
+#[cfg(unix)]
+type DirId = (u64, u64);
+#[cfg(not(unix))]
+type DirId = PathBuf;
 
+/// Stable identity of a directory for symlink-cycle detection.
+/// Returns `None` when no identity can be established (fail-open: the
+/// read_dir error paths below still bound the traversal).
+#[cfg(unix)]
+fn dir_identity(_dir: &Path, meta: &std::fs::Metadata) -> Option<DirId> {
+    use std::os::unix::fs::MetadataExt;
+    Some((meta.dev(), meta.ino()))
+}
+
+#[cfg(not(unix))]
+fn dir_identity(dir: &Path, _meta: &std::fs::Metadata) -> Option<DirId> {
+    std::fs::canonicalize(dir).ok()
+}
+
+fn collect_skill_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    let mut visited: HashSet<(u64, u64)> = HashSet::new();
+    let mut visited: HashSet<DirId> = HashSet::new();
     let mut stack = vec![root.to_path_buf()];
 
     while let Some(dir) = stack.pop() {
@@ -156,8 +177,10 @@ fn collect_skill_files(root: &Path) -> Vec<PathBuf> {
             }
             continue;
         }
-        if !visited.insert((meta.dev(), meta.ino())) {
-            continue; // Already scanned: symlink cycle guard.
+        if let Some(id) = dir_identity(&dir, &meta) {
+            if !visited.insert(id) {
+                continue; // Already scanned: symlink cycle guard.
+            }
         }
         let entries = match std::fs::read_dir(&dir) {
             Ok(entries) => entries,
@@ -760,6 +783,7 @@ Instructions here.
     }
 
     #[tokio::test]
+    #[cfg(unix)] // symlink(2) creation differs on Windows; cycle guard is covered there by canonical paths.
     async fn test_registry_symlink_cycle_terminates() {
         let tmp = tempfile::tempdir().unwrap();
         let dir_a = tmp.path().join("A");
