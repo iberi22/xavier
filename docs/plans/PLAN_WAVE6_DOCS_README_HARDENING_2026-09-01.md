@@ -37,7 +37,7 @@
 | `docs/guides/CODEGRAPH_GIT_SYNC.md` | Instalación | Revisar |
 | `docs/SRC/*.md` | Requisitos | Títulos en inglés, cuerpo puede quedar ES si es glosario pero preferible EN |
 | `docs/archive/*` | varios | No bloquear — archivar como está, no migrar |
-| `docs/skills/xavier-issue-creation/SKILL.md` | Idioma | Inglés |
+| `skills/xavier-issue-creation/SKILL.md` | Idioma | Inglés |
 
 **Política:** fuente primaria SIEMPRE inglés. Si se mantiene ES, duplicar como `*.es.md` y linkear desde EN.
 
