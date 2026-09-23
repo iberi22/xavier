@@ -438,4 +438,108 @@ mod tests {
 
         Ok(())
     }
+
+    fn write_json_fixture(dir: &std::path::Path, user_text: &str) -> Result<()> {
+        let val = serde_json::json!({
+            "session_id": "json-session-1",
+            "request": {
+                "body": {
+                    "model": "hermes-test",
+                    "messages": [
+                        {"role": "user", "content": user_text},
+                        {"role": "assistant", "content": "Acknowledged."}
+                    ]
+                }
+            }
+        });
+        std::fs::write(
+            dir.join("json-session-1.json"),
+            serde_json::to_string(&val)?,
+        )?;
+        Ok(())
+    }
+
+    /// Stability S1.01: the JSON import path must also skip identical content.
+    #[tokio::test]
+    async fn test_hermes_json_second_pass_no_reencode() -> Result<()> {
+        let dir = tempdir()?;
+        write_json_fixture(dir.path(), "Hello JSON Hermes")?;
+
+        let store = InMemoryMemoryStore::new();
+        let embedder = Arc::new(CountingEmbedder {
+            calls: AtomicUsize::new(0),
+        });
+        let importer = HermesImporter::with_dir(dir.path()).with_embedder(embedder.clone());
+
+        let first = importer.import_all(&store).await?;
+        assert_eq!(first.len(), 2);
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 2);
+
+        let second = importer.import_all(&store).await?;
+        assert_eq!(second.len(), 2);
+        assert_eq!(
+            embedder.calls.load(Ordering::SeqCst),
+            2,
+            "second identical JSON import must not call encode again"
+        );
+
+        Ok(())
+    }
+
+    /// Stability S1.01: changed content must re-embed exactly once and update the store.
+    #[tokio::test]
+    async fn test_hermes_changed_content_reembeds() -> Result<()> {
+        let dir = tempdir()?;
+        let db_path = dir.path().join("session1.db");
+
+        {
+            let conn = Connection::open(&db_path)?;
+            conn.execute(
+                "CREATE TABLE messages (id TEXT PRIMARY KEY, role TEXT, content TEXT)",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO messages (id, role, content) VALUES ('msg1', 'user', 'Hello Hermes')",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO messages (id, role, content) VALUES ('msg2', 'assistant', 'Hello User')",
+                [],
+            )?;
+        }
+
+        let store = InMemoryMemoryStore::new();
+        let embedder = Arc::new(CountingEmbedder {
+            calls: AtomicUsize::new(0),
+        });
+        let importer = HermesImporter::with_dir(dir.path()).with_embedder(embedder.clone());
+
+        let first = importer.import_all(&store).await?;
+        assert_eq!(first.len(), 2);
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 2);
+
+        // Mutate one message, re-import: exactly one re-encode expected.
+        {
+            let conn = Connection::open(&db_path)?;
+            conn.execute(
+                "UPDATE messages SET content = 'Hello Hermes EDITED' WHERE id = 'msg1'",
+                [],
+            )?;
+        }
+        let second = importer.import_all(&store).await?;
+        assert_eq!(second.len(), 2);
+        assert_eq!(
+            embedder.calls.load(Ordering::SeqCst),
+            3,
+            "exactly one changed record must re-encode"
+        );
+
+        let stored = store
+            .get("hermes:session1", &second[0].id)
+            .await?
+            .expect("record must exist");
+        assert_eq!(stored.content, "Hello Hermes EDITED");
+
+        Ok(())
+    }
 }
