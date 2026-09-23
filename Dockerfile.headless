@@ -6,7 +6,7 @@
 #        docker run -p 8006:8006 xavier:headless
 
 # Stage 1: Builder
-FROM rust:1.90-bookworm AS builder
+FROM rust:1.94-bookworm AS builder
 
 ARG FEATURES=ci-safe
 
