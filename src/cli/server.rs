@@ -12,6 +12,7 @@ use axum_server::tls_rustls::RustlsConfig;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -675,6 +676,7 @@ pub async fn start_http_server(
     let ingestion_interval_secs = ingestion_interval_secs();
     let ingestion_store = state.store.clone();
     let ingestion_embedder = state.embedder.clone();
+    let ingestion_in_flight = Arc::new(AtomicBool::new(false));
     if ingestion_interval_secs == 0 {
         tracing::warn!(
             "Universal agent session ingestion DISABLED (XAVIER_INGESTION_INTERVAL_SECS=0)"
@@ -684,10 +686,18 @@ pub async fn start_http_server(
             interval_secs = ingestion_interval_secs,
             "Universal agent session ingestion loop spawned"
         );
+        let in_flight = Arc::clone(&ingestion_in_flight);
         tokio::spawn(async move {
             // Initial grace period to allow server start
             tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
             loop {
+                if !try_begin_cycle(&in_flight) {
+                    tracing::warn!("skipping ingestion cycle: previous still running");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(ingestion_interval_secs))
+                        .await;
+                    continue;
+                }
+
                 tracing::info!("🔄 Running universal agent session ingestion cycle...");
 
                 // 1. Antigravity
@@ -722,6 +732,8 @@ pub async fn start_http_server(
                             .await;
                     }
                 }
+
+                end_cycle(&in_flight);
 
                 // Ingestion cadence is operator-tunable without a rebuild.
                 tokio::time::sleep(tokio::time::Duration::from_secs(ingestion_interval_secs)).await;
@@ -2072,6 +2084,19 @@ pub fn ingestion_interval_secs() -> u64 {
         .unwrap_or(600)
 }
 
+/// Attempts to mark an ingestion cycle as in-flight.
+/// Returns `true` if the cycle was successfully started (flag changed false -> true),
+/// or `false` if another cycle is already running.
+pub fn try_begin_cycle(flag: &AtomicBool) -> bool {
+    flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+}
+
+/// Marks the current ingestion cycle as complete, resetting the in-flight flag.
+pub fn end_cycle(flag: &AtomicBool) {
+    flag.store(false, Ordering::Release);
+}
+
 #[cfg(test)]
 mod ingestion_interval_tests {
     use super::ingestion_interval_secs;
@@ -2096,5 +2121,40 @@ mod ingestion_interval_tests {
         std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", "not-a-number");
         assert_eq!(ingestion_interval_secs(), 600);
         std::env::remove_var("XAVIER_INGESTION_INTERVAL_SECS");
+    }
+}
+
+#[cfg(test)]
+mod ingestion_guard_tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn cycle_guard_serializes() {
+        let flag = AtomicBool::new(false);
+
+        // First attempt succeeds
+        assert!(try_begin_cycle(&flag));
+
+        // Second overlapping attempt fails
+        assert!(!try_begin_cycle(&flag));
+
+        // End the first cycle
+        end_cycle(&flag);
+
+        // Subsequent attempt succeeds again
+        assert!(try_begin_cycle(&flag));
+    }
+
+    #[test]
+    fn end_cycle_resets() {
+        let flag = AtomicBool::new(true);
+
+        // Double-ending is harmless
+        end_cycle(&flag);
+        end_cycle(&flag);
+
+        // Flag is false, so try_begin_cycle succeeds
+        assert!(try_begin_cycle(&flag));
     }
 }
