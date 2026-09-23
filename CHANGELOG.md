@@ -4,6 +4,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.11] — 2026-09-23 — installer flag fix release
+
+### Fixed
+- **Inno Setup invalid flag** (#2523): drop unknown `skipfsreqterminate` from the `[Run]` section of `installer/setup.iss` (iscc aborted the Windows release build). v0.2.10 tag ran the pre-fix workflow; artifacts publish from this tag. No code changes.
+
 ## [0.2.10] — 2026-09-23 — release install fix
 
 ### Fixed
