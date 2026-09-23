@@ -4,6 +4,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.8] — 2026-09-23 — release workflow fix
+
+### Fixed
+- **Release Windows panel-ui step** (#2517): install pnpm (action-setup@v6) + Node 22 before `pnpm --prefix panel-ui` on the Windows runner. The v0.2.7 tag ran the pre-fix workflow (tag pins the workflow file), so artifacts are published from this tag instead. No code changes.
+
 ## [0.2.7] — 2026-09-23 — release fix
 
 ### Fixed
