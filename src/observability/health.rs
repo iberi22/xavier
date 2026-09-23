@@ -57,10 +57,18 @@ pub struct DbHealth {
     /// pasaba a `unhealthy` sin que la base tuviera nada.
     #[serde(default)]
     pub integrity_verified: bool,
+    #[serde(default = "default_fts_ok")]
+    pub fts_ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fts_detail: Option<String>,
     pub fragmentation_percent: f32,
     pub wal_size_bytes: u64,
     pub page_count: u32,
     pub status: HealthLevel,
+}
+
+fn default_fts_ok() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,6 +131,8 @@ impl Default for HealthStatus {
             database: DbHealth {
                 integrity_ok: true,
                 integrity_verified: false,
+                fts_ok: true,
+                fts_detail: None,
                 fragmentation_percent: 0.0,
                 wal_size_bytes: 0,
                 page_count: 0,
@@ -181,6 +191,7 @@ pub struct HealthMonitor {
 fn db_status_from(
     verified: bool,
     integrity_ok: bool,
+    fts_ok: bool,
     fragmentation_percent: f32,
     wal_size_bytes: u64,
 ) -> HealthLevel {
@@ -188,6 +199,8 @@ fn db_status_from(
         HealthLevel::Degraded
     } else if !integrity_ok {
         HealthLevel::Unhealthy
+    } else if !fts_ok {
+        HealthLevel::Degraded
     } else {
         HealthLevel::Healthy
     };
@@ -417,12 +430,51 @@ impl HealthMonitor {
         }
     }
 
+    /// Realiza una verificacion rapida y de solo lectura de los indices FTS.
+    /// Se limita con busy_timeout para no bloquear las comprobaciones de salud.
+    pub fn probe_fts_integrity(conn: &rusqlite::Connection) -> (bool, Option<String>) {
+        let _ = conn.busy_timeout(Duration::from_millis(50));
+
+        let mut stmt = match conn.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND (sql LIKE '%USING fts5%' OR sql LIKE '%USING fts4%')"
+    ) {
+        Ok(s) => s,
+        Err(e) => return (false, Some(format!("Error consultando tablas FTS: {}", e))),
+    };
+
+        let fts_tables: Vec<String> = match stmt.query_map([], |row| row.get(0)) {
+            Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+            Err(e) => return (false, Some(format!("Error listando tablas FTS: {}", e))),
+        };
+
+        if fts_tables.is_empty() {
+            return (true, None);
+        }
+
+        for table in fts_tables {
+            let query = format!(
+                "SELECT count(*) FROM \"{}\" WHERE \"{}\" MATCH 'a*'",
+                table, table
+            );
+            if let Err(e) = conn.query_row(&query, [], |r| r.get::<_, i64>(0)) {
+                return (
+                    false,
+                    Some(format!("Indice FTS corrupto en tabla '{}': {}", table, e)),
+                );
+            }
+        }
+
+        (true, None)
+    }
+
     async fn check_database(&self) -> DbHealth {
         // El monitor corre cada 60 s: `PRAGMA integrity_check` COMPLETO sobre esta base (991 MB,
         // 253k paginas) cuesta una barbaridad y se ejecutaba en cada vuelta. Se usa `quick_check`,
         // que detecta la corrupcion real a una fraccion del coste.
         let mut integrity_ok = false;
         let mut integrity_verified = false;
+        let mut fts_ok = true;
+        let mut fts_detail = None;
         let mut fragmentation_percent = 0.0;
         let mut page_count = 0;
 
@@ -442,16 +494,26 @@ impl HealthMonitor {
                     0.0
                 };
 
-                Ok((integrity, frag, pc))
+                let (f_ok, f_detail) = Self::probe_fts_integrity(conn);
+
+                Ok((integrity, frag, pc, f_ok, f_detail))
             })
             .await;
 
         match res {
-            Ok((integrity, frag, pc)) => {
+            Ok((integrity, frag, pc, f_ok, f_detail)) => {
                 integrity_verified = true;
                 integrity_ok = integrity == "ok";
                 if !integrity_ok {
                     tracing::error!(detalle = %integrity, "integridad de la base comprometida");
+                }
+                fts_ok = f_ok;
+                fts_detail = f_detail;
+                if !fts_ok {
+                    tracing::error!(
+                        detail = ?fts_detail,
+                        "indice FTS malformado o corrupto detectado en health check"
+                    );
                 }
                 fragmentation_percent = frag;
                 page_count = pc;
@@ -474,6 +536,7 @@ impl HealthMonitor {
         let status = db_status_from(
             integrity_verified,
             integrity_ok,
+            fts_ok,
             fragmentation_percent,
             wal_size_bytes,
         );
@@ -481,6 +544,8 @@ impl HealthMonitor {
         DbHealth {
             integrity_ok,
             integrity_verified,
+            fts_ok,
+            fts_detail,
             fragmentation_percent,
             wal_size_bytes,
             page_count,
@@ -697,29 +762,41 @@ mod tests {
     #[test]
     fn db_status_no_verificada_no_es_corrupcion() {
         // El caso que rompia: no se pudo comprobar -> Degraded, jamas Unhealthy.
-        assert_eq!(db_status_from(false, false, 1.0, 0), HealthLevel::Degraded);
+        assert_eq!(
+            db_status_from(false, false, true, 1.0, 0),
+            HealthLevel::Degraded
+        );
         // Y una base verificada y sana es Healthy.
         assert_eq!(
-            db_status_from(true, true, 1.2, 6_439_592),
+            db_status_from(true, true, true, 1.2, 6_439_592),
             HealthLevel::Healthy
         );
     }
 
     #[test]
     fn db_status_corrupcion_confirmada_es_unhealthy() {
-        assert_eq!(db_status_from(true, false, 1.0, 0), HealthLevel::Unhealthy);
+        assert_eq!(
+            db_status_from(true, false, true, 1.0, 0),
+            HealthLevel::Unhealthy
+        );
     }
 
     #[test]
     fn db_status_umbrales_de_fragmentacion_y_wal() {
-        assert_eq!(db_status_from(true, true, 45.0, 0), HealthLevel::Degraded);
-        assert_eq!(db_status_from(true, true, 70.0, 0), HealthLevel::Unhealthy);
         assert_eq!(
-            db_status_from(true, true, 0.0, 300 * 1024 * 1024),
+            db_status_from(true, true, true, 45.0, 0),
             HealthLevel::Degraded
         );
         assert_eq!(
-            db_status_from(true, true, 0.0, 2 * 1024 * 1024 * 1024),
+            db_status_from(true, true, true, 70.0, 0),
+            HealthLevel::Unhealthy
+        );
+        assert_eq!(
+            db_status_from(true, true, true, 0.0, 300 * 1024 * 1024),
+            HealthLevel::Degraded
+        );
+        assert_eq!(
+            db_status_from(true, true, true, 0.0, 2 * 1024 * 1024 * 1024),
             HealthLevel::Unhealthy
         );
     }
@@ -790,5 +867,61 @@ mod tests {
         let monitor = HealthMonitor::new(cm);
         let status = monitor.get_status().await;
         assert_eq!(status.status, HealthLevel::Healthy);
+    }
+
+    #[test]
+    fn fts_probe_healthy_db_true() {
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let db_path = dir.path().join("test_healthy.db");
+        let conn = rusqlite::Connection::open(&db_path).expect("open db failed");
+
+        conn.execute(
+            "CREATE VIRTUAL TABLE memory_fts USING fts5(id UNINDEXED, path, content, code_tokens);",
+            [],
+        )
+        .expect("create fts table failed");
+
+        conn.execute(
+            "INSERT INTO memory_fts (id, path, content, code_tokens) VALUES ('1', '/a.rs', 'hello world', 'tok1');",
+            [],
+        )
+        .expect("insert failed");
+
+        let (fts_ok, fts_detail) = HealthMonitor::probe_fts_integrity(&conn);
+        assert!(fts_ok, "expected fts_ok to be true for healthy db");
+        assert!(
+            fts_detail.is_none(),
+            "expected fts_detail to be None for healthy db"
+        );
+    }
+
+    #[test]
+    fn fts_probe_reports_corruption() {
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let db_path = dir.path().join("test_corrupt.db");
+        let conn = rusqlite::Connection::open(&db_path).expect("open db failed");
+
+        conn.execute(
+            "CREATE VIRTUAL TABLE memory_fts USING fts5(id UNINDEXED, path, content, code_tokens);",
+            [],
+        )
+        .expect("create fts table failed");
+
+        conn.execute(
+            "INSERT INTO memory_fts (id, path, content, code_tokens) VALUES ('1', '/a.rs', 'hello world', 'tok1');",
+            [],
+        )
+        .expect("insert failed");
+
+        // Simular corrupcion tirando la tabla shadow memory_fts_idx
+        conn.execute("DROP TABLE memory_fts_idx;", [])
+            .expect("drop shadow table failed");
+
+        let (fts_ok, fts_detail) = HealthMonitor::probe_fts_integrity(&conn);
+        assert!(!fts_ok, "expected fts_ok to be false for corrupted fts db");
+        assert!(
+            fts_detail.is_some(),
+            "expected fts_detail to contain error detail"
+        );
     }
 }
