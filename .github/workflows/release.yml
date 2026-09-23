@@ -73,6 +73,29 @@ jobs:
           cd dist && (sha256sum "${ARCHIVE_NAME}" 2>/dev/null || shasum -a 256 "${ARCHIVE_NAME}") > "${ARCHIVE_NAME}.sha256"
         shell: bash
 
+      - name: Build Panel UI (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pnpm --prefix panel-ui install
+          pnpm --prefix panel-ui build
+        shell: pwsh
+
+      - name: Install Installer Tools (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install wixtoolset innosetup -y
+          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $env:GITHUB_PATH
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      - name: Build Windows Installers (WiX msi & Inno Setup iscc candle)
+        if: runner.os == 'Windows'
+        run: |
+          # Runs WiX (candle/light/heat) and Inno Setup (iscc) to produce XavierInstaller.msi and XavierSetup.exe in dist/
+          $Version = if ("${{ github.ref_name }}" -like "v*") { "${{ github.ref_name }}".Substring(1) } else { "0.2.5" }
+          & ./installer/build-installer.ps1 -Version $Version -TargetTriple ${{ matrix.target }}
+        shell: pwsh
+
       - name: Package Binary Artifacts (Windows)
         if: runner.os == 'Windows'
         run: |
