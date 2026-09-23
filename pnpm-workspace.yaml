@@ -7,3 +7,10 @@ overrides:
   undici: '^7.29.0'
   esbuild: '^0.28.1'
   sharp: '^0.35.3'
+
+# pnpm >=10 blocks postinstall scripts unless pre-approved
+# (ERR_PNPM_IGNORED_BUILDS broke the Windows release job).
+# esbuild + sharp are the only build-script deps in this workspace.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
