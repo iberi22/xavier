@@ -215,7 +215,135 @@ impl HardwareMetrics {
             }
         }
 
+        // 5. Windows CimInstance/WMI fallback
+        #[cfg(target_os = "windows")]
+        {
+            if let Some((has_gpu, vram_bytes)) = Self::probe_windows_gpu() {
+                if has_gpu {
+                    return (true, vram_bytes);
+                }
+            }
+        }
+
         (false, None)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn probe_windows_gpu() -> Option<(bool, Option<u64>)> {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut cmd = Command::new("powershell");
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.args([
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_VideoController | Select-Object -Property Name, AdapterRAM | ConvertTo-Json",
+        ]);
+
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if let Some(result) = parse_windows_gpu_json(&stdout) {
+                    return Some(result);
+                }
+            }
+        }
+
+        let mut wmic_cmd = Command::new("wmic");
+        wmic_cmd.creation_flags(CREATE_NO_WINDOW);
+        wmic_cmd.args(["path", "win32_VideoController", "get", "name,adapterram"]);
+
+        if let Ok(output) = wmic_cmd.output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if let Some(result) = parse_windows_wmic_output(&stdout) {
+                    return Some(result);
+                }
+            }
+        }
+
+        None
+    }
+}
+
+/// Parses JSON output from PowerShell `Get-CimInstance Win32_VideoController`.
+///
+/// Output can be a single JSON object or an array of JSON objects representing video controllers.
+pub fn parse_windows_gpu_json(stdout: &str) -> Option<(bool, Option<u64>)> {
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
+    let controllers = match &json {
+        serde_json::Value::Array(arr) => arr.as_slice(),
+        obj @ serde_json::Value::Object(_) => std::slice::from_ref(obj),
+        _ => return None,
+    };
+
+    if controllers.is_empty() {
+        return None;
+    }
+
+    let mut found_gpu = false;
+    let mut max_vram: Option<u64> = None;
+
+    for controller in controllers {
+        if controller.is_object() {
+            found_gpu = true;
+            if let Some(ram_val) = controller.get("AdapterRAM") {
+                let vram = ram_val
+                    .as_u64()
+                    .or_else(|| ram_val.as_f64().map(|f| f as u64))
+                    .or_else(|| ram_val.as_str().and_then(|s| s.parse::<u64>().ok()));
+
+                if let Some(bytes) = vram {
+                    if bytes > 0 {
+                        max_vram = Some(max_vram.map_or(bytes, |curr| curr.max(bytes)));
+                    }
+                }
+            }
+        }
+    }
+
+    if found_gpu {
+        Some((true, max_vram))
+    } else {
+        None
+    }
+}
+
+/// Parses table output from `wmic path win32_VideoController get name,adapterram`.
+pub fn parse_windows_wmic_output(stdout: &str) -> Option<(bool, Option<u64>)> {
+    let lines: Vec<&str> = stdout
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    if lines.len() <= 1 {
+        return None;
+    }
+
+    let mut found_gpu = false;
+    let mut max_vram: Option<u64> = None;
+
+    for line in &lines[1..] {
+        if line.is_empty() {
+            continue;
+        }
+        found_gpu = true;
+
+        for token in line.split_whitespace() {
+            if let Ok(bytes) = token.parse::<u64>() {
+                if bytes > 0 {
+                    max_vram = Some(max_vram.map_or(bytes, |curr| curr.max(bytes)));
+                }
+            }
+        }
+    }
+
+    if found_gpu {
+        Some((true, max_vram))
+    } else {
+        None
     }
 }
 
@@ -345,5 +473,82 @@ mod tests {
         assert!(detected.is_ok());
         let metrics = detected.unwrap();
         assert!(metrics.cpu_cores >= 1);
+    }
+
+    #[test]
+    fn test_parse_windows_gpu_json_single_object() {
+        let json = r#"{
+            "Name": "Intel(R) Arc(TM) A770 Graphics",
+            "AdapterRAM": 17179869184
+        }"#;
+        let res = parse_windows_gpu_json(json);
+        assert_eq!(res, Some((true, Some(17179869184))));
+    }
+
+    #[test]
+    fn test_parse_windows_gpu_json_array() {
+        let json = r#"[
+            {
+                "Name": "Intel(R) UHD Graphics 770",
+                "AdapterRAM": 1073741824
+            },
+            {
+                "Name": "NVIDIA GeForce RTX 4080",
+                "AdapterRAM": 17179869184
+            }
+        ]"#;
+        let res = parse_windows_gpu_json(json);
+        assert_eq!(res, Some((true, Some(17179869184))));
+    }
+
+    #[test]
+    fn test_parse_windows_gpu_json_zero_vram() {
+        let json = r#"{
+            "Name": "Microsoft Basic Display Adapter",
+            "AdapterRAM": 0
+        }"#;
+        let res = parse_windows_gpu_json(json);
+        assert_eq!(res, Some((true, None)));
+    }
+
+    #[test]
+    fn test_parse_windows_gpu_json_invalid() {
+        assert_eq!(parse_windows_gpu_json(""), None);
+        assert_eq!(parse_windows_gpu_json("invalid json"), None);
+        assert_eq!(parse_windows_gpu_json("[]"), None);
+    }
+
+    #[test]
+    fn test_parse_windows_wmic_output() {
+        let wmic_stdout = "AdapterRAM   Name\n17179869184  AMD Radeon RX 7900 XT\n";
+        let res = parse_windows_wmic_output(wmic_stdout);
+        assert_eq!(res, Some((true, Some(17179869184))));
+
+        let wmic_no_ram = "AdapterRAM   Name\n             Basic Display\n";
+        let res_no_ram = parse_windows_wmic_output(wmic_no_ram);
+        assert_eq!(res_no_ram, Some((true, None)));
+
+        let empty = "AdapterRAM   Name\n";
+        assert_eq!(parse_windows_wmic_output(empty), None);
+    }
+
+    #[test]
+    fn test_windows_detected_gpu_tier_evaluation() {
+        let windows_json = r#"{
+            "Name": "Intel(R) Arc(TM) A770 Graphics",
+            "AdapterRAM": 17179869184
+        }"#;
+        let (has_gpu, vram_bytes) = parse_windows_gpu_json(windows_json).unwrap();
+
+        let metrics = HardwareMetrics {
+            cpu_cores: 16,
+            total_ram_bytes: 32 * GB_BYTES,
+            available_ram_bytes: 16 * GB_BYTES,
+            has_gpu,
+            gpu_vram_bytes: vram_bytes,
+            disk_available_bytes: 500 * GB_BYTES,
+        };
+
+        assert_eq!(metrics.host_tier(), HostTier::Powerhouse);
     }
 }
