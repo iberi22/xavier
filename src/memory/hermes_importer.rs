@@ -184,9 +184,20 @@ impl HermesImporter {
         for (item_id, role, content) in records {
             let record_path = format!("hermes/sessions/{}/{}", session_id, item_id);
             let workspace_id = format!("hermes:{}", session_id);
+            let record_id = stable_key("memory", &[&workspace_id, &record_path]);
+
+            // Incremental skip (stability): identical content already stored
+            // reuses the existing record without re-embedding. Fail-open:
+            // on store error fall through to the normal embed+put path.
+            if let Ok(Some(existing)) = store.get(&workspace_id, &record_id).await {
+                if existing.content == content {
+                    final_records.push(existing);
+                    continue;
+                }
+            }
 
             let mut record = MemoryRecord {
-                id: String::new(),
+                id: record_id,
                 workspace_id: workspace_id.clone(),
                 path: record_path.clone(),
                 content: content.clone(),
@@ -221,7 +232,6 @@ impl HermesImporter {
                 }
             }
 
-            record.id = stable_key("memory", &[&record.workspace_id, &record.path]);
             store.put(record.clone()).await?;
             final_records.push(record);
         }
@@ -268,9 +278,19 @@ impl HermesImporter {
 
                 let record_path = format!("hermes/sessions/{}/{}", session_id, idx);
                 let workspace_id = "agent:hermes".to_string();
+                let record_id = stable_key("memory", &[&workspace_id, &record_path]);
+
+                // Incremental skip (stability): identical content already
+                // stored reuses the existing record without re-embedding.
+                if let Ok(Some(existing)) = store.get(&workspace_id, &record_id).await {
+                    if existing.content == msg_content {
+                        final_records.push(existing);
+                        continue;
+                    }
+                }
 
                 let mut record = MemoryRecord {
-                    id: String::new(),
+                    id: record_id,
                     workspace_id: workspace_id.clone(),
                     path: record_path.clone(),
                     content: msg_content.to_string(),
@@ -308,7 +328,6 @@ impl HermesImporter {
                     }
                 }
 
-                record.id = stable_key("memory", &[&record.workspace_id, &record.path]);
                 store.put(record.clone()).await?;
                 final_records.push(record);
             }
@@ -321,7 +340,9 @@ impl HermesImporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embedding::{Embedder, EmbeddingError};
     use crate::memory::store::InMemoryMemoryStore;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
 
     #[tokio::test]
@@ -353,6 +374,67 @@ mod tests {
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].path, "hermes/sessions/session1/msg1");
         assert_eq!(records[0].content, "Hello Hermes");
+
+        Ok(())
+    }
+
+    /// Counting embedder: records every encode call for the incremental-skip test.
+    struct CountingEmbedder {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl Embedder for CountingEmbedder {
+        async fn encode(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![0.5; 8])
+        }
+
+        fn dimension(&self) -> usize {
+            8
+        }
+    }
+
+    /// Stability regression: a second identical import must not re-encode.
+    #[tokio::test]
+    async fn test_hermes_importer_second_pass_no_reencode() -> Result<()> {
+        let dir = tempdir()?;
+        let db_path = dir.path().join("session1.db");
+
+        {
+            let conn = Connection::open(&db_path)?;
+            conn.execute(
+                "CREATE TABLE messages (id TEXT PRIMARY KEY, role TEXT, content TEXT)",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO messages (id, role, content) VALUES ('msg1', 'user', 'Hello Hermes')",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO messages (id, role, content) VALUES ('msg2', 'assistant', 'Hello User')",
+                [],
+            )?;
+        }
+
+        let store = InMemoryMemoryStore::new();
+        let embedder = Arc::new(CountingEmbedder {
+            calls: AtomicUsize::new(0),
+        });
+        let importer = HermesImporter::with_dir(dir.path()).with_embedder(embedder.clone());
+
+        let first = importer.import_all(&store).await?;
+        assert_eq!(first.len(), 2);
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 2);
+
+        // Second identical pass: all records hit the incremental skip.
+        let second = importer.import_all(&store).await?;
+        assert_eq!(second.len(), 2);
+        assert_eq!(
+            embedder.calls.load(Ordering::SeqCst),
+            2,
+            "second identical import must not call encode again"
+        );
 
         Ok(())
     }
