@@ -261,6 +261,16 @@ impl AntigravityImporter {
 
         record.id = stable_key("memory", &[&workspace_id, &path]);
 
+        // Incremental skip (stability S1.06): identical content already
+        // stored reuses the existing record without re-embedding. Fail-open
+        // on store errors.
+        if let Ok(Some(existing)) = store.get(&workspace_id, &record.id).await {
+            if existing.content == record.content {
+                records.push(existing);
+                return Ok(records);
+            }
+        }
+
         if let Some(embedder) = &self.embedder {
             if let Ok(emb) = embedder.encode(&record.content).await {
                 record.embedding = emb;
@@ -299,7 +309,9 @@ impl AntigravityImporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embedding::{Embedder, EmbeddingError};
     use crate::memory::store::InMemoryMemoryStore;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
 
     #[tokio::test]
@@ -345,6 +357,68 @@ mod tests {
         assert!(imported[0].content.contains("Hello Antigravity!"));
         assert!(!imported[0].content.contains("\x1B[31m")); // ANSI stripped!
         assert!(imported[0].content.contains("view_file(Read config)"));
+
+        Ok(())
+    }
+
+    struct CountingEmbedder {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl Embedder for CountingEmbedder {
+        async fn encode(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![0.5; 8])
+        }
+
+        fn dimension(&self) -> usize {
+            8
+        }
+    }
+
+    async fn write_fixture(dir: &std::path::Path) -> Result<()> {
+        let logs_dir = dir
+            .join("sess_test_123")
+            .join(".system_generated")
+            .join("logs");
+        fs::create_dir_all(&logs_dir).await?;
+        let lines = vec![
+            json!({"step_index": 0, "type": "USER_INPUT", "content": "Hello Antigravity!"}),
+            json!({"step_index": 1, "type": "PLANNER_RESPONSE", "content": "I am ready."}),
+        ];
+        let mut content = String::new();
+        for l in lines {
+            content.push_str(&l.to_string());
+            content.push('\n');
+        }
+        fs::write(logs_dir.join("transcript.jsonl"), content).await?;
+        Ok(())
+    }
+
+    /// Stability S1.06: a second identical import must not re-encode.
+    #[tokio::test]
+    async fn test_antigravity_second_pass_no_reencode() -> Result<()> {
+        let dir = tempdir()?;
+        write_fixture(dir.path()).await?;
+
+        let store = InMemoryMemoryStore::new();
+        let embedder = Arc::new(CountingEmbedder {
+            calls: AtomicUsize::new(0),
+        });
+        let importer = AntigravityImporter::with_dir_and_embedder(dir.path(), embedder.clone());
+
+        let first = importer.import_all(&store).await?;
+        assert_eq!(first.len(), 1);
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 1);
+
+        let second = importer.import_all(&store).await?;
+        assert_eq!(second.len(), 1);
+        assert_eq!(
+            embedder.calls.load(Ordering::SeqCst),
+            1,
+            "second identical import must not call encode again"
+        );
 
         Ok(())
     }
