@@ -166,6 +166,18 @@ pub fn bus_quota_exhausted(path: &str) -> bool {
     count >= per_window
 }
 
+/// Test-only reset for the shared quota window. The window is process-global
+/// and libtest does not guarantee execution order, so every quota test must
+/// start from a known state. Zero production impact (`#[cfg(test)]`).
+#[cfg(test)]
+pub(crate) fn bus_quota_reset_for_tests() {
+    if let Some(cell) = BUS_WINDOW.get() {
+        if let Ok(mut guard) = cell.lock() {
+            *guard = (0, 0);
+        }
+    }
+}
+
 /// Add.
 pub async fn add(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
     if bus_quota_exceeded(&doc.path) {
@@ -687,7 +699,13 @@ fn dedupe_variants(variants: Vec<(String, String, Value)>) -> Vec<(String, Strin
 
 #[cfg(test)]
 mod bus_quota_tests {
-    use super::{bus_quota_exceeded, bus_quota_exhausted};
+    use super::super::QmdMemory;
+    use super::{
+        add_document_typed_with_embedding, bus_quota_exceeded, bus_quota_exhausted,
+        bus_quota_reset_for_tests,
+    };
+    use std::sync::Arc;
+    use tokio::sync::RwLock as AsyncRwLock;
 
     #[test]
     fn non_bus_paths_are_never_capped() {
@@ -698,6 +716,7 @@ mod bus_quota_tests {
 
     #[test]
     fn bus_paths_are_capped_within_a_window() {
+        bus_quota_reset_for_tests();
         std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "3");
         std::env::set_var("XAVIER_BUS_QUOTA_WINDOW_SECS", "3600");
         // First three events in the window pass, the fourth is dropped.
@@ -717,6 +736,7 @@ mod bus_quota_tests {
 
     #[test]
     fn quota_peek_never_consumes() {
+        bus_quota_reset_for_tests();
         std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "1000000");
         std::env::set_var("XAVIER_BUS_QUOTA_WINDOW_SECS", "3600");
         for i in 0..100 {
@@ -729,6 +749,7 @@ mod bus_quota_tests {
 
     #[test]
     fn quota_peek_reports_a_full_window() {
+        bus_quota_reset_for_tests();
         std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "1");
         std::env::set_var("XAVIER_BUS_QUOTA_WINDOW_SECS", "3600");
         // Fill the single slot (or observe it already full): either way the
@@ -739,5 +760,47 @@ mod bus_quota_tests {
         assert!(!bus_quota_exhausted("projects/xavier/overview"));
         std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "0");
         assert!(!bus_quota_exhausted("gestalt/bus/peek-probe/any"));
+    }
+
+    /// Stability S1.02: end-to-end drop contract. With the window budget
+    /// spent, a bus-path ingest stores nothing. The precomputed embedding
+    /// keeps this test backend-free and deterministic; GPU-avoidance itself
+    /// is covered by `quota_peek_*` above plus the guard's position ahead
+    /// of `generate_embedding`. The quota is blind-filled (two `exceeded`
+    /// calls with a window of 1 exhaust it from ANY prior global state),
+    /// so this holds regardless of test order.
+    #[tokio::test]
+    async fn bus_exhausted_event_stores_nothing() {
+        bus_quota_reset_for_tests();
+        std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "1");
+        std::env::set_var("XAVIER_BUS_QUOTA_WINDOW_SECS", "3600");
+
+        // Blind-fill: after two calls the window is exhausted no matter
+        // what earlier tests consumed (fresh window → 1 admit + 1 drop;
+        // active window → 2 drops).
+        let _ = bus_quota_exceeded("gestalt/bus/s1-02/fill-a");
+        let _ = bus_quota_exceeded("gestalt/bus/s1-02/fill-b");
+        assert!(bus_quota_exhausted("gestalt/bus/s1-02/any"));
+
+        let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(Vec::new())));
+
+        // Quota spent: this ingest must be dropped by the writer.
+        add_document_typed_with_embedding(
+            &memory,
+            "gestalt/bus/s1-02/second".to_string(),
+            "second bus event".to_string(),
+            serde_json::json!({}),
+            None,
+            Some(vec![0.2; 8]),
+        )
+        .await
+        .expect("dropped ingest still returns Ok");
+        assert!(memory
+            .get("gestalt/bus/s1-02/second")
+            .await
+            .expect("get works")
+            .is_none());
+
+        std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "60");
     }
 }
