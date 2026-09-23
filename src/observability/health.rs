@@ -573,6 +573,9 @@ impl HealthMonitor {
                     status = HealthLevel::Unhealthy;
                 }
             }
+        } else {
+            // Si el embedder no está configurado o inicializado, el estado del subsistema es Degraded
+            status = HealthLevel::Degraded;
         }
 
         let cache = embedder_opt.as_ref().and_then(|e| e.cache_metrics());

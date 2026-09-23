@@ -14,16 +14,22 @@ You can install Xavier with a single PowerShell command without installing Rust 
 irm https://raw.githubusercontent.com/iberi22/xavier/main/scripts/install.ps1 | iex
 ```
 
-### Script Options
+### Script Options & Silent Installation
 
-When running `install.ps1` locally from a cloned repository or downloaded script:
+When running `install.ps1` locally or non-interactively:
 
 ```powershell
 # Automatically download latest prebuilt release binary and UI assets
 .\scripts\install.ps1 -DownloadLatest
 
-# Download a specific release version
-.\scripts\install.ps1 -Version "0.2.0"
+# Silent unattended installation with logging
+.\scripts\install.ps1 -DownloadLatest -Silent -LogPath "$env:TEMP\xavier-install.log" -StartService
+
+# Exit codes:
+#  0 = Success
+#  1 = General error
+#  2 = SHA-256 integrity mismatch
+#  3 = Missing xavier.exe in downloaded asset
 ```
 
 ## Building & Installing from Source
@@ -63,12 +69,13 @@ This installer:
 xavier --help
 
 # Start server (web dashboard available at http://localhost:8006)
+xavier http
+
+# Or alias
 xavier serve
 
-# Live monitor
-xavier monitor
-
-# Check status
+# Check doctor and status
+xavier doctor
 xavier status
 ```
 
@@ -79,7 +86,7 @@ Edit `%LOCALAPPDATA%\Xavier\config\.env` with your values:
 | Variable | Description | Default |
 |---|---|---|
 | `XAVIER_TOKEN` | API token (required) | (generated) |
-| `XAVIER_PORT` | Server port | 8003 |
+| `XAVIER_PORT` | Server port | 8006 |
 | `XAVIER_MEMORY_BACKEND` | Backend: `vec` (SQLite) or `surreal` | `vec` |
 | `XAVIER_EMBEDDING_URL` | Embeddings URL (Ollama) | `http://localhost:11434/v1` |
 | `XAVIER_EMBEDDING_MODEL` | Embeddings model | `nomic-embed-text` |
