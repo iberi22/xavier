@@ -37,6 +37,14 @@ pub struct EmbeddingCacheConfig {
     /// Whether the cache is enabled (default: true).
     pub enabled: bool,
     /// Maximum number of entries in the in-memory LRU cache (default: 10_000).
+    ///
+    /// Sizing note (stability S1.11, measured 2026-09-22): the working set is
+    /// roughly the sum of the per-cycle importer corpora (~19.4k Hermes
+    /// records/cycle plus Antigravity/OpenCode/Codex). A capacity below the
+    /// working set turns the cache into LRU thrash (every cycle re-embeds).
+    /// Operators should set this to at least ~2x the per-cycle corpus
+    /// (production runs 80_000). This default is intentionally unchanged
+    /// here — tuning it is a maintainer decision, not a code fix.
     pub max_capacity: u64,
     /// Time-to-live in hours for cached embeddings (default: 24).
     pub ttl_hours: u64,
@@ -284,8 +292,17 @@ impl EmbeddingCache {
             return None;
         }
 
-        let db = self.db.lock();
-        let conn = db.as_ref()?;
+        let mut guard = self.db.lock();
+        // Lazily open the database on the read path too: after a restart
+        // the connection is closed, and without this every first lookup
+        // misses (re-embedding once per restart instead of zero times).
+        // Never create files here — only open an existing backing store.
+        if guard.is_none() && self.config.db_path.exists() {
+            if let Ok(db) = open_cache_db(&self.config.db_path) {
+                *guard = Some(db);
+            }
+        }
+        let conn = guard.as_ref()?;
 
         let row: Result<(Vec<u8>, String), rusqlite::Error> = conn.query_row(
             "SELECT embedding, created_at FROM embedding_cache WHERE content_hash = ?1",
@@ -484,7 +501,8 @@ fn open_cache_db(path: &Path) -> Result<Connection, rusqlite::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::embedding::NoopEmbedder;
+    use crate::embedding::{Embedder, EmbeddingError, NoopEmbedder};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn test_content_hash_is_deterministic() {
@@ -705,5 +723,68 @@ mod tests {
         cache.clear();
         // After clear the entry should be gone, causing a fresh generation.
         let _r3 = cache.get_or_embed(&*embedder, "clear-me").await.unwrap();
+    }
+
+    struct CountingEmbedder {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl Embedder for CountingEmbedder {
+        async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            // Deterministic pseudo-vector derived from input length.
+            Ok(vec![text.len() as f32; 8])
+        }
+
+        fn dimension(&self) -> usize {
+            8
+        }
+    }
+
+    /// Stability S1.11: persistence must survive a reopen. Insert N vectors
+    /// with persist=true, drop the cache, reopen the same DB path, and
+    /// assert all N serve from SQLite with zero new backend calls.
+    #[tokio::test]
+    async fn persist_roundtrip_survives_reopen() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("cache.db");
+        let texts: Vec<String> = (0..50).map(|i| format!("roundtrip text {i}")).collect();
+
+        let embedder = Arc::new(CountingEmbedder {
+            calls: AtomicUsize::new(0),
+        });
+
+        let config = EmbeddingCacheConfig {
+            enabled: true,
+            max_capacity: 1000,
+            ttl_hours: 24,
+            db_path: db_path.clone(),
+            persist: true,
+            model_name: "s1-11-test".to_string(),
+        };
+
+        {
+            let cache = EmbeddingCache::new(config.clone());
+            for t in &texts {
+                let v = cache.get_or_embed(&*embedder, t).await.unwrap();
+                assert_eq!(v.len(), 8);
+            }
+            assert_eq!(embedder.calls.load(Ordering::SeqCst), 50);
+            assert!(db_path.exists());
+        } // drop: closes the SQLite connection.
+
+        {
+            let cache = EmbeddingCache::new(config);
+            for t in &texts {
+                let v = cache.get_or_embed(&*embedder, t).await.unwrap();
+                assert_eq!(v, vec![t.len() as f32; 8]);
+            }
+            // All 50 served from SQLite: zero new backend calls.
+            assert_eq!(embedder.calls.load(Ordering::SeqCst), 50);
+            let m = cache.metrics();
+            assert_eq!(m.hits, 50);
+            assert_eq!(m.misses, 0);
+        }
     }
 }
