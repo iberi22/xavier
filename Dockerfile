@@ -12,7 +12,7 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY panel-ui/package.json panel-ui/package.json
 COPY vendor/ vendor/
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    corepack enable && corepack prepare pnpm@11.24.0 --activate && pnpm install
+    corepack enable && corepack prepare pnpm@11.24.0 --activate && pnpm install --config.dangerouslyAllowAllBuilds=true
 COPY panel-ui/ panel-ui/
 COPY Cargo.toml Cargo.toml
 RUN pnpm --filter xavier-panel-ui run build
