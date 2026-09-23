@@ -50,7 +50,7 @@ Name: "{autoprograms}\{#MyAppName} TUI"; Filename: "{app}\xavier-tui.exe"; Check
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "http 8006 --mcp-port 0"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Parameters: "http 8006 --mcp-port 0"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipfsreqterminate
+Filename: "{app}\{#MyAppExeName}"; Parameters: "http 8006 --mcp-port 0"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall
 
 [Code]
 const
