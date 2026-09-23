@@ -4,6 +4,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.10] — 2026-09-23 — release install fix
+
+### Fixed
+- **Release Windows install step, round 2** (#2521): `onlyBuiltDependencies` does not apply to `--prefix` installs; use the repo's own `--config.dangerouslyAllowAllBuilds=true` flag (same as ci.yml). v0.2.9 tag ran the pre-flag workflow; artifacts publish from this tag. No code changes.
+
 ## [0.2.9] — 2026-09-23 — release pipeline fix
 
 ### Fixed
