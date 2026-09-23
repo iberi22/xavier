@@ -4,6 +4,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.9] — 2026-09-23 — release pipeline fix
+
+### Fixed
+- **Release Windows install step** (#2519): pre-approve esbuild+sharp postinstall scripts (`onlyBuiltDependencies`) so `pnpm install` passes on pnpm>=10 runners. v0.2.7/v0.2.8 tags ran pre-fix workflows; artifacts publish from this tag. No code changes.
+
 ## [0.2.8] — 2026-09-23 — release workflow fix
 
 ### Fixed
