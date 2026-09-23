@@ -670,51 +670,64 @@ pub async fn start_http_server(
 
     // ── Universal Agent Session Ingestion Background Loop ────────────────
     // Periodically ingests transcripts from Antigravity, OpenCode, Hermes, and Codex.
+    // Interval via XAVIER_INGESTION_INTERVAL_SECS (default 600); 0 disables
+    // the loop (emergency brake for embedding storms).
+    let ingestion_interval_secs = ingestion_interval_secs();
     let ingestion_store = state.store.clone();
     let ingestion_embedder = state.embedder.clone();
-    tokio::spawn(async move {
-        // Initial grace period to allow server start
-        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
-        loop {
-            tracing::info!("🔄 Running universal agent session ingestion cycle...");
+    if ingestion_interval_secs == 0 {
+        tracing::warn!(
+            "Universal agent session ingestion DISABLED (XAVIER_INGESTION_INTERVAL_SECS=0)"
+        );
+    } else {
+        tracing::info!(
+            interval_secs = ingestion_interval_secs,
+            "Universal agent session ingestion loop spawned"
+        );
+        tokio::spawn(async move {
+            // Initial grace period to allow server start
+            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+            loop {
+                tracing::info!("🔄 Running universal agent session ingestion cycle...");
 
-            // 1. Antigravity
-            let ag_importer = xavier::memory::antigravity_importer::AntigravityImporter::new()
-                .with_embedder(ingestion_embedder.clone());
-            if let Err(e) = ag_importer.import_all(ingestion_store.as_ref()).await {
-                tracing::debug!("Antigravity ingestion note: {}", e);
-            }
-
-            // 2. OpenCode
-            let oc_importer = xavier::memory::opencode_importer::OpenCodeImporter::new()
-                .with_embedder(ingestion_embedder.clone());
-            if let Err(e) = oc_importer.import_all(ingestion_store.as_ref()).await {
-                tracing::debug!("OpenCode ingestion note: {}", e);
-            }
-
-            // 3. Hermes
-            let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
-                .with_embedder(ingestion_embedder.clone());
-            if let Err(e) = hermes_importer.import_all(ingestion_store.as_ref()).await {
-                tracing::debug!("Hermes ingestion note: {}", e);
-            }
-
-            // 4. Codex — with_embedder is an associated fn (not a builder method)
-            let codex_importer = xavier::memory::codex_importer::CodexImporter::with_embedder(
-                ingestion_embedder.clone(),
-            );
-            if let Ok(sessions) = codex_importer.scan_sessions().await {
-                for s in &sessions {
-                    let _ = codex_importer
-                        .import_session(s, ingestion_store.as_ref())
-                        .await;
+                // 1. Antigravity
+                let ag_importer = xavier::memory::antigravity_importer::AntigravityImporter::new()
+                    .with_embedder(ingestion_embedder.clone());
+                if let Err(e) = ag_importer.import_all(ingestion_store.as_ref()).await {
+                    tracing::debug!("Antigravity ingestion note: {}", e);
                 }
-            }
 
-            // Ingest every 10 minutes
-            tokio::time::sleep(tokio::time::Duration::from_secs(600)).await;
-        }
-    });
+                // 2. OpenCode
+                let oc_importer = xavier::memory::opencode_importer::OpenCodeImporter::new()
+                    .with_embedder(ingestion_embedder.clone());
+                if let Err(e) = oc_importer.import_all(ingestion_store.as_ref()).await {
+                    tracing::debug!("OpenCode ingestion note: {}", e);
+                }
+
+                // 3. Hermes
+                let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
+                    .with_embedder(ingestion_embedder.clone());
+                if let Err(e) = hermes_importer.import_all(ingestion_store.as_ref()).await {
+                    tracing::debug!("Hermes ingestion note: {}", e);
+                }
+
+                // 4. Codex — with_embedder is an associated fn (not a builder method)
+                let codex_importer = xavier::memory::codex_importer::CodexImporter::with_embedder(
+                    ingestion_embedder.clone(),
+                );
+                if let Ok(sessions) = codex_importer.scan_sessions().await {
+                    for s in &sessions {
+                        let _ = codex_importer
+                            .import_session(s, ingestion_store.as_ref())
+                            .await;
+                    }
+                }
+
+                // Ingestion cadence is operator-tunable without a rebuild.
+                tokio::time::sleep(tokio::time::Duration::from_secs(ingestion_interval_secs)).await;
+            }
+        });
+    }
 
     let protected_routes = Router::new()
         .merge(
@@ -2045,4 +2058,43 @@ pub async fn start_http_server(
     }
 
     Ok(())
+}
+
+/// Cadence of the universal agent session ingestion loop, in seconds.
+///
+/// Reads `XAVIER_INGESTION_INTERVAL_SECS` so operators can tune it without a
+/// rebuild (default 600). `0` disables the loop (emergency brake for
+/// embedding storms); unparsable values fall back to the default.
+pub fn ingestion_interval_secs() -> u64 {
+    std::env::var("XAVIER_INGESTION_INTERVAL_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(600)
+}
+
+#[cfg(test)]
+mod ingestion_interval_tests {
+    use super::ingestion_interval_secs;
+
+    #[test]
+    fn defaults_to_600_without_env() {
+        std::env::remove_var("XAVIER_INGESTION_INTERVAL_SECS");
+        assert_eq!(ingestion_interval_secs(), 600);
+    }
+
+    #[test]
+    fn honors_env_and_zero_disables() {
+        std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", "1800");
+        assert_eq!(ingestion_interval_secs(), 1800);
+        std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", "0");
+        assert_eq!(ingestion_interval_secs(), 0);
+        std::env::remove_var("XAVIER_INGESTION_INTERVAL_SECS");
+    }
+
+    #[test]
+    fn unparsable_falls_back_to_default() {
+        std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", "not-a-number");
+        assert_eq!(ingestion_interval_secs(), 600);
+        std::env::remove_var("XAVIER_INGESTION_INTERVAL_SECS");
+    }
 }
