@@ -13,10 +13,10 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 - **Idempotent migration bookkeeping** (`src/storage/mod.rs`): migration versions are recorded with `INSERT OR IGNORE`, so two concurrent initialisations of the same database no longer fail with a `schema_migrations` primary-key violation.
 
 ### Fixed
-- **HermesImporter Incremental Skip** ([#2476](https://github.com/xavier/xavier/pull/2476), `src/memory/hermes_importer.rs:1`): Stopped redundant document re-import storms during session synchronization. Reduced embedding generation rate from 439–502 to 4 emb/min.
-- **Bus Quota Precheck** ([#2477](https://github.com/xavier/xavier/pull/2477), `src/memory/qmd/writer.rs:1`, `src/server/mcp/tools_memory.rs:1`): Added non-consuming quota peek before queue submission to prevent bus exhaustion loops on repeated write attempts. Increased cache hit_rate from 41% to 88.4% (12,351 entries), maintained GPU JCT at 55-57 °C, and achieved NRestarts 0.
-- **Configurable Ingestion Interval** ([#2478](https://github.com/xavier/xavier/pull/2478), `src/cli/server.rs:1`): Made background session ingestion interval configurable via `XAVIER_INGESTION_INTERVAL_SECS` environment variable, stopping fixed-interval ingest storms.
-- **Known Issue — FTS5 Malformed Error** ([#2479](https://github.com/xavier/xavier/issues/2479)): Documented ongoing FTS5 malformed index corruption errors (reporting-only, 146/day) currently under investigation.
+- **HermesImporter Incremental Skip** ([#2476](https://github.com/iberi22/xavier/pull/2476), `src/memory/hermes_importer.rs:1`): Stopped redundant document re-import storms during session synchronization. Reduced embedding generation rate from 439–502 to 4 emb/min.
+- **Bus Quota Precheck** ([#2477](https://github.com/iberi22/xavier/pull/2477), `src/memory/qmd/writer.rs:1`, `src/server/mcp/tools_memory.rs:1`): Added non-consuming quota peek before queue submission to prevent bus exhaustion loops on repeated write attempts. Increased cache hit_rate from 41% to 88.4% (12,351 entries), maintained GPU JCT at 55-57 °C, and achieved NRestarts 0.
+- **Configurable Ingestion Interval** ([#2478](https://github.com/iberi22/xavier/pull/2478), `src/cli/server.rs:1`): Made background session ingestion interval configurable via `XAVIER_INGESTION_INTERVAL_SECS` environment variable, stopping fixed-interval ingest storms.
+- **Known Issue — FTS5 Malformed Error** ([#2479](https://github.com/iberi22/xavier/issues/2479)): Documented ongoing FTS5 malformed index corruption errors (reporting-only, 146/day) currently under investigation.
 
 ## [0.2.5] — 2026-09-20
 
