@@ -4,6 +4,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.12] — 2026-09-23 — Docker publish fix release
+
+### Fixed
+- **Docker GHCR publish** (#2525): same `dangerouslyAllowAllBuilds` flag in the Dockerfile image build (v0.2.11 tag ran the pre-flag image). Tags pin Docker context too; artifacts publish from this tag. No code changes.
+
 ## [0.2.11] — 2026-09-23 — installer flag fix release
 
 ### Fixed
