@@ -266,6 +266,16 @@ impl CodexImporter {
 
         record.id = stable_key("memory", &[&workspace_id, &path]);
 
+        // Incremental skip (stability S1.08): identical content already
+        // stored reuses the existing record without re-embedding. Fail-open
+        // on store errors.
+        if let Ok(Some(existing)) = store.get(&workspace_id, &record.id).await {
+            if existing.content == record.content {
+                records.push(existing);
+                return Ok(records);
+            }
+        }
+
         if let Some(embedder) = &self.embedder {
             if let Ok(emb) = embedder.encode(&record.content).await {
                 record.embedding = emb;
@@ -301,8 +311,9 @@ impl CodexImporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::embedding::NoopEmbedder;
+    use crate::embedding::{Embedder, EmbeddingError, NoopEmbedder};
     use crate::memory::store::InMemoryMemoryStore;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
 
     #[tokio::test]
@@ -352,6 +363,59 @@ mod tests {
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].session_id, "sess_002");
         assert_eq!(sessions[0].messages.len(), 2);
+
+        Ok(())
+    }
+
+    struct CountingEmbedder {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl Embedder for CountingEmbedder {
+        async fn encode(&self, _text: &str) -> Result<Vec<f32>, EmbeddingError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![0.5; 8])
+        }
+
+        fn dimension(&self) -> usize {
+            8
+        }
+    }
+
+    /// Stability S1.08: a second identical import must not re-encode.
+    #[tokio::test]
+    async fn test_codex_second_pass_no_reencode() -> Result<()> {
+        let dir = tempdir()?;
+        let session_file = dir.path().join("sess_001.json");
+        let content = json!({
+            "session_id": "codex-123",
+            "created_at": "2026-08-15T12:00:00Z",
+            "topic": "Refactoring module",
+            "messages": [
+                { "role": "user", "content": "Refactor codebase" },
+                { "role": "assistant", "content": "Refactored successfully" }
+            ]
+        });
+        fs::write(&session_file, serde_json::to_string(&content)?).await?;
+
+        let store = InMemoryMemoryStore::new();
+        let embedder = Arc::new(CountingEmbedder {
+            calls: AtomicUsize::new(0),
+        });
+        let importer = CodexImporter::with_dir_and_embedder(dir.path(), embedder.clone());
+
+        let first = importer.import_all(&store).await?;
+        assert_eq!(first.len(), 1);
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 1);
+
+        let second = importer.import_all(&store).await?;
+        assert_eq!(second.len(), 1);
+        assert_eq!(
+            embedder.calls.load(Ordering::SeqCst),
+            1,
+            "second identical import must not call encode again"
+        );
 
         Ok(())
     }
