@@ -73,6 +73,19 @@ jobs:
           cd dist && (sha256sum "${ARCHIVE_NAME}" 2>/dev/null || shasum -a 256 "${ARCHIVE_NAME}") > "${ARCHIVE_NAME}.sha256"
         shell: bash
 
+      - name: Setup pnpm (Windows)
+        if: runner.os == 'Windows'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.24.0
+
+      - name: Setup Node.js (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
       - name: Build Panel UI (Windows)
         if: runner.os == 'Windows'
         run: |
