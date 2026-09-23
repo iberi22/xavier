@@ -89,7 +89,7 @@ jobs:
       - name: Build Panel UI (Windows)
         if: runner.os == 'Windows'
         run: |
-          pnpm --prefix panel-ui install
+          pnpm --prefix panel-ui install --config.dangerouslyAllowAllBuilds=true
           pnpm --prefix panel-ui build
         shell: pwsh
 
