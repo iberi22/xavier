@@ -4,6 +4,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.7] — 2026-09-23 — release fix
+
+### Fixed
+- **Windows build** (#2510): `collect_skill_files` no longer uses `std::os::unix` unconditionally (`DirId` cfg-gated, symlink-cycle test unix-gated). Unblocks the multi-platform release artifacts (Windows + Docker publish) that v0.2.6 could not produce.
+
 ## [0.2.6] — 2026-09-23 — stability wave S1
 
 Measured outcome: ingestion-loop embedding rate 439-502 → 4 emb/min, cache hit_rate 41% → 88.4% (12.351 entries), GPU junction back to idle, NRestarts 0. Production binary rebuild pending maintainer approval; fixes verified in CI (fmt + clippy `-D warnings` + lib/integration tests green, incl. negative controls).
