@@ -4,8 +4,18 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.6] — 2026-09-23 — stability wave S1
+
+Measured outcome: ingestion-loop embedding rate 439-502 → 4 emb/min, cache hit_rate 41% → 88.4% (12.351 entries), GPU junction back to idle, NRestarts 0. Production binary rebuild pending maintainer approval; fixes verified in CI (fmt + clippy `-D warnings` + lib/integration tests green, incl. negative controls).
+
 ### Added
 - Wave skill-injection: 6 planned issues (301-306) and ledger scaffolding.
+- **Stability watch script** (`scripts/xavier-stability-watch.sh`, #2493): one-command KPI corroboration (emb/min, hit_rate, restarts, GPU, DB integrity), read-only.
+- **FTS health reporting** (`src/observability/health.rs`, #2498): additive `database.fts_ok` probe; `/health` no longer certifies a corrupt FTS index as healthy.
+- **Stability env docs** (`.env.example`, #2496): `XAVIER_INGESTION_INTERVAL_SECS`, `XAVIER_BUS_QUOTA_*` documented; TTL naming drift resolved (`XAVIER_EMBEDDING_CACHE_TTL` reads first, `TTL_HOURS` fallback).
+- **Ingestion single-flight guard** (`src/cli/server.rs`, #2497): overlapping full-corpus cycles are skipped with a warning.
+- **Cross-importer stability tests** (`tests/stability_ingestion_tests.rs`, #2505): 5/5 — second identical pass performs zero re-encodes, incl. shared-store cycle.
+- **Cache persist roundtrip test** (`src/embedding/cache.rs`, #2505): 15/15.
 
 ### Changed
 - **Storage PRAGMA layering** (`src/storage/pragma.rs`, `src/codebase/connection_manager.rs`): pooled connections now only re-apply the cheap per-connection pragmas (`busy_timeout`, `foreign_keys`) on acquire; the heavy settings are applied once per connection at pool construction and the opportunistic WAL checkpoint moved off the acquire path. This removes the `wal_checkpoint(TRUNCATE)` stalls that could block every checkout behind a long-running read.
@@ -13,10 +23,14 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 - **Idempotent migration bookkeeping** (`src/storage/mod.rs`): migration versions are recorded with `INSERT OR IGNORE`, so two concurrent initialisations of the same database no longer fail with a `schema_migrations` primary-key violation.
 
 ### Fixed
-- **HermesImporter Incremental Skip** ([#2476](https://github.com/iberi22/xavier/pull/2476), `src/memory/hermes_importer.rs:1`): Stopped redundant document re-import storms during session synchronization. Reduced embedding generation rate from 439–502 to 4 emb/min.
-- **Bus Quota Precheck** ([#2477](https://github.com/iberi22/xavier/pull/2477), `src/memory/qmd/writer.rs:1`, `src/server/mcp/tools_memory.rs:1`): Added non-consuming quota peek before queue submission to prevent bus exhaustion loops on repeated write attempts. Increased cache hit_rate from 41% to 88.4% (12,351 entries), maintained GPU JCT at 55-57 °C, and achieved NRestarts 0.
-- **Configurable Ingestion Interval** ([#2478](https://github.com/iberi22/xavier/pull/2478), `src/cli/server.rs:1`): Made background session ingestion interval configurable via `XAVIER_INGESTION_INTERVAL_SECS` environment variable, stopping fixed-interval ingest storms.
-- **Known Issue — FTS5 Malformed Error** ([#2479](https://github.com/iberi22/xavier/issues/2479)): Documented ongoing FTS5 malformed index corruption errors (reporting-only, 146/day) currently under investigation.
+- **HermesImporter incremental skip** (#2476): identical content reuses the stored record — second identical pass performs zero `encode` calls (regression-tested, incl. JSON path and exactly-once re-embed on change).
+- **Bus quota precheck** (#2477): read-only `bus_quota_exhausted()` peek skips GPU work the writer would drop; quota tests made order-independent.
+- **Ingestion interval env** (#2478): `XAVIER_INGESTION_INTERVAL_SECS` (default 600, 0 disables the loop).
+- **Importer skips for Antigravity/OpenCode/Codex** (#2505, S1.06/07/08): same incremental pattern, second-pass tests each.
+- **Cache read-path lazy open** (`src/embedding/cache.rs`, #2505, S1.11): `try_lookup_sqlite` now opens an existing backing DB — previously the first lookup after every restart missed and re-embedded (caught by the new roundtrip test, 51-vs-50 without the fix).
+
+### Known issues
+- **FTS5 malformed index** (#2479, #2494): `malformed inverted index for FTS5 table main.memory_fts` recurred ~146×/day; `quick_check` stays `ok` (index-only corruption). Rebuild procedure specified and rehearsed on a copy — repair on prod requires fresh backup + maintainer approval.
 
 ## [0.2.5] — 2026-09-20
 
