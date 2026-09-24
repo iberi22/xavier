@@ -636,7 +636,7 @@ pub async fn start_http_server(
         )),
         system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
         multi_db,
-        maloca: xavier::maloca::MalocaStore::open(&state_dir),
+        maloca: xavier::maloca::MalocaStore::open_default(),
     };
 
     info!(
@@ -1653,20 +1653,35 @@ pub async fn start_http_server(
         .merge(protected_routes)
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
-        .layer(Extension(event_bus_for_ws))
-        .layer(CorsLayer::permissive())
-        .layer(middleware::from_fn(
-            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
+        .layer(Extension(event_bus_for_ws));
+
+    let app = app.with_state(state.clone());
+
+    // Maloca ops API — public local dogfood for reads (matches @swal/maloca-client;
+    // no token needed on GET/HEAD), but every mutating verb (POST/PUT/PATCH/DELETE)
+    // requires the same token as the rest of the API via
+    // `maloca_mutation_auth_middleware`. This router is merged in BEFORE the
+    // `CorsLayer`/timeout layer below so those layers wrap Maloca too — previously
+    // they were applied first and the Maloca merge happened after, leaving `/maloca/*`
+    // and `/v1/maloca/*` with no CORS headers and no auth enforcement on writes.
+    let maloca_router = xavier::maloca::nested_router::<()>(maloca_store.clone())
+        .merge(xavier::server::maloca::v1_maloca_router_with_maloca_store(
+            None,
+            Some(state.workspace_dir.clone()),
+            Some(maloca_store),
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            maloca_mutation_auth_middleware,
         ));
 
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
     let app = app
-        .with_state(state.clone())
-        .merge(xavier::maloca::nested_router(maloca_store))
-        .merge(xavier::server::maloca::v1_maloca_router(
-            None,
-            Some(state.workspace_dir.clone()),
+        .merge(maloca_router)
+        .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
         ));
 
     #[cfg(feature = "enterprise")]

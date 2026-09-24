@@ -91,6 +91,7 @@ pub struct UnifiedBacklogService {
     cache: Arc<RwLock<Option<CacheEntry>>>,
     ttl: Duration,
     custom_workspace_dir: Option<PathBuf>,
+    maloca_store: Option<Arc<crate::maloca::MalocaStore>>,
 }
 
 impl Default for UnifiedBacklogService {
@@ -106,6 +107,7 @@ impl UnifiedBacklogService {
             cache: Arc::new(RwLock::new(None)),
             ttl: Duration::from_secs(30),
             custom_workspace_dir: None,
+            maloca_store: None,
         }
     }
 
@@ -113,6 +115,70 @@ impl UnifiedBacklogService {
     pub fn with_workspace_dir(mut self, path: impl Into<PathBuf>) -> Self {
         self.custom_workspace_dir = Some(path.into());
         self
+    }
+
+    /// Wires in the live `MalocaStore` so its own hand-curated `backlog` items
+    /// (`store.backlog()` — things like "MalocaView dogfood en panel-ui") are
+    /// folded into the unified `/v1/maloca/backlog/*` response as a synthetic
+    /// `maloca` project, alongside the scanned `.gitcore/features.json` items.
+    pub fn with_maloca_store(mut self, store: Arc<crate::maloca::MalocaStore>) -> Self {
+        self.maloca_store = Some(store);
+        self
+    }
+
+    /// Converts `MalocaStore::backlog()` (`{"source", "items":[{id,title,status}]}`)
+    /// into a synthetic `UnifiedProject` so those items show up in the aggregated
+    /// backlog view. Returns `None` if no store is wired in or it has no items.
+    fn maloca_backlog_project(&self) -> Option<UnifiedProject> {
+        let store = self.maloca_store.as_ref()?;
+        let raw = store.backlog();
+        let items = raw.get("items")?.as_array()?;
+
+        let features: Vec<UnifiedFeatureItem> = items
+            .iter()
+            .filter_map(|item| {
+                let id = item.get("id").and_then(|v| v.as_str())?.to_string();
+                let name = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&id)
+                    .to_string();
+                let status = item
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("planned")
+                    .to_string();
+                let progress_pct = if matches!(
+                    status.to_lowercase().as_str(),
+                    "done" | "complete" | "completed" | "stable" | "implemented"
+                ) {
+                    100.0
+                } else {
+                    0.0
+                };
+                Some(UnifiedFeatureItem {
+                    id,
+                    name,
+                    app_id: "maloca".to_string(),
+                    wave: None,
+                    status,
+                    priority: None,
+                    progress_pct,
+                    category: Some("maloca-backlog".to_string()),
+                    notes: None,
+                    github_issue: None,
+                })
+            })
+            .collect();
+
+        if features.is_empty() {
+            return None;
+        }
+
+        Some(UnifiedProject {
+            repo_name: "maloca".to_string(),
+            features,
+        })
     }
 
     /// Gets or refreshes cached project features.
@@ -126,7 +192,10 @@ impl UnifiedBacklogService {
         }
 
         // Cache miss or expired — perform scan
-        let projects = self.scan_all_projects();
+        let mut projects = self.scan_all_projects();
+        if let Some(maloca_project) = self.maloca_backlog_project() {
+            projects.push(maloca_project);
+        }
 
         if let Ok(mut guard) = self.cache.write() {
             *guard = Some(CacheEntry {
@@ -307,34 +376,69 @@ impl UnifiedBacklogService {
     }
 }
 
-/// Helper function to scan directory for projects containing `.gitcore/features.json` or standalone `.gitcore/features.json`.
+/// Directory names never descended into while scanning for `.gitcore/features.json`.
+/// `node_modules`/`target` are huge dependency/build trees, `.git` is internal repo
+/// plumbing, and `archivo/` is SWAL's explicitly-retired archive (see workspace
+/// `AGENTS.md`: "Archivo — Histórico — NO reactivar").
+const IGNORED_SCAN_DIR_NAMES: &[&str] = &["node_modules", "target", ".git", "archivo"];
+
+/// Maximum recursion depth (in directory levels below `base_dir`) while scanning
+/// for `.gitcore/features.json`. Real SWAL products live at
+/// `apps/<app>/.gitcore/features.json` and `cores/<core>/.gitcore/features.json` —
+/// two levels below the workspace root — so a flat 1-level scan (base_dir + its
+/// immediate children only) silently missed every one of them.
+const MAX_SCAN_DEPTH: usize = 3;
+
+/// Helper function to scan directory (up to [`MAX_SCAN_DEPTH`] levels deep) for
+/// projects containing `.gitcore/features.json`, e.g. both `<base>/.gitcore/...`
+/// (standalone project root) and `<base>/apps/<app>/.gitcore/...` /
+/// `<base>/cores/<core>/.gitcore/...` (SWAL workspace layout).
 fn scan_projects_from_directory(base_dir: &Path) -> Vec<UnifiedProject> {
     let mut projects = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    scan_dir_recursive(base_dir, 0, MAX_SCAN_DEPTH, &mut projects, &mut seen);
+    projects
+}
 
-    // Check if base_dir itself is a project root
-    let self_gitcore = base_dir.join(".gitcore").join("features.json");
-    if self_gitcore.is_file() {
-        if let Some(proj) = parse_project_features(base_dir, &self_gitcore) {
-            projects.push(proj);
-        }
-    }
-
-    // Check child directories
-    if let Ok(entries) = std::fs::read_dir(base_dir) {
-        for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            if path.is_dir() && path != base_dir {
-                let gitcore_features = path.join(".gitcore").join("features.json");
-                if gitcore_features.is_file() {
-                    if let Some(proj) = parse_project_features(&path, &gitcore_features) {
-                        projects.push(proj);
-                    }
-                }
+fn scan_dir_recursive(
+    dir: &Path,
+    depth: usize,
+    max_depth: usize,
+    projects: &mut Vec<UnifiedProject>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+) {
+    let gitcore_features = dir.join(".gitcore").join("features.json");
+    if gitcore_features.is_file() {
+        let dedup_key = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+        if seen.insert(dedup_key) {
+            if let Some(proj) = parse_project_features(dir, &gitcore_features) {
+                projects.push(proj);
             }
         }
     }
 
-    projects
+    if depth >= max_depth {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        // Skip build/VCS/dependency noise and any other hidden directory — the
+        // only hidden name we ever care about is `.gitcore`, and that is read
+        // directly above without needing to descend into it.
+        if name.starts_with('.') || IGNORED_SCAN_DIR_NAMES.contains(&name) {
+            continue;
+        }
+        scan_dir_recursive(&path, depth + 1, max_depth, projects, seen);
+    }
 }
 
 /// Parses `.gitcore/features.json` into a `UnifiedProject`.
@@ -663,5 +767,113 @@ mod tests {
             let guard = service.cache.read().unwrap();
             assert!(guard.is_none());
         }
+    }
+
+    /// Mirrors the real SWAL workspace layout audited in bug #4: products
+    /// live two levels below the workspace root, at
+    /// `apps/<app>/.gitcore/features.json` and `cores/<core>/.gitcore/features.json`.
+    /// A flat 1-level scan (workspace root + its immediate children only)
+    /// never reaches these — this test pins the depth-2/3 recursive fix.
+    fn setup_nested_apps_and_cores_workspace() -> tempfile::TempDir {
+        let tmp = tempdir().unwrap();
+
+        let xavier_dir = tmp.path().join("apps").join("xavier").join(".gitcore");
+        create_dir_all(&xavier_dir).unwrap();
+        write(
+            xavier_dir.join("features.json"),
+            r#"{
+                "metadata": { "project": "xavier" },
+                "features": [
+                    { "id": "feat-xavier-nested", "name": "Nested Xavier Feature",
+                      "status": "planned", "progress_pct": 10.0 }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let edge_mesh_dir = tmp.path().join("cores").join("edge-mesh").join(".gitcore");
+        create_dir_all(&edge_mesh_dir).unwrap();
+        write(
+            edge_mesh_dir.join("features.json"),
+            r#"{
+                "metadata": { "project": "edge-mesh" },
+                "features": [
+                    { "id": "feat-edge-mesh-nested", "name": "Nested Edge Mesh Feature",
+                      "status": "stable", "progress_pct": 100.0 }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        // Noise that must NOT be descended into: a features.json buried
+        // inside node_modules/target/.git/archivo must never surface.
+        for ignored in ["node_modules", "target", ".git", "archivo"] {
+            let noise_dir = tmp
+                .path()
+                .join("apps")
+                .join(ignored)
+                .join("nested-app")
+                .join(".gitcore");
+            create_dir_all(&noise_dir).unwrap();
+            write(
+                noise_dir.join("features.json"),
+                r#"{"metadata":{"project":"should-never-appear"},"features":[
+                    {"id":"feat-should-be-ignored","name":"x","status":"planned","progress_pct":0.0}
+                ]}"#,
+            )
+            .unwrap();
+        }
+
+        tmp
+    }
+
+    #[test]
+    fn test_scan_reaches_apps_and_cores_two_levels_deep() {
+        let mock_workspace = setup_nested_apps_and_cores_workspace();
+        let service =
+            UnifiedBacklogService::new().with_workspace_dir(mock_workspace.path().to_path_buf());
+
+        let all = service.get_unified_backlog(&BacklogQuery::default());
+        let ids: Vec<&str> = all.items.iter().map(|i| i.id.as_str()).collect();
+
+        assert!(
+            ids.contains(&"feat-xavier-nested"),
+            "apps/xavier/.gitcore/features.json (depth 2) must be found; got {ids:?}"
+        );
+        assert!(
+            ids.contains(&"feat-edge-mesh-nested"),
+            "cores/edge-mesh/.gitcore/features.json (depth 2) must be found; got {ids:?}"
+        );
+        assert!(
+            !ids.contains(&"feat-should-be-ignored"),
+            "features.json inside node_modules/target/.git/archivo must never be scanned; got {ids:?}"
+        );
+        assert_eq!(
+            all.total, 2,
+            "only the two legitimate nested features should surface"
+        );
+    }
+
+    #[test]
+    fn test_unified_backlog_includes_maloca_store_backlog_items() {
+        let mock_workspace = setup_nested_apps_and_cores_workspace();
+        let store_dir = tempdir().unwrap();
+        let maloca_store = crate::maloca::MalocaStore::open(store_dir.path());
+
+        let service = UnifiedBacklogService::new()
+            .with_workspace_dir(mock_workspace.path().to_path_buf())
+            .with_maloca_store(maloca_store);
+
+        let all = service.get_unified_backlog(&BacklogQuery::default());
+        let ids: Vec<&str> = all.items.iter().map(|i| i.id.as_str()).collect();
+
+        // Seeded by `default_state()` in store.rs: "maloca-ui" / "maloca-pwa".
+        assert!(
+            ids.contains(&"maloca-ui"),
+            "store.backlog() items must be folded into the unified response; got {ids:?}"
+        );
+        assert!(ids.contains(&"maloca-pwa"));
+        // Plus the two scanned .gitcore features from apps/ and cores/.
+        assert_eq!(all.total, 4);
     }
 }
