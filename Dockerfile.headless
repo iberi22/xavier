@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy source code (no panel-ui frontend build needed)
 COPY Cargo.toml Cargo.lock ./
+COPY LICENSE ./
 COPY benches/ benches/
 COPY src/ src/
 COPY code-graph/ code-graph/
