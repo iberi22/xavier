@@ -23,7 +23,7 @@ pub const RATE_LIMIT_COMMANDS: usize = 10;
 pub const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
 /// Simple per-user rate limiter: N commands per window.
-struct RateLimiter {
+pub struct RateLimiter {
     max_per_window: usize,
     window: Duration,
     entries: Mutex<HashMap<String, Vec<Instant>>>,
@@ -218,17 +218,12 @@ impl MemoryCommand {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TelegramTransport {
+    #[default]
     Polling,
     Webhook,
-}
-
-impl Default for TelegramTransport {
-    fn default() -> Self {
-        Self::Polling
-    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -503,6 +498,7 @@ impl XavierBot {
     }
 
     /// Handle command.
+    #[allow(clippy::too_many_arguments)]
     pub async fn handle_command(
         bot: Bot,
         msg: Message,
@@ -515,7 +511,8 @@ impl XavierBot {
     ) -> ResponseResult<()> {
         // ── Rate limiting ──────────────────────────────────────
         let user_id = msg
-            .from()
+            .from
+            .as_ref()
             .map(|u| u.id.0.to_string())
             .unwrap_or_else(|| "unknown".to_string());
         if let Err(secs) = rate_limiter.check(&user_id) {
@@ -529,7 +526,7 @@ impl XavierBot {
 
         // Simple admin check
         if !config.admin_ids.is_empty() {
-            let user_id = msg.from().map(|u| u.id.0).unwrap_or(0);
+            let user_id = msg.from.as_ref().map(|u| u.id.0).unwrap_or(0);
             if !config.admin_ids.contains(&user_id) {
                 bot.send_message(msg.chat.id, "⛔ Access denied. You are not an admin.")
                     .await?;
@@ -783,9 +780,9 @@ pub async fn handle_memory_command(args: &str) -> String {
                                 .metadata
                                 .get("title")
                                 .and_then(|t| t.as_str())
-                                .or(doc.path.split('/').last())
+                                .or(doc.path.split('/').next_back())
                                 .unwrap_or("Untitled");
-                            let preview: String = doc.content.chars().take(100).collect();
+                        let preview: String = doc.content.chars().take(100).collect();
                             response.push_str(&format!(
                                 "{}\\. *{}*\n_{}_\n\n",
                                 i + 1,
@@ -818,8 +815,8 @@ pub async fn handle_memory_command(args: &str) -> String {
                             .metadata
                             .get("title")
                             .and_then(|t| t.as_str())
-                            .or(doc.path.split('/').last())
-                            .unwrap_or("Untitled");
+                                .or(doc.path.split('/').next_back())
+                                .unwrap_or("Untitled");
                         response.push_str(&format!(
                             "{}\\. \\*{}\\* \\(id: `{}`\\)\n\n",
                             i + 1,
@@ -918,8 +915,10 @@ pub async fn start_webhook(
     security: Arc<dyn SecurityScanPort>,
 ) -> anyhow::Result<()> {
     let token = load_bot_token()?;
-    let mut config = TelegramConfig::default();
-    config.bot_token = token;
+    let config = TelegramConfig {
+        bot_token: token,
+        ..TelegramConfig::default()
+    };
     let base_url = config
         .webhook_url
         .clone()
@@ -1044,9 +1043,8 @@ mod tests {
         //  the error-message shape when resolution actually fails.)
 
         // Restore prior env state.
-        match prev {
-            Some(v) => std::env::set_var("TELEGRAM_BOT_TOKEN", v),
-            None => {}
+        if let Some(v) = prev {
+            std::env::set_var("TELEGRAM_BOT_TOKEN", v)
         }
     }
 
@@ -1217,8 +1215,10 @@ mod tests {
 
     #[test]
     fn test_telegram_transport_webhook_config() {
-        let mut config = TelegramConfig::default();
-        config.transport_mode = TelegramTransport::Webhook;
+        let config = TelegramConfig {
+            transport_mode: TelegramTransport::Webhook,
+            ..TelegramConfig::default()
+        };
         assert_eq!(config.transport_mode, TelegramTransport::Webhook);
     }
 

@@ -96,7 +96,40 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
                 "required": ["command"]
             }),
         },
+        MCPTool {
+            name: "xavier_dispatch_skill".to_string(),
+            description: "Dispatch a task to the best skill".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task": { "type": "string", "description": "Task to match a skill" },
+                    "max_tokens": { "type": "integer", "description": "Token budget, default 4000" },
+                    "project": { "type": "string", "description": "Optional project filter" }
+                },
+                "required": ["task"]
+            }),
+        },
+        MCPTool {
+            name: "xavier_skill_list".to_string(),
+            description: "List indexed skills with costs".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
     ]
+}
+
+/// Build a skill registry for the workspace, mirroring
+/// `api/skills.rs::dispatch_skill` (single construction site for ranking).
+async fn build_skill_registry(
+    workspace: &WorkspaceContext,
+) -> crate::context::skill_registry::SkillRegistry {
+    use crate::context::skill_registry::SkillRegistry;
+    let workspace_root = std::path::PathBuf::from(&workspace.workspace_id);
+    let mut registry = SkillRegistry::with_defaults(&workspace_root);
+    let _ = registry.reindex().await;
+    registry
 }
 
 /// Handle context tool.
@@ -331,8 +364,29 @@ pub async fn handle_context_tool(
                 );
             }
 
-            let result =
-                crate::kernel::runner::execute_rtk_command(command, cwd, session_id).await?;
+            // Fail-closed cwd validation: a caller-controlled working
+            // directory must exist and be a real directory (symlinks
+            // resolved). Rejects traversal into non-directories instead of
+            // silently falling back to the server cwd.
+            let cwd_canonical: Option<String> = match cwd {
+                Some(dir) => match std::fs::canonicalize(dir) {
+                    Ok(p) if p.is_dir() => Some(p.to_string_lossy().into_owned()),
+                    _ => {
+                        return super::server::mcp_text_result(
+                            "Error: 'cwd' must be an existing directory",
+                            true,
+                        );
+                    }
+                },
+                None => None,
+            };
+
+            let result = crate::kernel::runner::execute_rtk_command(
+                command,
+                cwd_canonical.as_deref(),
+                session_id,
+            )
+            .await?;
             let json_res = serde_json::to_string_pretty(&result)?;
             super::server::mcp_text_result(json_res, result.exit_code != 0)
         }
@@ -369,6 +423,94 @@ pub async fn handle_context_tool(
             )?;
 
             super::server::mcp_text_result(serde_json::to_string_pretty(&package)?, false)
+        }
+        "xavier_dispatch_skill" => {
+            use crate::context::skill_dispatcher::{SkillDispatchRequest, SkillDispatcher};
+
+            let task = arguments.get("task").and_then(|v| v.as_str()).unwrap_or("");
+            if task.is_empty() {
+                return super::server::mcp_text_result(
+                    serde_json::to_string(&json!({
+                        "ok": false,
+                        "error": "'task' argument cannot be empty",
+                    }))?,
+                    true,
+                );
+            }
+            let max_tokens = arguments
+                .get("max_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(4000);
+            let project = arguments
+                .get("project")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+
+            let registry = build_skill_registry(&workspace).await;
+            let memory = workspace.workspace.memory.clone();
+            let dispatcher = SkillDispatcher::new(registry, Some(memory));
+            match dispatcher
+                .dispatch(&SkillDispatchRequest {
+                    task: task.to_string(),
+                    model_hint: None,
+                    max_tokens: Some(max_tokens),
+                    project,
+                })
+                .await
+            {
+                Ok(result) => super::server::mcp_text_result(
+                    serde_json::to_string_pretty(&json!({
+                        "ok": true,
+                        "skill_name": result.skill_name,
+                        "skill_description": result.skill_description,
+                        "confidence": result.confidence,
+                        "context_pack": {
+                            "system_instructions": result.context_pack.system_instructions,
+                            "relevant_memories": result.context_pack.relevant_memories,
+                            "prior_decisions": result.context_pack.prior_decisions,
+                            "total_tokens": result.context_pack.total_tokens,
+                        },
+                        "estimated_savings_pct": result.estimated_savings_pct,
+                    }))?,
+                    false,
+                ),
+                // Fail-open: empty-skill verdict, never a throw across MCP.
+                Err(e) => super::server::mcp_text_result(
+                    serde_json::to_string(&json!({
+                        "ok": false,
+                        "skill_name": "_none",
+                        "confidence": 0.0,
+                        "error": format!("{e}"),
+                    }))?,
+                    true,
+                ),
+            }
+        }
+        "xavier_skill_list" => {
+            let registry = build_skill_registry(&workspace).await;
+            let skills: Vec<Value> = registry
+                .list()
+                .into_iter()
+                .filter_map(|name| {
+                    registry.get(name).map(|s| {
+                        json!({
+                            "name": s.name,
+                            "description": s.description,
+                            "domains": s.domains,
+                            "token_cost": s.token_cost,
+                        })
+                    })
+                })
+                .collect();
+            super::server::mcp_text_result(
+                serde_json::to_string_pretty(&json!({
+                    "ok": true,
+                    "count": skills.len(),
+                    "skills": skills,
+                }))?,
+                false,
+            )
         }
         _ => Err(anyhow::anyhow!("Unknown context tool: {}", name)),
     }

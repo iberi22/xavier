@@ -1,6 +1,5 @@
 //! Xavier - Cognitive Memory System
 #![deny(unsafe_code)]
-#![cfg_attr(feature = "telegram", allow(dead_code))]
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![allow(clippy::vec_init_then_push)]

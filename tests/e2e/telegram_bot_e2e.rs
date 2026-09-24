@@ -8,9 +8,8 @@ mod telegram_tests {
 
     #[test]
     fn test_telegram_config_defaults() {
-        let config = TelegramConfig::default();
+        let _config = TelegramConfig::default();
         // Default config should be parsed and readable
-        assert!(!config.enabled || config.enabled);
         assert_eq!(RATE_LIMIT_COMMANDS, 10);
         assert_eq!(RATE_LIMIT_WINDOW_SECS, 60);
         assert_eq!(TELEGRAM_TOKEN_VAULT_KEY, "telegram_bot_token");
@@ -77,7 +76,7 @@ mod telegram_tests {
 
         env::set_var("TELEGRAM_BOT_TOKEN", "123456:E2E-TEST-TOKEN");
         let resolved = load_bot_token().expect("Failed to resolve token");
-        assert!(resolved.len() > 0);
+        assert!(!resolved.is_empty());
 
         // Restore env
         if let Some(tok) = original_token {

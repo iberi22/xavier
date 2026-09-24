@@ -33,6 +33,7 @@ coverage/
 benchmark_results/
 target_x86/
 target_verify/
+target-verify-failures/
 *.tmp
 *.temp
 data/

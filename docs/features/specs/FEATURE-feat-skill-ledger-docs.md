@@ -1,6 +1,6 @@
 # FEATURE: Skill Wave Ledger, SRS and Ack-Gate Docs
 
-**Status:** `planned` | **Score:** — | **Last Tested:** —
+**Status:** `implemented` (Implemented 2026-09-21 (REQ-060..065 + this status line)) | **Score:** rg REQ count 61; check-only exit 0 | **Last Tested:** 2026-09-21
 
 ## Overview
 Closing feature for the wave: the ledger entries reference REQ-060..065 which do not exist yet in `docs/SRS/REQUIREMENTS.md` (max REQ-059), the six specs need final measured numbers, and the ack-gate predicate needs one canonical home. This issue is docs-only (`src/` untouched) and closes the wave on a green `verify-pipeline` run — statuses are promoted by the pipeline, never by hand (AGENTS.md §4-5).

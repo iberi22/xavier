@@ -21,12 +21,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code (no panel-ui frontend build needed)
+# NOTE: must mirror every path dependency / workspace member used by
+# Cargo.toml (codegraph-types, crates/*, vendor/maloca-core).
 COPY Cargo.toml Cargo.lock ./
 COPY LICENSE ./
 COPY benches/ benches/
 COPY src/ src/
 COPY code-graph/ code-graph/
-COPY patches/ patches/
+COPY codegraph-types/ codegraph-types/
+COPY crates/ crates/
+COPY vendor/maloca-core/ vendor/maloca-core/
 COPY panel-ui/src-tauri/ panel-ui/src-tauri/
 
 # Build headless xavier binary with no default features or specified FEATURES
@@ -51,19 +55,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create data directory
-RUN mkdir -p /data
+# Create data directory and drop root (see Dockerfile for rationale).
+RUN useradd --create-home --shell /usr/sbin/nologin xavier \
+    && mkdir -p /data /app \
+    && chown -R xavier:xavier /data /app
 
 WORKDIR /app
 
 # Copy binary from builder stage
-COPY --from=builder /app/target/release/xavier /usr/local/bin/xavier
+COPY --from=builder --chown=xavier:xavier /app/target/release/xavier /usr/local/bin/xavier
 
 EXPOSE 8006
 
-# Healthcheck: verify the server is responding
+# Healthcheck against /ready (503 unless stores are actually ready).
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -fsS http://localhost:8006/health || exit 1
+    CMD curl -fsS http://localhost:8006/ready || exit 1
 
 ENV XAVIER_PORT=8006 \
     XAVIER_HOST=0.0.0.0 \
@@ -73,4 +79,5 @@ ENV XAVIER_PORT=8006 \
     XAVIER_WORKSPACE_ID=default
 
 # Run headless with --no-ui flag
+USER xavier
 CMD ["/usr/local/bin/xavier", "http", "--no-ui"]

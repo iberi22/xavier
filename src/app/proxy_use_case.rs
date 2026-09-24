@@ -181,6 +181,16 @@ impl ProxyUseCase {
 
         let mut request_builder = client.request(method, &req.url);
 
+        // 0. Egress policy: validate destination before attaching any
+        // secret. Blocks metadata endpoints, link-local/multicast and
+        // non-HTTP(S) schemes; optional allowlist via XAVIER_ALLOWED_DOMAINS.
+        // Loopback stays allowed for legitimate local providers (Ollama).
+        if let Err(reason) = crate::security::url_validator::validate_internal_url(&req.url) {
+            return Err(ProxyError::InvalidRequest(format!(
+                "URL blocked by egress policy: {reason}"
+            )));
+        }
+
         // 1. Leak Detection: Scan request for any known API keys
         let mut combined_content = req.url.clone();
         for (k, v) in &req.headers {

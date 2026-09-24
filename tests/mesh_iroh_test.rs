@@ -8,10 +8,14 @@ use std::sync::Arc;
 use xavier::mesh::iroh_transport::IrohTransport;
 use xavier::mesh::node::NodeIdentity;
 
+fn test_store() -> std::sync::Arc<dyn xavier::memory::MemoryStore> {
+    std::sync::Arc::new(xavier::memory::store::InMemoryMemoryStore::default())
+}
+
 #[tokio::test]
 async fn test_spawn_accept_loop_returns_join_handle() {
     let identity = Arc::new(NodeIdentity::generate());
-    let transport = IrohTransport::new(identity);
+    let transport = IrohTransport::new(identity, test_store());
 
     let handle = transport.spawn_accept_loop().await;
     // The task handle is running in background. Abort it to clean up.
@@ -22,7 +26,7 @@ async fn test_spawn_accept_loop_returns_join_handle() {
 #[tokio::test]
 async fn test_iroh_accept_loop_handshake_flow() {
     let identity_a = Arc::new(NodeIdentity::generate());
-    let transport_a = IrohTransport::new(identity_a.clone());
+    let transport_a = IrohTransport::new(identity_a.clone(), test_store());
 
     let handle_a = transport_a.spawn_accept_loop().await;
     let addr_a = transport_a
@@ -31,7 +35,7 @@ async fn test_iroh_accept_loop_handshake_flow() {
         .expect("Failed to get Node A addr");
 
     let identity_b = Arc::new(NodeIdentity::generate());
-    let transport_b = IrohTransport::new(identity_b);
+    let transport_b = IrohTransport::new(identity_b, test_store());
 
     let resp = transport_b
         .handshake(&addr_a, "test-token", None)

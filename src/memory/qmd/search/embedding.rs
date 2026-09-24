@@ -251,12 +251,39 @@ async fn query_with_embedding_filtered_inner(
                 _ => Vec::new(),
             };
             if !expanded_vector.is_empty() {
-                let res = query_filtered(memory, &expanded_query, expanded_vector, limit, filters)
-                    .await
-                    .map(|docs| EmbeddingSearchResult {
-                        documents: docs,
-                        degraded: false,
-                    });
+                // Merge, don't replace: the expanded query widens recall, but
+                // the original query's ranking (exact/unique-token matches)
+                // keeps priority. Pure replacement buried exact matches below
+                // take(limit) whenever expansion terms matched other docs.
+                let base = query_filtered(
+                    memory,
+                    &processed_query,
+                    query_vector.clone(),
+                    limit,
+                    filters,
+                )
+                .await
+                .unwrap_or_default();
+                let mut seen: std::collections::HashSet<String> = base
+                    .iter()
+                    .map(|d| d.id.clone().unwrap_or_else(|| format!("path:{}", d.path)))
+                    .collect();
+                let mut merged = base;
+                if let Ok(expanded_docs) =
+                    query_filtered(memory, &expanded_query, expanded_vector, limit, filters).await
+                {
+                    for d in expanded_docs {
+                        let key = d.id.clone().unwrap_or_else(|| format!("path:{}", d.path));
+                        if seen.insert(key) {
+                            merged.push(d);
+                        }
+                    }
+                }
+                merged.truncate(limit);
+                let res = Ok(EmbeddingSearchResult {
+                    documents: merged,
+                    degraded: false,
+                });
                 tracing::info!(
                     total_ms = total_start.elapsed().as_millis(),
                     stage1_ms = stage1_duration.as_millis(),
@@ -526,6 +553,103 @@ mod tests {
         assert!(
             !result.documents.is_empty(),
             "search should return cached/BM25 documents on fallback"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_fresh_doc_without_embedding_found_lexically() {
+        // WS1 regression: a freshly written doc whose embedding is still
+        // pending (empty vector, e.g. provider hiccup at write time) must
+        // remain retrievable through the lexical fallback path.
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        for key in [
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBED_PROVIDER",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_URL",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_OLLAMA_MODEL",
+            "XAVIER_OLLAMA_URL",
+            "XAVIER_OLLAMA_DIMS",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_API_KEY",
+        ] {
+            std::env::remove_var(key);
+        }
+
+        let mut pending = test_doc("notes/fresh-ws1", "ws1marker fresh document vector pending");
+        pending.embedding = Vec::new();
+        let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(vec![pending])));
+
+        // Zero fallback budget forces the query-vector timeout deterministically,
+        // regardless of whether a provider is reachable in this environment.
+        std::env::set_var("XAVIER_EMBEDDING_FALLBACK_BUDGET_MS", "0");
+
+        let result = query_with_embedding_filtered(&memory, "ws1marker", 5, None)
+            .await
+            .expect("search must not fail");
+        assert!(
+            result.degraded,
+            "query embedding is unavailable, result must be marked degraded"
+        );
+        assert!(
+            result.documents.iter().any(|d| d.path == "notes/fresh-ws1"),
+            "fresh vector-pending doc must be found lexically"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_expansion_merge_keeps_exact_match() {
+        // Regression: stage-4 expansion used to REPLACE results, burying
+        // unique-token docs below take(limit). The merged path keeps the
+        // original query ranking first and appends expansion-only docs.
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        for key in [
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBED_PROVIDER",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_URL",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_OLLAMA_MODEL",
+            "XAVIER_OLLAMA_URL",
+            "XAVIER_OLLAMA_DIMS",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_API_KEY",
+        ] {
+            std::env::remove_var(key);
+        }
+        let base = run_slow_embed_server("___never_matches___", 0).await;
+        std::env::set_var("XAVIER_OLLAMA_URL", format!("{base}/api/embed"));
+        std::env::set_var("XAVIER_OLLAMA_MODEL", "test-embed");
+        std::env::set_var("XAVIER_OLLAMA_DIMS", TEST_DIM.to_string());
+        std::env::set_var("_XAVIER_TEST_OLLAMA_PROBE_URL", format!("{base}/v1/models"));
+
+        let docs = vec![
+            test_doc("notes/fresh", "zzmergeprobe isolation probe"),
+            test_doc(
+                "notes/other-a",
+                "alpha cluster registration workflow ledger",
+            ),
+            test_doc("notes/other-b", "alpha cluster registration workflow index"),
+        ];
+        let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(docs)));
+
+        let result = query_with_embedding_filtered(&memory, "zzmergeprobe", 2, None)
+            .await
+            .expect("search must not fail");
+        std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+        assert!(
+            result.documents.iter().any(|d| d.path == "notes/fresh"),
+            "exact-match doc must survive expansion merge"
+        );
+        assert_eq!(
+            result.documents.first().map(|d| d.path.as_str()),
+            Some("notes/fresh"),
+            "original-query ranking keeps priority over expansion"
         );
     }
 }

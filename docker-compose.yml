@@ -55,7 +55,7 @@ services:
     networks:
       - xavier_network
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8006/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8006/ready"]
       interval: 30s
       timeout: 10s
       retries: 3

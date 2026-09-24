@@ -23,10 +23,19 @@ panel-ui/dist
 
 # SQLite caches & database files
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
+*.sqlite-shm
+*.sqlite3-shm
+*.sqlite3-wal
 .xavier
+
+# Secrets: never let .env files into the build context / image layers
+.env
+.env.*
 
 # Test & benchmark results (not needed in container)
 tests

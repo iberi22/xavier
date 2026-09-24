@@ -1387,11 +1387,13 @@ mod tests {
             "Fixture stats: files={}, symbols={}, edges={}",
             stats.total_files, stats.total_symbols, edges_count
         );
-        // Baseline counts for code-graph/src fixture (measured 2026-09-18,
-        // post O4 parity+rewire + apply_paths fast-path)
+        // Baseline counts for code-graph/src fixture (measured 2026-09-22,
+        // post sidecar-probe: incompatible PATH sidecars are rejected at
+        // registration, so this is the pure-native output for the current
+        // tree; re-measure if parsers or fixture sources change)
         assert_eq!(stats.total_files, 35, "file count mismatch");
-        assert_eq!(stats.total_symbols, 2480, "symbol count mismatch");
-        assert_eq!(edges_count, 13750, "edge count mismatch");
+        assert_eq!(stats.total_symbols, 2498, "symbol count mismatch");
+        assert_eq!(edges_count, 13880, "edge count mismatch");
     }
 
     #[tokio::test]

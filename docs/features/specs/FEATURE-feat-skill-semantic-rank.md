@@ -1,6 +1,6 @@
 # FEATURE: Semantic Skill Ranking via Local Embeddings
 
-**Status:** `planned` | **Score:** — | **Last Tested:** —
+**Status:** `implemented` (Implemented 2026-09-21 (registry cosine rank + eval harness)) | **Score:** Recall@3 0.950 / MRR 0.950 (20-query offline eval) | **Last Tested:** 2026-09-21
 
 ## Overview
 Skill matching today is `score_skill_match` (`src/context/skill_registry.rs:200-235`): keyword substring counting, no semantics. This feature ranks by cosine similarity over locally computed embeddings (existing `EmbeddingPort`, `src/memory/embedder.rs`, `sqlite-vec` store from `feat-unified-storage`), keeping the keyword score as tiebreak and emitting a calibrated 0–1 confidence consumed by fusion (#304) and MCP (#305). 100% offline: no cloud calls anywhere in the ranking path.

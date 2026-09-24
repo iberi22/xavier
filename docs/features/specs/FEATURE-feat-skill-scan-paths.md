@@ -1,6 +1,6 @@
 # FEATURE: Skill Registry Scans Canonical Store
 
-**Status:** `planned` | **Score:** — | **Last Tested:** —
+**Status:** `implemented` (Implemented 2026-09-21 (merged 770d0f46 + wave-10 verification)) | **Score:** context::skill_registry 12 pass | **Last Tested:** 2026-09-21
 
 ## Overview
 `SkillRegistry` (`src/context/skill_registry.rs`, 345 lines) indexes skill files for dispatch, but `with_defaults` (lines 68-74) only scans `workspace_root/skills` + `workspace_root/.agents/skills`. The canonical 349-skill store at `~/.hermes/skills` is never indexed, so live `GET /skills` returns `count: 0` and every dispatch resolves `_none` (verified 2026-09-20). This feature adds the canonical path with cycle-safe traversal and Hermes `skills.disabled` respect.

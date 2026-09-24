@@ -92,3 +92,29 @@ fn test_srs_req_044_present_and_verifiable() {
         "REQ-044 section should describe panel browser compatibility"
     );
 }
+
+#[test]
+fn test_documentation_site_content_verified() {
+    let config = Path::new("docs/site/astro.config.mjs");
+    assert!(config.exists(), "docs site Astro config should exist");
+    let content = fs::read_to_string(config).expect("failed to read Astro config");
+    assert!(
+        content.contains("starlight"),
+        "docs site should be built on Starlight"
+    );
+}
+
+#[test]
+fn test_src_reference_and_config_verified() {
+    let src_path = Path::new("docs/SRC.md");
+    assert!(src_path.exists(), "docs/SRC.md should exist");
+    let content = fs::read_to_string(src_path).expect("failed to read SRC.md");
+    assert!(
+        content.contains("# SRC"),
+        "SRC.md should carry the SRC header"
+    );
+    assert!(
+        content.lines().count() >= 100,
+        "SRC.md should be a substantive reference"
+    );
+}

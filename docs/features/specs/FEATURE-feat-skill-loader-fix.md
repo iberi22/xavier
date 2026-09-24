@@ -1,6 +1,6 @@
 # FEATURE: SkillLoader Frontmatter Validation or Removal
 
-**Status:** `planned` | **Score:** — | **Last Tested:** —
+**Status:** `implemented` (Implemented 2026-09-21 (kept: executor depends on Skill; format test)) | **Score:** context::skills 3 pass | **Last Tested:** 2026-09-21
 
 ## Overview
 `SkillLoader` (`src/context/skills.rs`, 100 lines) gates loading on `"# Purpose"` / `"## Purpose"` markers (`validate_skill`, lines 60-64). Real `SKILL.md` files use YAML frontmatter (`name:`/`description:`); a 2026-09-20 probe over the 349-skill store found zero markers — effective load count 0 — and no production callers exist. This feature forces the decision: fix the validator to the real format or delete the module and migrate coverage to the registry.
