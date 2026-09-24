@@ -107,3 +107,6 @@ data/*.sqlite3-wal
 # Generated docs (regenerable locally via chronicle / src-generator)
 docs/auto-docs/
 docs/source/
+
+# SvelteKit build output (any package)
+.svelte-kit/
