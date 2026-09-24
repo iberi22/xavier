@@ -165,7 +165,10 @@ where
 /// `/auth/register` es publico: sin validacion acepta cualquier cadena como correo o contrasena, y
 /// basta un cliente roto (o malintencionado) para llenar el servicio de cuentas basura. Se valida
 /// aqui, antes de crear nada, y se responde 400 con el motivo en vez de un error opaco.
-fn validate_registration(
+///
+/// `pub` a proposito: la CLI (`xavier users create`) reutiliza esta misma funcion en vez de
+/// duplicar la politica de validacion.
+pub fn validate_registration(
     email: &str,
     password: &str,
     name: &str,
@@ -217,6 +220,77 @@ fn validate_registration(
         ));
     }
     Ok(())
+}
+
+/// Cuenta nueva ya lista para persistir, junto con la frase de recuperacion en claro
+/// (se muestra al llamante UNA sola vez; nunca se guarda sin hashear).
+#[derive(Debug)]
+pub struct NewAccount {
+    pub user: User,
+    pub seed_phrase: String,
+}
+
+/// Construye una cuenta local nueva: valida politica de alta, hashea la contrasena con
+/// Argon2id y genera + hashea la semilla de recuperacion BIP39 de 24 palabras en espanol —
+/// exactamente la misma logica que usaba `register_handler` inline.
+///
+/// No toca la base de datos: el llamante decide el chequeo de unicidad de correo y hace
+/// `AuthDb::create_user`. Compartida por `POST /auth/register` y `xavier users create` para
+/// que ambos caminos produzcan cuentas identicas (mismo hashing, misma politica).
+pub fn new_account(
+    email: &str,
+    password: &str,
+    name: &str,
+    role: &str,
+) -> Result<NewAccount, (&'static str, String)> {
+    validate_registration(email, password, name)?;
+
+    // El correo se normaliza (sin espacios y en minusculas): si no, "Ana@x.com" y "ana@x.com"
+    // conviven como dos cuentas distintas.
+    let email = email.trim().to_ascii_lowercase();
+
+    let password_hash = hash_password(password).map_err(|_| {
+        (
+            "hash_error",
+            "no se pudo procesar la contrasena".to_string(),
+        )
+    })?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    // Semilla de recuperacion (24 palabras en espanol)
+    let seed_phrase_str = bip39::Mnemonic::generate_in(bip39::Language::Spanish, 24)
+        .map(|m| m.to_string())
+        .map_err(|_| {
+            (
+                "recovery_error",
+                "no se pudo generar la recuperacion".to_string(),
+            )
+        })?;
+
+    // Recovery seed stored as salted Argon2id hash (never the raw phrase).
+    let seed_hash = RecoverySystem::hash_seed_phrase(&seed_phrase_str);
+
+    let user = User {
+        id: ulid::Ulid::new().to_string(),
+        email,
+        password_hash,
+        name: name.trim().to_string(),
+        role: role.to_string(),
+        totp_secret: None,
+        totp_enabled: false,
+        recovery_seed_hash: Some(seed_hash),
+        backup_codes: None,
+        created_at: now,
+        updated_at: now,
+    };
+
+    Ok(NewAccount {
+        user,
+        seed_phrase: seed_phrase_str,
+    })
 }
 
 async fn register_handler<S>(
@@ -276,47 +350,17 @@ where
         }
     }
 
-    let password_hash = match hash_password(&payload.password) {
-        Ok(h) => h,
-        Err(_) => {
+    let account = match new_account(&payload.email, &payload.password, &payload.name, "user") {
+        Ok(a) => a,
+        Err((codigo, motivo)) => {
             return json_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({ "error": "no se pudo procesar la contrasena" }),
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": codigo, "message": motivo }),
             )
         }
     };
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-
-    // Semilla de recuperacion (24 palabras en espanol)
-    let seed_phrase_str = match bip39::Mnemonic::generate_in(bip39::Language::Spanish, 24) {
-        Ok(m) => m.to_string(),
-        Err(_) => {
-            return json_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({ "error": "no se pudo generar la recuperacion" }),
-            )
-        }
-    };
-
-    // Recovery seed stored as salted Argon2id hash (never the raw phrase).
-    let seed_hash = RecoverySystem::hash_seed_phrase(&seed_phrase_str);
-
-    let user = User {
-        id: ulid::Ulid::new().to_string(),
-        email,
-        password_hash,
-        name: payload.name.trim().to_string(),
-        role: "user".to_string(),
-        totp_secret: None,
-        totp_enabled: false,
-        recovery_seed_hash: Some(seed_hash),
-        backup_codes: None,
-        created_at: now,
-        updated_at: now,
-    };
+    let user = account.user;
+    let seed_phrase_str = account.seed_phrase;
 
     if auth_db.create_user(&user).is_err() {
         return json_err(
@@ -325,6 +369,10 @@ where
         );
     }
 
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
     auth_db
         .log_audit(&AuditLog {
             id: ulid::Ulid::new().to_string(),
@@ -424,29 +472,14 @@ where
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // TOTP check if enabled
+    // TOTP check if enabled (shared with /auth/2fa/verify and the CLI: see `verify_totp_code`).
     let requires_2fa = user.totp_enabled;
     if user.totp_enabled {
         let code = payload.totp_code.ok_or(StatusCode::UNAUTHORIZED)?;
         if let Some(ref secret) = user.totp_secret {
-            let secret = Secret::try_from_base32(secret.as_str())
+            let ok = verify_totp_code(secret, &user.email, &code)
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            let totp = Builder::new()
-                .with_algorithm(TOTPAlgorithm::SHA1)
-                .with_digits(6)
-                .with_skew(1)
-                .with_step_duration(30)
-                .with_secret(secret)
-                .with_account_name(user.email.clone())
-                .with_issuer(Some("Xavier".to_string()))
-                .build()
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            let time = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                / 30;
-            if totp.check(&code, time).is_none() {
+            if !ok {
                 return Err(StatusCode::UNAUTHORIZED);
             }
         }
@@ -585,6 +618,124 @@ where
     Ok(StatusCode::OK)
 }
 
+/// Construye el validador TOTP de una cuenta: SHA1, 6 digitos, paso de 30s, ventana ±1 (skew),
+/// emisor "Xavier" — compatible con Google Authenticator y Microsoft Authenticator.
+///
+/// `pub` a proposito: es el UNICO lugar donde se arma el `Totp`; lo comparten
+/// `/auth/2fa/setup`, `/auth/2fa/verify`, `/auth/login` y la CLI (`xavier users
+/// totp-enroll|totp-disable`) para que los tres verifiquen codigos identicamente.
+pub fn build_totp(secret_base32: &str, email: &str) -> Result<Totp> {
+    let secret = Secret::try_from_base32(secret_base32)
+        .map_err(|e| anyhow::anyhow!("secreto TOTP invalido: {e}"))?;
+    Builder::new()
+        .with_algorithm(TOTPAlgorithm::SHA1)
+        .with_digits(6)
+        .with_skew(1)
+        .with_step_duration(30)
+        .with_secret(secret)
+        .with_account_name(email.to_string())
+        .with_issuer(Some("Xavier".to_string()))
+        .build()
+        .map_err(|e| anyhow::anyhow!("no se pudo construir el validador TOTP: {e}"))
+}
+
+/// Un enrolamiento TOTP recien generado, aun NO persistido ni confirmado.
+#[derive(Debug)]
+pub struct TotpEnrollment {
+    pub secret_base32: String,
+    pub otpauth_url: String,
+    /// Arte QR renderizado en Unicode (imprimible tal cual en terminal), NO un PNG/SVG.
+    pub qr_unicode: String,
+}
+
+/// Genera un secreto TOTP nuevo + su URL `otpauth://` + QR Unicode, SIN tocar la base de
+/// datos — comparte la misma logica que usaba `setup_2fa_handler` inline. El llamante decide
+/// cuando (y si) persistir el secreto: la CLI solo lo hace despues de confirmar un codigo.
+pub fn generate_totp_enrollment(email: &str) -> Result<TotpEnrollment> {
+    // Generate TOTP secret (gen_secret auto-generates inside build)
+    let totp = Builder::new()
+        .with_algorithm(TOTPAlgorithm::SHA1)
+        .with_digits(6)
+        .with_skew(1)
+        .with_step_duration(30)
+        .with_account_name(email.to_string())
+        .with_issuer(Some("Xavier".to_string()))
+        .build()
+        .map_err(|e| anyhow::anyhow!("no se pudo generar el secreto TOTP: {e}"))?;
+    let secret_base32 = totp.secret().to_base32();
+    let otpauth_url = totp
+        .to_url()
+        .map_err(|e| anyhow::anyhow!("no se pudo generar la URL otpauth: {e}"))?;
+
+    // Generate QR code as Unicode (no need for SVG render feature)
+    let qr = QrCode::new(otpauth_url.as_bytes())
+        .map_err(|e| anyhow::anyhow!("no se pudo generar el QR: {e}"))?;
+    let qr_unicode = qr
+        .render::<unicode::Dense1x2>()
+        .dark_color(unicode::Dense1x2::Light)
+        .light_color(unicode::Dense1x2::Dark)
+        .build();
+
+    Ok(TotpEnrollment {
+        secret_base32,
+        otpauth_url,
+        qr_unicode,
+    })
+}
+
+/// Genera 10 codigos de respaldo (8 digitos) junto con su hash Argon2id — comparte la misma
+/// logica que usaba `setup_2fa_handler` inline. Devuelve `(codigos_en_claro, codigos_hasheados)`;
+/// el llamante muestra los primeros UNA vez y persiste solo los segundos.
+pub fn generate_backup_codes_with_hashes() -> (Vec<String>, Vec<String>) {
+    let mut backup_codes = Vec::with_capacity(10);
+    let mut hashed_codes = Vec::with_capacity(10);
+    for _ in 0..10 {
+        use rand::Rng;
+        let code: u32 = rand::thread_rng().gen_range(10000000..99999999);
+        let code_str = code.to_string();
+        // Salted Argon2id: 8-digit codes (~27 bits) must not use fast hashes.
+        let hash = RecoverySystem::hash_backup_code(&code_str);
+        backup_codes.push(code_str);
+        hashed_codes.push(hash);
+    }
+    (backup_codes, hashed_codes)
+}
+
+/// Verifica un codigo TOTP de 6 digitos contra el secreto de una cuenta, en un instante
+/// arbitrario (segundos UNIX crudos, SIN dividir por el paso: `Totp::check` ya lo hace).
+/// Separada de [`verify_totp_code`] para que los tests puedan fijar el reloj.
+pub fn verify_totp_code_at(
+    secret_base32: &str,
+    email: &str,
+    code: &str,
+    unix_time_secs: u64,
+) -> Result<bool> {
+    let totp = build_totp(secret_base32, email)?;
+    Ok(totp.check(code, unix_time_secs).is_some())
+}
+
+/// Verifica un codigo TOTP de 6 digitos contra el secreto de una cuenta, al instante actual.
+/// Compartida por `/auth/2fa/verify`, `/auth/login` y `xavier users totp-enroll|totp-disable`.
+pub fn verify_totp_code(secret_base32: &str, email: &str, code: &str) -> Result<bool> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    verify_totp_code_at(secret_base32, email, code, now)
+}
+
+/// Verifica un codigo de respaldo contra el conjunto (hasheado, JSON) almacenado de una
+/// cuenta y, si coincide, lo CONSUME (uso unico): devuelve el JSON restante a persistir.
+/// `None` si el codigo no coincide con ninguno — el llamante no debe persistir nada.
+pub fn consume_backup_code(backup_codes_json: &str, code: &str) -> Option<String> {
+    let mut hashes: Vec<String> = serde_json::from_str(backup_codes_json).ok()?;
+    let pos = hashes
+        .iter()
+        .position(|h| RecoverySystem::verify_backup_code(code, h))?;
+    hashes.remove(pos);
+    serde_json::to_string(&hashes).ok()
+}
+
 async fn setup_2fa_handler<S>(
     State(state): State<S>,
     axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
@@ -612,43 +763,15 @@ where
         .next()
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Generate TOTP secret (gen_secret auto-generates inside build)
-    let totp = Builder::new()
-        .with_algorithm(TOTPAlgorithm::SHA1)
-        .with_digits(6)
-        .with_skew(1)
-        .with_step_duration(30)
-        .with_account_name(user.email.clone())
-        .with_issuer(Some("Xavier".to_string()))
-        .build()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let secret_encoded = totp.secret().to_base32();
+    // Generate TOTP secret + otpauth URL + Unicode QR (shared with the CLI: see
+    // `generate_totp_enrollment`).
+    let enrollment =
+        generate_totp_enrollment(&user.email).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let secret_encoded = enrollment.secret_base32;
+    let qr_unicode = enrollment.qr_unicode;
 
-    // Generate otpauth URL
-    let otpauth_url = totp
-        .to_url()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Generate QR code as Unicode (no need for SVG render feature)
-    let qr = QrCode::new(otpauth_url.as_bytes()).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let qr_unicode = qr
-        .render::<unicode::Dense1x2>()
-        .dark_color(unicode::Dense1x2::Light)
-        .light_color(unicode::Dense1x2::Dark)
-        .build();
-
-    // Generate backup codes (10 codes)
-    let mut backup_codes = Vec::new();
-    let mut hashed_codes = Vec::new();
-    for _ in 0..10 {
-        use rand::Rng;
-        let code: u32 = rand::thread_rng().gen_range(10000000..99999999);
-        let code_str = code.to_string();
-        // Salted Argon2id: 8-digit codes (~27 bits) must not use fast hashes.
-        let hash = RecoverySystem::hash_backup_code(&code_str);
-        backup_codes.push(code_str);
-        hashed_codes.push(hash);
-    }
+    // Generate backup codes (10 codes, shared with the CLI: see `generate_backup_codes_with_hashes`).
+    let (backup_codes, hashed_codes) = generate_backup_codes_with_hashes();
 
     // Store secret + backup codes in DB
     auth_db
@@ -712,26 +835,9 @@ where
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let secret_b32 = user.totp_secret.as_ref().ok_or(StatusCode::BAD_REQUEST)?;
-    let secret = Secret::try_from_base32(secret_b32.as_str())
+    let ok = verify_totp_code(secret_b32, &user.email, &payload.code)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let totp = Builder::new()
-        .with_algorithm(TOTPAlgorithm::SHA1)
-        .with_digits(6)
-        .with_skew(1)
-        .with_step_duration(30)
-        .with_secret(secret)
-        .with_account_name(user.email.clone())
-        .with_issuer(Some("Xavier".to_string()))
-        .build()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        / 30;
-    if totp.check(&payload.code, time).is_none() {
+    if !ok {
         return Err(StatusCode::UNAUTHORIZED);
     }
 
