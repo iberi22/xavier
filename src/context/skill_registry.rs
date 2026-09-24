@@ -1008,3 +1008,163 @@ Instructions here.
         assert_eq!(registry.vector_count(), 1);
     }
 }
+
+#[cfg(test)]
+mod eval_tests_302 {
+    use super::infer_domains;
+    use super::SkillRegistry;
+    use crate::context::skill_registry::IndexedSkill;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    const EVAL_DIM: usize = 64;
+
+    /// Deterministic hashed bag-of-words embedder (offline, zero I/O).
+    /// Fixed hasher keys make vectors stable across runs of one binary.
+    fn hashed_bow(text: &str) -> Vec<f32> {
+        let mut vec = vec![0.0_f32; EVAL_DIM];
+        for word in text
+            .to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.len() >= 3)
+        {
+            let mut hasher = DefaultHasher::new();
+            word.hash(&mut hasher);
+            vec[(hasher.finish() % EVAL_DIM as u64) as usize] += 1.0;
+        }
+        let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for x in vec.iter_mut() {
+                *x /= norm;
+            }
+        }
+        vec
+    }
+
+    struct BowEmbedder;
+
+    #[async_trait::async_trait]
+    impl crate::embedding::Embedder for BowEmbedder {
+        async fn encode(&self, text: &str) -> Result<Vec<f32>, crate::embedding::EmbeddingError> {
+            Ok(hashed_bow(text))
+        }
+
+        fn dimension(&self) -> usize {
+            EVAL_DIM
+        }
+    }
+
+    fn eval_registry() -> SkillRegistry {
+        let skills = [
+            (
+                "git-pr-reviewer",
+                "Verify GitHub pull requests with evidence and inline comments",
+            ),
+            (
+                "rust-tester",
+                "Run cargo test suites for Rust code and report failures",
+            ),
+            (
+                "deploy-publisher",
+                "Publish releases to production hosting with rollback support",
+            ),
+            (
+                "sql-migrator",
+                "Write PostgreSQL schema migrations with downtime safety",
+            ),
+            (
+                "incident-triage",
+                "Triage production alerts and page the on-call engineer",
+            ),
+            (
+                "doc-writer",
+                "Write user documentation and API reference guides",
+            ),
+            (
+                "perf-profiler",
+                "Profile CPU hotspots and optimize latency bottlenecks",
+            ),
+            (
+                "secret-rotator",
+                "Rotate API keys and database credentials safely",
+            ),
+            (
+                "chatbot-greeter",
+                "Greet new users and answer onboarding questions",
+            ),
+            (
+                "log-archiver",
+                "Archive old log files to cold storage buckets",
+            ),
+        ];
+        let mut registry = SkillRegistry::new(vec![]);
+        for (name, desc) in skills {
+            let text = super::skill_embed_text(name, desc);
+            registry.skills.insert(
+                name.to_string(),
+                IndexedSkill {
+                    name: name.to_string(),
+                    description: desc.to_string(),
+                    domains: infer_domains(desc, desc),
+                    content_hash: format!("eval-{name}"),
+                    token_cost: 100,
+                    content: format!("# {name}\n{desc}"),
+                    source_path: format!("eval/{name}"),
+                    embedding: Some(hashed_bow(&text)),
+                },
+            );
+        }
+        registry
+    }
+
+    /// Labeled eval set: (query, expected skill). Paraphrases share content
+    /// vocabulary with the target description (honest keyword-adjacent eval).
+    fn labeled_queries() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("review my pull request", "git-pr-reviewer"),
+            ("check pull request evidence", "git-pr-reviewer"),
+            ("run cargo tests", "rust-tester"),
+            ("rust test failures", "rust-tester"),
+            ("publish release production", "deploy-publisher"),
+            ("production rollback release", "deploy-publisher"),
+            ("postgres schema migration", "sql-migrator"),
+            ("database migration downtime", "sql-migrator"),
+            ("triage production alerts", "incident-triage"),
+            ("page on-call engineer", "incident-triage"),
+            ("write API documentation", "doc-writer"),
+            ("user guides reference", "doc-writer"),
+            ("profile CPU latency", "perf-profiler"),
+            ("optimize hotspots bottlenecks", "perf-profiler"),
+            ("rotate API keys", "secret-rotator"),
+            ("database credentials rotation", "secret-rotator"),
+            ("greet new users", "chatbot-greeter"),
+            ("onboarding questions help", "chatbot-greeter"),
+            ("archive log files", "log-archiver"),
+            ("cold storage logs", "log-archiver"),
+        ]
+    }
+
+    #[test]
+    fn test_semantic_rank_recall_at_3() {
+        let registry = eval_registry();
+        let queries = labeled_queries();
+        assert!(queries.len() >= 20, "eval set must hold >= 20 queries");
+        let mut hits_at_3 = 0usize;
+        let mut reciprocal_sum = 0.0_f32;
+        for (query, expected) in &queries {
+            let qv = hashed_bow(query);
+            let ranked = registry.search_with_vector(query, &qv, 3);
+            if let Some(rank) = ranked.iter().position(|(_, s)| s.name == *expected) {
+                hits_at_3 += 1;
+                reciprocal_sum += 1.0 / (rank as f32 + 1.0);
+            }
+        }
+        let recall_at_3 = hits_at_3 as f32 / queries.len() as f32;
+        let mrr = reciprocal_sum / queries.len() as f32;
+        println!("skill-ranking eval: Recall@3={recall_at_3:.3} MRR={mrr:.3}");
+        assert!(
+            recall_at_3 >= 0.8,
+            "Recall@3 {recall_at_3:.3} below 0.8 threshold"
+        );
+    }
+}

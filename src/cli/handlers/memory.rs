@@ -1,7 +1,7 @@
 //! Memory handlers for search, addition, deletion, and management of memories.
 
 use axum::{
-    extract::{Query, State},
+    extract::{Extension, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -16,6 +16,7 @@ use crate::cli::security::secure_cli_input;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
 use xavier::memory::qmd_memory::MemoryDocument;
+use xavier::workspace::WorkspaceContext;
 
 use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
@@ -349,6 +350,7 @@ pub async fn search_handler(
 /// Add handler.
 pub async fn add_handler(
     State(state): State<CliState>,
+    workspace: Option<Extension<WorkspaceContext>>,
     axum::Json(payload): axum::Json<AddPayload>,
 ) -> impl axum::response::IntoResponse {
     let sec_result = state
@@ -490,7 +492,7 @@ pub async fn add_handler(
         workspace_id: state.workspace_id.clone(),
         path: path.clone(),
         content: effective_content.to_string(),
-        metadata: normalized_metadata,
+        metadata: normalized_metadata.clone(),
         embedding: vec![],
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
@@ -512,6 +514,41 @@ pub async fn add_handler(
     match state.memory.add(record).await {
         Ok(id) => {
             info!("Memory added successfully: {}", path);
+            // Bridge: the v1/MCP search reads the workspace vector memory
+            // (QmdMemory docs), not the record store above. Mirror the doc
+            // there (same id+path) so fresh writes are searchable immediately
+            // instead of only after a reboot's init-from-store. Background:
+            // never delays the write response. Skipped when the caller did
+            // not layer a workspace (direct unit-test routers): the record
+            // store write above already succeeded.
+            if let Some(Extension(workspace)) = workspace {
+                let mirror = workspace.workspace.memory.clone();
+                let (mirror_id, mirror_path, mirror_content, mirror_meta) = (
+                    id.clone(),
+                    path.clone(),
+                    effective_content.to_string(),
+                    normalized_metadata.clone(),
+                );
+                tokio::spawn(async move {
+                    let mut doc = MemoryDocument {
+                        id: Some(mirror_id.clone()),
+                        path: mirror_path,
+                        content: mirror_content,
+                        metadata: mirror_meta,
+                        ..Default::default()
+                    };
+                    if let Ok(vector) =
+                        xavier::memory::qmd_memory::reader::generate_embedding(&doc.content).await
+                    {
+                        if !vector.is_empty() {
+                            doc.embedding = vector;
+                        }
+                    }
+                    if let Err(error) = mirror.add(doc).await {
+                        tracing::warn!(error = %error, memory_id = %mirror_id, "qmd mirror failed");
+                    }
+                });
+            }
             axum::Json(serde_json::json!({
                 "status": "ok",
                 "message": "Memory added",

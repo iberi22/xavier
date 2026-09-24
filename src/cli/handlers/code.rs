@@ -477,8 +477,13 @@ pub async fn code_scan_handler(
         }));
     }
 
-    let workspace_root =
-        std::path::absolute(&state.workspace_dir).unwrap_or_else(|_| PathBuf::from("."));
+    // Resolve symlinks on both sides: `absolute` alone does not resolve
+    // `workspace/link -> /etc` style escapes, so `starts_with` must run on
+    // canonical paths. Unresolvable paths fall back to the absolute form
+    // (same strictness as before, no new bypass).
+    let workspace_root = std::path::absolute(&state.workspace_dir)
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .unwrap_or_else(|_| PathBuf::from("."));
     let Ok(abs_path) = std::path::absolute(&requested_path) else {
         return axum::Json(serde_json::json!({
             "status": "error",
@@ -486,7 +491,8 @@ pub async fn code_scan_handler(
             "indexed_files": 0,
         }));
     };
-    if !abs_path.starts_with(&workspace_root) {
+    let target = abs_path.canonicalize().unwrap_or_else(|_| abs_path.clone());
+    if !target.starts_with(&workspace_root) {
         warn!(
             "Path traversal blocked: {} is outside workspace root {}",
             abs_path.display(),

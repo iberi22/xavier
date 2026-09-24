@@ -478,6 +478,11 @@ impl QmdMemory {
         self.docs.read().await.clone()
     }
 
+    /// Live document count without cloning (diagnostics only).
+    pub async fn doc_count(&self) -> usize {
+        self.docs.read().await.len()
+    }
+
     /// Ls.
     pub async fn ls(&self, path_prefix: &str) -> Result<Vec<NavEntry>> {
         self.ensure_loaded().await?;

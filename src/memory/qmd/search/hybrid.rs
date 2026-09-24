@@ -285,6 +285,20 @@ pub async fn query_filtered(
     };
 
     if vector_results.is_empty() {
+        if keyword_results.is_empty() {
+            // Diagnostic: both stages missed. Log what the query looked like
+            // against the live index so empty-search reports are actionable
+            // (lexical miss vs vector miss vs over-filtering).
+            let indexed_docs = memory.docs.read().await.len();
+            tracing::debug!(
+                query = %query_text,
+                limit = limit,
+                indexed_docs = indexed_docs,
+                query_vector_empty = query_vector.is_empty(),
+                has_filters = filters.is_some(),
+                "hybrid search produced zero candidates"
+            );
+        }
         return Ok(keyword_results.into_iter().take(limit).collect());
     }
 

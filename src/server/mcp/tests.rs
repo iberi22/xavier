@@ -2163,3 +2163,121 @@ async fn codegraph_route_and_gods_mcp_tools_dispatch() {
         std::fs::remove_dir_all(&dir).ok();
     }
 }
+
+// --- feat-skill-mcp-tool (#305) ---
+
+/// Write a fixture skill in real store shape: `<root>/skills/<name>/SKILL.md`.
+fn write_fixture_skill(root: &std::path::Path, name: &str, description: &str) {
+    let dir = root.join("skills").join(name);
+    std::fs::create_dir_all(&dir).expect("fixture skill dir");
+    std::fs::write(
+        dir.join("SKILL.md"),
+        format!(
+            "---\nname: {name}\ndescription: \"{description}\"\n---\n\n# {name}\n\nFixture body.\n"
+        ),
+    )
+    .expect("fixture SKILL.md");
+}
+
+/// Run `f` with an isolated empty HOME (no real `~/.hermes/skills`).
+async fn with_isolated_home<F, Fut>(f: F)
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    let home = tempfile::tempdir().expect("temp HOME");
+    let prev = std::env::var_os("HOME");
+    std::env::set_var("HOME", home.path());
+    f().await;
+    match prev {
+        Some(v) => std::env::set_var("HOME", v),
+        None => std::env::remove_var("HOME"),
+    }
+}
+
+fn mcp_text_payload(out: &Value) -> Value {
+    let text = out["content"][0]["text"]
+        .as_str()
+        .expect("mcp text content");
+    serde_json::from_str(text).expect("tool payload is JSON")
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_mcp_dispatch_tool_roundtrip() {
+    with_isolated_home(|| async {
+        let work = tempfile::tempdir().expect("temp workspace");
+        write_fixture_skill(
+            work.path(),
+            "pr-reviewer",
+            "Verify GitHub pull requests with evidence",
+        );
+        let (state, mut workspace) = test_state().await;
+        workspace.workspace_id = work.path().to_string_lossy().into_owned();
+
+        let out = super::tools_context::handle_context_tool(
+            state,
+            workspace,
+            "xavier_dispatch_skill",
+            json!({"task": "review this pull request for evidence", "max_tokens": 2000}),
+        )
+        .await
+        .expect("dispatch must be fail-open, never throw");
+        let payload = mcp_text_payload(&out);
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["skill_name"], "pr-reviewer");
+        assert!(
+            payload["confidence"].as_f64().unwrap_or(0.0) > 0.0,
+            "expected positive confidence"
+        );
+        let total = payload["context_pack"]["total_tokens"]
+            .as_u64()
+            .expect("total_tokens present");
+        assert!(total <= 2000, "pack exceeds budget: {total}");
+    })
+    .await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_mcp_skill_list_announced() {
+    // 1. Both tools are announced in the MCP tool registry.
+    let tools = super::tools_context::get_xavier_context_tools();
+    assert!(
+        tools.iter().any(|t| t.name == "xavier_dispatch_skill"),
+        "dispatch tool must be listed"
+    );
+    assert!(
+        tools.iter().any(|t| t.name == "xavier_skill_list"),
+        "list tool must be listed"
+    );
+
+    // 2. Live count matches the fixture registry (same construction as REST).
+    with_isolated_home(|| async {
+        let work = tempfile::tempdir().expect("temp workspace");
+        write_fixture_skill(work.path(), "skill-a", "First fixture skill for listing");
+        write_fixture_skill(work.path(), "skill-b", "Second fixture skill for listing");
+        let (state, mut workspace) = test_state().await;
+        workspace.workspace_id = work.path().to_string_lossy().into_owned();
+
+        let out = super::tools_context::handle_context_tool(
+            state,
+            workspace,
+            "xavier_skill_list",
+            json!({}),
+        )
+        .await
+        .expect("list must never throw");
+        let payload = mcp_text_payload(&out);
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["count"], 2);
+        let names: Vec<&str> = payload["skills"]
+            .as_array()
+            .expect("skills array")
+            .iter()
+            .filter_map(|s| s["name"].as_str())
+            .collect();
+        assert!(names.contains(&"skill-a") && names.contains(&"skill-b"));
+    })
+    .await;
+}
