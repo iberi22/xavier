@@ -35,7 +35,7 @@ hits_name=$(printf '%s\n' "$files" | grep -E "$DOC_SCOPE" | grep -iE "$NAME_RE" 
 
 # 2. PII: rutas de máquina y emails personales (en repo público esto es fuga siempre).
 PII_RE='(/home/belal|C:\\\\Users\\\\belal|E:\\\\proyectosSWAL|/mnt/ssd-2tb|beri22@gmail\.com|belal@swal\.dev|@gmail\.com)'
-PII_ALLOW='^(\.gitcore/MANIFEST\.json|benches/results/|docs/archive/)'
+PII_ALLOW='^(\.gitcore/MANIFEST\.json|benches/results/)'
 hits_pii=$(printf '%s\n' "$files" | grep -E "$DOC_SCOPE" | grep -vE "$PII_ALLOW" \
   | grep -avE "$is_bin" | xargs -r grep -aInE "$PII_RE" 2>/dev/null || true)
 
@@ -47,7 +47,7 @@ hits_econ=$(printf '%s\n' "$files" | grep -E "$DOC_SCOPE" | grep -vE "$ECON_ALLO
 
 # 4. Secretos (chequeo barato; scripts/check-secrets.sh + gitleaks cubren el resto).
 SECRET_RE='(sk-or-v1-[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{32,}|ghp_[A-Za-z0-9]{20,}|sbp_[A-Za-z0-9]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
-SECRET_ALLOW='^(docs/reference/|docs/archive/|scripts/|src/security/|tests/|src/nodes/audit\.rs)'
+SECRET_ALLOW='^(docs/reference/|scripts/|src/security/|tests/|src/nodes/audit\.rs)'
 hits_secret=$(printf '%s\n' "$files" | grep -vE "$SECRET_ALLOW" | grep -avE "$is_bin" \
   | xargs -r grep -aInE "$SECRET_RE" 2>/dev/null || true)
 

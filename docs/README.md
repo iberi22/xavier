@@ -16,7 +16,7 @@ Welcome to the Xavier documentation!
 
 - [API Reference](../api/README.md) - HTTP API endpoints
 - [Architecture](../ARCHITECTURE/ARCHITECTURE.md) - System design
-- [Security](../SECURITY.md) - Security model and configuration
+- [Security](../.github/SECURITY.md) - Security model and configuration
 
 ## Planning
 
@@ -25,7 +25,7 @@ Welcome to the Xavier documentation!
 
 ## Contributing
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md) - How to contribute
+- [CONTRIBUTING.md](../.github/CONTRIBUTING.md) - How to contribute
 - [Issue Templates](../.github/ISSUE_TEMPLATE/) - Bug reports and feature requests
 
 ## Key Topics
@@ -33,7 +33,7 @@ Welcome to the Xavier documentation!
 | Topic | Description |
 |-------|-------------|
 | [Memory Types](../reference/README.md) | Semantic, episodic, procedural memory |
-| [Security](../SECURITY.md) | Prompt injection protection |
+| [Security](../.github/SECURITY.md) | Prompt injection protection |
 | [Benchmarks](../benchmark/BENCHMARK_COMPARISON.md) | Performance analysis |
 | [Docker](../DEPLOY/DOCKER_DEPLOY.md) | Container deployment |
 | [Advanced Settings](./advanced-settings.md) | PgHeart, Chronicle, and Agent configuration |

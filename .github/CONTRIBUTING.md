@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Xavier! This document provides gu
 
 Xavier is an open-source core application of the SWAL ecosystem.
 
-- **SWAL Goal & Vision**: Before contributing, please review our canonical vision in [SWAL Goal Document](.gitcore/docs/SWAL_GOAL.md).
+- **SWAL Goal & Vision**: Before contributing, please review our canonical vision in [SWAL Goal Document](../.gitcore/docs/SWAL_GOAL.md).
 - **Issue → PR → Merge Workflow (GitCore Protocol)**:
   1. Pick or create an issue describing the work item.
   2. Fork/branch from `main` using standard branch naming conventions.
@@ -229,4 +229,4 @@ Xavier uses a **hexagonal architecture** (ports & adapters):
 
 ## License & Legal
 
-By contributing to Xavier, you agree that your contributions will be licensed under the AGPL-3.0-only License (or applicable SWAL dual licensing model) as specified in [LICENSE](LICENSE) and [CLA.md](CLA.md). Enterprise features are subject to a separate Enterprise License.
+By contributing to Xavier, you agree that your contributions will be licensed under the AGPL-3.0-only License (or applicable SWAL dual licensing model) as specified in [LICENSE](../LICENSE) and [CLA.md](CLA.md). Enterprise features are subject to a separate Enterprise License.

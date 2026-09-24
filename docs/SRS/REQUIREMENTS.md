@@ -104,7 +104,7 @@ Agentic memory via Xavier HTTP (`:8006`) and/or MCP, outside business DB.
 - **Category:** Non-functional
 - **Priority:** High
 - **SRS Status:** `verified`
-- **Files:** `.gitignore`, `.env.example`, `SECURITY.md`, `src/crypto/`, `src/security/`
+- **Files:** `.gitignore`, `.env.example`, `.github/SECURITY.md`, `src/crypto/`, `src/security/`
 - **Features:** `feat-encryption-at-rest`, `feat-security-hygiene`
 
 ### Description

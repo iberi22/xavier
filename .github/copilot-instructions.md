@@ -20,7 +20,7 @@ Canonical reference: `E:\scripts-python\GitCore\.gitcore\STRUCTURE.md`
 
 ### ✅ Root — These BELONG at root (industry standard)
 - `AGENTS.md`, `SOUL.md`, `USER.md` — agent configs that AI agents expect at root
-- `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `LICENSE`, `SECURITY.md`
+- `README.md`, `CHANGELOG.md`, `LICENSE`; community files (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CLA.md`) live in `.github/`
 - `Cargo.toml`, `package.json`, `.gitignore`
 - `.github/`, `.cursor/`, `.claude/` — platform-specific config dirs
 
