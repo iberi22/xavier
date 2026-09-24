@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   (path = "../codegraph-types" / "../../../codegraph-types")
 # - vendor/maloca-core/: used by root crate (maloca-core path dep)
 COPY Cargo.toml Cargo.lock ./
+COPY LICENSE ./
 COPY benches/ benches/
 COPY src/ src/
 COPY code-graph/ code-graph/
