@@ -25,3 +25,7 @@
 **Vulnerability:** A previous patch applied `subtle::ConstantTimeEq` using `ct_eq` on token slices of differing lengths without manually checking the lengths first. In Rust's `subtle` crate, calling `ct_eq` on slices of differing lengths causes a panic, introducing a critical Denial of Service (DoS) vulnerability.
 **Learning:** Constant-time string comparisons on arbitrary length inputs are tricky. If standard functions panic on length mismatch, attackers can crash the server by supplying tokens of incorrect lengths.
 **Prevention:** Explicitly check lengths first. If lengths differ, perform a dummy constant-time calculation on the correct length token to normalize computation time without panicking.
+## 2026-09-14 - [Fix timing attack in memory module auth token comparison]
+**Vulnerability:** Found a timing attack vulnerability in `src/cli/handlers/memory.rs` and `src/memory/store.rs` where the `==` operator was used to compare authentication and session tokens.
+**Learning:** The `==` operator for strings in Rust performs a short-circuiting comparison, which leaks the matching prefix length and allows timing side-channel attacks against secrets. The codebase has an existing utility `xavier::server::http::api::constant_time_compare` that handles this correctly, but it was not being used everywhere.
+**Prevention:** Use `xavier::server::http::api::constant_time_compare` for all token, password, and secret comparisons. I replaced the insecure `==` checks in the memory handlers and memory store.
