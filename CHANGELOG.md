@@ -4,6 +4,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.14] — 2026-09-24 — Docker LICENSE fix release
+
+### Fixed
+- **Docker builder context** (#2529): COPY LICENSE into both builder stages (`include_str!` needs it at compile time). v0.2.13 tag ran the pre-fix image; full release (binaries + GHCR) publishes from this tag. No code changes.
+
 ## [0.2.13] — 2026-09-23 — Docker builder fix release
 
 ### Fixed
