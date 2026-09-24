@@ -953,6 +953,53 @@ pub enum UsersCommand {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Create the first (or a new) local account interactively, with no server running.
+    ///
+    /// Prompts for the password twice (hidden input), applies the same validation,
+    /// Argon2id hashing and 24-word Spanish BIP39 recovery phrase generation as
+    /// `POST /auth/register`. Prints the recovery phrase ONCE — write it down, it is
+    /// never shown again.
+    Create {
+        /// Account email (normalized to lowercase, must be unique)
+        #[arg(long)]
+        email: String,
+        /// Initial role: `user` (default) or `admin`
+        #[arg(long, default_value = "user")]
+        role: String,
+        /// Display name (defaults to the email if omitted)
+        #[arg(long)]
+        name: Option<String>,
+        /// Allow printing the one-time recovery phrase even when stdout is not a TTY
+        /// (e.g. piped/redirected). Off by default: secrets are never dumped to a
+        /// non-interactive stdout unless you explicitly opt in.
+        #[arg(long, default_value_t = false)]
+        i_understand_output_is_not_a_tty: bool,
+    },
+    /// Enroll TOTP 2FA for an existing account: prints a QR (Unicode, scannable from
+    /// the terminal) + the base32 secret, asks for a 6-digit code to confirm, then
+    /// shows the 10 one-time backup codes. Compatible with Google Authenticator and
+    /// Microsoft Authenticator (SHA1, 6 digits, 30s step, issuer "Xavier").
+    ///
+    /// Uses the exact same secret/QR generation and code verification as
+    /// `POST /auth/2fa/setup` + `POST /auth/2fa/verify` — no server required.
+    TotpEnroll {
+        /// Account email (case-insensitive, as in registration)
+        #[arg(long)]
+        email: String,
+        /// Allow printing the QR/secret/backup codes even when stdout is not a TTY.
+        #[arg(long, default_value_t = false)]
+        i_understand_output_is_not_a_tty: bool,
+    },
+    /// Disable TOTP 2FA for an account. Requires a valid current TOTP code OR an
+    /// unused backup code (consumed on use); refuses to disable otherwise.
+    TotpDisable {
+        /// Account email (case-insensitive, as in registration)
+        #[arg(long)]
+        email: String,
+        /// TOTP code or backup code. Prompted interactively (hidden) if omitted.
+        #[arg(long)]
+        code: Option<String>,
+    },
 }
 
 /// Vault management subcommands
