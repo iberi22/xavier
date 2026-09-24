@@ -21,9 +21,23 @@ use axum::Router;
 use std::sync::Arc;
 
 /// Constructs a unified Axum router aggregating all `/v1/maloca/*` endpoints.
+///
+/// `maloca_store`, when provided, is wired into the unified backlog service so
+/// `MalocaStore::backlog()`'s hand-curated items are folded into
+/// `/v1/maloca/backlog/*` alongside the scanned `.gitcore/features.json` items.
 pub fn v1_maloca_router(
     challenge_store: Option<Arc<HumanChallengeStore>>,
     workspace_dir: Option<std::path::PathBuf>,
+) -> Router {
+    v1_maloca_router_with_maloca_store(challenge_store, workspace_dir, None)
+}
+
+/// Same as [`v1_maloca_router`], with an explicit `maloca_store` for wiring
+/// `store.backlog()` items into the unified backlog response.
+pub fn v1_maloca_router_with_maloca_store(
+    challenge_store: Option<Arc<HumanChallengeStore>>,
+    workspace_dir: Option<std::path::PathBuf>,
+    maloca_store: Option<Arc<crate::maloca::MalocaStore>>,
 ) -> Router {
     let registry_mgr = registry_route::AppRegistryManager::default();
     let challenge_state = challenge_store
@@ -36,6 +50,9 @@ pub fn v1_maloca_router(
     let mut backlog_svc = backlog_route::UnifiedBacklogService::new();
     if let Some(dir) = workspace_dir {
         backlog_svc = backlog_svc.with_workspace_dir(dir);
+    }
+    if let Some(store) = maloca_store {
+        backlog_svc = backlog_svc.with_maloca_store(store);
     }
     let model_svc = model_routes::ModelRouterService::new();
 
