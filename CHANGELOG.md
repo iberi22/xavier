@@ -4,6 +4,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.15] — 2026-09-24 — license embed fix release
+
+### Fixed
+- **Docker include_str robustness** (#2531): AGPL text embedded from a src-local mirror with a sync test instead of `../../../LICENSE` (failed in the builder despite COPY succeeding). v0.2.14 tag ran the pre-fix image; full release (binaries + GHCR) publishes from this tag.
+
 ## [0.2.14] — 2026-09-24 — Docker LICENSE fix release
 
 ### Fixed
