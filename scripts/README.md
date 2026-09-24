@@ -4,9 +4,11 @@ This directory contains utility scripts for Xavier development and operations.
 
 ## Organization
 
-- enchmarks/ - Benchmarking scripts for memory systems
-- dev/ - Development utilities
-- release/ - Release and deployment scripts
+- benchmarks/ - Benchmarking scripts for memory systems
+- eval/, training/ - Research: RAG evals and LoRA/SLM training
+- hooks/ - Git hooks (installed via `hooks/install-hooks.sh`)
+- mcp/ - MCP stdio launcher for Claude Code / Cursor
+- smoke/, tests/ - Contract and script self-tests
 
 ## Scripts
 
@@ -16,9 +18,7 @@ This directory contains utility scripts for Xavier development and operations.
 | xavier-service.ps1 | Windows service management |
 | xavier_client.ps1 | Client/CLI testing |
 | xavier-optimizer.ps1 | Performance optimization |
-| locomo_benchmark*.ps1 | LOCOMO benchmark suite |
-| cortex_cli.py | Cortex CLI utilities (⚠️ deprecated, project removed) |
-| enchmark_*.py | Various benchmark scripts |
+| benchmark_xavier_memory.* | Xavier memory benchmark (Node / PowerShell) |
 | smoke_test_local.sh | Bash script for local-first Xavier auto-contained smoke testing |
 | smoke_test_local.ps1 | PowerShell script for local-first Xavier auto-contained smoke testing |
 
