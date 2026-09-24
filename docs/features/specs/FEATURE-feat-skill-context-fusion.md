@@ -1,6 +1,6 @@
 # FEATURE: Session Context Fusion Injects Matched Skills
 
-**Status:** `planned` | **Score:** — | **Last Tested:** —
+**Status:** `implemented` (Implemented 2026-09-21 (integrated from feat/304-fusion worktree)) | **Score:** server::http::context 5 pass | **Last Tested:** 2026-09-21
 
 ## Overview
 The `session/compact` flow (`src/server/http/context.rs:128`) calls `builder.build(level, &selected_docs, &[], &[])` — skill/memory slots permanently empty ("integrated later in fusion step"). The builder (`builder.rs:43`) and dispatcher (`ContextPack`, `compacted_content` budget truncation) are already built; nothing feeds them. This feature wires dispatch into fusion on `ContextLevel::Maximum` with a 0.5 confidence gate and a trivial-prompt ack gate, keeping Minimal/Medium byte-identical.

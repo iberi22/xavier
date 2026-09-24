@@ -1112,5 +1112,113 @@ Pre-merge contracts (`edit-check`, `safe-delete`, three-valued `verify`) plus ar
 
 ---
 
+## REQ-060: Skill Registry Scans Canonical Store (skill-injection #301)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/context/skill_registry.rs`, `src/api/skills.rs`
+- **Features:** `feat-skill-scan-paths`
+
+### Description
+
+`SkillRegistry::with_defaults` SHALL scan `workspace_root/skills`, `workspace_root/.agents/skills` and the canonical Hermes store `$HOME/.hermes/skills` (`src/context/skill_registry.rs:82-91`). `$HOME` is resolved from the environment at runtime, never hardcoded. Traversal SHALL track visited `(device, inode)` pairs and skip seen dirs so symlink cycles terminate (`collect_skill_files`, `src/context/skill_registry.rs:138-194`); file symlinks are still followed. `skills.disabled` from `$HOME/.hermes/config.yaml` SHALL exclude names, fail-open when unreadable (`src/context/skill_registry.rs:95-123`).
+
+### Acceptance criteria
+
+- [ ] `GET /skills` against a HOME with the real store returns count >= 300 (live, post-restart)
+- [ ] `cargo test -p xavier --lib context::skill_registry` green incl. `test_registry_scans_hermes_canonical_store`, `test_registry_symlink_cycle_terminates` (<5s), `test_registry_honors_disabled_list`
+- [ ] `rg -n "/home/" src/context/skill_registry.rs` → 0 hits (no hardcoded developer home directory paths)
+
+## REQ-061: Skill Semantic Ranking via Local Embeddings (skill-injection #302)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/context/skill_registry.rs`, `src/ports/outbound/embedding_port.rs`
+- **Features:** `feat-skill-semantic-rank`
+
+### Description
+
+`IndexedSkill` carries an optional dense vector (`embedding`, `src/context/skill_registry.rs:37`); `index_skill_file_with_port` / `reindex_with_embeddings` / `embed_missing` embed `name + first 200 chars of description` through `EmbeddingPort`, fail-open to keyword-only (`src/context/skill_registry.rs:258-322,326-382`). `search_with_vector` / `search_semantic` rank by cosine similarity clamped to [0,1] with keyword `score_skill_match` tiebreak and keyword fallback when vectors are absent (`src/context/skill_registry.rs:427-475`). Cosine loops over many skills run in `spawn_blocking`. `SkillDispatcher::dispatch` keeps the compatible keyword `search()` call site.
+
+### Acceptance criteria
+
+- [ ] Offline eval harness `test_semantic_rank_recall_at_3`: 20 labeled queries, Recall@3 ≥ 0.8 (measured 0.950, MRR 0.950, mocked port, zero network)
+- [ ] `test_confidence_calibration_range` (all scores in [0,1]) and `test_ranking_offline_no_network` green; keyword fallback green on empty vector store
+
+## REQ-062: SkillLoader Fate — Keep with Real-Format Test (skill-injection #303)
+
+- **Category:** Functional
+- **Priority:** Medium
+- **SRS Status:** `implemented`
+- **Files:** `src/context/skills.rs`, `src/context/executor.rs`
+- **Features:** `feat-skill-loader-fix`
+
+### Description
+
+Decision: keep, not remove. `Skill` is consumed by `SkillExecutor` (`src/context/executor.rs:5`); only `SkillLoader::load_all` was prod-dead (registry superseded it). The loader SHALL accept Agent Skills frontmatter (`name:`/`description:`), fall back to parent-dir name, skip frontmatter-less files and non-`SKILL.md` markdown (`src/context/skills.rs:30-69`).
+
+### Acceptance criteria
+
+- [ ] `test_loader_loads_real_skill_format_or_module_removed` green on real store shape (`<skill>/SKILL.md` + frontmatter)
+
+## REQ-063: Session Fusion Injects Skills on Maximum (skill-injection #304)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/server/http/context.rs`, `src/context/builder.rs`, `src/context/skill_dispatcher.rs`
+- **Features:** `feat-skill-context-fusion`
+
+### Description
+
+On `ContextLevel::Maximum` only, `v1_context_regenerate` SHALL dispatch the latest user prompt through `SkillDispatcher`; on `confidence >= SKILL_CONFIDENCE_THRESHOLD` (0.5, `src/server/http/context.rs:15`) it feeds `compacted_content(remaining_budget)` plus pack memories into `builder.build`, replacing the previous empty `&[], &[]` placeholder (`src/server/http/context.rs:178-257`). Trivial prompts (acks/greetings/≤5-word confirmations, `is_trivial_prompt`) skip dispatch entirely. Minimal/Medium paths are byte-identical.
+
+### Acceptance criteria
+
+- [x] `POST /v1/context/regenerate` returns 200 on deep/medium/shallow (pre-existing 500 from unused `Extension<AppState>` fixed 2026-09-21); empty session takes the trivial/skill-free path without crash (live, post-restart)
+- [ ] Seeded-thread E2E (architecture prompt → skill-bearing context; `"ok thanks"` → skill-free) — pending: no HTTP seeder for `conversations_db` threads; dispatcher leg proven live separately (`POST /api/skill/dispatch` → skill `review` @0.9 within budget) and gate logic covered by unit tests
+- [x] `rg -n "integrated later in fusion" src/server/http/context.rs` → 0 hits
+- [x] `cargo test -p xavier --lib server::http::context` green incl. `test_fusion_injects_skill_on_maximum`, `test_fusion_skips_below_confidence`, `test_fusion_skips_trivial_prompt`, `test_fusion_respects_token_budget`
+
+## REQ-064: MCP Skill Dispatch Tools (skill-injection #305)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/server/mcp/tools_context.rs`, `src/server/mcp/server.rs`, `src/server/mcp/tests.rs`
+- **Features:** `feat-skill-mcp-tool`
+
+### Description
+
+MCP SHALL expose `xavier_dispatch_skill` (`{task*, max_tokens?, project?}`, ≤60-char descriptions) and `xavier_skill_list` (no required params), registered in `get_xavier_context_tools` and routed in `handle_tool_call` (`src/server/mcp/tools_context.rs`, `src/server/mcp/server.rs:97-107`). Both reuse the single dispatcher construction from `api/skills.rs::dispatch_skill` via `build_skill_registry`. Dispatch returns `{skill_name, skill_description, confidence, context_pack, estimated_savings_pct}`; errors serialize fail-open (`{ok:false}`, never a throw). Existing tool names/schemas are byte-identical.
+
+### Acceptance criteria
+
+- [ ] MCP `tools/list` contains both tools (live, post-restart)
+- [ ] Round-trip dispatch returns skill + pack within budget; list count matches fixture registry
+- [ ] `cargo test -p xavier --lib test_mcp_` green incl. `test_mcp_dispatch_tool_roundtrip`, `test_mcp_skill_list_announced`
+
+## REQ-065: Skill Wave Ledger Docs + Close (skill-injection #306)
+
+- **Category:** Documentation
+- **Priority:** Medium
+- **SRS Status:** `implemented`
+- **Files:** `docs/SRS/REQUIREMENTS.md`, `docs/features/specs/FEATURE-feat-skill-*.md`, `.gitcore/features.json`
+- **Features:** `feat-skill-ledger-docs`
+
+### Description
+
+REQ-060..064 SHALL cite merged code evidence (`file:line`); the six `FEATURE-feat-skill-*.md` specs SHALL record final status plus measured numbers (Recall@3 0.950 / MRR 0.950, live counts post-restart). Ledger `status` fields are promoted only by green `verify-pipeline` runs, never by hand.
+
+### Acceptance criteria
+
+- [ ] `rg -c "^## REQ-" docs/SRS/REQUIREMENTS.md` shows 61 (REQ-060..065 present)
+- [ ] Every cited `path:line` exists; `verify-pipeline.sh --check-only` exit 0
+- [ ] Zero `src/` changes under this REQ (docs-only)
+
+*WAVE-10 (2026-09-21): REQ-060..065 added (skill-injection wave: scan-paths, semantic-rank, loader-fate, fusion-gates, MCP-tools, ledger-docs). Implemented live: registry scans canonical store, cosine rank w/ keyword tiebreak, fusion gate 0.5 + ack-gate, MCP dispatch/list tools. Measured: Recall@3 0.950 / MRR 0.950 (20-query offline eval), live E2E post 0.2.5 restart. Full `verify-pipeline` green deferred: pre-existing zero-match filters outside the wave need ledger-wide cleanup (see rescan report).*
+
 *Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, enterprise ZDR, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui. WAVE-9 (2026-09-18): REQ-053..059 added (ripwire+graphify extraction O1-O7: honest-confidence, language-registry, blast-testgate, incremental-ids, budget-query, pagerank-router, contracts-arch; US-101..US-114; specs docs/features/specs/FEATURE-feat-cg-*.md; doc docs/EXTRACTION-RIPWIRE-GRAPHIFY.md; ADR-032/033).*
 

@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use tokio::time::timeout;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 use crate::session::types::{SessionEvent, SessionEventType};
 use crate::verification::auto_verifier::AutoVerifier;
@@ -100,7 +100,7 @@ impl AutoSaveConfig {
     /// Load from environment variables with sensible defaults
     pub fn from_env() -> Self {
         let mut config = Self::default();
-        
+
         if let Ok(url) = std::env::var("XAVIER_URL") {
             config.xavier_url = url;
         }
@@ -123,7 +123,7 @@ impl AutoSaveConfig {
                 config.min_match_score = parsed;
             }
         }
-        
+
         config
     }
 }
@@ -145,13 +145,13 @@ pub struct AutoSaveResult {
 /// Returns immediately; actual work happens in a spawned task.
 pub fn auto_save_event(event: SessionEvent) {
     let config = AutoSaveConfig::from_env();
-    
+
     // Skip non-important events (only save Message and ToolResult)
-    let should_save = matches!(event.event_type, 
-        SessionEventType::Message | 
-        SessionEventType::ToolResult
+    let should_save = matches!(
+        event.event_type,
+        SessionEventType::Message | SessionEventType::ToolResult
     );
-    
+
     if !should_save {
         info!(
             session_id = %event.session_id,
@@ -160,7 +160,7 @@ pub fn auto_save_event(event: SessionEvent) {
         );
         return;
     }
-    
+
     // Skip if missing content
     let raw_content = match event.content {
         Some(ref c) if !c.is_empty() => c.clone(),
@@ -175,15 +175,16 @@ pub fn auto_save_event(event: SessionEvent) {
 
     // Strip terminal ANSI escapes and cap oversized tool results to prevent index noise
     let stripped = crate::kernel::filters::strip_ansi(&raw_content);
-    let content = if matches!(event.event_type, SessionEventType::ToolResult) && stripped.len() > 2000 {
-        format!(
-            "{}... [tool output truncated, {} bytes total]",
-            &stripped[..2000],
-            stripped.len()
-        )
-    } else {
-        stripped
-    };
+    let content =
+        if matches!(event.event_type, SessionEventType::ToolResult) && stripped.len() > 2000 {
+            format!(
+                "{}... [tool output truncated, {} bytes total]",
+                &stripped[..2000],
+                stripped.len()
+            )
+        } else {
+            stripped
+        };
 
     // Heartbeat sliding window deduplication: skip insertion if the same heartbeat
     // arrived within 15 minutes to prevent duplicate accumulation.
@@ -201,18 +202,20 @@ pub fn auto_save_event(event: SessionEvent) {
     // Spawn fire-and-forget task
     tokio::spawn(async move {
         let start = Instant::now();
-        let path = format!("sessions/{}/{}", 
+        let path = format!(
+            "sessions/{}/{}",
             event.session_id,
             chrono::Utc::now().timestamp_millis()
         );
-        
+
         let result = timeout(
             Duration::from_millis(config.timeout_ms),
-            save_and_verify(&config, &path, &content, &event.session_id)
-        ).await;
-        
+            save_and_verify(&config, &path, &content, &event.session_id),
+        )
+        .await;
+
         let latency_ms = start.elapsed().as_millis() as u64;
-        
+
         match result {
             Ok(Ok(save_result)) => {
                 info!(
@@ -224,7 +227,7 @@ pub fn auto_save_event(event: SessionEvent) {
                     latency_ms = latency_ms,
                     "auto-save: completed"
                 );
-                
+
                 // Update session sync metrics
                 crate::tasks::session_sync_task::SessionSyncTask::update_metrics(
                     if save_result.saved { 1.0 } else { 0.0 },
@@ -240,9 +243,11 @@ pub fn auto_save_event(event: SessionEvent) {
                     latency_ms = latency_ms,
                     "auto-save: failed"
                 );
-                
+
                 // Record failed sync
-                if let Err(write_err) = record_failed_sync(&config.failed_syncs_dir, &event, &e, latency_ms).await {
+                if let Err(write_err) =
+                    record_failed_sync(&config.failed_syncs_dir, &event, &e, latency_ms).await
+                {
                     error!("Failed to write failed-sync record: {}", write_err);
                 }
             }
@@ -253,9 +258,11 @@ pub fn auto_save_event(event: SessionEvent) {
                     timeout_ms = config.timeout_ms,
                     "auto-save: timeout"
                 );
-                
+
                 let error = format!("timeout after {}ms", config.timeout_ms);
-                if let Err(write_err) = record_failed_sync(&config.failed_syncs_dir, &event, &error, latency_ms).await {
+                if let Err(write_err) =
+                    record_failed_sync(&config.failed_syncs_dir, &event, &error, latency_ms).await
+                {
                     error!("Failed to write failed-sync record: {}", write_err);
                 }
             }
@@ -274,7 +281,7 @@ async fn save_and_verify(
         .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| format!("failed to build HTTP client: {}", e))?;
-    
+
     // ─── SAVE ──────────────────────────────────────────────────────────────
     let save_payload = serde_json::json!({
         "path": path,
@@ -287,7 +294,7 @@ async fn save_and_verify(
             "dedup": true,
         }
     });
-    
+
     let save_resp = client
         .post(format!("{}/memory/add", config.xavier_url))
         .header("Authorization", format!("Bearer {}", config.auth_token))
@@ -295,19 +302,19 @@ async fn save_and_verify(
         .send()
         .await
         .map_err(|e| format!("save request failed: {}", e))?;
-    
+
     let save_ok = save_resp.status().is_success();
-    
+
     if !save_ok {
         let status = save_resp.status();
         let body = save_resp.text().await.unwrap_or_default();
         return Err(format!("save failed: HTTP {} — {}", status, body));
     }
-    
+
     // ─── AUTO-VERIFY (Fase 2) ──────────────────────────────────────────────
     let mut verified = false;
     let mut match_score = 1.0; // Default to perfect if verification skipped
-    
+
     if config.auto_verify {
         match AutoVerifier::verify_save(
             &client,
@@ -315,11 +322,13 @@ async fn save_and_verify(
             &config.auth_token,
             path,
             content,
-        ).await {
+        )
+        .await
+        {
             Ok(verify_result) => {
                 verified = verify_result.is_healthy();
                 match_score = verify_result.match_score;
-                
+
                 if !verified {
                     warn!(
                         path = %path,
@@ -339,7 +348,7 @@ async fn save_and_verify(
             }
         }
     }
-    
+
     Ok(AutoSaveResult {
         session_id: session_id.to_string(),
         event_type: "Message".to_string(),
@@ -363,11 +372,11 @@ async fn record_failed_sync(
     fs::create_dir_all(dir)
         .await
         .map_err(|e| format!("failed to create failed-syncs dir: {}", e))?;
-    
+
     let timestamp = chrono::Utc::now().timestamp_millis();
     let filename = format!("failed-sync-{}-{}.json", event.session_id, timestamp);
     let filepath = dir.join(&filename);
-    
+
     let record = serde_json::json!({
         "timestamp_ms": timestamp,
         "session_id": event.session_id,
@@ -376,19 +385,19 @@ async fn record_failed_sync(
         "error": error,
         "latency_ms": latency_ms,
     });
-    
+
     let json = serde_json::to_string_pretty(&record)
         .map_err(|e| format!("failed to serialize failed-sync record: {}", e))?;
 
     fs::write(&filepath, json)
         .await
         .map_err(|e| format!("failed to write failed-sync record: {}", e))?;
-    
+
     info!(
         filepath = %filepath.display(),
         "recorded failed sync"
     );
-    
+
     Ok(())
 }
 
@@ -429,7 +438,7 @@ mod tests {
             match_score: 1.0,
             error: None,
         };
-        
+
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("test-session"));
     }
@@ -443,8 +452,9 @@ mod tests {
             content: Some("hello".to_string()),
             metadata: None,
         };
-        
-        assert!(matches!(message_event.event_type, 
+
+        assert!(matches!(
+            message_event.event_type,
             SessionEventType::Message | SessionEventType::ToolResult
         ));
     }
@@ -464,7 +474,10 @@ mod tests {
         assert_eq!(config.auth_token, "custom-token-123");
         assert_eq!(config.timeout_ms, 5000);
         assert!(!config.auto_verify);
-        assert_eq!(config.failed_syncs_dir, PathBuf::from("/tmp/failed-syncs-test"));
+        assert_eq!(
+            config.failed_syncs_dir,
+            PathBuf::from("/tmp/failed-syncs-test")
+        );
         assert_eq!(config.min_match_score, 0.95);
 
         std::env::remove_var("XAVIER_URL");
@@ -491,7 +504,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_record_failed_sync() {
-        let temp_dir = std::env::temp_dir().join(format!("failed_syncs_test_{}", ulid::Ulid::new()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("failed_syncs_test_{}", ulid::Ulid::new()));
         let event = SessionEvent {
             session_id: "test-failed-session".to_string(),
             event_type: SessionEventType::Message,
@@ -504,8 +518,14 @@ mod tests {
         assert!(result.is_ok());
 
         let mut dir_entries = tokio::fs::read_dir(&temp_dir).await.expect("read dir ok");
-        let entry = dir_entries.next_entry().await.expect("entry ok").expect("some entry");
-        let file_content = tokio::fs::read_to_string(entry.path()).await.expect("read file ok");
+        let entry = dir_entries
+            .next_entry()
+            .await
+            .expect("entry ok")
+            .expect("some entry");
+        let file_content = tokio::fs::read_to_string(entry.path())
+            .await
+            .expect("read file ok");
 
         assert!(file_content.contains("test-failed-session"));
         assert!(file_content.contains("connection refused"));
