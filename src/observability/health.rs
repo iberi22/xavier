@@ -481,10 +481,34 @@ impl HealthMonitor {
         let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig::from_env();
         let project_id = crate::memory::sqlite_vec_store::project_id_for_path(&config.path);
 
-        let res = self
+        // La integridad se verifica en una conexion EFIMERA de solo lectura, no en una del pool
+        // (#2479): una conexion reutilizada del pool reportaba de forma intermitente
+        // "malformed inverted index" en memory_fts mientras que cualquier conexion nueva sobre
+        // la misma base daba `ok`. El estado por-conexion (transaccion abierta / estructura FTS5
+        // cacheada) no debe hacerse pasar por corrupcion en disco.
+        let db_path = config.path.clone();
+        let fresh = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+            let conn = rusqlite::Connection::open_with_flags(
+                &db_path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )?;
+            conn.busy_timeout(Duration::from_millis(2000))?;
+            let integrity: String = conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
+            let (f_ok, f_detail) = Self::probe_fts_integrity(&conn);
+            Ok((integrity, f_ok, f_detail))
+        })
+        .await
+        .map_err(anyhow::Error::from)
+        .and_then(|r| r);
+
+        let pooled = self
             .cm
             .with_conn(&project_id, |conn| {
-                let integrity: String = conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
+                if !conn.is_autocommit() {
+                    // Una conexion devuelta al pool con transaccion abierta es una fuga.
+                    tracing::warn!("conexion del pool con transaccion abierta (posible fuga)");
+                }
                 let pc: u32 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
                 let fc: u32 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
 
@@ -494,11 +518,16 @@ impl HealthMonitor {
                     0.0
                 };
 
-                let (f_ok, f_detail) = Self::probe_fts_integrity(conn);
-
-                Ok((integrity, frag, pc, f_ok, f_detail))
+                Ok((frag, pc))
             })
             .await;
+
+        let res = match (fresh, pooled) {
+            (Ok((integrity, f_ok, f_detail)), Ok((frag, pc))) => {
+                Ok((integrity, frag, pc, f_ok, f_detail))
+            }
+            (Err(e), _) | (_, Err(e)) => Err(e),
+        };
 
         match res {
             Ok((integrity, frag, pc, f_ok, f_detail)) => {
