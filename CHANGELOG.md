@@ -4,6 +4,11 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.13] — 2026-09-23 — Docker builder fix release
+
+### Fixed
+- **Docker builder MSRV** (#2527): `rust:1.90` → `1.94-bookworm` in both Dockerfiles (v0.2.12 tag ran the stale image). Tags pin everything; full release (binaries + GHCR) publishes from this tag. No code changes.
+
 ## [0.2.12] — 2026-09-23 — Docker publish fix release
 
 ### Fixed
