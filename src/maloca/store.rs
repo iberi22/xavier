@@ -38,14 +38,83 @@ pub struct MalocaStore {
     path: PathBuf,
 }
 
+impl std::fmt::Debug for MalocaStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MalocaStore")
+            .field("path", &self.path)
+            .finish_non_exhaustive()
+    }
+}
+
 impl MalocaStore {
+    /// Resolve the single canonical base directory for the Maloca store file.
+    ///
+    /// `open()` appends `maloca/store.json` to whatever directory is returned
+    /// here, so this is the ONE place that decides where that file lives.
+    /// Historically three different call sites each guessed a different base
+    /// dir (`XAVIER_STATE_DIR`/`HOME`, a relative `"data/maloca"`, and
+    /// `settings.memory.data_dir`), which meant writes and reads silently
+    /// diverged and a fresh/empty store could shadow the real one with ~377
+    /// tickets. Preference order:
+    ///
+    /// 1. `XAVIER_STATE_DIR` — explicit operator/test override.
+    /// 2. `settings.memory.data_dir` — the same data root the rest of
+    ///    Xavier's memory subsystem uses; this is where the real store.json
+    ///    lives in production (`data/maloca/store.json`).
+    /// 3. `"data"` — matches `MemorySettings::default()` when no config file
+    ///    or env var is present.
+    pub fn resolve_state_dir() -> PathBuf {
+        if let Ok(dir) = std::env::var("XAVIER_STATE_DIR") {
+            if !dir.trim().is_empty() {
+                return PathBuf::from(dir);
+            }
+        }
+
+        let data_dir = crate::settings::XavierSettings::current().memory.data_dir;
+        if !data_dir.trim().is_empty() {
+            return PathBuf::from(data_dir);
+        }
+
+        PathBuf::from("data")
+    }
+
+    /// Open the store at the canonical resolved directory (see
+    /// [`Self::resolve_state_dir`]). Prefer this over `open()` with a
+    /// manually constructed path — it is the single source of truth for
+    /// where the Maloca store file lives, and keeps every call site (CLI
+    /// server bootstrap, HTTP routes, self-manage CLI commands) consistent.
+    pub fn open_default() -> Arc<Self> {
+        Self::open(&Self::resolve_state_dir())
+    }
+
     pub fn open(state_dir: &Path) -> Arc<Self> {
         let path = state_dir.join("maloca").join("store.json");
         let mut state = if path.exists() {
-            std::fs::read_to_string(&path)
-                .ok()
-                .and_then(|raw| serde_json::from_str(&raw).ok())
-                .unwrap_or_else(default_state)
+            match std::fs::read_to_string(&path) {
+                Ok(raw) => match serde_json::from_str::<PersistedState>(&raw) {
+                    Ok(parsed) => parsed,
+                    Err(parse_err) => {
+                        tracing::error!(
+                            path = %path.display(),
+                            error = %parse_err,
+                            "MalocaStore: store.json failed to parse — quarantining the file \
+                             instead of silently discarding it, so the next persist() cannot \
+                             overwrite real data with an empty seed state"
+                        );
+                        quarantine_corrupt_file(&path);
+                        default_state()
+                    }
+                },
+                Err(read_err) => {
+                    tracing::error!(
+                        path = %path.display(),
+                        error = %read_err,
+                        "MalocaStore: store.json exists but could not be read — starting from \
+                         an empty seed state without touching the file on disk"
+                    );
+                    default_state()
+                }
+            }
         } else {
             default_state()
         };
@@ -435,6 +504,30 @@ fn short_id() -> String {
     Uuid::new_v4().to_string()[..8].to_string()
 }
 
+/// Renames an unparsable `store.json` out of the way (`store.json.corrupt-<ts>`)
+/// so the corrupt bytes are preserved on disk instead of being lost the next
+/// time `persist()` writes a fresh (empty) state to the original path.
+fn quarantine_corrupt_file(path: &Path) {
+    let ts = Utc::now().format("%Y%m%dT%H%M%SZ");
+    let quarantined = path.with_extension(format!("json.corrupt-{ts}"));
+    match std::fs::rename(path, &quarantined) {
+        Ok(()) => {
+            tracing::error!(
+                quarantined_to = %quarantined.display(),
+                "MalocaStore: corrupt store.json quarantined; starting empty seed state"
+            );
+        }
+        Err(rename_err) => {
+            tracing::error!(
+                path = %path.display(),
+                error = %rename_err,
+                "MalocaStore: failed to quarantine corrupt store.json — the corrupt file was \
+                 left in place; investigate manually before the next persist() runs"
+            );
+        }
+    }
+}
+
 fn default_nodes() -> Vec<NodeRecord> {
     vec![
         NodeRecord {
@@ -515,12 +608,126 @@ fn default_state() -> PersistedState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::maloca::types::{CastVoteBody, ManagerActionBody, ManagerActionType, VoteChoice};
+    use crate::maloca::types::{
+        CastVoteBody, CreateSupportBody, ManagerActionBody, ManagerActionType, VoteChoice,
+    };
 
     fn temp_store() -> (PathBuf, Arc<MalocaStore>) {
         let dir = std::env::temp_dir().join(format!("maloca-test-{}", short_id()));
         let store = MalocaStore::open(&dir);
         (dir, store)
+    }
+
+    /// Loading a real, on-disk `store.json` fixture must surface its actual
+    /// data (not silently fall back to the empty seed state) — this is the
+    /// scenario the three unified call sites (`MalocaStore::open_default`)
+    /// must all land on consistently.
+    #[test]
+    fn open_loads_a_real_store_json_fixture_from_disk() {
+        let dir = std::env::temp_dir().join(format!("maloca-fixture-test-{}", short_id()));
+        let maloca_dir = dir.join("maloca");
+        std::fs::create_dir_all(&maloca_dir).unwrap();
+
+        let fixture = r#"{
+            "support": [
+                {
+                    "id": "s-fixture001",
+                    "title": "Real ticket loaded from a fixture store.json",
+                    "body": "This must survive MalocaStore::open, not be discarded",
+                    "status": "open",
+                    "created_at": "2026-09-01T00:00:00Z"
+                }
+            ],
+            "reviews": [],
+            "inbox": [],
+            "rewards": [],
+            "proposals": [],
+            "manager_actions": [],
+            "backlog": {"source": "fixture", "items": []}
+        }"#;
+        std::fs::write(maloca_dir.join("store.json"), fixture).unwrap();
+
+        let store = MalocaStore::open(&dir);
+
+        let support = store.list_support();
+        assert_eq!(support.len(), 1, "fixture's support ticket must be loaded");
+        assert_eq!(support[0].id, "s-fixture001");
+        assert_eq!(
+            support[0].title,
+            "Real ticket loaded from a fixture store.json"
+        );
+
+        // Bootstrap logic (empty `nodes` -> defaults) still runs correctly on
+        // top of real, non-empty data loaded from disk.
+        let mesh = store.mesh();
+        assert_eq!(mesh.mode, "mock");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A `store.json` that fails to parse must NOT be silently discarded —
+    /// discarding it would let the next `persist()` overwrite real data with
+    /// an empty seed state. `open()` must quarantine the corrupt file
+    /// (`store.json.corrupt-<ts>`) instead, and any subsequent write must
+    /// land at the original path without touching the quarantined bytes.
+    #[test]
+    fn corrupt_store_json_is_quarantined_not_silently_overwritten() {
+        let dir = std::env::temp_dir().join(format!("maloca-corrupt-test-{}", short_id()));
+        let maloca_dir = dir.join("maloca");
+        std::fs::create_dir_all(&maloca_dir).unwrap();
+
+        let corrupt_bytes = "{ this is not valid json at all, truncated mid-object ";
+        let store_path = maloca_dir.join("store.json");
+        std::fs::write(&store_path, corrupt_bytes).unwrap();
+
+        // Opening must not panic, and must start from an empty seed state.
+        let store = MalocaStore::open(&dir);
+        assert!(
+            store.list_support().is_empty(),
+            "corrupt file must not be parsed into fake support tickets"
+        );
+
+        // The corrupt bytes must have been preserved under a quarantine name,
+        // not deleted, and the original path must no longer hold them.
+        let entries: Vec<_> = std::fs::read_dir(&maloca_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        let quarantined_name = entries
+            .iter()
+            .find(|name| name.starts_with("store.json.corrupt-"))
+            .cloned()
+            .expect("corrupt store.json must be quarantined under store.json.corrupt-<ts>");
+        let quarantined_content =
+            std::fs::read_to_string(maloca_dir.join(&quarantined_name)).unwrap();
+        assert_eq!(
+            quarantined_content, corrupt_bytes,
+            "quarantined file must preserve the original corrupt bytes verbatim"
+        );
+        assert!(
+            !store_path.exists(),
+            "original store.json path must be vacated by the rename, not copied"
+        );
+
+        // A subsequent write (persist()) must create a *fresh* store.json at
+        // the original path without touching the quarantined corrupt file.
+        store.create_support(CreateSupportBody {
+            title: "post-quarantine ticket".into(),
+            body: "written after recovering from corruption".into(),
+            feature_id: None,
+        });
+        assert!(
+            store_path.exists(),
+            "persist() must write a fresh store.json after quarantine"
+        );
+        let quarantined_after =
+            std::fs::read_to_string(maloca_dir.join(&quarantined_name)).unwrap();
+        assert_eq!(
+            quarantined_after, corrupt_bytes,
+            "quarantined file must remain untouched by later persist() calls"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

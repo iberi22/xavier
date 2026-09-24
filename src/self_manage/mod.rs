@@ -1012,11 +1012,7 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
                 }
                 _ => {
                     // Fallback to maloca if gh command fails or is missing
-                    let data_dir = crate::settings::XavierSettings::current()
-                        .memory
-                        .data_dir
-                        .clone();
-                    let store = crate::maloca::MalocaStore::open(std::path::Path::new(&data_dir));
+                    let store = crate::maloca::MalocaStore::open_default();
                     let ticket = store.create_support(crate::maloca::types::CreateSupportBody {
                         title: args.title.clone(),
                         body: args.body.clone(),
@@ -1028,11 +1024,7 @@ pub fn ticket_create(args: TicketCreateArgs) -> anyhow::Result<TicketCreateResul
         }
         _ => {
             // Drop a support ticket into Maloca
-            let data_dir = crate::settings::XavierSettings::current()
-                .memory
-                .data_dir
-                .clone();
-            let store = crate::maloca::MalocaStore::open(std::path::Path::new(&data_dir));
+            let store = crate::maloca::MalocaStore::open_default();
             let ticket = store.create_support(crate::maloca::types::CreateSupportBody {
                 title: args.title.clone(),
                 body: args.body.clone(),
