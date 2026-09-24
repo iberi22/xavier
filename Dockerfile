@@ -19,7 +19,7 @@ RUN pnpm --filter xavier-panel-ui run build
 
 # Stage 1: Builder
 # Using slim variant to keep final image small (~500MB vs ~800MB for full)
-FROM rust:1.90-bookworm AS builder
+FROM rust:1.94-bookworm AS builder
 
 ARG FEATURES=local-gllm,cli-interactive
 
