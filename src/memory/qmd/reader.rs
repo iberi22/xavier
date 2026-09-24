@@ -194,11 +194,15 @@ pub async fn search_with_cache_filtered(
         });
     }
 
+    let include_activity = filters.and_then(|f| f.include_activity).unwrap_or(false);
     let docs = memory.docs.read().await;
     let mut scored: Vec<(f32, MemoryDocument)> = docs
         .iter()
         .filter_map(|doc| {
             if !matches_filters(&doc.path, &doc.metadata, &memory.workspace_id, filters) {
+                return None;
+            }
+            if !include_activity && crate::memory::schema::is_noise_content(&doc.content) {
                 return None;
             }
             let score = lexical_score(doc, &normalized_query);

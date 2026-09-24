@@ -842,6 +842,10 @@ pub async fn start_http_server(
         )
         .route("/memory/search", post(search_handler))
         .route(
+            "/memory/get",
+            get(crate::cli::handlers::memory::get_handler),
+        )
+        .route(
             "/memory/update",
             post(update_handler).layer(middleware::from_fn(require_permission(|r| {
                 r.can_add_memory()
