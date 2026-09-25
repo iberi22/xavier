@@ -225,6 +225,21 @@ jobs:
           pnpm --filter xavier-panel-ui exec playwright install --with-deps chromium
           pnpm --filter xavier-panel-ui exec playwright test --project=chromium
 
+      # Debuggability: this job previously had NO artifact upload at all, so a red run left
+      # nothing but a list-reporter log to diagnose from (screenshots/videos/traces are
+      # generated locally under panel-ui/test-results/ per playwright.config.ts's
+      # screenshot/video/trace settings, but were never surfaced from CI). `if: always()` so a
+      # failing panel-browser-smoke step still uploads its evidence instead of the job just
+      # aborting silently.
+      - name: Upload panel-ui e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-ui-e2e-results
+          path: panel-ui/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   version-gate:
     name: Version Sync Gate
     runs-on: ubuntu-latest
