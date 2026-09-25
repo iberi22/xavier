@@ -19,6 +19,16 @@ interface ProvidersPageProps {
   token: string;
 }
 
+const CLI_AGENTS = [
+  { name: "Xavier Core", status: "logged_in" as const, enabled: true },
+  { name: "Code Graph", status: "not_logged_in" as const, enabled: true },
+  {
+    name: "Swarm Master",
+    status: "not_installed" as const,
+    enabled: false,
+  },
+];
+
 export default function ProvidersPage({ token }: ProvidersPageProps) {
   const [client] = useState(() => new ApiClient(token));
   const [loading, setLoading] = useState(true);
@@ -47,7 +57,7 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
       setConfigs(configList.providers);
 
       // Assume first configured cloud provider is active or use local
-      const firstConfigured = scan.providers.find((p) => p.configured);
+      const firstConfigured = scan.providers?.find((p) => p.configured);
       if (firstConfigured) setActiveProvider(firstConfigured.name);
     } catch (e) {
       console.error("Failed to fetch provider data:", e);
@@ -80,14 +90,6 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
     );
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <RefreshCcw className="w-8 h-8 text-[#39ff14] animate-spin opacity-50" />
-      </div>
-    );
-  }
-
   const mappedQuotas = useMemo(() => {
     return quotas.map((q) => ({
       provider: q.provider,
@@ -110,6 +112,14 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
       })) || []
     );
   }, [systemScan]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <RefreshCcw className="w-8 h-8 text-[#39ff14] animate-spin opacity-50" />
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -274,15 +284,7 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
               </h3>
             </div>
             <CliAgentList
-              agents={useMemo(() => [
-                { name: "Xavier Core", status: "logged_in" as const, enabled: true },
-                { name: "Code Graph", status: "not_logged_in" as const, enabled: true },
-                {
-                  name: "Swarm Master",
-                  status: "not_installed" as const,
-                  enabled: false,
-                },
-              ], [])}
+              agents={CLI_AGENTS}
               onToggle={handleAgentToggle}
               onLogin={handleAgentLogin}
             />
