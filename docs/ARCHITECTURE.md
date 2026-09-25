@@ -43,7 +43,7 @@ src/
 | SDC Directory Chain (T-14) | Planned P2 | gara-chain skeleton + PoUW-E |
 | Existing 52/52 | Stable 100% | keep |
 
-Legacy docs moved to `docs/legacy/` (ARCH_DISTRIBUTED_2X, ARCH_HEXAGONAL_FALLBACK, ARCH_WAVE3/4, advanced-settings, HEARTBEAT, MEMORY, TOOLS). Single source of truth is this file + SRC.md + FEATURE_STATUS.md.
+Legacy/archived docs were removed on 2026-09-24 (recoverable from git history). Single source of truth is this file + SRC.md + FEATURE_STATUS.md.
 
 ## New Web Spaces — Integration
 

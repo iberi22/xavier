@@ -179,6 +179,18 @@ pub async fn start_http_server(
 
     let cm = ConnectionManager::global();
 
+    // Register the sqlite-vec extension (vec_f32, vec_distance_cosine, ...) via
+    // `sqlite3_auto_extension` *before* any pool below opens its first
+    // connection. `sqlite3_auto_extension` only affects connections opened
+    // *after* this call — it does not retroactively patch a connection that
+    // was already established. `cm.connect("memory"/"metrics"/"security", ...)`
+    // just below used to run first, so those pools' connections could
+    // permanently lack `vec_f32` for the lifetime of the process (surfaced as
+    // `no such function: vec_f32` on memory writes through those pools; see
+    // issue #2544). Registration is idempotent, so calling it again later
+    // (e.g. inside `VecSqliteMemoryStore::new`) is harmless.
+    xavier::memory::sqlite_vec_store::VecSqliteMemoryStore::register_sqlite_vec_extension()?;
+
     let config = VecSqliteStoreConfig::from_env();
     // ── Startup guard: detect store fragmentation ────────────────────────────
     // Warn if multiple vec-store*.sqlite3 files exist outside the canonical data/
@@ -260,7 +272,7 @@ pub async fn start_http_server(
 
     let auth_store_file_path = xavier_dir.join("auth_store.db");
     let auth_db_path = auth_store_file_path.to_string_lossy().to_string();
-    let auth_store = Arc::new(AuthStore::open(&auth_db_path, [0u8; 32])?); // Use actual key in prod
+    let auth_store = Arc::new(AuthStore::open(&auth_db_path)?);
 
     let auth_db_file_path = xavier_dir.join("auth.db");
 
@@ -636,7 +648,7 @@ pub async fn start_http_server(
         )),
         system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
         multi_db,
-        maloca: xavier::maloca::MalocaStore::open(&state_dir),
+        maloca: xavier::maloca::MalocaStore::open_default(),
     };
 
     info!(
@@ -842,6 +854,10 @@ pub async fn start_http_server(
         )
         .route("/memory/search", post(search_handler))
         .route(
+            "/memory/get",
+            get(crate::cli::handlers::memory::get_handler),
+        )
+        .route(
             "/memory/update",
             post(update_handler).layer(middleware::from_fn(require_permission(|r| {
                 r.can_add_memory()
@@ -1012,17 +1028,21 @@ pub async fn start_http_server(
         .route("/v1/embeddings", post(embed_handler))
         .route("/v1/embeddings/stats", get(embedding_stats_handler))
         .route("/v1/auth/session", post(session_create_handler))
+        // Deprecated legacy user-auth API (GH #2545): these paths used to be documented as
+        // canonical but were backed by a user store nothing ever populated. They now answer
+        // 308 (equivalent contract at /auth/*) or 410 (no direct successor) instead of a
+        // silent 401/404 — see `src/cli/handlers/auth.rs` module docs for the full rationale.
+        // `/v1/auth/sessions*` (root-token sessions, routed above) is unrelated and unaffected.
         .nest(
             "/v1/auth",
             Router::new()
-                .route("/login", post(login_handler))
-                .route("/totp/verify", post(totp_verify_handler))
-                .route("/refresh", post(refresh_handler))
-                .route("/recover", post(recover_handler))
-                .layer(middleware::from_fn_with_state(
-                    state.clone(),
-                    rate_limit_middleware,
-                )),
+                .route("/login", post(deprecated_v1_login_handler))
+                .route("/register", post(deprecated_v1_register_handler))
+                .route("/refresh", post(deprecated_v1_refresh_handler))
+                .route("/logout", post(deprecated_v1_logout_handler))
+                .route("/recover", post(deprecated_v1_recover_handler))
+                .route("/totp/verify", post(deprecated_v1_totp_verify_handler))
+                .route("/totp/setup", post(deprecated_v1_totp_setup_handler)),
         )
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
@@ -1653,20 +1673,35 @@ pub async fn start_http_server(
         .merge(protected_routes)
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
-        .layer(Extension(event_bus_for_ws))
-        .layer(CorsLayer::permissive())
-        .layer(middleware::from_fn(
-            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
+        .layer(Extension(event_bus_for_ws));
+
+    let app = app.with_state(state.clone());
+
+    // Maloca ops API — public local dogfood for reads (matches @swal/maloca-client;
+    // no token needed on GET/HEAD), but every mutating verb (POST/PUT/PATCH/DELETE)
+    // requires the same token as the rest of the API via
+    // `maloca_mutation_auth_middleware`. This router is merged in BEFORE the
+    // `CorsLayer`/timeout layer below so those layers wrap Maloca too — previously
+    // they were applied first and the Maloca merge happened after, leaving `/maloca/*`
+    // and `/v1/maloca/*` with no CORS headers and no auth enforcement on writes.
+    let maloca_router = xavier::maloca::nested_router::<()>(maloca_store.clone())
+        .merge(xavier::server::maloca::v1_maloca_router_with_maloca_store(
+            None,
+            Some(state.workspace_dir.clone()),
+            Some(maloca_store),
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            maloca_mutation_auth_middleware,
         ));
 
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
     let app = app
-        .with_state(state.clone())
-        .merge(xavier::maloca::nested_router(maloca_store))
-        .merge(xavier::server::maloca::v1_maloca_router(
-            None,
-            Some(state.workspace_dir.clone()),
+        .merge(maloca_router)
+        .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::timeout::timeout_middleware,
         ));
 
     #[cfg(feature = "enterprise")]

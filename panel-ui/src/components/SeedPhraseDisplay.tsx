@@ -28,7 +28,12 @@ export const SeedPhraseDisplay: React.FC<SeedPhraseDisplayProps> = ({
             <span className="text-[10px] text-white/30 font-mono w-4">
               {i + 1}
             </span>
-            <span className="text-sm font-mono text-white/80">{word}</span>
+            <span
+              data-testid="seed-word"
+              className="text-sm font-mono text-white/80"
+            >
+              {word}
+            </span>
           </div>
         ))}
       </div>

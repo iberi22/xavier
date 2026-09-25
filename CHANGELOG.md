@@ -4,6 +4,49 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+### Fixed
+- **Dead `/v1/auth/*` user-login API removed** (#2545): `/v1/auth/login`, `/register`, `/refresh`, `/logout`, `/totp/verify` and `/totp/setup` were backed by `security::auth_store::AuthStore`, a user store nothing in the codebase ever wrote a user into — every login against it failed forever, on every fresh install. These paths now answer `308 Permanent Redirect` (login/register/refresh/logout/recover, same or superset request body) or `410 Gone` (totp/verify, totp/setup — no compatible successor) with a JSON body naming the real `/auth/*` route. The dead `AuthStore` login/TOTP/recovery methods were removed; `AuthStore` itself stays (still backs the unrelated `/v1/auth/sessions` root-token session endpoints). `docs/api/openapi.yaml`, `docs/api/README.md` and the Postman collection now document the real `/auth/*` flow (register, login with inline `totp_code`, refresh, logout, 2FA setup/verify, recovery) instead of the dead one.
+
+## [0.2.15] — 2026-09-24 — license embed fix release
+
+### Fixed
+- **Docker include_str robustness** (#2531): AGPL text embedded from a src-local mirror with a sync test instead of `../../../LICENSE` (failed in the builder despite COPY succeeding). v0.2.14 tag ran the pre-fix image; full release (binaries + GHCR) publishes from this tag.
+
+## [0.2.14] — 2026-09-24 — Docker LICENSE fix release
+
+### Fixed
+- **Docker builder context** (#2529): COPY LICENSE into both builder stages (`include_str!` needs it at compile time). v0.2.13 tag ran the pre-fix image; full release (binaries + GHCR) publishes from this tag. No code changes.
+
+## [0.2.13] — 2026-09-23 — Docker builder fix release
+
+### Fixed
+- **Docker builder MSRV** (#2527): `rust:1.90` → `1.94-bookworm` in both Dockerfiles (v0.2.12 tag ran the stale image). Tags pin everything; full release (binaries + GHCR) publishes from this tag. No code changes.
+
+## [0.2.12] — 2026-09-23 — Docker publish fix release
+
+### Fixed
+- **Docker GHCR publish** (#2525): same `dangerouslyAllowAllBuilds` flag in the Dockerfile image build (v0.2.11 tag ran the pre-flag image). Tags pin Docker context too; artifacts publish from this tag. No code changes.
+
+## [0.2.11] — 2026-09-23 — installer flag fix release
+
+### Fixed
+- **Inno Setup invalid flag** (#2523): drop unknown `skipfsreqterminate` from the `[Run]` section of `installer/setup.iss` (iscc aborted the Windows release build). v0.2.10 tag ran the pre-fix workflow; artifacts publish from this tag. No code changes.
+
+## [0.2.10] — 2026-09-23 — release install fix
+
+### Fixed
+- **Release Windows install step, round 2** (#2521): `onlyBuiltDependencies` does not apply to `--prefix` installs; use the repo's own `--config.dangerouslyAllowAllBuilds=true` flag (same as ci.yml). v0.2.9 tag ran the pre-flag workflow; artifacts publish from this tag. No code changes.
+
+## [0.2.9] — 2026-09-23 — release pipeline fix
+
+### Fixed
+- **Release Windows install step** (#2519): pre-approve esbuild+sharp postinstall scripts (`onlyBuiltDependencies`) so `pnpm install` passes on pnpm>=10 runners. v0.2.7/v0.2.8 tags ran pre-fix workflows; artifacts publish from this tag. No code changes.
+
+## [0.2.8] — 2026-09-23 — release workflow fix
+
+### Fixed
+- **Release Windows panel-ui step** (#2517): install pnpm (action-setup@v6) + Node 22 before `pnpm --prefix panel-ui` on the Windows runner. The v0.2.7 tag ran the pre-fix workflow (tag pins the workflow file), so artifacts are published from this tag instead. No code changes.
+
 ## [0.2.7] — 2026-09-23 — release fix
 
 ### Fixed

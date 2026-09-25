@@ -12,7 +12,9 @@ use xavier::mesh::start_mesh_node;
 async fn test_start_mesh_node_lifecycle_and_handshake() {
     // 1. Start Node A using start_mesh_node
     let identity_a = Arc::new(NodeIdentity::generate());
-    let (transport_a, handle_a) = start_mesh_node(identity_a.clone()).await;
+    let store_a: Arc<dyn xavier::memory::MemoryStore> =
+        Arc::new(xavier::memory::store::InMemoryMemoryStore::default());
+    let (transport_a, handle_a) = start_mesh_node(identity_a.clone(), store_a).await;
 
     // 2. Obtain Node A address
     let addr_a = transport_a
@@ -22,7 +24,9 @@ async fn test_start_mesh_node_lifecycle_and_handshake() {
 
     // 3. Start Node B using start_mesh_node
     let identity_b = Arc::new(NodeIdentity::generate());
-    let (transport_b, handle_b) = start_mesh_node(identity_b).await;
+    let store_b: Arc<dyn xavier::memory::MemoryStore> =
+        Arc::new(xavier::memory::store::InMemoryMemoryStore::default());
+    let (transport_b, handle_b) = start_mesh_node(identity_b, store_b).await;
 
     // 4. Perform P2P handshake from Node B to Node A
     let handshake_resp = transport_b

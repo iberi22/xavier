@@ -60,6 +60,44 @@ test.describe("Sovereign Wallet & Autonomous Agent Delegation E2E", () => {
       await route.fulfill({ json: [] });
     });
 
+    // AuthProvider (panel-ui/src/auth/AuthProvider.tsx) calls authClient.refresh() on every
+    // mount — that's the /auth/* email/password session, a SEPARATE system from the mesh
+    // node-identity endpoints mocked above. App.tsx gates every route past the login screen
+    // (including TopStatusBar/#/wallet) on `isAuthenticated`, which only refreshSession()/
+    // login() ever set. Shapes match the real backend (refresh_handler's AuthResponse /
+    // login_handler's LoginResponse in src/auth2/mod.rs): { access_token, refresh_token[, user] }.
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token-wallet",
+          refresh_token: "mock-refresh-token-wallet",
+        }),
+      });
+    });
+
+    await page.route("**/auth/login", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token-wallet",
+          refresh_token: "mock-refresh-token-wallet",
+          user: {
+            id: "01MOCKUSER0000000000000000",
+            email: "operator@xavier.local",
+            name: "Operator",
+            role: "admin",
+            totp_enabled: false,
+            created_at: 0,
+            updated_at: 0,
+          },
+          requires_2fa: false,
+        }),
+      });
+    });
+
     // Seed local storage with authenticated session and skip onboarding
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_token", "swal_sess_mock_wallet_token_777");
@@ -80,15 +118,12 @@ test.describe("Sovereign Wallet & Autonomous Agent Delegation E2E", () => {
   });
 
   test("opens Sovereign Wallet from TopStatusBar Karma pill and displays balances", async ({ page }) => {
-    await page.goto("/");
-
-    // TopStatusBar Karma pill should be visible
-    const karmaPill = page.locator("button[title*='Billetera Soberana']");
-    await expect(karmaPill).toBeVisible({ timeout: 10000 });
-    await expect(karmaPill).toContainText("KARMA");
-
-    // Click to open Wallet
-    await karmaPill.click();
+    // NOTE: TopStatusBar no longer exposes a "Karma pill" button (it was removed in a prior
+    // refactor — grep confirms no "Billetera Soberana"/"karma" references remain in
+    // src/components/TopStatusBar.tsx). WalletView is only reachable via the #/wallet hash
+    // route today (see App.tsx), the same entry point the other two tests in this file already
+    // use, so this test now drives it the same way instead of clicking dead UI.
+    await page.goto("/#/wallet");
 
     // Verify Wallet Modal opens
     const modalTitle = page.locator("h2:has-text('Billetera Soberana SWAL')");

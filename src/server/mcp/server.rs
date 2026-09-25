@@ -72,6 +72,16 @@ pub async fn handle_tool_call(
                     name
                 ));
             }
+            // Shell execution (arbitrary `sh -c` + caller-controlled cwd):
+            // admin-only. can_edit_config() is Admin-only in the Permission
+            // trait; lesser JWT roles must never reach the runner.
+            "xavier_run_command" if !role.can_edit_config() => {
+                return Err(anyhow::anyhow!(
+                    "Forbidden: Insufficient permissions for role {:?} to execute tool '{}'",
+                    role,
+                    name
+                ));
+            }
             _ => {}
         }
     }
@@ -98,6 +108,8 @@ pub async fn handle_tool_call(
         || name == "xavier_token_savings"
         || name == "xavier_issue_context_package"
         || name == "xavier_run_command"
+        || name == "xavier_dispatch_skill"
+        || name == "xavier_skill_list"
     {
         super::tools_context::handle_context_tool(state, workspace, name, arguments).await
     } else if name.starts_with("telecom_") {

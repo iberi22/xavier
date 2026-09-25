@@ -115,7 +115,10 @@ async fn handle_license_accept() -> Result<()> {
 }
 
 async fn handle_license_show() -> Result<()> {
-    let agpl_license = include_str!("../../../LICENSE");
+    // NOTE: embedded from src/cli/commands/LICENSE-AGPL.txt (mirror of the
+    // root LICENSE) so partial build contexts (Docker, worktrees) that lack
+    // the repo root still compile. Keep in sync - covered by test below.
+    let agpl_license = include_str!("LICENSE-AGPL.txt");
     let mesh_license = "Xavier Mesh License v1.0 (Dual AGPL-3.0 / Commercial)";
     println!("════════════════════════════════════════════════════════");
     println!("  Xavier Licensing Summary");
@@ -141,4 +144,20 @@ async fn handle_license_show() -> Result<()> {
     println!("For full terms, see LICENSE-AGPL and LICENSE-MESH.");
     println!("For commercial terms, see COMMERCIAL_LICENSE.md.");
     Ok(())
+}
+
+#[cfg(test)]
+mod license_sync_tests {
+    /// The embedded copy must match the canonical root LICENSE.
+    #[test]
+    fn embedded_license_matches_root() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("LICENSE");
+        let canonical = std::fs::read_to_string(&root)
+            .expect("root LICENSE must exist when running tests from the repo");
+        assert_eq!(
+            include_str!("LICENSE-AGPL.txt"),
+            canonical.as_str(),
+            "src/cli/commands/LICENSE-AGPL.txt drifted from root LICENSE"
+        );
+    }
 }

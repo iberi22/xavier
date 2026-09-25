@@ -16,37 +16,43 @@
 import type React from "react";
 import { createContext, useEffect } from "react";
 import { create } from "zustand";
-import { authClient } from "../api/authClient";
+import { AuthApiError, authClient } from "../api/authClient";
 import type { AuthState } from "../types";
 
-// The panel uses the master API key (VITE_XAVIER_API_TOKEN) for X-Xavier-Token panel routes.
-// The operator JWT is stored separately in refreshToken for session management.
-const API_TOKEN =
-	(import.meta.env.VITE_XAVIER_API_TOKEN as string | undefined) ?? null;
-
-const useAuthStore = create<AuthState>((set) => ({
+// SECURITY: the panel authenticates purely via the /auth/* session (cookie/token flow) —
+// never by embedding a raw API token into the built JS bundle. A prior panel deploy shipped
+// a build-time master-key env var inlined into the production bundle (a real leak vector,
+// since anyone with the built JS could read the master key in plaintext); that env var and
+// every read of it have been removed. `token` (used as X-Xavier-Token on panel/* routes) is
+// now always sourced from `accessToken`, the operator's raw JWT minted by /auth/login or
+// /auth/refresh — see src/types.ts's AuthState.token comment.
+const useAuthStore = create<AuthState>((set, get) => ({
 	user: null,
-	token: API_TOKEN, // Master API key — used as X-Xavier-Token in panel/* calls
+	token: null, // X-Xavier-Token for panel/* calls — always the operator's JWT (accessToken) once authenticated
+	accessToken: null, // Operator JWT — the raw /auth/* access_token
 	refreshToken: null,
 	isAuthenticated: false,
 	requires2FA: false,
+	pendingBackupCodes: null,
 
 	login: async (email, password, totpCode) => {
 		try {
 			const response = await authClient.login(email, password, totpCode);
-			// access_token is the JWT; use it only if no env token is configured.
-			const jwtToken =
-				(response as unknown as { access_token?: string }).access_token ??
-				response.token;
 			set({
 				user: response.user,
-				token: API_TOKEN ?? jwtToken ?? null,
+				token: response.access_token ?? null,
+				accessToken: response.access_token ?? null,
 				refreshToken: response.refresh_token,
 				isAuthenticated: true,
 				requires2FA: false,
 			});
 		} catch (error) {
-			if (error instanceof Error && error.message.includes("2FA")) {
+			// `mfa_required` (no/empty code sent yet) and `mfa_invalid` (wrong code) both mean
+			// "keep the TOTP field open" — see login_handler in src/auth2/mod.rs.
+			if (
+				error instanceof AuthApiError &&
+				(error.code === "mfa_required" || error.code === "mfa_invalid")
+			) {
 				set({ requires2FA: true });
 			}
 			throw error;
@@ -54,13 +60,16 @@ const useAuthStore = create<AuthState>((set) => ({
 	},
 
 	logout: async () => {
-		await authClient.logout();
+		// logout_handler needs the refresh token in the body to revoke it server-side.
+		await authClient.logout(get().refreshToken);
 		set({
 			user: null,
 			token: null,
+			accessToken: null,
 			refreshToken: null,
 			isAuthenticated: false,
 			requires2FA: false,
+			pendingBackupCodes: null,
 		});
 	},
 
@@ -73,22 +82,27 @@ const useAuthStore = create<AuthState>((set) => ({
 
 	refreshSession: async () => {
 		try {
-			const response = await authClient.refresh();
+			// /auth/refresh only returns { access_token, refresh_token } — no `user` — so the
+			// existing user object is preserved instead of being wiped out by `undefined`.
+			const response = await authClient.refresh(get().refreshToken);
 			set({
-				user: response.user,
-				token: response.token,
+				token: response.access_token ?? null,
+				accessToken: response.access_token ?? null,
 				refreshToken: response.refresh_token,
 				isAuthenticated: true,
 			});
 		} catch (_error) {
 			set({
 				user: null,
-				token: API_TOKEN,
+				token: null,
+				accessToken: null,
 				refreshToken: null,
 				isAuthenticated: false,
 			});
 		}
 	},
+
+	setPendingBackupCodes: (codes) => set({ pendingBackupCodes: codes }),
 }));
 
 export { useAuthStore };

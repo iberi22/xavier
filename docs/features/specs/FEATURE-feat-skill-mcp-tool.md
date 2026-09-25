@@ -1,6 +1,6 @@
 # FEATURE: MCP Skill Dispatch Tools
 
-**Status:** `planned` | **Score:** — | **Last Tested:** —
+**Status:** `implemented` (Implemented 2026-09-21 (2 tools + routing + round-trip tests)) | **Score:** test_mcp_* 3 pass | **Last Tested:** 2026-09-21
 
 ## Overview
 Skill dispatch exists only as REST (`POST /api/skill/dispatch`, `GET /api/skill/list`, `GET /skills`). MCP consumers (38 tools today, none skill-related) cannot reach it. This feature registers `xavier_dispatch_skill {task*, max_tokens?, project?}` and `xavier_skill_list` in `get_xavier_context_tools` (`src/server/mcp/tools_context.rs:22`) with handler arms in `handle_context_tool` (line 103), mirroring the REST dispatcher wiring exactly — ranking logic lives in one place.
