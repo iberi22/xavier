@@ -23,6 +23,19 @@ const appVersion =
   process.env.npm_package_version ??
   "0.0.1";
 
+// Shared by both the dev server and `vite preview`: without it, a preview build
+// (used by the Playwright e2e webServer) has no way to reach a real backend and
+// every relative `/auth/*`, `/v1/*`, etc. fetch 404s against the static server itself.
+const proxyRoutes = {
+  "/health": { target: xavierTarget, changeOrigin: true },
+  "/maloca": { target: xavierTarget, changeOrigin: true },
+  "/panel/api": { target: xavierTarget, changeOrigin: true },
+  "/v1": { target: xavierTarget, changeOrigin: true },
+  "/auth": { target: xavierTarget, changeOrigin: true },
+  "/api": { target: xavierTarget, changeOrigin: true },
+  "/notifications": { target: xavierTarget, changeOrigin: true },
+};
+
 export default defineConfig(({ command }) => {
   const _isBuild = command === "build";
 
@@ -60,36 +73,12 @@ export default defineConfig(({ command }) => {
     server: {
       host: "127.0.0.1",
       port: 4174,
-      proxy: {
-        "/health": {
-          target: xavierTarget,
-          changeOrigin: true,
-        },
-        "/maloca": {
-          target: xavierTarget,
-          changeOrigin: true,
-        },
-        "/panel/api": {
-          target: xavierTarget,
-          changeOrigin: true,
-        },
-        "/v1": {
-          target: xavierTarget,
-          changeOrigin: true,
-        },
-        "/auth": {
-          target: xavierTarget,
-          changeOrigin: true,
-        },
-        "/api": {
-          target: xavierTarget,
-          changeOrigin: true,
-        },
-        "/notifications": {
-          target: xavierTarget,
-          changeOrigin: true,
-        },
-      },
+      proxy: proxyRoutes,
+    },
+    preview: {
+      host: "127.0.0.1",
+      port: 4174,
+      proxy: proxyRoutes,
     },
     build: {
       outDir: "build",

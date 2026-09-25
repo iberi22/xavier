@@ -53,7 +53,7 @@ impl AuthDb {
     }
 
     fn get_or_create_master_key() -> AnyhowResult<String> {
-        let vault = HardwareVault::new("xavier-auth");
+        let vault = HardwareVault::new(&crate::auth2::auth_vault_service_name());
         match vault.get_secret("DB_MASTER_KEY") {
             Ok(key) => Ok(key),
             Err(_) => {
