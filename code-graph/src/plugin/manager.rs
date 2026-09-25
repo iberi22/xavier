@@ -19,6 +19,109 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::debug;
 
+/// Probe timeout for the sidecar protocol handshake at registration.
+/// A binary found in PATH is only registered when it answers a minimal
+/// parse request with valid protocol JSON inside this window.
+fn probe_timeout() -> std::time::Duration {
+    std::env::var("XAVIER_PLUGIN_PROBE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(std::time::Duration::from_secs)
+        .unwrap_or(std::time::Duration::from_secs(3))
+}
+
+/// Process-wide cache of probe verdicts: at most one probe per binary path
+/// per process, so test suites constructing many managers pay once.
+static PROBE_CACHE: std::sync::OnceLock<parking_lot::Mutex<HashMap<String, bool>>> =
+    std::sync::OnceLock::new();
+
+/// Verify a candidate sidecar binary speaks the JSON parse protocol before
+/// registering it. Sends an empty request and requires a parseable
+/// [`PluginResponse`](crate::plugin::types::PluginResponse) on stdout.
+/// A name collision with an unrelated tool (which never answers) is
+/// rejected here so per-file parses never pay the 30s engine timeout.
+fn sidecar_speaks_protocol(command: &str) -> bool {
+    // Key by RESOLVED binary path, not the bare name: tests (and users)
+    // mutate PATH, so a verdict for one `codegraph` must never apply to
+    // another binary with the same name.
+    let resolved = which::which(command)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| command.to_string());
+    {
+        let cache = PROBE_CACHE.get_or_init(|| parking_lot::Mutex::new(HashMap::new()));
+        if let Some(&verdict) = cache.lock().get(&resolved) {
+            return verdict;
+        }
+    }
+    let verdict = probe_once(&resolved);
+    PROBE_CACHE
+        .get_or_init(|| parking_lot::Mutex::new(HashMap::new()))
+        .lock()
+        .insert(resolved, verdict);
+    verdict
+}
+
+fn probe_once(command: &str) -> bool {
+    use std::io::Write;
+    let timeout = probe_timeout();
+    if timeout.is_zero() {
+        return true; // probing disabled: register blindly (legacy behavior)
+    }
+    let input = match serde_json::to_string(&serde_json::json!({
+        "language": "Rust",
+        "files": [],
+    })) {
+        Ok(input) => input,
+        Err(_) => return false,
+    };
+    let mut child = match std::process::Command::new(command)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        if stdin.write_all(input.as_bytes()).is_err() {
+            let _ = child.kill();
+            return false;
+        }
+    }
+    drop(child.stdin.take());
+    let start = std::time::Instant::now();
+    let poll = std::time::Duration::from_millis(25);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return false;
+                }
+                let mut stdout = Vec::new();
+                use std::io::Read;
+                if let Some(mut out) = child.stdout.take() {
+                    let _ = out.read_to_end(&mut stdout);
+                }
+                return serde_json::from_slice::<crate::plugin::types::PluginResponse>(&stdout)
+                    .is_ok();
+            }
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    debug!(command = %command, "sidecar probe timed out; not registering");
+                    return false;
+                }
+                std::thread::sleep(poll);
+            }
+            Err(_) => {
+                let _ = child.kill();
+                return false;
+            }
+        }
+    }
+}
+
 /// Orchestrates plugin lifecycle and execution for the indexer.
 pub struct PluginManager {
     /// Plugins keyed by the language they handle (first-wins on collision).
@@ -51,7 +154,7 @@ impl PluginManager {
             health: RwLock::new(Some(health)),
         };
 
-        if which::which("codegraph").is_ok() {
+        if which::which("codegraph").is_ok() && sidecar_speaks_protocol("codegraph") {
             let descriptor = PluginDescriptor {
                 name: "codegraph".to_string(),
                 version: "1.4.1".to_string(),
@@ -108,7 +211,7 @@ impl PluginManager {
         ];
 
         for (name, langs, exts) in parsers_info {
-            if which::which(name).is_ok() {
+            if which::which(name).is_ok() && sidecar_speaks_protocol(name) {
                 let descriptor = PluginDescriptor {
                     name: name.to_string(),
                     version: "0.1.0".to_string(),

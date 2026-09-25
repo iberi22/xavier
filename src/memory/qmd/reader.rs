@@ -61,7 +61,7 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
     let mut last_error = None;
     let mut delay_ms: u64 = 100;
     let max_delay_ms: u64 = 2000;
-    let embed_timeout = std::time::Duration::from_secs(5);
+    let embed_timeout = crate::memory::embedder::embedding_timeout();
 
     let embedder = crate::memory::embedder::EmbeddingClient::from_env()?;
     for attempt in 0..3 {
@@ -110,7 +110,10 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
                 }
             }
             Err(_timeout_err) => {
-                last_error = Some(anyhow::anyhow!("embedding request timed out after 5s"));
+                last_error = Some(anyhow::anyhow!(
+                    "embedding request timed out after {:?}",
+                    embed_timeout
+                ));
                 if attempt < 2 {
                     tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                     delay_ms = (delay_ms * 2).min(max_delay_ms);
@@ -194,11 +197,15 @@ pub async fn search_with_cache_filtered(
         });
     }
 
+    let include_activity = filters.and_then(|f| f.include_activity).unwrap_or(false);
     let docs = memory.docs.read().await;
     let mut scored: Vec<(f32, MemoryDocument)> = docs
         .iter()
         .filter_map(|doc| {
             if !matches_filters(&doc.path, &doc.metadata, &memory.workspace_id, filters) {
+                return None;
+            }
+            if !include_activity && crate::memory::schema::is_noise_content(&doc.content) {
                 return None;
             }
             let score = lexical_score(doc, &normalized_query);

@@ -147,17 +147,18 @@ impl Notifier {
         };
 
         #[cfg(feature = "telegram")]
-        let (telegram_bot, notification_chat_id) =
-            if settings.telegram.enabled && settings.telegram.bot_token.is_some() {
+        let (telegram_bot, notification_chat_id) = if settings.telegram.enabled {
+            if let Some(token) = &settings.telegram.bot_token {
                 (
-                    Some(teloxide::prelude::Bot::new(
-                        settings.telegram.bot_token.unwrap(),
-                    )),
+                    Some(teloxide::prelude::Bot::new(token)),
                     settings.telegram.notification_chat_id,
                 )
             } else {
                 (None, None)
-            };
+            }
+        } else {
+            (None, None)
+        };
 
         Self {
             discord,

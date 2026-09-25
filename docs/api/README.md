@@ -28,7 +28,10 @@ Legacy routes like `/memory/add` remain supported for CLI compatibility but migr
 - `XAVIER_PORT`: HTTP port (default `8006`).
 - `XAVIER_TOKEN`: Static token for basic endpoint protection.
 - `XAVIER_JWT_SECRET`: Secret key for generation and validation of JWT tokens in the user session flow.
-- `XAVIER_STATE_DIR`: Persistent directory where `auth.db`, `auth_store.db` and `memory.db` are stored.
+- `XAVIER_STATE_DIR`: Persistent directory where `.xavier/auth.db` and the rest of Xavier's state live.
+- `XAVIER_AUTH_RATE_LIMIT`: Max requests per minute accepted by the whole `/auth/*` nest, per caller (default `20`). See [Rate Limiting](#3-rate-limiting).
+
+See [`docs/reference/ENV_VARS.md`](../reference/ENV_VARS.md) for the full list.
 
 ---
 
@@ -42,21 +45,63 @@ Designed for direct integrations between local agents, CLI and scripts.
 - **Behavior:** If the header does not match the `XAVIER_TOKEN` configured on the server, access is denied with `401 Unauthorized`.
 
 ### B. Full Session-based Authentication with JWT + 2FA
+
+> **Note:** the canonical, working user-auth API is mounted at **`/auth/*`** (implemented in
+> `src/auth2/`, backed by `.xavier/auth.db`, populated by `xavier users create`). Earlier
+> revisions of this document (and of `openapi.yaml` / the Postman collection) described a
+> parallel `/v1/auth/*` API that was never actually reachable — nothing in the codebase ever
+> wrote a user into the store it read from, so every login attempt against it failed forever.
+> That dead API was removed in favor of clear `308`/`410` responses pointing here — see
+> [GH #2545](https://github.com/iberi22/xavier/issues/2545). If you have old client code or
+> docs referencing `/v1/auth/login`, `/v1/auth/register`, `/v1/auth/refresh`,
+> `/v1/auth/logout`, `/v1/auth/totp/verify` or `/v1/auth/totp/setup`, update it to the paths
+> below (`/v1/auth/sessions` and `/v1/auth/session`, the root-token session endpoints, are
+> unrelated and still work as documented in [`openapi.yaml`](./openapi.yaml)).
+
 Designed for advanced user interfaces (like `panel-ui`) and end users. The full flow comprises:
 
-1. **User Registration (`POST /auth/register`)**
-   - Registers email and password securely. Passwords are hashed with robust cryptographic algorithms and stored isolated in `auth.db`.
-2. **Login (`POST /v1/auth/login`)**
-   - Returns initial state. If the user has second factor enabled (MFA/TOTP), the response will indicate `totp_required: true` and will not yet return the final token.
-3. **TOTP 2FA Verification (`POST /v1/auth/totp/verify`)**
-   - The client sends the one-time code.
-   - **Compatibility Note (TOTP Double-Division Bug):** The server implements a double division by 30 of the Unix timestamp (`timestamp / 30 / 30`) to validate TOTP codes. Clients must generate codes taking this into account to avoid time sync failures.
-   - Returns the final JWT token on success.
-4. **Recovery Seed and Backup Codes**
-   - During initial setup, endpoints are exposed to view and verify the cryptographic seed (`/auth/recovery/seed/show` and `/auth/recovery/seed/verify`) or generate emergency backup codes (`/auth/recovery/backup-codes`) to recover access if the 2FA device is lost.
-5. **Active Session Management**
-   - `GET /v1/auth/sessions`: Lists tokens and devices with active sessions.
-   - `DELETE /v1/auth/sessions/{id}`: Revokes and destroys an active session immediately.
+1. **User Registration — `POST /auth/register`**
+   - Body: `{ "email": "...", "password": "...", "name": "..." }`. Password must be at least
+     12 characters (max 200); email must look like `user@domain.tld`.
+   - Passwords are hashed with Argon2id. The response includes a one-time-shown 24-word Spanish
+     BIP39 recovery seed phrase (`seed_phrase`) — store it now, it is never shown again and is
+     required by the recovery flow below.
+   - `409 Conflict` (`email_taken`) if the email is already registered.
+2. **Login — `POST /auth/login`**
+   - Body: `{ "email": "...", "password": "...", "totp_code": "123456" }` (`totp_code` is
+     optional and only required when the account has TOTP enabled).
+   - If the account has TOTP enabled and `totp_code` is missing or wrong, the server currently
+     returns a plain `401 Unauthorized` (there is no distinct `mfa_required` / `mfa_invalid`
+     status in the response body yet, and login does not accept a backup code as a substitute
+     for `totp_code` — only `POST /auth/recovery`, below, consumes the recovery seed to reset a
+     lost account). On success: `{ access_token, refresh_token, user, requires_2fa }`.
+3. **Token Refresh — `POST /auth/refresh`**
+   - Body: `{ "refresh_token": "..." }`. Rotates the refresh token (theft detection: reusing an
+     already-rotated token revokes the whole chain and returns `403 Forbidden`). Returns a new
+     `{ access_token, refresh_token }` pair.
+4. **Logout — `POST /auth/logout`**
+   - Body: `{ "refresh_token": "..." }`. Revokes that refresh token. Always `200 OK`, even if the
+     token was already invalid/expired (idempotent).
+5. **2FA Enrollment — `POST /auth/2fa/setup` (JWT-protected) + `POST /auth/2fa/verify` (JWT-protected)**
+   - `2fa/setup` generates a new TOTP secret, a Unicode-rendered QR code (`qr_code`, an
+     `otpauth://` URL rendered directly as text — not a PNG/SVG image) and 10 one-time backup
+     codes (`backup_codes`), and persists the (not-yet-enabled) secret + hashed backup codes.
+   - `2fa/verify` takes `{ "code": "123456" }`, checks it against the pending secret and, on
+     success, flips the account to `totp_enabled = true`.
+   - Equivalent CLI flow, no HTTP session required: `xavier users totp-enroll --email <email>`.
+6. **Account Recovery — `POST /auth/recovery`**
+   - Body: `{ "email": "...", "seed_phrase": "<24-word phrase>", "new_password": "..." }`.
+     Verifies the seed phrase from step 1, resets the password, and disables TOTP on the account
+     (so the user can log back in immediately without the lost device).
+7. **Other `/auth/*` routes:** `GET /auth/check-users` (whether any user exists yet, used by
+   first-run onboarding), `GET /auth/status` (JWT introspection), `GET /auth/oauth/{provider}`
+   + `GET /auth/oauth/{provider}/callback` (login via OAuth) and `POST /auth/oauth/link`
+   (JWT-protected, links a provider to the authenticated account).
+8. **Root-token Session Management** (unrelated to the user-auth flow above; requires the
+   `X-Xavier-Token` header, not a JWT):
+   - `GET /v1/auth/sessions`: Lists active sessions for the caller's root-token session.
+   - `DELETE /v1/auth/sessions/{id}`: Revokes an active session immediately.
+   - `POST /v1/auth/session`: Creates a new root-token session.
 
 ---
 
@@ -64,10 +109,10 @@ Designed for advanced user interfaces (like `panel-ui`) and end users. The full 
 
 To mitigate brute-force attacks and resource abuse, Xavier includes dynamic rate-limiting middleware and database audit logging.
 
-### Brute-Force Protection on Login
-- **Protected Route:** `/v1/auth/login`
-- **Rule:** Maximum **5 failed attempts within a 15-minute window**.
-- **Behavior on Exceed:** Server logs `login_failed` in internal audit log, temporarily blocks requesting IP and returns `429 Too Many Requests`.
+### Brute-Force Protection on `/auth/*`
+- **Protected Routes:** the entire `/auth/*` nest (register, login, refresh, logout, 2FA, recovery, OAuth start/callback) shares one limiter — it does not single out `/auth/login`.
+- **Rule:** configurable via `XAVIER_AUTH_RATE_LIMIT`, default **20 requests per minute** per caller (client IP, or agent id when the request carries an authenticated agent lease), over a 60s sliding window.
+- **Behavior on Exceed:** returns `429 Too Many Requests` with `{"status": "error", "message": "Demasiados intentos de autenticacion. Maximo <n> por minuto."}`.
 
 ### Rate-Limit Response Headers
 When a request is processed, the server adds the following headers to help clients regulate frequency:

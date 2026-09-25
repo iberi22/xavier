@@ -77,7 +77,7 @@ PY
 
 # ---------------------------------------------------------------- existence
 echo "==> [2/5] Checking implemented_in[] paths..."
-python3 - "$LEDGER" "$ROOT" << 'PY'
+python3 - "$LEDGER" "$ROOT" << 'PY' || exit 1
 import json, os, sys
 ledger, root = json.load(open(sys.argv[1])), sys.argv[2]
 raw = ledger.get("features", [])
@@ -93,9 +93,12 @@ def norm_paths(v):
 for f in feats:
     for p in norm_paths(f.get("implemented_in")):
         if not os.path.exists(os.path.join(root, p)):
-            print(f"  ⚠ {f.get('id')}: missing file {p}")
+            print(f"  ❌ {f.get('id')}: missing file {p}")
             bad += 1
-print(f"  {'✅ all paths exist' if bad == 0 else f'⚠ {bad} missing paths'}")
+if bad:
+    print(f"  ❌ {bad} missing paths — failing pipeline")
+    sys.exit(1)
+print("  ✅ all paths exist")
 PY
 
 # ---------------------------------------------------------------- score
@@ -116,20 +119,9 @@ PY
 if [ "$MODE" = "full" ] && command -v cargo >/dev/null 2>&1; then
   echo "==> [4/5] Executing declared tests (stable + beta)..."
   FAILED=0
-  while IFS= read -r testname; do
-    [ -z "$testname" ] && continue
-    echo "  ▶ $testname"
-    # Wrap: features.json declares test NAMES (filter), not commands.
-    # Detect crate by prefix: code_graph_*/query::/indexer::/db:: → code-graph, else xavier.
-    case "$testname" in
-      code_graph_*|query::*|indexer::*|db::*) CRATE="code-graph" ;;
-      *) CRATE="xavier" ;;
-    esac
-    if ! (cd "$ROOT" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/build/rust-target/xavier-verify}" cargo test -p "$CRATE" --lib "$testname" >/dev/null 2>&1); then
-      echo "  ❌ FAILED: $testname"
-      FAILED=1
-    fi
-  done < <(python3 - "$LEDGER" << 'PY'
+  ZERO_MATCH=0
+  TEST_LIST="$(mktemp)"
+  python3 - "$LEDGER" << 'PY' > "$TEST_LIST" || { echo "❌ test list generation failed"; rm -f "$TEST_LIST"; exit 1; }
 import json, sys
 ledger = json.load(open(sys.argv[1]))
 raw = ledger.get("features", [])
@@ -141,8 +133,117 @@ for f in feats:
         for t in tests:
             print(t)
 PY
-)
-  [ "$FAILED" -eq 0 ] && echo "  ✅ all declared tests passed"
+  TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/xavier-verify-target}"
+  # NOTE: never default to /build (small tmpfs ramdisk, fills up); /tmp lives
+  # on the big disk. Override with CARGO_TARGET_DIR if you know better.
+  PER_ATTEMPT="${XAVIER_VERIFY_PER_ATTEMPT_SECS:-600}"
+  if command -v timeout >/dev/null 2>&1; then TIMEOUT_BIN="timeout $PER_ATTEMPT"; else TIMEOUT_BIN=""; fi
+  # Warmup: compile lib test binaries once WITHOUT the per-attempt timeout,
+  # so the first filters don't burn their budget on a cold target dir.
+  echo "  … warming test binaries (one-time compile, may take minutes) …"
+  for spec in "-p xavier --lib" "-p code-graph --lib" "-p xavier-core-logic --lib" "-p xavier --features telegram --lib" "-p xavier --features mesh --lib"; do
+    # shellcheck disable=SC2086
+    (cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" cargo test $spec --no-run >/dev/null 2>&1) \
+      || echo "  ⚠ warmup failed for: $spec (continuing anyway)"
+  done
+  # Declared [[test]] target names (for path/:: filters pointing at integration targets).
+  TEST_TARGETS="$(grep -A1 '^\[\[test\]\]' "$ROOT/Cargo.toml" | grep 'name =' | sed -E 's/.*name = "([^"]+)".*/\1/' | tr '\n' ' ')"
+  # try_cargo: run one cargo invocation, set OUT/RC/PASSED. Echoes the label on success.
+  try_cargo() {
+    OUT="$(cd "$ROOT" && CARGO_TARGET_DIR="$TARGET_DIR" $TIMEOUT_BIN cargo "$@" 2>&1)"
+    RC=$?
+    PASSED="$(printf '%s' "$OUT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | head -1)"
+    PASSED="${PASSED:-0}"
+    echo "    … attempt [$TRY_LABEL]: rc=$RC passed=$PASSED" >&2
+    if [ "$RC" -eq 0 ] && [ "$PASSED" -ge 1 ]; then
+      echo "    ✅ $TRY_LABEL (passed=$PASSED)"
+      return 0
+    fi
+    FAIL_OUT="${FAIL_OUT:-}${FAIL_OUT:+$'\n'}--- $TRY_LABEL (rc=$RC) ---"$'\n'"$(printf '%s' "$OUT" | tail -12)"
+    return 1
+  }
+  # file_to_invocation: map a defining source file to "label|cargo args".
+  file_to_invocation() {
+    # NOTE: specific prefixes first — bash case takes the first match,
+    # so src/telegram/* must precede the generic src/* (same for mesh).
+    case "$1" in
+      src/telegram/*)
+        echo "xavier telegram|test -p xavier --features telegram --lib" ;;
+      tests/mesh_integration.rs)
+        echo "--test mesh_integration (mesh)|test --features mesh --test mesh_integration" ;;
+      src/*)            echo "xavier --lib|test -p xavier --lib" ;;
+      code-graph/*)     echo "code-graph --lib|test -p code-graph --lib" ;;
+      crates/xavier-core-logic/*) echo "xavier-core-logic|test -p xavier-core-logic --lib" ;;
+      crates/xavier-wasm/*)       echo "xavier-wasm|test -p xavier-wasm --lib" ;;
+      crates/*)         echo "crate $(echo "$1" | cut -d/ -f2)|test -p $(echo "$1" | cut -d/ -f2) --lib" ;;
+      tests/e2e/*|tests/*.rs)
+        local base; base="$(basename "$1" .rs)"
+        echo "--test $base|test --test $base" ;;
+      *)                echo "" ;;
+    esac
+  }
+  # run_filter: locate `fn <name>` definitions with grep (no compile), run the
+  # owning target(s); fall back to lib sweeps for macro-generated tests.
+  # Returns 0 iff at least one invocation executed >=1 test successfully.
+  # On failure, the last cargo output is kept under ./target-verify-failures/
+  # (git-ignored scratch) for diagnosis instead of being swallowed.
+  run_filter() {
+    local testname="$1" fnname files f inv filter_arg
+    FAIL_OUT=""
+    case "$testname" in
+      *\ *)
+        echo "  ❌ LEDGER-FIX NEEDED: '$testname' is prose, not a test filter"
+        return 1 ;;
+    esac
+    fnname="${testname##*::}"
+    files="$(cd "$ROOT" && grep -rl --include='*.rs' -e "fn $fnname" src code-graph crates tests 2>/dev/null | head -5)"
+    if [ -n "$files" ]; then
+      for f in $files; do
+        inv="$(file_to_invocation "$f")"
+        [ -z "$inv" ] && continue
+        TRY_LABEL="${inv%%|*}"
+        # --test targets match on the bare fn name: a full `a::b::fn`
+        # path never substrings-matches the flat integration test name.
+        case "$inv" in
+          "--test "*) filter_arg="$fnname" ;;
+          *) filter_arg="$testname" ;;
+        esac
+        # shellcheck disable=SC2086: intentional word-splitting of cargo args
+        try_cargo ${inv#*|} "$filter_arg" && return 0
+      done
+    fi
+    # Fallback sweeps (macro-generated or oddly located tests).
+    TRY_LABEL="xavier --lib";        try_cargo test -p xavier --lib "$testname" && return 0
+    TRY_LABEL="code-graph --lib";    try_cargo test -p code-graph --lib "$testname" && return 0
+    TRY_LABEL="xavier-core-logic";   try_cargo test -p xavier-core-logic --lib "$testname" && return 0
+    TRY_LABEL="--test $testname";    try_cargo test --test "$testname" && return 0
+    case "$testname" in
+      */*.rs)
+        local base; base="$(basename "$testname" .rs)"
+        TRY_LABEL="--test $base (path)"; try_cargo test --test "$base" && return 0 ;;
+    esac
+    return 1
+  }
+  while IFS= read -r testname; do
+    [ -z "$testname" ] && continue
+    echo "  ▶ $testname"
+    # Wrap: features.json declares test NAMES (filter), not commands.
+    if ! run_filter "$testname"; then
+      echo "  ❌ FAILED: $testname (no invocation executed >=1 test)"
+      faildir="$ROOT/target-verify-failures"
+      mkdir -p "$faildir"
+      printf '%s\n' "$FAIL_OUT" | tail -60 > "$faildir/$(printf '%s' "$testname" | tr -c 'A-Za-z0-9_-' '_').log"
+      echo "    (last output kept in target-verify-failures/)"
+      FAILED=1
+      ZERO_MATCH=1
+    fi
+  done < "$TEST_LIST"
+  rm -f "$TEST_LIST"
+  if [ "$FAILED" -ne 0 ]; then
+    echo "  ❌ declared tests failed (zero-match=$ZERO_MATCH) — failing pipeline"
+    exit 1
+  fi
+  echo "  ✅ all declared tests passed"
 fi
 
 # ---------------------------------------------------------------- strict
@@ -175,4 +276,5 @@ PY
 fi
 
 echo ""
-echo "==> Pipeline complete. ✅ (exit 0)"
+echo "==> Pipeline complete. ✅"
+exit 0

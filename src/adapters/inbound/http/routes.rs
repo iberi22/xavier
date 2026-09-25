@@ -52,7 +52,7 @@ static MALOCA_STORE: std::sync::OnceLock<Arc<crate::maloca::MalocaStore>> =
 /// Get the global maloca store, initializing with default path if needed
 pub fn get_maloca_store() -> Arc<crate::maloca::MalocaStore> {
     MALOCA_STORE
-        .get_or_init(|| crate::maloca::MalocaStore::open(std::path::Path::new("data/maloca")))
+        .get_or_init(crate::maloca::MalocaStore::open_default)
         .clone()
 }
 

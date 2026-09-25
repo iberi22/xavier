@@ -31,6 +31,15 @@ async fn start_test_server(state_dir_path: &std::path::Path) -> (u16, ChildGuard
                 "XAVIER_JWT_SECRET",
                 "super-secret-jwt-key-2026-very-secure-indeed",
             )
+            // auth2's JWT keypair / DB master key live in a HardwareVault keyed by service
+            // name (default "xavier-auth"), which is NOT scoped by XAVIER_STATE_DIR — it
+            // falls back to `$HOME/.xavier/secrets` when the OS keyring has no entry. Without
+            // this override, this test process would read/write whatever machine it runs on's
+            // real xavier-auth secrets. See auth2::auth_vault_service_name (src/auth2/mod.rs).
+            .env(
+                "XAVIER_AUTH_VAULT_SERVICE",
+                format!("xavier-auth-test-{port}"),
+            )
             .env(
                 "XAVIER_CODE_GRAPH_DB_PATH",
                 state_dir_path.join(format!("test-code-{port}.db")),
@@ -194,4 +203,143 @@ async fn test_auth_register_flow() {
             resp_invalid.status()
         );
     }
+}
+
+/// Regression test for a real bug found while wiring up the panel's 2FA UI:
+/// `setup_2fa_handler`/`verify_2fa_handler` used to operate on `list_users().next()`
+/// (whichever account happens to be first in the DB — typically the very first one
+/// ever registered) instead of the account identified by the caller's own JWT
+/// (`claims.sub`). Any authenticated user could therefore re-enroll or overwrite
+/// the FIRST user's TOTP secret/backup codes just by calling `/auth/2fa/setup` or
+/// `/auth/2fa/verify` with their own valid token.
+///
+/// This registers two accounts (A first, B second), has B set up and verify its
+/// OWN 2FA, and asserts that A is completely unaffected: A can still log in with
+/// just its password (2FA was never toggled on for A), and B's 2FA — and only
+/// B's — is enabled and enforced.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_2fa_scoped_to_jwt_user_not_first_user() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let (port, _server) = start_test_server(temp_dir.path()).await;
+    let client = Client::new();
+    let base = format!("http://127.0.0.1:{port}");
+
+    async fn register(client: &Client, base: &str, email: &str, password: &str) {
+        let resp = client
+            .post(format!("{base}/auth/register"))
+            .json(&json!({ "email": email, "name": "Regression Test", "password": password }))
+            .send()
+            .await
+            .expect("register request failed");
+        assert!(
+            resp.status() == StatusCode::CREATED || resp.status() == StatusCode::OK,
+            "register({email}) expected 200/201, got {}",
+            resp.status()
+        );
+    }
+
+    async fn login(
+        client: &Client,
+        base: &str,
+        email: &str,
+        password: &str,
+        totp_code: Option<&str>,
+    ) -> reqwest::Response {
+        client
+            .post(format!("{base}/auth/login"))
+            .json(&json!({ "email": email, "password": password, "totp_code": totp_code }))
+            .send()
+            .await
+            .expect("login request failed")
+    }
+
+    let email_a = "regression-user-a@example.com";
+    let email_b = "regression-user-b@example.com";
+    let password = "securepassword123"; // 12+ chars, satisfies validate_registration
+
+    // A registers FIRST — under the old bug, A is exactly the account
+    // `list_users().next()` would return regardless of who is authenticated.
+    register(&client, &base, email_a, password).await;
+    register(&client, &base, email_b, password).await;
+
+    // B logs in and sets up + verifies 2FA using ONLY B's own JWT.
+    let login_b = login(&client, &base, email_b, password, None).await;
+    assert_eq!(
+        login_b.status(),
+        StatusCode::OK,
+        "B's initial login should succeed"
+    );
+    let login_b_body: Value = login_b.json().await.expect("B login body");
+    let access_token_b = login_b_body["access_token"]
+        .as_str()
+        .expect("B access_token")
+        .to_string();
+
+    let setup_b = client
+        .post(format!("{base}/auth/2fa/setup"))
+        .bearer_auth(&access_token_b)
+        .send()
+        .await
+        .expect("2fa/setup as B failed");
+    assert_eq!(
+        setup_b.status(),
+        StatusCode::OK,
+        "2fa/setup as B should succeed"
+    );
+    let setup_b_body: Value = setup_b.json().await.expect("setup_b body");
+    let secret_b = setup_b_body["secret"].as_str().expect("secret").to_string();
+
+    let code_b = xavier::auth2::build_totp(&secret_b, email_b)
+        .expect("build_totp for B")
+        .generate_current()
+        .to_string();
+
+    let verify_b = client
+        .post(format!("{base}/auth/2fa/verify"))
+        .bearer_auth(&access_token_b)
+        .json(&json!({ "code": code_b }))
+        .send()
+        .await
+        .expect("2fa/verify as B failed");
+    assert_eq!(
+        verify_b.status(),
+        StatusCode::OK,
+        "2fa/verify as B should succeed with B's own code"
+    );
+
+    // A must be totally unaffected: plain password login still works, no TOTP required.
+    let login_a_after = login(&client, &base, email_a, password, None).await;
+    assert_eq!(
+        login_a_after.status(),
+        StatusCode::OK,
+        "A must still log in with just a password — B's 2FA setup/verify must not have \
+         enrolled A into 2FA (the exact regression this test guards against)"
+    );
+    let login_a_body: Value = login_a_after.json().await.expect("A login body");
+    assert_eq!(
+        login_a_body["requires_2fa"], false,
+        "A's account must not report requires_2fa: true"
+    );
+
+    // B, on the other hand, must now be enforced: password alone is rejected.
+    let login_b_no_code = login(&client, &base, email_b, password, None).await;
+    assert_eq!(
+        login_b_no_code.status(),
+        StatusCode::UNAUTHORIZED,
+        "B must now require a 2FA code"
+    );
+    let login_b_no_code_body: Value = login_b_no_code.json().await.expect("body");
+    assert_eq!(login_b_no_code_body["error"], "mfa_required");
+
+    // And B's own fresh TOTP code (own account, own secret) logs B in.
+    let code_b_2 = xavier::auth2::build_totp(&secret_b, email_b)
+        .expect("build_totp for B (2nd)")
+        .generate_current()
+        .to_string();
+    let login_b_with_code = login(&client, &base, email_b, password, Some(&code_b_2)).await;
+    assert_eq!(
+        login_b_with_code.status(),
+        StatusCode::OK,
+        "B must be able to log in with B's own live TOTP code"
+    );
 }

@@ -60,6 +60,20 @@ pub struct V1MemoryResponse {
     pub memory: String,
     pub user_id: Option<String>,
     pub metadata: serde_json::Value,
+    /// Vector index state: `indexed` when the doc carries an embedding
+    /// (hybrid search can rank it), `pending` when only lexical match applies.
+    #[serde(default)]
+    pub embedding_status: String,
+}
+
+/// Derive the vector index state for a stored document.
+fn embedding_status_of(doc: &crate::memory::qmd_memory::MemoryDocument) -> &'static str {
+    let vector_len = doc.embedding.len() + doc.content_vector.as_ref().map_or(0, Vec::len);
+    if vector_len > 0 {
+        "indexed"
+    } else {
+        "pending"
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -435,6 +449,42 @@ pub async fn v1_memories_add(
             {
                 tracing::warn!(%error, memory_id = %id, "failed to index entity graph from v1 add");
             }
+            // Vector backfill (MCP parity): the sync write may land without an
+            // embedding when the provider hiccups; retry once in background so
+            // hybrid search can rank this doc instead of leaving it
+            // lexical-only until the next manual reindex.
+            let backfill_memory = workspace.workspace.memory.clone();
+            let backfill_id = id.clone();
+            let docs_after_write = backfill_memory.doc_count().await;
+            tracing::debug!(
+                instance = ?std::sync::Arc::as_ptr(&backfill_memory),
+                workspace_id = %workspace.workspace_id,
+                docs_after_write = docs_after_write,
+                memory_id = %backfill_id,
+                "v1 add committed"
+            );
+            tokio::spawn(async move {
+                let Ok(Some(mut doc)) = backfill_memory.get(&backfill_id).await else {
+                    return;
+                };
+                let has_vector = !doc.embedding.is_empty()
+                    || doc.content_vector.as_ref().is_some_and(|v| !v.is_empty());
+                if has_vector {
+                    return;
+                }
+                let Ok(vector) =
+                    crate::memory::qmd_memory::reader::generate_embedding(&doc.content).await
+                else {
+                    return;
+                };
+                if vector.is_empty() {
+                    return;
+                }
+                doc.embedding = vector;
+                if let Err(error) = backfill_memory.update(doc).await {
+                    tracing::warn!(error = %error, memory_id = %backfill_id, "vector backfill failed");
+                }
+            });
             Json(serde_json::json!({
                 "status": "ok",
                 "message": "Memory added successfully",
@@ -1126,6 +1176,17 @@ pub async fn v1_memories_search(
     let limit = payload.limit.unwrap_or(10);
 
     let mut filters = payload.filters.clone().unwrap_or_default();
+    let search_memory = workspace.workspace.memory.clone();
+    let search_docs = search_memory.doc_count().await;
+    tracing::debug!(
+        instance = ?std::sync::Arc::as_ptr(&search_memory),
+        workspace_id = %workspace.workspace_id,
+        docs_before_search = search_docs,
+        query_len = payload.query.len(),
+        limit = limit,
+        "v1 search start"
+    );
+
     let zones = payload
         .active_zones
         .clone()
@@ -1251,6 +1312,7 @@ pub async fn v1_memories_search(
         let results = documents
             .into_iter()
             .map(|doc| V1MemoryResponse {
+                embedding_status: embedding_status_of(&doc).to_string(),
                 id: doc.id.unwrap_or_default(),
                 memory: doc.content,
                 user_id: Some(doc.path),
@@ -1696,6 +1758,7 @@ pub async fn v1_memories_list(
         .skip(offset)
         .take(limit)
         .map(|doc| V1MemoryResponse {
+            embedding_status: embedding_status_of(&doc).to_string(),
             id: doc.id.unwrap_or_default(),
             memory: doc.content,
             user_id: Some(doc.path),
@@ -1856,6 +1919,7 @@ pub async fn v1_memories_get(
             Json(serde_json::json!({
                 "status": "ok",
                 "memory": V1MemoryResponse {
+                    embedding_status: embedding_status_of(&doc).to_string(),
                     id: doc.id.unwrap_or_default(),
                     memory: final_content,
                     user_id: Some(doc.path),

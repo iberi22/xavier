@@ -26,6 +26,7 @@ pub async fn vsearch_filtered(
         return Ok(Vec::new());
     }
 
+    let include_activity = filters.and_then(|f| f.include_activity).unwrap_or(false);
     let docs = memory.docs.read().await;
 
     let mut similarities: Vec<(f32, MemoryDocument)> = docs
@@ -38,6 +39,7 @@ pub async fn vsearch_filtered(
                 filters,
             )
         })
+        .filter(|doc| include_activity || !crate::memory::schema::is_noise_content(&doc.content))
         .filter_map(|doc| {
             let score = cosine_similarity(&query_vector, &doc.embedding);
             if score > 0.0 {

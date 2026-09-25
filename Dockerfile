@@ -12,14 +12,14 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY panel-ui/package.json panel-ui/package.json
 COPY vendor/ vendor/
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    corepack enable && corepack prepare pnpm@11.24.0 --activate && pnpm install
+    corepack enable && corepack prepare pnpm@11.24.0 --activate && pnpm install --config.dangerouslyAllowAllBuilds=true
 COPY panel-ui/ panel-ui/
 COPY Cargo.toml Cargo.toml
 RUN pnpm --filter xavier-panel-ui run build
 
 # Stage 1: Builder
 # Using slim variant to keep final image small (~500MB vs ~800MB for full)
-FROM rust:1.90-bookworm AS builder
+FROM rust:1.94-bookworm AS builder
 
 ARG FEATURES=local-gllm,cli-interactive
 
@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   (path = "../codegraph-types" / "../../../codegraph-types")
 # - vendor/maloca-core/: used by root crate (maloca-core path dep)
 COPY Cargo.toml Cargo.lock ./
+COPY LICENSE ./
 COPY benches/ benches/
 COPY src/ src/
 COPY code-graph/ code-graph/
@@ -77,22 +78,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create data directory
-RUN mkdir -p /data
+# Create data directory and drop root: the daemon must never run as uid 0
+# (shell/proxy mitigations assume least privilege at the OS layer too).
+RUN useradd --create-home --shell /usr/sbin/nologin xavier \
+    && mkdir -p /data /app \
+    && chown -R xavier:xavier /data /app
 
 WORKDIR /app
 
 # Copy binary from builder stage
-COPY --from=builder /app/xavier /usr/local/bin/xavier
+COPY --from=builder --chown=xavier:xavier /app/xavier /usr/local/bin/xavier
 
 # Copy frontend assets from frontend-builder stage
-COPY --from=frontend-builder /app/panel-ui/build /app/panel-ui/build
+COPY --from=frontend-builder --chown=xavier:xavier /app/panel-ui/build /app/panel-ui/build
 
 EXPOSE 8006
 
-# Healthcheck: verify the server is responding
+# Healthcheck against /ready (503 unless memory store + code-graph are
+# actually ready). /health returns 200 even with status=unhealthy, so it
+# must NOT be used as the health signal.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8006/health || exit 1
+    CMD curl -fsS http://127.0.0.1:8006/ready || exit 1
 
 ENV XAVIER_PORT=8006 \
     XAVIER_HOST=0.0.0.0 \
@@ -102,4 +108,5 @@ ENV XAVIER_PORT=8006 \
     XAVIER_WORKSPACE_ID=default
 
 # Required: set XAVIER_TOKEN to a secure random value
+USER xavier
 CMD ["/usr/local/bin/xavier", "http"]

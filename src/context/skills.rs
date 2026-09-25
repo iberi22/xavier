@@ -113,7 +113,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loads_real_store_shape_probe() {
+    async fn test_loader_loads_real_skill_format_or_module_removed() {
         let dir = tempdir().expect("test assertion");
         write_file(&dir.path().join("adhd/SKILL.md"), &real_skill("adhd"));
         write_file(
