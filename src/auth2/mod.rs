@@ -35,6 +35,17 @@ use crate::auth2::refresh::RefreshTokenManager;
 use crate::security::recovery::RecoverySystem;
 use anyhow::Result;
 
+/// `HardwareVault` service name backing the auth2 JWT keypair + DB master key
+/// (`auth2::db::AuthDb::get_or_create_master_key`, `auth2::jwt::JwtManager`).
+/// Defaults to the historical hardcoded `"xavier-auth"` — unchanged for normal
+/// operation — but can be overridden so an isolated test/dev instance (e.g. a
+/// disposable e2e run on an alternate port/data dir) never reads from or writes
+/// to the machine's real `xavier-auth` keyring/`~/.xavier/secrets` entries,
+/// which are NOT scoped by `XAVIER_STATE_DIR`/`XAVIER_DATA_DIR`.
+pub(crate) fn auth_vault_service_name() -> String {
+    std::env::var("XAVIER_AUTH_VAULT_SERVICE").unwrap_or_else(|_| "xavier-auth".to_string())
+}
+
 #[derive(Deserialize)]
 pub struct RegisterRequest {
     pub email: String,
@@ -445,55 +456,107 @@ async fn login_handler<S>(
     State(state): State<S>,
     axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
     Json(payload): Json<LoginRequest>,
-) -> Result<impl IntoResponse, StatusCode>
+) -> axum::response::Response
 where
     S: HasAuthDb + Clone + Send + Sync + 'static,
 {
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
-        None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!(
-                "{}/.xavier/auth.db",
-                base_path
-            )))
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-        )),
+        None => match AuthDb::new(std::path::Path::new(&format!(
+            "{}/.xavier/auth.db",
+            base_path
+        ))) {
+            Ok(db) => std::sync::Arc::new(parking_lot::Mutex::new(db)),
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        },
     };
     let auth_db = auth_db_lock.lock();
 
-    let user = auth_db
-        .get_user_by_email(&payload.email)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let user = match auth_db.get_user_by_email(&payload.email) {
+        Ok(Some(u)) => u,
+        Ok(None) => {
+            return json_err(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({ "error": "invalid_credentials" }),
+            )
+        }
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
 
-    if !verify_password(&payload.password, &user.password_hash)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    {
-        return Err(StatusCode::UNAUTHORIZED);
+    match verify_password(&payload.password, &user.password_hash) {
+        Ok(true) => {}
+        Ok(false) => {
+            return json_err(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({ "error": "invalid_credentials" }),
+            )
+        }
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 
     // TOTP check if enabled (shared with /auth/2fa/verify and the CLI: see `verify_totp_code`).
     let requires_2fa = user.totp_enabled;
     if user.totp_enabled {
-        let code = payload.totp_code.ok_or(StatusCode::UNAUTHORIZED)?;
-        if let Some(ref secret) = user.totp_secret {
-            let ok = verify_totp_code(secret, &user.email, &code)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            if !ok {
-                return Err(StatusCode::UNAUTHORIZED);
+        let code = match payload.totp_code.as_deref() {
+            Some(c) if !c.trim().is_empty() => c.to_string(),
+            _ => {
+                // Password was correct but no TOTP/backup code was sent yet. A bare 401 here is
+                // indistinguishable from "wrong password" on the client (see authClient.ts /
+                // AuthProvider.tsx), so this tells it explicitly to re-submit with a code.
+                return json_err(
+                    StatusCode::UNAUTHORIZED,
+                    serde_json::json!({
+                        "error": "mfa_required",
+                        "message": "se requiere el codigo 2FA"
+                    }),
+                );
             }
+        };
+        let mut ok = false;
+        if let Some(ref secret) = user.totp_secret {
+            ok = match verify_totp_code(secret, &user.email, &code) {
+                Ok(v) => v,
+                Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
+        }
+        if !ok {
+            // Not a valid live TOTP code — try a one-shot backup code instead (`consume_backup_code`,
+            // shared with the CLI). This is the only way to sign in via /auth/login without the
+            // authenticator device; the matched code is removed from the stored set on success.
+            if let Some(ref backup_codes_json) = user.backup_codes {
+                if let Some(remaining) = consume_backup_code(backup_codes_json, &code) {
+                    if auth_db.update_backup_codes(&user.id, &remaining).is_err() {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                    ok = true;
+                }
+            }
+        }
+        if !ok {
+            return json_err(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({ "error": "mfa_invalid", "message": "codigo 2FA invalido" }),
+            );
         }
     }
 
-    let jwt_manager = JwtManager::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let access_token = jwt_manager
-        .create_token(&user.id, &user.email, &user.role)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let jwt_manager = match JwtManager::new() {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::error!(error = %e, "login_handler: JwtManager::new() failed");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    let access_token = match jwt_manager.create_token(&user.id, &user.email, &user.role) {
+        Ok(t) => t,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
 
     let refresh_manager = RefreshTokenManager::new(&auth_db);
-    let refresh_token = refresh_manager
-        .generate_token(&user.id, None)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let refresh_token = match refresh_manager.generate_token(&user.id, None) {
+        Ok(t) => t,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -510,12 +573,13 @@ where
         })
         .ok();
 
-    Ok(Json(LoginResponse {
+    Json(LoginResponse {
         access_token,
         refresh_token,
         user: UserResponse::from(user),
         requires_2fa,
-    }))
+    })
+    .into_response()
 }
 
 async fn refresh_handler<S>(
@@ -739,6 +803,7 @@ pub fn consume_backup_code(backup_codes_json: &str, code: &str) -> Option<String
 async fn setup_2fa_handler<S>(
     State(state): State<S>,
     axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
+    axum::Extension(claims): axum::Extension<crate::auth2::jwt::Claims>,
 ) -> Result<impl IntoResponse, StatusCode>
 where
     S: HasAuthDb + Clone + Send + Sync + 'static,
@@ -755,12 +820,14 @@ where
     };
     let auth_db = auth_db_lock.lock();
 
-    // Get first user for setup (JWT claims are validated by middleware already)
+    // The account this setup applies to is the one from the validated JWT (claims.sub),
+    // NEVER `list_users().next()` — that took whichever account happened to be first in
+    // the DB (typically the admin), so any authenticated user could re-enroll/overwrite
+    // someone else's TOTP secret and backup codes. See verify_2fa_handler below for the
+    // matching fix and `two_factor_scoped_to_jwt_user_not_first_user` for the regression test.
     let user = auth_db
-        .list_users()
+        .get_user_by_id(&claims.sub)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .into_iter()
-        .next()
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Generate TOTP secret + otpauth URL + Unicode QR (shared with the CLI: see
@@ -809,6 +876,7 @@ where
 async fn verify_2fa_handler<S>(
     State(state): State<S>,
     axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
+    axum::Extension(claims): axum::Extension<crate::auth2::jwt::Claims>,
     Json(payload): Json<TwoFactorVerifyRequest>,
 ) -> Result<impl IntoResponse, StatusCode>
 where
@@ -826,12 +894,11 @@ where
     };
     let auth_db = auth_db_lock.lock();
 
-    // Get first user (JWT claims validated by middleware)
+    // Same fix as setup_2fa_handler above: scope to the JWT's own account (claims.sub),
+    // never the first row in the DB.
     let user = auth_db
-        .list_users()
+        .get_user_by_id(&claims.sub)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .into_iter()
-        .next()
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let secret_b32 = user.totp_secret.as_ref().ok_or(StatusCode::BAD_REQUEST)?;
@@ -1262,9 +1329,8 @@ pub struct OAuthLinkRequest {
 /// usuario debe demostrar que controla la cuenta iniciando sesion y vinculando desde aqui.
 ///
 /// El dueno de la vinculacion sale de `claims.sub` (el JWT que valido el middleware), NO de una
-/// consulta a la base. Nota: el handler de 2FA existente toma `list_users().next()`, o sea el primer
-/// usuario de la base, que con mas de una cuenta vincularia la identidad a quien no es; aqui no se
-/// repite ese patron.
+/// consulta a la base — mismo patron que `setup_2fa_handler`/`verify_2fa_handler` (antes usaban
+/// `list_users().next()`, el primer usuario de la base en vez del dueno del JWT; corregido).
 async fn oauth_link_handler<S>(
     State(state): State<S>,
     axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
