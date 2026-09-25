@@ -96,7 +96,9 @@ test.describe("Telecom Agent Responder E2E", () => {
     const headerTitle = page.locator("text=Automated Cognitive Responder");
     await expect(headerTitle).toBeVisible();
 
-    const activeBadge = page.locator("text=Active");
+    // Exact match: "text=Active" substring-matches "Select Active Cognitive Responder" and
+    // "Active Capabilities" too (strict-mode violation), so scope to the status badge's exact text.
+    const activeBadge = page.getByText("Active", { exact: true });
     await expect(activeBadge).toBeVisible();
 
     // Verify initial selected agent
@@ -117,8 +119,9 @@ test.describe("Telecom Agent Responder E2E", () => {
     await expect(sentinelOption).toBeVisible();
     await sentinelOption.click();
 
-    // Verify updated selected agent
-    const updatedAgent = page.locator("h4", { hasText: "Sentinel Threat Monitor" });
+    // Verify updated selected agent (rendered in a <span>, not an <h4> —
+    // src/components/Telecom/AgentResponderSelect.tsx's trigger button)
+    const updatedAgent = page.locator("text=Sentinel Threat Monitor");
     await expect(updatedAgent).toBeVisible();
 
     // Toggle master switch

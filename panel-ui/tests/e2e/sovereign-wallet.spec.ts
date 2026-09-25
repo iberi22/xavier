@@ -118,15 +118,12 @@ test.describe("Sovereign Wallet & Autonomous Agent Delegation E2E", () => {
   });
 
   test("opens Sovereign Wallet from TopStatusBar Karma pill and displays balances", async ({ page }) => {
-    await page.goto("/");
-
-    // TopStatusBar Karma pill should be visible
-    const karmaPill = page.locator("button[title*='Billetera Soberana']");
-    await expect(karmaPill).toBeVisible({ timeout: 10000 });
-    await expect(karmaPill).toContainText("KARMA");
-
-    // Click to open Wallet
-    await karmaPill.click();
+    // NOTE: TopStatusBar no longer exposes a "Karma pill" button (it was removed in a prior
+    // refactor — grep confirms no "Billetera Soberana"/"karma" references remain in
+    // src/components/TopStatusBar.tsx). WalletView is only reachable via the #/wallet hash
+    // route today (see App.tsx), the same entry point the other two tests in this file already
+    // use, so this test now drives it the same way instead of clicking dead UI.
+    await page.goto("/#/wallet");
 
     // Verify Wallet Modal opens
     const modalTitle = page.locator("h2:has-text('Billetera Soberana SWAL')");

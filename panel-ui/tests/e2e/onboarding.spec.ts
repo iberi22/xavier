@@ -42,6 +42,25 @@ test.describe("Onboarding Flow (pending wave-theme)", () => {
       await route.fulfill({ json: { data: { nodes: [], links: [] } } });
     });
 
+    // AuthProvider (panel-ui/src/auth/AuthProvider.tsx) calls authClient.refresh() on every
+    // mount — a SEPARATE /auth/* email/password session from the onboarding flow's own
+    // Skip/Register/Login steps. Left unmocked, that unmocked fetch hits the real network and
+    // 401s (no refresh_token exists yet in a fresh onboarding session), which the browser logs
+    // as a "Failed to load resource: 401" console error — exactly what
+    // "Zero-Knowledge onboarding without 401 console errors" asserts never happens. Response
+    // shape matches the real backend (refresh_handler's AuthResponse in src/auth2/mod.rs):
+    // { access_token, refresh_token }.
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token-onboarding",
+          refresh_token: "mock-refresh-token-onboarding",
+        }),
+      });
+    });
+
     await page.addInitScript(() => {
       localStorage.removeItem("xavier_onboarding_completed");
       localStorage.removeItem("xavier_token");
