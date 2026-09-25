@@ -78,8 +78,20 @@ pub struct EmbeddingHealth {
     pub latency_ms: u64,
     pub error_rate: f32,
     pub status: HealthLevel,
+    /// `true` when an embedder is configured *and* answered a live health
+    /// ping within budget. `false` on a fresh install with no embedder
+    /// configured, or one that's unreachable/timing out — memory add/search
+    /// still work in that case via lexical/FTS fallback (see
+    /// `HealthStatus.status`, which only reaches `Unhealthy` for
+    /// system/database failures, never for embeddings alone).
+    #[serde(default = "default_true")]
+    pub available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache: Option<crate::embedding::cache::EmbeddingCacheMetrics>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +156,7 @@ impl Default for HealthStatus {
                 latency_ms: 0,
                 error_rate: 0.0,
                 status: HealthLevel::Healthy,
+                available: true,
                 cache: None,
             },
             llm: LlmHealth {
@@ -587,24 +600,42 @@ impl HealthMonitor {
         let model = std::env::var("XAVIER_EMBEDDING_MODEL").unwrap_or_else(|_| "unknown".into());
         let mut latency_ms = 0;
         let mut status = HealthLevel::Healthy;
+        let mut available = true;
 
         let embedder_opt = self.embedder.read().await;
         if let Some(ref embedder) = *embedder_opt {
             let start = std::time::Instant::now();
-            match embedder.encode("health check ping").await {
-                Ok(_) => {
+            // Bounded: an unreachable/misconfigured embedding endpoint must
+            // not hang the periodic health-check loop. Reuses the same short,
+            // configurable budget as the memory add/search fallback paths.
+            match tokio::time::timeout(
+                crate::memory::embedder::embedding_timeout(),
+                embedder.encode("health check ping"),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
                     latency_ms = start.elapsed().as_millis() as u64;
                     if latency_ms > 3000 {
                         status = HealthLevel::Degraded;
                     }
                 }
-                Err(_) => {
+                Ok(Err(_)) => {
                     status = HealthLevel::Unhealthy;
+                    available = false;
+                }
+                Err(_) => {
+                    // Timed out: unavailable, but memory itself stays
+                    // operational via lexical/FTS — only degrade, never
+                    // escalate the whole node to Unhealthy for this alone.
+                    status = HealthLevel::Degraded;
+                    available = false;
                 }
             }
         } else {
             // Si el embedder no está configurado o inicializado, el estado del subsistema es Degraded
             status = HealthLevel::Degraded;
+            available = false;
         }
 
         let cache = embedder_opt.as_ref().and_then(|e| e.cache_metrics());
@@ -615,6 +646,7 @@ impl HealthMonitor {
             latency_ms,
             error_rate: 0.0,
             status,
+            available,
             cache,
         }
     }

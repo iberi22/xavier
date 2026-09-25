@@ -413,6 +413,58 @@ mod tests {
         assert_eq!(pragmas.3, 2, "temp_store=MEMORY must be set at pool build");
     }
 
+    /// Regression for issue #2544: a *new* write connection opened through
+    /// `ConnectionManager` (the same mechanism `VecSqliteMemoryStore` and the
+    /// MCP `create_memory` write path use) must have the sqlite-vec extension
+    /// (`vec_f32`, `vec_distance_cosine`, ...) available — not just the
+    /// connection that happened to be open at boot.
+    ///
+    /// Mirrors production ordering: register the extension via
+    /// `sqlite3_auto_extension` (idempotent, safe to call from every test in
+    /// this binary), *then* open a brand-new project pool + connection and
+    /// exercise a real `vec_f32(...)` call, matching the embedding INSERT in
+    /// `sqlite_vec_store`.
+    #[tokio::test]
+    async fn test_fresh_write_connection_has_vec_f32() {
+        crate::memory::sqlite_vec_store::vector::register_sqlite_vec_extension()
+            .expect("sqlite-vec extension registration must succeed");
+
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("vec_f32_write_conn.sqlite3");
+
+        cm.connect_with_path("vec_f32_write_conn", db_path).unwrap();
+
+        let version: String = cm
+            .with_conn("vec_f32_write_conn", |conn| {
+                Ok(conn.query_row("SELECT vec_version()", [], |row| row.get(0))?)
+            })
+            .await
+            .expect("vec_version() must resolve on a fresh connection from a fresh pool");
+        assert!(
+            version.starts_with('v'),
+            "unexpected vec_version() output: {version}"
+        );
+
+        // The exact call shape used on the memory-write path
+        // (`INSERT ... VALUES (?1, ?2, vec_f32(?3))`): a real vec_f32() call
+        // against a freshly opened write connection must not error with
+        // "no such function: vec_f32".
+        let blob: Vec<u8> = cm
+            .with_conn("vec_f32_write_conn", |conn| {
+                let embedding_json = serde_json::to_string(&[0.1_f32, 0.2, 0.3]).unwrap();
+                conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v BLOB)", [])?;
+                conn.execute(
+                    "INSERT INTO t (v) VALUES (vec_f32(?1))",
+                    rusqlite::params![embedding_json],
+                )?;
+                Ok(conn.query_row("SELECT v FROM t WHERE id = 1", [], |row| row.get(0))?)
+            })
+            .await
+            .expect("vec_f32() insert must succeed on a fresh write connection");
+        assert_eq!(blob.len(), 3 * std::mem::size_of::<f32>());
+    }
+
     #[tokio::test]
     async fn test_get_code_graph_db_and_shutdown() {
         let cm = ConnectionManager::new();

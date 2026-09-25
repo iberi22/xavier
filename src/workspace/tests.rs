@@ -363,3 +363,79 @@ async fn test_entity_graph_persists_and_restores_on_reload() {
     assert_eq!(entities_after.len(), entities_before_count);
     assert_eq!(relations_after.len(), relations_before_count);
 }
+
+/// Regression for issue #2544: on a fresh install with no embedder
+/// configured (or one that's unreachable), `POST /memory/add` used to hang
+/// behind an unbounded embedding call and never persist the record.
+/// `WorkspaceState::ingest_typed` with an explicit empty vector (the fast
+/// path both the HTTP `/memory/add` handler and the MCP `create_memory` tool
+/// use) must persist the record immediately via the lexical/FTS index —
+/// never wait on, or fail because of, the embedding call — and the record
+/// must be lexically searchable right away.
+#[tokio::test]
+async fn add_memory_persists_immediately_with_empty_vector_and_is_lexically_searchable() {
+    // Deterministically simulate "no usable embedder" (e.g. a fresh install
+    // whose configured/default embedding endpoint is unreachable) rather
+    // than relying on ambient env/network state, which varies by
+    // environment (a `local-gllm` build may have a working bundled
+    // fallback and legitimately answer in "hybrid" mode).
+    let _temp_env = crate::settings::tests::TempEnv::new();
+    std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "disabled");
+
+    let unique_id = Ulid::new().to_string();
+    let root = std::env::temp_dir().join(format!("xavier-add-fastpath-{}", unique_id));
+    let workspace = WorkspaceState::new(
+        WorkspaceConfig {
+            id: format!("add-fastpath-{}", unique_id),
+            token: "token".to_string(),
+            plan: PlanTier::Personal,
+            memory_backend: MemoryBackend::File,
+            storage_limit_bytes: None,
+            request_limit: None,
+            request_unit_limit: None,
+            embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: SyncPolicy::CloudMirror,
+            dedup: crate::settings::types::DedupSettings::default(),
+        },
+        RuntimeConfig::default(),
+        &root,
+    )
+    .await
+    .expect("workspace must initialize even without an embedder configured");
+
+    let start = std::time::Instant::now();
+    let doc_id = workspace
+        .ingest_typed(
+            "notes/add-fastpath".to_string(),
+            "issue 2544 regression content about the memory add fast path".to_string(),
+            serde_json::json!({}),
+            None,
+            Some(Vec::new()),
+            false,
+        )
+        .await
+        .expect("add must succeed synchronously even when no embedding is available");
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(2),
+        "add must not block on embeddings, took {:?}",
+        start.elapsed()
+    );
+
+    let (results, mode) = workspace
+        .memory
+        .search_filtered_with_mode("issue 2544 regression fast path", 5, None)
+        .await
+        .expect("search must not error");
+    assert!(
+        results
+            .iter()
+            .any(|d| d.id.as_deref() == Some(doc_id.as_str())),
+        "record must be lexically searchable immediately after add"
+    );
+    assert_eq!(
+        mode,
+        crate::memory::qmd::SearchMode::Lexical,
+        "no embedder is configured in this test, so search must report lexical mode"
+    );
+}

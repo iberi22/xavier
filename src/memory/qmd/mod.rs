@@ -38,6 +38,39 @@ use crate::memory::schema::{matches_filters, MemoryQueryFilters, TypedMemoryPayl
 use crate::memory::store::MemoryStore;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
+/// Which retrieval signal actually produced a search result set.
+///
+/// Surfaced to HTTP/MCP clients so a fresh install without a reachable
+/// embedding endpoint (or one that's timing out) is visibly running in
+/// lexical/FTS-only mode instead of silently degrading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchMode {
+    /// Results include a contribution from vector/embedding similarity.
+    Hybrid,
+    /// Results are lexical/FTS/BM25 only (no embedder configured, or the
+    /// embedding call failed/timed out and search degraded gracefully).
+    Lexical,
+}
+
+impl SearchMode {
+    fn from_vector_used(vector_used: bool) -> Self {
+        if vector_used {
+            SearchMode::Hybrid
+        } else {
+            SearchMode::Lexical
+        }
+    }
+
+    /// String form used in JSON API responses ("hybrid" / "lexical").
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SearchMode::Hybrid => "hybrid",
+            SearchMode::Lexical => "lexical",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct QmdMemory {
     pub(crate) workspace_id: String,
@@ -271,11 +304,29 @@ impl QmdMemory {
         limit: usize,
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<Vec<MemoryDocument>> {
-        let optimized = self
-            .search_hybrid_optimized(query_text, limit, filters)
+        self.search_filtered_with_mode(query_text, limit, filters)
+            .await
+            .map(|(docs, _mode)| docs)
+    }
+
+    /// Same as [`search_filtered`](Self::search_filtered) but also reports the
+    /// [`SearchMode`] actually used to produce the results: `Hybrid` when the
+    /// embedding/vector signal contributed, `Lexical` when the results came
+    /// purely from FTS/BM25/cache (no embedder configured, or the embedding
+    /// call failed/timed out and search degraded gracefully instead of
+    /// hanging). Callers that expose search over HTTP/MCP should surface this
+    /// so clients know when they're running without semantic search.
+    pub async fn search_filtered_with_mode(
+        &self,
+        query_text: &str,
+        limit: usize,
+        filters: Option<&MemoryQueryFilters>,
+    ) -> Result<(Vec<MemoryDocument>, SearchMode)> {
+        let (optimized, vector_used) = self
+            .search_hybrid_optimized_with_mode(query_text, limit, filters)
             .await?;
         if !optimized.is_empty() {
-            return Ok(optimized);
+            return Ok((optimized, SearchMode::from_vector_used(vector_used)));
         }
 
         let docs = self.docs.read().await;
@@ -286,10 +337,12 @@ impl QmdMemory {
         drop(docs);
 
         if locomo_only {
-            return Ok(self
-                .search_with_cache_filtered(query_text, limit, filters)
-                .await?
-                .documents);
+            return Ok((
+                self.search_with_cache_filtered(query_text, limit, filters)
+                    .await?
+                    .documents,
+                SearchMode::Lexical,
+            ));
         }
 
         if std::env::var("XAVIER_EMBEDDING_URL").is_ok()
@@ -299,7 +352,10 @@ impl QmdMemory {
                 query_with_embedding_filtered(self, query_text, limit, filters).await
             {
                 if !results.documents.is_empty() {
-                    return Ok(results.documents);
+                    return Ok((
+                        results.documents,
+                        SearchMode::from_vector_used(!results.degraded),
+                    ));
                 }
             }
         }
@@ -308,7 +364,7 @@ impl QmdMemory {
             .search_with_cache_filtered(query_text, limit, filters)
             .await?;
         if !cache_results.documents.is_empty() {
-            return Ok(cache_results.documents);
+            return Ok((cache_results.documents, SearchMode::Lexical));
         }
 
         // SPRINT 1: BM25 fallback — search self.docs directly with full BM25 scoring
@@ -316,10 +372,10 @@ impl QmdMemory {
         // is always findable, even if the MemoryStore path returns empty.
         let bm25_results = self.bm25_search(query_text, limit, filters).await?;
         if !bm25_results.is_empty() {
-            return Ok(bm25_results);
+            return Ok((bm25_results, SearchMode::Lexical));
         }
 
-        Ok(Vec::new())
+        Ok((Vec::new(), SearchMode::Lexical))
     }
 
     /// Search hybrid optimized.
@@ -330,6 +386,17 @@ impl QmdMemory {
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<Vec<MemoryDocument>> {
         search::search_hybrid_optimized(self, query_text, limit, filters).await
+    }
+
+    /// Search hybrid optimized, also reporting whether the vector/embedding
+    /// signal contributed (see [`search_filtered_with_mode`](Self::search_filtered_with_mode)).
+    pub async fn search_hybrid_optimized_with_mode(
+        &self,
+        query_text: &str,
+        limit: usize,
+        filters: Option<&MemoryQueryFilters>,
+    ) -> Result<(Vec<MemoryDocument>, bool)> {
+        search::search_hybrid_optimized_with_mode(self, query_text, limit, filters).await
     }
 
     /// Export.

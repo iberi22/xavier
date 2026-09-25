@@ -41,13 +41,6 @@ pub async fn memory_add(
         relation: payload.relation,
         clearance: None,
     };
-    let content_vector = match embedding::build_embedder_from_env().await {
-        Ok(embedder) => match embedder.encode(&content).await {
-            Ok(vector) if !vector.is_empty() => Some(vector),
-            _ => None,
-        },
-        _ => None,
-    };
     if let Err(error) = workspace
         .workspace
         .ensure_within_storage_limit(&path, &content, &metadata)
@@ -60,22 +53,80 @@ pub async fn memory_add(
         pub status: &'static str,
         pub message: &'static str,
         pub workspace_id: String,
+        /// `true` when the embedding is being computed asynchronously in the
+        /// background (record was persisted immediately via lexical/FTS so a
+        /// fresh install with an unreachable/misconfigured embedding endpoint
+        /// never blocks or fails this write; `xavier reindex` also backfills
+        /// any record left in this state). `false` when no embedder is
+        /// configured at all, so no background embedding will ever run.
+        pub embedding_pending: bool,
     }
 
-    match workspace
+    // Persist the record immediately with an empty vector so the write never
+    // blocks on (or fails because of) an unreachable/misconfigured embedding
+    // endpoint — the lexical/FTS index is always populated synchronously.
+    // The real embedding, when an embedder is configured, is computed and
+    // backfilled in the background (mirrors the MCP `create_memory` fast
+    // path). Records left without an embedding default to
+    // `embedding_status = 'pending'` and are picked up by `xavier reindex`.
+    let embedding_pending = embedding::EmbedderConfig::from_env().is_configured();
+
+    if let Err(error) = workspace
         .workspace
-        .ingest_typed(path, content, metadata, Some(typed), content_vector, false)
+        .ingest_typed(
+            path.clone(),
+            content.clone(),
+            metadata.clone(),
+            Some(typed.clone()),
+            Some(Vec::new()),
+            false,
+        )
         .await
     {
-        Ok(_) => Json(AddMemoryResponse {
-            status: "ok",
-            message: "Document added to memory",
-            workspace_id: workspace.workspace_id,
-        })
-        .into_response(),
-        Err(error) => crate::error::ApiError::internal(format!("failed to add memory: {}", error))
-            .into_ok_response(),
+        return crate::error::ApiError::internal(format!("failed to add memory: {}", error))
+            .into_ok_response();
     }
+
+    if embedding_pending {
+        let ws_clone = workspace.workspace.clone();
+        tokio::spawn(async move {
+            if crate::memory::qmd::writer::bus_quota_exhausted(&path) {
+                tracing::debug!(
+                    path = %path,
+                    "memory_add: skipping background embedding: bus quota exhausted"
+                );
+                return;
+            }
+            match crate::memory::qmd_memory::reader::generate_embedding(&content).await {
+                Ok(vector) if !vector.is_empty() => {
+                    if let Err(error) = ws_clone
+                        .ingest_typed(path, content, metadata, Some(typed), Some(vector), false)
+                        .await
+                    {
+                        tracing::warn!(
+                            error = %error,
+                            "memory_add: background embedding backfill failed"
+                        );
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(
+                        error = %error,
+                        "memory_add: background embedding generation failed; record stays pending for xavier reindex"
+                    );
+                }
+            }
+        });
+    }
+
+    Json(AddMemoryResponse {
+        status: "ok",
+        message: "Document added to memory",
+        workspace_id: workspace.workspace_id,
+        embedding_pending,
+    })
+    .into_response()
 }
 
 /// Memory search.
@@ -86,10 +137,10 @@ pub async fn memory_search(
     match workspace
         .workspace
         .memory
-        .search_filtered(&payload.query, payload.limit, payload.filters.as_ref())
+        .search_filtered_with_mode(&payload.query, payload.limit, payload.filters.as_ref())
         .await
     {
-        Ok(docs) => Json(SearchResponse {
+        Ok((docs, mode)) => Json(SearchResponse {
             status: "ok".to_string(),
             results: docs
                 .into_iter()
@@ -101,6 +152,7 @@ pub async fn memory_search(
                 })
                 .collect(),
             query: payload.query,
+            mode: mode.as_str().to_string(),
         })
         .into_response(),
         Err(error) => crate::error::ApiError::internal(format!("memory search failed: {}", error))

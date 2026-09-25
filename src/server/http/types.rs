@@ -82,6 +82,16 @@ pub struct SearchResponse {
     pub status: String,
     pub results: Vec<SearchHit>,
     pub query: String,
+    /// "hybrid" when the embedding/vector signal contributed to `results`,
+    /// "lexical" when results are FTS/BM25-only (no embedder configured, or
+    /// the embedding call failed/timed out and search degraded gracefully
+    /// instead of hanging). Defaults to "lexical" for older serialized data.
+    #[serde(default = "default_search_mode")]
+    pub mode: String,
+}
+
+fn default_search_mode() -> String {
+    "lexical".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

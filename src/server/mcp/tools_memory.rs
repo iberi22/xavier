@@ -424,10 +424,10 @@ async fn handle_mem_search(
     let filter_ref = if has_filters { Some(&filters) } else { None };
 
     let fetch_limit = (page * limit).saturating_add(1);
-    let results = workspace
+    let (results, search_mode) = workspace
         .workspace
         .memory
-        .search_filtered(query, fetch_limit, filter_ref)
+        .search_filtered_with_mode(query, fetch_limit, filter_ref)
         .await?;
 
     let results = if depth > 0 {
@@ -533,6 +533,10 @@ async fn handle_mem_search(
         "has_more": has_more,
         "count": candidates.len(),
         "candidates": candidates,
+        // "hybrid" when the embedding/vector signal contributed, "lexical" when
+        // results are FTS/BM25-only (no embedder configured, or it timed out /
+        // failed and search degraded gracefully instead of hanging).
+        "mode": search_mode.as_str(),
     });
 
     Ok(serde_json::to_value(MCPToolResult::structured(

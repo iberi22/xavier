@@ -179,6 +179,18 @@ pub async fn start_http_server(
 
     let cm = ConnectionManager::global();
 
+    // Register the sqlite-vec extension (vec_f32, vec_distance_cosine, ...) via
+    // `sqlite3_auto_extension` *before* any pool below opens its first
+    // connection. `sqlite3_auto_extension` only affects connections opened
+    // *after* this call — it does not retroactively patch a connection that
+    // was already established. `cm.connect("memory"/"metrics"/"security", ...)`
+    // just below used to run first, so those pools' connections could
+    // permanently lack `vec_f32` for the lifetime of the process (surfaced as
+    // `no such function: vec_f32` on memory writes through those pools; see
+    // issue #2544). Registration is idempotent, so calling it again later
+    // (e.g. inside `VecSqliteMemoryStore::new`) is harmless.
+    xavier::memory::sqlite_vec_store::VecSqliteMemoryStore::register_sqlite_vec_extension()?;
+
     let config = VecSqliteStoreConfig::from_env();
     // ── Startup guard: detect store fragmentation ────────────────────────────
     // Warn if multiple vec-store*.sqlite3 files exist outside the canonical data/
