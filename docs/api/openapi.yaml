@@ -127,10 +127,20 @@ paths:
                   category: "embeddings"
 
   # --- AUTHENTICATION ---
+  # --- AUTH (real, working user-auth API: src/auth2/, backed by .xavier/auth.db) ---
+  # NOTE: earlier revisions of this spec documented a parallel `/v1/auth/*` API
+  # (login/register/refresh/logout/totp) as canonical. That API was backed by a user store
+  # nothing ever wrote a user into (security::auth_store::AuthStore::create_user had zero
+  # callers) — every login attempt against it failed forever. It was removed and those paths
+  # now answer 308/410 pointing here. See GH #2545 and the "Deprecated" section at the bottom
+  # of this file.
   /auth/register:
     post:
       summary: User registration
-      description: Registers a new user. Persists the registration safely into `auth.db`.
+      description: >
+        Registers a new user. Validates email format and an at-least-12-character password,
+        hashes it with Argon2id, generates a 24-word Spanish BIP39 recovery seed phrase, and
+        persists everything into `.xavier/auth.db`.
       requestBody:
         required: true
         content:
@@ -140,6 +150,7 @@ paths:
               required:
                 - email
                 - password
+                - name
               properties:
                 email:
                   type: string
@@ -147,36 +158,53 @@ paths:
                 password:
                   type: string
                   format: password
+                  minLength: 12
+                  maxLength: 200
+                name:
+                  type: string
       responses:
         "200":
-          description: Registration successful
+          description: Registration successful. `seed_phrase` is shown once — it is never returned again and is required by `POST /auth/recovery`.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  status:
-                    type: string
                   user:
                     $ref: "#/components/schemas/PublicUser"
+                  seed_phrase:
+                    type: string
               example:
-                status: "ok"
                 user:
                   id: "usr_01J239FJKSL"
                   email: "user@example.com"
-                  is_mfa_enabled: false
-                  created_at: "2026-06-12T12:00:00Z"
+                  name: "Ada"
+                  role: "user"
+                  totp_enabled: false
+                  created_at: 1750000000
+                  updated_at: 1750000000
+                seed_phrase: "palabra1 palabra2 ... palabra24"
         "400":
-          description: Registration error (e.g. email already exists or invalid payload)
+          description: Invalid email/password/name (`invalid_email`, `weak_password`, `invalid_name`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already registered (`email_taken`)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /v1/auth/login:
+  /auth/login:
     post:
       summary: User login
-      description: Logs in a user. Tracks failures and triggers rate limits on successive bad requests (max 5 failed attempts per 15 mins).
+      description: >
+        Logs in a user with email + password, and — if the account has TOTP enabled —
+        `totp_code` in the same request (there is no separate verify step). The whole `/auth/*`
+        nest, not just this route, is rate-limited (default 20 req/min per caller, see
+        `XAVIER_AUTH_RATE_LIMIT`).
       requestBody:
         required: true
         content:
@@ -192,59 +220,142 @@ paths:
                   format: email
                 password:
                   type: string
+                totp_code:
+                  type: string
+                  description: Required only when the account has TOTP enabled.
       responses:
         "200":
-          description: Login initiated or complete. If MFA is required, `totp_required` is true.
+          description: Login successful.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  status:
+                  access_token:
                     type: string
-                  token:
+                  refresh_token:
                     type: string
-                    description: JWT access token (omitted if TOTP verification is required first)
-                  totp_required:
+                  user:
+                    $ref: "#/components/schemas/PublicUser"
+                  requires_2fa:
                     type: boolean
               example:
-                status: "ok"
-                token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                totp_required: false
+                access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                refresh_token: "01J239FJKSL0000000000000"
+                requires_2fa: false
         "401":
-          description: Invalid email or password
+          description: >
+            Invalid email/password, or (when TOTP is enabled) a missing/invalid `totp_code`.
+            The server does not currently distinguish these cases in the response body — there
+            is no separate `mfa_required`/`mfa_invalid` status, and backup codes are not
+            accepted here (use `POST /auth/recovery` to regain access without a TOTP device).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
-          description: Rate limit exceeded (IP blocked temporarily due to multiple failed login attempts)
+          description: Rate limit exceeded on the `/auth/*` nest.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /v1/auth/totp/verify:
+  /auth/refresh:
     post:
-      summary: Verify TOTP token (2FA)
+      summary: Rotate an access/refresh token pair
       description: >
-        Completes the second factor of authentication. Due to double-division bug-compatibility,
-        the server divides incoming Unix timestamps by 30 twice, requiring the client to adjust TOTP generation.
+        Rotates the refresh token. Reusing an already-rotated (stolen/replayed) token revokes
+        the whole token chain and returns 403.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - code
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        "200":
+          description: New token pair issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+        "401":
+          description: Invalid or expired refresh token.
+        "403":
+          description: Token reuse detected (possible theft) — the whole chain was revoked.
+
+  /auth/logout:
+    post:
+      summary: Revoke a refresh token
+      description: Idempotent — always 200, even if the token was already invalid or expired.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        "200":
+          description: Token revoked (or already invalid).
+
+  /auth/2fa/setup:
+    post:
+      summary: Begin TOTP 2FA enrollment (JWT-protected)
+      description: >
+        Generates a new TOTP secret, a Unicode-rendered QR code (an `otpauth://` URL rendered
+        as text, not an image) and 10 one-time backup codes, and stores the pending secret +
+        hashed backup codes. The account is NOT yet TOTP-enabled until `POST /auth/2fa/verify`
+        confirms a code. Requires `Authorization: Bearer <access_token>`.
+      responses:
+        "200":
+          description: Enrollment material generated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qr_code:
+                    type: string
+                    description: Unicode QR art of the otpauth:// URL (not a PNG/SVG).
+                  secret:
+                    type: string
+                  backup_codes:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          description: Missing/invalid JWT.
+
+  /auth/2fa/verify:
+    post:
+      summary: Confirm TOTP 2FA enrollment (JWT-protected)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
               properties:
                 code:
                   type: string
-                  description: 6-digit TOTP code
+                  description: 6-digit TOTP code.
       responses:
         "200":
-          description: 2FA Verification successful
+          description: TOTP enabled on the account.
           content:
             application/json:
               schema:
@@ -252,11 +363,179 @@ paths:
                 properties:
                   status:
                     type: string
-                  token:
+              example:
+                status: "2fa_enabled"
+        "401":
+          description: Missing/invalid JWT, or wrong code.
+        "400":
+          description: No pending TOTP secret to confirm.
+
+  /auth/recovery:
+    post:
+      summary: Reset password with the BIP39 recovery seed phrase
+      description: >
+        Verifies the 24-word seed phrase shown once at registration, resets the password, and
+        disables TOTP on the account so the user can log back in without the lost device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, seed_phrase, new_password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                seed_phrase:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 12
+      responses:
+        "200":
+          description: Password reset, TOTP disabled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
                     type: string
               example:
-                status: "ok"
-                token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                status: "recovery_completed"
+        "400":
+          description: Account has no recovery seed on file.
+        "401":
+          description: Unknown email or wrong seed phrase.
+
+  /auth/check-users:
+    get:
+      summary: Whether any user has been created yet
+      description: Used by first-run onboarding to decide whether to show a "create the first admin" prompt.
+      responses:
+        "200":
+          description: OK
+
+  /v1/auth/sessions:
+    get:
+      summary: List active root-token sessions
+      description: >
+        Unrelated to the user-login flow above — sessions created from the root `XAVIER_TOKEN`.
+        Requires an authenticated request (root token or agent lease).
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not authenticated.
+
+  /v1/auth/sessions/{id}:
+    delete:
+      summary: Revoke a root-token session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked.
+        "401":
+          description: Not authenticated.
+
+  # --- DEPRECATED: legacy /v1/auth/* user-login API (GH #2545) ---
+  # These paths never worked (dead AuthStore, zero callers ever wrote a user into it — see the
+  # note above the AUTH section). They are kept mounted only to redirect stale clients/docs to
+  # the real /auth/* routes above, or to say 410 Gone when there is no 1:1 successor.
+  /v1/auth/login:
+    post:
+      deprecated: true
+      summary: "Deprecated — use POST /auth/login"
+      description: Always answers 308 with a JSON body naming the new path; never performs a login.
+      responses:
+        "308":
+          description: Permanent redirect to `/auth/login`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeprecatedAuthResponse"
+
+  /v1/auth/register:
+    post:
+      deprecated: true
+      summary: "Deprecated — use POST /auth/register"
+      responses:
+        "308":
+          description: Permanent redirect to `/auth/register`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeprecatedAuthResponse"
+
+  /v1/auth/refresh:
+    post:
+      deprecated: true
+      summary: "Deprecated — use POST /auth/refresh"
+      responses:
+        "308":
+          description: Permanent redirect to `/auth/refresh`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeprecatedAuthResponse"
+
+  /v1/auth/logout:
+    post:
+      deprecated: true
+      summary: "Deprecated — use POST /auth/logout"
+      responses:
+        "308":
+          description: Permanent redirect to `/auth/logout`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeprecatedAuthResponse"
+
+  /v1/auth/recover:
+    post:
+      deprecated: true
+      summary: "Deprecated — use POST /auth/recovery"
+      responses:
+        "308":
+          description: Permanent redirect to `/auth/recovery`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeprecatedAuthResponse"
+
+  /v1/auth/totp/verify:
+    post:
+      deprecated: true
+      summary: "Deprecated — 410 Gone, no direct successor"
+      description: >
+        TOTP verification is now inline in `POST /auth/login` (`totp_code` field). There is no
+        separate verify-after-login endpoint anymore.
+      responses:
+        "410":
+          description: Gone. Body points to `/auth/login`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeprecatedAuthResponse"
+
+  /v1/auth/totp/setup:
+    post:
+      deprecated: true
+      summary: "Deprecated — 410 Gone, was never implemented"
+      description: This path always returned 501 Not Implemented and was not reachable from any route. Use `POST /auth/2fa/setup` (JWT-protected) or `xavier users totp-enroll`.
+      responses:
+        "410":
+          description: Gone. Body points to `/auth/2fa/setup`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeprecatedAuthResponse"
 
   # --- V1 MEMORIES ---
   /v1/memories:
@@ -826,10 +1105,34 @@ components:
           type: string
         email:
           type: string
-        is_mfa_enabled:
+        name:
+          type: string
+        role:
+          type: string
+        totp_enabled:
           type: boolean
         created_at:
+          type: integer
+          description: Unix timestamp (seconds).
+        updated_at:
+          type: integer
+          description: Unix timestamp (seconds).
+
+    DeprecatedAuthResponse:
+      type: object
+      description: Shared JSON body for every deprecated `/v1/auth/*` route — see GH #2545.
+      properties:
+        error:
           type: string
+          example: "endpoint_deprecated"
+        message:
+          type: string
+        new_path:
+          type: string
+          description: The `/auth/*` (or `/v1/auth/sessions`) path to use instead.
+        docs:
+          type: string
+          format: uri
 
     MemoryRecord:
       type: object

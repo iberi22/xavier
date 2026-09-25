@@ -269,9 +269,8 @@ The repository includes GitHub Actions workflows for:
 
 | Workflow | Purpose |
 |---|---|
-| `.github/workflows/ci.yml` | Multi-OS Rust formatting, check, clippy, tests, docs tests, coverage, release build, panel validation, Playwright E2E, and release smoke. |
-| `.github/workflows/docker-build.yml` | Docker Buildx publishing to GHCR for `linux/amd64` and `linux/arm64`. |
-| `.github/workflows/release.yml` | Release assets for Linux, Windows, and macOS. |
+| `.github/workflows/ci.yml` | Multi-OS Rust formatting, check, clippy, tests, docs tests, coverage, release build, panel validation, Playwright E2E, and release smoke. Does NOT build or publish a Docker image. |
+| `.github/workflows/release.yml` | Release assets for Linux, Windows, and macOS, **plus** the `docker-publish` job: builds the repo-root `Dockerfile` and pushes `ghcr.io/iberi22/xavier:<version>` + `:latest` — but only when a `v*` tag is pushed (`if: startsWith(github.ref, 'refs/tags/v')`). There is no separate `docker-build.yml` workflow. |
 | `.github/workflows/build-windows.yml` | Windows binary and ZIP release assets. |
 | `.github/workflows/tauri-release.yml` | Desktop app release packaging. |
 | `.github/workflows/docs.yml` | Documentation and DevLog site generation/deployment. |
@@ -294,10 +293,11 @@ cargo test --workspace --features ci-safe --exclude xavier-web --exclude app
 cargo build --release --bin xavier
 ```
 
-3. Build and smoke test Docker:
+3. Build and smoke test Docker (repo-root `Dockerfile`; budget ~20 min cold, see
+   [`DOCKER_DEPLOY.md`](./DOCKER_DEPLOY.md)):
 
 ```bash
-docker build -t xavier:local -f docker/Dockerfile .
+docker build -t xavier:local .
 docker run --rm -p 8006:8006 -e XAVIER_TOKEN=test -e XAVIER_HOST=0.0.0.0 xavier:local
 ```
 
