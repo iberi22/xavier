@@ -296,6 +296,12 @@ pub struct MemoryQueryFilters {
     pub clearances: Option<Vec<ClearanceLevel>>,
     #[serde(default)]
     pub path_prefix: Option<String>,
+    /// When `false` (the default), general search excludes telemetry/noise
+    /// namespaces (`activity/*`, `gestalt/thinking/*`, and records tagged
+    /// as automatic activity/insight events). Callers that explicitly want
+    /// that telemetry back (e.g. an activity dashboard) set this to `true`.
+    #[serde(default)]
+    pub include_activity: Option<bool>,
     #[serde(default)]
     pub federated: Option<FederatedSearchRequest>,
 }
@@ -427,12 +433,64 @@ pub fn resolve_metadata(
 }
 
 /// Matches filters.
+/// Path namespaces that hold auto-generated telemetry/observability records
+/// (agent activity feeds, self-reflection "thinking loop" transcripts, etc).
+/// These are high-volume, low-signal for general search and drown out
+/// actual decisions/plans/docs unless explicitly requested.
+pub const NOISE_PATH_PREFIXES: [&str; 2] = ["activity/", "gestalt/thinking/"];
+
+/// True when `path` sits under a known telemetry/noise namespace.
+pub fn is_noise_path(path: &str) -> bool {
+    NOISE_PATH_PREFIXES
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+}
+
+/// True when metadata marks this record as an automatic activity/insight
+/// event (e.g. `event_type` or `type` set by the Gestalt event bus / the
+/// Xavier self-reflection loop) rather than user- or agent-authored content.
+pub fn is_noise_metadata(metadata: &Value) -> bool {
+    for key in ["event_type", "type"] {
+        if let Some(value) = metadata.get(key).and_then(|v| v.as_str()) {
+            if value.eq_ignore_ascii_case("activity") || value.eq_ignore_ascii_case("insight") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// True when the record's content is an auto-emitted activity line
+/// (`[activity] ...`), the format used by the Gestalt bus/opencode
+/// session-update feed regardless of its path or metadata.
+pub fn is_noise_content(content: &str) -> bool {
+    content.trim_start().starts_with("[activity]")
+}
+
+/// Combined noise check used by search filtering (path + metadata only;
+/// content is checked separately by callers that already hold the full
+/// document, since this signature is shared with path/metadata-only sites).
+pub fn is_noise_memory(path: &str, metadata: &Value) -> bool {
+    is_noise_path(path) || is_noise_metadata(metadata)
+}
+
+/// Matches filters.
+///
+/// Telemetry/noise namespaces (see [`is_noise_memory`]) are excluded from
+/// general search by default, independent of whether `filters` is `None` or
+/// `Some` — the caller must opt in via `filters.include_activity = Some(true)`
+/// to see them again.
 pub fn matches_filters(
     path: &str,
     metadata: &Value,
     workspace_id: &str,
     filters: Option<&MemoryQueryFilters>,
 ) -> bool {
+    let include_activity = filters.and_then(|f| f.include_activity).unwrap_or(false);
+    if !include_activity && is_noise_memory(path, metadata) {
+        return false;
+    }
+
     let Some(filters) = filters else {
         return true;
     };

@@ -25,10 +25,33 @@ pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
         .split_whitespace()
         .filter(|term| !term.is_empty())
         .collect();
+
+    // BM25-style term-frequency saturation + document-length normalization.
+    // Root cause: raw `content.matches(term).count()` grows unbounded with
+    // document length, so long auto-generated documents that happen to
+    // repeat many query-adjacent words (e.g. verbose self-reflection
+    // summaries) out-scored short, precisely-relevant docs purely by being
+    // long — independent of the activity/gestalt-thinking namespace
+    // exclusion above. `k1` bounds how much repeats of the same term can
+    // contribute; `b`/`avg_doc_len_words` penalize documents longer than a
+    // typical memory record.
+    const BM25_K1: f32 = 1.5;
+    const BM25_B: f32 = 0.75;
+    const AVG_DOC_LEN_WORDS: f32 = 220.0;
+    let doc_len_words = content.split_whitespace().count().max(1) as f32;
+    let length_norm = (1.0 - BM25_B) + BM25_B * (doc_len_words / AVG_DOC_LEN_WORDS);
+
     let mut matched_terms = 0usize;
     let mut score = 0.0f32;
     for term in &query_terms {
-        let content_hits = content.matches(term).count() as f32;
+        let raw_content_hits = content.matches(term).count() as f32;
+        let content_hits = if raw_content_hits > 0.0 {
+            (raw_content_hits * (BM25_K1 + 1.0)) / (raw_content_hits + BM25_K1 * length_norm)
+        } else {
+            0.0
+        };
+        // Path hits stay raw: paths are short and exact-segment matches are
+        // a strong, length-independent relevance signal.
         let path_hits = path.matches(term).count() as f32 * 2.0;
         if content_hits > 0.0 || path_hits > 0.0 {
             matched_terms += 1;
