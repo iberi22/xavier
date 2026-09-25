@@ -168,12 +168,16 @@ jobs:
         run: bash scripts/check-secrets.sh
 
   # Job 5: Frontend Build & Security Audit
+  # NOTE: deliberately NOT gated behind `needs.changes.outputs.frontend` (see the `changes` job
+  # above). This job's `panel-browser-smoke` step runs the panel-ui Playwright e2e suite, which
+  # used to only run when panel-ui/** paths changed — so `main` could look green while the e2e
+  # suite was actually red (backend/shared-dependency changes never re-triggered it; see #2547).
+  # It now runs on every PR to main and every push to main, at the cost of a slower job on
+  # backend-only changes.
   frontend-build-audit:
     name: Frontend Build & Security Audit
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -195,16 +199,46 @@ jobs:
       - name: Build Frontend (panel-ui)
         run: pnpm --filter xavier-panel-ui run build
 
+      # SECURITY: the panel authenticates purely via the /auth/* session — never by embedding a
+      # raw API token into the built JS bundle (a prior deploy shipped VITE_XAVIER_API_TOKEN
+      # inlined into production assets, a real credential-leak vector; see panel-ui's
+      # useApiToken.ts / AuthProvider.tsx). This rebuilds with a canary value in that env var
+      # and asserts it does NOT end up in the output, so a regression (someone re-adding an
+      # `import.meta.env.VITE_XAVIER_API_TOKEN` read) fails CI instead of shipping silently.
+      - name: Verify no build-time token leaks into the bundle
+        env:
+          VITE_XAVIER_API_TOKEN: XAVIER_CI_CANARY_TOKEN_MUST_NOT_LEAK
+        run: |
+          pnpm --filter xavier-panel-ui run build
+          if grep -rl "XAVIER_CI_CANARY_TOKEN_MUST_NOT_LEAK\|VITE_XAVIER_API_TOKEN" panel-ui/build/assets/*.js; then
+            echo "::error::VITE_XAVIER_API_TOKEN leaked into the built panel-ui bundle" >&2
+            exit 1
+          fi
+          echo "OK: no token leak in panel-ui/build/assets/*.js"
+
       - name: panel-browser-smoke
         env:
-          VITE_XAVIER_API_TOKEN: dummy
           PANEL_UI_BASE_URL: http://127.0.0.1:4174
         run: |
-          VITE_XAVIER_API_TOKEN=dummy pnpm --filter xavier-panel-ui run build
-          grep -c "dummy\|VITE" panel-ui/dist/assets/*.js
+          pnpm --filter xavier-panel-ui run build
           pnpm --filter xavier-panel-ui run test
           pnpm --filter xavier-panel-ui exec playwright install --with-deps chromium
           pnpm --filter xavier-panel-ui exec playwright test --project=chromium
+
+      # Debuggability: this job previously had NO artifact upload at all, so a red run left
+      # nothing but a list-reporter log to diagnose from (screenshots/videos/traces are
+      # generated locally under panel-ui/test-results/ per playwright.config.ts's
+      # screenshot/video/trace settings, but were never surfaced from CI). `if: always()` so a
+      # failing panel-browser-smoke step still uploads its evidence instead of the job just
+      # aborting silently.
+      - name: Upload panel-ui e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-ui-e2e-results
+          path: panel-ui/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   version-gate:
     name: Version Sync Gate

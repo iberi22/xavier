@@ -92,36 +92,36 @@ test.describe("Telecom Hub Rooms E2E", () => {
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(500);
 
-    // Verify main header
-    const hubHeader = page.locator("h1", { hasText: "Sovereign Mesh Telecom" });
+    // Verify main header (src/components/Telecom/TelecomHubView.tsx)
+    const hubHeader = page.locator("h1", { hasText: "Xavier Telecom Hub" });
     await expect(hubHeader).toBeVisible();
 
     // Verify channel tabs
-    const directTab = page.locator('button[role="tab"]', { hasText: "Direct (1:1)" });
-    const groupsTab = page.locator('button[role="tab"]', { hasText: "Groups" });
-    const peersTab = page.locator('button[role="tab"]', { hasText: "Peers" });
+    const directTab = page.locator('button[role="tab"]', { hasText: "Direct Chats" });
+    const groupsTab = page.locator('button[role="tab"]', { hasText: "Group Rooms" });
+    const peersTab = page.locator('button[role="tab"]', { hasText: "Network Peers" });
 
     await expect(directTab).toBeVisible();
     await expect(groupsTab).toBeVisible();
     await expect(peersTab).toBeVisible();
 
-    // Verify initial selected room (Strategic Operations Council)
-    const selectedTitle = page.locator("h2", { hasText: "Strategic Operations Council" });
+    // Verify initial selected room (MOCK_ROOMS' first "direct" room — initialTab defaults to "direct")
+    const selectedTitle = page.locator("h2", { hasText: "node_alpha_8f (Primary Gateway)" });
     await expect(selectedTitle).toBeVisible();
 
     // Capture initial hub view
     const initialHubArtifact = path.join(ARTIFACT_DIR, "telecom_hub_rooms_e2e.png");
     await page.screenshot({ path: initialHubArtifact, fullPage: true });
 
-    // Switch to Direct Tab
-    await directTab.click();
-    const vanguardChannel = page.locator("button", { hasText: "Vanguard Prime" });
-    await expect(vanguardChannel).toBeVisible();
-    await vanguardChannel.click();
+    // Switch to Group Rooms Tab
+    await groupsTab.click();
+    const opsChannel = page.locator("button", { hasText: "Sovereign Mesh Operators" });
+    await expect(opsChannel).toBeVisible();
+    await opsChannel.click();
 
-    // Verify active room switched to Vanguard Prime
-    const activeDirectRoom = page.locator("h2", { hasText: "Vanguard Prime" });
-    await expect(activeDirectRoom).toBeVisible();
+    // Verify active room switched to Sovereign Mesh Operators
+    const activeGroupRoom = page.locator("h2", { hasText: "Sovereign Mesh Operators" });
+    await expect(activeGroupRoom).toBeVisible();
 
     // Send an optimistic message in the room
     const messageInput = page.locator('input[placeholder*="Send encrypted message"]');
@@ -132,13 +132,16 @@ test.describe("Telecom Hub Rooms E2E", () => {
     await expect(sendBtn).toBeEnabled();
     await sendBtn.click();
 
-    // Assert optimistic message appeared in chat feed
-    const sentMsg = page.locator("text=Telecom Hub Optimistic Dispatch Test");
+    // Assert optimistic message appeared in chat feed (scope to the message panel — the room
+    // list item's lastMessage preview also renders this text, causing a strict-mode collision)
+    const sentMsg = page
+      .locator("section")
+      .getByText("Telecom Hub Optimistic Dispatch Test");
     await expect(sentMsg).toBeVisible();
 
     // Switch to Peers Tab
     await peersTab.click();
-    const peerNode = page.locator("button", { hasText: "node-delta-9e" });
+    const peerNode = page.locator("button", { hasText: "node_delta_9e" });
     await expect(peerNode).toBeVisible();
     await peerNode.click();
 

@@ -23,6 +23,19 @@ const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT
  * deterministic seed generation, cancellation rejection handling, and Ed25519 software fallback.
  */
 
+// FIXME(#2547 follow-up): not an auth-gate issue (out of scope for the panel-ui auth-mock fix).
+// Every test here does `await import("/src/auth/<file>.ts")` inside page.evaluate — this only
+// works against Vite's dev server, which transpiles and serves raw .ts on demand. playwright.config.ts
+// runs webServer as `vite preview` (this repo's production-build server) for every spec in this
+// directory; `vite preview` has no /src/* route, so its SPA history-fallback returns index.html
+// (200, Content-Type: text/html) for that path instead, and the browser's dynamic import() then
+// fails with "Failed to fetch dynamically imported module" — confirmed by curling
+// http://127.0.0.1:4174/src/auth/webauthnPrf.ts directly against a `vite preview` server. This
+// suite was already marked fixme once for the same class of problem and was unfixme'd in #2440-
+// #2442 without a green run under `vite preview`, so it regressed to always-red the moment
+// panel-browser-smoke actually ran on main (the CI gate #2547 fixes). Re-fixme'd until it's
+// rewritten to either exercise these functions through the built app UI (no raw source import)
+// or run against a dedicated dev-server webServer config.
 test.describe("WebAuthn PRF Hardware Bridge E2E Suite", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept standard routes so page loads smoothly without network errors
@@ -59,7 +72,7 @@ test.describe("WebAuthn PRF Hardware Bridge E2E Suite", () => {
     await page.goto("/");
   });
 
-  test("isWebAuthnPrfSupported evaluates to true when CDP virtual authenticator with PRF extension is enabled", async ({
+  test.fixme("isWebAuthnPrfSupported evaluates to true when CDP virtual authenticator with PRF extension is enabled", async ({
     page,
   }) => {
     // Attach CDP session and enable virtual WebAuthn CTAP2 authenticator with PRF support
@@ -85,7 +98,7 @@ test.describe("WebAuthn PRF Hardware Bridge E2E Suite", () => {
     expect(isSupported).toBe(true);
   });
 
-  test("deriveHardwareSeedWithPrf returns deterministic 32-byte seed and credentialId with active virtual authenticator", async ({
+  test.fixme("deriveHardwareSeedWithPrf returns deterministic 32-byte seed and credentialId with active virtual authenticator", async ({
     page,
   }) => {
     // Configure CDP virtual authenticator with CTAP2 PRF support
@@ -143,7 +156,7 @@ test.describe("WebAuthn PRF Hardware Bridge E2E Suite", () => {
     expect(secondResult?.seedHex).toEqual(firstResult?.seedHex);
   });
 
-  test("deriveHardwareSeedWithPrf handles rejection or removed authenticator gracefully returning null", async ({
+  test.fixme("deriveHardwareSeedWithPrf handles rejection or removed authenticator gracefully returning null", async ({
     page,
   }) => {
     const cdp = await page.context().newCDPSession(page);
@@ -178,7 +191,7 @@ test.describe("WebAuthn PRF Hardware Bridge E2E Suite", () => {
     expect(result).toBeNull();
   });
 
-  test(
+  test.fixme(
     "getOrCreateNodeIdentity provides software Ed25519 keypair fallback when hardware PRF fails or is bypassed",
     async ({ page }) => {
     // Clear any existing stored identity

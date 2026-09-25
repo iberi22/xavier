@@ -138,11 +138,11 @@ export interface User {
 
 export interface AuthState {
   user: User | null;
-  /** Master API key (X-Xavier-Token) OR — when none is configured — the operator's JWT. */
+  /** X-Xavier-Token for panel/* calls — always the operator's JWT (accessToken), sourced
+   *  purely from the /auth session. Never a build-time env var baked into the JS bundle. */
   token: string | null;
-  /** Operator JWT (`/auth/*` access_token), always populated after login regardless of
-   *  whether a master API key is configured. Required for `Authorization: Bearer` calls
-   *  such as `/auth/2fa/setup` and `/auth/2fa/verify`. */
+  /** Operator JWT (`/auth/*` access_token), always populated after login. Required for
+   *  `Authorization: Bearer` calls such as `/auth/2fa/setup` and `/auth/2fa/verify`. */
   accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;

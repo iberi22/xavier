@@ -49,9 +49,23 @@ const devProxyRoutes = proxyRoutesFor(xavierTarget);
 // instead of failing fast like they did before this proxy existed. Regression found via
 // onboarding.spec.ts flipping from pass (origin/main, no preview proxy at all) to fail
 // (this branch) when run against a machine with xavier.service active on :8006.
+//
+// IMPORTANT: this must be `{}` (an empty proxy map), NOT `undefined`. The installed Vite
+// version's `preview` command falls back to `server.proxy` (devProxyRoutes, which targets
+// :8006 by default) whenever `preview.proxy` is `undefined` — it does NOT treat "unset" as "no
+// proxy" the way `server.proxy` does. With `undefined` here, every mocked e2e run on a machine
+// running `xavier.service` on :8006 (a common local-dev state — see AGENTS.md) silently leaks
+// /health, /notifications, /v1/*, /auth/*, /panel/api/*, /api/*, and /maloca requests to that
+// REAL backend instead of hitting Playwright's page.route() mocks or falling through to the
+// SPA index.html fallback. Confirmed by curling a freshly spawned `vite preview` (no proxy
+// target reachable) directly: `undefined` → real 401 JSON from :8006 for /notifications; `{}`
+// → the expected 200 text/html SPA fallback. This made onboarding.spec.ts's "no 401 console
+// errors" assertion machine-dependent (green in CI where :8006 is never up, red locally on any
+// dev box with xavier.service running) — exactly the kind of environment-dependent flake #2547
+// is about eliminating.
 const previewProxyRoutes = process.env.XAVIER_WEB_PROXY_TARGET
   ? proxyRoutesFor(process.env.XAVIER_WEB_PROXY_TARGET)
-  : undefined;
+  : {};
 
 export default defineConfig(({ command }) => {
   const _isBuild = command === "build";

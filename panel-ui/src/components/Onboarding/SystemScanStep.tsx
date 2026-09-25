@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SystemInfo } from "./OnboardingFlow";
 
 function isTauriRuntime(): boolean {
@@ -62,7 +62,27 @@ export function SystemScanStep({
     "> Initiating deep system scan...",
   ]);
 
+  // BUG FIX: `onNext` is an inline callback recreated on every render of the parent
+  // (OnboardingFlow.tsx). This overlay stays mounted inside <App> while App's own
+  // background fetches (threads/bookmarks/widgets/graph — see onboarding.spec.ts's mocks
+  // for exactly these) resolve and setState, re-rendering App and therefore this whole
+  // subtree. If the scan effect below depended on `onNext` directly, each of those
+  // unrelated re-renders handed it a new `onNext` reference and re-ran the effect,
+  // restarting ANOTHER overlapping ~4.6s scan() timer chain. Once several of those chains
+  // resolved in a burst, `onNext` (and so `handleNext()`/`setStep`) fired multiple times in
+  // quick succession, skipping past the Hardware step entirely — reproduced in real CI
+  // (never locally, where these mocked fetches happen to resolve in fewer render batches):
+  // every onboarding.spec.ts failure's captured page state was deterministically the
+  // Integrations step (EXTERNAL_UPLINK), i.e. two steps past the one the test was waiting
+  // on. A ref keeps the effect's dependency array stable (`[]`, run once per mount) while
+  // still calling whatever `onNext` the component was most recently given.
+  const onNextRef = useRef(onNext);
   useEffect(() => {
+    onNextRef.current = onNext;
+  }, [onNext]);
+
+  useEffect(() => {
+    let cancelled = false;
     const scan = async () => {
       try {
         await new Promise((r) => setTimeout(r, 1000)); // Visual delay
@@ -95,20 +115,28 @@ export function SystemScanStep({
           "> Scan complete.",
         ]);
 
+        if (cancelled) return;
         setStatus("success");
 
         // Auto proceed after short delay
         setTimeout(() => {
-          onNext(info);
+          if (!cancelled) onNextRef.current(info);
         }, 2000);
       } catch (e) {
+        if (cancelled) return;
         setStatus("error");
         setErrorMsg(String(e));
       }
     };
 
     scan();
-  }, [onNext]);
+
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally run once per mount — see the comment above. Do NOT add `onNext` here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

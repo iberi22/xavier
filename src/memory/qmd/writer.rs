@@ -236,7 +236,23 @@ pub async fn update(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
 }
 
 /// Delete.
+///
+/// BUG FIX: on a lazily-loaded `QmdMemory` (the production default —
+/// `QmdMemory::new_lazy`, see src/cli/server.rs), `memory.docs` stays empty until
+/// something first triggers `ensure_loaded()` (e.g. `get`/`list`/`search`). A delete
+/// issued before that point used to search this still-empty in-memory cache, find no
+/// match, and — because the `store.delete()` call below was (and still is) gated on a
+/// match being found — silently no-op against the persistent store too. The record
+/// stayed in the DB. A subsequent add-at-the-same-path then inserted a NEW row (new
+/// ULID) alongside the never-actually-deleted one, so the next full cache reload
+/// (`ensure_loaded`/`init`, which *replaces* `docs` wholesale from the persisted
+/// workspace state) surfaced two documents at the same path — a duplicate instead of
+/// a clean replace. Ensuring the cache is loaded before we search/evict it closes that
+/// gap: delete now always sees (and can remove) a record persisted by an earlier
+/// session/instance, not just one added within this process's lifetime.
 pub async fn delete(memory: &QmdMemory, path_or_id: &str) -> Result<Option<MemoryDocument>> {
+    memory.ensure_loaded().await?;
+
     let mut docs = memory.docs.write().await;
     let removed = docs
         .iter()
@@ -802,5 +818,99 @@ mod bus_quota_tests {
             .is_none());
 
         std::env::set_var("XAVIER_BUS_QUOTA_PER_WINDOW", "60");
+    }
+}
+
+#[cfg(test)]
+mod delete_readd_no_duplicate_tests {
+    use super::super::QmdMemory;
+    use crate::memory::store::{InMemoryMemoryStore, MemoryRecord, MemoryStore};
+    use std::sync::Arc;
+
+    const WORKSPACE: &str = "test-delete-readd-ws";
+    const PATH: &str = "notes/delete-readd-duplicate-test";
+
+    /// Regression test for the bug fixed above: on a lazily-loaded `QmdMemory`
+    /// (production's default — see `QmdMemory::new_lazy`), deleting a record that was
+    /// persisted by an earlier session/instance (i.e. never loaded into *this*
+    /// instance's in-memory `docs` cache) used to silently no-op — the in-memory
+    /// search found nothing, so the guarded `store.delete()` call never ran, leaving
+    /// the row in the store. Re-adding at the same path then inserted a second row
+    /// (a fresh ULID, since the writer's path-collision check only covers
+    /// "stability/"/"features/" paths), so the next full cache reload showed two
+    /// documents at the same path instead of one replaced.
+    #[tokio::test]
+    async fn delete_then_readd_same_path_replaces_instead_of_duplicating() {
+        let store = Arc::new(InMemoryMemoryStore::new());
+
+        // Simulate a record already persisted from an earlier session — written
+        // directly to the store, never loaded into any QmdMemory's in-memory cache.
+        store
+            .put(MemoryRecord {
+                id: "pre-existing-record-id".to_string(),
+                workspace_id: WORKSPACE.to_string(),
+                path: PATH.to_string(),
+                content: "original content from a prior session".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("seed store with pre-existing record");
+
+        // Fresh, lazily-loaded instance — mirrors production wiring
+        // (src/cli/server.rs constructs QmdMemory::new_lazy). Its `docs` cache starts
+        // empty; nothing has triggered ensure_loaded() yet.
+        let memory = QmdMemory::new_lazy(WORKSPACE);
+        memory.set_store(store.clone()).await;
+
+        // Delete the record the fresh instance has never itself loaded/cached.
+        let deleted = memory.delete(PATH).await.expect("delete should not error");
+        assert!(
+            deleted.is_some(),
+            "delete must find and evict a record persisted by an earlier session, \
+             not just one added within this process's lifetime"
+        );
+
+        // Re-add at the same path.
+        memory
+            .add_document(
+                PATH.to_string(),
+                "new content after delete".to_string(),
+                serde_json::json!({}),
+            )
+            .await
+            .expect("re-add after delete should succeed");
+
+        // The persisted store — the ultimate source of truth once a lazy cache
+        // reloads — must hold exactly one record at this path, not two.
+        let state = store
+            .load_workspace_state(WORKSPACE)
+            .await
+            .expect("load workspace state");
+        let matching: Vec<_> = state
+            .memories
+            .iter()
+            .filter(|record| record.path == PATH)
+            .collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "expected exactly one persisted record at {PATH} after delete + re-add, found {}: {:?}",
+            matching.len(),
+            matching.iter().map(|r| &r.id).collect::<Vec<_>>()
+        );
+        assert_eq!(matching[0].content, "new content after delete");
+
+        // The in-memory cache on a *fresh* instance pointed at the same store (the
+        // scenario a real cache reload / process restart exercises) must agree.
+        let reloaded = QmdMemory::new_lazy(WORKSPACE);
+        reloaded.set_store(store.clone()).await;
+        let all_docs = reloaded.all_documents().await;
+        let matching_docs: Vec<_> = all_docs.iter().filter(|d| d.path == PATH).collect();
+        assert_eq!(
+            matching_docs.len(),
+            1,
+            "expected exactly one document at {PATH} after a fresh cache load, found {}",
+            matching_docs.len()
+        );
     }
 }

@@ -21,77 +21,55 @@ describe("Panel UI Build & Version Integration", () => {
     expect(viteConfigContent).not.toContain("0.6.1-beta");
   });
 
-  test("should include dummy token in dist assets when built with VITE_XAVIER_API_TOKEN=dummy", async () => {
+  // SECURITY REGRESSION TEST: a prior panel deploy shipped VITE_XAVIER_API_TOKEN inlined into
+  // the production JS bundle (a real credential-leak vector — anyone reading the served JS
+  // could read the master key in plaintext). The panel now authenticates purely via the
+  // /auth/* session; no source file reads import.meta.env.VITE_XAVIER_API_TOKEN anymore. This
+  // asserts that holds even when the env var IS set at build time — Vite only inlines
+  // `import.meta.env.VITE_*` references that actually appear in source, so with no such
+  // reference left, the value must never reach the built assets, however it's supplied.
+  test("never inlines VITE_XAVIER_API_TOKEN into the built bundle, even when set at build time", () => {
     const panelDir = path.resolve(__dirname, "..");
-    // Ensure clean build
-    try {
-      execSync("rm -rf dist build", { cwd: panelDir });
-    } catch {}
-    execSync("VITE_XAVIER_API_TOKEN=dummy pnpm build", {
-      cwd: panelDir,
-      env: { ...process.env, VITE_XAVIER_API_TOKEN: "dummy" },
-    });
+    const srcDir = path.resolve(panelDir, "src");
 
-    const distDir = path.resolve(panelDir, "dist");
-    // vite builds to build/ then copies to dist via post-build script; check both
-    const assetsDirs = [path.join(distDir, "assets"), path.join(panelDir, "build", "assets")].filter((d) =>
-      fs.existsSync(d),
-    );
-    expect(assetsDirs.length).toBeGreaterThan(0);
-    const assetsDir = assetsDirs[0];
-    const files = fs.readdirSync(assetsDir);
-    const jsFiles = files.filter((f) => f.endsWith(".js"));
-    expect(jsFiles.length).toBeGreaterThan(0);
-
-    let foundDummy = false;
-    for (const jsFile of jsFiles) {
-      const content = fs.readFileSync(path.join(assetsDir, jsFile), "utf8");
-      if (content.includes("dummy")) {
-        foundDummy = true;
-        break;
-      }
-    }
-    // dummy should be inlined via import.meta.env replacement; if not found due to treeshake,
-    // at least ensure build succeeded and assets exist (non-blocking for versioning fix)
-    if (!foundDummy) {
-      // Fallback: verify __APP_VERSION__ was inlined instead (proves build env injection works).
-      // Version derived from Cargo.toml (single source of truth, see first test).
-      const cargoContent = fs.readFileSync(
-        path.resolve(__dirname, "../../Cargo.toml"),
-        "utf8",
-      );
-      const cargoVersion = cargoContent.match(/^version = "(.+)"/m)?.[1] ?? "";
-      let foundVersion = false;
-      for (const jsFile of jsFiles) {
-        const content = fs.readFileSync(path.join(assetsDir, jsFile), "utf8");
-        if (cargoVersion && content.includes(cargoVersion)) {
-          foundVersion = true;
-          break;
+    // No source file may actually READ this env var — the real guarantee. Comments that merely
+    // mention the string (e.g. documenting why it was removed) are fine and intentionally not
+    // flagged; grepping the built bundle for a canary secret (below) only proves *that specific
+    // value* doesn't leak, so this grep for the live `import.meta.env.VITE_XAVIER_API_TOKEN`
+    // read pattern proves the read path itself is gone.
+    const grepSource = (dir: string): string[] => {
+      const hits: string[] = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          hits.push(...grepSource(full));
+        } else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) {
+          const content = fs.readFileSync(full, "utf8");
+          if (content.includes("import.meta.env.VITE_XAVIER_API_TOKEN")) hits.push(full);
         }
       }
-      expect(foundVersion).toBe(true);
-    } else {
-      expect(foundDummy).toBe(true);
-    }
-  }, 120000);
+      return hits;
+    };
+    expect(grepSource(srcDir)).toEqual([]);
 
-  test("should not include unexpected real token in build when VITE_XAVIER_API_TOKEN is not set", () => {
-    const panelDir = path.resolve(__dirname, "..");
-    const env = { ...process.env };
-    delete env.VITE_XAVIER_API_TOKEN;
-
+    const canarySecret = "XAVIER_CANARY_SECRET_MUST_NOT_LEAK_INTO_BUNDLE_9f2c7a";
     execSync("pnpm build", {
       cwd: panelDir,
-      env,
+      env: { ...process.env, VITE_XAVIER_API_TOKEN: canarySecret },
     });
 
     const distAssetsDir = path.resolve(panelDir, "dist/assets");
-    const files = fs.readdirSync(distAssetsDir);
-    const jsFiles = files.filter((f) => f.endsWith(".js"));
+    const buildAssetsDir = path.resolve(panelDir, "build/assets");
+    const assetsDir = fs.existsSync(distAssetsDir) ? distAssetsDir : buildAssetsDir;
+    const jsFiles = fs
+      .readdirSync(assetsDir)
+      .filter((f) => f.endsWith(".js"));
+    expect(jsFiles.length).toBeGreaterThan(0);
 
     for (const jsFile of jsFiles) {
-      const content = fs.readFileSync(path.join(distAssetsDir, jsFile), "utf8");
-      expect(content).not.toContain("XAVIER_SECRET_TOKEN_REAL");
+      const content = fs.readFileSync(path.join(assetsDir, jsFile), "utf8");
+      expect(content).not.toContain(canarySecret);
+      expect(content).not.toContain("VITE_XAVIER_API_TOKEN");
     }
   }, 120000);
 
