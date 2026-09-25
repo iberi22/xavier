@@ -23,18 +23,35 @@ const appVersion =
   process.env.npm_package_version ??
   "0.0.1";
 
-// Shared by both the dev server and `vite preview`: without it, a preview build
-// (used by the Playwright e2e webServer) has no way to reach a real backend and
-// every relative `/auth/*`, `/v1/*`, etc. fetch 404s against the static server itself.
-const proxyRoutes = {
-  "/health": { target: xavierTarget, changeOrigin: true },
-  "/maloca": { target: xavierTarget, changeOrigin: true },
-  "/panel/api": { target: xavierTarget, changeOrigin: true },
-  "/v1": { target: xavierTarget, changeOrigin: true },
-  "/auth": { target: xavierTarget, changeOrigin: true },
-  "/api": { target: xavierTarget, changeOrigin: true },
-  "/notifications": { target: xavierTarget, changeOrigin: true },
-};
+function proxyRoutesFor(target: string) {
+  return {
+    "/health": { target, changeOrigin: true },
+    "/maloca": { target, changeOrigin: true },
+    "/panel/api": { target, changeOrigin: true },
+    "/v1": { target, changeOrigin: true },
+    "/auth": { target, changeOrigin: true },
+    "/api": { target, changeOrigin: true },
+    "/notifications": { target, changeOrigin: true },
+  };
+}
+
+// `vite dev` (pnpm dev): proxies to a real backend by default (XAVIER_WEB_PROXY_TARGET,
+// falling back to the conventional local dev port 8006) — unchanged, pre-existing behavior
+// for local development.
+const devProxyRoutes = proxyRoutesFor(xavierTarget);
+
+// `vite preview` (used by the Playwright e2e webServer, both playwright.config.ts's mocked
+// suite and playwright.auth-e2e.config.ts's real-backend suite): only proxy when
+// XAVIER_WEB_PROXY_TARGET is EXPLICITLY set (as playwright.auth-e2e.config.ts does, pointing
+// at its own disposable instance). Falling back to :8006 here — a real, possibly-production
+// xavier a developer happens to have running locally — silently let unmocked requests in the
+// DEFAULT mocked e2e suite (playwright.config.ts, no XAVIER_WEB_PROXY_TARGET) leak to it
+// instead of failing fast like they did before this proxy existed. Regression found via
+// onboarding.spec.ts flipping from pass (origin/main, no preview proxy at all) to fail
+// (this branch) when run against a machine with xavier.service active on :8006.
+const previewProxyRoutes = process.env.XAVIER_WEB_PROXY_TARGET
+  ? proxyRoutesFor(process.env.XAVIER_WEB_PROXY_TARGET)
+  : undefined;
 
 export default defineConfig(({ command }) => {
   const _isBuild = command === "build";
@@ -73,12 +90,12 @@ export default defineConfig(({ command }) => {
     server: {
       host: "127.0.0.1",
       port: 4174,
-      proxy: proxyRoutes,
+      proxy: devProxyRoutes,
     },
     preview: {
       host: "127.0.0.1",
       port: 4174,
-      proxy: proxyRoutes,
+      proxy: previewProxyRoutes,
     },
     build: {
       outDir: "build",

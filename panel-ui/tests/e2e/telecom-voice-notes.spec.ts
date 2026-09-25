@@ -40,6 +40,21 @@ test.describe("Telecom Voice Notes Player E2E Verification", () => {
 			});
 		});
 
+		// AuthProvider calls authClient.refresh() on every mount (panel-ui/src/auth/AuthProvider.tsx);
+		// this test navigates straight to a gated route (#/mesh) with no explicit login click, so
+		// isAuthenticated only ever becomes true via this call. Shape matches the real backend
+		// (refresh_handler's AuthResponse, src/auth2/mod.rs): { access_token, refresh_token }.
+		await page.route("**/auth/refresh", async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({
+					access_token: "mock.jwt.access-token-voice-notes",
+					refresh_token: "mock-refresh-token-voice-notes",
+				}),
+			});
+		});
+
 		await page.route("**/panel/api/bookmarks", async (route) => {
 			await route.fulfill({ json: [] });
 		});
