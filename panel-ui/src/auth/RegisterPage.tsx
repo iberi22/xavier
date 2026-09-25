@@ -35,11 +35,14 @@ export const RegisterPage: React.FC = () => {
     }
 
     if (
-      password.length < 8 ||
+      // Backend `validate_registration` (src/auth2/mod.rs) rejects anything under 12
+      // chars — keep this in sync so users don't pass client validation only to hit a
+      // confusing 400 from the server.
+      password.length < 12 ||
       !/[A-Z]/.test(password) ||
       !/[0-9]/.test(password)
     ) {
-      setError("Password must be 8+ chars, with 1 uppercase & 1 number");
+      setError("Password must be 12+ chars, with 1 uppercase & 1 number");
       return;
     }
 
@@ -68,7 +71,7 @@ export const RegisterPage: React.FC = () => {
             Emergency Recovery Seed
           </h1>
           <p className="text-xs opacity-70 mb-6 leading-relaxed">
-            Write down these 12 words and keep them safe. This is the{" "}
+            Write down these 24 words and keep them safe. This is the{" "}
             <span className="text-[#39ff14]">ONLY WAY</span> to recover your
             account if you lose access.
           </p>
@@ -104,10 +107,14 @@ export const RegisterPage: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs text-white/60 uppercase tracking-widest">
+            <label
+              htmlFor="register-name-input"
+              className="text-xs text-white/60 uppercase tracking-widest"
+            >
               Name
             </label>
             <input
+              id="register-name-input"
               className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -117,10 +124,14 @@ export const RegisterPage: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs text-white/60 uppercase tracking-widest">
+            <label
+              htmlFor="register-email-input"
+              className="text-xs text-white/60 uppercase tracking-widest"
+            >
               Email
             </label>
             <input
+              id="register-email-input"
               className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -132,6 +143,7 @@ export const RegisterPage: React.FC = () => {
 
           <div className="flex flex-col gap-2">
             <PasswordInput
+              id="register-password-input"
               label="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -158,6 +170,7 @@ export const RegisterPage: React.FC = () => {
           </div>
 
           <PasswordInput
+            id="register-confirm-password-input"
             label="Confirm Password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}

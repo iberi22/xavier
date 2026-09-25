@@ -42,7 +42,8 @@ impl JwtManager {
     }
 
     fn get_or_create_keypair() -> Result<(String, String)> {
-        let vault = HardwareVault::new("xavier-auth");
+        let service_name = crate::auth2::auth_vault_service_name();
+        let vault = HardwareVault::new(&service_name);
 
         // Try to get from vault
         if let (Ok(enc_private), Ok(enc_public)) = (
@@ -50,7 +51,7 @@ impl JwtManager {
             vault.get_secret("JWT_PUBLIC_KEY"),
         ) {
             // Decrypt keys
-            let master_key = HardwareVault::new("xavier-auth").get_secret("DB_MASTER_KEY")?;
+            let master_key = HardwareVault::new(&service_name).get_secret("DB_MASTER_KEY")?;
             let mut key_bytes = [0u8; 32];
             let decoded_master = crate::crypto::hex_decode(&master_key)?;
             key_bytes.copy_from_slice(&decoded_master[..32]);
@@ -90,7 +91,7 @@ impl JwtManager {
             .map_err(|e| anyhow!("Failed to encode public key: {}", e))?;
 
         // Encrypt and store in vault
-        let master_key = HardwareVault::new("xavier-auth").get_secret("DB_MASTER_KEY")?;
+        let master_key = HardwareVault::new(&service_name).get_secret("DB_MASTER_KEY")?;
         let mut key_bytes = [0u8; 32];
         let decoded_master = crate::crypto::hex_decode(&master_key)?;
         key_bytes.copy_from_slice(&decoded_master[..32]);

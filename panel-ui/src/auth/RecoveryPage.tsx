@@ -73,15 +73,19 @@ export const RecoveryPage: React.FC = () => {
           Account Recovery
         </h1>
         <p className="text-[10px] opacity-60 mb-8 leading-relaxed uppercase tracking-widest">
-          Use your 12-word seed phrase to reset access
+          Use your 24-word seed phrase to reset access
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs text-white/60 uppercase tracking-widest">
+            <label
+              htmlFor="recovery-email-input"
+              className="text-xs text-white/60 uppercase tracking-widest"
+            >
               Email
             </label>
             <input
+              id="recovery-email-input"
               className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -92,19 +96,24 @@ export const RecoveryPage: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs text-white/60 uppercase tracking-widest">
+            <label
+              htmlFor="recovery-seed-phrase-input"
+              className="text-xs text-white/60 uppercase tracking-widest"
+            >
               Seed Phrase
             </label>
             <textarea
+              id="recovery-seed-phrase-input"
               className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono min-h-[100px] resize-none"
               value={seedPhrase}
               onChange={(e) => setSeedPhrase(e.target.value)}
-              placeholder="Enter your 12 words here..."
+              placeholder="Enter your 24 words here..."
               required
             />
           </div>
 
           <PasswordInput
+            id="recovery-new-password-input"
             label="New Password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
@@ -112,6 +121,7 @@ export const RecoveryPage: React.FC = () => {
           />
 
           <PasswordInput
+            id="recovery-confirm-password-input"
             label="Confirm New Password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}

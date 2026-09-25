@@ -1,30 +1,30 @@
 import { Check, Copy } from "lucide-react";
 import { motion } from "motion/react";
 import type React from "react";
-import { useEffect, useState } from "react";
-import { authClient } from "../api/authClient";
+import { useState } from "react";
 import ParticleBackground from "../components/ParticleBackground";
+import { useAuthStore } from "./AuthProvider";
 
 export const BackupCodesPage: React.FC = () => {
-  const [codes, setCodes] = useState<string[]>([]);
+  // Codes come from the single `/auth/2fa/setup` call made by TwoFactorSetup
+  // and are held in the auth store just long enough to be shown here once.
+  // Calling setup2FA() again would rotate the TOTP secret server-side and
+  // invalidate the code the operator already scanned/verified.
+  const codes = useAuthStore((state) => state.pendingBackupCodes) ?? [];
+  const setPendingBackupCodes = useAuthStore(
+    (state) => state.setPendingBackupCodes,
+  );
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    const fetchCodes = async () => {
-      try {
-        const response = await authClient.setup2FA();
-        setCodes(response.backup_codes);
-      } catch (e) {
-        console.error("Failed to fetch backup codes", e);
-      }
-    };
-    void fetchCodes();
-  }, []);
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(codes.join("\n"));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleAcknowledge = () => {
+    setPendingBackupCodes(null);
+    window.location.hash = "#/";
   };
 
   return (
@@ -48,6 +48,7 @@ export const BackupCodesPage: React.FC = () => {
           {codes.map((code, i) => (
             <div
               key={i}
+              data-testid="backup-code"
               className="bg-white/5 border border-white/10 rounded-lg p-2 text-center font-mono text-sm tracking-widest text-white/80"
             >
               {code}
@@ -74,7 +75,7 @@ export const BackupCodesPage: React.FC = () => {
           <button
             type="button"
             className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all mt-2"
-            onClick={() => (window.location.hash = "#/")}
+            onClick={handleAcknowledge}
           >
             I HAVE SAVED MY CODES
           </button>

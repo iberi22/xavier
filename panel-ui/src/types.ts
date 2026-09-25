@@ -138,15 +138,24 @@ export interface User {
 
 export interface AuthState {
   user: User | null;
+  /** Master API key (X-Xavier-Token) OR — when none is configured — the operator's JWT. */
   token: string | null;
+  /** Operator JWT (`/auth/*` access_token), always populated after login regardless of
+   *  whether a master API key is configured. Required for `Authorization: Bearer` calls
+   *  such as `/auth/2fa/setup` and `/auth/2fa/verify`. */
+  accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
   requires2FA: boolean;
+  /** Backup codes returned by the most recent `/auth/2fa/setup` call, held in memory only
+   *  long enough for `BackupCodesPage` to display them once; cleared once acknowledged. */
+  pendingBackupCodes: string[] | null;
 
   login: (email: string, password: string, totpCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   register: (email: string, name: string, password: string) => Promise<void>;
   refreshSession: () => Promise<void>;
+  setPendingBackupCodes: (codes: string[] | null) => void;
 }
 
 export interface Agent {

@@ -50,6 +50,44 @@ test.describe("Sovereign Recovery Modal & Disaster Recovery Wizard E2E", () => {
       await route.fulfill({ json: [] });
     });
 
+    // AuthProvider (panel-ui/src/auth/AuthProvider.tsx) calls authClient.refresh() on every
+    // mount — that's the /auth/* email/password session, a SEPARATE system from the mesh
+    // node-identity endpoints mocked above. App.tsx gates every route past the login screen
+    // (including #/wallet) on `isAuthenticated`, which only refreshSession()/login() ever set.
+    // Response shapes here match the real backend (refresh_handler's AuthResponse /
+    // login_handler's LoginResponse in src/auth2/mod.rs): { access_token, refresh_token[, user] }.
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token-recovery",
+          refresh_token: "mock-refresh-token-recovery",
+        }),
+      });
+    });
+
+    await page.route("**/auth/login", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token-recovery",
+          refresh_token: "mock-refresh-token-recovery",
+          user: {
+            id: "01MOCKUSER0000000000000000",
+            email: "operator@xavier.local",
+            name: "Operator",
+            role: "admin",
+            totp_enabled: false,
+            created_at: 0,
+            updated_at: 0,
+          },
+          requires_2fa: false,
+        }),
+      });
+    });
+
     // Seed local storage with authenticated session and skip onboarding
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_token", "swal_sess_mock_recovery_token_999");

@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e:generative": "playwright test",
+    "test:e2e:auth": "playwright test --config=playwright.auth-e2e.config.ts",
     "tauri:build:desktop": "tauri build"
   },
   "dependencies": {

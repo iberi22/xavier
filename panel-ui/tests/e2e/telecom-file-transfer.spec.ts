@@ -39,6 +39,21 @@ test.describe("Telecom File Transfer Drawer E2E", () => {
       });
     });
 
+    // AuthProvider calls authClient.refresh() on every mount (panel-ui/src/auth/AuthProvider.tsx);
+    // this test navigates straight to a gated route (#/telecom/direct) with no explicit login
+    // click, so isAuthenticated only ever becomes true via this call. Shape matches the real
+    // backend (refresh_handler's AuthResponse, src/auth2/mod.rs): { access_token, refresh_token }.
+    await page.route("**/auth/refresh", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: "mock.jwt.access-token-file-transfer",
+          refresh_token: "mock-refresh-token-file-transfer",
+        }),
+      });
+    });
+
     // Bypass onboarding and set authenticated session
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_onboarding_completed", "true");

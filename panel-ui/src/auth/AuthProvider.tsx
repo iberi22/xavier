@@ -16,37 +16,44 @@
 import type React from "react";
 import { createContext, useEffect } from "react";
 import { create } from "zustand";
-import { authClient } from "../api/authClient";
+import { AuthApiError, authClient } from "../api/authClient";
 import type { AuthState } from "../types";
 
 // The panel uses the master API key (VITE_XAVIER_API_TOKEN) for X-Xavier-Token panel routes.
-// The operator JWT is stored separately in refreshToken for session management.
+// The operator's raw JWT always lives in `accessToken`; `refreshToken` holds the opaque
+// rotation token used only to mint new access tokens via /auth/refresh.
 const API_TOKEN =
 	(import.meta.env.VITE_XAVIER_API_TOKEN as string | undefined) ?? null;
 
-const useAuthStore = create<AuthState>((set) => ({
+const useAuthStore = create<AuthState>((set, get) => ({
 	user: null,
 	token: API_TOKEN, // Master API key — used as X-Xavier-Token in panel/* calls
+	accessToken: null, // Operator JWT — always the raw /auth/* access_token, independent of API_TOKEN
 	refreshToken: null,
 	isAuthenticated: false,
 	requires2FA: false,
+	pendingBackupCodes: null,
 
 	login: async (email, password, totpCode) => {
 		try {
 			const response = await authClient.login(email, password, totpCode);
-			// access_token is the JWT; use it only if no env token is configured.
-			const jwtToken =
-				(response as unknown as { access_token?: string }).access_token ??
-				response.token;
 			set({
 				user: response.user,
-				token: API_TOKEN ?? jwtToken ?? null,
+				// Panel/* routes prefer the master API key when configured; auth-protected
+				// routes (2fa/setup, 2fa/verify) always use `accessToken` below.
+				token: API_TOKEN ?? response.access_token ?? null,
+				accessToken: response.access_token ?? null,
 				refreshToken: response.refresh_token,
 				isAuthenticated: true,
 				requires2FA: false,
 			});
 		} catch (error) {
-			if (error instanceof Error && error.message.includes("2FA")) {
+			// `mfa_required` (no/empty code sent yet) and `mfa_invalid` (wrong code) both mean
+			// "keep the TOTP field open" — see login_handler in src/auth2/mod.rs.
+			if (
+				error instanceof AuthApiError &&
+				(error.code === "mfa_required" || error.code === "mfa_invalid")
+			) {
 				set({ requires2FA: true });
 			}
 			throw error;
@@ -54,13 +61,16 @@ const useAuthStore = create<AuthState>((set) => ({
 	},
 
 	logout: async () => {
-		await authClient.logout();
+		// logout_handler needs the refresh token in the body to revoke it server-side.
+		await authClient.logout(get().refreshToken);
 		set({
 			user: null,
-			token: null,
+			token: API_TOKEN,
+			accessToken: null,
 			refreshToken: null,
 			isAuthenticated: false,
 			requires2FA: false,
+			pendingBackupCodes: null,
 		});
 	},
 
@@ -73,10 +83,12 @@ const useAuthStore = create<AuthState>((set) => ({
 
 	refreshSession: async () => {
 		try {
-			const response = await authClient.refresh();
+			// /auth/refresh only returns { access_token, refresh_token } — no `user` — so the
+			// existing user object is preserved instead of being wiped out by `undefined`.
+			const response = await authClient.refresh(get().refreshToken);
 			set({
-				user: response.user,
-				token: response.token,
+				token: API_TOKEN ?? response.access_token ?? null,
+				accessToken: response.access_token ?? null,
 				refreshToken: response.refresh_token,
 				isAuthenticated: true,
 			});
@@ -84,11 +96,14 @@ const useAuthStore = create<AuthState>((set) => ({
 			set({
 				user: null,
 				token: API_TOKEN,
+				accessToken: null,
 				refreshToken: null,
 				isAuthenticated: false,
 			});
 		}
 	},
+
+	setPendingBackupCodes: (codes) => set({ pendingBackupCodes: codes }),
 }));
 
 export { useAuthStore };
