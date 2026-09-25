@@ -229,10 +229,14 @@ impl QmdMemory {
         limit: usize,
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<Vec<MemoryDocument>> {
+        let include_activity = filters.and_then(|f| f.include_activity).unwrap_or(false);
         let docs = self.all_documents().await;
         let filtered_docs: Vec<MemoryDocument> = docs
             .into_iter()
             .filter(|doc| matches_filters(&doc.path, &doc.metadata, &self.workspace_id, filters))
+            .filter(|doc| {
+                include_activity || !crate::memory::schema::is_noise_content(&doc.content)
+            })
             .collect();
 
         if filtered_docs.is_empty() {

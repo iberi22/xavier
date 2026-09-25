@@ -266,6 +266,12 @@ pub async fn search_handler(
             requester_level,
         ));
     }
+    // Top-level convenience flag mirrors `filters.include_activity`; excludes
+    // telemetry/noise namespaces (activity/*, gestalt/thinking/*, auto
+    // activity/insight records) from general search unless opted back in.
+    if let Some(include_activity) = payload.include_activity {
+        filters.include_activity = Some(include_activity);
+    }
     let zones = payload
         .active_zones
         .clone()
@@ -345,6 +351,93 @@ pub async fn search_handler(
         "hidden_by_clearance": hidden_by_clearance,
         "workspace_id": state.workspace_id,
     }))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GetMemoryQuery {
+    /// The document path, exactly as returned/persisted by `/memory/add`.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// The document id, as an alternative to `path`.
+    #[serde(default)]
+    pub id: Option<String>,
+}
+
+/// Get-by-path (or by-id) handler.
+///
+/// `POST /memory/add` returns a `path`, but no route ever answered
+/// `GET /memory/get?path=...` — the request 404'd before reaching any
+/// handler (no such route was registered). `state.memory` already resolves
+/// either an id or a path (`QmdMemory::get` -> `reader::get`, with a store
+/// fallback that also matches by path), so this only exposes that existing
+/// lookup over HTTP.
+pub async fn get_handler(
+    State(state): State<CliState>,
+    requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
+    Query(query): Query<GetMemoryQuery>,
+) -> impl axum::response::IntoResponse {
+    let key = query
+        .path
+        .filter(|p| !p.trim().is_empty())
+        .or_else(|| query.id.filter(|id| !id.trim().is_empty()));
+
+    let Some(key) = key else {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": "Provide either `path` or `id`",
+            })),
+        )
+            .into_response();
+    };
+
+    let requester_level = requester
+        .map(|axum::extract::Extension(level)| level)
+        .unwrap_or_else(xavier::security::clearance::default_clearance);
+
+    match state.memory.get(&key).await {
+        Ok(Some(record)) => {
+            if !xavier::security::clearance::can_access(
+                requester_level,
+                xavier::security::clearance::level_from_metadata(&record.metadata),
+            ) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    axum::Json(serde_json::json!({
+                        "status": "error",
+                        "message": "Access denied by classification clearance",
+                    })),
+                )
+                    .into_response();
+            }
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "id": record.id,
+                "path": record.path,
+                "content": record.content,
+                "metadata": record.metadata,
+                "workspace_id": state.workspace_id,
+            }))
+            .into_response()
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({
+                "status": "not_found",
+                "message": format!("No memory found for path/id '{}'", key),
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string(),
+            })),
+        )
+            .into_response(),
+    }
 }
 
 /// Add handler.
