@@ -24,12 +24,18 @@ describe("useApiToken hook and getApiTokenSync helper", () => {
     expect(getApiTokenSync()).toBe("custom-store-token-123");
   });
 
-  it("(b) falls back to VITE_XAVIER_API_TOKEN when store token is null", () => {
-    vi.stubEnv("VITE_XAVIER_API_TOKEN", "env-token-xyz");
+  // SECURITY: useApiToken/getApiTokenSync must source the token exclusively from the /auth
+  // session (useAuthStore's `token`, set from the operator's JWT on login/refresh) and must
+  // NEVER fall back to a VITE_*-prefixed build-time env var — that gets inlined as plaintext
+  // into the production JS bundle by Vite. A prior panel deploy shipped exactly that
+  // (VITE_XAVIER_API_TOKEN baked into the built assets), a real credential-leak vector. This
+  // asserts an env var of that shape has no effect whatsoever, even when set.
+  it("(b) ignores a VITE_XAVIER_API_TOKEN env var entirely — never falls back to it", () => {
+    vi.stubEnv("VITE_XAVIER_API_TOKEN", "env-token-should-be-ignored");
     useAuthStore.setState({ token: null });
     const { result } = renderHook(() => useApiToken());
-    expect(result.current).toBe("env-token-xyz");
-    expect(getApiTokenSync()).toBe("env-token-xyz");
+    expect(result.current).toBe("");
+    expect(getApiTokenSync()).toBe("");
   });
 
   it("(c) getApiTokenSync returns token synchronously outside React component lifecycle", () => {
@@ -38,8 +44,7 @@ describe("useApiToken hook and getApiTokenSync helper", () => {
   });
 
   it("(d) fetch attaching token header using getApiUrl resolves 200 without 401 loop or Tauri dependency", async () => {
-    vi.stubEnv("VITE_XAVIER_API_TOKEN", "valid-test-token");
-    useAuthStore.setState({ token: null });
+    useAuthStore.setState({ token: "valid-test-token" });
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -64,8 +69,7 @@ describe("useApiToken hook and getApiTokenSync helper", () => {
     );
   });
 
-  it("(e) falls back to empty string when neither store token nor env var is defined", () => {
-    vi.stubEnv("VITE_XAVIER_API_TOKEN", "");
+  it("(e) falls back to empty string when no /auth session token is present", () => {
     useAuthStore.setState({ token: null });
     const { result } = renderHook(() => useApiToken());
     expect(result.current).toBe("");

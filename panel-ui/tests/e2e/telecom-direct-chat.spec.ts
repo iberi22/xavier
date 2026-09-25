@@ -92,18 +92,21 @@ test.describe("Telecom Direct Chat E2E", () => {
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(500);
 
-    // Verify peer identity & online status indicator
-    const peerHeading = page.locator("h2", { hasText: "Vanguard Prime" });
+    // Verify peer identity & online status indicator (DirectChatView's DEFAULT_PEER, see
+    // src/components/Telecom/DirectChatView.tsx)
+    const peerHeading = page.locator("h2", { hasText: "Node Beta" });
     await expect(peerHeading).toBeVisible();
 
     const statusBadge = page.locator("text=Online · Direct Link Active");
     await expect(statusBadge).toBeVisible();
 
-    const cipherBadge = page.locator("text=ChaCha20-Poly1305");
+    const cipherBadge = page.locator("text=ChaCha20-Poly1305").first();
     await expect(cipherBadge).toBeVisible();
 
-    // Verify existing pre-seeded message rendering
-    const existingMsg = page.locator("text=Secure telecom handshake established.");
+    // Verify existing pre-seeded message rendering (DirectChatView's DEFAULT_MESSAGES)
+    const existingMsg = page.locator(
+      "text=Encrypted 1-to-1 channel initialized via ChaCha20-Poly1305 key exchange."
+    );
     await expect(existingMsg).toBeVisible();
 
     // Take screenshot of direct chat room
@@ -123,15 +126,18 @@ test.describe("Telecom Direct Chat E2E", () => {
     const sentMsg = page.locator("text=E2E Test Encrypted Message with Receipt Verification");
     await expect(sentMsg).toBeVisible();
 
-    // Verify delivery receipt indicator
-    const receiptIndicator = page.locator('span[title*="Status:"]');
+    // Verify delivery receipt indicator (DirectChatView.MessageItem renders
+    // <span title="Sending...|Sent|Delivered|Read">, never "Status: ...")
+    const receiptIndicator = page.locator(
+      'span[title="Sending..."], span[title="Sent"], span[title="Delivered"], span[title="Read"]'
+    );
     await expect(receiptIndicator.first()).toBeVisible();
 
     // Toggle Search conversation bar
     const searchBtn = page.locator('button[aria-label="Search conversation messages"]');
     await searchBtn.click();
 
-    const searchInput = page.locator('input[placeholder="Search messages in this channel..."]');
+    const searchInput = page.locator('input[placeholder="Search in encrypted chat..."]');
     await expect(searchInput).toBeVisible();
     await searchInput.fill("handshake");
 
