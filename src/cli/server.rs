@@ -260,7 +260,7 @@ pub async fn start_http_server(
 
     let auth_store_file_path = xavier_dir.join("auth_store.db");
     let auth_db_path = auth_store_file_path.to_string_lossy().to_string();
-    let auth_store = Arc::new(AuthStore::open(&auth_db_path, [0u8; 32])?); // Use actual key in prod
+    let auth_store = Arc::new(AuthStore::open(&auth_db_path)?);
 
     let auth_db_file_path = xavier_dir.join("auth.db");
 
@@ -1016,17 +1016,21 @@ pub async fn start_http_server(
         .route("/v1/embeddings", post(embed_handler))
         .route("/v1/embeddings/stats", get(embedding_stats_handler))
         .route("/v1/auth/session", post(session_create_handler))
+        // Deprecated legacy user-auth API (GH #2545): these paths used to be documented as
+        // canonical but were backed by a user store nothing ever populated. They now answer
+        // 308 (equivalent contract at /auth/*) or 410 (no direct successor) instead of a
+        // silent 401/404 — see `src/cli/handlers/auth.rs` module docs for the full rationale.
+        // `/v1/auth/sessions*` (root-token sessions, routed above) is unrelated and unaffected.
         .nest(
             "/v1/auth",
             Router::new()
-                .route("/login", post(login_handler))
-                .route("/totp/verify", post(totp_verify_handler))
-                .route("/refresh", post(refresh_handler))
-                .route("/recover", post(recover_handler))
-                .layer(middleware::from_fn_with_state(
-                    state.clone(),
-                    rate_limit_middleware,
-                )),
+                .route("/login", post(deprecated_v1_login_handler))
+                .route("/register", post(deprecated_v1_register_handler))
+                .route("/refresh", post(deprecated_v1_refresh_handler))
+                .route("/logout", post(deprecated_v1_logout_handler))
+                .route("/recover", post(deprecated_v1_recover_handler))
+                .route("/totp/verify", post(deprecated_v1_totp_verify_handler))
+                .route("/totp/setup", post(deprecated_v1_totp_setup_handler)),
         )
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
