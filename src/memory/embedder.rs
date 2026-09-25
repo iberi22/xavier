@@ -59,3 +59,35 @@ impl EmbeddingClient {
         })
     }
 }
+
+/// Per-attempt timeout budget for a single embedding request, configurable via
+/// `XAVIER_EMBEDDING_TIMEOUT_MS` (default: 3000ms / 3s).
+///
+/// Kept intentionally short: on a fresh install the configured embedding
+/// endpoint (remote Ollama, OpenAI-compatible URL, ...) is commonly
+/// unreachable, and memory writes/searches must degrade to lexical/FTS
+/// quickly instead of hanging behind the outer HTTP request-timeout
+/// middleware. Callers that need a hard ceiling on *total* wall-clock time
+/// (including retries) should additionally wrap the call in
+/// `tokio::time::timeout` using `embedding_fallback_budget()`.
+pub fn embedding_timeout() -> std::time::Duration {
+    let ms = std::env::var("XAVIER_EMBEDDING_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(3000);
+    std::time::Duration::from_millis(ms)
+}
+
+/// Total wall-clock budget allowed for an embedding call (including internal
+/// retries) before a caller on the interactive add/search path must give up
+/// and degrade to lexical/FTS results. Configurable via
+/// `XAVIER_EMBEDDING_FALLBACK_BUDGET_MS` (default: 2000ms / 2s).
+pub fn embedding_fallback_budget() -> std::time::Duration {
+    let ms = std::env::var("XAVIER_EMBEDDING_FALLBACK_BUDGET_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(2000);
+    std::time::Duration::from_millis(ms)
+}
