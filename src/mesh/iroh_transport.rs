@@ -305,7 +305,9 @@ impl IrohTransport {
         let resp = self
             .round_trip(&conn, &MeshRequest::FetchChunks { request })
             .await?;
-        Ok(serde_json::from_value(resp).context("parse chunks")?)
+        let chunks: HashMap<String, Vec<u8>> =
+            serde_json::from_value(resp).context("parse chunks")?;
+        Ok(chunks)
     }
 
     /// Push chunks to a remote peer over Iroh. The wanted_hashes field carries
@@ -324,7 +326,8 @@ impl IrohTransport {
         let resp = self
             .round_trip(&conn, &MeshRequest::PushChunks { request })
             .await?;
-        Ok(serde_json::from_value(resp).context("parse push ack")?)
+        let ack: Vec<String> = serde_json::from_value(resp).context("parse push ack")?;
+        Ok(ack)
     }
 
     /// Share a session bundle with a remote peer over Iroh.
@@ -438,7 +441,8 @@ impl IrohTransport {
 
                     let response_value = handle_request(&local_identity, &*store, &req).await;
 
-                    let resp_bytes = match response_value.and_then(|v| serde_json::to_vec(&v)) {
+                    let resp_bytes = match response_value.and_then(|v| Ok(serde_json::to_vec(&v)?))
+                    {
                         Ok(bytes) => bytes,
                         Err(e) => {
                             tracing::warn!("Failed to serialize response: {e:#}");
@@ -842,7 +846,7 @@ mod tests {
         let val = handle_request(&identity, &*store, &req).await.unwrap();
         let chunks = val["chunks"].as_array().unwrap();
         assert_eq!(chunks.len(), 1, "one record should produce one chunk ref");
-        assert!(chunks[0]["hash"].as_str().unwrap().len() > 0);
+        assert!(!chunks[0]["hash"].as_str().unwrap().is_empty());
     }
 
     #[tokio::test]

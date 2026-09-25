@@ -1,6 +1,6 @@
 [package]
 name = "xavier"
-version = "0.2.14"
+version = "0.2.15"
 rust-version = "1.94"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
@@ -76,7 +76,7 @@ gpu-search-metal = ["gpu-search", "candle-core/metal", "candle-nn/metal"]
 test-utils = []
 bench-runners = []
 tauri = ["dep:tauri"]
-telegram = ["teloxide/macros", "teloxide/webhooks-axum"]
+telegram = ["teloxide/macros", "teloxide/webhooks-axum", "teloxide/ctrlc_handler"]
 local-gllm = ["dep:gllm", "gllm/wgpu", "dep:candle-core"]
 local-gllm-cuda = ["dep:gllm", "gllm/cuda", "dep:candle-core"]
 dev-mode = []
@@ -370,7 +370,7 @@ bech32 = "0.12.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 x25519-dalek = { version = "3.0.0", features = ["static_secrets", "reusable_secrets", "getrandom"] }
 sqlite-vec = "0.1.0"
-mdns-sd = "0.13"
+mdns-sd = "0.21"
 # Iroh provides QUIC-based P2P transport with automatic NAT traversal (the mesh
 # roadmap's "Phase 2"). Feature-gated under `mesh` so the default
 # build stays lean; the IrohTransport is the preferred P2P backend going forward.
