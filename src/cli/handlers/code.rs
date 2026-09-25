@@ -2591,7 +2591,7 @@ mod tests {
     use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 
     async fn xav01_test_state(workspace_dir: std::path::PathBuf) -> CliState {
-        let auth_store = Arc::new(AuthStore::open(":memory:", [0u8; 32]).unwrap());
+        let auth_store = Arc::new(AuthStore::open(":memory:").unwrap());
         let docs = Arc::new(AsyncRwLock::new(Vec::new()));
         let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
         let memory_port = Arc::new(QmdMemoryAdapter::new(Arc::clone(&qmd_memory)));

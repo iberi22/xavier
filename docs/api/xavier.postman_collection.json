@@ -112,7 +112,7 @@
     },
     {
       "name": "Authentication",
-      "description": "Endpoints handling user registration, standard JWT authentication, Multi-Factor verification (TOTP), and session revocation.",
+      "description": "Endpoints for the real, working user-auth API (src/auth2/, .xavier/auth.db): registration, login (with inline TOTP), refresh, logout, 2FA enrollment and account recovery — plus the unrelated root-token session endpoints. NOTE: this collection used to document a parallel /v1/auth/login + /v1/auth/totp/verify API that never worked (dead AuthStore, zero callers ever wrote a user into it — see https://github.com/iberi22/xavier/issues/2545). Those paths now return 308/410 pointing here; they were removed from this collection.",
       "item": [
         {
           "name": "Register User",
@@ -127,7 +127,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123\"\n}"
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123!\",\n  \"name\": \"Ada Lovelace\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/register",
@@ -139,12 +139,12 @@
                 "register"
               ]
             },
-            "description": "Register a new local user into the `auth.db` database."
+            "description": "Register a new local user into `.xavier/auth.db` (src/auth2/). Password must be at least 12 characters. Response includes a one-time seed_phrase (24-word BIP39, Spanish) — store it now, it is required by POST /auth/recovery and never shown again."
           },
           "response": []
         },
         {
-          "name": "User Login",
+          "name": "Login",
           "request": {
             "method": "POST",
             "header": [
@@ -156,31 +156,119 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123\"\n}"
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123!\",\n  \"totp_code\": null\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/auth/login",
+              "raw": "{{baseUrl}}/auth/login",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "v1",
                 "auth",
                 "login"
               ]
             },
-            "description": "Perform credentials check. Tracked by brute force monitor (max 5 failed logins within 15 minutes)."
+            "description": "Log in with email + password. If the account has TOTP enabled, include the current 6-digit code in totp_code in this SAME request (there is no separate verify-after-login call). The whole /auth/* nest is rate-limited (default 20 req/min, XAVIER_AUTH_RATE_LIMIT)."
           },
           "response": []
         },
         {
-          "name": "Verify 2FA TOTP",
+          "name": "Refresh Token",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Rotate a refresh token for a new access/refresh pair. Reusing an already-rotated token revokes the whole chain (403)."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revoke a refresh token. Idempotent: always 200, even if already invalid."
+          },
+          "response": []
+        },
+        {
+          "name": "2FA Setup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa/setup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa",
+                "setup"
+              ]
+            },
+            "description": "Begin TOTP enrollment: generates a secret, a Unicode QR (otpauth:// rendered as text, not an image) and 10 backup codes. Requires a valid access token. Confirm with '2FA Verify' below before the account is actually TOTP-protected."
+          },
+          "response": []
+        },
+        {
+          "name": "2FA Verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
                 "type": "text"
               }
             ],
@@ -189,23 +277,51 @@
               "raw": "{\n  \"code\": \"123456\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/v1/auth/totp/verify",
+              "raw": "{{baseUrl}}/auth/2fa/verify",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "v1",
                 "auth",
-                "totp",
+                "2fa",
                 "verify"
               ]
             },
-            "description": "Complete authentication via Time-based One-Time Password validation. Double-divided epoch timestamps apply on the server."
+            "description": "Confirm TOTP enrollment with a code from the authenticator app. On success the account is flagged totp_enabled = true. Requires a valid access token."
           },
           "response": []
         },
         {
-          "name": "List Active Sessions",
+          "name": "Account Recovery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"seed_phrase\": \"word1 word2 ... word24\",\n  \"new_password\": \"newSecurePassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/recovery",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "recovery"
+              ]
+            },
+            "description": "Reset a lost password using the 24-word recovery seed phrase shown once at registration. Also disables TOTP on the account so the user can log back in without the lost device."
+          },
+          "response": []
+        },
+        {
+          "name": "List Active Sessions (root-token)",
           "request": {
             "method": "GET",
             "header": [
@@ -226,12 +342,12 @@
                 "sessions"
               ]
             },
-            "description": "Retrieve active, valid user sessions associated with the user's account."
+            "description": "Unrelated to the user-login flow above: lists active sessions for the caller's root-token session (X-Xavier-Token), not a JWT user session."
           },
           "response": []
         },
         {
-          "name": "Revoke Session",
+          "name": "Revoke Session (root-token)",
           "request": {
             "method": "DELETE",
             "header": [
@@ -259,7 +375,7 @@
                 }
               ]
             },
-            "description": "Log out or revoke an active session token."
+            "description": "Revoke an active root-token session."
           },
           "response": []
         }
