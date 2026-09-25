@@ -19,16 +19,17 @@ import { create } from "zustand";
 import { AuthApiError, authClient } from "../api/authClient";
 import type { AuthState } from "../types";
 
-// The panel uses the master API key (VITE_XAVIER_API_TOKEN) for X-Xavier-Token panel routes.
-// The operator's raw JWT always lives in `accessToken`; `refreshToken` holds the opaque
-// rotation token used only to mint new access tokens via /auth/refresh.
-const API_TOKEN =
-	(import.meta.env.VITE_XAVIER_API_TOKEN as string | undefined) ?? null;
-
+// SECURITY: the panel authenticates purely via the /auth/* session (cookie/token flow) —
+// never by embedding a raw API token into the built JS bundle. A prior panel deploy shipped
+// a build-time master-key env var inlined into the production bundle (a real leak vector,
+// since anyone with the built JS could read the master key in plaintext); that env var and
+// every read of it have been removed. `token` (used as X-Xavier-Token on panel/* routes) is
+// now always sourced from `accessToken`, the operator's raw JWT minted by /auth/login or
+// /auth/refresh — see src/types.ts's AuthState.token comment.
 const useAuthStore = create<AuthState>((set, get) => ({
 	user: null,
-	token: API_TOKEN, // Master API key — used as X-Xavier-Token in panel/* calls
-	accessToken: null, // Operator JWT — always the raw /auth/* access_token, independent of API_TOKEN
+	token: null, // X-Xavier-Token for panel/* calls — always the operator's JWT (accessToken) once authenticated
+	accessToken: null, // Operator JWT — the raw /auth/* access_token
 	refreshToken: null,
 	isAuthenticated: false,
 	requires2FA: false,
@@ -39,9 +40,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
 			const response = await authClient.login(email, password, totpCode);
 			set({
 				user: response.user,
-				// Panel/* routes prefer the master API key when configured; auth-protected
-				// routes (2fa/setup, 2fa/verify) always use `accessToken` below.
-				token: API_TOKEN ?? response.access_token ?? null,
+				token: response.access_token ?? null,
 				accessToken: response.access_token ?? null,
 				refreshToken: response.refresh_token,
 				isAuthenticated: true,
@@ -65,7 +64,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
 		await authClient.logout(get().refreshToken);
 		set({
 			user: null,
-			token: API_TOKEN,
+			token: null,
 			accessToken: null,
 			refreshToken: null,
 			isAuthenticated: false,
@@ -87,7 +86,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
 			// existing user object is preserved instead of being wiped out by `undefined`.
 			const response = await authClient.refresh(get().refreshToken);
 			set({
-				token: API_TOKEN ?? response.access_token ?? null,
+				token: response.access_token ?? null,
 				accessToken: response.access_token ?? null,
 				refreshToken: response.refresh_token,
 				isAuthenticated: true,
@@ -95,7 +94,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
 		} catch (_error) {
 			set({
 				user: null,
-				token: API_TOKEN,
+				token: null,
 				accessToken: null,
 				refreshToken: null,
 				isAuthenticated: false,
