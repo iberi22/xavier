@@ -20,6 +20,11 @@ use super::scoring::{contextual_boost, lexical_score};
 use super::vector::{vsearch, vsearch_filtered};
 
 /// Hybrid search with variant expansion, multi-hop context, and RRF re-ranking.
+///
+/// Thin wrapper over [`search_hybrid_optimized_with_mode`] that drops the
+/// `vector_used` flag, kept for the many call sites that only need the
+/// documents. Prefer the `_with_mode` variant when the caller wants to
+/// surface "hybrid" vs "lexical-only" degradation to a client/response.
 #[autometrics]
 pub async fn search_hybrid_optimized(
     memory: &QmdMemory,
@@ -27,8 +32,26 @@ pub async fn search_hybrid_optimized(
     limit: usize,
     filters: Option<&MemoryQueryFilters>,
 ) -> Result<Vec<MemoryDocument>> {
+    search_hybrid_optimized_with_mode(memory, query_text, limit, filters)
+        .await
+        .map(|(docs, _vector_used)| docs)
+}
+
+/// Same as [`search_hybrid_optimized`] but also reports whether the vector
+/// (embedding) signal actually contributed to the result set. `false` means
+/// the result is lexical/FTS-only, either because no embedder is configured
+/// or because the embedding call failed/timed out and search degraded
+/// gracefully instead of hanging.
+#[autometrics]
+pub async fn search_hybrid_optimized_with_mode(
+    memory: &QmdMemory,
+    query_text: &str,
+    limit: usize,
+    filters: Option<&MemoryQueryFilters>,
+) -> Result<(Vec<MemoryDocument>, bool)> {
     let query_bundle = query_builder::build_query_bundle_internal(query_text);
     let mut candidate_scores: HashMap<String, (f32, MemoryDocument, f32)> = HashMap::new();
+    let mut vector_used = false;
 
     // 1. Lexical retrieval across query variants
     for expanded_query in &query_bundle.variants {
@@ -43,18 +66,29 @@ pub async fn search_hybrid_optimized(
         );
     }
 
-    // 2. Vector retrieval (when embedder is configured)
+    // 2. Vector retrieval (when embedder is configured). Bounded by a short,
+    // configurable fallback budget (`XAVIER_EMBEDDING_FALLBACK_BUDGET_MS`,
+    // default 2s): on a fresh install with an unreachable embedding
+    // endpoint, `generate_embedding` alone can retry for 10s+ internally.
+    // Without this outer timeout that unbounded wait used to make
+    // `mem_search`/`memory_search` hang well past client/middleware
+    // timeouts instead of degrading to the lexical results already
+    // gathered above.
     if crate::memory::embedder::EmbeddingClient::is_configured_from_env()
         || std::env::var("XAVIER_EMBEDDING_URL").is_ok()
     {
-        if let Ok(vector) =
-            crate::memory::qmd_memory::reader::generate_embedding(&query_bundle.normalized_query)
-                .await
+        let embed_budget = crate::memory::embedder::embedding_fallback_budget();
+        match tokio::time::timeout(
+            embed_budget,
+            crate::memory::qmd_memory::reader::generate_embedding(&query_bundle.normalized_query),
+        )
+        .await
         {
-            if !vector.is_empty() {
+            Ok(Ok(vector)) if !vector.is_empty() => {
                 if let Ok(filtered_hits) =
                     vsearch_filtered(memory, vector, limit.max(5), filters).await
                 {
+                    vector_used = true;
                     merge_ranked_candidates(
                         &mut candidate_scores,
                         filtered_hits,
@@ -63,11 +97,24 @@ pub async fn search_hybrid_optimized(
                     );
                 }
             }
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(
+                    error = %error,
+                    "hybrid search: embedding generation failed, degrading to lexical-only"
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
+                    budget_ms = embed_budget.as_millis() as u64,
+                    "hybrid search: embedding generation timed out, degrading to lexical-only"
+                );
+            }
         }
     }
 
     if candidate_scores.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), vector_used));
     }
 
     let mut candidates: Vec<(f32, MemoryDocument, f32)> =
@@ -115,14 +162,17 @@ pub async fn search_hybrid_optimized(
             .then_with(|| left.1.path.cmp(&right.1.path))
     });
 
-    Ok(reranked
-        .into_iter()
-        .take(limit)
-        .map(|(score, mut doc, _)| {
-            doc.score = score;
-            doc
-        })
-        .collect())
+    Ok((
+        reranked
+            .into_iter()
+            .take(limit)
+            .map(|(score, mut doc, _)| {
+                doc.score = score;
+                doc
+            })
+            .collect(),
+        vector_used,
+    ))
 }
 
 /// Merge ranked candidates using RRF + contextual boost + temporal decay.
@@ -285,6 +335,20 @@ pub async fn query_filtered(
     };
 
     if vector_results.is_empty() {
+        if keyword_results.is_empty() {
+            // Diagnostic: both stages missed. Log what the query looked like
+            // against the live index so empty-search reports are actionable
+            // (lexical miss vs vector miss vs over-filtering).
+            let indexed_docs = memory.docs.read().await.len();
+            tracing::debug!(
+                query = %query_text,
+                limit = limit,
+                indexed_docs = indexed_docs,
+                query_vector_empty = query_vector.is_empty(),
+                has_filters = filters.is_some(),
+                "hybrid search produced zero candidates"
+            );
+        }
         return Ok(keyword_results.into_iter().take(limit).collect());
     }
 
@@ -388,6 +452,167 @@ pub async fn multi_hop_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::sync::RwLock as AsyncRwLock;
+
+    const TEST_DIM: usize = 8;
+
+    fn test_doc(path: &str, content: &str) -> MemoryDocument {
+        MemoryDocument {
+            id: Some(path.to_string()),
+            path: path.to_string(),
+            content: content.to_string(),
+            metadata: serde_json::json!({}),
+            ..Default::default()
+        }
+    }
+
+    /// Minimal HTTP stub: fast on every route except POST /api/embed, which
+    /// sleeps `slow_secs` before responding — simulates the fresh-install
+    /// scenario in issue #2544 where the configured embedding endpoint is
+    /// reachable but never answers in time.
+    async fn run_slow_embed_server(slow_secs: u64) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test embed server");
+        let addr = listener.local_addr().expect("test server addr");
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut chunk = vec![0u8; 8192];
+                    let mut req = Vec::new();
+                    loop {
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => {
+                                req.extend_from_slice(&chunk[..n]);
+                                if req.windows(4).any(|w| w == b"\r\n\r\n") {
+                                    break;
+                                }
+                                if req.len() > 65536 {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    let head_end = req.windows(4).position(|w| w == b"\r\n\r\n").unwrap_or(0) + 4;
+                    let head = String::from_utf8_lossy(&req[..head_end]).to_string();
+                    let content_len: usize = head
+                        .lines()
+                        .filter_map(|line| {
+                            let (k, v) = line.split_once(':')?;
+                            if k.trim().eq_ignore_ascii_case("content-length") {
+                                v.trim().parse::<usize>().ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .next()
+                        .unwrap_or(0);
+                    let mut body = req[head_end.min(req.len())..].to_vec();
+                    while body.len() < content_len {
+                        match socket.read(&mut chunk).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => body.extend_from_slice(&chunk[..n]),
+                        }
+                    }
+                    let (payload, status) = if head.starts_with("GET /v1/models") {
+                        (
+                            r#"{"object":"list","data":[{"id":"test-embed","object":"model"}]}"#
+                                .to_string(),
+                            200,
+                        )
+                    } else if head.starts_with("POST /api/embed") {
+                        tokio::time::sleep(Duration::from_secs(slow_secs)).await;
+                        let vec_json = ["0.5"; TEST_DIM].join(",");
+                        (
+                            format!(r#"{{"model":"test-embed","embeddings":[[{vec_json}]]}}"#),
+                            200,
+                        )
+                    } else {
+                        (r#"{"error":"not found"}"#.to_string(), 404)
+                    };
+                    let resp = format!(
+                        "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                        payload.len()
+                    );
+                    let _ = socket.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// Regression for issue #2544: `search_hybrid_optimized` used to call
+    /// `generate_embedding` for the query vector with no outer timeout, so a
+    /// configured-but-unreachable/hanging embedding endpoint made
+    /// `mem_search`/`memory_search` hang for 15s+ (3 retries x 5s) instead of
+    /// falling back to the lexical results already gathered. It must now
+    /// degrade to lexical-only within the configured fallback budget.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_search_hybrid_optimized_degrades_to_lexical_on_embedder_timeout() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        for key in [
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBED_PROVIDER",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_URL",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_OLLAMA_MODEL",
+            "XAVIER_OLLAMA_URL",
+            "XAVIER_OLLAMA_DIMS",
+            "XAVIER_EMBEDDING_FALLBACK_BUDGET_MS",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_API_KEY",
+            "XAVIER_EMBEDDING_CLOUD_MODEL",
+        ] {
+            std::env::remove_var(key);
+        }
+
+        // Embed endpoint sleeps 5s on every call; the fallback budget below
+        // is far shorter, so the outer timeout must win.
+        let base = run_slow_embed_server(5).await;
+        std::env::set_var("XAVIER_OLLAMA_URL", format!("{base}/api/embed"));
+        std::env::set_var("XAVIER_OLLAMA_MODEL", "test-embed");
+        std::env::set_var("XAVIER_OLLAMA_DIMS", TEST_DIM.to_string());
+        std::env::set_var("_XAVIER_TEST_OLLAMA_PROBE_URL", format!("{base}/v1/models"));
+        std::env::set_var("XAVIER_EMBEDDING_FALLBACK_BUDGET_MS", "300");
+
+        let docs = vec![test_doc(
+            "notes/alpha",
+            "alpha cluster registration workflow ledger",
+        )];
+        let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(docs)));
+
+        let start = Instant::now();
+        let (results, vector_used) =
+            search_hybrid_optimized_with_mode(&memory, "alpha registration", 5, None)
+                .await
+                .expect("hybrid search must not error when the embedder hangs");
+        let elapsed = start.elapsed();
+
+        std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+
+        assert!(
+            !vector_used,
+            "vector signal must not be reported as used when the embedder times out"
+        );
+        assert!(
+            !results.is_empty(),
+            "lexical results must still be returned when the embedder hangs"
+        );
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "search must degrade to lexical within ~2s (300ms budget), took {elapsed:?}"
+        );
+    }
 
     #[test]
     fn test_merge_ranked_candidates_rrf_and_decay() {

@@ -49,8 +49,19 @@
 | `XAVIER_CODE_GRAPH_DB_PATH` | `string` | `server.code_graph_db_path` | `"data/code_graph.db"` | ❌ | Path to code graph SQLite DB |
 | `XAVIER_CONFIG_PATH` | `string` | — | `"config/xavier.config.json"` | ❌ | Override config file location |
 | `XAVIER_ALLOWED_DOMAINS` | `string` | — | (none) | ❌ | Comma-separated domain allowlist for URL validator (test-only) |
+| `XAVIER_STATE_DIR` | `string` | — | `$HOME` (then `$USERPROFILE`, then `.`) | ❌ | Base directory for persistent server state: `.xavier/auth.db`, Maloca store, node registry, etc. Set it explicitly (e.g. `/data` in Docker) so state survives container restarts. |
+| `XAVIER_JWT_SECRET` | `string` | — | (none) | ✅ | HMAC signing secret for user-session JWTs issued by `/auth/login` and validated by the MCP/API JWT middleware. Must be set for `/auth/*` login to work at all. |
+| `XAVIER_AUTH_RATE_LIMIT` | `u32` | — | `20` | ❌ | Max requests per minute, per caller, accepted by the whole `/auth/*` nest (register/login/refresh/logout/2FA/recovery/OAuth), sliding 60s window. See `src/cli/http_setup.rs::auth_rate_limit_middleware`. |
+| `XAVIER_ALLOW_CLI_TOKEN` | `bool` | — | `false` | ❌ | Gates the `--token` CLI flag for node provisioning (`src/nodes/provision.rs`): only honored when `1`/`true`. Test/dev only — production must use `XAVIER_NODE_TOKEN` or stdin. |
+| `XAVIER_MCP_PORT` | `u16` | — | `crate::cli::mcp::DEFAULT_MCP_PORT` | ❌ | Port for the MCP HTTP+SSE server started alongside `xavier http`. `0` disables the MCP HTTP endpoint. |
+| `XAVIER_TLS_CERT` / `XAVIER_TLS_KEY` | `string` (PEM paths) | — | (none) | ❌ | When BOTH are set, the HTTP server terminates TLS 1.3 itself (`axum_server::bind_rustls`) instead of plain HTTP. Either var alone is ignored (both required). |
+| `XAVIER_PANEL_STORE_DIR` | `string` | — | (see `XAVIER_PANEL_UI_DIR` resolution) | ❌ | Override directory for the Maloca/panel conversations store. |
 
-**Source**: `src/settings.rs`, `src/main.rs`, `src/cli/auth.rs`, `src/cli/utils.rs`, `src/server/http.rs`, `src/security/url_validator.rs`
+**Source**: `src/settings.rs`, `src/main.rs`, `src/cli/auth.rs`, `src/cli/utils.rs`, `src/server/http.rs`, `src/security/url_validator.rs`, `src/cli/server.rs`, `src/cli/http_setup.rs`, `src/cli/config.rs`, `src/nodes/provision.rs`, `src/middleware/token_bucket.rs`
+
+> **Not a real variable:** `XAVIER_AUTH_VAULT_SERVICE` does not exist anywhere in this codebase (checked with `grep -rn "AUTH_VAULT" src/`, zero hits). If you saw it referenced somewhere, that reference is stale/wrong — do not add code or docs assuming it exists.
+>
+> **Note:** this repo defines 250+ distinct `std::env::var(...)` reads in total; the sections below and above cover the ones most relevant to auth, the HTTP server, and deployment (this PR's scope, GH #2545). Large subsystems — embedding cache tuning, mesh/P2P, reranking, Postgres/Supabase mirrors, DocBot, Telegram/WhatsApp notifications, blockchain anchoring — have many more `XAVIER_*` variables not yet inventoried here; a dedicated audit pass (`grep -rhoE 'std::env::var\("[A-Z_0-9]+"\)' src/ | sort -u` against this file) is recommended as a follow-up.
 
 ---
 

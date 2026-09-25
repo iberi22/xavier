@@ -1,7 +1,7 @@
 //! Memory handlers for search, addition, deletion, and management of memories.
 
 use axum::{
-    extract::{Query, State},
+    extract::{Extension, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -16,6 +16,7 @@ use crate::cli::security::secure_cli_input;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
 use xavier::memory::qmd_memory::MemoryDocument;
+use xavier::workspace::WorkspaceContext;
 
 use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
@@ -265,6 +266,12 @@ pub async fn search_handler(
             requester_level,
         ));
     }
+    // Top-level convenience flag mirrors `filters.include_activity`; excludes
+    // telemetry/noise namespaces (activity/*, gestalt/thinking/*, auto
+    // activity/insight records) from general search unless opted back in.
+    if let Some(include_activity) = payload.include_activity {
+        filters.include_activity = Some(include_activity);
+    }
     let zones = payload
         .active_zones
         .clone()
@@ -346,9 +353,97 @@ pub async fn search_handler(
     }))
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct GetMemoryQuery {
+    /// The document path, exactly as returned/persisted by `/memory/add`.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// The document id, as an alternative to `path`.
+    #[serde(default)]
+    pub id: Option<String>,
+}
+
+/// Get-by-path (or by-id) handler.
+///
+/// `POST /memory/add` returns a `path`, but no route ever answered
+/// `GET /memory/get?path=...` — the request 404'd before reaching any
+/// handler (no such route was registered). `state.memory` already resolves
+/// either an id or a path (`QmdMemory::get` -> `reader::get`, with a store
+/// fallback that also matches by path), so this only exposes that existing
+/// lookup over HTTP.
+pub async fn get_handler(
+    State(state): State<CliState>,
+    requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
+    Query(query): Query<GetMemoryQuery>,
+) -> impl axum::response::IntoResponse {
+    let key = query
+        .path
+        .filter(|p| !p.trim().is_empty())
+        .or_else(|| query.id.filter(|id| !id.trim().is_empty()));
+
+    let Some(key) = key else {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": "Provide either `path` or `id`",
+            })),
+        )
+            .into_response();
+    };
+
+    let requester_level = requester
+        .map(|axum::extract::Extension(level)| level)
+        .unwrap_or_else(xavier::security::clearance::default_clearance);
+
+    match state.memory.get(&key).await {
+        Ok(Some(record)) => {
+            if !xavier::security::clearance::can_access(
+                requester_level,
+                xavier::security::clearance::level_from_metadata(&record.metadata),
+            ) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    axum::Json(serde_json::json!({
+                        "status": "error",
+                        "message": "Access denied by classification clearance",
+                    })),
+                )
+                    .into_response();
+            }
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "id": record.id,
+                "path": record.path,
+                "content": record.content,
+                "metadata": record.metadata,
+                "workspace_id": state.workspace_id,
+            }))
+            .into_response()
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({
+                "status": "not_found",
+                "message": format!("No memory found for path/id '{}'", key),
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string(),
+            })),
+        )
+            .into_response(),
+    }
+}
+
 /// Add handler.
 pub async fn add_handler(
     State(state): State<CliState>,
+    workspace: Option<Extension<WorkspaceContext>>,
     axum::Json(payload): axum::Json<AddPayload>,
 ) -> impl axum::response::IntoResponse {
     let sec_result = state
@@ -490,7 +585,7 @@ pub async fn add_handler(
         workspace_id: state.workspace_id.clone(),
         path: path.clone(),
         content: effective_content.to_string(),
-        metadata: normalized_metadata,
+        metadata: normalized_metadata.clone(),
         embedding: vec![],
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
@@ -512,6 +607,41 @@ pub async fn add_handler(
     match state.memory.add(record).await {
         Ok(id) => {
             info!("Memory added successfully: {}", path);
+            // Bridge: the v1/MCP search reads the workspace vector memory
+            // (QmdMemory docs), not the record store above. Mirror the doc
+            // there (same id+path) so fresh writes are searchable immediately
+            // instead of only after a reboot's init-from-store. Background:
+            // never delays the write response. Skipped when the caller did
+            // not layer a workspace (direct unit-test routers): the record
+            // store write above already succeeded.
+            if let Some(Extension(workspace)) = workspace {
+                let mirror = workspace.workspace.memory.clone();
+                let (mirror_id, mirror_path, mirror_content, mirror_meta) = (
+                    id.clone(),
+                    path.clone(),
+                    effective_content.to_string(),
+                    normalized_metadata.clone(),
+                );
+                tokio::spawn(async move {
+                    let mut doc = MemoryDocument {
+                        id: Some(mirror_id.clone()),
+                        path: mirror_path,
+                        content: mirror_content,
+                        metadata: mirror_meta,
+                        ..Default::default()
+                    };
+                    if let Ok(vector) =
+                        xavier::memory::qmd_memory::reader::generate_embedding(&doc.content).await
+                    {
+                        if !vector.is_empty() {
+                            doc.embedding = vector;
+                        }
+                    }
+                    if let Err(error) = mirror.add(doc).await {
+                        tracing::warn!(error = %error, memory_id = %mirror_id, "qmd mirror failed");
+                    }
+                });
+            }
             axum::Json(serde_json::json!({
                 "status": "ok",
                 "message": "Memory added",
@@ -556,7 +686,8 @@ pub async fn update_handler(
     };
 
     match presented_token(&headers) {
-        Some(token) if token == expected_token => {}
+        Some(token) if xavier::server::http::api::constant_time_compare(token, &expected_token) => {
+        }
         _ => {
             return json_response(
                 StatusCode::UNAUTHORIZED,
@@ -1094,7 +1225,8 @@ pub async fn delete_handler(
     };
 
     match presented_token(&headers) {
-        Some(token) if token == expected_token => {}
+        Some(token) if xavier::server::http::api::constant_time_compare(token, &expected_token) => {
+        }
         _ => {
             return json_response(
                 StatusCode::UNAUTHORIZED,

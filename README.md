@@ -170,6 +170,7 @@ Short summary:
 - Browser panel required `__TAURI_INTERNALS__` guards + `useApiToken` hook (fixed in WAVE-5, `4af11709`).
 - `XAVIER_TOKEN=foo # comment` inline — the `# comment` becomes part of the literal token; put comments on their own lines.
 - `XAVIER_PANEL_UI_DIR` priority list only in `assets.rs` — now documented in `docs/reference/ENV_VARS.md`.
+- `/v1/auth/login`, `/v1/auth/register`, `/v1/auth/refresh`, `/v1/auth/logout` and `/v1/auth/totp/*` were dead endpoints (backed by a user store nothing ever wrote to) and are now deprecated (`308`/`410` pointing to `/auth/*`) — see [GH #2545](https://github.com/iberi22/xavier/issues/2545) and [`docs/api/README.md`](docs/api/README.md#2-authentication-protocol) for the real, working auth API and a tested install walkthrough in [`docs/manual/GETTING_STARTED.md`](docs/manual/GETTING_STARTED.md#4-instalación-desde-cero-docker--primer-usuario-admin).
 
 ---
 

@@ -138,7 +138,7 @@ impl GatewayAdapter for TelegramDocGateway {
             let handler = handler_arc.clone();
             let allowed = allowed.clone();
             async move {
-                let user_id = msg.from().map(|u| u.id.0 as i64).unwrap_or(0);
+                let user_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
                 if !allowed.is_empty() && !allowed.contains(&user_id) {
                     bot.send_message(msg.chat.id, "⛔ Acceso no autorizado.")
                         .await?;
@@ -155,15 +155,19 @@ impl GatewayAdapter for TelegramDocGateway {
                     gateway: "telegram".to_string(),
                     channel_id: msg.chat.id.0.to_string(),
                     sender_id: user_id.to_string(),
-                    sender_name: msg.from().map(|u| u.first_name.clone()),
+                    sender_name: msg.from.as_ref().map(|u| u.first_name.clone()),
                     text,
                     attachment: None,
                 };
 
                 match handler.handle(inbound).await {
                     Ok(reply) => {
+                        // Legacy Markdown on purpose: handler replies are not
+                        // MarkdownV2-escaped, and V2 rejects any unescaped `.`/`-`.
+                        #[allow(deprecated)]
+                        let mode = TgParseMode::Markdown;
                         bot.send_message(msg.chat.id, &reply)
-                            .parse_mode(TgParseMode::Markdown)
+                            .parse_mode(mode)
                             .await?;
                     }
                     Err(e) => {

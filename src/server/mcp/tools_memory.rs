@@ -51,6 +51,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
                     "include_content": { "type": "boolean", "description": "Include full document body in each candidate (default false — prefer memory_context page-in by ids)", "default": false },
                     "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid BM25+vector+RRF pipeline. Kept for forward-compatibility.", "default": "hybrid" },
+                    "include_activity": { "type": "boolean", "description": "Include telemetry/noise namespaces (activity/*, gestalt/thinking/*, auto activity/insight records) that are excluded by default (default false)", "default": false },
                     "filters": { "type": "object", "description": "Optional filters" }
                 },
                 "required": ["query"]
@@ -258,7 +259,8 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "max_chars": { "type": "number", "description": "Maximum total characters in the aggregated context output", "default": 4000 },
                     "max_chars_per_doc": { "type": "number", "description": "Maximum characters per individual memory document (default: min(800, max_chars)); response reports per-source truncation honesty" },
                     "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
-                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid pipeline.", "default": "hybrid" }
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid pipeline.", "default": "hybrid" },
+                    "include_activity": { "type": "boolean", "description": "Include telemetry/noise namespaces (activity/*, gestalt/thinking/*, auto activity/insight records) that are excluded by default when assembling context from a query (default false)", "default": false }
                 }
             }),
         },
@@ -401,20 +403,31 @@ async fn handle_mem_search(
         }
     }
 
+    // Top-level convenience arg mirrors `filters.include_activity`: opts
+    // back into telemetry/noise namespaces (activity/*, gestalt/thinking/*,
+    // auto activity/insight records) that general search excludes by
+    // default. Checked *before* `has_filters` below so a bare
+    // `{"include_activity": true}` call (no other filter field set) isn't
+    // silently dropped by `filter_ref = None`.
+    if let Some(include_activity) = arguments.get("include_activity").and_then(|v| v.as_bool()) {
+        filters.include_activity = Some(include_activity);
+    }
+
     let has_filters = filters.project.is_some()
         || filters.agent_id.is_some()
         || filters.scope.is_some()
         || filters.session_id.is_some()
         || filters.user_id.is_some()
         || filters.kinds.is_some()
-        || filters.path_prefix.is_some();
+        || filters.path_prefix.is_some()
+        || filters.include_activity.is_some();
     let filter_ref = if has_filters { Some(&filters) } else { None };
 
     let fetch_limit = (page * limit).saturating_add(1);
-    let results = workspace
+    let (results, search_mode) = workspace
         .workspace
         .memory
-        .search_filtered(query, fetch_limit, filter_ref)
+        .search_filtered_with_mode(query, fetch_limit, filter_ref)
         .await?;
 
     let results = if depth > 0 {
@@ -520,6 +533,10 @@ async fn handle_mem_search(
         "has_more": has_more,
         "count": candidates.len(),
         "candidates": candidates,
+        // "hybrid" when the embedding/vector signal contributed, "lexical" when
+        // results are FTS/BM25-only (no embedder configured, or it timed out /
+        // failed and search degraded gracefully instead of hanging).
+        "mode": search_mode.as_str(),
     });
 
     Ok(serde_json::to_value(MCPToolResult::structured(
@@ -1257,10 +1274,20 @@ pub async fn handle_memory_context(
                     }
                 }
             } else if let Some(q) = query {
+                // `include_activity` mirrors mem_search: telemetry/noise
+                // namespaces are excluded from the assembled context unless
+                // explicitly requested.
+                let context_filters = arguments
+                    .get("include_activity")
+                    .and_then(|v| v.as_bool())
+                    .map(|include_activity| MemoryQueryFilters {
+                        include_activity: Some(include_activity),
+                        ..Default::default()
+                    });
                 results = workspace
                     .workspace
                     .memory
-                    .search_filtered(q, limit, None)
+                    .search_filtered(q, limit, context_filters.as_ref())
                     .await?;
             }
 

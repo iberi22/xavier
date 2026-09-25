@@ -33,7 +33,7 @@ These rules are **MANDATORY** for all agents working in this repo:
 
 #### ✅ BELONGS at root (industry standard for AI agents)
 - `AGENTS.md`, `SOUL.md`, `USER.md` — AI agent configs (Cursor, Claude, Copilot, OpenClaw expect these at root)
-- `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `LICENSE`, `SECURITY.md` — standard project docs
+- `README.md`, `CHANGELOG.md`, `LICENSE`; community files (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CLA.md`) live in `.github/` — standard project docs
 - `Cargo.toml`, `package.json`, `.gitignore` — language/tool configs
 - `.github/`, `.cursor/`, `.claude/` — platform-specific directories
 

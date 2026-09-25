@@ -59,8 +59,12 @@ async fn test_e2e_multi_node_memory_flow_via_mesh() {
     let identity_b = Arc::new(NodeIdentity::generate());
 
     // 2. Initialize active Iroh transports
-    let transport_a = IrohTransport::new(identity_a.clone());
-    let transport_b = IrohTransport::new(identity_b.clone());
+    let store_a: std::sync::Arc<dyn xavier::memory::MemoryStore> =
+        std::sync::Arc::new(xavier::memory::store::InMemoryMemoryStore::default());
+    let store_b: std::sync::Arc<dyn xavier::memory::MemoryStore> =
+        std::sync::Arc::new(xavier::memory::store::InMemoryMemoryStore::default());
+    let transport_a = IrohTransport::new(identity_a.clone(), store_a);
+    let transport_b = IrohTransport::new(identity_b.clone(), store_b);
 
     // Bind endpoints
     let addr_a = transport_a

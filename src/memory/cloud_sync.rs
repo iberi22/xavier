@@ -638,475 +638,478 @@ impl Default for CloudSyncConfig {
 
 #[cfg(test)]
 pub fn sync_fallback_chain() -> Vec<&'static str> {
-    mod tests {
-        use super::*;
-        use crate::memory::sync::manifest::tests::TestStore;
-        use chrono::TimeDelta;
-        use std::sync::Arc;
-        use tempfile::TempDir;
+    vec!["vec", "supabase", "neon"]
+}
 
-        fn make_record(
-            id: &str,
-            workspace_id: &str,
-            content: &str,
-            updated_at: DateTime<Utc>,
-            revision: u64,
-            node_id: &str,
-        ) -> MemoryRecord {
-            let mut meta = serde_json::Map::new();
-            meta.insert(
-                "node_id".to_string(),
-                serde_json::Value::String(node_id.to_string()),
-            );
-            MemoryRecord {
-                id: id.to_string(),
-                workspace_id: workspace_id.to_string(),
-                path: format!("test/{}", id),
-                content: content.to_string(),
-                metadata: serde_json::Value::Object(meta),
-                embedding: Vec::new(),
-                created_at: updated_at,
-                updated_at,
-                revision,
-                primary: true,
-                parent_id: None,
-                cluster_id: None,
-                level: crate::memory::schema::MemoryLevel::Raw,
-                relation: None,
-                clearance: crate::security::clearance::ClearanceLevel::Unclassified,
-                revisions: Vec::new(),
-                encrypted_dek: None,
-                content_iv: None,
-                metadata_iv: None,
-                score: 0.0,
-                deleted_at: None,
-                ..Default::default()
-            }
+pub fn shard_for_sync(id: &str) -> u8 {
+    shard_for_id(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::sync::manifest::tests::TestStore;
+    use chrono::TimeDelta;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    fn make_record(
+        id: &str,
+        workspace_id: &str,
+        content: &str,
+        updated_at: DateTime<Utc>,
+        revision: u64,
+        node_id: &str,
+    ) -> MemoryRecord {
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "node_id".to_string(),
+            serde_json::Value::String(node_id.to_string()),
+        );
+        MemoryRecord {
+            id: id.to_string(),
+            workspace_id: workspace_id.to_string(),
+            path: format!("test/{}", id),
+            content: content.to_string(),
+            metadata: serde_json::Value::Object(meta),
+            embedding: Vec::new(),
+            created_at: updated_at,
+            updated_at,
+            revision,
+            primary: true,
+            parent_id: None,
+            cluster_id: None,
+            level: crate::memory::schema::MemoryLevel::Raw,
+            relation: None,
+            clearance: crate::security::clearance::ClearanceLevel::Unclassified,
+            revisions: Vec::new(),
+            encrypted_dek: None,
+            content_iv: None,
+            metadata_iv: None,
+            score: 0.0,
+            deleted_at: None,
+            ..Default::default()
         }
+    }
 
-        async fn create_cloud_sync(cloud: TestStore) -> (CloudMemorySync, TempDir) {
-            let tmp = TempDir::new().unwrap();
-            let config = CloudSyncConfig {
-                data_dir: tmp.path().to_string_lossy().to_string(),
-                node_id: Some("node_test".to_string()),
-                ..Default::default()
-            };
-            let sync = CloudMemorySync::new(Arc::new(cloud), config).await.unwrap();
-            (sync, tmp)
+    async fn create_cloud_sync(cloud: TestStore) -> (CloudMemorySync, TempDir) {
+        let tmp = TempDir::new().unwrap();
+        let config = CloudSyncConfig {
+            data_dir: tmp.path().to_string_lossy().to_string(),
+            node_id: Some("node_test".to_string()),
+            ..Default::default()
+        };
+        let sync = CloudMemorySync::new(Arc::new(cloud), config).await.unwrap();
+        (sync, tmp)
+    }
+
+    /// Helper: create bare TestStore (no fields initializer because it's pub(crate) in manifest)
+    fn new_test_store() -> TestStore {
+        TestStore {
+            records: std::sync::Mutex::new(Vec::new()),
         }
+    }
 
-        /// Helper: create bare TestStore (no fields initializer because it's pub(crate) in manifest)
-        fn new_test_store() -> TestStore {
-            TestStore {
-                records: std::sync::Mutex::new(Vec::new()),
-            }
-        }
+    #[tokio::test]
+    async fn test_push_local_to_cloud() {
+        let local = new_test_store();
+        let cloud = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(cloud).await;
 
-        #[tokio::test]
-        async fn test_push_local_to_cloud() {
-            let local = new_test_store();
-            let cloud = new_test_store();
-            let (sync, _tmp) = create_cloud_sync(cloud).await;
-
-            local
-                .put(make_record(
-                    "r1",
-                    "episodic",
-                    "local content",
-                    Utc::now(),
-                    1,
-                    "node_test",
-                ))
-                .await
-                .unwrap();
-
-            let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
-            assert_eq!(report.pushed, 1, "should push 1 record");
-            assert_eq!(report.conflicts, 0, "no conflicts on first push");
-
-            let cloud_recs = sync.store.list("episodic").await.unwrap();
-            assert_eq!(cloud_recs.len(), 1);
-            assert_eq!(cloud_recs[0].content, "local content");
-        }
-
-        #[tokio::test]
-        async fn test_push_empty_no_new_records() {
-            let local = new_test_store();
-            let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
-            let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
-            assert_eq!(report.pushed, 0, "nothing to push");
-        }
-
-        #[tokio::test]
-        async fn test_pull_cloud_to_local() {
-            let local = new_test_store();
-            let cloud = new_test_store();
-            let (sync, _tmp) = create_cloud_sync(cloud).await;
-
-            // Add a record to cloud
-            sync.store
-                .put(make_record(
-                    "r1",
-                    "episodic",
-                    "cloud content",
-                    Utc::now(),
-                    1,
-                    "node_cloud",
-                ))
-                .await
-                .unwrap();
-
-            let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
-            assert_eq!(report.pulled, 1, "should pull 1 record");
-            assert_eq!(report.conflicts, 0, "no conflicts on first pull");
-
-            let local_recs = local.list("episodic").await.unwrap();
-            assert_eq!(local_recs.len(), 1);
-            assert_eq!(local_recs[0].content, "cloud content");
-        }
-
-        #[tokio::test]
-        async fn test_bidirectional_sync() {
-            let local = new_test_store();
-            let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
-
-            local
-                .put(make_record(
-                    "a",
-                    "episodic",
-                    "from local",
-                    Utc::now(),
-                    1,
-                    "node_test",
-                ))
-                .await
-                .unwrap();
-            sync.store
-                .put(make_record(
-                    "b",
-                    "episodic",
-                    "from cloud",
-                    Utc::now() + TimeDelta::seconds(1),
-                    1,
-                    "node_cloud",
-                ))
-                .await
-                .unwrap();
-
-            let report = sync.sync_all(&local, "episodic").await.unwrap();
-            assert!(
-                report.pushed >= 1 || report.pulled >= 1,
-                "should sync something"
-            );
-
-            assert_eq!(
-                local.list("episodic").await.unwrap().len(),
-                2,
-                "local should have both records"
-            );
-            assert_eq!(
-                sync.store.list("episodic").await.unwrap().len(),
-                2,
-                "cloud should have both records"
-            );
-        }
-
-        #[tokio::test]
-        async fn test_lww_cloud_newer_wins_on_pull() {
-            let local = new_test_store();
-            let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
-
-            let now = Utc::now();
-            local
-                .put(make_record(
-                    "r1",
-                    "episodic",
-                    "old local",
-                    now,
-                    1,
-                    "node_local",
-                ))
-                .await
-                .unwrap();
-            sync.store
-                .put(make_record(
-                    "r1",
-                    "episodic",
-                    "newer cloud",
-                    now + TimeDelta::seconds(10),
-                    2,
-                    "node_cloud",
-                ))
-                .await
-                .unwrap();
-
-            let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
-            assert_eq!(report.pulled, 1, "should pull the cloud version");
-            assert_eq!(report.conflicts, 1, "should detect conflict");
-
-            let fetched = local.get("episodic", "r1").await.unwrap().unwrap();
-            assert_eq!(fetched.content, "newer cloud", "newer cloud should win");
-        }
-
-        #[tokio::test]
-        async fn test_lww_same_timestamp_node_id_tiebreak() {
-            let local = new_test_store();
-            let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
-
-            let now = Utc::now();
-            local
-                .put(make_record("r1", "episodic", "from A", now, 1, "A"))
-                .await
-                .unwrap();
-            sync.store
-                .put(make_record("r1", "episodic", "from B", now, 1, "B"))
-                .await
-                .unwrap();
-
-            let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
-            assert_eq!(report.conflicts, 1, "should detect conflict");
-
-            let fetched = local.get("episodic", "r1").await.unwrap().unwrap();
-            assert_eq!(fetched.content, "from B", "B > A → B wins");
-        }
-
-        #[tokio::test]
-        async fn test_persist_last_sync_state() {
-            let local = new_test_store();
-            let tmp = TempDir::new().unwrap();
-            let config = CloudSyncConfig {
-                data_dir: tmp.path().to_string_lossy().to_string(),
-                node_id: Some("node_test".to_string()),
-                ..Default::default()
-            };
-            let sync = CloudMemorySync::new(Arc::new(new_test_store()), config)
-                .await
-                .unwrap();
-
-            local
-                .put(make_record(
-                    "r1",
-                    "episodic",
-                    "content",
-                    Utc::now(),
-                    1,
-                    "node_test",
-                ))
-                .await
-                .unwrap();
-            sync.push_to_cloud(&local, "episodic").await.unwrap();
-
-            let state_path = tmp.path().join("last_sync.json");
-            assert!(state_path.exists(), "last_sync.json should exist");
-
-            let state = LastSyncState::load(&state_path).await.unwrap();
-            assert!(
-                state.last_sync_at("episodic").is_some(),
-                "should have timestamp"
-            );
-        }
-
-        #[tokio::test]
-        async fn test_batch_100_records() {
-            let local = new_test_store();
-            let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
-
-            for i in 0..150u64 {
-                local
-                    .put(make_record(
-                        &format!("r{}", i),
-                        "episodic",
-                        &format!("content {}", i),
-                        Utc::now() + TimeDelta::milliseconds(i as i64),
-                        i,
-                        "node_test",
-                    ))
-                    .await
-                    .unwrap();
-            }
-
-            let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
-            assert_eq!(report.pushed, 150, "should push all 150 records");
-
-            assert_eq!(
-                sync.store.list("episodic").await.unwrap().len(),
-                150,
-                "cloud should have all 150 records"
-            );
-        }
-
-        #[tokio::test]
-        async fn test_sync_all_workspaces() {
-            let local = new_test_store();
-            let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
-
-            local
-                .put(make_record(
-                    "r1",
-                    "workspace_a",
-                    "from local a",
-                    Utc::now(),
-                    1,
-                    "node_test",
-                ))
-                .await
-                .unwrap();
-            sync.store
-                .put(make_record(
-                    "r2",
-                    "workspace_b",
-                    "from cloud b",
-                    Utc::now() + TimeDelta::seconds(1),
-                    1,
-                    "node_cloud",
-                ))
-                .await
-                .unwrap();
-
-            let reports = sync.sync_all_workspaces(&local).await.unwrap();
-            assert_eq!(reports.len(), 2, "should sync 2 workspaces");
-
-            for r in &reports {
-                assert!(
-                    r.success,
-                    "sync should succeed for workspace {}",
-                    r.workspace_id
-                );
-            }
-        }
-
-        #[tokio::test]
-        async fn test_incremental_sync_after_full_sync() {
-            let local = new_test_store();
-            let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
-
-            let rec1 = make_record("r1", "episodic", "first", Utc::now(), 1, "node_test");
-            local.put(rec1).await.unwrap();
-            let report1 = sync.push_to_cloud(&local, "episodic").await.unwrap();
-            assert_eq!(report1.pushed, 1);
-
-            let rec2 = make_record(
-                "r2",
+        local
+            .put(make_record(
+                "r1",
                 "episodic",
-                "second",
-                Utc::now() + TimeDelta::seconds(5),
+                "local content",
+                Utc::now(),
                 1,
                 "node_test",
-            );
-            local.put(rec2).await.unwrap();
-            let report2 = sync.push_to_cloud(&local, "episodic").await.unwrap();
-            assert_eq!(
-                report2.pushed, 1,
-                "should only push the new record incrementally"
-            );
+            ))
+            .await
+            .unwrap();
 
-            assert_eq!(
-                sync.store.list("episodic").await.unwrap().len(),
+        let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
+        assert_eq!(report.pushed, 1, "should push 1 record");
+        assert_eq!(report.conflicts, 0, "no conflicts on first push");
+
+        let cloud_recs = sync.store.list("episodic").await.unwrap();
+        assert_eq!(cloud_recs.len(), 1);
+        assert_eq!(cloud_recs[0].content, "local content");
+    }
+
+    #[tokio::test]
+    async fn test_push_empty_no_new_records() {
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
+        let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
+        assert_eq!(report.pushed, 0, "nothing to push");
+    }
+
+    #[tokio::test]
+    async fn test_pull_cloud_to_local() {
+        let local = new_test_store();
+        let cloud = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(cloud).await;
+
+        // Add a record to cloud
+        sync.store
+            .put(make_record(
+                "r1",
+                "episodic",
+                "cloud content",
+                Utc::now(),
+                1,
+                "node_cloud",
+            ))
+            .await
+            .unwrap();
+
+        let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
+        assert_eq!(report.pulled, 1, "should pull 1 record");
+        assert_eq!(report.conflicts, 0, "no conflicts on first pull");
+
+        let local_recs = local.list("episodic").await.unwrap();
+        assert_eq!(local_recs.len(), 1);
+        assert_eq!(local_recs[0].content, "cloud content");
+    }
+
+    #[tokio::test]
+    async fn test_bidirectional_sync() {
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
+
+        local
+            .put(make_record(
+                "a",
+                "episodic",
+                "from local",
+                Utc::now(),
+                1,
+                "node_test",
+            ))
+            .await
+            .unwrap();
+        sync.store
+            .put(make_record(
+                "b",
+                "episodic",
+                "from cloud",
+                Utc::now() + TimeDelta::seconds(1),
+                1,
+                "node_cloud",
+            ))
+            .await
+            .unwrap();
+
+        let report = sync.sync_all(&local, "episodic").await.unwrap();
+        assert!(
+            report.pushed >= 1 || report.pulled >= 1,
+            "should sync something"
+        );
+
+        assert_eq!(
+            local.list("episodic").await.unwrap().len(),
+            2,
+            "local should have both records"
+        );
+        assert_eq!(
+            sync.store.list("episodic").await.unwrap().len(),
+            2,
+            "cloud should have both records"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_lww_cloud_newer_wins_on_pull() {
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
+
+        let now = Utc::now();
+        local
+            .put(make_record(
+                "r1",
+                "episodic",
+                "old local",
+                now,
+                1,
+                "node_local",
+            ))
+            .await
+            .unwrap();
+        sync.store
+            .put(make_record(
+                "r1",
+                "episodic",
+                "newer cloud",
+                now + TimeDelta::seconds(10),
                 2,
-                "cloud should have both records"
-            );
-        }
+                "node_cloud",
+            ))
+            .await
+            .unwrap();
 
-        #[tokio::test]
-        async fn test_supabase_only_flag() {
-            let local = new_test_store();
-            let tmp = TempDir::new().unwrap();
-            let config = CloudSyncConfig {
-                data_dir: tmp.path().to_string_lossy().to_string(),
-                supabase_only: true,
-                ..Default::default()
-            };
-            let sync = CloudMemorySync::new(Arc::new(new_test_store()), config)
-                .await
-                .unwrap();
+        let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
+        assert_eq!(report.pulled, 1, "should pull the cloud version");
+        assert_eq!(report.conflicts, 1, "should detect conflict");
 
+        let fetched = local.get("episodic", "r1").await.unwrap().unwrap();
+        assert_eq!(fetched.content, "newer cloud", "newer cloud should win");
+    }
+
+    #[tokio::test]
+    async fn test_lww_same_timestamp_node_id_tiebreak() {
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
+
+        let now = Utc::now();
+        local
+            .put(make_record("r1", "episodic", "from A", now, 1, "A"))
+            .await
+            .unwrap();
+        sync.store
+            .put(make_record("r1", "episodic", "from B", now, 1, "B"))
+            .await
+            .unwrap();
+
+        let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
+        assert_eq!(report.conflicts, 1, "should detect conflict");
+
+        let fetched = local.get("episodic", "r1").await.unwrap().unwrap();
+        assert_eq!(fetched.content, "from B", "B > A → B wins");
+    }
+
+    #[tokio::test]
+    async fn test_persist_last_sync_state() {
+        let local = new_test_store();
+        let tmp = TempDir::new().unwrap();
+        let config = CloudSyncConfig {
+            data_dir: tmp.path().to_string_lossy().to_string(),
+            node_id: Some("node_test".to_string()),
+            ..Default::default()
+        };
+        let sync = CloudMemorySync::new(Arc::new(new_test_store()), config)
+            .await
+            .unwrap();
+
+        local
+            .put(make_record(
+                "r1",
+                "episodic",
+                "content",
+                Utc::now(),
+                1,
+                "node_test",
+            ))
+            .await
+            .unwrap();
+        sync.push_to_cloud(&local, "episodic").await.unwrap();
+
+        let state_path = tmp.path().join("last_sync.json");
+        assert!(state_path.exists(), "last_sync.json should exist");
+
+        let state = LastSyncState::load(&state_path).await.unwrap();
+        assert!(
+            state.last_sync_at("episodic").is_some(),
+            "should have timestamp"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_batch_100_records() {
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
+
+        for i in 0..150u64 {
             local
                 .put(make_record(
-                    "r1",
+                    &format!("r{}", i),
                     "episodic",
-                    "content",
-                    Utc::now(),
-                    1,
+                    &format!("content {}", i),
+                    Utc::now() + TimeDelta::milliseconds(i as i64),
+                    i,
                     "node_test",
                 ))
                 .await
                 .unwrap();
-            let report = sync.sync_all(&local, "episodic").await.unwrap();
-
-            assert_eq!(report.pushed, 0);
-            assert_eq!(report.pulled, 0);
-            assert!(report.success);
         }
 
-        #[test]
-        fn test_cloud_backend_type_serde() {
-            let default_backend = CloudBackendType::default();
-            assert_eq!(default_backend, CloudBackendType::Supabase);
+        let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
+        assert_eq!(report.pushed, 150, "should push all 150 records");
 
-            let json_cf = serde_json::to_string(&CloudBackendType::CloudflareEdge).unwrap();
-            assert_eq!(json_cf, "\"cloudflare_edge\"");
+        assert_eq!(
+            sync.store.list("episodic").await.unwrap().len(),
+            150,
+            "cloud should have all 150 records"
+        );
+    }
 
-            let parsed_cf: CloudBackendType = serde_json::from_str("\"cloudflare_edge\"").unwrap();
-            assert_eq!(parsed_cf, CloudBackendType::CloudflareEdge);
+    #[tokio::test]
+    async fn test_sync_all_workspaces() {
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
-            let config_json = r#"{
+        local
+            .put(make_record(
+                "r1",
+                "workspace_a",
+                "from local a",
+                Utc::now(),
+                1,
+                "node_test",
+            ))
+            .await
+            .unwrap();
+        sync.store
+            .put(make_record(
+                "r2",
+                "workspace_b",
+                "from cloud b",
+                Utc::now() + TimeDelta::seconds(1),
+                1,
+                "node_cloud",
+            ))
+            .await
+            .unwrap();
+
+        let reports = sync.sync_all_workspaces(&local).await.unwrap();
+        assert_eq!(reports.len(), 2, "should sync 2 workspaces");
+
+        for r in &reports {
+            assert!(
+                r.success,
+                "sync should succeed for workspace {}",
+                r.workspace_id
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_incremental_sync_after_full_sync() {
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
+
+        let rec1 = make_record("r1", "episodic", "first", Utc::now(), 1, "node_test");
+        local.put(rec1).await.unwrap();
+        let report1 = sync.push_to_cloud(&local, "episodic").await.unwrap();
+        assert_eq!(report1.pushed, 1);
+
+        let rec2 = make_record(
+            "r2",
+            "episodic",
+            "second",
+            Utc::now() + TimeDelta::seconds(5),
+            1,
+            "node_test",
+        );
+        local.put(rec2).await.unwrap();
+        let report2 = sync.push_to_cloud(&local, "episodic").await.unwrap();
+        assert_eq!(
+            report2.pushed, 1,
+            "should only push the new record incrementally"
+        );
+
+        assert_eq!(
+            sync.store.list("episodic").await.unwrap().len(),
+            2,
+            "cloud should have both records"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_supabase_only_flag() {
+        let local = new_test_store();
+        let tmp = TempDir::new().unwrap();
+        let config = CloudSyncConfig {
+            data_dir: tmp.path().to_string_lossy().to_string(),
+            supabase_only: true,
+            ..Default::default()
+        };
+        let sync = CloudMemorySync::new(Arc::new(new_test_store()), config)
+            .await
+            .unwrap();
+
+        local
+            .put(make_record(
+                "r1",
+                "episodic",
+                "content",
+                Utc::now(),
+                1,
+                "node_test",
+            ))
+            .await
+            .unwrap();
+        let report = sync.sync_all(&local, "episodic").await.unwrap();
+
+        assert_eq!(report.pushed, 0);
+        assert_eq!(report.pulled, 0);
+        assert!(report.success);
+    }
+
+    #[test]
+    fn test_cloud_backend_type_serde() {
+        let default_backend = CloudBackendType::default();
+        assert_eq!(default_backend, CloudBackendType::Supabase);
+
+        let json_cf = serde_json::to_string(&CloudBackendType::CloudflareEdge).unwrap();
+        assert_eq!(json_cf, "\"cloudflare_edge\"");
+
+        let parsed_cf: CloudBackendType = serde_json::from_str("\"cloudflare_edge\"").unwrap();
+        assert_eq!(parsed_cf, CloudBackendType::CloudflareEdge);
+
+        let config_json = r#"{
                 "data_dir": "data",
                 "backend_type": "cloudflare_edge"
             }"#;
-            let config: CloudSyncConfig = serde_json::from_str(config_json).unwrap();
-            assert_eq!(config.backend_type, CloudBackendType::CloudflareEdge);
-        }
-
-        #[test]
-        fn test_cloudflare_edge_payload_contracts() {
-            let enc_rec = CloudflareEncryptedRecordPayload {
-                id: "rec_123".to_string(),
-                workspace_id: "ws_456".to_string(),
-                path: "memories/001.md".to_string(),
-                content_enc: "a1b2c3d4".to_string(),
-                metadata_enc: "e5f6g7h8".to_string(),
-                encrypted_dek: Some("dek_hex".to_string()),
-                content_iv: Some("iv_content_hex".to_string()),
-                metadata_iv: Some("iv_meta_hex".to_string()),
-                created_at: "2026-03-31T12:00:00Z".to_string(),
-                updated_at: "2026-03-31T12:00:00Z".to_string(),
-                revision: 1,
-            };
-
-            let vec_payload = CloudflareVectorPayload {
-                id: "rec_123".to_string(),
-                values: vec![0.1, 0.2, 0.3],
-                namespace: Some("ws_456".to_string()),
-                metadata: serde_json::json!({"workspace_id": "ws_456"}),
-            };
-
-            let sync_payload = CloudflareEdgeSyncPayload {
-                records: vec![enc_rec.clone()],
-                vectors: vec![vec_payload.clone()],
-                node_id: "node_alpha".to_string(),
-            };
-
-            let json_str = serde_json::to_string_pretty(&sync_payload).unwrap();
-            assert!(json_str.contains("\"content_enc\": \"a1b2c3d4\""));
-            assert!(json_str.contains("\"values\": ["));
-
-            let parsed: CloudflareEdgeSyncPayload = serde_json::from_str(&json_str).unwrap();
-            assert_eq!(parsed, sync_payload);
-
-            let pull_resp = CloudflareEdgePullResponse {
-                workspace_id: "ws_456".to_string(),
-                records: vec![enc_rec],
-                vectors: vec![vec_payload],
-                next_cursor: Some("cursor_xyz".to_string()),
-            };
-
-            let pull_json = serde_json::to_string(&pull_resp).unwrap();
-            let parsed_pull: CloudflareEdgePullResponse = serde_json::from_str(&pull_json).unwrap();
-            assert_eq!(parsed_pull, pull_resp);
-        }
+        let config: CloudSyncConfig = serde_json::from_str(config_json).unwrap();
+        assert_eq!(config.backend_type, CloudBackendType::CloudflareEdge);
     }
-    vec!["vec", "supabase", "neon"]
-}
-pub fn shard_for_sync(id: &str) -> u8 {
-    shard_for_id(id)
+
+    #[test]
+    fn test_cloudflare_edge_payload_contracts() {
+        let enc_rec = CloudflareEncryptedRecordPayload {
+            id: "rec_123".to_string(),
+            workspace_id: "ws_456".to_string(),
+            path: "memories/001.md".to_string(),
+            content_enc: "a1b2c3d4".to_string(),
+            metadata_enc: "e5f6g7h8".to_string(),
+            encrypted_dek: Some("dek_hex".to_string()),
+            content_iv: Some("iv_content_hex".to_string()),
+            metadata_iv: Some("iv_meta_hex".to_string()),
+            created_at: "2026-03-31T12:00:00Z".to_string(),
+            updated_at: "2026-03-31T12:00:00Z".to_string(),
+            revision: 1,
+        };
+
+        let vec_payload = CloudflareVectorPayload {
+            id: "rec_123".to_string(),
+            values: vec![0.1, 0.2, 0.3],
+            namespace: Some("ws_456".to_string()),
+            metadata: serde_json::json!({"workspace_id": "ws_456"}),
+        };
+
+        let sync_payload = CloudflareEdgeSyncPayload {
+            records: vec![enc_rec.clone()],
+            vectors: vec![vec_payload.clone()],
+            node_id: "node_alpha".to_string(),
+        };
+
+        let json_str = serde_json::to_string_pretty(&sync_payload).unwrap();
+        assert!(json_str.contains("\"content_enc\": \"a1b2c3d4\""));
+        assert!(json_str.contains("\"values\": ["));
+
+        let parsed: CloudflareEdgeSyncPayload = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed, sync_payload);
+
+        let pull_resp = CloudflareEdgePullResponse {
+            workspace_id: "ws_456".to_string(),
+            records: vec![enc_rec],
+            vectors: vec![vec_payload],
+            next_cursor: Some("cursor_xyz".to_string()),
+        };
+
+        let pull_json = serde_json::to_string(&pull_resp).unwrap();
+        let parsed_pull: CloudflareEdgePullResponse = serde_json::from_str(&pull_json).unwrap();
+        assert_eq!(parsed_pull, pull_resp);
+    }
 }

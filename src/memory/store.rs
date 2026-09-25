@@ -876,10 +876,10 @@ impl MemoryStore for FileMemoryStore {
             .workspaces
             .get(workspace_id)
             .map(|workspace| {
-                workspace
-                    .session_tokens
-                    .iter()
-                    .any(|item| item.token == token && item.expires_at > Utc::now())
+                workspace.session_tokens.iter().any(|item| {
+                    xavier::server::http::api::constant_time_compare(&item.token, token)
+                        && item.expires_at > Utc::now()
+                })
             })
             .unwrap_or(false))
     }
@@ -1101,10 +1101,10 @@ impl MemoryStore for InMemoryMemoryStore {
             .workspaces
             .get(workspace_id)
             .map(|workspace| {
-                workspace
-                    .session_tokens
-                    .iter()
-                    .any(|item| item.token == token && item.expires_at > now)
+                workspace.session_tokens.iter().any(|item| {
+                    xavier::server::http::api::constant_time_compare(&item.token, token)
+                        && item.expires_at > now
+                })
             })
             .unwrap_or(false))
     }

@@ -16,6 +16,12 @@ pub struct SearchPayload {
     pub filters: Option<MemoryQueryFilters>,
     #[serde(default)]
     pub active_zones: Option<Vec<ContextZone>>,
+    /// Convenience top-level opt-in for telemetry/noise namespaces
+    /// (`activity/*`, `gestalt/thinking/*`, auto activity/insight records),
+    /// which general search excludes by default. Equivalent to setting
+    /// `filters.include_activity = true`.
+    #[serde(default)]
+    pub include_activity: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
