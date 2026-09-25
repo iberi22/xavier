@@ -79,7 +79,14 @@ export const LoginPage: React.FC = () => {
               <label className="text-xs text-[#39ff14] uppercase tracking-widest text-center mb-2">
                 Enter 2FA Code
               </label>
-              <TwoFactorInput value={totpCode} onChange={setTotpCode} />
+              <TwoFactorInput
+                value={totpCode}
+                onChange={setTotpCode}
+                length={8}
+              />
+              <p className="text-[10px] text-white/40 text-center uppercase tracking-widest">
+                6-digit authenticator code, or an 8-digit backup code
+              </p>
             </motion.div>
           )}
 

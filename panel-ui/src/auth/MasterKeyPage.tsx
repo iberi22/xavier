@@ -1,12 +1,25 @@
-import { Download, Shield, Upload } from "lucide-react";
+import { Download, LogOut, Shield, Upload } from "lucide-react";
 import { motion } from "motion/react";
 import type React from "react";
 import { useState } from "react";
 import ParticleBackground from "../components/ParticleBackground";
+import { useAuthStore } from "./AuthProvider";
 
 export const MasterKeyPage: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const logout = useAuthStore((state) => state.logout);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      setIsLoggingOut(false);
+      window.location.hash = "#/login";
+    }
+  };
 
   const handleExport = () => {
     setIsExporting(true);
@@ -80,6 +93,24 @@ export const MasterKeyPage: React.FC = () => {
             >
               <Upload size={16} />{" "}
               {isImporting ? "IMPORTING..." : "IMPORT MASTER KEY"}
+            </button>
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-xl p-6 flex flex-col gap-4">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-white/80">
+              Session
+            </h3>
+            <p className="text-[10px] text-white/40 uppercase">
+              End this session on this device. You'll need your password (and
+              2FA code, if enabled) to sign back in.
+            </p>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              data-testid="logout-button"
+              className="flex items-center justify-center gap-2 w-full py-3 border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-lg text-xs font-bold transition-all uppercase tracking-widest disabled:opacity-50"
+            >
+              <LogOut size={16} /> {isLoggingOut ? "SIGNING OUT..." : "LOG OUT"}
             </button>
           </div>
         </div>

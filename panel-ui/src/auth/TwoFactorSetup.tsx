@@ -5,30 +5,44 @@ import { authClient } from "../api/authClient";
 import ParticleBackground from "../components/ParticleBackground";
 import { QrCodeDisplay } from "../components/QrCodeDisplay";
 import { TwoFactorInput } from "../components/TwoFactorInput";
+import { useAuthStore } from "./AuthProvider";
 
 export const TwoFactorSetup: React.FC = () => {
   const [qrCode, setQrCode] = useState<string | null>(null);
+  const [secret, setSecret] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const setPendingBackupCodes = useAuthStore(
+    (state) => state.setPendingBackupCodes,
+  );
+
   useEffect(() => {
     const init2FA = async () => {
       try {
-        const response = await authClient.setup2FA();
+        const response = await authClient.setup2FA(accessToken);
         setQrCode(response.qr_code);
+        setSecret(response.secret);
+        // Backup codes are only ever returned by this call — BackupCodesPage
+        // reads them from the store instead of calling setup2FA() again,
+        // which would silently rotate the TOTP secret and invalidate the
+        // code the operator just scanned.
+        setPendingBackupCodes(response.backup_codes);
       } catch (err) {
         setError("Failed to initialize 2FA setup");
       }
     };
     void init2FA();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleVerify = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      await authClient.verify2FA(code);
+      await authClient.verify2FA(accessToken, code);
       window.location.hash = "#/2fa/backup";
     } catch (err) {
       setError("Invalid code. Please try again.");
@@ -53,6 +67,20 @@ export const TwoFactorSetup: React.FC = () => {
         </p>
 
         {qrCode && <QrCodeDisplay svg={qrCode} />}
+
+        {secret && (
+          <div className="mt-4 flex flex-col gap-1">
+            <p className="text-[10px] text-white/40 uppercase tracking-widest">
+              Can't scan? Enter this key manually
+            </p>
+            <code
+              data-testid="totp-manual-secret"
+              className="block w-full break-all bg-white/5 border border-white/10 rounded-lg p-2 text-xs text-[#39ff14] tracking-widest"
+            >
+              {secret}
+            </code>
+          </div>
+        )}
 
         <div className="text-left mt-8 mb-6 flex flex-col gap-2">
           <p className="text-[10px] text-white/50 uppercase">

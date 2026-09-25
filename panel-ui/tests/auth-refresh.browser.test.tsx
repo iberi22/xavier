@@ -10,40 +10,54 @@ vi.mock("../src/api/authClient", () => ({
 		register: vi.fn(),
 		refresh: vi.fn(),
 	},
+	AuthApiError: class AuthApiError extends Error {
+		code?: string;
+		constructor(message: string, code?: string) {
+			super(message);
+			this.name = "AuthApiError";
+			this.code = code;
+		}
+	},
 }));
 
-describe("AuthProvider Refresh & API_TOKEN Preservation", () => {
-	const initialToken = import.meta.env.VITE_XAVIER_API_TOKEN ?? null;
+// SECURITY: `token` (X-Xavier-Token) is sourced purely from the operator's /auth session
+// (accessToken) — never from a build-time env var. See src/auth/AuthProvider.tsx.
+describe("AuthProvider Refresh & /auth session token sourcing", () => {
+	const existingUser = { id: "1", email: "user@example.com", role: "admin" };
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		useAuthStore.setState({
-			user: null,
-			token: initialToken,
-			refreshToken: null,
+			user: existingUser,
+			token: "old-jwt-token",
+			accessToken: "old-jwt-token",
+			refreshToken: "old-refresh-token",
 			isAuthenticated: false,
 			requires2FA: false,
+			pendingBackupCodes: null,
 		});
 	});
 
-	test("(a) refresh 200 -> isAuthenticated true, token and refreshToken updated", async () => {
-		const mockUser = { id: "1", email: "user@example.com", role: "admin" };
+	// /auth/refresh (refresh_handler, src/auth2/mod.rs) returns only
+	// `{ access_token, refresh_token }` — never a `user` field — so a successful
+	// refresh must preserve whatever `user` was already in the store.
+	test("(a) refresh 200 -> isAuthenticated true, token/accessToken/refreshToken updated, user preserved", async () => {
 		(authClient.refresh as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-			user: mockUser,
-			token: "new-jwt-token",
+			access_token: "new-jwt-token",
 			refresh_token: "new-refresh-token",
 		});
 
 		await useAuthStore.getState().refreshSession();
 
 		const state = useAuthStore.getState();
-		expect(state.user).toEqual(mockUser);
+		expect(state.user).toEqual(existingUser);
 		expect(state.token).toBe("new-jwt-token");
+		expect(state.accessToken).toBe("new-jwt-token");
 		expect(state.refreshToken).toBe("new-refresh-token");
 		expect(state.isAuthenticated).toBe(true);
 	});
 
-	test("(b) refresh 400 -> token preserves API_TOKEN, isAuthenticated false, refreshToken null", async () => {
+	test("(b) refresh 400 -> token/accessToken/refreshToken cleared, isAuthenticated false", async () => {
 		(authClient.refresh as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 			new Error("400 Bad Request: Invalid refresh token"),
 		);
@@ -52,12 +66,13 @@ describe("AuthProvider Refresh & API_TOKEN Preservation", () => {
 
 		const state = useAuthStore.getState();
 		expect(state.user).toBeNull();
-		expect(state.token).toBe(initialToken);
+		expect(state.token).toBeNull();
+		expect(state.accessToken).toBeNull();
 		expect(state.refreshToken).toBeNull();
 		expect(state.isAuthenticated).toBe(false);
 	});
 
-	test("(c) refresh network error -> preserves API_TOKEN, isAuthenticated false", async () => {
+	test("(c) refresh network error -> token cleared, isAuthenticated false", async () => {
 		(authClient.refresh as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 			new Error("Network Error"),
 		);
@@ -66,12 +81,14 @@ describe("AuthProvider Refresh & API_TOKEN Preservation", () => {
 
 		const state = useAuthStore.getState();
 		expect(state.user).toBeNull();
-		expect(state.token).toBe(initialToken);
+		expect(state.token).toBeNull();
 		expect(state.refreshToken).toBeNull();
 		expect(state.isAuthenticated).toBe(false);
 	});
 
-	test("(d) login with API_TOKEN set -> token remains API_TOKEN if configured", async () => {
+	// /auth/login (login_handler) returns `access_token`, not `token` — the client
+	// type (LoginResponse in authClient.ts) must match this exactly.
+	test("(d) login -> token is set to the /auth access_token", async () => {
 		const mockUser = {
 			id: "2",
 			email: "operator@example.com",
@@ -79,7 +96,7 @@ describe("AuthProvider Refresh & API_TOKEN Preservation", () => {
 		};
 		(authClient.login as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
 			user: mockUser,
-			token: "jwt-token-123",
+			access_token: "jwt-token-123",
 			refresh_token: "refresh-token-123",
 		});
 
@@ -87,7 +104,8 @@ describe("AuthProvider Refresh & API_TOKEN Preservation", () => {
 
 		const state = useAuthStore.getState();
 		expect(state.user).toEqual(mockUser);
-		expect(state.token).toBe(initialToken ?? "jwt-token-123");
+		expect(state.token).toBe("jwt-token-123");
+		expect(state.accessToken).toBe("jwt-token-123");
 		expect(state.refreshToken).toBe("refresh-token-123");
 		expect(state.isAuthenticated).toBe(true);
 	});

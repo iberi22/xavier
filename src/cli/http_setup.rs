@@ -10,7 +10,7 @@ use crate::cli::state::CliState;
 use axum::{
     body::Body,
     extract::{ConnectInfo, State},
-    http::{Request, StatusCode},
+    http::{Method, Request, StatusCode},
     middleware::Next,
     response::Response,
 };
@@ -20,6 +20,27 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tracing::warn;
 use xavier::coordination::secrets::SecretLease;
+
+/// Auth gate for Maloca's mutating endpoints (`/maloca/*`, `/v1/maloca/*`).
+///
+/// Maloca is intentionally public for reads — GET/HEAD requests pass straight
+/// through so the panel and `@swal/maloca-client` dogfood surface keep
+/// working without a token, matching the router's existing design. Every
+/// other verb (POST/PUT/PATCH/DELETE) is routed through the same
+/// [`auth_middleware`] the rest of the API uses, so writes require the root
+/// or API token like everything else. OPTIONS also passes through unchanged
+/// here; CORS preflight is handled by the `CorsLayer` wrapping this
+/// middleware, which short-circuits OPTIONS before it ever reaches us.
+pub async fn maloca_mutation_auth_middleware(
+    state: State<CliState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
+        return next.run(req).await;
+    }
+    auth_middleware(state, req, next).await
+}
 
 /// Auth middleware.
 pub async fn auth_middleware(
