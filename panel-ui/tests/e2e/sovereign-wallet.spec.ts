@@ -93,8 +93,6 @@ test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E", () => 
   test("opens Sovereign Wallet and displays balances", async ({ page }) => {
     // Navigate directly to the hash route where the wallet view should be loaded/accessible
     await page.goto("/#/wallet");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(1000);
 
     // Verify Wallet Modal opens
     const modalTitle = page.locator("h2:has-text('Billetera Soberana SWAL')");
@@ -120,8 +118,6 @@ test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E", () => 
 
   test("configures Autonomous Agent Delegation limits and settings", async ({ page }) => {
     await page.goto("/#/wallet");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(1000);
 
     // Verify Wallet is opened via direct hash route
     await expect(page.locator("h2:has-text('Billetera Soberana SWAL')")).toBeVisible({ timeout: 10000 });
@@ -145,8 +141,6 @@ test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E", () => 
 
   test("saves Polygon payout address and executes Merkle rollup sync", async ({ page }) => {
     await page.goto("/#/wallet");
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(1000);
 
     await expect(page.locator("h2:has-text('Billetera Soberana SWAL')")).toBeVisible({ timeout: 10000 });
 
