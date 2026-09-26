@@ -76,9 +76,14 @@ impl SkillDispatcher {
         let max_tokens = request.max_tokens.unwrap_or(4000);
 
         // 1. Find the best matching skill
+        const MIN_DISPATCH_CONFIDENCE: f32 = 0.40;
         let matches = self.registry.search(&request.task, 3);
 
-        let (confidence, skill) = if let Some((score, skill)) = matches.first() {
+        // Instead of unconditionally taking matches.first(), ensure the score meets minimum threshold.
+        let (confidence, skill) = if let Some((score, skill)) = matches
+            .first()
+            .filter(|(s, _)| *s >= MIN_DISPATCH_CONFIDENCE)
+        {
             (*score, (*skill).clone())
         } else {
             // No skill matched — return a generic "no-skill" result
@@ -275,5 +280,64 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("test-skill"));
         assert!(json.contains("73.2"));
+    }
+
+    #[tokio::test]
+    async fn dispatch_returns_no_match_below_confidence_threshold() {
+        // Prepare a registry with a dummy skill
+        // Need to add through a file because skills is private. Let's use a temp dir.
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("skills");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            "---\nname: unrelated-skill\ndescription: \"This does some other stuff\"\n---\n\nContent",
+        )
+        .unwrap();
+        let mut registry = SkillRegistry::new(vec![dir]);
+        registry.reindex().await.unwrap();
+
+        let dispatcher = SkillDispatcher::new(registry, None);
+        // "very weak query" should match weakly or not at all
+        let req = SkillDispatchRequest {
+            task: "very weak query".to_string(),
+            model_hint: None,
+            max_tokens: Some(100),
+            project: None,
+        };
+
+        let result = dispatcher.dispatch(&req).await.unwrap();
+        // It must fallback to _none because the confidence is below 0.40
+        assert_eq!(result.skill_name, "_none");
+        assert_eq!(result.confidence, 0.0);
+    }
+
+    #[tokio::test]
+    async fn dispatch_never_reports_full_confidence_for_weak_match() {
+        // Note: For now we test dispatch behavior to not pass through 1.0 confidence for weak matches implicitly
+        // by making sure we get _none for weak queries.
+        // A true test for score bounding is more appropriate on the registry score function.
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("skills");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            "---\nname: weak-skill\ndescription: \"weak\"\n---\n\nContent",
+        )
+        .unwrap();
+        let mut registry = SkillRegistry::new(vec![dir]);
+        registry.reindex().await.unwrap();
+
+        let dispatcher = SkillDispatcher::new(registry, None);
+        let req = SkillDispatchRequest {
+            task: "weak".to_string(),
+            model_hint: None,
+            max_tokens: Some(100),
+            project: None,
+        };
+        // By using a weak exact term match "weak" to "weak" we might get a match.
+        // We want to verify it doesn't give 1.0 confidence for it implicitly.
+        let result = dispatcher.dispatch(&req).await.unwrap();
+        assert!(result.confidence < 0.999);
     }
 }
