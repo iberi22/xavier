@@ -60,7 +60,7 @@ test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server 
     await page.goto("/");
   });
 
-  test.fixme("isWebAuthnPrfSupported evaluates to true when CDP virtual authenticator with PRF extension is enabled", async ({
+  test("isWebAuthnPrfSupported evaluates to true when CDP virtual authenticator with PRF extension is enabled", async ({
     page,
   }) => {
     // Attach CDP session and enable virtual WebAuthn CTAP2 authenticator with PRF support
@@ -86,7 +86,7 @@ test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server 
     expect(isSupported).toBe(true);
   });
 
-  test.fixme("deriveHardwareSeedWithPrf returns deterministic 32-byte seed and credentialId with active virtual authenticator", async ({
+  test("deriveHardwareSeedWithPrf returns deterministic 32-byte seed and credentialId with active virtual authenticator", async ({
     page,
   }) => {
     // Configure CDP virtual authenticator with CTAP2 PRF support
@@ -144,7 +144,7 @@ test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server 
     expect(secondResult?.seedHex).toEqual(firstResult?.seedHex);
   });
 
-  test.fixme("deriveHardwareSeedWithPrf handles rejection or removed authenticator gracefully returning null", async ({
+  test("deriveHardwareSeedWithPrf handles rejection or removed authenticator gracefully returning null", async ({
     page,
   }) => {
     const cdp = await page.context().newCDPSession(page);
