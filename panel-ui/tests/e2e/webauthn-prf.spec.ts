@@ -1,4 +1,22 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+
+const DEFAULT_ARTIFACT_DIR = path.join(process.cwd(), "test-results", "artifacts");
+
+function getWritableDir(target: string): string {
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    fs.accessSync(target, fs.constants.W_OK);
+    return target;
+  } catch {
+    fs.mkdirSync(DEFAULT_ARTIFACT_DIR, { recursive: true });
+    return DEFAULT_ARTIFACT_DIR;
+  }
+}
+
+const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
+
 
 /**
  * End-to-End Test Suite for WebAuthn PRF Hardware Bridge & Node Identity Fallback.
@@ -42,7 +60,7 @@ test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server 
     await page.goto("/");
   });
 
-  test("isWebAuthnPrfSupported evaluates to true when CDP virtual authenticator with PRF extension is enabled", async ({
+  test.fixme("isWebAuthnPrfSupported evaluates to true when CDP virtual authenticator with PRF extension is enabled", async ({
     page,
   }) => {
     // Attach CDP session and enable virtual WebAuthn CTAP2 authenticator with PRF support
@@ -68,7 +86,7 @@ test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server 
     expect(isSupported).toBe(true);
   });
 
-  test("deriveHardwareSeedWithPrf returns deterministic 32-byte seed and credentialId with active virtual authenticator", async ({
+  test.fixme("deriveHardwareSeedWithPrf returns deterministic 32-byte seed and credentialId with active virtual authenticator", async ({
     page,
   }) => {
     // Configure CDP virtual authenticator with CTAP2 PRF support
@@ -126,7 +144,7 @@ test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server 
     expect(secondResult?.seedHex).toEqual(firstResult?.seedHex);
   });
 
-  test("deriveHardwareSeedWithPrf handles rejection or removed authenticator gracefully returning null", async ({
+  test.fixme("deriveHardwareSeedWithPrf handles rejection or removed authenticator gracefully returning null", async ({
     page,
   }) => {
     const cdp = await page.context().newCDPSession(page);
@@ -187,5 +205,27 @@ test.describe.fixme("WebAuthn PRF Hardware Bridge E2E Suite (pending dev-server 
     expect(identityResult.hasPrivKey).toBe(true);
     expect(identityResult.hasPubKey).toBe(true);
     expect(identityResult.keyAlgorithm).toBe("Ed25519");
+  });
+  test.fixme("WebAuthn auth prompt and fallback rendering in Maloca Hub", async ({ page }) => {
+    // Navigate to Maloca Hub UI which triggers WebAuthn/Node attestation natively or explicitly via button
+    await page.goto("/#/maloca");
+    await page.waitForLoadState("domcontentloaded");
+
+    // Click the attestation button
+    const attestationBtn = page.locator('button:has-text("Node Attestation")');
+    await attestationBtn.waitFor({ state: 'visible', timeout: 5000 });
+    await attestationBtn.click();
+
+    // The component falls back to a dev key after failing in dev environment without https/webauthn setup
+    const keyLabel = page.locator('text="Attestation Key (WebAuthn PRF):"');
+    await expect(keyLabel).toBeVisible({ timeout: 5000 });
+
+    const codeBlock = page.locator('code');
+    await expect(codeBlock).toBeVisible();
+    await expect(codeBlock).toContainText("swal_dev_key_");
+
+    // Capture visual screenshot of WebAuthn auth prompt in artifacts
+    const screenshotPath = path.join(ARTIFACT_DIR, 'webauthn_auth_prompt_e2e.png');
+    await page.screenshot({ path: screenshotPath, fullPage: true });
   });
 });
