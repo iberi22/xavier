@@ -29,3 +29,7 @@
 **Vulnerability:** Found a timing attack vulnerability in `src/cli/handlers/memory.rs` and `src/memory/store.rs` where the `==` operator was used to compare authentication and session tokens.
 **Learning:** The `==` operator for strings in Rust performs a short-circuiting comparison, which leaks the matching prefix length and allows timing side-channel attacks against secrets. The codebase has an existing utility `xavier::server::http::api::constant_time_compare` that handles this correctly, but it was not being used everywhere.
 **Prevention:** Use `xavier::server::http::api::constant_time_compare` for all token, password, and secret comparisons. I replaced the insecure `==` checks in the memory handlers and memory store.
+## 2025-02-24 - [Timing side-channel in OAuth state validation]
+**Vulnerability:** Found OAuth2 state token comparison using standard `==` string equality operator, leading to potential timing side-channel attacks for token guessing.
+**Learning:** This is a recurring pattern in Rust applications when comparing user-provided strings against secrets or tokens.
+**Prevention:** Use `constant_time_compare` for all token or secret verification comparisons in this codebase.
