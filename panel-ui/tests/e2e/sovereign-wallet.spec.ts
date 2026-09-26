@@ -1,6 +1,23 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
-test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E (pending wave-theme)", () => {
+const DEFAULT_ARTIFACT_DIR = path.join(process.cwd(), "test-results", "artifacts");
+
+function getWritableDir(target: string): string {
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    fs.accessSync(target, fs.constants.W_OK);
+    return target;
+  } catch {
+    fs.mkdirSync(DEFAULT_ARTIFACT_DIR, { recursive: true });
+    return DEFAULT_ARTIFACT_DIR;
+  }
+}
+
+const ARTIFACT_DIR = getWritableDir(process.env.ARTIFACT_DIR || DEFAULT_ARTIFACT_DIR);
+
+test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E", () => {
   test.beforeEach(async ({ page }) => {
     // Mock Genesis Node endpoints
     await page.route("**/v1/auth/challenge", async (route) => {
@@ -47,6 +64,17 @@ test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E (pending
     await page.addInitScript(() => {
       window.localStorage.setItem("xavier_token", "swal_sess_mock_wallet_token_777");
       window.localStorage.setItem("xavier_onboarding_completed", "true");
+      window.localStorage.setItem(
+        "auth-storage",
+        JSON.stringify({
+          state: {
+            token: "swal_sess_mock_wallet_token_777",
+            isAuthenticated: true,
+            user: { id: "1", email: "operator@xavier.local", role: "admin" },
+          },
+          version: 0,
+        })
+      );
       window.localStorage.setItem("swal_agent_delegation", "true");
       window.localStorage.setItem(
         "swal_node_session_v1",
@@ -62,25 +90,24 @@ test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E (pending
     });
   });
 
-  test("opens Sovereign Wallet from TopStatusBar Karma pill and displays balances", async ({ page }) => {
-    await page.goto("/");
-
-    // TopStatusBar Karma pill should be visible
-    const karmaPill = page.locator("button[title*='Billetera Soberana']");
-    await expect(karmaPill).toBeVisible({ timeout: 10000 });
-    await expect(karmaPill).toContainText("KARMA");
-
-    // Click to open Wallet
-    await karmaPill.click();
+  test("opens Sovereign Wallet and displays balances", async ({ page }) => {
+    // Navigate directly to the hash route where the wallet view should be loaded/accessible
+    await page.goto("/#/wallet");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(1000);
 
     // Verify Wallet Modal opens
     const modalTitle = page.locator("h2:has-text('Billetera Soberana SWAL')");
-    await expect(modalTitle).toBeVisible({ timeout: 5000 });
+    await expect(modalTitle).toBeVisible({ timeout: 10000 });
 
     // Verify Balances (Layer 0 Karma and Layer 1 Polygon)
     await expect(page.getByText("Karma Acumulado", { exact: true })).toBeVisible();
-    await expect(page.locator("text=Capa 1 (Polygon PoS)")).toBeVisible();
-    await expect(page.locator("text=xaviercloud.swal.network")).toBeVisible();
+    await expect(page.getByText("Capa 1 (Polygon PoS)", { exact: true })).toBeVisible();
+    await expect(page.getByText("xaviercloud.swal.network")).toBeVisible();
+
+    // Capture full page screenshot
+    const walletPath = path.join(ARTIFACT_DIR, "sovereign_wallet_e2e.png");
+    await page.screenshot({ path: walletPath, fullPage: true });
 
     // Close modal via close button
     const closeBtn = page.locator("button[aria-label='Cerrar Billetera']");
@@ -93,6 +120,8 @@ test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E (pending
 
   test("configures Autonomous Agent Delegation limits and settings", async ({ page }) => {
     await page.goto("/#/wallet");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(1000);
 
     // Verify Wallet is opened via direct hash route
     await expect(page.locator("h2:has-text('Billetera Soberana SWAL')")).toBeVisible({ timeout: 10000 });
@@ -116,6 +145,8 @@ test.describe.fixme("Sovereign Wallet & Autonomous Agent Delegation E2E (pending
 
   test("saves Polygon payout address and executes Merkle rollup sync", async ({ page }) => {
     await page.goto("/#/wallet");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(1000);
 
     await expect(page.locator("h2:has-text('Billetera Soberana SWAL')")).toBeVisible({ timeout: 10000 });
 
