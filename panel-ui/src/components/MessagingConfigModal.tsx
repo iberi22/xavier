@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   Bell,
-  CheckCircle2,
   ChevronRight,
   Copy,
   Eye,
@@ -15,7 +14,6 @@ import {
   Shield,
   Users,
   X,
-  XCircle,
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -295,6 +293,7 @@ function PermissionsPanel() {
             </p>
           </div>
           <button
+            type="button"
             onClick={() => setPerms((p) => ({ ...p, [key]: !p[key] }))}
             className={`relative w-9 h-5 rounded-full transition-all duration-300 flex-shrink-0 ml-3 ${val ? "bg-[#39ff14]/20 border border-[#39ff14]/30" : "bg-white/5 border border-white/10"}`}
           >
@@ -349,6 +348,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
       <div className="flex gap-1 mb-4 bg-black/20 rounded-lg p-1">
         {(["credentials", "permissions", "advanced"] as const).map((s) => (
           <button
+            type="button"
             key={s}
             onClick={() => setActiveSection(s)}
             className={`flex-1 py-1.5 text-[10px] uppercase tracking-widest rounded-md transition-all duration-200 ${
@@ -378,11 +378,15 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
             >
               {platform.fields.map((field) => (
                 <div key={field.key}>
-                  <label className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block">
+                  <label
+                    htmlFor={`input-${field.key}`}
+                    className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block"
+                  >
                     {field.label}
                   </label>
                   <div className="relative">
                     <input
+                      id={`input-${field.key}`}
                       type={
                         field.type === "password" && !revealed[field.key]
                           ? "password"
@@ -401,6 +405,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
                       {field.type === "password" && (
                         <button
+                          type="button"
                           onClick={() =>
                             setRevealed((r) => ({
                               ...r,
@@ -418,6 +423,8 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                       )}
                       {values[field.key] && (
                         <button
+                          type="button"
+                          aria-label={`Copy ${field.label}`}
                           onClick={() => handleCopy(values[field.key])}
                           className="p-1 text-white/30 hover:text-white/60 transition-colors"
                         >
@@ -437,6 +444,7 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
               {/* Actions */}
               <div className="flex gap-2 pt-2">
                 <button
+                  type="button"
                   onClick={handleTest}
                   disabled={status === "testing"}
                   className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-xs text-white/60 hover:text-white/80 hover:border-white/20 transition-all disabled:opacity-40"
@@ -448,7 +456,10 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                   )}
                   Test Connection
                 </button>
-                <button className="flex-1 py-2 bg-[#39ff14]/10 border border-[#39ff14]/20 rounded-lg text-xs text-[#39ff14] hover:bg-[#39ff14]/15 hover:border-[#39ff14]/30 transition-all font-medium tracking-wide">
+                <button
+                  type="button"
+                  className="flex-1 py-2 bg-[#39ff14]/10 border border-[#39ff14]/20 rounded-lg text-xs text-[#39ff14] hover:bg-[#39ff14]/15 hover:border-[#39ff14]/30 transition-all font-medium tracking-wide"
+                >
                   Save Configuration
                 </button>
               </div>
@@ -492,30 +503,42 @@ function PlatformForm({ platform }: { platform: PlatformConfig }) {
                 Advanced Settings
               </h4>
               <div>
-                <label className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block">
+                <label
+                  htmlFor="adv-rate-limit"
+                  className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block"
+                >
                   Rate Limit (msg/min)
                 </label>
                 <input
+                  id="adv-rate-limit"
                   type="number"
                   defaultValue={30}
                   className="w-full bg-black/30 border border-white/10 text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono"
                 />
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block">
+                <label
+                  htmlFor="adv-msg-prefix"
+                  className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block"
+                >
                   Message Prefix
                 </label>
                 <input
+                  id="adv-msg-prefix"
                   type="text"
                   defaultValue="[Xavier]"
                   className="w-full bg-black/30 border border-white/10 text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono"
                 />
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block">
+                <label
+                  htmlFor="adv-retry-attempts"
+                  className="text-[10px] uppercase tracking-widest text-white/40 mb-1.5 block"
+                >
                   Retry Attempts
                 </label>
                 <input
+                  id="adv-retry-attempts"
                   type="number"
                   defaultValue={3}
                   className="w-full bg-black/30 border border-white/10 text-white/80 text-xs px-3 py-2.5 rounded-lg outline-none font-mono"
@@ -575,6 +598,8 @@ export default function MessagingConfigModal({
             </div>
           </div>
           <button
+            type="button"
+            aria-label="Close modal"
             onClick={onClose}
             className="p-1.5 rounded-lg text-white/30 hover:text-white/70 hover:bg-white/5 transition-all"
           >
@@ -590,6 +615,7 @@ export default function MessagingConfigModal({
               const mockConnected = MOCK_STATUS[p.id] === "connected";
               return (
                 <button
+                  type="button"
                   key={p.id}
                   onClick={() => setActiveTab(p.id)}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all duration-200 group relative ${
@@ -667,6 +693,7 @@ export function MessagingConfigInner({
           const mockConnected = MOCK_STATUS[p.id] === "connected";
           return (
             <button
+              type="button"
               key={p.id}
               onClick={() => setActiveTab(p.id)}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all duration-200 group relative ${
