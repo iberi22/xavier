@@ -498,8 +498,9 @@ mod tests {
         let token_count = compacted.split_whitespace().count();
 
         // Compaction keeps the first `remaining_budget` content words plus a
-        // fixed 5-word truncation marker.
-        assert!(token_count <= remaining_budget + 5);
+        // fixed 14-word overhead: the untrusted-content envelope (9 words)
+        // and the truncation marker (5 words).
+        assert!(token_count <= remaining_budget + 14);
 
         let builder = ContextBuilder::new(ContextBuilderConfig::default());
         let context = builder.build(ContextLevel::Maximum, &[], &[], &[compacted]);

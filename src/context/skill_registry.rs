@@ -41,13 +41,37 @@ impl IndexedSkill {
     /// Build a compacted version of the skill that uses fewer tokens.
     /// Strips examples, tests sections, and verbose formatting.
     pub fn compacted_content(&self, max_tokens: usize) -> String {
-        let words: Vec<&str> = self.content.split_whitespace().collect();
-        if words.len() <= max_tokens {
-            return self.content.clone();
+        let mut content = self.content.clone();
+
+        // Strict budget: max_tokens words, max 4096 bytes, max 100 lines.
+        let mut words: Vec<&str> = content.split_whitespace().collect();
+        let mut truncated_marker = "";
+
+        if words.len() > max_tokens {
+            words.truncate(max_tokens);
+            content = words.join(" ");
+            truncated_marker = "\n\n...[skill truncated for token budget]";
         }
-        // Keep the first max_tokens words and add a truncation marker
-        let truncated: String = words[..max_tokens].join(" ");
-        format!("{}...[skill truncated for token budget]", truncated)
+
+        if content.len() > 4096 {
+            let mut end = 4096;
+            while end > 0 && !content.is_char_boundary(end) {
+                end -= 1;
+            }
+            content.truncate(end);
+            truncated_marker = "\n\n...[skill truncated for byte budget]";
+        }
+
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.len() > 100 {
+            content = lines[..100].join("\n");
+            truncated_marker = "\n\n...[skill truncated for line budget]";
+        }
+
+        format!(
+            "--- START UNTRUSTED SKILL CONTENT ---\n{}{}\n--- END ---",
+            content, truncated_marker
+        )
     }
 }
 
@@ -216,6 +240,26 @@ fn collect_skill_files(root: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// Check if a string is a valid skill slug identifier (alphanumeric, -, _)
+fn is_valid_skill_slug(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Check if a description is substantive (at least 2 chars of non-whitespace)
+fn is_valid_description(desc: &str) -> bool {
+    desc.trim().len() >= 2
+}
+
+enum IndexStatus {
+    Indexed,
+    Unchanged,
+    Rejected,
+}
+
 impl SkillRegistry {
     /// Create a new registry scanning the given directories.
     pub fn new(scan_paths: Vec<PathBuf>) -> Self {
@@ -247,7 +291,9 @@ impl SkillRegistry {
 
     /// Scan all directories and index skills. Re-indexes only changed files.
     pub async fn reindex(&mut self) -> Result<usize> {
+        self.prune_invalid_skills();
         let mut indexed_count = 0;
+        let mut rejected_count = 0;
 
         for scan_path in &self.scan_paths.clone() {
             if !scan_path.exists() {
@@ -257,23 +303,37 @@ impl SkillRegistry {
 
             for path in collect_skill_files(scan_path) {
                 match self.index_skill_file(&path).await {
-                    Ok(true) => indexed_count += 1,
-                    Ok(false) => {} // Already up to date
+                    Ok(IndexStatus::Indexed) => indexed_count += 1,
+                    Ok(IndexStatus::Unchanged) => {} // Already up to date
+                    Ok(IndexStatus::Rejected) => rejected_count += 1,
                     Err(e) => warn!("Failed to index skill at {:?}: {}", path, e),
                 }
             }
         }
 
         info!(
-            "Skill registry reindex complete: {} skills indexed, {} total",
+            "Skill registry reindex complete: {} skills indexed, {} rejected, {} total",
             indexed_count,
+            rejected_count,
             self.skills.len()
         );
         Ok(indexed_count)
     }
 
+    /// Prune any currently in-memory skills that are invalid.
+    fn prune_invalid_skills(&mut self) {
+        let before = self.skills.len();
+        self.skills.retain(|name, skill| {
+            is_valid_skill_slug(name) && is_valid_description(&skill.description)
+        });
+        let pruned = before - self.skills.len();
+        if pruned > 0 {
+            info!("Pruned {} invalid skills from registry memory", pruned);
+        }
+    }
+
     /// Index a single skill file. Returns true if it was new or changed.
-    async fn index_skill_file(&mut self, path: &Path) -> Result<bool> {
+    async fn index_skill_file(&mut self, path: &Path) -> Result<IndexStatus> {
         self.index_skill_file_with_port(path, None).await
     }
 
@@ -282,7 +342,7 @@ impl SkillRegistry {
         &mut self,
         path: &Path,
         port: Option<&EmbeddingPort>,
-    ) -> Result<bool> {
+    ) -> Result<IndexStatus> {
         let content = fs::read_to_string(path)
             .await
             .with_context(|| format!("reading skill file {:?}", path))?;
@@ -306,13 +366,18 @@ impl SkillRegistry {
         if self.disabled.contains(&name) {
             debug!("Skipping disabled skill: {}", name);
             self.skills.remove(&name);
-            return Ok(false);
+            return Ok(IndexStatus::Unchanged);
+        }
+
+        if !is_valid_skill_slug(&name) || !is_valid_description(&description) {
+            debug!("Rejected invalid skill {name}");
+            return Ok(IndexStatus::Rejected);
         }
 
         // Check if already indexed with same hash
         if let Some(existing) = self.skills.get(&name) {
             if existing.content_hash == content_hash {
-                return Ok(false);
+                return Ok(IndexStatus::Unchanged);
             }
         }
 
@@ -341,13 +406,15 @@ impl SkillRegistry {
         }
 
         self.skills.insert(name, skill);
-        Ok(true)
+        Ok(IndexStatus::Indexed)
     }
 
     /// Scan all directories and index skills, embedding each through `port`.
     /// Falls back to keyword-only entries when the port has no backend.
     pub async fn reindex_with_embeddings(&mut self, port: &EmbeddingPort) -> Result<usize> {
+        self.prune_invalid_skills();
         let mut indexed_count = 0;
+        let mut rejected_count = 0;
 
         for scan_path in &self.scan_paths.clone() {
             if !scan_path.exists() {
@@ -357,8 +424,9 @@ impl SkillRegistry {
 
             for path in collect_skill_files(scan_path) {
                 match self.index_skill_file_with_port(&path, Some(port)).await {
-                    Ok(true) => indexed_count += 1,
-                    Ok(false) => {} // Already up to date
+                    Ok(IndexStatus::Indexed) => indexed_count += 1,
+                    Ok(IndexStatus::Unchanged) => {} // Already up to date
+                    Ok(IndexStatus::Rejected) => rejected_count += 1,
                     Err(e) => warn!("Failed to index skill at {:?}: {}", path, e),
                 }
             }
@@ -366,9 +434,10 @@ impl SkillRegistry {
 
         let backfilled = self.embed_missing(port).await;
         info!(
-            "Skill registry reindex complete: {} skills indexed, {} backfilled, {} total",
+            "Skill registry reindex complete: {} skills indexed, {} backfilled, {} rejected, {} total",
             indexed_count,
             backfilled,
+            rejected_count,
             self.skills.len()
         );
         Ok(indexed_count)
@@ -640,7 +709,7 @@ fn score_skill_match(skill: &IndexedSkill, query_lower: &str, query_terms: &[&st
         }
     }
 
-    score.min(1.0)
+    score.min(0.99)
 }
 
 /// Parse YAML frontmatter from a skill markdown file.
@@ -984,6 +1053,80 @@ Instructions here.
                 assert!((a.0 - b.0).abs() < f32::EPSILON);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_non_skill_entries() {
+        let mut registry = SkillRegistry::new(vec![]);
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("skills");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Write a valid skill
+        std::fs::write(
+            dir.join("SKILL1.md"),
+            "---\nname: valid-skill\ndescription: \"Valid description\"\n---\n\nContent",
+        )
+        .unwrap();
+
+        // Write an invalid skill (bad slug)
+        std::fs::write(
+            dir.join("SKILL2.md"),
+            "---\nname: \">-\"\ndescription: \"Valid description\"\n---\n\nContent",
+        )
+        .unwrap();
+
+        // Write an invalid skill (bad slug space)
+        std::fs::write(
+            dir.join("SKILL3.md"),
+            "---\nname: \"my skill\"\ndescription: \"Valid description\"\n---\n\nContent",
+        )
+        .unwrap();
+
+        registry.scan_paths = vec![dir];
+        let indexed = registry.reindex().await.unwrap();
+
+        assert_eq!(indexed, 1);
+        assert_eq!(registry.skills.len(), 1);
+        assert!(registry.skills.contains_key("valid-skill"));
+    }
+
+    #[tokio::test]
+    async fn registry_rejects_empty_description() {
+        let mut registry = SkillRegistry::new(vec![]);
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("skills");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Write a valid skill
+        std::fs::write(
+            dir.join("SKILL1.md"),
+            "---\nname: valid-skill-two\ndescription: \"Valid description\"\n---\n\nContent",
+        )
+        .unwrap();
+
+        // Write an invalid skill (empty desc)
+        std::fs::write(
+            dir.join("SKILL2.md"),
+            "---\nname: invalid-skill\ndescription: \"\"\n---\n\nContent",
+        )
+        .unwrap();
+
+        // Write an invalid skill (1 char desc)
+        std::fs::write(
+            dir.join("SKILL3.md"),
+            "---\nname: invalid-skill-two\ndescription: \"a\"\n---\n\nContent",
+        )
+        .unwrap();
+
+        registry.scan_paths = vec![dir];
+        let indexed = registry.reindex().await.unwrap();
+
+        assert_eq!(indexed, 1);
+        assert_eq!(registry.skills.len(), 1);
+        assert!(registry.skills.contains_key("valid-skill-two"));
     }
 
     #[tokio::test]
