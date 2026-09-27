@@ -12,13 +12,13 @@
 
 Xavier requires selective CLI placement, task-scoped context assembly, and drift visibility across multiple agent harnesses while remaining file-based and local-first (`.gitcore/docs/SWAL_GOAL.md:8`, `docs/design/skill-controller/00-BRIEF.md:58`). Currently, Hermes canonical discovery is hardcoded directly into the skill registry (`src/context/skill_registry.rs:105`). Moving source authority away from a single tool's discovery path must preserve existing offline file access, respect source ownership, and avoid publishing the complete catalog to all tools.
 
-Adopting an in-process controller in Xavier requires addressing ADR-019, which restricts the core codebase to storage and embedding primitives.
+Adopting an in-process controller in the `xavier` application crate requires addressing ADR-019's blanket statement that everything outside the storage core leaves as a plugin or sidecar. Its storage-core membership rule and C1/C2/C3 sidecar boundaries remain binding.
 
 ### Enmienda a ADR-019
 
-ADR-019 (`docs/adr/ADR-019-plugin-first-boundary.md:54`, `:90`) establishes that non-storage components belong in external plugins or sidecars. ADR-034 introduces a narrow, explicit architectural amendment permitting the Skill Controller as an in-process module within the `xavier` application crate under `src/context/skill_controller/` (containing `manifest`, `policy`, `projector`, `composer`, `audit`, and `telemetry`; D6).
+ADR-019 (`docs/adr/ADR-019-plugin-first-boundary.md:54-57`, `:90-98`) restricts the storage core to database, embeddings, and storage protocol responsibilities and states that everything else leaves as an external plugin or sidecar. This **proposed amendment** makes one explicit exception to that blanket placement sentence: the Skill Controller may be an in-process module of the `xavier` **application crate** under `src/context/skill_controller/` (containing `manifest`, `policy`, `projector`, `composer`, `audit`, and `telemetry`; D6). It does not classify the controller as storage core, relax ADR-019's core membership rule, or change the C1 CodeGraph, C2 Mesh, or C3 Panel UI boundaries. Acceptance of this amendment remains a human decision (P03).
 
-This exception is granted under the following non-negotiable invariants:
+The proposed exception is conditional on these invariants:
 1. **Core Logic Isolation:** Nothing is added to `crates/xavier-core-logic` (core vector store and embedding calculation primitives remain untainted).
 2. **No New Daemon or Plugin System:** No new background daemons, network services, DSLs, or plugin frameworks are introduced (D8).
 3. **Preserved Sidecar Boundaries:** The C CodeGraph AST parser remains an external UDS sidecar (`src/codebase/codegraph_client.rs:108`), and the SWAL Mesh P2P network remains strictly decoupled.
@@ -38,13 +38,9 @@ This exception is granted under the following non-negotiable invariants:
 
 > Ninguna decisión se acepta sin simulación multi-escenario. Ver skill `swal-adr-simulation`.
 
-**Simulación: PENDIENTE**
+The `skill_controller_store` model compares A/B/C across bull, base, bear, and worst scenarios. Its outputs are simulated estimates, not field measurements; every input without a cited anchor is an **ASSUMPTION** (see below and the report).
 
-Checked on 2026-09-27: `$HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py` exists and `python3 -B "$HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py" --list` exits successfully. It lists `xavier_cloud_tier`, `maloca_analytics_monetization`, `ledger_architecture`, `supply_scale`, `karma_semantics`, `council_approvals`, and `reviewer_assignment`. None models skill-source ownership, migration or projection; using one would measure a different decision.
-
-Prerequisite: implement and register model **`skill_controller_store`** with ADR ID `ADR-034`, options A/B/C, complete metric definitions, anchored inputs and bull/base/bear/worst scenarios. This model does **not** exist today. Measure migration effort, unwanted discovery, recovery time and drift incidents; use field measurements or explicitly label estimates `ASSUMPTION`. Scenario assumptions must cover healthy operation, catalog growth, conflicting edits and interrupted migration/store loss.
-
-Exact command to run after that prerequisite:
+Reproduction command:
 
 ```sh
 python3 -B "$HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py" \
@@ -52,11 +48,13 @@ python3 -B "$HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py" \
   --outdir "$HOME/proyectosSWAL/periferia/swal-sim/reports"
 ```
 
-- **Motor:** the checked script above; no simulator file was edited.
-- **Runs / seed:** 5000 / 42 planned, not executed.
-- **Resultado / ¿Coinciden?:** composite winner, primary-only winner and agreement pending; no measured margin.
-- **Sensitivity:** pending leave-one-scenario-out checks and p10–p90 intervals; robustness unknown.
-- **Reporte:** expected `$HOME/proyectosSWAL/periferia/swal-sim/reports/ADR-034-skill_controller_store.md` and `.json`; neither generated by this task.
+- **Motor:** `$HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py`, model `skill_controller_store` (iberi22/swal-sim, branch `feat/adr-034-skill-controller-model`, commit `b45ba5d`).
+- **Runs / seed:** 5000 / 42.
+- **Resultado:** composite winner **C** (0.800), followed by B (0.451) and A (0.093). Primary metric `unwanted_discovery_rate` (lower is better): **C** 0.01604, B 0.5614, A 0.8616. Primary-only winner: **C**.
+- **¿Coinciden?** Sí: composite and primary-only winners are both C.
+- **Trade-off:** C has the **highest modeled migration effort**: 23.97 hours versus A 16.51 and B 7.888 hours. These hours are **ASSUMPTION-based estimates**, not a completed migration or measured rollout cost.
+- **Sensitivity:** dropping bull, base, bear, or worst separately leaves **C** as winner in every case. This is stability under the report's scenarios and **ASSUMPTION-based inputs**, not proof of CLI compatibility.
+- **Reporte:** `$HOME/proyectosSWAL/periferia/swal-sim/reports/ADR-034-skill_controller_store.md` and `.json`.
 
 ## Supuestos y su anclaje
 
@@ -67,12 +65,14 @@ python3 -B "$HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py" \
 | Canonical catalog inside discovery root defeats selective exposure | Architectural inference for Options A/B | `docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:130-134` |
 | File operation without Xavier | Required | `docs/design/skill-controller/00-BRIEF.md:11` |
 | Per-skill links supported by every target CLI | ASSUMPTION, adapter acceptance gate | `docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:255` |
+| Scenario sizes, weights, conflict and store-loss rates; objective weights | ASSUMPTION: model inputs, not field observations | `skill_controller_store` in `$HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py` |
+| Migration effort, recovery time, drift rates, and unwanted-discovery baseline values | ASSUMPTION: model inputs; reported outputs are simulated estimates | `skill_controller_store` in `$HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py` |
 | Ephemeral token budget / stale lease / telemetry retention | 4000 tokens / 86400 seconds / 30 days | ASSUMPTION: initial configurable policy (D3, D11, D12) |
 | Relative migration costs in options table | Qualitative estimates | ASSUMPTION |
 
 ## Decisión
 
-Provisionally adopt **Option C with per-skill symlinks** across all harness discovery roots, governed by reconciled decisions D1–D14. **No simulated winner or margin is claimed** pending execution of the `skill_controller_store` simulation model.
+Propose **Option C with per-skill symlinks** across harness discovery roots, governed by reconciled decisions D1–D14. The `skill_controller_store` simulation favors C on both composite and primary metric, subject to its **ASSUMPTION-based** inputs and adapter rollout tests. This ADR and the ADR-019 amendment remain **Propuesto** until human acceptance (P03).
 
 1. **Canonical Store (D1):** Dedicated Git source outside CLI discovery roots, configured by `XAVIER_SKILL_STORE` (example `$HOME/.local/share/xavier/skill-store`). Hermes remains authoritative until an approved migration completes.
 2. **Publication Mechanism (D2, D9):** One symlink per selected skill directory; whole-directory symlinks are prohibited. Swaps are atomic: create `symlink(src, dir/.tmp-<rand>)`, `rename` over destination, and `fsync` the parent directory. Managed copies serve only as measured fallbacks.
@@ -97,21 +97,21 @@ Provisionally adopt **Option C with per-skill symlinks** across all harness disc
   - Reversible, atomic projection with write-ahead journals and rollback.
   - Clean separation between storage primitives (ADR-019) and application orchestration.
 - **Negativas / coste:**
-  - One-time migration effort and prerequisite backup procedures.
+  - Highest modeled one-time migration effort (23.97 hours, **ASSUMPTION-based**) and prerequisite backup procedures; Hermes remains authoritative until approved migration completes.
   - Adapter maintenance to verify symlink discovery across CLI updates.
   - Dependency on source directory availability for symlink resolution.
   - Incomplete telemetry visibility for direct filesystem reads without harness hooks.
 - **Qué invalidaría esta decisión:**
-  - Simulation results under `skill_controller_store` showing Option A or B superior across multi-scenario runs.
+  - Field measurements or revised `skill_controller_store` assumptions showing Option A or B superior across multi-scenario runs.
   - Native per-tool discovery filters implemented upstream in CLIs, making separate projection redundant.
   - Discovery failure of per-skill symlinks across core CLI harnesses (Codex, Claude Code, OpenCode).
   - Migration or operational overhead exceeding measured benefits.
 
 ## Verificación posterior
 
-Prior to accepting ADR-034:
-1. Execute the `skill_controller_store` simulation model and verify composite winner and sensitivity stability.
-2. Verify startup discovery for each supported CLI harness with Xavier stopped.
+Before rollout and for human acceptance (P03):
+1. Review the completed `skill_controller_store` simulation, its **ASSUMPTION-based** inputs, and the stable composite/primary winner C.
+2. Verify startup discovery for each supported CLI harness with Xavier stopped; CLI compatibility is not yet established.
 3. Validate atomic symlink swapping, crash recovery, and unmanaged file collision rejection in isolated test fixtures.
 4. Verify that REQ-060 and `AGENTS.md` path documentation are reconciled.
 
