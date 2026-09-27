@@ -402,6 +402,10 @@ fn default_max_entries() -> usize {
     500
 }
 
+fn default_entry_count() -> usize {
+    1
+}
+
 /// A parsed, redacted log entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogScanEntry {
@@ -409,6 +413,12 @@ pub struct LogScanEntry {
     pub level: String,
     pub message: String,
     pub source: String,
+    #[serde(default = "default_entry_count")]
+    pub count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_seen: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<String>,
 }
 
 /// Persisted scan cursor
@@ -426,6 +436,14 @@ pub struct LogScanResult {
     pub cursor: LogCursor,
     pub histogram: HashMap<String, usize>,
     pub telegram_polling_dead: bool,
+    #[serde(default)]
+    pub earliest_timestamp: Option<String>,
+    #[serde(default)]
+    pub latest_timestamp: Option<String>,
+    #[serde(default)]
+    pub cursor_reset: bool,
+    #[serde(default)]
+    pub cursor_reset_reason: Option<String>,
 }
 
 /// Helper to redact potential secrets (tokens, bearer keys, passwords)
@@ -469,7 +487,7 @@ fn get_sorted_log_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
             }
         }
     }
-    files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
     files
 }
 
@@ -497,105 +515,260 @@ pub fn parse_log_line(line: &str) -> Option<LogScanEntry> {
             .or_else(|| v.get("message").and_then(|m| m.as_str()))
             .unwrap_or("")
             .to_string();
+        let ts = timestamp.clone();
         Some(LogScanEntry {
             timestamp,
             level,
             message,
             source: "xavier".to_string(),
+            count: 1,
+            first_seen: if ts.is_empty() {
+                None
+            } else {
+                Some(ts.clone())
+            },
+            last_seen: if ts.is_empty() { None } else { Some(ts) },
         })
     } else {
         // Fallback standard text line parse [timestamp] [level] message
         let parts: Vec<&str> = redacted.splitn(3, ' ').collect();
         if parts.len() == 3 {
+            let ts = parts[0].to_string();
             Some(LogScanEntry {
-                timestamp: parts[0].to_string(),
+                timestamp: ts.clone(),
                 level: parts[1].replace(['[', ']'], ""),
                 message: parts[2].to_string(),
                 source: "xavier".to_string(),
+                count: 1,
+                first_seen: Some(ts.clone()),
+                last_seen: Some(ts),
             })
         } else {
+            let ts = chrono::Utc::now().to_rfc3339();
             Some(LogScanEntry {
-                timestamp: chrono::Utc::now().to_rfc3339(),
+                timestamp: ts.clone(),
                 level: "INFO".to_string(),
                 message: redacted,
                 source: "xavier".to_string(),
+                count: 1,
+                first_seen: Some(ts.clone()),
+                last_seen: Some(ts),
             })
         }
     }
 }
 
-pub fn load_cursor() -> LogCursor {
-    if let Some(home) = dirs::home_dir() {
-        let cursor_path = home.join(".xavier/state/scan.cursor");
-        if let Ok(content) = std::fs::read_to_string(&cursor_path) {
-            if let Ok(cursor) = serde_json::from_str(&content) {
-                return cursor;
-            }
+pub fn default_cursor_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join(".xavier/state/scan.cursor"))
+}
+
+pub fn load_cursor_from(path: &std::path::Path) -> LogCursor {
+    if let Ok(content) = std::fs::read_to_string(path) {
+        if let Ok(cursor) = serde_json::from_str(&content) {
+            return cursor;
         }
     }
     LogCursor::default()
 }
 
+pub fn save_cursor_to(cursor: &LogCursor, path: &std::path::Path) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(content) = serde_json::to_string(cursor) {
+        let _ = std::fs::write(path, content);
+    }
+}
+
+pub fn load_cursor() -> LogCursor {
+    if let Some(p) = default_cursor_path() {
+        load_cursor_from(&p)
+    } else {
+        LogCursor::default()
+    }
+}
+
 pub fn save_cursor(cursor: &LogCursor) {
-    if let Some(home) = dirs::home_dir() {
-        let cursor_path = home.join(".xavier/state/scan.cursor");
-        if let Some(parent) = cursor_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+    if let Some(p) = default_cursor_path() {
+        save_cursor_to(cursor, &p);
+    }
+}
+
+fn update_seen_timestamps(entry: &mut LogScanEntry, new_ts: &str) {
+    if new_ts.is_empty() {
+        return;
+    }
+    if let Some(fs) = &entry.first_seen {
+        let is_earlier = match (
+            chrono::DateTime::parse_from_rfc3339(new_ts),
+            chrono::DateTime::parse_from_rfc3339(fs),
+        ) {
+            (Ok(a), Ok(b)) => a < b,
+            _ => new_ts < fs.as_str(),
+        };
+        if is_earlier {
+            entry.first_seen = Some(new_ts.to_string());
         }
-        if let Ok(content) = serde_json::to_string(cursor) {
-            let _ = std::fs::write(&cursor_path, content);
+    } else {
+        entry.first_seen = Some(new_ts.to_string());
+    }
+
+    if let Some(ls) = &entry.last_seen {
+        let is_later = match (
+            chrono::DateTime::parse_from_rfc3339(new_ts),
+            chrono::DateTime::parse_from_rfc3339(ls),
+        ) {
+            (Ok(a), Ok(b)) => a > b,
+            _ => new_ts > ls.as_str(),
+        };
+        if is_later {
+            entry.last_seen = Some(new_ts.to_string());
+            entry.timestamp = new_ts.to_string();
         }
+    } else {
+        entry.last_seen = Some(new_ts.to_string());
+        entry.timestamp = new_ts.to_string();
     }
 }
 
 /// Scan logs under home directory (~/.xavier/logs) or fallbacks
 pub fn log_scan(args: LogScanArgs) -> LogScanResult {
     let dir = resolve_logs_dir();
-    let files = get_sorted_log_files(&dir);
+    let cursor_path = default_cursor_path();
+    log_scan_internal(args, &dir, cursor_path.as_deref())
+}
 
-    let mut entries = Vec::new();
-    let mut histogram = HashMap::new();
-    let mut truncated = false;
+/// Internal log scanning implementation with configurable directories for isolation
+pub fn log_scan_internal(
+    args: LogScanArgs,
+    dir: &std::path::Path,
+    cursor_file: Option<&std::path::Path>,
+) -> LogScanResult {
+    let files = get_sorted_log_files(dir);
+    if files.is_empty() {
+        return LogScanResult {
+            entries: Vec::new(),
+            truncated: false,
+            cursor: LogCursor::default(),
+            histogram: HashMap::new(),
+            telegram_polling_dead: false,
+            earliest_timestamp: None,
+            latest_timestamp: None,
+            cursor_reset: false,
+            cursor_reset_reason: None,
+        };
+    }
 
     let cursor = if args.since.is_some() {
         LogCursor::default()
+    } else if let Some(cp) = cursor_file {
+        load_cursor_from(cp)
     } else {
         load_cursor()
     };
 
-    let mut new_cursor = cursor.clone();
-    let mut start_reading = cursor.last_file.is_empty();
+    let mut cursor_reset = false;
+    let mut cursor_reset_reason = None;
+    let mut effective_cursor = cursor.clone();
+
+    if !cursor.last_file.is_empty() {
+        let pos = files.iter().position(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|name| name == cursor.last_file)
+                .unwrap_or(false)
+        });
+
+        match pos {
+            None => {
+                cursor_reset = true;
+                cursor_reset_reason = Some(format!(
+                    "cursor file '{}' is no longer present (rotated away)",
+                    cursor.last_file
+                ));
+                effective_cursor = LogCursor::default();
+            }
+            Some(idx) if idx > 1 => {
+                let newest_name = files[0]
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                cursor_reset = true;
+                cursor_reset_reason = Some(format!(
+                    "cursor file '{}' is stale ({} rotations behind newest log '{}')",
+                    cursor.last_file, idx, newest_name
+                ));
+                effective_cursor = LogCursor::default();
+            }
+            Some(_) => {
+                // Recent cursor (files[0] or files[1])
+            }
+        }
+    }
+
+    let mut files_to_scan = Vec::new();
+    if cursor_reset {
+        // Stale or rotated-away cursor: report the newest log only, so history
+        // is never replayed as if it were the current state.
+        files_to_scan.push(&files[0]);
+    } else if effective_cursor.last_file.is_empty() {
+        for f in &files {
+            files_to_scan.push(f);
+        }
+    } else {
+        for f in &files {
+            files_to_scan.push(f);
+            if f.file_name().and_then(|n| n.to_str()) == Some(&effective_cursor.last_file) {
+                break;
+            }
+        }
+    }
+
+    let mut entries: Vec<LogScanEntry> = Vec::new();
+    let mut group_indices: HashMap<(String, String, String), usize> = HashMap::new();
+    let mut histogram: HashMap<String, usize> = HashMap::new();
+    let mut truncated = false;
+
+    let newest_file_name = files[0]
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let mut new_cursor = LogCursor {
+        last_file: newest_file_name,
+        last_line: 0,
+    };
 
     let since_time = args
         .since
         .as_ref()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
 
-    for file_path in files {
+    for (file_idx, file_path) in files_to_scan.iter().enumerate() {
         let file_name = file_path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
 
-        if !start_reading {
-            if file_name == cursor.last_file {
-                start_reading = true;
-            } else {
-                continue;
-            }
-        }
+        let is_cursor_file = file_name == effective_cursor.last_file;
+        let min_line = if is_cursor_file {
+            effective_cursor.last_line
+        } else {
+            0
+        };
 
-        if let Ok(content) = std::fs::read_to_string(&file_path) {
+        if let Ok(content) = std::fs::read_to_string(file_path) {
             let mut line_num = 0;
             for line in content.lines() {
                 line_num += 1;
 
-                if file_name == cursor.last_file && line_num <= cursor.last_line {
+                if line_num <= min_line {
                     continue;
                 }
 
-                if let Some(entry) = parse_log_line(line) {
+                if let Some(mut entry) = parse_log_line(line) {
                     if let Some(lvl_min) = &args.level_min {
                         if level_to_val(&entry.level) < level_to_val(lvl_min) {
                             continue;
@@ -620,17 +793,39 @@ pub fn log_scan(args: LogScanArgs) -> LogScanResult {
                         }
                     }
 
-                    *histogram.entry(entry.level.clone()).or_insert(0) += 1;
-
-                    if entries.len() >= args.max_entries {
+                    let level = entry.level.clone();
+                    let key = (level.clone(), entry.message.clone(), entry.source.clone());
+                    if let Some(&existing_idx) = group_indices.get(&key) {
+                        entries[existing_idx].count += 1;
+                        update_seen_timestamps(&mut entries[existing_idx], &entry.timestamp);
+                        *histogram.entry(level).or_insert(0) += 1;
+                    } else if entries.len() >= args.max_entries {
                         truncated = true;
+                        if file_idx == 0 {
+                            // Keep the cursor on the last recorded line so the
+                            // dropped overflow line is re-read on the next scan
+                            // instead of being skipped forever.
+                            new_cursor.last_line = line_num.saturating_sub(1);
+                        }
                         break;
+                    } else {
+                        entry.count = 1;
+                        if !entry.timestamp.is_empty() {
+                            entry.first_seen = Some(entry.timestamp.clone());
+                            entry.last_seen = Some(entry.timestamp.clone());
+                        }
+                        *histogram.entry(level).or_insert(0) += 1;
+                        group_indices.insert(key, entries.len());
+                        entries.push(entry);
                     }
-
-                    entries.push(entry);
                 }
 
-                new_cursor.last_file = file_name.clone();
+                if file_idx == 0 {
+                    new_cursor.last_line = line_num;
+                }
+            }
+
+            if file_idx == 0 && !truncated {
                 new_cursor.last_line = line_num;
             }
         }
@@ -641,11 +836,59 @@ pub fn log_scan(args: LogScanArgs) -> LogScanResult {
     }
 
     if args.since.is_none() {
-        save_cursor(&new_cursor);
+        if let Some(cp) = cursor_file {
+            save_cursor_to(&new_cursor, cp);
+        } else {
+            save_cursor(&new_cursor);
+        }
     }
 
-    // Telegram Polling Dead Detection (P1)
-    // Detects silence/dead loops or specific errors
+    let mut earliest_timestamp: Option<String> = None;
+    let mut latest_timestamp: Option<String> = None;
+
+    for entry in &entries {
+        let candidates = [
+            entry.first_seen.as_deref(),
+            entry.last_seen.as_deref(),
+            Some(entry.timestamp.as_str()),
+        ];
+        for ts in candidates.into_iter().flatten() {
+            if ts.trim().is_empty() {
+                continue;
+            }
+            match &earliest_timestamp {
+                None => earliest_timestamp = Some(ts.to_string()),
+                Some(cur) => {
+                    let is_earlier = match (
+                        chrono::DateTime::parse_from_rfc3339(ts),
+                        chrono::DateTime::parse_from_rfc3339(cur),
+                    ) {
+                        (Ok(t), Ok(c)) => t < c,
+                        _ => ts < cur.as_str(),
+                    };
+                    if is_earlier {
+                        earliest_timestamp = Some(ts.to_string());
+                    }
+                }
+            }
+            match &latest_timestamp {
+                None => latest_timestamp = Some(ts.to_string()),
+                Some(cur) => {
+                    let is_later = match (
+                        chrono::DateTime::parse_from_rfc3339(ts),
+                        chrono::DateTime::parse_from_rfc3339(cur),
+                    ) {
+                        (Ok(t), Ok(c)) => t > c,
+                        _ => ts > cur.as_str(),
+                    };
+                    if is_later {
+                        latest_timestamp = Some(ts.to_string());
+                    }
+                }
+            }
+        }
+    }
+
     let mut telegram_polling_dead = false;
     let mut get_me_fails = 0;
     let mut has_close_wait = false;
@@ -659,7 +902,7 @@ pub fn log_scan(args: LogScanArgs) -> LogScanResult {
                 || msg.contains("dead")
                 || msg.contains("retry"))
         {
-            get_me_fails += 1;
+            get_me_fails += entry.count;
             if msg.contains("close-wait") || msg.contains("close_wait") {
                 has_close_wait = true;
             }
@@ -676,6 +919,10 @@ pub fn log_scan(args: LogScanArgs) -> LogScanResult {
         cursor: new_cursor,
         histogram,
         telegram_polling_dead,
+        earliest_timestamp,
+        latest_timestamp,
+        cursor_reset,
+        cursor_reset_reason,
     }
 }
 
@@ -740,6 +987,255 @@ mod log_scan_tests {
             std::env::set_var("HOME", h);
         }
     }
+
+    #[test]
+    fn log_scan_prefers_newest_file_when_cursor_is_stale() {
+        let test_dir =
+            std::env::temp_dir().join(format!("xavier_test_stale_{}", uuid::Uuid::new_v4()));
+        let logs_dir = test_dir.join("logs");
+        let state_dir = test_dir.join("state");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        std::fs::create_dir_all(&state_dir).unwrap();
+
+        let ancient_file = logs_dir.join("xavier.2026-09-03.log");
+        let old_file = logs_dir.join("xavier.2026-09-05.log");
+        let new_file = logs_dir.join("xavier.2026-09-26.log");
+
+        let ancient_log = r#"{"timestamp":"2026-09-03T10:00:00Z","level":"ERROR","fields":{"message":"Ancient error from 2026-09-03"}}"#;
+        let old_log = r#"{"timestamp":"2026-09-05T10:00:00Z","level":"ERROR","fields":{"message":"Old stale error from 2026-09-05"}}"#;
+        let new_log = r#"{"timestamp":"2026-09-26T10:00:00Z","level":"ERROR","fields":{"message":"Active error from 2026-09-26"}}"#;
+
+        std::fs::write(&ancient_file, ancient_log).unwrap();
+        std::fs::write(&old_file, old_log).unwrap();
+        std::fs::write(&new_file, new_log).unwrap();
+
+        // Cursor two rotations behind the newest log.
+        let cursor_path = state_dir.join("scan.cursor");
+        let stale_cursor = LogCursor {
+            last_file: "xavier.2026-09-03.log".to_string(),
+            last_line: 1,
+        };
+        save_cursor_to(&stale_cursor, &cursor_path);
+
+        let args = LogScanArgs {
+            since: None,
+            level_min: None,
+            pattern: None,
+            source: None,
+            max_entries: 10,
+        };
+
+        let res = log_scan_internal(args, &logs_dir, Some(&cursor_path));
+
+        assert!(
+            res.cursor_reset,
+            "cursor reset should be true when cursor is stale"
+        );
+        assert!(
+            res.cursor_reset_reason.is_some(),
+            "cursor_reset_reason should be populated"
+        );
+        assert_eq!(res.cursor.last_file, "xavier.2026-09-26.log");
+        assert!(
+            res.entries
+                .iter()
+                .any(|e| e.message.contains("Active error from 2026-09-26")),
+            "entries must contain lines from newest file"
+        );
+        assert!(
+            !res.entries
+                .iter()
+                .any(|e| e.message.contains("2026-09-05") || e.message.contains("2026-09-03")),
+            "stale entries from older logs must not be returned as current"
+        );
+        assert_eq!(
+            res.entries.len(),
+            1,
+            "only the newest log is reported after a cursor reset"
+        );
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn log_scan_keeps_cursor_after_single_rotation() {
+        let test_dir =
+            std::env::temp_dir().join(format!("xavier_test_rotation_{}", uuid::Uuid::new_v4()));
+        let logs_dir = test_dir.join("logs");
+        let state_dir = test_dir.join("state");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        std::fs::create_dir_all(&state_dir).unwrap();
+
+        let old_file = logs_dir.join("xavier.2026-09-25.log");
+        let new_file = logs_dir.join("xavier.2026-09-26.log");
+
+        let old_log = r#"{"timestamp":"2026-09-25T10:00:00Z","level":"INFO","fields":{"message":"Consumed line from 2026-09-25"}}
+{"timestamp":"2026-09-25T10:05:00Z","level":"ERROR","fields":{"message":"Unconsumed tail from 2026-09-25"}}
+"#;
+        let new_log = r#"{"timestamp":"2026-09-26T10:00:00Z","level":"INFO","fields":{"message":"Active line from 2026-09-26"}}
+"#;
+
+        std::fs::write(&old_file, old_log).unwrap();
+        std::fs::write(&new_file, new_log).unwrap();
+
+        // One rotation behind the newest log: a normal rotation, not a stale cursor.
+        let cursor_path = state_dir.join("scan.cursor");
+        let recent_cursor = LogCursor {
+            last_file: "xavier.2026-09-25.log".to_string(),
+            last_line: 1,
+        };
+        save_cursor_to(&recent_cursor, &cursor_path);
+
+        let args = LogScanArgs {
+            since: None,
+            level_min: None,
+            pattern: None,
+            source: None,
+            max_entries: 10,
+        };
+
+        let res = log_scan_internal(args, &logs_dir, Some(&cursor_path));
+
+        assert!(!res.cursor_reset, "one rotation is not a stale cursor");
+        assert!(res.cursor_reset_reason.is_none());
+        assert_eq!(res.cursor.last_file, "xavier.2026-09-26.log");
+        assert_eq!(
+            res.entries.len(),
+            2,
+            "newest file plus the unconsumed tail of the rotated file"
+        );
+        assert!(res.entries[0]
+            .message
+            .contains("Active line from 2026-09-26"));
+        assert!(res.entries[1]
+            .message
+            .contains("Unconsumed tail from 2026-09-25"));
+        assert!(
+            !res.entries[0]
+                .message
+                .contains("Consumed line from 2026-09-25"),
+            "already consumed lines must not be re-reported"
+        );
+
+        let persisted = load_cursor_from(&cursor_path);
+        assert_eq!(persisted.last_file, "xavier.2026-09-26.log");
+        assert_eq!(persisted.last_line, 1);
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn log_scan_reports_time_range_of_returned_entries() {
+        let test_dir =
+            std::env::temp_dir().join(format!("xavier_test_timerange_{}", uuid::Uuid::new_v4()));
+        let logs_dir = test_dir.join("logs");
+        let state_dir = test_dir.join("state");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        std::fs::create_dir_all(&state_dir).unwrap();
+
+        let log_file = logs_dir.join("xavier.2026-09-26.log");
+        let sample_logs = r#"{"timestamp":"2026-09-26T08:00:00Z","level":"INFO","fields":{"message":"Node bootstrap"}}
+{"timestamp":"2026-09-26T10:15:30Z","level":"WARN","fields":{"message":"Memory pressure notice"}}
+{"timestamp":"2026-09-26T14:45:00Z","level":"ERROR","fields":{"message":"Peer connection dropped"}}
+"#;
+        std::fs::write(&log_file, sample_logs).unwrap();
+
+        let cursor_path = state_dir.join("scan.cursor");
+
+        let args = LogScanArgs {
+            since: None,
+            level_min: None,
+            pattern: None,
+            source: None,
+            max_entries: 10,
+        };
+
+        let res = log_scan_internal(args, &logs_dir, Some(&cursor_path));
+
+        assert_eq!(
+            res.earliest_timestamp.as_deref(),
+            Some("2026-09-26T08:00:00Z"),
+            "earliest timestamp must match first event"
+        );
+        assert_eq!(
+            res.latest_timestamp.as_deref(),
+            Some("2026-09-26T14:45:00Z"),
+            "latest timestamp must match last event"
+        );
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn log_scan_groups_repeated_identical_lines() {
+        let test_dir =
+            std::env::temp_dir().join(format!("xavier_test_groups_{}", uuid::Uuid::new_v4()));
+        let logs_dir = test_dir.join("logs");
+        let state_dir = test_dir.join("state");
+        std::fs::create_dir_all(&logs_dir).unwrap();
+        std::fs::create_dir_all(&state_dir).unwrap();
+
+        let log_file = logs_dir.join("xavier.2026-09-26.log");
+        let sample_logs = r#"{"timestamp":"2026-09-26T09:00:00Z","level":"ERROR","fields":{"message":"file is not a database"}}
+{"timestamp":"2026-09-26T09:01:00Z","level":"ERROR","fields":{"message":"file is not a database"}}
+{"timestamp":"2026-09-26T09:02:00Z","level":"ERROR","fields":{"message":"file is not a database"}}
+{"timestamp":"2026-09-26T09:03:00Z","level":"ERROR","fields":{"message":"file is not a database"}}
+{"timestamp":"2026-09-26T09:04:00Z","level":"ERROR","fields":{"message":"file is not a database"}}
+{"timestamp":"2026-09-26T09:05:00Z","level":"INFO","fields":{"message":"Service recovered"}}
+"#;
+        std::fs::write(&log_file, sample_logs).unwrap();
+
+        let cursor_path = state_dir.join("scan.cursor");
+
+        let args = LogScanArgs {
+            since: None,
+            level_min: None,
+            pattern: None,
+            source: None,
+            max_entries: 2,
+        };
+
+        let res = log_scan_internal(args, &logs_dir, Some(&cursor_path));
+
+        assert_eq!(
+            res.entries.len(),
+            2,
+            "must collapse identical lines into distinct groups"
+        );
+        assert!(
+            !res.truncated,
+            "2 distinct groups fit within max_entries budget of 2"
+        );
+
+        let err_entry = res.entries.iter().find(|e| e.level == "ERROR").unwrap();
+        assert_eq!(err_entry.count, 5, "count must reflect 5 occurrences");
+        assert_eq!(
+            err_entry.first_seen.as_deref(),
+            Some("2026-09-26T09:00:00Z")
+        );
+        assert_eq!(err_entry.last_seen.as_deref(), Some("2026-09-26T09:04:00Z"));
+        // A grouped entry's `timestamp` is defined as its latest occurrence.
+        assert_eq!(
+            Some(err_entry.timestamp.as_str()),
+            err_entry.last_seen.as_deref()
+        );
+
+        let info_entry = res.entries.iter().find(|e| e.level == "INFO").unwrap();
+        assert_eq!(info_entry.count, 1);
+        assert_eq!(
+            info_entry.first_seen.as_deref(),
+            Some("2026-09-26T09:05:00Z")
+        );
+        assert_eq!(
+            info_entry.last_seen.as_deref(),
+            Some("2026-09-26T09:05:00Z")
+        );
+
+        assert_eq!(res.histogram.get("ERROR"), Some(&5));
+        assert_eq!(res.histogram.get("INFO"), Some(&1));
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
 }
 
 // ═══════════════════════════════════════════════
@@ -766,19 +1262,96 @@ pub struct EnvStatusResult {
     pub overall: String,
 }
 
-/// Helper to query systemd service status safely using argv execution
+/// Scope result of querying systemctl for a service
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServiceScopeResult {
+    Found(String),
+    NotFound,
+    Unavailable(String),
+}
+
+/// Parses the output of `systemctl is-active` for a given scope
+pub fn parse_service_status_output(
+    exit_code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+    scope: &str,
+) -> ServiceScopeResult {
+    let stdout_trimmed = stdout.trim();
+    let stderr_trimmed = stderr.trim();
+
+    // Only the systemctl connect failure means "no bus in this scope"; a generic
+    // errno string in stderr belongs to the unit, not to the manager.
+    if stderr_trimmed.contains("Failed to connect to bus") {
+        return ServiceScopeResult::Unavailable(format!("systemctl {scope} bus unavailable"));
+    }
+
+    // Exit code 4 means "unit not found" in systemd
+    if exit_code == Some(4) || stdout_trimmed == "not-found" || stdout_trimmed == "unknown" {
+        return ServiceScopeResult::NotFound;
+    }
+
+    if stdout_trimmed.is_empty() {
+        if exit_code == Some(0) {
+            ServiceScopeResult::Found(format!("active ({scope})"))
+        } else {
+            ServiceScopeResult::NotFound
+        }
+    } else {
+        ServiceScopeResult::Found(format!("{stdout_trimmed} ({scope})"))
+    }
+}
+
+/// Helper to query systemd service status safely using argv execution.
+///
+/// Queries the user manager (`systemctl --user`) first, falling back to system
+/// scope (`systemctl --system`) if the unit is not found in user scope or user systemd is unavailable.
+/// Returns status formatted with scope (e.g. "active (user)", "inactive (user)", "not-found").
 pub fn check_service_status(service: &str) -> String {
     use std::process::Command;
-    match Command::new("systemctl")
-        .args(["is-active", service])
-        .output()
-    {
+
+    // 1. Query user scope: systemctl --user is-active <service>
+    let user_res = Command::new("systemctl")
+        .args(["--user", "is-active", service])
+        .output();
+
+    match user_res {
         Ok(output) => {
-            let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if status.is_empty() {
-                "inactive".to_string()
-            } else {
-                status
+            let parsed = parse_service_status_output(
+                output.status.code(),
+                &String::from_utf8_lossy(&output.stdout),
+                &String::from_utf8_lossy(&output.stderr),
+                "user",
+            );
+            match parsed {
+                ServiceScopeResult::Found(status) => return status,
+                ServiceScopeResult::NotFound | ServiceScopeResult::Unavailable(_) => {
+                    // Fall back to system scope
+                }
+            }
+        }
+        Err(_) => {
+            // systemctl unavailable or failed to execute, try system scope
+        }
+    }
+
+    // 2. Query system scope: systemctl --system is-active <service>
+    let system_res = Command::new("systemctl")
+        .args(["--system", "is-active", service])
+        .output();
+
+    match system_res {
+        Ok(output) => {
+            let parsed = parse_service_status_output(
+                output.status.code(),
+                &String::from_utf8_lossy(&output.stdout),
+                &String::from_utf8_lossy(&output.stderr),
+                "system",
+            );
+            match parsed {
+                ServiceScopeResult::Found(status) => status,
+                ServiceScopeResult::NotFound => "not-found".to_string(),
+                ServiceScopeResult::Unavailable(_) => "unknown (systemctl unavailable)".to_string(),
             }
         }
         Err(_) => "unknown (systemctl unavailable)".to_string(),
@@ -892,6 +1465,39 @@ mod env_status_tests {
         // Resolve target that fails or times out quickly
         let res = tcp_probe("10.255.255.1:80");
         assert!(res.contains("failed"));
+    }
+
+    #[test]
+    fn check_service_status_distinguishes_missing_unit_from_inactive() {
+        // 1. Logic unit test with mock outputs
+        let inactive = parse_service_status_output(Some(3), "inactive\n", "", "user");
+        assert_eq!(
+            inactive,
+            ServiceScopeResult::Found("inactive (user)".to_string())
+        );
+
+        let missing = parse_service_status_output(Some(4), "inactive\n", "", "user");
+        assert_eq!(missing, ServiceScopeResult::NotFound);
+
+        let missing_explicit = parse_service_status_output(Some(4), "not-found\n", "", "user");
+        assert_eq!(missing_explicit, ServiceScopeResult::NotFound);
+
+        let active = parse_service_status_output(Some(0), "active\n", "", "user");
+        assert_eq!(
+            active,
+            ServiceScopeResult::Found("active (user)".to_string())
+        );
+
+        // 2. Integration check with nonexistent service. The exact string depends
+        // on the host (systemd versions report a missing unit as exit 3 + "inactive"
+        // or as exit 4 + "not-found"), so only the invariant is asserted here: a
+        // missing unit is never reported as a bare "inactive".
+        let status = check_service_status("xavier-definitely-nonexistent-unit-xyz.service");
+        assert!(!status.is_empty(), "status must never be empty");
+        assert_ne!(
+            status, "inactive",
+            "missing unit must not be reported as plain 'inactive'"
+        );
     }
 }
 
