@@ -719,7 +719,8 @@ pub async fn handle_core_tool(
             let history_path = std::path::Path::new(".xavier/improvement-history.json");
             let last_experiment = crate::auto_improvement::cycle::load_history(history_path)
                 .ok()
-                .and_then(|entries| entries.into_iter().next())
+                // Skip truncated entries: they carry no accepted experiments.
+                .and_then(|entries| entries.into_iter().find(|e| e.partial.is_none()))
                 .and_then(|entry| entry.experiments.into_iter().next());
 
             let overall_alert = snapshot.overall.clone();
