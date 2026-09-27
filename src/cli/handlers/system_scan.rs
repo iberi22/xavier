@@ -482,13 +482,15 @@ async fn detect_env_vars(detailed: bool) -> HashMap<String, EnvVarStatus> {
 
 /// Gather system info.
 pub fn gather_system_info() -> SystemInfo {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
     SystemInfo {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
         cpus: std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(1),
-        memory_mb: sysinfo::System::new_all().total_memory() / 1024,
+        memory_mb: sys.total_memory() / 1024,
         xavier_version: env!("CARGO_PKG_VERSION").to_string(),
     }
 }

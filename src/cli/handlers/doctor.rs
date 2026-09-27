@@ -59,12 +59,41 @@ async fn effective_ollama_models(configured_url: &str, scanned: &[String]) -> Ve
 
 pub type CheckResult = DoctorCheck;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Default timeout for individual doctor check probes.
+pub const DOCTOR_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Total deadline budget for the entire doctor diagnostic run.
+pub const DOCTOR_TOTAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+/// Timeout specifically for system scan.
+pub const DOCTOR_SCAN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+pub const DOCTOR_DATABASE_TIMEOUT: std::time::Duration = DOCTOR_CHECK_TIMEOUT;
+pub const DOCTOR_EMBEDDINGS_TIMEOUT: std::time::Duration = DOCTOR_CHECK_TIMEOUT;
+pub const DOCTOR_MEMORY_TIMEOUT: std::time::Duration = DOCTOR_CHECK_TIMEOUT;
+pub const DOCTOR_MESH_TIMEOUT: std::time::Duration = DOCTOR_CHECK_TIMEOUT;
+pub const DOCTOR_HTTP_TIMEOUT: std::time::Duration = DOCTOR_CHECK_TIMEOUT;
+pub const DOCTOR_SECURITY_TIMEOUT: std::time::Duration = DOCTOR_CHECK_TIMEOUT;
+pub const DOCTOR_SCHEDULER_TIMEOUT: std::time::Duration = DOCTOR_CHECK_TIMEOUT;
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct DoctorCheck {
     pub name: String,
     pub status: CheckStatus, // Ok / Warn / Fail
     pub detail: String,
     pub hint: Option<String>,
+    #[serde(default)]
+    pub timed_out: bool,
+}
+
+impl DoctorCheck {
+    pub fn timed_out_check(name: &str, budget: std::time::Duration) -> Self {
+        Self {
+            name: name.to_string(),
+            status: CheckStatus::Warn,
+            detail: format!("Probe '{}' timed out after {:?}", name, budget),
+            hint: Some(format!("Check responsiveness or host load for {}", name)),
+            timed_out: true,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Debug)]
@@ -142,6 +171,7 @@ pub fn check_database(settings: &XavierSettings) -> Vec<CheckResult> {
         },
         detail: db_detail,
         hint: db_hint,
+        timed_out: false,
     });
 
     checks
@@ -220,6 +250,7 @@ pub async fn check_embeddings(
                     expected_embed
                 ))
             },
+            timed_out: false,
         });
     } else {
         let url_ok = !embedding_url.trim().is_empty()
@@ -270,6 +301,7 @@ pub async fn check_embeddings(
                         .to_string(),
                 )
             },
+            timed_out: false,
         });
     }
 
@@ -289,6 +321,7 @@ pub fn check_memory(settings: &XavierSettings, verbose: bool) -> Vec<CheckResult
             status: CheckStatus::Ok,
             detail: format!("Data directory path is valid: {data_dir_raw}"),
             hint: None,
+            timed_out: false,
         },
         Err(msg) => DoctorCheck {
             name: "XAVIER_DATA_DIR Path".to_string(),
@@ -298,6 +331,7 @@ pub fn check_memory(settings: &XavierSettings, verbose: bool) -> Vec<CheckResult
                 "Unset or rewrite XAVIER_DATA_DIR to a POSIX path (e.g. /home/.../xavier/data)"
                     .to_string(),
             ),
+            timed_out: false,
         },
     };
     checks.push(data_dir_check);
@@ -348,6 +382,7 @@ pub fn check_memory(settings: &XavierSettings, verbose: bool) -> Vec<CheckResult
         status,
         detail,
         hint,
+        timed_out: false,
     });
 
     // Embedding Model Consistency Check (Verbose / Soft)
@@ -431,6 +466,7 @@ pub fn check_memory(settings: &XavierSettings, verbose: bool) -> Vec<CheckResult
             status: check_consist_status,
             detail: check_consist_detail,
             hint: check_consist_hint,
+            timed_out: false,
         });
     }
 
@@ -460,6 +496,7 @@ pub fn check_mesh(_settings: &XavierSettings) -> Vec<CheckResult> {
         } else {
             Some("Ensure system keyring service (e.g. secret-service/kwallet) is installed if hardware keystore is desired.".to_string())
         },
+        timed_out: false,
     });
 
     checks
@@ -521,6 +558,7 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
                     .to_string(),
             )
         },
+        timed_out: false,
     });
 
     // 2. LLM Model Installed (local provider only)
@@ -569,6 +607,7 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
                     expected_llm
                 ))
             },
+            timed_out: false,
         });
     } else {
         checks.push(DoctorCheck {
@@ -576,6 +615,7 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
             status: CheckStatus::Ok,
             detail: format!("Skipped Ollama LLM model check (provider='{provider}' is not local)"),
             hint: None,
+            timed_out: false,
         });
     }
 
@@ -627,6 +667,7 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
                     .to_string(),
             )
         },
+        timed_out: false,
     });
 
     // 4. Local LLM Probe Reachability
@@ -698,6 +739,7 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
                         .to_string(),
                 )
             },
+            timed_out: false,
         });
     } else {
         checks.push(DoctorCheck {
@@ -705,6 +747,7 @@ pub async fn check_http(settings: &XavierSettings, scan: &SystemScanResult) -> V
             status: CheckStatus::Ok,
             detail: format!("Skipped local LLM URL probe (provider='{provider}' is not local)"),
             hint: None,
+            timed_out: false,
         });
     }
 
@@ -726,6 +769,7 @@ pub fn check_security(_settings: &XavierSettings) -> Vec<CheckResult> {
             "No auth token set in environment (using default local access rules)".to_string()
         },
         hint: None,
+        timed_out: false,
     });
 
     checks
@@ -738,50 +782,258 @@ pub fn check_scheduler(_settings: &XavierSettings) -> Vec<CheckResult> {
         status: CheckStatus::Ok,
         detail: "Background cron / scheduler task queue operating normally".to_string(),
         hint: None,
+        timed_out: false,
     };
     vec![single]
 }
 
-/// Handle doctor diagnosis execution and report formatting.
-pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
-    let settings = XavierSettings::current();
-    let scan = scan_system(false).await;
+/// Runs an async probe future bounded by a per-probe timeout.
+pub async fn run_async_probe<Fut>(
+    name: &str,
+    budget: std::time::Duration,
+    fut: Fut,
+) -> Vec<DoctorCheck>
+where
+    Fut: std::future::Future<Output = Vec<DoctorCheck>>,
+{
+    match tokio::time::timeout(budget, fut).await {
+        Ok(checks) => checks,
+        Err(_) => vec![DoctorCheck::timed_out_check(name, budget)],
+    }
+}
 
-    let mut checks = Vec::new();
+/// Runs a blocking synchronous probe bounded by a per-probe timeout.
+pub async fn run_sync_probe<F>(
+    name: &'static str,
+    budget: std::time::Duration,
+    f: F,
+) -> Vec<DoctorCheck>
+where
+    F: FnOnce() -> Vec<DoctorCheck> + Send + 'static,
+{
+    let handle = tokio::task::spawn_blocking(f);
+    match tokio::time::timeout(budget, handle).await {
+        Ok(Ok(checks)) => checks,
+        Ok(Err(join_err)) => vec![DoctorCheck {
+            name: name.to_string(),
+            status: CheckStatus::Fail,
+            detail: format!("Probe '{}' failed to join: {}", name, join_err),
+            hint: None,
+            timed_out: false,
+        }],
+        Err(_) => vec![DoctorCheck::timed_out_check(name, budget)],
+    }
+}
 
-    checks.extend(check_database(&settings));
-    checks.extend(check_embeddings(&settings, &scan).await);
-    checks.extend(check_memory(&settings, verbose));
-    checks.extend(check_mesh(&settings));
-    checks.extend(check_http(&settings, &scan).await);
-    checks.extend(check_security(&settings));
-    checks.extend(check_scheduler(&settings));
-
-    let overall_status = if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
+/// Compute overall doctor status from a list of check results.
+pub fn compute_overall_status(checks: &[DoctorCheck]) -> CheckStatus {
+    if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
         CheckStatus::Fail
     } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Warn)) {
         CheckStatus::Warn
     } else {
         CheckStatus::Ok
+    }
+}
+
+/// Compute process exit code based on doctor overall status.
+pub fn doctor_exit_code(overall: CheckStatus) -> i32 {
+    match overall {
+        CheckStatus::Fail => 1,
+        CheckStatus::Ok | CheckStatus::Warn => 0,
+    }
+}
+
+/// Core logic to execute doctor checks with bounded timeouts on every probe.
+pub async fn execute_doctor_checks(
+    settings: &XavierSettings,
+    scan: &SystemScanResult,
+    verbose: bool,
+) -> DoctorReport {
+    let settings_db = settings.clone();
+    let db_probe = run_sync_probe("Database Access", DOCTOR_DATABASE_TIMEOUT, move || {
+        check_database(&settings_db)
+    });
+
+    let settings_emb = settings.clone();
+    let scan_emb = scan.clone();
+    let emb_probe = run_async_probe(
+        "Embedding Provider",
+        DOCTOR_EMBEDDINGS_TIMEOUT,
+        async move { check_embeddings(&settings_emb, &scan_emb).await },
+    );
+
+    let settings_mem = settings.clone();
+    let mem_probe = run_sync_probe("Memory Store", DOCTOR_MEMORY_TIMEOUT, move || {
+        check_memory(&settings_mem, verbose)
+    });
+
+    let settings_mesh = settings.clone();
+    let mesh_probe = run_sync_probe("Mesh Network", DOCTOR_MESH_TIMEOUT, move || {
+        check_mesh(&settings_mesh)
+    });
+
+    let settings_http = settings.clone();
+    let scan_http = scan.clone();
+    let http_probe = run_async_probe("HTTP / LLM Services", DOCTOR_HTTP_TIMEOUT, async move {
+        check_http(&settings_http, &scan_http).await
+    });
+
+    let settings_sec = settings.clone();
+    let sec_probe = run_sync_probe("Security Posture", DOCTOR_SECURITY_TIMEOUT, move || {
+        check_security(&settings_sec)
+    });
+
+    let settings_sched = settings.clone();
+    let sched_probe = run_sync_probe("Scheduler Status", DOCTOR_SCHEDULER_TIMEOUT, move || {
+        check_scheduler(&settings_sched)
+    });
+
+    let (db, emb, mem, mesh, http, sec, sched) = tokio::join!(
+        db_probe,
+        emb_probe,
+        mem_probe,
+        mesh_probe,
+        http_probe,
+        sec_probe,
+        sched_probe
+    );
+
+    let mut checks = Vec::new();
+    checks.extend(db);
+    checks.extend(emb);
+    checks.extend(mem);
+    checks.extend(mesh);
+    checks.extend(http);
+    checks.extend(sec);
+    checks.extend(sched);
+
+    let overall = compute_overall_status(&checks);
+
+    DoctorReport { checks, overall }
+}
+
+/// Fallback scan result when system scan times out.
+pub fn fallback_scan_result() -> SystemScanResult {
+    use crate::cli::handlers::system_scan::*;
+    use std::collections::HashMap;
+    SystemScanResult {
+        ollama: OllamaStatus {
+            installed: false,
+            running: false,
+            version: None,
+            models: vec![],
+            url: "http://localhost:11434".to_string(),
+        },
+        cli_agents: vec![],
+        gpu: GpuStatus {
+            detected: false,
+            vendor: None,
+            model: None,
+            vram_mb: None,
+            driver_version: None,
+            cuda_available: false,
+        },
+        docker: DockerStatus {
+            installed: false,
+            running: false,
+            version: None,
+            containers: vec![],
+        },
+        env_vars: HashMap::new(),
+        system_info: SystemInfo {
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+            cpus: 1,
+            memory_mb: 0,
+            xavier_version: env!("CARGO_PKG_VERSION").to_string(),
+        },
+    }
+}
+
+/// Renders doctor diagnostic output as a String without printing or exiting.
+pub fn render_doctor_output(report: &DoctorReport, format: &str) -> Result<String> {
+    match format {
+        "json" => Ok(serde_json::to_string_pretty(report)?),
+        "markdown" => Ok(format_as_markdown(&report.checks)),
+        _ => Ok(format_table_output(&report.checks)),
+    }
+}
+
+/// Handle doctor diagnosis execution and report formatting.
+pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
+    let settings = XavierSettings::current();
+
+    // Overall deadline safety net
+    let report_res = tokio::time::timeout(DOCTOR_TOTAL_TIMEOUT, async {
+        let (scan, scan_timed_out) =
+            match tokio::time::timeout(DOCTOR_SCAN_TIMEOUT, scan_system(false)).await {
+                Ok(s) => (s, false),
+                Err(_) => {
+                    tracing::warn!("system scan timed out after {:?}", DOCTOR_SCAN_TIMEOUT);
+                    (fallback_scan_result(), true)
+                }
+            };
+
+        let mut report = execute_doctor_checks(&settings, &scan, verbose).await;
+        if scan_timed_out {
+            report.checks.insert(
+                0,
+                DoctorCheck {
+                    name: "System Scan".to_string(),
+                    status: CheckStatus::Warn,
+                    detail: format!("System scan timed out after {:?}", DOCTOR_SCAN_TIMEOUT),
+                    hint: Some("Host under heavy load or hung subprocess".to_string()),
+                    timed_out: true,
+                },
+            );
+            report.overall = compute_overall_status(&report.checks);
+        }
+        report
+    })
+    .await;
+
+    let report = match report_res {
+        Ok(rep) => rep,
+        Err(_) => {
+            tracing::error!(
+                "doctor total diagnostic deadline exceeded ({:?})",
+                DOCTOR_TOTAL_TIMEOUT
+            );
+            DoctorReport {
+                checks: vec![DoctorCheck {
+                    name: "Total Diagnostic Deadline".to_string(),
+                    status: CheckStatus::Fail,
+                    detail: format!(
+                        "Doctor diagnosis timed out after {:?}",
+                        DOCTOR_TOTAL_TIMEOUT
+                    ),
+                    hint: Some("Host is under extreme resource pressure".to_string()),
+                    timed_out: true,
+                }],
+                overall: CheckStatus::Fail,
+            }
+        }
     };
 
-    let report = DoctorReport {
-        checks: checks.clone(),
-        overall: overall_status,
-    };
-
+    let rendered = render_doctor_output(&report, &format)?;
     match format.as_str() {
-        "json" => println!("{}", serde_json::to_string_pretty(&report)?),
-        "markdown" => println!("{}", format_as_markdown(&checks)),
-        _ => print_table_output(&checks),
+        "json" | "markdown" => println!("{}", rendered),
+        _ => print!("{}", rendered),
+    }
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+
+    let exit_code = doctor_exit_code(report.overall);
+    // A timed-out spawn_blocking probe keeps its thread alive and the tokio runtime
+    // waits for it on shutdown, so returning normally would hang after printing.
+    let any_timed_out = report.checks.iter().any(|c| c.timed_out);
+    if exit_code != 0 || any_timed_out {
+        #[cfg(not(test))]
+        std::process::exit(exit_code);
     }
 
-    let any_failed = checks.iter().any(|c| matches!(c.status, CheckStatus::Fail));
-    if any_failed {
-        std::process::exit(1);
-    } else {
-        std::process::exit(0);
-    }
+    Ok(())
 }
 
 /// True when embeddings should be validated against a local Ollama install.
@@ -836,24 +1088,39 @@ fn format_as_markdown(checks: &[DoctorCheck]) -> String {
     lines.join("\n")
 }
 
-fn print_table_output(checks: &[DoctorCheck]) {
-    println!();
-    println!("  Xavier Doctor Diagnostic Report");
-    println!("{}", "=".repeat(120));
-    println!("  {:<8} | {:<30} | {:<75}", "Status", "Check", "Detail");
-    println!("{}", "=".repeat(120));
+pub fn format_table_output(checks: &[DoctorCheck]) -> String {
+    let mut out = String::new();
+    out.push('\n');
+    out.push_str("  Xavier Doctor Diagnostic Report\n");
+    out.push_str(&"=".repeat(120));
+    out.push('\n');
+    out.push_str(&format!(
+        "  {:<8} | {:<30} | {:<75}\n",
+        "Status", "Check", "Detail"
+    ));
+    out.push_str(&"=".repeat(120));
+    out.push('\n');
     for check in checks {
         let status_icon = match check.status {
             CheckStatus::Ok => "  [✓] OK",
             CheckStatus::Warn => "  [⚠] WARN",
             CheckStatus::Fail => "  [✗] FAIL",
         };
-        println!("{:<8} | {:<30} | {}", status_icon, check.name, check.detail);
+        out.push_str(&format!(
+            "{:<8} | {:<30} | {}\n",
+            status_icon, check.name, check.detail
+        ));
         if let Some(ref hint) = check.hint {
-            println!("{:<8} | {:<30} | Hint: {}", "", "", hint);
+            out.push_str(&format!("{:<8} | {:<30} | Hint: {}\n", "", "", hint));
         }
-        println!("{}", "-".repeat(120));
+        out.push_str(&"-".repeat(120));
+        out.push('\n');
     }
+    out
+}
+
+pub fn print_table_output(checks: &[DoctorCheck]) {
+    print!("{}", format_table_output(checks));
 }
 
 #[cfg(test)]
@@ -908,12 +1175,14 @@ mod tests {
                     status: CheckStatus::Ok,
                     detail: "All good".to_string(),
                     hint: None,
+                    timed_out: false,
                 },
                 DoctorCheck {
                     name: "Warning Check".to_string(),
                     status: CheckStatus::Warn,
                     detail: "Attention required".to_string(),
                     hint: Some("Check logs".to_string()),
+                    timed_out: false,
                 },
             ],
             overall: CheckStatus::Warn,
@@ -1016,5 +1285,121 @@ mod tests {
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0].name, "Scheduler Status");
         assert_eq!(checks[0].status, CheckStatus::Ok);
+    }
+
+    #[tokio::test]
+    async fn doctor_completes_when_a_probe_hangs() {
+        let budget = std::time::Duration::from_millis(50);
+        let hanging_probe = async { std::future::pending::<Vec<DoctorCheck>>().await };
+
+        let start = std::time::Instant::now();
+        let checks = run_async_probe("Hanging Probe", budget, hanging_probe).await;
+        let elapsed = start.elapsed();
+
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].name, "Hanging Probe");
+        assert!(checks[0].timed_out);
+        assert!(matches!(checks[0].status, CheckStatus::Warn));
+        assert!(checks[0].detail.contains("timed out"));
+        assert!(elapsed < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn doctor_prints_output_even_with_timed_out_checks() {
+        let report = DoctorReport {
+            checks: vec![
+                DoctorCheck {
+                    name: "Database Access".to_string(),
+                    status: CheckStatus::Ok,
+                    detail: "Database accessible".to_string(),
+                    hint: None,
+                    timed_out: false,
+                },
+                DoctorCheck {
+                    name: "Hanging Network Probe".to_string(),
+                    status: CheckStatus::Warn,
+                    detail: "Probe 'Hanging Network Probe' timed out after 5s".to_string(),
+                    hint: Some("Check network responsiveness".to_string()),
+                    timed_out: true,
+                },
+            ],
+            overall: CheckStatus::Warn,
+        };
+
+        // 1. JSON output contains probe name and timed_out marker
+        let json_output =
+            render_doctor_output(&report, "json").expect("json rendering should succeed");
+        assert!(!json_output.is_empty());
+        assert!(json_output.contains("Hanging Network Probe"));
+        assert!(json_output.contains("\"timed_out\": true"));
+
+        // 2. Markdown output renders table and contains probe name
+        let md_output =
+            render_doctor_output(&report, "markdown").expect("markdown rendering should succeed");
+        assert!(!md_output.is_empty());
+        assert!(md_output.contains("Hanging Network Probe"));
+        assert!(md_output.contains("timed out"));
+
+        // 3. Table output renders ASCII table and contains probe name
+        let table_output =
+            render_doctor_output(&report, "table").expect("table rendering should succeed");
+        assert!(!table_output.is_empty());
+        assert!(table_output.contains("Hanging Network Probe"));
+        assert!(table_output.contains("timed out"));
+    }
+
+    #[test]
+    fn doctor_exit_code_reflects_overall_status() {
+        assert_eq!(doctor_exit_code(CheckStatus::Ok), 0);
+        assert_eq!(doctor_exit_code(CheckStatus::Warn), 0);
+        assert_eq!(doctor_exit_code(CheckStatus::Fail), 1);
+
+        let ok_checks = vec![DoctorCheck {
+            name: "Database".to_string(),
+            status: CheckStatus::Ok,
+            detail: "ok".to_string(),
+            hint: None,
+            timed_out: false,
+        }];
+        assert_eq!(compute_overall_status(&ok_checks), CheckStatus::Ok);
+        assert_eq!(doctor_exit_code(compute_overall_status(&ok_checks)), 0);
+
+        let warn_checks = vec![
+            DoctorCheck {
+                name: "Database".to_string(),
+                status: CheckStatus::Ok,
+                detail: "ok".to_string(),
+                hint: None,
+                timed_out: false,
+            },
+            DoctorCheck {
+                name: "Slow Probe".to_string(),
+                status: CheckStatus::Warn,
+                detail: "timed out".to_string(),
+                hint: None,
+                timed_out: true,
+            },
+        ];
+        assert_eq!(compute_overall_status(&warn_checks), CheckStatus::Warn);
+        assert_eq!(doctor_exit_code(compute_overall_status(&warn_checks)), 0);
+
+        let fail_checks = vec![
+            DoctorCheck {
+                name: "Database".to_string(),
+                status: CheckStatus::Fail,
+                detail: "corrupt".to_string(),
+                hint: None,
+                timed_out: false,
+            },
+            DoctorCheck {
+                name: "Slow Probe".to_string(),
+                status: CheckStatus::Warn,
+                detail: "timed out".to_string(),
+                hint: None,
+                timed_out: true,
+            },
+        ];
+        assert_eq!(compute_overall_status(&fail_checks), CheckStatus::Fail);
+        assert_eq!(doctor_exit_code(compute_overall_status(&fail_checks)), 1);
     }
 }
