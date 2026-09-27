@@ -27,6 +27,10 @@ static MESH_TELEMETRY: std::sync::OnceLock<Arc<MeshTelemetryCollector>> =
 /// Global health registry
 static HEALTH_REGISTRY: std::sync::OnceLock<Arc<RwLock<HealthState>>> = std::sync::OnceLock::new();
 
+/// Share of memory records that carry an embedding.
+///
+/// `total == 0` means coverage was not measured (no store found or no records),
+/// never perfect coverage: `percent` is 0.0 and `status` is `"unknown"`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmbeddingCoverage {
     pub indexed: u64,
@@ -40,8 +44,8 @@ impl Default for EmbeddingCoverage {
         Self {
             indexed: 0,
             total: 0,
-            percent: 100.0,
-            status: "healthy".to_string(),
+            percent: 0.0,
+            status: "unknown".to_string(),
         }
     }
 }
@@ -64,6 +68,11 @@ pub struct HealthResponse {
     pub dependency_graph: ComponentDependencyGraph,
     pub checks: Vec<HealthCheck>,
     pub embedding_coverage: EmbeddingCoverage,
+    /// Why `status` is not `healthy`, as `host:<check>` (resource pressure on
+    /// the machine) or `subsystem:<check>` (a Xavier component failing).
+    /// Empty when `status == "healthy"`.
+    #[serde(default)]
+    pub degraded_reasons: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -306,6 +315,32 @@ pub fn mesh_telemetry() -> Option<Arc<MeshTelemetryCollector>> {
     MESH_TELEMETRY.get().cloned()
 }
 
+const STALE_SNAPSHOT_REASON: &str = "health:probe_unavailable_serving_cached_snapshot";
+const NO_SNAPSHOT_REASON: &str = "health:probe_unavailable_no_snapshot";
+
+/// Checks that measure the host machine rather than a Xavier component.
+const HOST_CHECKS: &[&str] = &["disk_space", "memory"];
+
+/// Machine-readable causes for a non-healthy `status`, derived from the
+/// non-passing checks. Empty when `status` is `healthy`.
+fn degraded_reasons_for(checks: &[HealthCheck], status: &str) -> Vec<String> {
+    if status == "healthy" {
+        return Vec::new();
+    }
+    checks
+        .iter()
+        .filter(|c| !matches!(c.status, CheckStatus::Pass))
+        .map(|c| {
+            let scope = if HOST_CHECKS.contains(&c.name.as_str()) {
+                "host"
+            } else {
+                "subsystem"
+            };
+            format!("{scope}:{}", c.name)
+        })
+        .collect()
+}
+
 /// Synchronous version — called from axum handlers.
 ///
 /// Spawns a dedicated OS thread with its own multi-threaded tokio runtime
@@ -328,6 +363,9 @@ fn fast_degraded_health_fallback() -> HealthResponse {
                 dependency_graph: reg.dependency_graph.clone(),
                 checks: reg.checks.clone(),
                 embedding_coverage: reg.embedding_coverage.clone(),
+                degraded_reasons: std::iter::once(STALE_SNAPSHOT_REASON.to_string())
+                    .chain(degraded_reasons_for(&reg.checks, "degraded"))
+                    .collect(),
             };
         }
     }
@@ -375,6 +413,7 @@ fn fast_degraded_health_fallback() -> HealthResponse {
         dependency_graph: ComponentDependencyGraph::default(),
         checks: vec![],
         embedding_coverage: EmbeddingCoverage::default(),
+        degraded_reasons: vec![NO_SNAPSHOT_REASON.to_string()],
     }
 }
 
@@ -546,11 +585,11 @@ pub fn gather_embedding_coverage(settings: &XavierSettings) -> EmbeddingCoverage
         }
     }
 
-    let percent = if found && total > 0 {
-        (indexed as f64 / total as f64) * 100.0
-    } else {
-        100.0
-    };
+    if !found || total == 0 {
+        return EmbeddingCoverage::default();
+    }
+
+    let percent = (indexed as f64 / total as f64) * 100.0;
 
     let status = if percent < 50.0 {
         "unhealthy"
@@ -904,7 +943,9 @@ async fn collect_health_impl(
     }
 
     // 5. Embedding coverage check
-    let coverage_check_status = if embedding_coverage.percent < 50.0 {
+    let coverage_check_status = if embedding_coverage.total == 0 {
+        CheckStatus::Warn
+    } else if embedding_coverage.percent < 50.0 {
         CheckStatus::Fail
     } else if embedding_coverage.percent < 80.0 {
         CheckStatus::Warn
@@ -961,6 +1002,7 @@ async fn collect_health_impl(
         telegram,
         auth: crate::security::auth::AuthHealth::default(),
         dependency_graph: dependency_graph.clone(),
+        degraded_reasons: degraded_reasons_for(&checks, overall_status),
         checks,
         embedding_coverage,
     };
@@ -1601,6 +1643,76 @@ mod tests {
             timestamp_secs: 0,
         }];
         assert_eq!(prioritize_status(&warn_checks), "warn");
+    }
+
+    fn check(name: &str, status: CheckStatus) -> HealthCheck {
+        HealthCheck {
+            name: name.into(),
+            status,
+            detail: String::new(),
+            timestamp_secs: 0,
+        }
+    }
+
+    #[test]
+    fn embedding_coverage_default_is_not_healthy_when_empty() {
+        let coverage = EmbeddingCoverage::default();
+        assert_eq!(coverage.total, 0);
+        assert_eq!(coverage.percent, 0.0);
+        assert_eq!(coverage.status, "unknown");
+    }
+
+    #[test]
+    fn embedding_coverage_unmeasured_store_is_unknown() {
+        let mut settings = XavierSettings::default();
+        let dir = tempfile::tempdir().unwrap();
+        settings.memory.data_dir = dir.path().to_string_lossy().into_owned();
+        settings.memory.vec_path = String::new();
+        settings.memory.sqlite_path = String::new();
+        let coverage = gather_embedding_coverage(&settings);
+        assert_ne!(
+            coverage.status, "healthy",
+            "no records must not read as healthy"
+        );
+        assert_eq!(coverage.percent, 0.0);
+    }
+
+    #[test]
+    fn degraded_reasons_distinguishes_host_pressure_from_subsystem_failure() {
+        let host_only = [
+            check("memory", CheckStatus::Warn),
+            check("embedding", CheckStatus::Pass),
+        ];
+        assert_eq!(
+            degraded_reasons_for(&host_only, "warn"),
+            vec!["host:memory".to_string()]
+        );
+
+        let subsystem = [
+            check("disk_space", CheckStatus::Pass),
+            check("embedding", CheckStatus::Fail),
+        ];
+        assert_eq!(
+            degraded_reasons_for(&subsystem, "degraded"),
+            vec!["subsystem:embedding".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn degraded_reasons_empty_when_status_healthy() {
+        let checks = [check("memory", CheckStatus::Warn)];
+        assert!(degraded_reasons_for(&checks, "healthy").is_empty());
+
+        // Invariant on the real collector: reasons are present iff status is not healthy.
+        let settings = XavierSettings::default();
+        let health = collect_health_impl(&settings, None, 10.0, 10, 1000, 10.0, 100.0).await;
+        assert_eq!(
+            health.status == "healthy",
+            health.degraded_reasons.is_empty(),
+            "status={} reasons={:?}",
+            health.status,
+            health.degraded_reasons
+        );
     }
 }
 

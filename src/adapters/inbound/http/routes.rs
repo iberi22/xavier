@@ -309,6 +309,7 @@ pub struct RouteHealthResponse {
     pub dependency_graph: crate::health::ComponentDependencyGraph,
     pub checks: Vec<RouteHealthCheck>,
     pub embedding_coverage: crate::health::EmbeddingCoverage,
+    pub degraded_reasons: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -390,6 +391,7 @@ async fn health_handler() -> impl axum::response::IntoResponse {
             })
             .collect(),
         embedding_coverage: health.embedding_coverage,
+        degraded_reasons: health.degraded_reasons,
     })
 }
 
