@@ -346,7 +346,7 @@ fn degraded_reasons_for(checks: &[HealthCheck], status: &str) -> Vec<String> {
 /// Spawns a dedicated OS thread with its own multi-threaded tokio runtime
 /// so that sysinfo calls and async health gathering never collide with
 /// any existing tokio context (e.g. `#[tokio::test]`).
-fn fast_degraded_health_fallback() -> HealthResponse {
+pub(crate) fn fast_degraded_health_fallback() -> HealthResponse {
     if let Some(registry) = health_registry() {
         if let Ok(reg) = registry.try_read() {
             let uptime = reg.started_at.elapsed().unwrap_or_default().as_secs();
