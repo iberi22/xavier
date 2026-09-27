@@ -153,6 +153,30 @@ fn is_workspace_repo(workspace_dir: &std::path::Path, requested: &ResolvedRepo) 
     workspace_repo_root(workspace_dir) == requested.root
 }
 
+/// An on-disk index older than this is reported as stale.
+const STALE_INDEX_AFTER_SECS: u64 = 24 * 60 * 60;
+
+/// Freshness of the on-disk index for a repo: age + `last_modified`.
+///
+/// Staleness is only REPORTED here — reindexing is never triggered
+/// implicitly.
+fn index_freshness_json(db_path: &std::path::Path) -> serde_json::Value {
+    let modified = std::fs::metadata(db_path)
+        .ok()
+        .and_then(|meta| meta.modified().ok());
+    let age_seconds = modified
+        .and_then(|time| time.elapsed().ok())
+        .map(|age| age.as_secs());
+    serde_json::json!({
+        "path": db_path.to_string_lossy(),
+        "present": db_path.exists(),
+        "last_modified": modified
+            .map(|time| chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339()),
+        "index_age_seconds": age_seconds,
+        "stale": age_seconds.is_some_and(|secs| secs > STALE_INDEX_AFTER_SECS),
+    })
+}
+
 /// Shared `repo` echo object for per-repo responses.
 fn repo_json(r: &ResolvedRepo) -> serde_json::Value {
     serde_json::json!({
@@ -161,6 +185,7 @@ fn repo_json(r: &ResolvedRepo) -> serde_json::Value {
         "indexed_commit": r.indexed_commit,
         "head": r.head,
         "stale": r.stale,
+        "index": index_freshness_json(&r.db_path),
     })
 }
 
@@ -207,6 +232,7 @@ async fn legacy_stats_json(state: &CliState) -> serde_json::Value {
                 "total_symbols": stats.total_symbols,
                 "total_imports": stats.total_imports,
                 "languages": stats.languages,
+                "index": index_freshness_json(&db_path),
                 "degraded": empty,
                 "warning": if empty {
                     Some("CodeGraph vacío (total_symbols=0). Ejecuta `xavier code scan .` o `xavier code sync --git`.")
@@ -397,23 +423,83 @@ pub async fn code_memories_handler(
     }))
 }
 
+/// Resolve a requested target path against `base` (the caller's cwd).
+///
+/// Returns `(requested, resolved)`: `requested` is echoed verbatim so a
+/// caller can see exactly what was asked for, `resolved` is what will
+/// actually be read/written. A missing argument means `base` — never the
+/// configured project root, which is how `dump` used to silently discard
+/// its path argument.
+///
+/// `base` is a parameter (not read from the process) so the precedence is
+/// testable without mutating the process-wide cwd.
+fn resolve_target_path_from(requested: Option<&str>, base: &std::path::Path) -> (String, String) {
+    let requested = requested.unwrap_or(".").to_string();
+    let raw = PathBuf::from(&requested);
+    let abs = if raw.is_absolute() {
+        raw
+    } else {
+        base.join(raw)
+    };
+    let resolved = abs.canonicalize().unwrap_or(abs);
+    (requested, resolved.to_string_lossy().into_owned())
+}
+
+/// [`resolve_target_path_from`] with the process cwd as base.
+fn resolve_target_path(requested: Option<&str>) -> (String, String) {
+    let base = std::env::current_dir().unwrap_or_default();
+    resolve_target_path_from(requested, &base)
+}
+
+/// Log a dump/load target that lies outside the daemon workspace.
+///
+/// Unlike [`code_scan_handler`], these two endpoints are deliberately NOT
+/// workspace-contained: `xavier code dump <repo>` exists precisely to dump
+/// codebases other than the daemon's own workspace (WAVE-29.08), and the
+/// route is behind `auth_middleware`. The target is therefore surfaced in
+/// the log and echoed back to the caller, not blocked.
+fn log_out_of_workspace_target(state: &CliState, resolved: &str) {
+    let workspace_root = std::path::absolute(&state.workspace_dir)
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let target = PathBuf::from(resolved);
+    let target = target.canonicalize().unwrap_or(target);
+    if !target.starts_with(&workspace_root) {
+        warn!(
+            "code dump/load target {} is outside the daemon workspace {}",
+            target.display(),
+            workspace_root.display()
+        );
+    }
+}
+
 /// Code dump handler.
 pub async fn code_dump_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
 ) -> impl axum::response::IntoResponse {
-    let path = payload.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+    let (requested_path, resolved_path) =
+        resolve_target_path(payload.get("path").and_then(|v| v.as_str()));
+    info!(
+        "Code dump request: requested={} resolved={}",
+        requested_path, resolved_path
+    );
+    log_out_of_workspace_target(&state, &resolved_path);
 
     let code_graph = state.code_graph.read().await;
-    match perform_dump(&code_graph, path).await {
+    match perform_dump(&code_graph, &resolved_path).await {
         Ok(dump_path) => axum::Json(serde_json::json!({
             "status": "ok",
             "message": format!("Code graph dumped to {}", dump_path.display()),
             "path": dump_path.to_string_lossy(),
+            "requested_path": requested_path,
+            "resolved_path": resolved_path,
         })),
         Err(error) => axum::Json(serde_json::json!({
             "status": "error",
             "message": error.to_string(),
+            "requested_path": requested_path,
+            "resolved_path": resolved_path,
         })),
     }
 }
@@ -423,20 +509,30 @@ pub async fn code_load_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
 ) -> impl axum::response::IntoResponse {
-    let path = payload.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+    let (requested_path, resolved_path) =
+        resolve_target_path(payload.get("path").and_then(|v| v.as_str()));
+    info!(
+        "Code load request: requested={} resolved={}",
+        requested_path, resolved_path
+    );
+    log_out_of_workspace_target(&state, &resolved_path);
 
-    match perform_load(path).await {
+    match perform_load(&resolved_path).await {
         Ok(new_state) => {
             let mut code_graph = state.code_graph.write().await;
             *code_graph = new_state;
             axum::Json(serde_json::json!({
                 "status": "ok",
                 "message": "Code graph loaded successfully from dump",
+                "requested_path": requested_path,
+                "resolved_path": resolved_path,
             }))
         }
         Err(error) => axum::Json(serde_json::json!({
             "status": "error",
             "message": error.to_string(),
+            "requested_path": requested_path,
+            "resolved_path": resolved_path,
         })),
     }
 }
@@ -446,7 +542,7 @@ pub async fn code_scan_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<CodeScanPayload>,
 ) -> impl axum::response::IntoResponse {
-    let requested_path = payload.path.unwrap_or_else(|| ".".to_string());
+    let (requested_path, resolved_path) = resolve_target_path(payload.path.as_deref());
 
     let sec_result = state
         .security
@@ -484,13 +580,7 @@ pub async fn code_scan_handler(
     let workspace_root = std::path::absolute(&state.workspace_dir)
         .map(|p| p.canonicalize().unwrap_or(p))
         .unwrap_or_else(|_| PathBuf::from("."));
-    let Ok(abs_path) = std::path::absolute(&requested_path) else {
-        return axum::Json(serde_json::json!({
-            "status": "error",
-            "message": "invalid path",
-            "indexed_files": 0,
-        }));
-    };
+    let abs_path = PathBuf::from(&resolved_path);
     let target = abs_path.canonicalize().unwrap_or_else(|_| abs_path.clone());
     if !target.starts_with(&workspace_root) {
         warn!(
@@ -505,8 +595,11 @@ pub async fn code_scan_handler(
         }));
     }
 
-    let path = requested_path;
-    info!("Code scan request: path={}", path);
+    let path = resolved_path.clone();
+    info!(
+        "Code scan request: requested={} resolved={}",
+        requested_path, path
+    );
 
     // Consent-first Colby sidecar (server usually non-TTY → skip/honour env). Soft-fail.
     let sidecar = ensure_sidecar_for_workspace(&state.workspace_dir);
@@ -546,6 +639,8 @@ pub async fn code_scan_handler(
                 "codegraph_dump_path": dump_path_str,
                 "codegraph_dump_success": dump_success,
                 "message": format!("Scan complete. {}{}", stats.to_string(), dump_msg),
+                "requested_path": requested_path,
+                "resolved_path": resolved_path,
             }))
         }
         Err(error) => axum::Json(serde_json::json!({
@@ -1581,14 +1676,23 @@ pub async fn code_hubs_handler(State(state): State<CliState>) -> impl axum::resp
         Ok(hubs) => {
             let (items, truncated, estimated_tokens) =
                 truncate_json_items(hubs, default_graph_budget());
-            axum::Json(serde_json::json!({
+            let mut body = serde_json::json!({
                 "status": "ok",
                 "count": items.len(),
                 "min_degree": default_min_degree(),
                 "estimated_tokens": estimated_tokens,
                 "_truncated": truncated,
                 "results": items,
-            }))
+            });
+            // An empty hub list is never a bare []: say why it is empty.
+            if body["count"] == 0 {
+                body["reason"] = serde_json::json!(format!(
+                    "no significant hubs: trivial symbols ({}, with_*) are excluded from hub ranking; \
+                     reindex with `xavier code scan .` if the graph looks empty",
+                    code_graph::query::TRIVIAL_HUB_NAMES.join(", ")
+                ));
+            }
+            axum::Json(body)
         }
         Err(error) => axum::Json(serde_json::json!({
             "status": "error",
@@ -3017,5 +3121,251 @@ mod tests {
         assert_eq!(res["changed_files"], 1);
         assert!(res.get("changed_symbols").is_some());
         assert!(res.get("covering_tests").is_some());
+    }
+
+    // ── WAVE-29.08: dump honours its path argument ────────────────────
+    // `xavier code dump .` used to ignore the argument and write to the
+    // configured project root. These tests pin the resolution: explicit
+    // argument wins, absent argument means the cwd, and the reported
+    // path is the file actually written.
+    //
+    // No test here touches the process cwd or the real repo: the "no
+    // argument" case injects the base dir into `resolve_target_path_from`
+    // instead, because `set_current_dir` is process-global and would race
+    // every other test in this binary.
+
+    /// A target directory that looks like a repo (so dump resolves to it).
+    fn w2908_target(parent: &std::path::Path, name: &str) -> PathBuf {
+        let dir = parent.join(name);
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn dump_respects_explicit_path_argument() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = w2908_target(tmp.path(), "w2908-explicit");
+        let daemon_ws = w2908_target(tmp.path(), "w2908-daemon-ws");
+        let state = xav01_test_state(daemon_ws.clone()).await;
+
+        let body = xav01_body(code_dump_handler(
+            State(state),
+            axum::Json(serde_json::json!({ "path": target.to_string_lossy() })),
+        ))
+        .await;
+
+        assert_eq!(body["status"], "ok");
+        let expected = crate::cli::code_dump::codegraph_dump_path_for_target(
+            target.canonicalize().unwrap().to_str().unwrap(),
+        );
+        assert_eq!(body["path"], expected.to_string_lossy().as_ref());
+        assert_eq!(
+            body["resolved_path"],
+            target.canonicalize().unwrap().to_string_lossy().as_ref()
+        );
+        assert!(expected.exists(), "dump must land under the requested path");
+        assert!(
+            !body["path"]
+                .as_str()
+                .unwrap()
+                .starts_with(daemon_ws.to_str().unwrap()),
+            "dump must not fall back to the daemon project root"
+        );
+    }
+
+    #[tokio::test]
+    async fn dump_respects_cwd_when_no_argument() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = w2908_target(tmp.path(), "w2908-cwd");
+        let daemon_ws = w2908_target(tmp.path(), "w2908-daemon-ws2");
+        let state = xav01_test_state(daemon_ws.clone()).await;
+        let base = target.canonicalize().unwrap();
+
+        // The resolution contract: no `path` means the caller's cwd. The base
+        // is injected so the assertion never mutates the process cwd.
+        let (requested, resolved) = resolve_target_path_from(None, &base);
+        assert_eq!(requested, ".", "an absent argument is echoed as `.`");
+        assert_eq!(resolved, base.to_string_lossy());
+
+        // A relative argument resolves against the same base, never against
+        // the daemon's startup workspace.
+        let (_, relative) = resolve_target_path_from(Some("."), &base);
+        assert_eq!(relative, base.to_string_lossy());
+
+        // The write side of the same contract: dumping the cwd-resolved
+        // target lands under it, not under the daemon project root.
+        let body = xav01_body(code_dump_handler(
+            State(state),
+            axum::Json(serde_json::json!({ "path": resolved })),
+        ))
+        .await;
+
+        assert_eq!(body["status"], "ok");
+        let expected = crate::cli::code_dump::codegraph_dump_path_for_target(&resolved);
+        assert_eq!(body["path"], expected.to_string_lossy().as_ref());
+        assert_eq!(body["resolved_path"], base.to_string_lossy().as_ref());
+        assert!(expected.exists());
+        assert!(
+            !body["path"]
+                .as_str()
+                .unwrap()
+                .starts_with(daemon_ws.to_str().unwrap()),
+            "no argument must mean the cwd, not the daemon project root"
+        );
+    }
+
+    #[tokio::test]
+    async fn dump_present_matches_actual_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = w2908_target(tmp.path(), "w2908-presence");
+        let state = xav01_test_state(tmp.path().to_path_buf()).await;
+
+        let body = xav01_body(code_dump_handler(
+            State(state),
+            axum::Json(serde_json::json!({ "path": target.to_string_lossy() })),
+        ))
+        .await;
+        assert_eq!(body["status"], "ok");
+        let reported = body["path"].as_str().unwrap().to_string();
+
+        // The single source of truth for the dump location agrees with
+        // what the handler reported...
+        let expected = crate::cli::code_dump::codegraph_dump_path_for_target(&reported);
+        assert_eq!(expected.to_str().unwrap(), reported);
+        assert!(expected.exists());
+
+        // ...and the loader finds the very same file, so a dump can
+        // never be written where the presence check looks for it.
+        assert!(
+            crate::cli::code_dump::perform_load(&reported).await.is_ok(),
+            "loader must resolve the dump the writer just wrote"
+        );
+    }
+
+    #[tokio::test]
+    async fn hubs_exclude_generic_constructors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = xav01_test_state(tmp.path().to_path_buf()).await;
+
+        {
+            let code_graph = state.code_graph.read().await;
+            let db = &code_graph.db;
+            let sym = |stable_id: &str, name: &str, file: &str| Symbol {
+                id: None,
+                stable_id: Some(stable_id.to_string()),
+                name: name.to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: file.to_string(),
+                start_line: 1,
+                end_line: 2,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                parent: None,
+                complexity: None,
+            };
+            let call = |from: &str, to: &str| CodeEdge {
+                id: None,
+                from_symbol: from.to_string(),
+                to_symbol: to.to_string(),
+                edge_type: code_graph::types::EdgeType::Calls,
+                file_path: "src/lib.rs".to_string(),
+                line: 1,
+                confidence: 1.0,
+                metadata: None,
+            };
+
+            // Six `new` constructors are called by everything — the
+            // reported bug ranked every generic constructor as a hub.
+            for i in 0..6 {
+                db.insert_symbol(&sym(
+                    &format!("new-{}", i),
+                    "new",
+                    &format!("src/type{}.rs", i),
+                ))
+                .unwrap();
+                for j in 0..3 {
+                    let leaf = format!("leaf-{}-{}", i, j);
+                    db.insert_symbol(&sym(&leaf, &format!("leaf_{}_{}", i, j), "src/leaf.rs"))
+                        .unwrap();
+                    db.insert_edge(&call(&leaf, &format!("new-{}", i))).unwrap();
+                }
+            }
+            // A real architectural hub, and a duplicated real name. Every
+            // symbol asserted below MUST clear `default_min_degree()`, or the
+            // SQL filter in `hub_nodes` drops it before ranking sees it and the
+            // assertion becomes vacuous.
+            db.insert_symbol(&sym("auth-0", "authenticate", "src/auth.rs"))
+                .unwrap();
+            for i in 0..3 {
+                let route = format!("route-{}", i);
+                db.insert_symbol(&sym(&route, "route", "src/route.rs"))
+                    .unwrap();
+                db.insert_edge(&call(&route, "auth-0")).unwrap();
+                for k in 0..3 {
+                    let caller = format!("rcall-{}-{}", i, k);
+                    db.insert_symbol(&sym(
+                        &caller,
+                        &format!("caller_{}_{}", i, k),
+                        "src/caller.rs",
+                    ))
+                    .unwrap();
+                    db.insert_edge(&call(&caller, &route)).unwrap();
+                }
+            }
+            db.insert_symbol(&sym("with-0", "with_capacity", "src/buf.rs"))
+                .unwrap();
+            db.insert_edge(&call("with-0", "auth-0")).unwrap();
+            for k in 0..3 {
+                let caller = format!("wcall-{}", k);
+                db.insert_symbol(&sym(&caller, &format!("buf_caller_{}", k), "src/caller.rs"))
+                    .unwrap();
+                db.insert_edge(&call(&caller, "with-0")).unwrap();
+            }
+
+            // Fixture guard: the ranker's own output must contain the symbols
+            // the name assertions below depend on.
+            let ranked: Vec<String> = db
+                .hub_nodes(default_min_degree(), 1000)
+                .expect("raw hubs")
+                .into_iter()
+                .map(|hub| hub.symbol.name)
+                .collect();
+            for needed in ["route", "with_capacity", "authenticate", "new"] {
+                assert!(
+                    ranked.iter().any(|name| name == needed),
+                    "fixture symbol `{needed}` is below min_degree and would never be ranked: {ranked:?}"
+                );
+            }
+        }
+
+        let body = xav01_body(code_hubs_handler(State(state))).await;
+        assert_eq!(body["status"], "ok");
+        assert!(body["count"].as_u64().unwrap() > 0);
+        let names: Vec<&str> = body["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|hub| hub["symbol"]["name"].as_str().unwrap())
+            .collect();
+
+        assert!(
+            !names.contains(&"new"),
+            "generic constructors must not be hubs: {names:?}"
+        );
+        assert!(
+            !names.contains(&"with_capacity"),
+            "with_* must not be hubs: {names:?}"
+        );
+        assert!(
+            names.contains(&"authenticate"),
+            "real hubs survive: {names:?}"
+        );
+        assert_eq!(
+            names.iter().filter(|n| **n == "route").count(),
+            1,
+            "duplicate names must be deduped: {names:?}"
+        );
     }
 }

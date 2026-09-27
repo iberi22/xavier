@@ -65,8 +65,7 @@ fn perform_dump_blocking(
     let hotspots = query.hotspots(0.0, 100)?;
     let hubs = query.hubs(0, 100)?;
 
-    let repo_root = find_repo_root(scanned_path);
-    let dump_path = xavier::codebase::codegraph_paths::codegraph_dump_path_for(&repo_root);
+    let dump_path = codegraph_dump_path_for_target(scanned_path);
     if let Some(parent) = dump_path.parent() {
         let parent_path: &Path = parent;
         if !parent_path.exists() {
@@ -74,8 +73,10 @@ fn perform_dump_blocking(
         }
     }
 
+    // `<root>/.xavier/codegraph.json` — the root is two levels up.
+    let repo_root = dump_path.parent().and_then(|p| p.parent());
     let repo_name = repo_root
-        .file_name()
+        .and_then(|root| root.file_name())
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string();
@@ -111,8 +112,7 @@ fn perform_dump_blocking(
 
 /// Perform a load of the code graph from .xavier/codegraph.json into an in-memory DB
 pub async fn perform_load(repo_path: &str) -> Result<CodeGraphState> {
-    let repo_root = find_repo_root(repo_path);
-    let dump_path = repo_root.join(".xavier").join("codegraph.json");
+    let dump_path = codegraph_dump_path_for_target(repo_path);
 
     if !dump_path.exists() {
         return Err(anyhow!(
@@ -142,7 +142,8 @@ pub async fn perform_load(repo_path: &str) -> Result<CodeGraphState> {
 }
 
 fn find_repo_root(start_path: &str) -> PathBuf {
-    let mut current = std::path::absolute(start_path).unwrap_or_else(|_| PathBuf::from(start_path));
+    let start = std::path::absolute(start_path).unwrap_or_else(|_| PathBuf::from(start_path));
+    let mut current = start.clone();
 
     loop {
         if current.join(".git").exists() {
@@ -154,7 +155,19 @@ fn find_repo_root(start_path: &str) -> PathBuf {
         }
     }
 
-    std::path::absolute(".").unwrap_or_else(|_| PathBuf::from("."))
+    // No `.git` above the target: the target itself IS the root. Falling
+    // back to the process cwd here is what made `dump` silently ignore its
+    // path argument (the daemon's cwd is its own workspace, not the
+    // caller's).
+    start
+}
+
+/// Single source of truth for the portable dump location of `target`.
+///
+/// Writer ([`perform_dump`]) and reader ([`perform_load`]) both resolve
+/// through this, so a dump can never be written where it is not read.
+pub fn codegraph_dump_path_for_target(target: &str) -> PathBuf {
+    xavier::codebase::codegraph_paths::codegraph_dump_path_for(&find_repo_root(target))
 }
 
 #[cfg(test)]
