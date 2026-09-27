@@ -29,6 +29,17 @@ const CLI_AGENTS = [
   },
 ];
 
+function scanProviders(scan: SystemScan | null) {
+  if (!scan) return [];
+  const agents = (scan.cli_agents ?? [])
+    .filter((a) => a.installed)
+    .map((a) => ({ name: a.name, configured: a.logged_in }));
+  const ollama = scan.ollama?.installed
+    ? [{ name: "ollama", configured: scan.ollama.running }]
+    : [];
+  return [...agents, ...ollama];
+}
+
 export default function ProvidersPage({ token }: ProvidersPageProps) {
   const [client] = useState(() => new ApiClient(token));
   const [loading, setLoading] = useState(true);
@@ -57,7 +68,7 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
       setConfigs(configList.providers);
 
       // Assume first configured cloud provider is active or use local
-      const firstConfigured = scan.providers?.find((p) => p.configured);
+      const firstConfigured = scanProviders(scan).find((p) => p.configured);
       if (firstConfigured) setActiveProvider(firstConfigured.name);
     } catch (e) {
       console.error("Failed to fetch provider data:", e);
@@ -104,13 +115,11 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
   }, [quotas]);
 
   const mappedProviders = useMemo(() => {
-    return (
-      systemScan?.providers.map((p) => ({
-        name: p.name,
-        status: (p.configured ? "running" : "error") as "running" | "error" | "degraded",
-        configured: p.configured,
-      })) || []
-    );
+    return scanProviders(systemScan).map((p) => ({
+      name: p.name,
+      status: (p.configured ? "running" : "error") as "running" | "error" | "degraded",
+      configured: p.configured,
+    }));
   }, [systemScan]);
 
   if (loading) {

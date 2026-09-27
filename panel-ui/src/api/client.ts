@@ -585,16 +585,46 @@ export interface ProviderConfig {
 }
 
 export interface SystemScan {
-  version: string;
-  os: string;
-  arch: string;
-  providers: {
+  ollama: {
+    installed: boolean;
+    running: boolean;
+    version: string | null;
+    models: string[];
+    url: string;
+  };
+  cli_agents: {
     name: string;
-    configured: boolean;
-    model: string;
+    installed: boolean;
+    version: string | null;
+    logged_in: boolean;
+    config_path: string | null;
+    usage_tier: string | null;
   }[];
-  workspace_id: string;
-  memory_backend: string;
+  gpu: {
+    detected: boolean;
+    vendor: string | null;
+    model: string | null;
+    vram_mb: number | null;
+    driver_version: string | null;
+    cuda_available: boolean;
+  };
+  docker: {
+    installed: boolean;
+    running: boolean;
+    version: string | null;
+    containers: string[];
+  };
+  env_vars: Record<
+    string,
+    { present: boolean; masked_value: string | null; source: string }
+  >;
+  system_info: {
+    os: string;
+    arch: string;
+    cpus: number;
+    memory_mb: number;
+    xavier_version: string;
+  };
 }
 
 export interface ProviderQuota {
