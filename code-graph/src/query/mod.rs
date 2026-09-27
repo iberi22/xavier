@@ -436,6 +436,69 @@ pub struct QueryEngine {
     cache: Option<Arc<QueryCache>>,
 }
 
+/// Trivial symbols whose degree measures the language, not the codebase:
+/// generic constructors, derive-generated conversions, and plain
+/// accessors. Excluded from hub ranking — never from the index.
+pub const TRIVIAL_HUB_NAMES: &[&str] = &[
+    // generic constructors / conversions
+    "new",
+    "default",
+    "from",
+    "clone",
+    "with_capacity",
+    "into",
+    "to_owned",
+    "unwrap",
+    "expect",
+    // plain accessors / mutators
+    "len",
+    "is_empty",
+    "iter",
+    "iter_mut",
+    "next",
+    "get",
+    "get_mut",
+    "set",
+    "push",
+    "add",
+    "eq",
+    "fmt",
+    "drop",
+    "deref",
+    "as_ref",
+    "as_mut",
+    "to_string",
+    "into_iter",
+    "clone_from",
+];
+
+fn is_trivial_hub_symbol(name: &str) -> bool {
+    TRIVIAL_HUB_NAMES.contains(&name) || name.starts_with("with_")
+}
+
+/// Drop trivial symbols and collapse repeated names, keeping the
+/// highest-degree occurrence of each name (input is degree-ordered).
+fn significant_hubs(hubs: Vec<HubNode>, limit: usize) -> Vec<HubNode> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: Vec<HubNode> = Vec::with_capacity(limit.min(hubs.len()));
+    for hub in hubs {
+        if is_trivial_hub_symbol(&hub.symbol.name) {
+            continue;
+        }
+        if !seen.insert(hub.symbol.name.clone()) {
+            continue;
+        }
+        out.push(hub);
+        if out.len() >= limit {
+            break;
+        }
+    }
+    out
+}
+
 impl QueryEngine {
     pub fn new(db: Arc<CodeGraphDB>) -> Self {
         Self { db, cache: None }
@@ -891,17 +954,17 @@ impl QueryEngine {
     }
 
     /// O7 (G7 + O2): top hubs minus builtin globals (globals are never
-    /// architecture signals).
+    /// architecture signals) and minus trivial symbols.
     pub fn god_nodes(&self, limit: usize) -> Result<Vec<HubNode>> {
         use crate::language::LanguageRegistry;
         let limit = limit.clamp(1, 200);
         let registry = LanguageRegistry::with_builtins();
         let hubs = self.db.hub_nodes(1, limit * 4 + 8)?;
-        Ok(hubs
+        let non_builtin = hubs
             .into_iter()
             .filter(|h| !registry.is_builtin_global(&h.symbol.lang, &h.symbol.name))
-            .take(limit)
-            .collect())
+            .collect();
+        Ok(significant_hubs(non_builtin, limit))
     }
 
     /// O7 (G7 import-cycles): simple file cycles over `Calls` edges,
@@ -1218,7 +1281,12 @@ impl QueryEngine {
     }
 
     pub fn hubs(&self, min_degree: u64, limit: usize) -> Result<Vec<HubNode>> {
-        self.db.hub_nodes(min_degree, limit)
+        // Over-fetch: filtering happens at ranking time, so a page of hubs
+        // can be entirely trivial.
+        let fetched = self
+            .db
+            .hub_nodes(min_degree, limit.saturating_mul(4).saturating_add(8))?;
+        Ok(significant_hubs(fetched, limit))
     }
 
     pub fn hotspots(&self, min_complexity: f32, limit: usize) -> Result<Vec<ComplexityHotspot>> {
@@ -1645,5 +1713,59 @@ mod inline_typed_cycle_tests {
                 "reports must be ordered shortest-first"
             );
         }
+    }
+
+    #[test]
+    fn test_hubs_exclude_trivial_symbols_and_dedupe_by_name() {
+        let db = CodeGraphDB::in_memory().expect("in-memory db");
+        let mk = |stable_id: &str, name: &str| Symbol {
+            stable_id: Some(stable_id.to_string()),
+            name: name.to_string(),
+            file_path: format!("/src/{}.rs", stable_id),
+            ..mk_sym(name, "/src/x.rs")
+        };
+
+        // `new` out-degree everything — the reported bug ranked every
+        // generic constructor as a hub.
+        db.insert_symbol(&mk("new-0", "new")).expect("new 0");
+        db.insert_symbol(&mk("new-1", "new")).expect("new 1");
+        db.insert_symbol(&mk("buf-0", "with_capacity"))
+            .expect("with_capacity");
+        db.insert_symbol(&mk("svc-0", "Service"))
+            .expect("Service 0");
+        db.insert_symbol(&mk("svc-1", "Service"))
+            .expect("Service 1");
+        db.insert_symbol(&mk("caller-0", "caller"))
+            .expect("caller 0");
+
+        let edge = |from: &str, to: &str| CodeEdge {
+            id: None,
+            from_symbol: from.to_string(),
+            to_symbol: to.to_string(),
+            edge_type: EdgeType::Calls,
+            file_path: format!("/src/{}.rs", from),
+            line: 1,
+            confidence: 1.0,
+            metadata: None,
+        };
+        for target in ["new-0", "new-1", "buf-0", "svc-0", "svc-1"] {
+            db.insert_edge(&edge("caller-0", target)).expect("edge");
+        }
+
+        let query = QueryEngine::new(Arc::new(db));
+        let hubs = query.hubs(1, 10).expect("hubs");
+        let names: Vec<&str> = hubs.iter().map(|h| h.symbol.name.as_str()).collect();
+
+        assert!(
+            !names.contains(&"new") && !names.contains(&"with_capacity"),
+            "trivial symbols must not rank as hubs: {names:?}"
+        );
+        assert_eq!(
+            names.iter().filter(|n| **n == "Service").count(),
+            1,
+            "duplicate names must collapse to one hub: {names:?}"
+        );
+        // Over-fetch keeps the real hub visible behind a page of noise.
+        assert!(names.contains(&"Service"), "real hubs survive: {names:?}");
     }
 }
