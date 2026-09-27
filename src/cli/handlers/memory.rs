@@ -1386,12 +1386,21 @@ pub async fn reindex_handler(State(state): State<CliState>, headers: HeaderMap) 
 }
 
 /// Stats handler.
-pub async fn stats_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
-    axum::Json(serde_json::json!({
-        "status": "ok",
-        "workspace_id": state.workspace_id,
-        "version": env!("CARGO_PKG_VERSION"),
-    }))
+///
+/// Returns the same substantive fields as the MCP `xavier_stats` tool so CLI
+/// and MCP consumers see a consistent picture.  WorkspaceContext is accepted as
+/// `Option` so the handler still compiles and responds when the workspace
+/// extension is not mounted (e.g. lightweight test harnesses).
+pub async fn stats_handler(
+    State(state): State<CliState>,
+    workspace: Option<Extension<WorkspaceContext>>,
+) -> impl axum::response::IntoResponse {
+    let stats = crate::cli::handlers::system::calculate_system_stats(
+        &state,
+        workspace.as_ref().map(|Extension(ws)| ws),
+    )
+    .await;
+    axum::Json(stats)
 }
 
 /// Memory query handler.
