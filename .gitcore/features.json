@@ -2580,10 +2580,19 @@
       "status": "planned",
       "progress_pct": 0,
       "description": "Replace hardcoded $HOME/.hermes/skills and config paths with XAVIER_SKILL_STORE/MANIFEST/SOURCE_ROOTS/TARGET_ROOTS env vars; defaults reproduce the current scan set exactly (D5, D7a)",
-      "steps": [],
+      "steps": [
+        "Add the four D5 environment variables and document them in .env.example",
+        "Preserve the current scan roots and Hermes disabled-list defaults when variables are unset",
+        "Enforce host-owned root allowlists and workspace-only fallback when HOME is unset"
+      ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
-      "tests": []
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md (Configurable Skill Store and Scan Paths). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D5, D7a). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "tests": [
+        "test_skill_store_env_override_respected",
+        "test_skill_roots_host_allowlist_cannot_be_widened_by_manifest",
+        "test_unset_skill_env_preserves_all_three_scan_roots",
+        "test_unset_home_fails_open_workspace_only"
+      ]
     },
     "feat-skill-registry-unify": {
       "id": "feat-skill-registry-unify",
@@ -2592,10 +2601,18 @@
       "status": "planned",
       "progress_pct": 0,
       "description": "One build_skill_registry(workspace) used by REST, MCP and session fusion; named, documented dispatch (0.40) and fusion (0.5) confidence constants (D7b, D7c)",
-      "steps": [],
+      "steps": [
+        "Use one build_skill_registry(workspace) constructor across REST, MCP and session fusion",
+        "Name and document the distinct 0.40 dispatch and 0.5 fusion thresholds",
+        "Verify candidate parity and preserve existing response shapes"
+      ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
-      "tests": []
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md (Unified Skill Registry Constructor and Thresholds). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D7b, D7c). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "tests": [
+        "test_build_skill_registry_shared_parity",
+        "test_build_skill_registry_fusion_uses_same_candidates",
+        "test_confidence_calibration_range"
+      ]
     },
     "feat-skill-projector": {
       "id": "feat-skill-projector",
@@ -2604,10 +2621,20 @@
       "status": "planned",
       "progress_pct": 0,
       "description": "TOML v1 manifest + CLI plan/apply/rollback projecting one symlink per selected skill into allowlisted tool roots; dry-run default, journal, backups, atomic swap (D1-D4, D9)",
-      "steps": [],
+      "steps": [
+        "Parse TOML v1 explicit placements and reject globs or whole-directory links",
+        "Provide read-only default plan and CLI-only apply and rollback with allowlist checks",
+        "Verify symlink ownership, backups, atomic swaps and idempotent rollback"
+      ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
-      "tests": []
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md (Declarative Skill Manifest and Projector). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D1-D4, D9). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "tests": [
+        "test_manifest_parses_toml_v1_and_rejects_unknown_fields",
+        "test_projector_dry_run_writes_nothing",
+        "test_projector_backup_and_atomic_swap",
+        "test_projector_unmanaged_regular_file_never_deleted",
+        "test_projector_write_outside_allowlist_rejected"
+      ]
     },
     "feat-skill-ephemeral": {
       "id": "feat-skill-ephemeral",
@@ -2616,10 +2643,20 @@
       "status": "planned",
       "progress_pct": 0,
       "description": "Deterministic, bounded, provenance-stamped composition of registry skills + scoped memories + Code-Graph into <worktree>/.agents/skills/eph-<task>; same pack over MCP for live sessions (D11)",
-      "steps": [],
+      "steps": [
+        "Compose bounded deterministic context from authorized workspace skills, memories and CodeGraph",
+        "Gate composed output on whole-package secret scanning and preserve trust boundaries",
+        "Deliver live MCP packs without files and clean up only journaled unchanged ephemeral paths"
+      ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
-      "tests": []
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md (Deterministic Ephemeral Skill Composer). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D4, D10, D11). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "tests": [
+        "test_ephemeral_composes_within_token_budget",
+        "test_ephemeral_provenance_and_scope_filtering",
+        "test_ephemeral_blocks_on_secret_scan_finding",
+        "test_ephemeral_cleanup_removes_only_eph_dirs",
+        "test_ephemeral_live_session_returns_pack_without_files"
+      ]
     },
     "feat-skill-drift-audit": {
       "id": "feat-skill-drift-audit",
@@ -2628,10 +2665,19 @@
       "status": "planned",
       "progress_pct": 0,
       "description": "Report-only audit: package/projection hashes, frontmatter, dead paths, version contradictions, native secret scan; proposed diffs for human approval (D10, D13)",
-      "steps": [],
+      "steps": [
+        "Scan whole packages and composed output for secrets while reporting location and kind only",
+        "Audit frontmatter, references and projection drift offline by default",
+        "Offer reviewable diffs without automatically rewriting canonical sources"
+      ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
-      "tests": []
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md (Skill Drift Audit and Secret Scanner). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D10, D13). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "tests": [
+        "test_audit_fixture_detects_dead_path_missing_field_and_secret",
+        "test_audit_secret_values_never_printed_or_logged",
+        "test_audit_proposes_diff_without_modifying_source",
+        "test_audit_prohibits_automatic_canonical_rewrites"
+      ]
     },
     "feat-skill-usage-telemetry": {
       "id": "feat-skill-usage-telemetry",
@@ -2640,10 +2686,20 @@
       "status": "planned",
       "progress_pct": 0,
       "description": "Local SQLite events (selected/delivered/invoked/completed) with opaque IDs and 30-day retention to inform pruning; never auto-deletes (D12)",
-      "steps": [],
+      "steps": [
+        "Record selected, delivered, invoked and completed events with opaque IDs in local SQLite",
+        "Require idempotent invocation acknowledgment and fail open on telemetry errors",
+        "Report observation coverage and prune only event records after 30 days"
+      ],
       "passes": false,
-      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
-      "tests": []
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md (Local Skill Usage Telemetry). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D12). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
+      "tests": [
+        "test_telemetry_records_stages_with_opaque_ids",
+        "test_telemetry_acknowledged_invocation_requires_idempotent_event_id",
+        "test_telemetry_coverage_aware_summary_reports_unobserved_usage",
+        "test_telemetry_prohibits_usage_based_deletion",
+        "test_telemetry_ttl_retention_prune_removes_events_only"
+      ]
     }
   },
   "verification_commands": {
