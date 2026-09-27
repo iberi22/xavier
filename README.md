@@ -1,7 +1,7 @@
 # Xavier — Fast Vector Memory & Communal Context Runtime for AI Agents
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
-[![Version](https://img.shields.io/badge/version-0.2.1-brightgreen.svg)](https://github.com/iberi22/xavier)
+[![Version](https://img.shields.io/badge/version-0.2.15-brightgreen.svg)](https://github.com/iberi22/xavier)
 [![CI Build Status](https://github.com/iberi22/xavier/actions/workflows/ci.yml/badge.svg)](https://github.com/iberi22/xavier/actions/workflows/ci.yml)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 
@@ -102,13 +102,13 @@ swal-preflight check --cwd .
 
 ## 📦 Downloads
 
-Latest release: **[v0.0.1](https://github.com/iberi22/xavier/releases/latest)** — built via `.github/workflows/release.yml` (3 targets + SHA256).
+Latest release: **[v0.2.15](https://github.com/iberi22/xavier/releases/tag/v0.2.15)** — built via `.github/workflows/release.yml` (3 targets + SHA256, plus the `XavierSetup.exe` Windows installer).
 
 | OS | Arch | Artifact |
 |---|---|---|
-| Linux | x86_64 | `xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz` |
-| macOS | aarch64 (Apple Silicon) | `xavier-v0.0.1-aarch64-apple-darwin.tar.gz` |
-| Windows | x86_64 | `xavier-v0.0.1-x86_64-pc-windows-msvc.zip` |
+| Linux | x86_64 | `xavier-v0.2.15-x86_64-unknown-linux-gnu.tar.gz` |
+| macOS | aarch64 (Apple Silicon) | `xavier-v0.2.15-aarch64-apple-darwin.tar.gz` |
+| Windows | x86_64 | `xavier-v0.2.15-x86_64-pc-windows-msvc.zip` |
 
 Each artifact has a `.sha256` sidecar.
 
@@ -116,13 +116,13 @@ Each artifact has a `.sha256` sidecar.
 
 ```bash
 # Linux example
-curl -L https://github.com/iberi22/xavier/releases/latest/download/xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz -o xavier.tar.gz
-curl -L https://github.com/iberi22/xavier/releases/latest/download/xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz.sha256 -o xavier.sha256
+curl -L https://github.com/iberi22/xavier/releases/download/v0.2.15/xavier-v0.2.15-x86_64-unknown-linux-gnu.tar.gz -o xavier.tar.gz
+curl -L https://github.com/iberi22/xavier/releases/download/v0.2.15/xavier-v0.2.15-x86_64-unknown-linux-gnu.tar.gz.sha256 -o xavier.sha256
 sha256sum -c xavier.sha256
 tar -xzf xavier.tar.gz && ./xavier --help
 ```
 
-Docker image (pending `ghcr` publish): `ghcr.io/iberi22/xavier:0.0.1` — also see [Downloads page](docs/site/src/content/docs/downloads.mdx) (Starlight).
+Docker image: `ghcr.io/iberi22/xavier:0.2.15` (also `:latest`) — also see [Downloads page](docs/site/src/content/docs/downloads.mdx) (Starlight).
 
 ---
 
@@ -138,7 +138,7 @@ docker compose up -d
 # Xavier on http://localhost:8006, Ollama via host.docker.internal:11434
 ```
 
-Healthcheck: `curl -fsS http://localhost:8006/health`
+Healthcheck: `curl -fsS http://localhost:8006/ready` (503 until the memory store and code graph are ready). `GET /health` always answers HTTP 200 and reports `status` / `degraded_reasons` in the body, so it is not a liveness signal; `xavier health` exits non-zero when the node is `unhealthy`.
 
 ### Development mode (no token, browser panel)
 
@@ -156,7 +156,7 @@ XAVIER_DEV_MODE=true XAVIER_TOKEN=dummy docker compose up -d
 
 | Mode | How to run | URL | Notes |
 |---|---|---|---|
-| **Browser (prod)** | `xavier http` (serves `panel-ui/dist`) | `http://localhost:8006/` and `/panel` | No Tauri, uses `VITE_XAVIER_API_TOKEN` + polling fallback |
+| **Browser (prod)** | `xavier http` (serves `panel-ui/build`) | `http://localhost:8006/` and `/panel` | No Tauri, uses `VITE_XAVIER_API_TOKEN` + polling fallback |
 | **Browser (dev)** | `pnpm --filter xavier-panel-ui dev` + `cargo run -- http` | `http://localhost:5173` (Vite) proxied to `:8006` | Hot-reload, `XAVIER_DEV_MODE=true` |
 | **Tauri Desktop** | `pnpm --filter xavier-panel-ui tauri dev` | Native window | Requires `__TAURI_INTERNALS__` guard + dynamic `invoke`/`listen` |
 | **Custom panel path** | `XAVIER_PANEL_UI_DIR=/path/to/dist xavier http` | Same as browser | Priority: `XAVIER_PANEL_UI_DIR` → `<exe_dir>/panel-ui/build` → `<cwd>/panel-ui/build` → `CARGO_MANIFEST_DIR/panel-ui/build` (see `src/server/panel/assets.rs`) |
@@ -316,7 +316,7 @@ cp skills/xavier-cognitive-memory/SKILL.md ~/.hermes/skills/xavier-cognitive-mem
 ### 💻 CLI Command Summary
 
 ```bash
-xavier http [--port PORT] [--mcp-port MCP_PORT]  # Start HTTP REST and MCP SSE servers
+xavier http [PORT] [--mcp-port MCP_PORT]         # Start HTTP REST and MCP SSE servers (port is positional)
 xavier mcp                                        # Start stdio MCP JSON-RPC transport
 xavier search <QUERY> [-n MAX]                    # Search memory store
 xavier recall <QUERY> [--limit N]                 # Recall memories with score details

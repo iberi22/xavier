@@ -8,12 +8,12 @@
 
 | Metric | Value |
 |--------|-------|
-| Total requirements | 19 (REQ-001…019) |
+| Total requirements | 75 (REQ-001…075) |
 | Structure complete | ✅ 100% |
-| User stories | 32 (US-001…032), traceable to REQ + feature |
-| Features (features.json) | 27 — overall **85.2%** (23 stable, 4 beta) |
+| User stories | 46 in `USER-STORIES.md`, traceable to REQ + feature |
+| Features (features.json) | 83 — 70 stable, 13 beta (WAVE-29 pending verify-pipeline promotion) |
 | Content status | REQ-008 `implemented` ~95% (E2E+unit) |
-| Pipeline | `.gitcore/scripts/verify-pipeline.sh` — 27/27 PASS (2026-08-04) |
+| Pipeline | `scripts/verify-pipeline.sh` (ledger `.gitcore/features.json`) — see latest run in `.gitcore/chronicles/` |
 | Synced ratio (drift) | n/a (local); pipeline enforces REQ↔feature↔story links |
 
 ## Documents (mandatory)
@@ -74,7 +74,7 @@
 
 ## Cross-links
 
-- [SRC.md](../../SRC.md) — repository map
+- [SRC.md](../SRC.md) — repository map
 - [AGENTS.md](../../AGENTS.md) — agent rules
-- [SDLC_WORKFLOW.md](../../.gitcore/SDLC_WORKFLOW.md) — full SDLC with traceability chain
-- [SWAL roadmap](../../../docs/SWAL/README.md) — ecosystem (if monorepo)
+- [SDLC_WORKFLOW.md](../protocol/SDLC_WORKFLOW.md) — full SDLC with traceability chain
+- SWAL roadmap — ecosystem monorepo `~/proyectosSWAL/docs/SWAL/` (outside this repo)

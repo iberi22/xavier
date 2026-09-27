@@ -15,23 +15,31 @@ paths:
   /health:
     get:
       summary: Get general system health
-      description: Returns runtime health, version, provider status, and storage indicators.
+      description: |
+        Runtime health (`observability::health::HealthStatus`). Always answers HTTP 200 —
+        read `status` in the body; use `/ready` as a liveness/readiness probe.
+        `degraded_reasons` has one entry per non-healthy component — `host:<cpu|memory|disk>`
+        for machine resources, `subsystem:<database|embedding|llm|vector_db|mesh>` for Xavier
+        components — and is empty iff `status` is `healthy`.
       responses:
         "200":
-          description: System is healthy or degraded (with details)
+          description: Health snapshot (healthy, degraded or unhealthy)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemHealthResponse"
               example:
-                status: "ok"
+                timestamp: "2026-09-27T05:00:00Z"
+                status: "degraded"
+                version: "0.2.15"
+                degraded_reasons: ["subsystem:llm"]
                 mode: "LOCAL"
-                version: "0.10.0"
                 llm:
                   provider: "ollama"
                   model: "qwen3-coder"
                   endpoint: "http://localhost:11434"
-                  reachable: true
+                  reachable: false
+                  status: "unhealthy"
                 embedding:
                   provider: "openai"
                   model: "text-embedding-3-small"
@@ -984,6 +992,65 @@ paths:
                 files_found: 142
                 message: "Scanning complete. Symbols index updated."
 
+  /code/dump:
+    post:
+      summary: Dump the code graph to disk
+      description: |
+        Writes the live code graph to `<target>/.xavier/codegraph.json`. Target precedence:
+        explicit `path`, then the caller's working directory, then the daemon default.
+        Out-of-workspace targets are logged; containment and a role gate are tracked in #2580.
+      security:
+        - XavierToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  description: Directory to dump into (optional)
+      responses:
+        "200":
+          description: Dump result (`status` is `ok` or `error`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, error]
+                  message:
+                    type: string
+                  path:
+                    type: string
+                    description: File actually written (only on success)
+                  requested_path:
+                    type: string
+                  resolved_path:
+                    type: string
+
+  /code/load:
+    post:
+      summary: Load a code graph dump
+      description: Replaces the live code graph with a previously dumped `codegraph.json` (same path resolution as `/code/dump`).
+      security:
+        - XavierToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+      responses:
+        "200":
+          description: Load result (`status` is `ok` or `error`) with `requested_path` / `resolved_path`
+
   /code/find:
     post:
       summary: Find code symbols
@@ -1052,13 +1119,33 @@ components:
     SystemHealthResponse:
       type: object
       properties:
+        timestamp:
+          type: string
+          format: date-time
         status:
           type: string
+          enum: [healthy, degraded, unhealthy]
+        degraded_reasons:
+          type: array
+          description: One entry per non-healthy component; empty iff status is healthy.
+          items:
+            type: string
+            pattern: "^(host|subsystem):[a-z_]+$"
+        system:
+          type: object
+          additionalProperties: true
+        database:
+          type: object
+          additionalProperties: true
+        mesh:
+          type: object
+          additionalProperties: true
         mode:
           type: string
           enum: [LOCAL, "LOCAL (DEGRADED)", CLOUD, DISABLED]
         version:
           type: string
+          description: Build version of the serving process (CARGO_PKG_VERSION).
         llm:
           type: object
           properties:
@@ -1070,6 +1157,9 @@ components:
               type: string
             reachable:
               type: boolean
+            status:
+              type: string
+              enum: [healthy, degraded, unhealthy]
         embedding:
           type: object
           properties:

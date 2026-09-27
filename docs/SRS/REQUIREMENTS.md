@@ -1200,7 +1200,181 @@ MCP SHALL expose `xavier_dispatch_skill` (`{task*, max_tokens?, project?}`, ≤6
 - [ ] Round-trip dispatch returns skill + pack within budget; list count matches fixture registry
 - [ ] `cargo test -p xavier --lib test_mcp_` green incl. `test_mcp_dispatch_tool_roundtrip`, `test_mcp_skill_list_announced`
 
-## REQ-065: Skill Wave Ledger Docs + Close (skill-injection #306)
+## REQ-065:
+## REQ-066: Health report does not fabricate a healthy state (WAVE-29.01 #2554)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/health/mod.rs`, `src/adapters/inbound/http/routes.rs`
+- **Features:** `feat-health-truth` (PR #2568)
+
+### Description
+
+`GET /health` and `collect_health*` SHALL NOT report unmeasured embedding coverage as healthy: zero records or no store yield `percent: 0.0`, `status: "unknown"` and a `Warn` coverage check. `HealthResponse.degraded_reasons` SHALL list one `host:<check>` or `subsystem:<check>` entry per non-passing check and SHALL be empty iff the status is `healthy`.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2568; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `embedding_coverage_default_is_not_healthy_when_empty`, `embedding_coverage_unmeasured_store_is_unknown`, `degraded_reasons_distinguishes_host_pressure_from_subsystem_failure`, `degraded_reasons_empty_when_status_healthy`
+
+## REQ-067: MCP sys_health/health_check report measured values only (WAVE-29.02 #2555)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/server/mcp/tools_core.rs`, `src/health/mod.rs`
+- **Features:** `feat-mcp-health-honesty` (PR #2577)
+
+### Description
+
+MCP `sys_health` SHALL report unmeasured benchmark metrics with a `-1.0` sentinel (never a fabricated `0.0`) and SQLite integrity as tri-state (`db_integrity: null` when the check did not run), so `analyze_gaps` raises no gap from unmeasured data. MCP `health_check.memoryStoreOk` SHALL mean the store answers a query and no measured integrity check failed. `codegraph_gods` SHALL exclude generic constructors and dedupe per symbol.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2577; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `health_check_embedding_ok_true_when_fallback_embedder_works`, `health_check_memory_store_ok_reflects_store_and_integrity`, `sys_health_does_not_report_hardcoded_zero_benchmarks`, `codegraph_gods_excludes_generic_constructors`
+
+## REQ-068: Guardian env_status/log_scan report the real state (WAVE-29.03 #2556)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/self_manage/mod.rs`
+- **Features:** `feat-guardian-truth` (PR #2575)
+
+### Description
+
+`env_status` SHALL query the systemd scope Xavier runs in (`--user`). `log_scan` SHALL read files newest-first, reset a cursor more than one rotation stale with an explicit `cursor_reset_reason`, never advance the cursor past a line dropped on `max_entries` overflow, and group identical lines with `count`/`first_seen`/`last_seen`. Tests SHALL NOT touch `$HOME/.xavier`.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2575; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `log_scan_prefers_newest_file_when_cursor_is_stale`, `log_scan_keeps_cursor_after_single_rotation`, `log_scan_reports_time_range_of_returned_entries`, `log_scan_groups_repeated_identical_lines`, `check_service_status_distinguishes_missing_unit_from_inactive`
+
+## REQ-069: Skill dispatch confidence floor and ingest validation (WAVE-29.04 #2557)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/context/skill_dispatcher.rs`, `src/context/skill_registry.rs`
+- **Features:** `feat-skill-dispatch-confidence` (PR #2567)
+
+### Description
+
+Skill dispatch SHALL return the `_none` sentinel (confidence 0.0) below `MIN_DISPATCH_CONFIDENCE = 0.40` and SHALL NOT report 1.0 for a weak match. Registry ingest SHALL reject entries without a plausible slug or a substantive description and count the rejects. Skill content SHALL be wrapped in an UNTRUSTED boundary and truncated by explicit byte/line/token budgets.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2567; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `dispatch_returns_no_match_below_confidence_threshold`, `dispatch_never_reports_full_confidence_for_weak_match`, `registry_rejects_non_skill_entries`, `registry_rejects_empty_description`, `test_confidence_calibration_range`
+
+## REQ-070: xavier doctor is bounded and always prints its report (WAVE-29.05 #2558)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/cli/handlers/doctor.rs`, `src/cli/handlers/system_scan.rs`
+- **Features:** `feat-doctor-bounded` (PR #2571)
+
+### Description
+
+`xavier doctor` SHALL bound every probe with a timeout, SHALL always print its report (including timed-out checks) and SHALL exit with a code that reflects the overall status.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2571; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `doctor_completes_when_a_probe_hangs`, `doctor_prints_output_even_with_timed_out_checks`, `doctor_exit_code_reflects_overall_status`
+
+## REQ-071: xavier improve is bounded per stage and persists partial progress (WAVE-29.06 #2559)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/auto_improvement/cycle.rs`, `src/auto_improvement/mod.rs`, `src/cli/commands/improve.rs`
+- **Features:** `feat-improve-bounded` (PR #2579)
+
+### Description
+
+`xavier improve` SHALL run every stage under a per-stage and an overall deadline (`XAVIER_IMPROVE_STAGE_TIMEOUT_SECS`, `XAVIER_IMPROVE_TOTAL_TIMEOUT_SECS`, capped at 24 h). An overrun SHALL end the cycle as `Truncated` with completed stages persisted as `partial` history; `Failed` only when partial progress cannot be persisted. Exit codes: `0` completed, `124` truncated, `1` failed. Truncated entries SHALL NOT feed `last_accepted_config` or `sys_health.last_experiment`.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2579; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `improve_cycle_respects_overall_deadline`, `improve_persists_progress_when_stage_times_out`, `improve_exit_code_distinguishes_truncated_from_failed`, `test_last_accepted_config_skips_truncated_entries`, `test_partial_progress_roundtrips_through_json`, `test_absurd_budget_is_capped_instead_of_overflowing`
+
+## REQ-072: xavier health/stats match the server and MCP (WAVE-29.07 #2560)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/observability/health.rs`, `src/cli/handlers/system.rs`, `src/cli/handlers/memory.rs`, `src/cli/commands/http.rs`
+- **Features:** `feat-cli-health-stats-parity` (PR #2574)
+
+### Description
+
+The live `GET /health` payload (`observability::health::HealthStatus`) SHALL carry the server build `version` and `degraded_reasons`. `xavier health` SHALL render them, label a CLI-side fallback version for older servers and exit non-zero when `unhealthy`. `xavier stats` SHALL read every counter from the same workspace as MCP `xavier_stats` and report unmeasured counters as `unknown`.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2574; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `health_report_shows_version_and_reasons_from_real_payload`, `healthy_status_reports_no_degraded_reasons`, `health_report_falls_back_to_cli_version_when_server_omits_it`, `stats_payload_matches_mcp_field_contract`, `stats_reports_semantic_layer_state`
+
+## REQ-073: code dump honours its path argument and cwd; hubs skip trivial symbols (WAVE-29.08 #2561)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/cli/handlers/code.rs`, `src/cli/code_dump.rs`, `src/cli/commands/code.rs`, `code-graph/src/query/mod.rs`
+- **Features:** `feat-codegraph-dump-path` (PR #2576)
+
+### Description
+
+`xavier code dump/scan` SHALL resolve the target as explicit argument, then caller cwd, then daemon default, and report `requested_path` and `resolved_path` (the path actually written). `hubs()`/`god_nodes()` SHALL exclude trivial constructors/accessors and keep the highest-degree occurrence per name. Index freshness SHALL be reported without triggering a reindex.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2576; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `dump_respects_explicit_path_argument`, `dump_respects_cwd_when_no_argument`, `dump_present_matches_actual_file`, `hubs_exclude_generic_constructors`, `test_hubs_exclude_trivial_symbols_and_dedupe_by_name`
+
+## REQ-074: Memory writes reject corrupt content and are idempotent per path (WAVE-29.09 #2562)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `src/memory/sanitizer.rs`, `src/memory/qmd/writer.rs`
+- **Features:** `feat-memory-write-integrity` (PR #2573)
+
+### Description
+
+Memory writes SHALL reject Latin-dominant tokens where a lowercase Latin letter is glued to CJK/Kana/Hangul, SHALL flag (and store verbatim) uppercase-acronym + CJK tokens, and SHALL accept multilingual content unchanged. A write SHALL be an idempotent retry only when path, content and non-volatile metadata match, checked under the same write guard as the append.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2573; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `create_rejects_mixed_script_corruption`, `create_accepts_multilingual_valid_content`, `suspect_content_is_stored_and_flagged`, `create_is_idempotent_per_path`, `same_path_different_content_still_appends`, `same_content_different_metadata_still_appends`, `returned_id_resolves_on_lookup`, `legacy_records_without_integrity_marker_still_load`
+
+## REQ-075: E2E gate: MCP health agrees with GET /health (WAVE-29.10 #2563)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `tests/observability_contract.rs`, `.github/workflows/ci.yml`
+- **Features:** `feat-e2e-observability-contract` (PR #2578)
+
+### Description
+
+CI SHALL run a hermetic E2E contract (`tests/observability_contract.rs`, job `Rust Integration (Observability Contract)`) that boots `xavier http` with state/data/cwd in a tempdir and asserts: self-consistent embedding health, `healthy` ⇔ empty `degraded_reasons` with tagged reasons, measured coverage (never 100% on an empty store), version and stats surface. Every field read SHALL assert presence and type.
+
+### Acceptance criteria
+
+- [x] Merged in PR #2578; CI green on main `d914b41c`
+- [ ] Declared tests green in `scripts/verify-pipeline.sh`: `test_observability_embedding_consistency`, `test_observability_degraded_status_logic`, `test_observability_embedding_coverage_anomaly`, `test_observability_version_match`, `test_observability_mcp_stats_surface`
+
+*WAVE-10 (2026-09-21): REQ-060..065 added (skill-injection wave: scan-paths, semantic-rank, loader-fate, fusion-gates, MCP-tools, ledger-docs). Implemented live: registry scans canonical store, cosine rank w/ keyword tiebreak, fusion gate 0.5 + ack-gate, MCP dispatch/list tools. Measured: Recall@3 0.950 / MRR 0.950 (20-query offline eval), live E2E post 0.2.5 restart. Full `verify-pipeline` green deferred: pre-existing zero-match filters outside the wave need ledger-wide cleanup (see rescan report).*
+
+*Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, enterprise ZDR, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui. WAVE-9 (2026-09-18): REQ-053..059 added (ripwire+graphify extraction O1-O7: honest-confidence, language-registry, blast-testgate, incremental-ids, budget-query, pagerank-router, contracts-arch; US-101..US-114; specs docs/features/specs/FEATURE-feat-cg-*.md; doc docs/EXTRACTION-RIPWIRE-GRAPHIFY.md; ADR-032/033). WAVE-29 (2026-09-27): REQ-066..075 added (observability honesty: health-truth, mcp-health-honesty, guardian-truth, skill-dispatch-confidence, doctor-bounded, improve-bounded, cli-health-stats-parity, codegraph-dump-path, memory-write-integrity, e2e-observability-contract; PRs #2567-#2579; specs `.gitcore/waves/wave-29/issue-01..10.md`).*
+ Skill Wave Ledger Docs + Close (skill-injection #306)
 
 - **Category:** Documentation
 - **Priority:** Medium
