@@ -2572,6 +2572,78 @@
       "user_stories": [
         "US-120"
       ]
+    },
+    "feat-skill-store-config": {
+      "id": "feat-skill-store-config",
+      "name": "Configurable Skill Store and Roots",
+      "category": "skills",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Replace hardcoded $HOME/.hermes/skills and config paths with XAVIER_SKILL_STORE/MANIFEST/SOURCE_ROOTS/TARGET_ROOTS env vars; defaults reproduce the current scan set exactly (D5, D7a)",
+      "steps": [],
+      "passes": false,
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
+      "tests": []
+    },
+    "feat-skill-registry-unify": {
+      "id": "feat-skill-registry-unify",
+      "name": "Single Skill Registry Construction",
+      "category": "skills",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "One build_skill_registry(workspace) used by REST, MCP and session fusion; named, documented dispatch (0.40) and fusion (0.5) confidence constants (D7b, D7c)",
+      "steps": [],
+      "passes": false,
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-registry-unify.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
+      "tests": []
+    },
+    "feat-skill-projector": {
+      "id": "feat-skill-projector",
+      "name": "Declarative Skill Manifest and Projector",
+      "category": "skills",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "TOML v1 manifest + CLI plan/apply/rollback projecting one symlink per selected skill into allowlisted tool roots; dry-run default, journal, backups, atomic swap (D1-D4, D9)",
+      "steps": [],
+      "passes": false,
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-projector.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
+      "tests": []
+    },
+    "feat-skill-ephemeral": {
+      "id": "feat-skill-ephemeral",
+      "name": "Task-Scoped Ephemeral Skills",
+      "category": "skills",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Deterministic, bounded, provenance-stamped composition of registry skills + scoped memories + Code-Graph into <worktree>/.agents/skills/eph-<task>; same pack over MCP for live sessions (D11)",
+      "steps": [],
+      "passes": false,
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-ephemeral.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
+      "tests": []
+    },
+    "feat-skill-drift-audit": {
+      "id": "feat-skill-drift-audit",
+      "name": "Skill Drift and Secret Audit",
+      "category": "skills",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Report-only audit: package/projection hashes, frontmatter, dead paths, version contradictions, native secret scan; proposed diffs for human approval (D10, D13)",
+      "steps": [],
+      "passes": false,
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-drift-audit.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
+      "tests": []
+    },
+    "feat-skill-usage-telemetry": {
+      "id": "feat-skill-usage-telemetry",
+      "name": "Skill Usage Telemetry",
+      "category": "skills",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Local SQLite events (selected/delivered/invoked/completed) with opaque IDs and 30-day retention to inform pruning; never auto-deletes (D12)",
+      "steps": [],
+      "passes": false,
+      "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-usage-telemetry.md. Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md",
+      "tests": []
     }
   },
   "verification_commands": {
