@@ -92,7 +92,7 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
 
     let mut scanned_path = None;
     if let CodeCommand::Scan { path, .. } = &cmd {
-        scanned_path = Some(path.clone());
+        scanned_path = Some(abs_target(path));
     }
 
     let response = match cmd {
@@ -118,7 +118,7 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .post(format!("{}/code/scan", base_url))
                 .header("X-Xavier-Token", &token)
                 .json(&serde_json::json!({
-                    "path": path,
+                    "path": abs_target(&path),
                     "codegraph_available": outcome.available,
                     "codegraph_bin": outcome.bin_path.as_ref().map(|p| p.display().to_string()),
                 }))
@@ -230,7 +230,7 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
             client
                 .post(format!("{}/code/dump", base_url))
                 .header("X-Xavier-Token", &token)
-                .json(&serde_json::json!({ "path": path }))
+                .json(&serde_json::json!({ "path": abs_target(path.as_deref().unwrap_or(".")) }))
                 .send()
                 .await?
         }
@@ -238,7 +238,7 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
             client
                 .post(format!("{}/code/load", base_url))
                 .header("X-Xavier-Token", &token)
-                .json(&serde_json::json!({ "path": path }))
+                .json(&serde_json::json!({ "path": abs_target(path.as_deref().unwrap_or(".")) }))
                 .send()
                 .await?
         }
@@ -271,6 +271,18 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
         eprintln!("{}", serde_json::to_string_pretty(&body)?);
         bail!("Code graph HTTP {} — see response body above", status);
     }
+}
+
+/// Resolve a user-supplied path against THIS process's cwd before handing
+/// it to the daemon: the daemon's cwd is its own startup workspace, so a
+/// relative path sent verbatim would silently target the wrong codebase.
+/// An absent argument means this process's cwd.
+fn abs_target(path: &str) -> String {
+    std::path::absolute(path)
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .unwrap_or_else(|_| PathBuf::from(path))
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Minimal RFC3986 percent-encoding for query values (unreserved +
@@ -311,9 +323,20 @@ async fn soft_dump(
         anyhow::bail!("Dump request failed ({}): {}", status, err_msg);
     }
 
-    let resolved_path =
-        xavier::codebase::codegraph_paths::codegraph_dump_path_for(std::path::Path::new(path));
-    println!("Portable code graph dumped to {}", resolved_path.display());
+    // The server writes to `<repo-root-of-target>/.xavier/codegraph.json`,
+    // which is NOT `<target>/.xavier/…` when the target is a subdirectory.
+    // Prefer the path the server actually reported; resolve locally only if
+    // the response omitted it.
+    let dumped = body
+        .get("path")
+        .and_then(|p| p.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            crate::cli::code_dump::codegraph_dump_path_for_target(path)
+                .to_string_lossy()
+                .into_owned()
+        });
+    println!("Portable code graph dumped to {}", dumped);
     Ok(())
 }
 
