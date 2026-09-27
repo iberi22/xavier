@@ -7,6 +7,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 use super::benchmark::{
@@ -14,6 +15,137 @@ use super::benchmark::{
 };
 use super::experiments::{generate_experiments, Experiment, ExperimentStatus};
 use super::gaps::{analyze_gaps, Gap};
+
+/// Overall deadline for one full auto-improvement cycle. Configurable via
+/// `XAVIER_IMPROVE_TOTAL_TIMEOUT_SECS`.
+pub const IMPROVE_TOTAL_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Per-stage deadline for stages that can perform unbounded work (benchmark
+/// execution, experiment application, history persistence). Configurable via
+/// `XAVIER_IMPROVE_STAGE_TIMEOUT_SECS`.
+pub const IMPROVE_STAGE_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Exit code for a completed cycle.
+pub const EXIT_OK: i32 = 0;
+/// Exit code for a cycle truncated by a deadline (conventional timeout code,
+/// cf. GNU `timeout`).
+pub const EXIT_TIMEOUT: i32 = 124;
+/// Exit code for a genuine failure.
+pub const EXIT_FAILURE: i32 = 1;
+
+/// Hard ceiling for any applied deadline, whatever the source. `Instant +
+/// Duration` panics on overflow, so every deadline is capped at 24h before it
+/// is turned into an absolute instant.
+pub const MAX_IMPROVE_TIMEOUT: Duration = Duration::from_secs(86_400);
+
+/// Outcome of a full auto-improvement cycle, used by the CLI to pick a
+/// meaningful exit code.
+///
+/// The stage name is a `String`, not a `&'static str`, because this enum is
+/// serialized as part of `ImprovementCycle` and `HistoryEntry`: serde's
+/// `Deserialize` for borrowed strings requires `'de: 'a`, which `&'static str`
+/// cannot satisfy in a derived impl.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CycleStatus {
+    /// Every stage ran to completion.
+    #[default]
+    Completed,
+    /// A stage exceeded its deadline; partial progress was persisted.
+    Truncated { stage: String },
+    /// The cycle could not honour its durability contract (e.g. partial
+    /// progress could not be persisted after a truncation).
+    Failed,
+}
+
+impl CycleStatus {
+    /// Process exit code the CLI should use for this outcome.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            CycleStatus::Completed => EXIT_OK,
+            CycleStatus::Truncated { .. } => EXIT_TIMEOUT,
+            CycleStatus::Failed => EXIT_FAILURE,
+        }
+    }
+
+    /// Name of the stage that exceeded its deadline, if the cycle was truncated.
+    pub fn truncated_stage(&self) -> Option<&str> {
+        match self {
+            CycleStatus::Truncated { stage } => Some(stage.as_str()),
+            _ => None,
+        }
+    }
+}
+
+/// Deadline budget for one cycle: an overall cap plus a per-stage cap. Each
+/// stage runs under `min(stage_timeout, remaining overall budget)`.
+#[derive(Debug, Clone, Copy)]
+pub struct CycleBudget {
+    pub overall_timeout: Duration,
+    pub stage_timeout: Duration,
+}
+
+impl Default for CycleBudget {
+    fn default() -> Self {
+        Self {
+            overall_timeout: IMPROVE_TOTAL_TIMEOUT,
+            stage_timeout: IMPROVE_STAGE_TIMEOUT,
+        }
+    }
+}
+
+impl CycleBudget {
+    /// Read deadline overrides from the environment. Non-numeric or zero values
+    /// are ignored (a zero deadline would truncate every cycle immediately).
+    /// Out-of-range values are capped at [`MAX_IMPROVE_TIMEOUT`].
+    pub fn from_env() -> Self {
+        let mut budget = Self::default();
+        if let Some(secs) = env_timeout_secs("XAVIER_IMPROVE_TOTAL_TIMEOUT_SECS") {
+            budget.overall_timeout = Duration::from_secs(secs).min(MAX_IMPROVE_TIMEOUT);
+        }
+        if let Some(secs) = env_timeout_secs("XAVIER_IMPROVE_STAGE_TIMEOUT_SECS") {
+            budget.stage_timeout = Duration::from_secs(secs).min(MAX_IMPROVE_TIMEOUT);
+        }
+        budget
+    }
+
+    /// Overall deadline actually applied, capped so the absolute deadline can
+    /// never overflow for any caller of `run_cycle_bounded` (including
+    /// programmatic budgets built from unvalidated input).
+    fn applied_overall_timeout(&self) -> Duration {
+        self.overall_timeout.min(MAX_IMPROVE_TIMEOUT)
+    }
+}
+
+fn env_timeout_secs(key: &str) -> Option<u64> {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+}
+
+/// Partial cycle state persisted when a cycle is truncated, so the work the
+/// cycle did accomplish is never lost. It is written into the improvement
+/// history and is the inspection record for a truncated run (`improve status`,
+/// operators, tooling). The next cycle always re-runs from stage 1; nothing
+/// replays this record automatically.
+///
+/// The stage names are `String`s because this record round-trips through serde.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartialProgress {
+    /// Stages that completed before truncation.
+    pub completed_stages: Vec<String>,
+    /// Stage that did not finish.
+    pub truncated_stage: String,
+    /// Benchmark snapshot measured by the benchmark stage (zeroed default if
+    /// that stage never completed).
+    pub benchmark: BenchmarkSnapshot,
+    /// Gaps found by the gap-analysis stage (empty if it never completed).
+    pub gaps: Vec<Gap>,
+    /// Experiments generated before the truncation (empty if that stage never
+    /// completed). Persisted so the generated proposals survive the truncation.
+    #[serde(default)]
+    pub experiments: Vec<Experiment>,
+}
 
 /// Full auto-improvement cycle result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +158,12 @@ pub struct ImprovementCycle {
     pub accepted_changes: Vec<String>,
     pub improvement_pct: f64,
     pub final_benchmark: Option<BenchmarkSnapshot>,
+    /// Outcome of the cycle (completed / truncated / failed).
+    #[serde(default)]
+    pub status: CycleStatus,
+    /// Stages that ran to completion, in order.
+    #[serde(default)]
+    pub completed_stages: Vec<String>,
 }
 
 /// One persisted record of accepted changes from a completed cycle, written to
@@ -41,10 +179,31 @@ pub struct HistoryEntry {
     pub experiments: Vec<Experiment>,
     /// Merged retrieval config derived from the accepted overrides.
     pub config: RetrievalConfig,
+    /// Present only on entries written when a cycle was truncated: the partial
+    /// progress of the stages that did complete. Inspection record for a
+    /// truncated run; it is skipped by `last_accepted_config*` because such an
+    /// entry accepted nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partial: Option<PartialProgress>,
 }
 
 /// Default history file location relative to the workspace root.
 const IMPROVEMENT_HISTORY_FILE: &str = ".xavier/improvement-history.json";
+
+/// Stage names, used for progress output, truncation reporting, and the
+/// persisted partial-progress record.
+const STAGE_BENCHMARK: &str = "benchmark";
+const STAGE_GAP_ANALYSIS: &str = "gap-analysis";
+const STAGE_GENERATE_EXPERIMENTS: &str = "generate-experiments";
+const STAGE_VALIDATE: &str = "validate";
+const STAGE_PERSIST: &str = "persist-history";
+const STAGE_RE_MEASURE: &str = "re-measure";
+
+/// Result of running one bounded stage.
+enum StageOutcome<T> {
+    Completed(T),
+    Truncated,
+}
 
 /// Auto-Improvement Loop engine
 pub struct AutoImprovementEngine {
@@ -62,6 +221,10 @@ pub struct AutoImprovementEngine {
     /// Smallest improvement (in composite units) considered meaningful. Deltas below
     /// this epsilon are rejected as noise even if non-negative. Defaults to 0.005.
     pub(crate) min_improvement: f64,
+    /// Test seam: artificial delay injected inside a stage's deadline window,
+    /// keyed by stage name. Only compiled under `cfg(test)`.
+    #[cfg(test)]
+    pub(crate) test_stage_delays: std::collections::HashMap<&'static str, Duration>,
 }
 
 impl AutoImprovementEngine {
@@ -74,6 +237,8 @@ impl AutoImprovementEngine {
             autonomous_mode: false,
             acceptance_threshold: 0.0,
             min_improvement: 0.005,
+            #[cfg(test)]
+            test_stage_delays: std::collections::HashMap::new(),
         }
     }
 
@@ -197,11 +362,34 @@ impl AutoImprovementEngine {
         run_external_benchmark().await
     }
 
-    /// Run a full cycle: benchmark → gaps → experiments → validate → merge → re-measure
+    /// Run a full cycle with the default deadline budget: benchmark → gaps →
+    /// experiments → validate → merge → re-measure.
     pub async fn run_cycle(
         &self,
         settings: &XavierSettings,
         db: Option<&rusqlite::Connection>,
+    ) -> ImprovementCycle {
+        self.run_cycle_bounded(settings, db, CycleBudget::default(), None, None)
+            .await
+    }
+
+    /// Run a full cycle under an explicit deadline budget.
+    ///
+    /// The whole cycle is bounded by `budget.overall_timeout` (measured from
+    /// entry) and each stage additionally by `budget.stage_timeout`. When a
+    /// deadline expires the stage is cancelled, whatever was measured so far
+    /// is durably persisted to the improvement-history file, and the returned
+    /// cycle carries `CycleStatus::Truncated` naming the stage that did not
+    /// finish. `history_path` overrides the default improvement-history
+    /// location (tests use temp files); `progress` receives one line per stage
+    /// transition for CLI progress output.
+    pub async fn run_cycle_bounded(
+        &self,
+        settings: &XavierSettings,
+        db: Option<&rusqlite::Connection>,
+        budget: CycleBudget,
+        progress: Option<&dyn Fn(&str)>,
+        history_path: Option<&Path>,
     ) -> ImprovementCycle {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -209,26 +397,70 @@ impl AutoImprovementEngine {
             .as_secs();
 
         let cycle_id = format!("cycle-{:x}", now);
+        let history_path = history_path.unwrap_or(Path::new(IMPROVEMENT_HISTORY_FILE));
+        let overall_deadline = tokio::time::Instant::now() + budget.applied_overall_timeout();
+        let mut completed_stages: Vec<&'static str> = Vec::new();
 
-        // Phase 1: Benchmark
-        let benchmark = self.run_benchmark(settings, db).await;
+        // Stage 1: Benchmark
+        let benchmark = match self
+            .run_stage(STAGE_BENCHMARK, budget, overall_deadline, progress, async {
+                self.run_benchmark(settings, db).await
+            })
+            .await
+        {
+            StageOutcome::Completed(b) => {
+                completed_stages.push(STAGE_BENCHMARK);
+                b
+            }
+            StageOutcome::Truncated => {
+                return self
+                    .truncated_cycle(
+                        &cycle_id,
+                        now,
+                        completed_stages,
+                        STAGE_BENCHMARK,
+                        None,
+                        Vec::new(),
+                        Vec::new(),
+                        history_path,
+                    )
+                    .await;
+            }
+        };
 
-        // Phase 2: Gap analysis
+        // Stage 2: Gap analysis
         let previous = {
             let history = self.history.lock().await;
             history.last().cloned()
         };
-        let gaps = analyze_gaps(&benchmark, previous.as_ref());
-
-        // Phase 3: Generate experiments
-        let experiments = generate_experiments(&gaps, now);
-
-        // Phase 4: Validate proposed experiments
-        let (experiments, accepted) = if self.autonomous_mode && !experiments.is_empty() {
-            self.validate_experiments(experiments, settings, db, &benchmark)
-                .await
-        } else {
-            (experiments, vec![])
+        let gaps = match self
+            .run_stage(
+                STAGE_GAP_ANALYSIS,
+                budget,
+                overall_deadline,
+                progress,
+                async { analyze_gaps(&benchmark, previous.as_ref()) },
+            )
+            .await
+        {
+            StageOutcome::Completed(g) => {
+                completed_stages.push(STAGE_GAP_ANALYSIS);
+                g
+            }
+            StageOutcome::Truncated => {
+                return self
+                    .truncated_cycle(
+                        &cycle_id,
+                        now,
+                        completed_stages,
+                        STAGE_GAP_ANALYSIS,
+                        Some(benchmark.clone()),
+                        Vec::new(),
+                        Vec::new(),
+                        history_path,
+                    )
+                    .await;
+            }
         };
 
         // Track improvement
@@ -250,7 +482,73 @@ impl AutoImprovementEngine {
             }
         }
 
-        // Phase 5: Merge accepted configuration overrides.
+        // Stage 3: Generate experiments
+        let experiments = match self
+            .run_stage(
+                STAGE_GENERATE_EXPERIMENTS,
+                budget,
+                overall_deadline,
+                progress,
+                async { generate_experiments(&gaps, now) },
+            )
+            .await
+        {
+            StageOutcome::Completed(e) => {
+                completed_stages.push(STAGE_GENERATE_EXPERIMENTS);
+                e
+            }
+            StageOutcome::Truncated => {
+                return self
+                    .truncated_cycle(
+                        &cycle_id,
+                        now,
+                        completed_stages,
+                        STAGE_GENERATE_EXPERIMENTS,
+                        Some(benchmark.clone()),
+                        gaps.clone(),
+                        Vec::new(),
+                        history_path,
+                    )
+                    .await;
+            }
+        };
+
+        // Stage 4: Validate proposed experiments
+        let (experiments, accepted) = if self.autonomous_mode && !experiments.is_empty() {
+            // `validate_experiments` takes ownership, but the truncated arm
+            // below still needs the unvalidated proposals, so hand it a clone.
+            let to_validate = experiments.clone();
+            match self
+                .run_stage(STAGE_VALIDATE, budget, overall_deadline, progress, async {
+                    self.validate_experiments(to_validate, settings, db, &benchmark)
+                        .await
+                })
+                .await
+            {
+                StageOutcome::Completed((e, a)) => {
+                    completed_stages.push(STAGE_VALIDATE);
+                    (e, a)
+                }
+                StageOutcome::Truncated => {
+                    return self
+                        .truncated_cycle(
+                            &cycle_id,
+                            now,
+                            completed_stages,
+                            STAGE_VALIDATE,
+                            Some(benchmark.clone()),
+                            gaps.clone(),
+                            experiments,
+                            history_path,
+                        )
+                        .await;
+                }
+            }
+        } else {
+            (experiments, vec![])
+        };
+
+        // Stage 5: Merge accepted configuration overrides.
         if !accepted.is_empty() {
             let accepted_experiments: Vec<Experiment> = experiments
                 .iter()
@@ -269,18 +567,69 @@ impl AutoImprovementEngine {
                 accepted_experiments: accepted.clone(),
                 experiments: accepted_experiments,
                 config: merged_config,
+                partial: None,
             };
-            if let Err(e) = append_history_entry(Path::new(IMPROVEMENT_HISTORY_FILE), &entry) {
-                tracing::warn!(
-                    error = %e,
-                    "Failed to persist improvement-history entry (non-fatal)"
-                );
+            let persist = self
+                .run_stage(STAGE_PERSIST, budget, overall_deadline, progress, async {
+                    // Best-effort: a lost history entry does not invalidate
+                    // the accepted changes already applied.
+                    append_history_entry(history_path, &entry).unwrap_or_else(|e| {
+                        tracing::warn!(
+                            error = %e,
+                            "Failed to persist improvement-history entry (non-fatal)"
+                        );
+                    })
+                })
+                .await;
+            if let StageOutcome::Completed(()) = persist {
+                completed_stages.push(STAGE_PERSIST);
+            } else {
+                return self
+                    .truncated_cycle(
+                        &cycle_id,
+                        now,
+                        completed_stages,
+                        STAGE_PERSIST,
+                        Some(benchmark.clone()),
+                        gaps.clone(),
+                        experiments,
+                        history_path,
+                    )
+                    .await;
             }
         }
 
-        // Phase 6: Re-measure (Post-improvement baseline verification)
+        // Stage 6: Re-measure (Post-improvement baseline verification)
         let final_benchmark = if !accepted.is_empty() && self.autonomous_mode {
-            Some(self.re_measure(settings, db).await)
+            match self
+                .run_stage(
+                    STAGE_RE_MEASURE,
+                    budget,
+                    overall_deadline,
+                    progress,
+                    async { self.re_measure(settings, db).await },
+                )
+                .await
+            {
+                StageOutcome::Completed(b) => {
+                    completed_stages.push(STAGE_RE_MEASURE);
+                    Some(b)
+                }
+                StageOutcome::Truncated => {
+                    return self
+                        .truncated_cycle(
+                            &cycle_id,
+                            now,
+                            completed_stages,
+                            STAGE_RE_MEASURE,
+                            Some(benchmark.clone()),
+                            gaps.clone(),
+                            experiments,
+                            history_path,
+                        )
+                        .await;
+                }
+            }
         } else {
             None
         };
@@ -294,6 +643,114 @@ impl AutoImprovementEngine {
             accepted_changes: accepted,
             improvement_pct: improvement,
             final_benchmark,
+            status: CycleStatus::Completed,
+            completed_stages: completed_stages.iter().map(|s| String::from(*s)).collect(),
+        }
+    }
+
+    /// Assemble a truncated cycle, durably persisting the partial progress of
+    /// the stages that completed. If the partial progress itself cannot be
+    /// persisted the cycle is reported as `Failed` rather than `Truncated`:
+    /// durability of partial progress is a hard contract of truncation, and
+    /// `Failed` is the only producer of the genuine-failure exit code, so
+    /// degrading it to a warning would both hide the lost work and leave
+    /// `EXIT_FAILURE` unreachable.
+    #[allow(clippy::too_many_arguments)]
+    async fn truncated_cycle(
+        &self,
+        cycle_id: &str,
+        now: u64,
+        completed_stages: Vec<&'static str>,
+        truncated_stage: &'static str,
+        benchmark: Option<BenchmarkSnapshot>,
+        gaps: Vec<Gap>,
+        experiments: Vec<Experiment>,
+        history_path: &Path,
+    ) -> ImprovementCycle {
+        let partial = PartialProgress {
+            completed_stages: completed_stages.iter().map(|s| String::from(*s)).collect(),
+            truncated_stage: truncated_stage.to_string(),
+            benchmark: benchmark.clone().unwrap_or_default(),
+            gaps: gaps.clone(),
+            experiments: experiments.clone(),
+        };
+        let entry = HistoryEntry {
+            cycle_id: cycle_id.to_string(),
+            timestamp_secs: now,
+            accepted_experiments: Vec::new(),
+            // A truncated cycle accepted nothing, so the top-level `experiments`
+            // (which means "accepted experiments", and feeds `config`) stays
+            // empty; the generated proposals are kept inside `partial`.
+            experiments: Vec::new(),
+            config: RetrievalConfig::default(),
+            partial: Some(partial),
+        };
+        let status = match append_history_entry(history_path, &entry) {
+            Ok(()) => CycleStatus::Truncated {
+                stage: truncated_stage.to_string(),
+            },
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    stage = truncated_stage,
+                    "Failed to persist partial cycle progress; reporting cycle as failed"
+                );
+                CycleStatus::Failed
+            }
+        };
+        ImprovementCycle {
+            cycle_id: cycle_id.to_string(),
+            timestamp_secs: now,
+            benchmark: benchmark.unwrap_or_default(),
+            gaps,
+            experiments,
+            accepted_changes: Vec::new(),
+            improvement_pct: 0.0,
+            final_benchmark: None,
+            status,
+            completed_stages: completed_stages.iter().map(|s| String::from(*s)).collect(),
+        }
+    }
+
+    /// Run one stage under both its own deadline and the remaining overall
+    /// budget, emitting progress lines around it. The stage future is
+    /// cancelled (dropped) when either deadline expires.
+    async fn run_stage<T>(
+        &self,
+        name: &'static str,
+        budget: CycleBudget,
+        overall_deadline: tokio::time::Instant,
+        progress: Option<&dyn Fn(&str)>,
+        body: impl std::future::Future<Output = T>,
+    ) -> StageOutcome<T> {
+        if let Some(f) = progress {
+            f(&format!("stage starting: {name}"));
+        }
+        // Test-only injected delay; production awaits `body` directly.
+        #[cfg(test)]
+        let body = async {
+            if let Some(delay) = self.test_stage_delays.get(name) {
+                tokio::time::sleep(*delay).await;
+            }
+            body.await
+        };
+        let stage_deadline = tokio::time::Instant::now()
+            .checked_add(budget.stage_timeout)
+            .map(|d| d.min(overall_deadline))
+            .unwrap_or(overall_deadline);
+        match tokio::time::timeout_at(stage_deadline, body).await {
+            Ok(value) => {
+                if let Some(f) = progress {
+                    f(&format!("stage done: {name}"));
+                }
+                StageOutcome::Completed(value)
+            }
+            Err(_) => {
+                if let Some(f) = progress {
+                    f(&format!("stage DEADLINE EXCEEDED: {name}"));
+                }
+                StageOutcome::Truncated
+            }
         }
     }
 
@@ -315,20 +772,34 @@ impl AutoImprovementEngine {
     /// improvement history (`.xavier/improvement-history.json`), or `None` when
     /// the history is missing/empty. Other systems can call this to apply the
     /// latest winning configuration.
+    ///
+    /// Entries written by a truncated cycle are skipped: they accept nothing and
+    /// carry a placeholder config, so honouring them would silently reset every
+    /// consumer to `RetrievalConfig::default()`.
     pub fn last_accepted_config(&self) -> Option<RetrievalConfig> {
-        load_history(Path::new(IMPROVEMENT_HISTORY_FILE))
-            .ok()
-            .and_then(|h| h.into_iter().next())
+        Self::last_accepted_config_from(Path::new(IMPROVEMENT_HISTORY_FILE))
+    }
+
+    /// Same as [`Self::last_accepted_config`], reading a history file at an
+    /// explicit path.
+    pub fn last_accepted_config_from(path: &Path) -> Option<RetrievalConfig> {
+        load_history(path)
+            .ok()?
+            .into_iter()
+            .find(|entry| entry.partial.is_none())
             .map(|entry| entry.config)
     }
 
-    /// Return the most recently accepted `RetrievalConfig` from a history file at
-    /// an explicit path. Primarily useful for tests with a temp file.
-    pub fn last_accepted_config_from(path: &Path) -> Option<RetrievalConfig> {
-        load_history(path)
-            .ok()
-            .and_then(|h| h.into_iter().next())
-            .map(|entry| entry.config)
+    /// Return the partial progress of the most recent truncated cycle recorded
+    /// in a history file at an explicit path. This is the inspection record of a
+    /// truncated run: the next cycle re-runs from stage 1 rather than replaying
+    /// it, so callers use it to report or analyse what the truncated cycle
+    /// achieved.
+    pub fn last_partial_progress_from(path: &Path) -> Result<Option<PartialProgress>> {
+        // History is newest-first; a later completed cycle must not hide it.
+        Ok(load_history(path)?
+            .into_iter()
+            .find_map(|entry| entry.partial))
     }
 
     /// Validate proposed experiments by applying each one's overrides, re-running
@@ -610,6 +1081,7 @@ mod tests {
                 rrf_k: 80,
                 ..RetrievalConfig::default()
             },
+            partial: None,
         };
 
         append_history_entry(&path, &entry).expect("append should succeed");
@@ -633,6 +1105,7 @@ mod tests {
                 rrf_k: rrf,
                 ..RetrievalConfig::default()
             },
+            partial: None,
         };
 
         append_history_entry(&path, &mk_entry("first", 10)).unwrap();
@@ -647,6 +1120,107 @@ mod tests {
         assert_eq!(entries[1].cycle_id, "first");
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// A truncated cycle writes an entry whose `config` is a placeholder. That
+    /// entry must not be handed to consumers as "the latest winning config".
+    #[test]
+    fn test_last_accepted_config_skips_truncated_entries() {
+        let path = temp_history_path("skip-partial");
+        let accepted = HistoryEntry {
+            cycle_id: "cycle-accepted".into(),
+            timestamp_secs: 1,
+            accepted_experiments: vec!["Increase RRF k value".into()],
+            experiments: vec![],
+            config: RetrievalConfig {
+                rrf_k: 77,
+                ..RetrievalConfig::default()
+            },
+            partial: None,
+        };
+        let truncated = HistoryEntry {
+            cycle_id: "cycle-truncated".into(),
+            timestamp_secs: 2,
+            accepted_experiments: vec![],
+            experiments: vec![],
+            config: RetrievalConfig::default(),
+            partial: Some(PartialProgress {
+                completed_stages: vec![STAGE_BENCHMARK.to_string()],
+                truncated_stage: STAGE_VALIDATE.to_string(),
+                benchmark: BenchmarkSnapshot::default(),
+                gaps: vec![],
+                experiments: vec![],
+            }),
+        };
+
+        append_history_entry(&path, &accepted).unwrap();
+        append_history_entry(&path, &truncated).unwrap();
+
+        let cfg = AutoImprovementEngine::last_accepted_config_from(&path)
+            .expect("the last accepted config must survive a newer truncated entry");
+        assert_eq!(cfg.rrf_k, 77);
+        assert_eq!(
+            AutoImprovementEngine::last_partial_progress_from(&path)
+                .unwrap()
+                .map(|p| p.truncated_stage),
+            Some(STAGE_VALIDATE.to_string()),
+            "the truncated record must still be inspectable"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The persisted partial record must survive a JSON round-trip: it is read
+    /// back by every consumer, so borrowed stage names would not deserialize.
+    #[test]
+    fn test_partial_progress_roundtrips_through_json() {
+        let partial = PartialProgress {
+            completed_stages: vec![STAGE_BENCHMARK.to_string(), STAGE_GAP_ANALYSIS.to_string()],
+            truncated_stage: STAGE_VALIDATE.to_string(),
+            benchmark: BenchmarkSnapshot {
+                recall_at_k: 0.42,
+                ..BenchmarkSnapshot::default()
+            },
+            gaps: vec![Gap {
+                metric: "recall@k".to_string(),
+                current: 0.42,
+                target: 0.70,
+                gap_pct: 40.0,
+                severity: GapSeverity::Critical,
+                suggested_experiments: vec!["Increase RRF k value".to_string()],
+            }],
+            experiments: vec![Experiment {
+                name: "Increase RRF k value".into(),
+                description: "generated before truncation".into(),
+                config_overrides: HashMap::from([("rrf_k".to_string(), "80".to_string())]),
+                acceptance_criteria: vec![],
+                created_at_secs: 1234,
+                status: ExperimentStatus::Pending,
+                result_metric_delta: None,
+            }],
+        };
+
+        let json = serde_json::to_string(&partial).expect("partial progress must serialize");
+        let back: PartialProgress =
+            serde_json::from_str(&json).expect("partial progress must deserialize");
+        assert_eq!(back.truncated_stage, STAGE_VALIDATE);
+        assert_eq!(back.completed_stages, partial.completed_stages);
+        assert_eq!(back.benchmark.recall_at_k, 0.42);
+        assert_eq!(back.gaps.len(), 1);
+        assert_eq!(back.experiments.len(), 1);
+        assert_eq!(back.experiments[0].name, "Increase RRF k value");
+    }
+
+    /// An absurd deadline must be capped, not allowed to overflow the absolute
+    /// instant the cycle is bounded by.
+    #[test]
+    fn test_absurd_budget_is_capped_instead_of_overflowing() {
+        let budget = CycleBudget {
+            overall_timeout: Duration::from_secs(u64::MAX),
+            stage_timeout: Duration::from_secs(u64::MAX),
+        };
+        assert_eq!(budget.applied_overall_timeout(), MAX_IMPROVE_TIMEOUT);
+        let _deadline = tokio::time::Instant::now() + budget.applied_overall_timeout();
     }
 
     #[test]
@@ -667,5 +1241,212 @@ mod tests {
         // Verify we ran baseline, gap analysis, and returned proper final_benchmark option (which is None since not autonomous/no experiments accepted)
         assert!(cycle.final_benchmark.is_none());
         assert_eq!(cycle.accepted_changes.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn improve_cycle_respects_overall_deadline() {
+        let mut engine = AutoImprovementEngine::new();
+        // The benchmark stage can never finish inside its deadline.
+        engine
+            .test_stage_delays
+            .insert(STAGE_BENCHMARK, Duration::from_secs(30));
+        let settings = XavierSettings::default();
+        let history = temp_history_path("deadline");
+        let budget = CycleBudget {
+            overall_timeout: Duration::from_millis(300),
+            stage_timeout: Duration::from_millis(50),
+        };
+
+        let cycle = engine
+            .run_cycle_bounded(&settings, None, budget, None, Some(&history))
+            .await;
+
+        assert_eq!(
+            cycle.status.truncated_stage(),
+            Some(STAGE_BENCHMARK),
+            "expected truncation at the benchmark stage, got {:?}",
+            cycle.status
+        );
+        assert!(cycle.completed_stages.is_empty());
+        assert_eq!(cycle.status.exit_code(), EXIT_TIMEOUT);
+
+        let _ = std::fs::remove_file(&history);
+    }
+
+    #[tokio::test]
+    async fn improve_persists_progress_when_stage_times_out() {
+        let mut engine = AutoImprovementEngine::new();
+        // Stages 1-2 (benchmark, gap-analysis) finish; stage 3
+        // (generate-experiments) is injected far beyond its deadline.
+        engine
+            .test_stage_delays
+            .insert(STAGE_GENERATE_EXPERIMENTS, Duration::from_secs(30));
+        let settings = XavierSettings::default();
+        let history = temp_history_path("partial");
+        let budget = CycleBudget {
+            overall_timeout: Duration::from_secs(10),
+            // Above the 2 s embedder health-probe ceiling hit by stage 1.
+            stage_timeout: Duration::from_secs(3),
+        };
+
+        // The progress sink is called synchronously from inside the cycle, so it
+        // must use a blocking mutex, not the async one this module imports.
+        let lines: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = lines.clone();
+        let progress = move |msg: &str| {
+            captured
+                .lock()
+                .expect("progress sink mutex poisoned")
+                .push(msg.to_string());
+        };
+
+        let cycle = engine
+            .run_cycle_bounded(&settings, None, budget, Some(&progress), Some(&history))
+            .await;
+
+        assert_eq!(
+            cycle.status.truncated_stage(),
+            Some(STAGE_GENERATE_EXPERIMENTS),
+            "expected truncation at generate-experiments, got {:?}",
+            cycle.status
+        );
+        assert_eq!(
+            cycle.completed_stages,
+            vec![STAGE_BENCHMARK.to_string(), STAGE_GAP_ANALYSIS.to_string()]
+        );
+
+        // Stages 1-2 results must be durably persisted, not discarded.
+        let partial = AutoImprovementEngine::last_partial_progress_from(&history)
+            .expect("history file should parse")
+            .expect("partial progress must be persisted on truncation");
+        assert_eq!(partial.truncated_stage, STAGE_GENERATE_EXPERIMENTS);
+        assert_eq!(
+            partial.completed_stages,
+            vec![STAGE_BENCHMARK.to_string(), STAGE_GAP_ANALYSIS.to_string()]
+        );
+        assert!(
+            partial.benchmark.timestamp_secs > 0,
+            "stage-1 benchmark result must be durably persisted"
+        );
+
+        // One progress line per stage transition, naming the breached stage.
+        let lines = lines.lock().expect("progress sink mutex poisoned");
+        for stage in [STAGE_BENCHMARK, STAGE_GAP_ANALYSIS] {
+            assert!(
+                lines
+                    .iter()
+                    .any(|l| l.contains(&format!("stage starting: {stage}"))),
+                "progress output should announce every stage start: {lines:?}"
+            );
+            assert!(
+                lines
+                    .iter()
+                    .any(|l| l.contains(&format!("stage done: {stage}"))),
+                "progress output should announce every completed stage: {lines:?}"
+            );
+        }
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("stage DEADLINE EXCEEDED: generate-experiments")),
+            "progress output must name the stage that exceeded its deadline: {lines:?}"
+        );
+
+        let _ = std::fs::remove_file(&history);
+    }
+
+    #[tokio::test]
+    async fn improve_exit_code_distinguishes_truncated_from_failed() {
+        let settings = XavierSettings::default();
+        let tight_budget = CycleBudget {
+            overall_timeout: Duration::from_millis(300),
+            stage_timeout: Duration::from_millis(50),
+        };
+
+        // Truncated: a stage that can never finish inside its deadline.
+        let mut engine = AutoImprovementEngine::new();
+        engine
+            .test_stage_delays
+            .insert(STAGE_BENCHMARK, Duration::from_secs(30));
+        let truncated_history = temp_history_path("exit-truncated");
+        let truncated = engine
+            .run_cycle_bounded(
+                &settings,
+                None,
+                tight_budget,
+                None,
+                Some(&truncated_history),
+            )
+            .await;
+        assert!(
+            matches!(truncated.status, CycleStatus::Truncated { .. }),
+            "injected deadline breach must truncate the cycle, got {:?}",
+            truncated.status
+        );
+        assert_eq!(truncated.status.exit_code(), 124);
+
+        // Failed: truncation whose partial progress cannot be persisted —
+        // the history path lives under a regular file, so the mandatory
+        // partial-progress write fails.
+        let blocker =
+            std::env::temp_dir().join(format!("xavier-improve-blocker-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&blocker, "not a directory").unwrap();
+        let unwritable_history = blocker.join("history.json");
+        let mut engine = AutoImprovementEngine::new();
+        engine
+            .test_stage_delays
+            .insert(STAGE_BENCHMARK, Duration::from_secs(30));
+        let failed = engine
+            .run_cycle_bounded(
+                &settings,
+                None,
+                tight_budget,
+                None,
+                Some(&unwritable_history),
+            )
+            .await;
+        assert!(
+            matches!(failed.status, CycleStatus::Failed),
+            "unpersistable partial progress must fail the cycle, got {:?}",
+            failed.status
+        );
+        assert_eq!(failed.status.exit_code(), 1);
+
+        // Completed: healthy cycle within budget.
+        let ok_history = temp_history_path("exit-ok");
+        let engine = AutoImprovementEngine::new();
+        let completed = engine
+            .run_cycle_bounded(
+                &settings,
+                None,
+                CycleBudget {
+                    overall_timeout: Duration::from_secs(10),
+                    stage_timeout: Duration::from_secs(5),
+                },
+                None,
+                Some(&ok_history),
+            )
+            .await;
+        assert!(
+            matches!(completed.status, CycleStatus::Completed),
+            "healthy cycle must complete, got {:?}",
+            completed.status
+        );
+        assert_eq!(completed.status.exit_code(), 0);
+
+        // The three outcomes map to three distinct exit codes.
+        let codes = [
+            completed.status.exit_code(),
+            truncated.status.exit_code(),
+            failed.status.exit_code(),
+        ];
+        assert!(
+            codes[0] != codes[1] && codes[1] != codes[2] && codes[0] != codes[2],
+            "completed/truncated/failed must map to distinct exit codes, got {codes:?}"
+        );
+
+        let _ = std::fs::remove_file(&truncated_history);
+        let _ = std::fs::remove_file(&ok_history);
+        let _ = std::fs::remove_file(&blocker);
     }
 }

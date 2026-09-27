@@ -10,7 +10,10 @@ pub mod gaps;
 
 // Re-export public structs, enums, functions, and the core engine for perfect backwards-compatibility
 pub use benchmark::{benchmark_entity_resolution, BenchmarkSnapshot, ExternalBenchmarkMetrics};
-pub use cycle::{AutoImprovementEngine, HistoryEntry, ImprovementCycle};
+pub use cycle::{
+    AutoImprovementEngine, CycleBudget, CycleStatus, HistoryEntry, ImprovementCycle,
+    PartialProgress,
+};
 pub use experiments::{generate_experiments, Experiment, ExperimentStatus};
 pub use gaps::{analyze_gaps, Gap, GapSeverity};
 
