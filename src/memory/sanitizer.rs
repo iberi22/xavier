@@ -296,6 +296,337 @@ struct TurnSanitizeStats {
     dropped_boilerplate: bool,
 }
 
+// ── Write-time content integrity ──────────────────────────────────────────────
+
+/// Cap on the suspect reasons stored per record. A prose memory full of
+/// identifiers can yield hundreds of hits; the marker only has to tell a reader
+/// the content is questionable, not to enumerate every occurrence.
+const MAX_SUSPECT_REASONS: usize = 10;
+
+/// Outcome of a write-time content integrity check.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContentCheck {
+    /// Reason the content must not be stored at all, if any.
+    pub reject: Option<String>,
+    /// Short reasons the content looks corrupted even though it is stored
+    /// verbatim, e.g. `joined_words:cualesPassed`, `dot_join:tiene.noción`.
+    pub suspect: Vec<String>,
+}
+
+impl ContentCheck {
+    /// True when the content must not be stored.
+    pub fn is_rejected(&self) -> bool {
+        self.reject.is_some()
+    }
+
+    /// Integrity marker to stamp on the stored record.
+    pub fn integrity(&self) -> &'static str {
+        if self.suspect.is_empty() {
+            "verified"
+        } else {
+            "suspect"
+        }
+    }
+}
+
+/// CJK ideographs, Japanese kana and Korean Hangul.
+fn is_cjk_char(c: char) -> bool {
+    matches!(c,
+        '\u{3005}'..='\u{3007}'
+            | '\u{3040}'..='\u{30FF}'
+            | '\u{3100}'..='\u{312F}'
+            | '\u{31F0}'..='\u{31FF}'
+            | '\u{3130}'..='\u{318F}'
+            | '\u{31C0}'..='\u{31EF}'
+            | '\u{3200}'..='\u{33FF}'
+            | '\u{3400}'..='\u{4DBF}'
+            | '\u{4E00}'..='\u{9FFF}'
+            | '\u{A960}'..='\u{A97F}'
+            | '\u{AC00}'..='\u{D7FF}'
+            | '\u{F900}'..='\u{FAFF}'
+            | '\u{20000}'..='\u{2A6DF}')
+}
+
+/// Latin letters, ASCII plus the accented/extended ranges.
+///
+/// The `is_alphabetic` gate is what keeps the symbols that share those ranges
+/// out: `×` (U+00D7) and `÷` (U+00F7) fall inside `00C0..=024F` but are
+/// operators, not letters, and treating them as letters would make a formula
+/// such as `2×3` look like Latin-dominant text.
+fn is_latin_letter(c: char) -> bool {
+    c.is_alphabetic()
+        && (c.is_ascii_alphabetic()
+            || matches!(c,
+                '\u{00C0}'..='\u{024F}'
+                    | '\u{1D00}'..='\u{1D7F}'
+                    | '\u{1D80}'..='\u{1DBF}'
+                    | '\u{1E00}'..='\u{1EFF}'
+                    | '\u{2C60}'..='\u{2C7F}'
+                    | '\u{A720}'..='\u{A7FF}'))
+}
+
+/// Lowercase Latin letter: a word that was still being written when a CJK
+/// character got glued onto it.
+fn is_lowercase_latin(c: char) -> bool {
+    is_latin_letter(c) && c.is_lowercase()
+}
+
+/// Uppercase Latin letter: an acronym, which CJK prose legitimately embeds.
+fn is_uppercase_latin(c: char) -> bool {
+    is_latin_letter(c) && c.is_uppercase()
+}
+
+/// Control characters that memory content may not carry.
+fn is_forbidden_control(c: char) -> bool {
+    c.is_control() && c != '\n' && c != '\r' && c != '\t'
+}
+
+/// Drops the surrounding punctuation/whitespace of a token, keeping the parts
+/// that carry meaning (so `prueba.Word,` -> `prueba.Word`).
+fn trim_token(token: &str) -> &str {
+    token.trim_matches(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-' || c == '\''))
+}
+
+/// Adjacent-script findings, only meaningful when the content as a whole is
+/// Latin dominant.
+#[derive(Default)]
+struct MixedScript {
+    /// Token where a lowercase Latin letter touches a CJK/Kana/Hangul letter
+    /// with no boundary between them (`La全区`): a dropped word boundary.
+    reject: Option<String>,
+    /// Token where an uppercase Latin acronym touches CJK (`API接口`): normal
+    /// writing, worth reporting but never worth dropping.
+    suspect: Option<String>,
+}
+
+/// Scan for the two mixed-script shapes, but only in Latin-dominant content.
+///
+/// In CJK-dominant text the same shapes are ordinary writing
+/// (`这个API接口返回JSON数据`), so the whole scan is skipped there; a mixed token
+/// inside Spanish or English prose is where a boundary was actually lost.
+fn mixed_script(content: &str) -> MixedScript {
+    let mut letters = 0usize;
+    let mut cjk_letters = 0usize;
+    for c in content.chars().filter(|c| c.is_alphabetic()) {
+        letters += 1;
+        if is_cjk_char(c) {
+            cjk_letters += 1;
+        }
+    }
+    if letters == 0 || cjk_letters * 10 >= letters {
+        return MixedScript::default();
+    }
+
+    let mut findings = MixedScript::default();
+    for token in content.split_whitespace().map(trim_token) {
+        let chars: Vec<char> = token.chars().collect();
+        for pair in chars.windows(2) {
+            let (left, right) = (pair[0], pair[1]);
+            if (is_lowercase_latin(left) && is_cjk_char(right))
+                || (is_cjk_char(left) && is_lowercase_latin(right))
+            {
+                findings.reject = Some(token.to_string());
+                break;
+            }
+            if findings.suspect.is_none()
+                && ((is_uppercase_latin(left) && is_cjk_char(right))
+                    || (is_cjk_char(left) && is_uppercase_latin(right)))
+            {
+                findings.suspect = Some(token.to_string());
+            }
+        }
+        if findings.reject.is_some() {
+            break;
+        }
+    }
+    findings
+}
+
+/// Prose view of `content`: fenced code blocks are dropped and inline backtick
+/// spans are blanked out, so code is never pattern-matched as prose.
+fn prose_lines(content: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut in_fence = false;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        lines.push(mask_inline_code(line));
+    }
+    lines
+}
+
+fn mask_inline_code(line: &str) -> String {
+    let mut masked = String::with_capacity(line.len());
+    let mut in_code = false;
+    for c in line.chars() {
+        if c == '`' {
+            in_code = !in_code;
+            masked.push(' ');
+        } else if in_code {
+            masked.push(' ');
+        } else {
+            masked.push(c);
+        }
+    }
+    masked
+}
+
+/// `cualesPassed`: three or more lowercase letters directly followed by an
+/// uppercase letter and another lowercase letter, i.e. two words glued
+/// together. Code-ish tokens are filtered out by the caller before this runs.
+fn has_joined_word_case(token: &str) -> bool {
+    let chars: Vec<char> = token.chars().collect();
+    let mut lower_run = 0usize;
+    for (index, &c) in chars.iter().enumerate() {
+        if c.is_lowercase() {
+            lower_run += 1;
+            continue;
+        }
+        if c.is_uppercase()
+            && lower_run >= 3
+            && chars.get(index + 1).is_some_and(|next| next.is_lowercase())
+        {
+            return true;
+        }
+        lower_run = 0;
+    }
+    false
+}
+
+/// `tiene.noción`, `prueba.Word`: a period where a space should be, inside
+/// prose. Dotted identifiers (`health.status`, `config.json`,
+/// `settings.memory.data_dir`) are never flagged.
+fn has_dot_joined_word(token: &str) -> bool {
+    let Some((left, right)) = token.split_once('.') else {
+        return false;
+    };
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    let Some(left_last) = left.chars().next_back() else {
+        return false;
+    };
+    if !is_latin_letter(left_last) {
+        return false;
+    }
+    let Some(right_first) = right.chars().next() else {
+        return false;
+    };
+
+    // `word.Word`: capitalized word after the period.
+    if is_latin_letter(right_first)
+        && right_first.is_uppercase()
+        && right.chars().filter(|c| c.is_alphabetic()).count() >= 3
+    {
+        return true;
+    }
+
+    // `word.nón-ascii-word`: the right side carries non-ASCII letters.
+    right
+        .chars()
+        .any(|c| c.is_alphabetic() && !c.is_ascii_alphabetic())
+}
+
+fn push_suspect(suspect: &mut Vec<String>, reason: String) {
+    if suspect.len() < MAX_SUSPECT_REASONS && !suspect.contains(&reason) {
+        suspect.push(reason);
+    }
+}
+
+/// Validate memory content at write time.
+///
+/// Xavier stores memories produced by autonomous agents in many languages and
+/// in code/JSON payloads, so this gate is deliberately narrow: it rejects the
+/// two failure modes that destroy meaning and only *flags* the two that merely
+/// look wrong. It never mutates the caller's bytes.
+///
+/// REJECTED (the write fails, nothing is stored):
+/// (a) Control characters other than `\n`, `\r`, `\t`. NUL bytes and escape
+///     sequences corrupt the lexical index and make content unprintable, so
+///     they are never legitimate memory text.
+/// (b) A whitespace-delimited token where a LOWERCASE Latin letter sits
+///     immediately next to a CJK/Kana/Hangul letter — no boundary between them —
+///     and the whole content is Latin dominant (CJK under 10% of all letters).
+///     That is a lost word boundary (`La全区 prioritario`). An UPPERCASE acronym
+///     touching CJK is not that: `API接口` inside a Latin-dominant sentence is
+///     ordinary technical Spanish, so it is only reported (clause e). The whole
+///     scan is skipped in CJK-dominant text, where `这个API接口返回JSON数据` and
+///     friends are normal writing.
+///
+/// FLAGGED as suspect (stored verbatim, stamped `integrity: "suspect"`):
+/// (c) A token where three or more lowercase letters are directly followed by
+///     an uppercase letter and another lowercase letter (`cualesPassed`).
+///     Only prose is scanned: backticks and fenced code blocks are skipped, and
+///     tokens with `_`, `::`, `(`, `/` or digits are ignored, so `getMemory()`
+///     and `v0.2.15` are not reported.
+/// (d) A `word.Word` or `word.nón-ascii` join inside prose (`tiene.noción`),
+///     with the same skips plus URLs, emails, paths, numbers, and every token
+///     whose part after the dot is lowercase ASCII, so `health.status`,
+///     `config.json` and `settings.memory.data_dir` are never flagged.
+/// (e) An uppercase Latin acronym glued to CJK inside Latin-dominant content
+///     (`API接口`), reported as `mixed_script:<token>`.
+///
+/// camelCase and dotted identifiers are never rejected: real agent memories are
+/// full of them, and a filter that aggressive is a data-loss incident.
+pub fn validate_memory_content(content: &str) -> ContentCheck {
+    if let Some(c) = content.chars().find(|c| is_forbidden_control(*c)) {
+        return ContentCheck {
+            reject: Some(format!(
+                "content contains the forbidden control character {c:?} (U+{:04X}); only \\n, \\r and \\t are allowed",
+                c as u32
+            )),
+            suspect: Vec::new(),
+        };
+    }
+
+    let mixed = mixed_script(content);
+    if let Some(token) = mixed.reject {
+        return ContentCheck {
+            reject: Some(format!(
+                "content contains the mixed-script token {token:?} (a lowercase Latin letter glued to a CJK letter with no word boundary) while the content is Latin dominant"
+            )),
+            suspect: Vec::new(),
+        };
+    }
+
+    let mut suspect = Vec::new();
+    if let Some(token) = mixed.suspect {
+        push_suspect(&mut suspect, format!("mixed_script:{token}"));
+    }
+    for line in prose_lines(content) {
+        for raw in line.split_whitespace() {
+            // Skip code-ish tokens before any pattern matching: identifiers,
+            // call sites, paths, scopes, URLs, e-mails and numbers.
+            if raw.contains(['_', ':', '(', '/', '@', '\\'])
+                || raw.chars().any(|c| c.is_ascii_digit())
+            {
+                continue;
+            }
+            let token = trim_token(raw);
+            if token.is_empty() {
+                continue;
+            }
+            if has_joined_word_case(token) {
+                push_suspect(&mut suspect, format!("joined_words:{token}"));
+            }
+            if has_dot_joined_word(token) {
+                push_suspect(&mut suspect, format!("dot_join:{token}"));
+            }
+        }
+    }
+
+    ContentCheck {
+        reject: None,
+        suspect,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,6 +691,108 @@ mod tests {
         assert_eq!(report.kept, 1);
         assert_eq!(report.dropped_dedup, 1);
         assert_eq!(turns.len(), 1);
+    }
+
+    #[test]
+    fn validate_rejects_control_characters_and_mixed_script() {
+        let control = validate_memory_content("informe \u{0} trimestral");
+        assert!(control.is_rejected());
+        assert!(control.reject.unwrap().contains("control character"));
+
+        let mixed =
+            validate_memory_content("La\u{5168}\u{533A} prioritario no es agregar features");
+        assert!(mixed.is_rejected());
+        assert!(mixed.reject.unwrap().contains("mixed-script token"));
+
+        // Newline, carriage return and tab stay allowed.
+        assert!(!validate_memory_content("linea 1\nlinea 2\r\ttab").is_rejected());
+    }
+
+    /// An uppercase acronym glued to CJK is ordinary technical prose, so it is
+    /// reported instead of dropped. Rejecting it was a data-loss bug.
+    #[test]
+    fn validate_flags_uppercase_acronym_touching_cjk_without_rejecting() {
+        let check = validate_memory_content(
+            "El informe confirma que el API\u{63a5}\u{53e3} responde bien en producci\u{f3}n.",
+        );
+        assert!(!check.is_rejected(), "an acronym must not fail the write");
+        assert_eq!(
+            check.suspect,
+            vec!["mixed_script:API\u{63a5}\u{53e3}".to_string()]
+        );
+        assert_eq!(check.integrity(), "suspect");
+
+        // The same shape glued through a LOWERCASE letter is still corruption.
+        assert!(
+            validate_memory_content("La regi\u{f3}n\u{63a5}\u{53e3} quedo publicada").is_rejected(),
+            "a lowercase Latin letter touching CJK is a lost word boundary"
+        );
+    }
+
+    /// `×` (U+00D7) and `÷` (U+00F7) sit inside the Latin-1 range but are
+    /// operators. Counting them as letters would misjudge what is Latin text.
+    #[test]
+    fn multiplication_and_division_signs_are_not_latin_letters() {
+        assert!(!is_latin_letter('\u{d7}'));
+        assert!(!is_latin_letter('\u{f7}'));
+        assert!(is_latin_letter('ñ'));
+        assert!(is_latin_letter('Z'));
+        assert!(!is_latin_letter('全'));
+    }
+
+    #[test]
+    fn validate_accepts_cjk_dominant_and_dotted_identifiers() {
+        // Accepted and left completely clean.
+        for content in [
+            "\u{8fd9}\u{4e2a}API\u{63a5}\u{53e3}\u{8fd4}\u{56de}JSON\u{6570}\u{636e}",
+            "\u{65e5}\u{672c}\u{8a9e}\u{306e}\u{6587}\u{7ae0}\u{3082}\u{6b63}\u{5e38}\u{306b}\u{4fdd}\u{5b58}\u{3067}\u{304d}\u{308b}",
+            "El gateway reporta que health.status es degraded y settings.memory.data_dir vale /var/lib/xavier",
+            "El release v0.2.15 y config.json siguen estables, ver https://github.com/iberi22/xavier",
+            "{\"zone\": \"atomic\", \"revision\": 1, \"primary\": true}",
+        ] {
+            let check = validate_memory_content(content);
+            assert!(!check.is_rejected(), "must be accepted: {content}");
+            assert!(
+                check.suspect.is_empty(),
+                "must not be flagged: {content} -> {:?}",
+                check.suspect
+            );
+        }
+
+        // camelCase inside prose is never rejected. It is reported as a suspect
+        // because its shape is identical to the observed corruption
+        // (`cualesPassed`); the caller keeps the content and the marker tells it
+        // apart from verified text.
+        let camel = validate_memory_content("Refactor de getMemory() y useState en el panel React");
+        assert!(!camel.is_rejected());
+        assert_eq!(camel.integrity(), "suspect");
+        assert_eq!(camel.suspect, vec!["joined_words:useState".to_string()]);
+    }
+
+    #[test]
+    fn validate_flags_joins_only_outside_code() {
+        let prose = validate_memory_content(
+            "ninguno de los cualesPassed review y el agente no tiene.noci\u{f3}n del estado",
+        );
+        assert!(!prose.is_rejected());
+        assert_eq!(prose.integrity(), "suspect");
+        assert_eq!(
+            prose.suspect,
+            vec![
+                "joined_words:cualesPassed".to_string(),
+                "dot_join:tiene.noci\u{f3}n".to_string()
+            ]
+        );
+
+        let code = validate_memory_content(
+            "```rust\nlet cualesPassed = word.Word;\n```\nEl valor es health.status y data_dir",
+        );
+        assert!(!code.is_rejected());
+        assert!(code.suspect.is_empty(), "{:?}", code.suspect);
+
+        let inline =
+            validate_memory_content("Usamos `cualesPassed` y `tiene.noci\u{f3}n` en el codigo");
+        assert!(inline.suspect.is_empty(), "{:?}", inline.suspect);
     }
 
     #[test]
