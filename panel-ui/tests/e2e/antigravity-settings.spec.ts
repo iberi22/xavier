@@ -269,29 +269,35 @@ test.describe("Antigravity Settings Modal & Live Telemetry E2E Suite", () => {
     await expect(page.locator('text="Provide Feedback"').first()).toBeVisible();
 
     // 5. Test Settings Sidebar navigation items
+    // Address the sidebar by data-testid (survives the modal re-render/animation).
+    // The testid is derived from the MainTab id, which does not always match the
+    // visible label (General -> config, Models -> providers, App -> plugins).
     const sidebarItems = [
-      "Account",
-      "General",
-      "Appearance",
-      "Models",
-      "Customizations",
-      "Browser",
-      "App",
+      { label: "Account", testId: "settings-tab-account" },
+      { label: "General", testId: "settings-tab-config" },
+      { label: "Appearance", testId: "settings-tab-appearance" },
+      { label: "Models", testId: "settings-tab-providers" },
+      { label: "Customizations", testId: "settings-tab-customizations" },
+      { label: "Browser", testId: "settings-tab-browser" },
+      { label: "App", testId: "settings-tab-plugins" },
     ];
 
-    for (const itemLabel of sidebarItems) {
-      const itemBtn = page.locator(`button:has-text("${itemLabel}")`).first();
-      if (await itemBtn.isVisible()) {
-        await itemBtn.click({ force: true });
-        await page.waitForTimeout(200);
-      }
+    for (const { label, testId } of sidebarItems) {
+      const tab = page.getByTestId(testId);
+      // Web-first assertion retries until the tab is attached, visible and stable.
+      await expect(tab, `settings tab "${label}" should be visible`).toBeVisible({ timeout: 10_000 });
+      await tab.click();
+      // Stable post-click condition: the selected tab is the only sidebar button
+      // rendered with font-semibold, so this auto-retries until React commits it.
+      await expect(tab, `settings tab "${label}" should be selected`).toHaveClass(/font-semibold/, {
+        timeout: 10_000,
+      });
     }
 
     // Switch to Appearance tab to test chat preferences & theme switching
-    const appearanceSidebarBtn = page.locator('[data-testid="settings-tab-appearance"]').first();
+    const appearanceSidebarBtn = page.getByTestId("settings-tab-appearance");
     await expect(appearanceSidebarBtn).toBeVisible({ timeout: 10000 });
-    await appearanceSidebarBtn.click({ force: true });
-    await page.waitForTimeout(600);
+    await appearanceSidebarBtn.click();
 
     // Verify Appearance view headings
     await expect(page.locator('h1:has-text("Appearance")')).toBeVisible();
