@@ -2281,3 +2281,152 @@ async fn test_mcp_skill_list_announced() {
     })
     .await;
 }
+
+#[test]
+fn health_check_embedding_ok_true_when_fallback_embedder_works() {
+    let mut health = crate::health::fast_degraded_health_fallback();
+    health.embedding.connected = false;
+    health.embedding.fallback_success = true;
+    assert!(super::tools_core::mcp_health_result(&health, 1, true).embedding_ok);
+
+    health.embedding.fallback_success = false;
+    assert!(!super::tools_core::mcp_health_result(&health, 1, true).embedding_ok);
+}
+
+#[test]
+fn health_check_memory_store_ok_reflects_store_and_integrity() {
+    let mut health = crate::health::fast_degraded_health_fallback();
+    health.checks.retain(|c| c.name != "sqlite_integrity");
+    // Integrity not measured: the reachable store decides.
+    assert!(super::tools_core::mcp_health_result(&health, 1, true).memory_store_ok);
+    assert!(!super::tools_core::mcp_health_result(&health, 1, false).memory_store_ok);
+
+    health.checks.push(crate::health::HealthCheck {
+        name: "sqlite_integrity".into(),
+        status: crate::health::CheckStatus::Fail,
+        detail: "PRAGMA integrity_check: corrupt".into(),
+        timestamp_secs: 0,
+    });
+    assert!(!super::tools_core::mcp_health_result(&health, 1, true).memory_store_ok);
+}
+
+#[tokio::test]
+async fn sys_health_does_not_report_hardcoded_zero_benchmarks() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "sys_health",
+                "arguments": {}
+            }
+        }),
+    )
+    .await;
+
+    let body = get_json_body(response).await;
+    let structured = &body["result"]["structuredContent"];
+
+    // Check that avg_latency_ms gap is not triggered artificially (active_gaps ignores -1.0 sentinel)
+    let gaps = structured["active_gaps"]
+        .as_array()
+        .expect("sys_health must expose active_gaps");
+    // Only the sentinel-backed (unmeasured) metrics are under test; other gaps
+    // such as telegram_polling may legitimately report 0.0.
+    for gap in gaps {
+        let metric = gap["metric"].as_str().expect("gap metric");
+        assert!(
+            !["recall@k", "precision", "avg_latency", "cache_hit_rate"].contains(&metric),
+            "unmeasured metric {metric} surfaced as a gap: {gap}"
+        );
+    }
+    // Integrity is not measured on this path: null, and never a Critical gap.
+    assert!(structured["db_integrity"].is_null());
+    assert!(gaps.iter().all(|g| g["metric"] != "db_integrity"));
+}
+
+#[tokio::test]
+async fn codegraph_gods_excludes_generic_constructors() {
+    let (state, workspace) = test_state().await;
+
+    // Index a codebase with both generic constructors and domain hub functions
+    let dir = unique_test_path("xavier-gods-filter", "dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("lib.rs"),
+        r#"
+pub struct Service;
+impl Service {
+    pub fn new() -> Self { Self }
+    pub fn default() -> Self { Self }
+    pub fn from() -> Self { Self }
+    pub fn with_capacity(_c: usize) -> Self { Self }
+    pub fn clone(&self) -> Self { Self }
+    pub fn execute_engine(&self) { step_one(); step_two(); }
+}
+fn step_one() {}
+fn step_two() {}
+"#,
+    )
+    .unwrap();
+
+    state
+        .code_indexer
+        .index(&dir, false)
+        .await
+        .expect("index codebase for gods filter test");
+
+    let router = test_router(state, workspace);
+
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "codegraph_gods",
+                "arguments": {
+                    "limit": 10
+                }
+            }
+        }),
+    )
+    .await;
+
+    let body = get_json_body(response).await;
+    let structured = &body["result"]["structuredContent"];
+
+    let nodes = structured["god_nodes"]
+        .as_array()
+        .expect("codegraph_gods must return a god_nodes array");
+    let names: Vec<String> = nodes
+        .iter()
+        .map(|n| {
+            n["symbol"]["name"]
+                .as_str()
+                .expect("god node symbol name")
+                .to_lowercase()
+        })
+        .collect();
+    for name in &names {
+        assert!(
+            !["new", "default", "from", "with_capacity", "clone"].contains(&name.as_str()),
+            "generic constructor {name} was returned in god nodes: {names:?}"
+        );
+    }
+    // Over-filtering guard: the real domain hub must survive.
+    assert!(
+        names.iter().any(|n| n == "execute_engine"),
+        "domain hub execute_engine missing from god nodes: {names:?}"
+    );
+
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

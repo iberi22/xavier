@@ -327,6 +327,30 @@ pub fn is_core_tool(name: &str) -> bool {
     )
 }
 
+/// Result of the `sqlite_integrity` check, or `None` when it was not run.
+fn sqlite_integrity(health: &crate::health::HealthResponse) -> Option<bool> {
+    health
+        .checks
+        .iter()
+        .find(|c| c.name == "sqlite_integrity")
+        .map(|c| matches!(c.status, crate::health::CheckStatus::Pass))
+}
+
+pub(crate) fn mcp_health_result(
+    health: &crate::health::HealthResponse,
+    tools_count: usize,
+    store_reachable: bool,
+) -> MCPHealthResult {
+    MCPHealthResult {
+        status: health.status.clone(),
+        tools_count,
+        handshake_ok: true,
+        memory_store_ok: store_reachable && sqlite_integrity(health) != Some(false),
+        embedding_ok: health.embedding.connected || health.embedding.fallback_success,
+        mcp_protocol: "2026-07-28".to_string(),
+    }
+}
+
 /// Handle core tool.
 pub async fn handle_core_tool(
     _state: AppState,
@@ -642,14 +666,10 @@ pub async fn handle_core_tool(
                 + super::tools_memory::get_xavier_memory_tools().len()
                 + super::tools_context::get_xavier_context_tools().len();
 
-            let result = MCPHealthResult {
-                status: health.status.clone(),
-                tools_count,
-                handshake_ok: true,
-                memory_store_ok: health.database.size_mb >= 0.0, // store exists
-                embedding_ok: health.embedding.connected,
-                mcp_protocol: "2026-07-28".to_string(),
-            };
+            // The store is OK when it actually answers a query; a measured SQLite
+            // integrity failure overrides that.
+            let store_reachable = workspace.workspace.memory.count().await.is_ok();
+            let result = mcp_health_result(&health, tools_count, store_reachable);
 
             // MCP `isError` = tool EXECUTION failure (spec 2025-06-18+), not host
             // state: warn/degraded alerts ride inside the payload. Only a hard
@@ -666,22 +686,32 @@ pub async fn handle_core_tool(
             let snapshot = crate::self_manage::collect_system_snapshot();
             let in_process_health = crate::health::collect_health_sync();
 
-            let db_integrity = in_process_health.checks.iter().any(|c| {
-                c.name == "sqlite_integrity" && matches!(c.status, crate::health::CheckStatus::Pass)
-            });
+            // `None` = not measured on this path (no DB connection is threaded into
+            // `collect_health_sync`), reported as null instead of a fabricated `false`.
+            let db_integrity = sqlite_integrity(&in_process_health);
 
+            let total_documents = workspace.workspace.memory.count().await.unwrap_or(0);
+
+            // Measured vs unmeasured fields (WAVE-29.02 / issue #2555):
+            // - Measured: timestamp_secs, memory_hit_rate (size proxy), mesh_peers_reachable,
+            //   health_status, db_integrity_ok, total_documents.
+            // - Unmeasured sentinels (-1.0): recall_at_k, precision, avg_latency_ms,
+            //   p99_latency_ms, cache_hit_rate. Using -1.0 sentinel prevents analyze_gaps
+            //   from treating 0.0 as measured degraded performance.
+            // - Unmeasured counter (0): test_iterations (no synthetic benchmarks executed).
             let benchmark = crate::auto_improvement::benchmark::BenchmarkSnapshot {
                 timestamp_secs: chrono::Utc::now().timestamp() as u64,
-                recall_at_k: 0.0,
-                precision: 0.0,
-                avg_latency_ms: 0.0,
-                p99_latency_ms: 0.0,
+                recall_at_k: -1.0,    // unmeasured sentinel
+                precision: -1.0,      // unmeasured sentinel
+                avg_latency_ms: -1.0, // unmeasured sentinel
+                p99_latency_ms: -1.0, // unmeasured sentinel
                 memory_hit_rate: in_process_health.database.size_mb / 1024.0,
-                cache_hit_rate: 0.0,
+                cache_hit_rate: -1.0, // unmeasured sentinel
                 mesh_peers_reachable: in_process_health.mesh.connected_peers,
                 health_status: in_process_health.status.clone(),
-                db_integrity_ok: db_integrity,
-                total_documents: 0,
+                // Unmeasured integrity must not raise a Critical `db_integrity` gap.
+                db_integrity_ok: db_integrity.unwrap_or(true),
+                total_documents,
                 test_iterations: 0,
             };
             let active_gaps = crate::auto_improvement::gaps::analyze_gaps(&benchmark, None);
@@ -698,6 +728,7 @@ pub async fn handle_core_tool(
                 "overall": overall_alert,
                 "components": in_process_health,
                 "active_gaps": active_gaps,
+                "db_integrity": db_integrity,
                 "last_experiment": last_experiment,
                 "system_snapshot": snapshot,
             });
@@ -1024,9 +1055,42 @@ pub async fn handle_core_tool(
                 .unwrap_or(10)
                 .clamp(1, 100) as usize;
 
-            let hubs = _state.code_query.god_nodes(limit)?;
-            let returned = hubs.len();
+            let raw_hubs = _state
+                .code_query
+                .god_nodes(limit.saturating_mul(10).clamp(50, 200))?;
+            let mut unique_names = std::collections::HashSet::new();
+            let mut hubs = Vec::new();
+            for hub in raw_hubs {
+                let name = hub.symbol.name.to_lowercase();
+                if ["new", "default", "from", "with_capacity", "clone"].contains(&name.as_str()) {
+                    continue;
+                }
+                // Dedup per symbol, not per name: same-named hubs in different
+                // modules are distinct.
+                let key = hub.symbol.stable_id.clone().unwrap_or_else(|| {
+                    format!(
+                        "{}:{}:{}",
+                        hub.symbol.file_path, hub.symbol.start_line, name
+                    )
+                });
+                if unique_names.insert(key) {
+                    hubs.push(hub);
+                    if hubs.len() >= limit {
+                        break;
+                    }
+                }
+            }
 
+            if hubs.is_empty() {
+                let val = json!({
+                    "returned": 0,
+                    "god_nodes": [],
+                    "reason": "No structurally significant god nodes found (generic constructors excluded)."
+                });
+                return Ok(serde_json::to_value(MCPToolResult::structured(val, false))?);
+            }
+
+            let returned = hubs.len();
             let val = json!({
                 "returned": returned,
                 "god_nodes": hubs,
