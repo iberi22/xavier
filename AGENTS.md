@@ -89,7 +89,7 @@ All autonomous agents (Jules, Hermes, Antigravity, Claude, etc.) MUST strictly r
 - **Jules memory / learnings**: MUST only be recorded in lowercase `.jules/` (e.g. `.jules/palette.md`). Never create uppercase `.Jules/`.
 - **Git Hooks**: The repository strictly uses `.husky/` via Husky 9. Never create or restore `.githooks/`.
 - **GitCore Ledger**: All wave management, issue definitions, chronicles, and specs live under `.gitcore/`. Do not create competing tracking directories.
-- **Skills**: Global skills reside in `~/.hermes/skills/` and project skills in `.skills/` (never commit ephemeral skill files directly to repo root).
+- **Skills**: Global skills reside in `~/.hermes/skills/` (authoritative canonical store until migration completes) and project skills in `skills/` (never commit ephemeral skill files directly to repo root). The canonical store is configurable via `XAVIER_SKILL_STORE` (e.g. `$HOME/.local/share/xavier/skill-store`); Hermes remains authoritative until an approved migration completes (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md D1, D5).
 - **Runtime databases and caches**: `.xavier/`, `data/`, `*.db`, `*.sqlite*`, `metrics.db*`, `xavier_memory.db*` are strictly runtime caches. Never commit SQLite database files, WAL files, or SHM files. Only static configuration fixtures (such as `.xavier/maturity-anchors.json`) are tracked under `.xavier/`.
 - **Cargo & Compiler Settings**: `.cargo/` is the canonical Rust compiler configuration directory and must remain clean.
 
