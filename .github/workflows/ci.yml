@@ -153,6 +153,34 @@ jobs:
         # See commit message for full rationale and reproduction log.
         run: cargo test --package xavier --lib --features ci-safe -- --test-threads=1
 
+  # Job: Observability contract gate (WAVE-29.10)
+  # Scoped to the single new integration target on purpose: `tests/` holds ~119
+  # test binaries, many of them environment-dependent e2e/benchmark files that
+  # need live services. Running `--tests` here would put `main` at the mercy of
+  # an unrelated suite (the canonical gate `scripts/ci-local.sh` and the
+  # `rust-test` job above also stay on `--lib`). Widen the scope only once the
+  # full suite is proven green, one target at a time.
+  rust-integration:
+    name: Rust Integration (Observability Contract)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Observability Contract Tests
+        # 1 thread, same reason as `rust-test`: several suites mutate global ENV
+        # and cannot be parallelised across processes (see the comment above).
+        run: cargo test --package xavier --features ci-safe --test observability_contract -- --test-threads=1
+
   # Job 4: Secret Scan
   secret-scan:
     name: Secret Scan (Gitleaks)
