@@ -175,6 +175,9 @@ pub async fn show_stats(offline_ok: bool) -> Result<()> {
             let body: serde_json::Value = resp.json().await.unwrap_or_default();
             println!("\nXavier Server Statistics:");
             println!("{}", serde_json::to_string_pretty(&body)?);
+            // No health gate here: `/memory/stats` answers `"status": "ok"` by
+            // construction, so checking it for `unhealthy` was dead code. `xavier health`
+            // is the command that carries the real health signal.
             Ok(())
         }
         Ok(resp) => {
@@ -190,6 +193,9 @@ pub async fn show_stats(offline_ok: bool) -> Result<()> {
                     println!("  Workspace: {}", memory.workspace_id());
                     println!("  Document Count: {}", usage.document_count);
                     println!("  Storage (Estimated Bytes): {}", usage.storage_bytes);
+                    // Semantic/entity counters are workspace-layer state and are not
+                    // reachable from this local store handle, so they are omitted rather
+                    // than asserted: a guessed `unpopulated` is a claim nobody measured.
                     Ok(())
                 },
             )

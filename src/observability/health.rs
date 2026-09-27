@@ -113,10 +113,40 @@ pub struct MeshHealth {
     pub maturity: crate::mesh::MeshMaturityReport,
 }
 
+/// HOST resource thresholds, shared by `check_system` and
+/// `HealthStatus::compute_degraded_reasons` so a reason never contradicts the
+/// aggregate status that produced it.
+const CPU_DEGRADED_PCT: f32 = 80.0;
+const CPU_UNHEALTHY_PCT: f32 = 95.0;
+const RAM_DEGRADED_PCT: f32 = 85.0;
+const RAM_UNHEALTHY_PCT: f32 = 95.0;
+const DISK_DEGRADED_PCT: f32 = 85.0;
+const DISK_UNHEALTHY_PCT: f32 = 95.0;
+
+fn host_resource_level(value: f32, degraded_pct: f32, unhealthy_pct: f32) -> HealthLevel {
+    if value > unhealthy_pct {
+        HealthLevel::Unhealthy
+    } else if value > degraded_pct {
+        HealthLevel::Degraded
+    } else {
+        HealthLevel::Healthy
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthStatus {
     pub timestamp: DateTime<Utc>,
     pub status: HealthLevel,
+    /// Build that produced this snapshot (`CARGO_PKG_VERSION` of this process).
+    /// Without it `xavier health` printed `Version: unknown`: the payload carried
+    /// no version to read.
+    #[serde(default)]
+    pub version: String,
+    /// One entry per component that is NOT `Healthy`, none when the overall
+    /// status is `Healthy`. `host:<name>` for machine resources (cpu, memory,
+    /// disk) and `subsystem:<name>` for Xavier components.
+    #[serde(default)]
+    pub degraded_reasons: Vec<String>,
     pub mode: crate::server::alerts::OperationalMode,
     pub system: SystemHealth,
     pub database: DbHealth,
@@ -127,11 +157,75 @@ pub struct HealthStatus {
     pub tgd_consolidation: Option<crate::tgd::consolidation::ProgressReport>,
 }
 
+impl HealthStatus {
+    /// Reasons for the overall status: one entry per non-`Healthy` component, empty
+    /// when the node is `Healthy`.
+    ///
+    /// Machine resources are tagged `host:<name>` (the OS is not a Xavier subsystem and
+    /// operators read it separately); components are tagged `subsystem:<name>`.
+    /// The SAME thresholds that produced the aggregate status are used, so every reason
+    /// actually explains the reported level.
+    pub fn compute_degraded_reasons(&self) -> Vec<String> {
+        if self.status == HealthLevel::Healthy {
+            return Vec::new();
+        }
+
+        let mut reasons = Vec::new();
+        for (name, value, degraded_pct, unhealthy_pct) in [
+            (
+                "cpu",
+                self.system.cpu_usage,
+                CPU_DEGRADED_PCT,
+                CPU_UNHEALTHY_PCT,
+            ),
+            (
+                "memory",
+                self.system.ram_usage_percent,
+                RAM_DEGRADED_PCT,
+                RAM_UNHEALTHY_PCT,
+            ),
+            (
+                "disk",
+                self.system.disk_usage_percent,
+                DISK_DEGRADED_PCT,
+                DISK_UNHEALTHY_PCT,
+            ),
+        ] {
+            let level = host_resource_level(value, degraded_pct, unhealthy_pct);
+            if level != HealthLevel::Healthy {
+                reasons.push(format!("host:{name}"));
+            }
+        }
+
+        for (name, level) in [
+            ("database", &self.database.status),
+            ("embedding", &self.embedding.status),
+            ("llm", &self.llm.status),
+            ("vector_db", &self.vector_db.status),
+            ("mesh", &self.mesh.status),
+        ] {
+            if *level != HealthLevel::Healthy {
+                reasons.push(format!("subsystem:{name}"));
+            }
+        }
+
+        // The overall status cannot degrade unless a component does, but if the
+        // aggregation ever changes, admit the unknown rather than print a causeless
+        // `degraded` again — the very defect this fixes.
+        if reasons.is_empty() {
+            reasons.push("subsystem:overall".to_string());
+        }
+        reasons
+    }
+}
+
 impl Default for HealthStatus {
     fn default() -> Self {
         Self {
             timestamp: Utc::now(),
             status: HealthLevel::Healthy,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            degraded_reasons: Vec::new(),
             mode: crate::server::alerts::OperationalMode::LocalHealthy,
             system: SystemHealth {
                 cpu_usage: 0.0,
@@ -301,9 +395,11 @@ impl HealthMonitor {
 
         let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();
 
-        let new_status = HealthStatus {
+        let mut new_status = HealthStatus {
             timestamp: Utc::now(),
             status,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            degraded_reasons: Vec::new(),
             mode,
             system,
             database,
@@ -313,6 +409,7 @@ impl HealthMonitor {
             mesh,
             tgd_consolidation,
         };
+        new_status.degraded_reasons = new_status.compute_degraded_reasons();
 
         // Notify if status changed
         let previous_level = {
@@ -427,11 +524,20 @@ impl HealthMonitor {
 
         let uptime_secs = sysinfo::System::uptime();
 
+        // Thresholds shared with `compute_degraded_reasons`: if they diverged, a
+        // reason could contradict the aggregate status that produced it.
         let mut status = HealthLevel::Healthy;
-        if cpu_usage > 95.0 || ram_usage_percent > 95.0 || disk_usage_percent > 95.0 {
-            status = HealthLevel::Unhealthy;
-        } else if cpu_usage > 80.0 || ram_usage_percent > 85.0 || disk_usage_percent > 85.0 {
-            status = HealthLevel::Degraded;
+        for (value, degraded_pct, unhealthy_pct) in [
+            (cpu_usage, CPU_DEGRADED_PCT, CPU_UNHEALTHY_PCT),
+            (ram_usage_percent, RAM_DEGRADED_PCT, RAM_UNHEALTHY_PCT),
+            (disk_usage_percent, DISK_DEGRADED_PCT, DISK_UNHEALTHY_PCT),
+        ] {
+            let level = host_resource_level(value, degraded_pct, unhealthy_pct);
+            if level == HealthLevel::Unhealthy {
+                status = HealthLevel::Unhealthy;
+            } else if level == HealthLevel::Degraded && status == HealthLevel::Healthy {
+                status = HealthLevel::Degraded;
+            }
         }
 
         SystemHealth {
