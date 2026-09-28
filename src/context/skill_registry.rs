@@ -102,13 +102,19 @@ fn hermes_config_path(home: &Path) -> PathBuf {
     home.join(".hermes").join("config.yaml")
 }
 
-/// Default scan paths for an explicit home dir (pure helper, testable).
-fn default_scan_paths(workspace_root: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+/// Default scan paths for an explicit home dir and an optional store override (testable helper).
+fn default_scan_paths(
+    workspace_root: &Path,
+    home: Option<&Path>,
+    store_override: Option<PathBuf>,
+) -> Vec<PathBuf> {
     let mut paths = vec![
         workspace_root.join("skills"),
         workspace_root.join(".agents").join("skills"),
     ];
-    if let Some(home) = home {
+    if let Some(store) = store_override {
+        paths.push(store);
+    } else if let Some(home) = home {
         paths.push(hermes_store_path(home));
     }
     paths
@@ -273,18 +279,35 @@ impl SkillRegistry {
     /// Create with default Xavier skill paths plus the canonical Hermes store.
     /// `$HOME` is resolved from the environment at runtime, never hardcoded.
     pub fn with_defaults(workspace_root: &Path) -> Self {
-        Self::with_home(workspace_root, home_dir().as_deref())
+        let store_override = std::env::var_os("XAVIER_SKILL_STORE").map(PathBuf::from);
+        let config_override = std::env::var_os("XAVIER_SKILL_MANIFEST").map(PathBuf::from);
+        Self::with_paths(
+            workspace_root,
+            home_dir().as_deref(),
+            store_override,
+            config_override,
+        )
     }
 
     /// Create with default paths for an explicit home dir (testable helper).
     fn with_home(workspace_root: &Path, home: Option<&Path>) -> Self {
-        let disabled = home
-            .map(hermes_config_path)
+        Self::with_paths(workspace_root, home, None, None)
+    }
+
+    /// Create with explicit overrides for tests.
+    fn with_paths(
+        workspace_root: &Path,
+        home: Option<&Path>,
+        store_override: Option<PathBuf>,
+        config_override: Option<PathBuf>,
+    ) -> Self {
+        let config_path = config_override.or_else(|| home.map(hermes_config_path));
+        let disabled = config_path
             .map(|path| load_disabled_from_config(&path))
             .unwrap_or_default();
         Self {
             skills: HashMap::new(),
-            scan_paths: default_scan_paths(workspace_root, home),
+            scan_paths: default_scan_paths(workspace_root, home, store_override),
             disabled,
         }
     }
@@ -1309,5 +1332,55 @@ mod eval_tests_302 {
             recall_at_3 >= 0.8,
             "Recall@3 {recall_at_3:.3} below 0.8 threshold"
         );
+    }
+
+    #[test]
+    fn test_skill_store_env_override_respected() {
+        let workspace = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let override_store = tempfile::tempdir().unwrap();
+
+        let registry = SkillRegistry::with_paths(
+            workspace.path(),
+            Some(home.path()),
+            Some(override_store.path().to_path_buf()),
+            None,
+        );
+
+        let default_hermes = super::hermes_store_path(home.path());
+        assert!(
+            !registry.scan_paths.contains(&default_hermes),
+            "Canonical hermes store should not be included when overridden"
+        );
+        assert!(
+            registry
+                .scan_paths
+                .contains(&override_store.path().to_path_buf()),
+            "Overridden store should be included in scan paths"
+        );
+        assert_eq!(
+            registry.scan_paths.len(),
+            3,
+            "Scan paths should exactly include 2 workspace defaults and the override"
+        );
+    }
+
+    #[test]
+    fn test_unset_home_fails_open_workspace_only() {
+        let workspace = tempfile::tempdir().unwrap();
+
+        let registry = SkillRegistry::with_paths(workspace.path(), None, None, None);
+
+        assert_eq!(
+            registry.scan_paths.len(),
+            2,
+            "Only workspace scan paths should be included when home is not set"
+        );
+        assert!(registry
+            .scan_paths
+            .contains(&workspace.path().join("skills")));
+        assert!(registry
+            .scan_paths
+            .contains(&workspace.path().join(".agents").join("skills")));
     }
 }
