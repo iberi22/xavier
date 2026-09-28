@@ -3,8 +3,9 @@
 //! Feature-gated behind the `telegram` cargo feature. Supports long-polling and
 //! webhook (axum) modes, with memory search/stats commands backed by the local
 //! QmdMemory store. The bot token is resolved from the Clavis hardware vault
-//! first (`xavier vault set telegram_bot_token ...`) and falls back to the
-//! `TELEGRAM_BOT_TOKEN` environment variable.
+//! first (`xavier vault set telegram_bot_token`, which reads the value from a
+//! hidden prompt or stdin) and falls back to the `TELEGRAM_BOT_TOKEN`
+//! environment variable.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -290,7 +291,8 @@ use uuid::Uuid;
 ///
 /// Resolution order:
 /// 1. The Clavis hardware vault (`telegram_bot_token` key) — set via
-///    `xavier vault set telegram_bot_token <value>`.
+///    `xavier vault set telegram_bot_token`, which reads the value from a
+///    hidden prompt or stdin.
 /// 2. The `TELEGRAM_BOT_TOKEN` environment variable.
 ///
 /// Returns `Ok(token)` if either source yields a non-empty token, otherwise an
@@ -313,8 +315,9 @@ pub fn load_bot_token() -> anyhow::Result<String> {
     }
 
     anyhow::bail!(
-        "Telegram bot token not found. Set it via `xavier vault set {} <token>` \
-         or the TELEGRAM_BOT_TOKEN environment variable.",
+        "Telegram bot token not found. Set it via `xavier vault set {}`, which reads \
+         the value from a hidden prompt or stdin, or the TELEGRAM_BOT_TOKEN \
+         environment variable.",
         TELEGRAM_TOKEN_VAULT_KEY
     )
 }
