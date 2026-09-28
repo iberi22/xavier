@@ -237,6 +237,12 @@ mod tests {
     #[test]
     fn test_fallback_key_file_is_0600() {
         let tmp = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Start loose so the 0700 assertion proves the helper tightens it.
+            std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         let key_path = tmp.path().join("master.key");
         let synthetic_key = [42u8; MASTER_KEY_LEN];
 

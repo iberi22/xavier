@@ -125,6 +125,12 @@ mod tests {
     #[test]
     fn test_local_vault_set_writes_0600() {
         let tmp = tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Start loose so the 0700 assertion proves the helper tightens it.
+            std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         let vault_key = [0u8; 32];
         let vault = LocalSecretsVault::new(tmp.path(), vault_key);
 

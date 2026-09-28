@@ -6,7 +6,6 @@
 //! Falls back to local encrypted file vault when the system keyring
 //! is unavailable (e.g., non-interactive Windows sessions, CI, etc.).
 
-use std::io::Write;
 use std::sync::OnceLock;
 
 use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
