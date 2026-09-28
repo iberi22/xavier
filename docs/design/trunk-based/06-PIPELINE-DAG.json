@@ -143,7 +143,7 @@
    "epic": "G2",
    "title": "Run ADR-035 simulation and record agent panel report",
    "decisions": [
-    "Keep ADR proposed until the required simulation and current owner acceptance.",
+    "Keep ADR proposed until the required simulation and agent-panel acceptance.",
     "Panel approvals are a proposed policy amendment, not current authorization."
    ],
    "depends_on": [
@@ -164,7 +164,7 @@
    "acceptance": [
     "Execute the ADR's declared simulation command and preserve reports as linked artifacts.",
     "Checker validates report presence, seed and no unresolved reviewer blocker.",
-    "Status stays proposed pending owner policy decision; at most 400 changed lines."
+    "Status stays proposed pending agent-panel acceptance; at most 400 changed lines."
    ],
    "do_not_touch": [
     "AGENTS.md",
@@ -518,7 +518,7 @@
    "epic": "G7",
    "title": "Activate branch rules (owner authorization of an outward change)",
    "decisions": [
-    "Owner decides whether agent panel can accept reversible ADR/Ask design.",
+    "The owner authorizes only the outward branch-rule activation; the panel-decision policy was already confirmed by the owner on 2026-09-27.",
     "Rule activation is an outward governance action."
    ],
    "depends_on": [
@@ -536,10 +536,10 @@
      "action": "edit"
     }
    ],
-   "current_state": "ADR-035 proposed, Ask requires owner, main has no required checks. The governance amendment itself was confirmed by the owner on 2026-09-27 (AGENTS.md \"Decision rights (agent panel)\").",
-   "desired_state": "Owner records decision; only then policy text and main ruleset reflect the approved scope.",
+   "current_state": "ADR-035 accepted or pending by the agent panel; Ask is approved by the panel; main has no required checks. The governance amendment was confirmed by the owner on 2026-09-27 (AGENTS.md \"Decision rights (agent panel)\").",
+   "desired_state": "Owner authorizes the ruleset activation; policy text and main ruleset reflect the approved scope.",
    "acceptance": [
-    "Owner reviews simulation and shadow gate evidence before deciding.",
+    "Owner receives the panel-reviewed simulation and shadow-gate evidence in the Product Acceptance Package before authorizing activation.",
     "Trial rejects agent direct push, stale PR and unapproved Ask; preserves emergency owner path.",
     "At most 400 changed lines."
    ],

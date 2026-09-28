@@ -41,7 +41,7 @@
    "epic": "P1",
    "title": "Panel acceptance of ADR-035 (simulation done)",
    "decisions": [
-    "Human records real simulator output, sensitivity and rationale; no invented score.",
+    "The agent panel records real simulator output, sensitivity and rationale; no invented score.",
     "Change at most 400 lines total."
    ],
    "depends_on": [],
@@ -309,7 +309,7 @@
    "title": "Configure main ruleset and auto-merge",
    "decisions": [
     "Require PR and always-present fast-gate; no agent bypass.",
-    "Ask requires owner approval after latest change.",
+    "Ask requires agent-panel approval (two independent non-author models) after the latest change.",
     "Only owner holds documented emergency direct-push bypass."
    ],
    "depends_on": [
