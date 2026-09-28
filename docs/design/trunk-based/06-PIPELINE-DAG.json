@@ -1,0 +1,613 @@
+{
+ "epics": [
+  {
+   "id": "G1",
+   "title": "Idea and research",
+   "feature_id": "autonomous-delivery",
+   "summary": "Register the feature, ground claims and preserve source evidence.",
+   "depends_on": []
+  },
+  {
+   "id": "G2",
+   "title": "Design and ADR",
+   "feature_id": "autonomous-delivery",
+   "summary": "Complete required simulation and machine-readable agent panel reviews; retain current owner policy until changed.",
+   "depends_on": [
+    "G1"
+   ]
+  },
+  {
+   "id": "G3",
+   "title": "Task DAG",
+   "feature_id": "autonomous-delivery",
+   "summary": "Validate Atlas task dependencies, scopes and acceptance commands.",
+   "depends_on": [
+    "G2"
+   ]
+  },
+  {
+   "id": "G4",
+   "title": "Implementation control",
+   "feature_id": "autonomous-delivery",
+   "summary": "Constrain worktrees and bound executor attempts without adding a service.",
+   "depends_on": [
+    "G3"
+   ]
+  },
+  {
+   "id": "G5",
+   "title": "Verification",
+   "feature_id": "autonomous-delivery",
+   "summary": "Require executed deterministic evidence followed by a blocking cross-model verdict.",
+   "depends_on": [
+    "G4"
+   ]
+  },
+  {
+   "id": "G6",
+   "title": "Integration",
+   "feature_id": "autonomous-delivery",
+   "summary": "Wire CI, PR policy and main failure handling to immutable SHAs.",
+   "depends_on": [
+    "G5"
+   ]
+  },
+  {
+   "id": "G7",
+   "title": "Release and acceptance",
+   "feature_id": "autonomous-delivery",
+   "summary": "Generate the product package and reserve policy activation/publication for the owner.",
+   "depends_on": [
+    "G6"
+   ]
+  }
+ ],
+ "tasks": [
+  {
+   "id": "P01",
+   "epic": "G1",
+   "title": "Register autonomous delivery feature and acceptance scenarios",
+   "decisions": [
+    "Use existing GitCore ledger and SRS; status starts planned.",
+    "One code PR references this feature ID or a bounded part."
+   ],
+   "depends_on": [],
+   "files": [
+    {
+     "path": "docs/features/specs/FEATURE-AUTONOMOUS-DELIVERY.md",
+     "action": "create"
+    },
+    {
+     "path": "docs/SRS/REQUIREMENTS.md",
+     "action": "edit"
+    },
+    {
+     "path": ".gitcore/features.json",
+     "action": "edit"
+    }
+   ],
+   "current_state": "No durable feature contract for DONE.",
+   "desired_state": "Acceptance scenarios, REQ mapping and planned ledger entry exist.",
+   "acceptance": [
+    "Ledger entry is planned and maps to the spec and SRS.",
+    "No status is hand-promoted.",
+    "Task changes at most 4 files and 400 lines."
+   ],
+   "do_not_touch": [
+    "clientes/",
+    "archivo/",
+    "runtime databases"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "Bounded specification and ledger edit."
+  },
+  {
+   "id": "P02",
+   "epic": "G1",
+   "title": "Ground pipeline claims and intake evidence",
+   "decisions": [
+    "Use Atlas evidence strings and CI artifacts for sources; do not invent a database.",
+    "External figures need source URL, date and independent recheck."
+   ],
+   "depends_on": [
+    "P01"
+   ],
+   "files": [
+    {
+     "path": "docs/design/trunk-based/02-AUTONOMOUS-PIPELINE.md",
+     "action": "edit"
+    },
+    {
+     "path": "docs/design/trunk-based/03-DONE-PROTOCOL.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "Research and intake rules are proposed but not independently checked.",
+   "desired_state": "A checked source table and intake examples are embedded in the protocol.",
+   "acceptance": [
+    "All measured claims have source pointers; assumptions are marked.",
+    "Independent agent verifies cited local facts and records report URL.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "AGENTS.md",
+    "docs/adr/ADR-035-trunk-based-ship-show-ask.md"
+   ],
+   "size": "S",
+   "agent": "agy-medium",
+   "agent_reason": "Independent fact review on a bounded document scope."
+  },
+  {
+   "id": "P03",
+   "epic": "G2",
+   "title": "Run ADR-035 simulation and record agent panel report",
+   "decisions": [
+    "Keep ADR proposed until the required simulation and agent-panel acceptance.",
+    "Panel approvals are a proposed policy amendment, not current authorization."
+   ],
+   "depends_on": [
+    "P02"
+   ],
+   "files": [
+    {
+     "path": "docs/adr/ADR-035-trunk-based-ship-show-ask.md",
+     "action": "edit"
+    },
+    {
+     "path": "docs/design/trunk-based/02-AUTONOMOUS-PIPELINE.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "ADR simulation and agreement fields are PENDIENTE.",
+   "desired_state": "Simulation command, seed, JSON/Markdown report digests and two independent panel verdicts are recorded without changing acceptance status.",
+   "acceptance": [
+    "Execute the ADR's declared simulation command and preserve reports as linked artifacts.",
+    "Checker validates report presence, seed and no unresolved reviewer blocker.",
+    "Status stays proposed pending agent-panel acceptance; at most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "AGENTS.md",
+    "GitHub rulesets"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "Can run and report the required deterministic simulation."
+  },
+  {
+   "id": "P04",
+   "epic": "G3",
+   "title": "Validate bounded DAG before Atlas import",
+   "decisions": [
+    "Use the supplied JSON schema and Atlas IDs; no alternate task store.",
+    "Reject cycles, missing dependencies and tasks over 4 files; enforce 400 changed lines on the actual diff."
+   ],
+   "depends_on": [
+    "P03"
+   ],
+   "files": [
+    {
+     "path": "scripts/delivery-dag-check.py",
+     "action": "create"
+    },
+    {
+     "path": "scripts/tests/test_delivery_dag_check.py",
+     "action": "create"
+    }
+   ],
+   "current_state": "Atlas can hold tasks but does not enforce this delivery DAG contract.",
+   "desired_state": "A deterministic pre-import validator rejects malformed/unbounded DAGs.",
+   "acceptance": [
+    "Valid sample passes; cycle, orphan, path escape and oversize fixtures fail.",
+    "No task is marked complete by import.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    ".gitcore/features.json",
+    "Atlas database"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Deterministic DAG and scope validation."
+  },
+  {
+   "id": "P05",
+   "epic": "G4",
+   "title": "Enforce changed-path and public path-leak guards",
+   "decisions": [
+    "Inspect actual base-to-head diff, staged/untracked files and task-known worktrees.",
+    "Scan added content/new blobs; fail closed on symlink and unknown file types."
+   ],
+   "depends_on": [
+    "P04"
+   ],
+   "files": [
+    {
+     "path": "scripts/delivery-scope-check.py",
+     "action": "create"
+    },
+    {
+     "path": "scripts/tests/test_delivery_scope_check.py",
+     "action": "create"
+    }
+   ],
+   "current_state": "Executor scope and personal path leaks are caught by manual review.",
+   "desired_state": "A SHA-bound guard produces an evidence report and rejects scope/path leaks.",
+   "acceptance": [
+    "Tests reject a second-checkout write, rename escape, out-of-scope path and private absolute path.",
+    "$HOME examples pass; non-text additions require review.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "clientes/",
+    "archivo/",
+    "runtime databases"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Security-sensitive filesystem guard needs focused implementation."
+  },
+  {
+   "id": "P06",
+   "epic": "G4",
+   "title": "Bound executor launches and retry on another backend",
+   "decisions": [
+    "Close stdin for noninteractive CLIs; two attempts total with different backends.",
+    "Heartbeat quiet commands; no-output and wall limits yield explicit failure."
+   ],
+   "depends_on": [
+    "P05"
+   ],
+   "files": [
+    {
+     "path": "scripts/delivery-run.sh",
+     "action": "create"
+    },
+    {
+     "path": "scripts/tests/delivery-run-test.sh",
+     "action": "create"
+    }
+   ],
+   "current_state": "Agents can hang on stdin or return zero bytes with no bounded recovery.",
+   "desired_state": "Coordinator wrapper records each attempt, terminates hangs and blocks descendants after two failures.",
+   "acceptance": [
+    "Fixtures detect stdin wait, zero-byte exit and timeout.",
+    "Second attempt uses a different backend and cannot widen scope.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "GitHub rulesets",
+    "release workflow"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Process control and failure accounting require a deterministic wrapper."
+  },
+  {
+   "id": "P07",
+   "epic": "G5",
+   "title": "Wire ATLAS_REVIEW_CMD to co-agent-review.sh",
+   "decisions": [
+    "Atlas reviewer is advisory; DONE checker independently blocks rejected/deferred verdicts.",
+    "PARTIAL from helper is rejection despite exit 0."
+   ],
+   "depends_on": [
+    "P05"
+   ],
+   "files": [
+    {
+     "path": "scripts/atlas-review-adapter.sh",
+     "action": "create"
+    },
+    {
+     "path": "scripts/tests/atlas-review-adapter-test.sh",
+     "action": "create"
+    }
+   ],
+   "current_state": "Unset ATLAS_REVIEW_CMD uses Atlas stub and helper success can mean PARTIAL.",
+   "desired_state": "Adapter reads Atlas JSON stdin, invokes $HOME/.hermes/scripts/co-agent-review.sh and emits strict JSON verdict.",
+   "acceptance": [
+    "approve, reject, PARTIAL, malformed, timeout and reviewer-unavailable fixtures produce expected verdicts.",
+    "Output is exact JSON; raw report is saved and SHA-bound.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "$HOME/.hermes/scripts/co-agent-review.sh",
+    "Atlas Core source"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Bridges existing reviewer protocols without modifying external tools."
+  },
+  {
+   "id": "P08",
+   "epic": "G5",
+   "title": "Implement task DONE checks",
+   "decisions": [
+    "Use immutable bundle schema; do not trust free-form Atlas evidence alone.",
+    "Deterministic command execution precedes cross-model review."
+   ],
+   "depends_on": [
+    "P06",
+    "P07"
+   ],
+   "files": [
+    {
+     "path": "scripts/done-check.sh",
+     "action": "create"
+    },
+    {
+     "path": "scripts/tests/done-check-task-test.sh",
+     "action": "create"
+    }
+   ],
+   "current_state": "Atlas checks DoD/evidence presence but model rejection does not block completion.",
+   "desired_state": "Task DONE requires scope, scans, observed commands/tests, Atlas rule pass and exact independent reviewer approval.",
+   "acceptance": [
+    "Missing cargo, zero tests, stale SHA, missing scanner, stub/defer/PARTIAL all fail.",
+    "Green fixture emits machine-readable checks and exit 0.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    ".gitcore/features.json",
+    "GitHub rulesets"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Central fail-closed verification logic."
+  },
+  {
+   "id": "P09",
+   "epic": "G5",
+   "title": "Add feature and increment closure checks",
+   "decisions": [
+    "Full ledger must execute with cargo present before feature status is trusted.",
+    "Merged PR is not feature DONE until main is green."
+   ],
+   "depends_on": [
+    "P08"
+   ],
+   "files": [
+    {
+     "path": "scripts/done-check.sh",
+     "action": "edit"
+    },
+    {
+     "path": "scripts/tests/done-check-feature-test.sh",
+     "action": "create"
+    },
+    {
+     "path": "scripts/tests/done-check-increment-test.sh",
+     "action": "create"
+    }
+   ],
+   "current_state": "Task-level evidence has no aggregate closure verifier.",
+   "desired_state": "Feature/increment checks validate DAG closure, current-SHA CI, full ledger, incidents and package links.",
+   "acceptance": [
+    "Green task with red main or open incident does not close increment.",
+    "Full verifier log proves declared tests executed; no hand promotion.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "scripts/verify-pipeline.sh",
+    ".gitcore/features.json"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Aggregates task evidence using existing CI and ledger."
+  },
+  {
+   "id": "P10",
+   "epic": "G6",
+   "title": "Wire DONE and full ledger into CI",
+   "decisions": [
+    "Keep existing required safeguards until shadow gate is proven.",
+    "Required result must be attached to exact PR or main SHA."
+   ],
+   "depends_on": [
+    "P09"
+   ],
+   "files": [
+    {
+     "path": ".github/workflows/ci.yml",
+     "action": "edit"
+    },
+    {
+     "path": ".github/workflows/pr-gate.yml",
+     "action": "edit"
+    },
+    {
+     "path": "scripts/done-check.sh",
+     "action": "edit"
+    }
+   ],
+   "current_state": "CI does not invoke full feature ledger verification; no required DONE check.",
+   "desired_state": "PR gets policy/task evidence check; main runs full ledger and feature/increment evidence artifacts.",
+   "acceptance": [
+    "Docs-only and Rust PRs emit a stable check result; missing/skipped jobs fail closed.",
+    "Main workflow executes full ledger with cargo prerequisite and uploads logs.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "GitHub rulesets",
+    "release workflow"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "CI wiring must preserve existing gates and expose stable status."
+  },
+  {
+   "id": "P11",
+   "epic": "G6",
+   "title": "Track red main runs and reversible recovery",
+   "decisions": [
+    "One tbd-incident issue per failing SHA; no silent auto-merge of reverts.",
+    "Do not mechanically revert schema/data migrations or released tags."
+   ],
+   "depends_on": [
+    "P10"
+   ],
+   "files": [
+    {
+     "path": ".github/workflows/jules-ci-feedback.yml",
+     "action": "edit"
+    },
+    {
+     "path": "scripts/main-incident.sh",
+     "action": "create"
+    },
+    {
+     "path": "scripts/tests/main-incident-test.sh",
+     "action": "create"
+    }
+   ],
+   "current_state": "Jules notifier skips main failures.",
+   "desired_state": "Failed main check opens/updates SHA-keyed incident with owner, run URL and fix/revert tracking.",
+   "acceptance": [
+    "Simulated main failure creates one incident; repeated event deduplicates.",
+    "Incident closes only after linked green fix/revert SHA.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "GitHub rulesets",
+    "release workflow"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Bounded CI failure path and idempotency."
+  },
+  {
+   "id": "P12",
+   "epic": "G7",
+   "title": "Generate Product Acceptance Package",
+   "decisions": [
+    "One page generated from verified evidence; no green claims from prose.",
+    "Separate product acceptance from outward authorization."
+   ],
+   "depends_on": [
+    "P09",
+    "P11"
+   ],
+   "files": [
+    {
+     "path": "scripts/acceptance-package.py",
+     "action": "create"
+    },
+    {
+     "path": "scripts/tests/test_acceptance_package.py",
+     "action": "create"
+    }
+   ],
+   "current_state": "Owner would need to inspect scattered PR/CI/Atlas records.",
+   "desired_state": "Package has changes, trial steps, results, risks, rollback, links and decision block at one SHA.",
+   "acceptance": [
+    "Red/missing evidence or broken required link prevents READY_FOR_ACCEPTANCE.",
+    "Source rollback differs from deployed binary/tag rollback.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "release workflow",
+    "GitHub rulesets"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Deterministic summary generation from the DONE bundle."
+  },
+  {
+   "id": "P13",
+   "epic": "G7",
+   "title": "Activate branch rules (owner authorization of an outward change)",
+   "decisions": [
+    "The owner authorizes only the outward branch-rule activation; the panel-decision policy was already confirmed by the owner on 2026-09-27.",
+    "Rule activation is an outward governance action."
+   ],
+   "depends_on": [
+    "P03",
+    "P10",
+    "P11"
+   ],
+   "files": [
+    {
+     "path": "docs/adr/ADR-035-trunk-based-ship-show-ask.md",
+     "action": "edit"
+    },
+    {
+     "path": "AGENTS.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "ADR-035 accepted or pending by the agent panel; Ask is approved by the panel; main has no required checks. The governance amendment was confirmed by the owner on 2026-09-27 (AGENTS.md \"Decision rights (agent panel)\").",
+   "desired_state": "Owner authorizes the ruleset activation; policy text and main ruleset reflect the approved scope.",
+   "acceptance": [
+    "Owner receives the panel-reviewed simulation and shadow-gate evidence in the Product Acceptance Package before authorizing activation.",
+    "Trial rejects agent direct push, stale PR and unapproved Ask; preserves emergency owner path.",
+    "At most 400 changed lines."
+   ],
+   "do_not_touch": [
+    "secrets",
+    "clientes/",
+    "archivo/"
+   ],
+   "size": "S",
+   "agent": "human",
+   "agent_reason": "Policy acceptance and branch protection require owner authorization."
+  },
+  {
+   "id": "P14",
+   "epic": "G7",
+   "title": "Review finished product and authorize outward release",
+   "decisions": [
+    "Human reviews only the finished product package and explicitly authorizes any public tag/deployment/spend.",
+    "No publication is inferred from merge."
+   ],
+   "depends_on": [
+    "P12",
+    "P13"
+   ],
+   "files": [],
+   "current_state": "Candidate package is READY_FOR_ACCEPTANCE; public release/local install remains separate.",
+   "desired_state": "Owner acceptance or concrete defect issue is recorded; any outward authorization is explicit.",
+   "acceptance": [
+    "Owner receives one-page package and working trial steps.",
+    "Accept/reject and any release authorization are recorded separately.",
+    "Agents retain execution of authorized release steps."
+   ],
+   "do_not_touch": [
+    "secrets",
+    "unapproved public release"
+   ],
+   "size": "S",
+   "agent": "human",
+   "agent_reason": "Final product acceptance and irreversible/outward authorization are owner decisions."
+  },
+  {
+   "id": "P15",
+   "epic": "G7",
+   "title": "Execute authorized release and close increment",
+   "decisions": [
+    "Reuse existing release.yml or local deploy procedure after explicit owner authorization.",
+    "A Git revert does not undo an installed binary, data migration or public tag."
+   ],
+   "depends_on": [
+    "P14"
+   ],
+   "files": [],
+   "current_state": "Product is accepted, but an authorized outward action may still be pending.",
+   "desired_state": "Release agent executes only the authorized action and records artifact URL, SHA, checksum and rollback result.",
+   "acceptance": [
+    "Authorization scope matches the actual tag/deploy target.",
+    "Release/deploy run and checksum are linked in Atlas and package.",
+    "Increment DONE is recomputed after action; failures open an incident."
+   ],
+   "do_not_touch": [
+    "unapproved targets",
+    "secrets",
+    "clientes/",
+    "archivo/"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "Agent executes the bounded release operation after owner authorization."
+  }
+ ]
+}
