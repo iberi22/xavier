@@ -52,7 +52,7 @@
     }
    ],
    "current_state": "ADR-035 is proposed and simulation is pending.",
-   "desired_state": "Owner has reviewed the simulation and recorded acceptance or rejection with report links.",
+   "desired_state": "The agent panel has reviewed the simulation and recorded ADR-035 acceptance or rejection with report links.",
    "acceptance": [
     "From the simulator directory: python3 adr_sim.py --model trunk_based_flow --runs 5000 --seed 42 --outdir reports",
     "rg -n 'Estado|Result|sensitivity|Report' docs/adr/ADR-035-trunk-based-ship-show-ask.md"
@@ -95,7 +95,7 @@
    ],
    "size": "S",
    "agent": "codex",
-   "agent_reason": "A bounded policy edit after the owner accepts the ADR."
+   "agent_reason": "A bounded policy edit after the agent panel accepts the ADR."
   },
   {
    "id": "T03",
@@ -289,7 +289,7 @@
     }
    ],
    "current_state": "Three-minute gate and impact safety are targets without shadow evidence.",
-   "desired_state": "Owner has a measured go/no-go record for branch protection.",
+   "desired_state": "The agent panel has a measured go/no-go record for branch protection; activating branch protection remains an owner-authorized outward step (T08).",
    "acceptance": [
     "gh run list --workflow fast-gate.yml --limit 100 --json databaseId,conclusion,createdAt,updatedAt",
     "gh pr list --state merged --limit 100 --json number,labels,mergedAt",
@@ -317,7 +317,7 @@
    ],
    "files": [],
    "current_state": "Main rulesets only block deletion and force push.",
-   "desired_state": "Direct agent pushes fail and Ship/Show auto-merge only after green fast gate; Ask waits for owner approval.",
+   "desired_state": "Direct agent pushes fail and Ship/Show auto-merge only after green fast gate; Ask waits for agent-panel approval.",
    "acceptance": [
     "gh api repos/iberi22/xavier/rulesets --jq '.[] | {name,enforcement,rules}'",
     "gh api repos/iberi22/xavier/rules/branches/main --jq '.[] | {type,parameters}'",
@@ -421,7 +421,7 @@
   {
    "id": "T11",
    "epic": "P4",
-   "title": "Owner reviews rollout results",
+   "title": "Panel review of rollout results (owner informed via the Product Acceptance Package)",
    "decisions": [
     "Retain, narrow or roll back gate scope based on observed missed failures and recovery times.",
     "Do not promote feature ledger status by hand.",
@@ -437,7 +437,7 @@
     }
    ],
    "current_state": "The four-phase policy is proposed and may not meet latency or reliability targets.",
-   "desired_state": "Owner records an evidence-backed continuation or rollback decision after four weekly cohorts.",
+   "desired_state": "The agent panel records an evidence-backed continuation or rollback decision after four weekly cohorts; the owner receives it in the next Product Acceptance Package.",
    "acceptance": [
     "python3 scripts/tbd-metrics.py --weeks 4",
     "rg -n 'Phase 4|fast-gate|MTTR|change-failure' docs/design/trunk-based/01-DESIGN.md",
@@ -449,8 +449,8 @@
     ".gitcore/features.json"
    ],
    "size": "S",
-   "agent": "human",
-   "agent_reason": "The owner decides whether the observed risk and latency justify retaining the policy."
+   "agent": "agent-panel",
+   "agent_reason": "Reversible decision: decided by the two-model agent panel under AGENTS.md \"Decision rights (agent panel)\"; the owner only gives final product acceptance."
   }
  ]
 }

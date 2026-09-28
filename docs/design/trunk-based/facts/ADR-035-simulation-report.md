@@ -1,6 +1,6 @@
 # ADR-035 — Simulation Report
 
-> Generated: 2026-09-28T03:42:16.141053+00:00 · model `trunk_based_flow` · runs=5000 · seed=42
+> Generated: 2026-09-28T03:54:32.154880+00:00 · model `trunk_based_flow` · runs=5000 · seed=42
 > Reproduce with: `python3 adr_sim.py --model trunk_based_flow --runs 5000 --seed 42`
 
 **Question:** how should an agent-heavy repo integrate changes into main?
@@ -50,7 +50,7 @@ Objective weights: `change_failure_rate`×0.35, `lead_time_hours`×0.2, `mttr_ho
 - docs/design/trunk-based/facts/FACTS.md:5 (rust-test median 9.7 min, rust-clippy 3.2 min, n=10 runs)
 - docs/design/trunk-based/facts/FACTS.md:2 (no required status checks, no required reviews on main)
 - docs/design/trunk-based/facts/FACTS.md:8 (agent failure modes: scope errors, personal paths, unverified test claims)
-- docs/design/trunk-based/facts/FACTS.md:6 (Husky 9 pre-commit runs whole-workspace fmt/clippy/secrets)
+- docs/design/trunk-based/facts/FACTS.md:6 (Husky 9 pre-commit runs workspace fmt plus package-scoped clippy (-p xavier -p code-graph) and secret scan)
 - docs/design/trunk-based/00-ANALYSIS.md:49 (fast-gate target p50 < 3 min, p90 < 3 min for eligible PRs)
 - docs/design/trunk-based/00-ANALYSIS.md:51-52 (DORA targets: lead time <1d, MTTR <4h, change_failure_rate <10%)
 - docs/design/trunk-based/01-DESIGN.md:31-33 (Ship/Show/Ask classification, 2-model panel for Ask)
