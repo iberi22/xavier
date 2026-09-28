@@ -23,7 +23,7 @@ the two cases that always escalate (new dependency, ADR-contradicting change).
 ## MANDATORY RULES — Xavier Skill Controller
 
 **Scope (hard limits)**
-- Touch only the files in this issue's "Files to Modify" table: max 4 files, max 400 changed lines. No drive-by refactors, renames, or reformatting.
+- Touch only the files in this issue's "Files to Modify" table: max 4 files; max 400 changed non-test lines, 400 changed test lines (tests/, benches/, fuzz/, trailing #[cfg(test)] modules) and 50 fixture lines, as counted by `swal-preflight review`. Code stays rustfmt-formatted: `#[rustfmt::skip]` and multi-statement lines are forbidden; if the formatted change does not fit, split the task. Table-driven tests must name each case in their failure message. No drive-by refactors, renames, or reformatting.
 - No new crate in `Cargo.toml`/`Cargo.lock` unless the Library Table (this design set) lists it with license + reuse rationale **and** this issue says so.
 - No new daemon, systemd unit, port, thread pool, FUSE/VFS, or plugin system — host the work in the existing process. No new trait/generic layer until a second in-tree implementation exists.
 - No speculative config: add a `std::env::var` only if a caller sets it, and document the key in `.env.example` in the same change.
@@ -75,7 +75,7 @@ bash scripts/verify-pipeline.sh              # ledger is the judge; never hand-p
 ## Definition of Done
 
 **Scope**
-- [ ] `git diff --stat HEAD | tail -1` shows <= 4 files and <= 400 changed lines.
+- [ ] `swal-preflight review` reports <= 4 files and non-test <= 400, test <= 400, fixture <= 50 changed lines, with no blocking finding.
 - [ ] Every changed file is in this issue's "Files to Modify" table; nothing else was touched.
 - [ ] `git diff HEAD -- Cargo.toml Cargo.lock` is empty, or the new crate is in the Library Table.
 - [ ] `.gitcore/features.json` is untouched.
@@ -132,7 +132,7 @@ bash scripts/verify-pipeline.sh              # ledger is the judge; never hand-p
 
 Notes on two rules that are policy, not precedent:
 
-- **400 lines / 4 files** is a number picked for this initiative to keep islands disjoint
+- **400 non-test + 400 test lines / 4 files** (split 2026-09-28 by agent panel: a single combined cap made agents cut or cram tests and use `#[rustfmt::skip]`) is a number picked for this initiative to keep islands disjoint
   (the parallel-PR convention in `.gitcore/waves/wave-26/issue-01.md:74`). It is a cap, not a
   target: if a behavior genuinely needs more, split the issue rather than raising the cap.
 - **"trait only with 2+ implementations"** is the smallest design that meets the goal
