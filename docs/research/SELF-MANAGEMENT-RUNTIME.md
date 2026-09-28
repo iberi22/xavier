@@ -99,12 +99,12 @@ Hermes ya hace diagnósticos de ambiente (como este). Protocolo:
 
 ## 8. Decisiones
 
-- **Sin Jules**: implementación directa (regla F12/SWAL) — workflow Hermes+kimi(design)→implementación local.
+- **Sin Jules**: implementación directa (regla F12/SWAL) — workflow Hermes (diseño con revisión externa)→implementación local.
 - **Read-only primero**: sensores P0-P1 no tocan nada; P4 con aprobación explícita.
 - **Dedup de tickets**: hash(title + metric) en store de tickets para no duplicar.
 - **Logs**: respetar rotación diaria (~/.xavier/logs/xavier.YYYY-MM-DD); no cargar >1000 líneas por scan.
 
-## 9. Diseño validado (Kimi k3, 2026-08-08)
+## 9. Diseño validado (revisión externa, 2026-08-08)
 
 Diseño de referencia para implementación — módulo `src/self_manage/` (feature-gated `self-manage`):
 
@@ -136,7 +136,7 @@ Contrato de tools:
 | `env_status` | `{include_processes?, top_n≤20}` | psi (some/full avg10/60/300), swap, load_avg, top_processes, services (allowlist), connectivity, alerts derivados de umbrales |
 | `ticket_create` | `{title≤120, body≤8KiB, labels[], severity, fingerprint?}` | id + url + deduplicated + backend |
 
-Reglas de diseño (de Kimi):
+Reglas de diseño (de la revisión externa):
 1. `self_manage` depende de `health/` y `auto_improvement/` SOLO vía traits (`HealthProvider`, `GapSink`) — sin imports cruzados, test con mocks.
 2. `sys_health` consume el handler de `/health` in-process (nunca HTTP loopback a sí mismo).
 3. Idempotencia: `log_scan` vía cursor; `ticket_create` vía fingerprint (hash title+severity+componente) consultado antes de crear.

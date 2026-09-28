@@ -26,14 +26,14 @@ y secreto primero (tokens/claves nunca en disco plano).
 ## Decisiones de Aceptación (Aceptados)
 
 ### 1. `src/secrets/` como ÚNICO gestor persistente de secrets de nodos
-- **Estado**: **ACEPTADO** (revisado 2026-08-14 con validación Kimi k3 — hallazgo P0)
+- **Estado**: **ACEPTADO** (revisado 2026-08-14 con revisión externa de diseño — hallazgo P0)
 - **Decisión**: Los tokens BaaS (Supabase/Neon) y las claves SSH dedicadas se
   almacenan en **`src/secrets/`** — `LocalSecretsVault`/`HardwareVault`
   (AES-256-GCM real, persistencia en disco cifrada vía `MasterKeyManager`) —
   con **`KeyLendingEngine` + `EphemeralLease`** (session_token + real_secret_id
   + agent_id + expires_at) como capa de leases con TTL. Rotación y revocación
   vía `xavier nodes rotate|remove`.
-- **⚠️ Reality check (validación Kimi 2026-08-14)**: `src/clavis/mod.rs`
+- **⚠️ Reality check (revisión externa 2026-08-14)**: `src/clavis/mod.rs`
   (`ClavisEngine`) es **volátil en memoria** (`RwLock<HashMap>`), sin
   persistencia AES-GCM y sin leases — NO es el store para credenciales de
   nodos. El nombre correcto de la struct de lease es `EphemeralLease`
@@ -61,7 +61,7 @@ y secreto primero (tokens/claves nunca en disco plano).
   reside en la billetera (mesh ≠ blockchain).
 
 ### 3. VPS = nodos privados vía edge-hive lite
-- **Estado**: **ACEPTADO** (revisado 2026-08-14 — hallazgos P0 Kimi #4/#5)
+- **Estado**: **ACEPTADO** (revisado 2026-08-14 — hallazgos P0 #4/#5)
 - **Decisión**: `xavier nodes add --provider vps --ssh user@host` instala un
   agente ligero (edge-hive lite: subconjunto identity/sync/tunnel) y lo
   registra en la billetera con challenge-response Ed25519 (protocolo M3).
@@ -82,7 +82,7 @@ y secreto primero (tokens/claves nunca en disco plano).
   de permisos de la billetera.
 
 ### 4. Visibilidad pública/privada por nodo + sync Yjs CRDT
-- **Estado**: **ACEPTADO** (revisado 2026-08-14 — hallazgos P1 Kimi #8/#10)
+- **Estado**: **ACEPTADO** (revisado 2026-08-14 — hallazgos P1 #8/#10)
 - **Decisión**: Cada nodo BaaS declara `visibility`: `public` → directorio M1
   (`GET /mesh/public/nodes`); `private` → solo visible para la billetera (M3).
   **`private` es el default en TODOS los providers; `--visibility public`
@@ -100,7 +100,7 @@ y secreto primero (tokens/claves nunca en disco plano).
 - **Justificación**: edge-mesh ya usa Yjs/y-protocols. Mantiene la separación
   red pública / mesh privada sin exponer direcciones privadas.
 
-### 5. Ciclo de vida de credenciales (rotación y revocación) — P0 Kimi #2/#3
+### 5. Ciclo de vida de credenciales (rotación y revocación) — P0 #2/#3
 - **Estado**: **ACEPTADO** (revisado 2026-08-14)
 - **Decisión**: Dos flujos separados de rotación:
   - **`nodes rotate`** = el usuario provee un token NUEVO (o Xavier llama a la
@@ -120,7 +120,7 @@ y secreto primero (tokens/claves nunca en disco plano).
   nodos restantes (forward secrecy); declarar que el ciphertext histórico ya
   descifrado no es recuperable.
 
-### 6. Certificado de nodo = mecanismo criptográfico de aislamiento (P0 Kimi #6)
+### 6. Certificado de nodo = mecanismo criptográfico de aislamiento (P0 #6)
 - **Estado**: **ACEPTADO** (revisado 2026-08-14)
 - **Decisión**: El aislamiento cross-wallet se garantiza criptográficamente:
   - **Certificado de nodo** = firma de la billetera sobre
