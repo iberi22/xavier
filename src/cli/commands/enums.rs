@@ -1253,13 +1253,33 @@ pub enum SecretsCommand {
         #[arg(long)]
         apply: bool,
     },
-    /// Lend a secret to an agent
+    /// Lend a secret to an agent.
+    ///
+    /// Internal-only and value-free: it returns a lease token and never the
+    /// secret. Use `secrets exec` to run a command with the secret injected
+    /// into its environment.
+    #[command(hide = true)]
     Lend {
         secret_name: String,
         agent: String,
         /// Time to live in seconds (default 3600)
         #[arg(short, long, default_value_t = 3600)]
         ttl: u64,
+    },
+    /// Run a command with a vault secret injected into its environment
+    Exec {
+        /// Secret key name resolved in the vault
+        secret_name: String,
+        /// Agent identity recorded in the lease and audit rows
+        agent: String,
+        /// Lease TTL and child watchdog in seconds (default 3600)
+        #[arg(short, long, default_value_t = 3600)]
+        ttl: u64,
+        /// Command to run followed by its arguments, taken verbatim after a
+        /// `--` separator. The first element is the program itself, so a
+        /// zero-argument command is `-- /bin/true`.
+        #[arg(last = true, required = true, num_args = 1..)]
+        argv: Vec<String>,
     },
     /// List all active secret leases
     ListLeases,

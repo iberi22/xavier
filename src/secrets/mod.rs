@@ -76,6 +76,8 @@ impl SecretsManager {
 // Lending engine
 pub mod audit;
 pub mod exec;
+#[cfg(test)]
+mod exec_http_tests;
 pub mod fallback_store;
 pub mod import_env;
 pub mod lending;
