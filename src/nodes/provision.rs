@@ -415,10 +415,93 @@ impl<P: NodeProvisioner> ProvisioningEngine<P> {
 mod tests {
     use super::*;
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        vars: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvGuard {
+        fn new(keys: &[&'static str]) -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let vars = keys.iter().map(|&k| (k, std::env::var(k).ok())).collect();
+            Self { _lock: lock, vars }
+        }
+
+        fn set(&self, key: &'static str, value: &str) {
+            std::env::set_var(key, value);
+        }
+
+        fn remove(&self, key: &'static str) {
+            std::env::remove_var(key);
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, orig_val) in &self.vars {
+                if let Some(val) = orig_val {
+                    std::env::set_var(key, val);
+                } else {
+                    std::env::remove_var(key);
+                }
+            }
+        }
+    }
+
+    /// Helper to assert that ~/.xavier/secrets directory listing and mtime remain untouched.
+    async fn assert_real_secrets_untouched_async<F, Fut, R>(f: F) -> R
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = R>,
+    {
+        let secrets_dir = dirs::home_dir().map(|h| h.join(".xavier").join("secrets"));
+        let before_snapshot = secrets_dir.as_ref().and_then(|dir| {
+            if !dir.exists() {
+                return None;
+            }
+            let mtime = std::fs::metadata(dir).ok()?.modified().ok()?;
+            let mut entries = Vec::new();
+            if let Ok(rd) = std::fs::read_dir(dir) {
+                for e in rd.flatten() {
+                    entries.push(e.file_name().to_string_lossy().to_string());
+                }
+            }
+            entries.sort();
+            Some((entries, mtime))
+        });
+
+        let res = f().await;
+
+        if let (Some(dir), Some((before_entries, before_mtime))) = (&secrets_dir, before_snapshot) {
+            let after_mtime = std::fs::metadata(dir).ok().and_then(|m| m.modified().ok());
+            assert_eq!(
+                Some(before_mtime),
+                after_mtime,
+                "Real ~/.xavier/secrets directory mtime was modified during test!"
+            );
+            let mut after_entries = Vec::new();
+            if let Ok(rd) = std::fs::read_dir(dir) {
+                for e in rd.flatten() {
+                    after_entries.push(e.file_name().to_string_lossy().to_string());
+                }
+            }
+            after_entries.sort();
+            assert_eq!(
+                before_entries, after_entries,
+                "Real ~/.xavier/secrets directory contents were modified during test!"
+            );
+        }
+
+        res
+    }
+
     #[test]
     fn test_reject_cli_token_without_env_flag() {
-        std::env::remove_var("XAVIER_ALLOW_CLI_TOKEN");
-        std::env::remove_var("XAVIER_NODE_TOKEN");
+        let guard = EnvGuard::new(&["XAVIER_ALLOW_CLI_TOKEN", "XAVIER_NODE_TOKEN"]);
+        guard.remove("XAVIER_ALLOW_CLI_TOKEN");
+        guard.remove("XAVIER_NODE_TOKEN");
 
         let res = resolve_token(Some("sbp_forbidden_via_flag"));
         assert!(res.is_err(), "Must reject --token without allow flag");
@@ -427,22 +510,22 @@ mod tests {
 
     #[test]
     fn test_allow_cli_token_with_env_flag() {
-        std::env::set_var("XAVIER_ALLOW_CLI_TOKEN", "1");
+        let guard = EnvGuard::new(&["XAVIER_ALLOW_CLI_TOKEN"]);
+        guard.set("XAVIER_ALLOW_CLI_TOKEN", "1");
         let res = resolve_token(Some("sbp_allowed_test_token"));
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), "sbp_allowed_test_token");
-        std::env::remove_var("XAVIER_ALLOW_CLI_TOKEN");
     }
 
     #[test]
     fn test_read_token_from_env() {
-        std::env::remove_var("XAVIER_ALLOW_CLI_TOKEN");
-        std::env::set_var("XAVIER_NODE_TOKEN", "sbp_from_environment");
+        let guard = EnvGuard::new(&["XAVIER_ALLOW_CLI_TOKEN", "XAVIER_NODE_TOKEN"]);
+        guard.remove("XAVIER_ALLOW_CLI_TOKEN");
+        guard.set("XAVIER_NODE_TOKEN", "sbp_from_environment");
 
         let res = resolve_token(None);
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), "sbp_from_environment");
-        std::env::remove_var("XAVIER_NODE_TOKEN");
     }
 
     #[test]
@@ -463,77 +546,87 @@ mod tests {
 
     #[tokio::test]
     async fn test_provision_rotate_remove_lifecycle() {
-        let registry = Arc::new(NodeRegistry::open_in_memory().unwrap());
-        let secrets = NodeSecretsManager::new();
-        let provisioner = Arc::new(MockProvisioner::new());
+        assert_real_secrets_untouched_async(|| async {
+            let tmp = tempfile::tempdir().unwrap();
+            let registry = Arc::new(NodeRegistry::open_in_memory().unwrap());
+            let secrets =
+                NodeSecretsManager::isolated_for_test(tmp.path().join("secrets"), [101u8; 32]);
+            let provisioner = Arc::new(MockProvisioner::new());
 
-        let engine = ProvisioningEngine::new(registry.clone(), secrets, provisioner);
-        let wallet_sk = SigningKey::generate(&mut OsRng);
+            let engine = ProvisioningEngine::new(registry.clone(), secrets, provisioner);
+            let wallet_sk = SigningKey::generate(&mut OsRng);
 
-        // Provision
-        let record = engine
-            .provision_node(
-                &wallet_sk,
-                Provider::Supabase,
-                NodeVisibility::Private,
-                Some("sbp_test_token".to_string()),
-                None,
-                None,
-                3600,
-                3600,
-            )
-            .await
-            .unwrap();
+            // Provision
+            let record = engine
+                .provision_node(
+                    &wallet_sk,
+                    Provider::Supabase,
+                    NodeVisibility::Private,
+                    Some("sbp_test_token".to_string()),
+                    None,
+                    None,
+                    3600,
+                    3600,
+                )
+                .await
+                .unwrap();
 
-        assert_eq!(record.provider, Provider::Supabase);
-        assert_eq!(record.visibility, NodeVisibility::Private);
-        assert_eq!(record.status, NodeStatus::Active);
-        assert!(record.cert.is_some());
+            assert_eq!(record.provider, Provider::Supabase);
+            assert_eq!(record.visibility, NodeVisibility::Private);
+            assert_eq!(record.status, NodeStatus::Active);
+            assert!(record.cert.is_some());
 
-        // Rotate
-        let rotated = engine
-            .rotate_node(&record.node_id, "sbp_new_token_456", 3600)
-            .await
-            .unwrap();
-        assert_ne!(record.lease_id, rotated.lease_id);
+            // Rotate
+            let rotated = engine
+                .rotate_node(&record.node_id, "sbp_new_token_456", 3600)
+                .await
+                .unwrap();
+            assert_ne!(record.lease_id, rotated.lease_id);
 
-        // Remove
-        let status = engine.remove_node(&record.node_id).await.unwrap();
-        assert_eq!(status, NodeStatus::Revoked);
+            // Remove
+            let status = engine.remove_node(&record.node_id).await.unwrap();
+            assert_eq!(status, NodeStatus::Revoked);
 
-        let final_rec = registry.get(&record.node_id).unwrap().unwrap();
-        assert_eq!(final_rec.status, NodeStatus::Revoked);
+            let final_rec = registry.get(&record.node_id).unwrap().unwrap();
+            assert_eq!(final_rec.status, NodeStatus::Revoked);
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn test_deprovision_failure_yields_partial_revocation() {
-        let registry = Arc::new(NodeRegistry::open_in_memory().unwrap());
-        let secrets = NodeSecretsManager::new();
-        let provisioner = Arc::new(MockProvisioner::with_failing_deprovision(
-            "Supabase API error 500",
-        ));
+        assert_real_secrets_untouched_async(|| async {
+            let tmp = tempfile::tempdir().unwrap();
+            let registry = Arc::new(NodeRegistry::open_in_memory().unwrap());
+            let secrets =
+                NodeSecretsManager::isolated_for_test(tmp.path().join("secrets"), [102u8; 32]);
+            let provisioner = Arc::new(MockProvisioner::with_failing_deprovision(
+                "Supabase API error 500",
+            ));
 
-        let engine = ProvisioningEngine::new(registry.clone(), secrets, provisioner);
-        let wallet_sk = SigningKey::generate(&mut OsRng);
+            let engine = ProvisioningEngine::new(registry.clone(), secrets, provisioner);
+            let wallet_sk = SigningKey::generate(&mut OsRng);
 
-        let record = engine
-            .provision_node(
-                &wallet_sk,
-                Provider::Supabase,
-                NodeVisibility::Private,
-                Some("sbp_test_token".to_string()),
-                None,
-                None,
-                3600,
-                3600,
-            )
-            .await
-            .unwrap();
+            let record = engine
+                .provision_node(
+                    &wallet_sk,
+                    Provider::Supabase,
+                    NodeVisibility::Private,
+                    Some("sbp_test_token".to_string()),
+                    None,
+                    None,
+                    3600,
+                    3600,
+                )
+                .await
+                .unwrap();
 
-        let status = engine.remove_node(&record.node_id).await.unwrap();
-        assert_eq!(status, NodeStatus::PartialRevocation);
+            let status = engine.remove_node(&record.node_id).await.unwrap();
+            assert_eq!(status, NodeStatus::PartialRevocation);
 
-        let final_rec = registry.get(&record.node_id).unwrap().unwrap();
-        assert_eq!(final_rec.status, NodeStatus::PartialRevocation);
+            let final_rec = registry.get(&record.node_id).unwrap().unwrap();
+            assert_eq!(final_rec.status, NodeStatus::PartialRevocation);
+        })
+        .await;
     }
 }
