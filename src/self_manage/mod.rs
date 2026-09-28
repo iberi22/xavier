@@ -4,7 +4,7 @@
 //! top procesos por RSS, conteo D-state y alertas derivadas de umbrales.
 //! Sin dependencias externas (solo std + serde) — lectura directa de /proc.
 //!
-//! Diseño validado con Kimi k3 (docs/research/SELF-MANAGEMENT-RUNTIME.md §9-12).
+//! Diseño validado en docs/research/SELF-MANAGEMENT-RUNTIME.md §9-12.
 //! Siguientes fases: log_scan (P1), env_status (P1), ticket_create (P2).
 
 use serde::{Deserialize, Serialize};
