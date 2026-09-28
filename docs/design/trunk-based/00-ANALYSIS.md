@@ -1,6 +1,6 @@
 # Trunk-based development: evidence and fit
 
-Date: 2026-09-27. Status: proposal; see [the design](01-DESIGN.md) and [ADR-035](../../adr/ADR-035-trunk-based-ship-show-ask.md). `facts/FACTS.md` below refers to the measured snapshot supplied with this design, not a file in the public repository. Targets below are goals, not measured results.
+Date: 2026-09-27. Status: proposal; see [the design](01-DESIGN.md) and [ADR-035](../../adr/ADR-035-trunk-based-ship-show-ask.md). `facts/FACTS.md` is the measured snapshot tracked in this directory, with a reproducible evidence section. Targets below are goals, not measured results.
 
 ## Current state
 
