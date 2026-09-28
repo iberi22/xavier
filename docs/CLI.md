@@ -452,6 +452,39 @@ xavier provider fallback local groq openai
 
 ## Secrets and Vault
 
+Secret values are never accepted as command-line arguments: they would land in
+shell history and agent transcripts. `xavier vault set` and `xavier secrets put`
+read the value from a hidden interactive prompt when stdin is a TTY, and from
+stdin when it is piped.
+
+### `xavier secrets put <name>`
+
+Store one secret in the hardware vault, reading the value from the hidden
+prompt or from stdin.
+
+```bash
+xavier secrets put OPENAI_API_KEY
+printf '%s' "$VALUE" | xavier secrets put OPENAI_API_KEY
+```
+
+### `xavier secrets import-env --from <file> --dry-run|--apply`
+
+Import secrets from a `.env` file into the hardware vault. Exactly one of
+`--dry-run` or `--apply` is required.
+
+Flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--from <file>` | — | Path to the `.env` file to import. Required. |
+| `--dry-run` | — | Parse and validate the file, print the plan, store nothing. |
+| `--apply` | — | Store every parsed entry in the hardware vault. |
+
+```bash
+xavier secrets import-env --from .env --dry-run
+xavier secrets import-env --from .env --apply
+```
+
 ### `xavier secrets lend <secret_name> <agent>`
 
 Lend a secret to an agent.
@@ -480,10 +513,12 @@ Check lease status.
 
 ### `xavier vault set|get|delete`
 
-Manage secrets in the hardware vault.
+Manage secrets in the hardware vault. `set` takes no value argument: the value
+comes from the hidden prompt, or from stdin when it is piped.
 
 ```bash
-xavier vault set OPENAI_API_KEY sk-...
+xavier vault set OPENAI_API_KEY
+printf '%s' "$VALUE" | xavier vault set OPENAI_API_KEY
 xavier vault get OPENAI_API_KEY
 xavier vault delete OPENAI_API_KEY
 ```
