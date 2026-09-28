@@ -838,7 +838,7 @@ fn infer_domains(description: &str, content: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-fn env_lock() -> &'static tokio::sync::Mutex<()> {
+pub(crate) fn env_lock() -> &'static tokio::sync::Mutex<()> {
     static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     &ENV_LOCK
 }
