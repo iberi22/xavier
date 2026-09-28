@@ -314,6 +314,15 @@ impl SkillRegistry {
         Self::with_paths(workspace_root, home.as_deref(), store_override)
     }
 
+    /// Build and index a [`SkillRegistry`] with default scan paths for the given workspace root.
+    ///
+    /// Single construction site (D7b) that reproduces default scan paths and re-indexes skills.
+    pub async fn build_skill_registry(workspace: impl AsRef<Path>) -> Self {
+        let mut registry = Self::with_defaults(workspace.as_ref());
+        let _ = registry.reindex().await;
+        registry
+    }
+
     /// Create with default paths for an explicit home dir (testable helper).
     fn with_home(workspace_root: &Path, home: Option<&Path>) -> Self {
         Self::with_paths(workspace_root, home, None)
@@ -661,6 +670,14 @@ impl SkillRegistry {
     }
 }
 
+/// Build and index a [`SkillRegistry`] with default scan paths for the given workspace root.
+///
+/// Intended as the single construction site for REST, MCP and HTTP context fusion (D7b);
+/// callers migrate to it in follow-up tasks.
+pub async fn build_skill_registry(workspace: impl AsRef<Path>) -> SkillRegistry {
+    SkillRegistry::build_skill_registry(workspace).await
+}
+
 /// Text embedded at index time: skill name plus first 200 chars of description.
 pub fn skill_embed_text(name: &str, description: &str) -> String {
     let snippet: String = description.chars().take(200).collect();
@@ -818,6 +835,79 @@ fn infer_domains(description: &str, content: &str) -> Vec<String> {
 
     domains.dedup();
     domains
+}
+
+#[cfg(test)]
+fn env_lock() -> &'static tokio::sync::Mutex<()> {
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    &ENV_LOCK
+}
+
+#[cfg(test)]
+fn set_skill_store_env(path: &Path) -> Option<String> {
+    let previous = std::env::var("XAVIER_SKILL_STORE").ok();
+    std::env::set_var("XAVIER_SKILL_STORE", path);
+    previous
+}
+
+#[cfg(test)]
+fn restore_skill_store_env(previous: Option<String>) {
+    match previous {
+        Some(value) => std::env::set_var("XAVIER_SKILL_STORE", value),
+        None => std::env::remove_var("XAVIER_SKILL_STORE"),
+    }
+}
+
+#[cfg(test)]
+fn remove_skill_store_env() -> Option<String> {
+    let previous = std::env::var("XAVIER_SKILL_STORE").ok();
+    std::env::remove_var("XAVIER_SKILL_STORE");
+    previous
+}
+
+/// Holds the shared env lock plus the `XAVIER_SKILL_STORE` value that was set
+/// before the test started. `Drop` restores that original value, so a failing
+/// assertion unwinds without leaking the override into sibling tests.
+#[cfg(test)]
+struct SkillStoreEnv {
+    _lock: tokio::sync::MutexGuard<'static, ()>,
+    previous: Option<String>,
+}
+
+#[cfg(test)]
+impl SkillStoreEnv {
+    /// Lock the env and point `XAVIER_SKILL_STORE` at `value`.
+    async fn set(value: impl AsRef<Path>) -> Self {
+        let lock = env_lock().lock().await;
+        let previous = set_skill_store_env(value.as_ref());
+        Self {
+            _lock: lock,
+            previous,
+        }
+    }
+
+    /// Lock the env and remove `XAVIER_SKILL_STORE` entirely.
+    async fn unset() -> Self {
+        let lock = env_lock().lock().await;
+        let previous = remove_skill_store_env();
+        Self {
+            _lock: lock,
+            previous,
+        }
+    }
+
+    /// Re-point the variable, keeping the value saved at lock time as the
+    /// one restored on drop.
+    fn replace(&mut self, value: impl AsRef<Path>) {
+        set_skill_store_env(value.as_ref());
+    }
+}
+
+#[cfg(test)]
+impl Drop for SkillStoreEnv {
+    fn drop(&mut self) {
+        restore_skill_store_env(self.previous.take());
+    }
 }
 
 #[cfg(test)]
@@ -1197,6 +1287,45 @@ Instructions here.
         assert_eq!(registry.embed_missing(&port).await, 1);
         assert_eq!(registry.vector_count(), 1);
     }
+
+    // --- feat-skill-registry-unify (#2600 / D7b, D7c) ---
+
+    #[tokio::test]
+    async fn test_build_skill_registry_indexes_every_discovery_root() {
+        let workspace = tempfile::tempdir().unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let ws_skills = workspace.path().join("skills");
+        let ws_agents_skills = workspace.path().join(".agents").join("skills");
+        write_skill_md(&ws_skills.join("ws-skill"), "ws-skill");
+        write_skill_md(&ws_agents_skills.join("agent-skill"), "agent-skill");
+        write_skill_md(&store.path().join("store-skill"), "store-skill");
+
+        let _env = SkillStoreEnv::set(store.path()).await;
+
+        // No reindex() call here: the shared constructor must return a registry
+        // that is already indexed.
+        let registry = build_skill_registry(workspace.path()).await;
+
+        for name in ["ws-skill", "agent-skill", "store-skill"] {
+            assert!(
+                registry.get(name).is_some(),
+                "{name} must be indexed from its discovery root"
+            );
+        }
+
+        // The configured store replaces the Hermes default, it does not add to it.
+        let home = home_dir().expect("HOME must be resolvable for the Hermes default");
+        let hermes = super::hermes_store_path(&home);
+        assert!(
+            !registry.scan_paths.contains(&hermes),
+            "the Hermes store must be dropped when XAVIER_SKILL_STORE is set"
+        );
+        assert_eq!(
+            registry.scan_paths,
+            vec![ws_skills, ws_agents_skills, store.path().to_path_buf()],
+            "exactly the two workspace roots plus the configured store"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1205,35 +1334,13 @@ mod eval_tests_302 {
     use super::infer_domains;
     use super::resolve_skill_store;
     use super::SkillRegistry;
+    use super::SkillStoreEnv;
     use crate::context::skill_registry::IndexedSkill;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     use std::path::{Path, PathBuf};
 
     const EVAL_DIM: usize = 64;
-
-    /// Serializes tests that mutate `XAVIER_SKILL_STORE` in the shared process
-    /// environment, so no two env-mutating tests can interleave.
-    fn env_lock() -> &'static std::sync::Mutex<()> {
-        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        &ENV_LOCK
-    }
-
-    /// Point `XAVIER_SKILL_STORE` at `path`, returning the previous value so it
-    /// can be restored verbatim.
-    fn set_skill_store_env(path: &Path) -> Option<String> {
-        let previous = std::env::var("XAVIER_SKILL_STORE").ok();
-        std::env::set_var("XAVIER_SKILL_STORE", path);
-        previous
-    }
-
-    /// Restore the pre-test value: the captured one, or removal when unset.
-    fn restore_skill_store_env(previous: Option<String>) {
-        match previous {
-            Some(value) => std::env::set_var("XAVIER_SKILL_STORE", value),
-            None => std::env::remove_var("XAVIER_SKILL_STORE"),
-        }
-    }
 
     /// Assert the three pre-existing discovery roots survive an unset variable:
     /// workspace `skills/`, workspace `.agents/skills`, and `$HOME/.hermes/skills`.
@@ -1456,15 +1563,11 @@ mod eval_tests_302 {
         assert_eq!(resolve_skill_store(Some("   ".to_string()), None), None);
     }
 
-    #[test]
-    fn test_skill_store_env_override_respected() {
-        let _guard = env_lock()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
+    #[tokio::test]
+    async fn test_skill_store_env_override_respected() {
         let workspace = tempfile::tempdir().unwrap();
         let override_store = tempfile::tempdir().unwrap();
-        let previous = set_skill_store_env(override_store.path());
+        let _env = SkillStoreEnv::set(override_store.path()).await;
 
         let registry = SkillRegistry::with_defaults(workspace.path());
 
@@ -1485,16 +1588,10 @@ mod eval_tests_302 {
             3,
             "Scan paths should exactly include 2 workspace defaults and the override"
         );
-
-        restore_skill_store_env(previous);
     }
 
     #[tokio::test]
     async fn test_with_defaults_skill_store_env_wiring() {
-        let guard = env_lock()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
         let workspace = tempfile::tempdir().unwrap();
         let override_store = tempfile::tempdir().unwrap();
         let skill_dir = override_store.path().join("env-override-skill");
@@ -1504,7 +1601,7 @@ mod eval_tests_302 {
             "---\nname: env-override-skill\ndescription: \"Skill env-override-skill for testing\"\n---\n\n# env-override-skill\n",
         )
         .unwrap();
-        let previous = set_skill_store_env(override_store.path());
+        let mut env = SkillStoreEnv::set(override_store.path()).await;
 
         // The public constructor must read the real environment variable, so
         // removing the `std::env::var` read in `with_defaults` breaks this test.
@@ -1518,7 +1615,7 @@ mod eval_tests_302 {
 
         // Documented behavior on a bad value: warn (see with_defaults) but the
         // override still replaces Hermes rather than silently failing open.
-        set_skill_store_env(Path::new("/nonexistent/xavier-skill-store"));
+        env.replace(Path::new("/nonexistent/xavier-skill-store"));
         let missing = SkillRegistry::with_defaults(workspace.path());
         assert!(
             !missing.scan_paths.contains(&default_hermes),
@@ -1528,11 +1625,8 @@ mod eval_tests_302 {
             .scan_paths
             .contains(&PathBuf::from("/nonexistent/xavier-skill-store")));
 
-        // The environment is only read by the constructors above; release the
-        // lock before awaiting so no std MutexGuard is held across an await.
-        restore_skill_store_env(previous);
-        drop(guard);
-
+        // The environment is only read by the constructors above, so this reindex
+        // needs no lock juggling: the guard restores the original value on unwind.
         let indexed = registry.reindex().await.unwrap();
         assert!(
             indexed >= 1,
@@ -1544,26 +1638,21 @@ mod eval_tests_302 {
         );
     }
 
-    #[test]
-    fn test_unset_skill_env_preserves_all_three_scan_roots() {
-        let _guard = env_lock()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
+    #[tokio::test]
+    async fn test_unset_skill_env_preserves_all_three_scan_roots() {
         let workspace = tempfile::tempdir().unwrap();
-        let previous = std::env::var("XAVIER_SKILL_STORE").ok();
+        let mut env = SkillStoreEnv::unset().await;
 
         // Unset keeps every current discovery root.
-        std::env::remove_var("XAVIER_SKILL_STORE");
         let unset = SkillRegistry::with_defaults(workspace.path());
         assert_three_scan_roots(&unset, workspace.path());
+        let built = crate::context::skill_registry::build_skill_registry(workspace.path()).await;
+        assert_three_scan_roots(&built, workspace.path());
 
         // Empty is treated as unset and keeps the same three roots.
-        set_skill_store_env(Path::new("   \t "));
+        env.replace(Path::new("   \t "));
         let empty = SkillRegistry::with_defaults(workspace.path());
         assert_three_scan_roots(&empty, workspace.path());
-
-        restore_skill_store_env(previous);
     }
 
     #[test]
