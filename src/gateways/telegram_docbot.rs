@@ -35,7 +35,8 @@ impl TelegramDocConfig {
     pub fn from_env() -> Result<Self> {
         let token = std::env::var("TELEGRAM_BOT_TOKEN").map_err(|_| {
             anyhow::anyhow!(
-                "TELEGRAM_BOT_TOKEN not set — run: xavier vault set telegram_bot_token <TOKEN>"
+                "TELEGRAM_BOT_TOKEN not set — run: xavier vault set telegram_bot_token \
+                 and paste the value at the hidden prompt, or pipe it on stdin"
             )
         })?;
 
