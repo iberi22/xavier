@@ -1,6 +1,12 @@
 //! Link-object backups and atomic file persistence for skill controller.
 //!
 //! Provides write-ahead backup state and crash-safe file persistence.
+//!
+//! Containment is delegated to the J02 policy layer: callers must authorize
+//! `base_dir` and every `target_path` through `FsPolicy` before calling in;
+//! this module never re-canonicalizes caller paths. All operations are
+//! synchronous `std::fs`, so callers on a Tokio worker must wrap them in
+//! `tokio::task::spawn_blocking`.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -10,6 +16,11 @@ use thiserror::Error;
 
 pub const BACKUPS_SUBDIR: &str = "backups";
 const _: () = assert!(!BACKUPS_SUBDIR.is_empty());
+
+/// Per-file backup cap, matching the J02 package member bound
+/// (`PACKAGE_BOUNDS.3`): foreign files are untrusted input.
+pub const MAX_BACKUP_BYTES: u64 = 1 << 20;
+const _: () = assert!(MAX_BACKUP_BYTES > 0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -39,6 +50,8 @@ pub enum BackupError {
     Serialization(#[from] serde_json::Error),
     #[error("unmanaged directory collision at {0}")]
     UnmanagedDirectory(PathBuf),
+    #[error("backup source {path} exceeds the {limit} byte cap")]
+    BoundExceeded { path: PathBuf, limit: u64 },
 }
 
 #[derive(Debug, Clone)]
@@ -46,18 +59,33 @@ pub struct BackupManager {
     base_dir: PathBuf,
 }
 
+#[cfg(unix)]
+fn set_dir_permissions(path: &Path) -> Result<(), BackupError> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|source| BackupError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+#[cfg(not(unix))]
+fn set_dir_permissions(_path: &Path) -> Result<(), BackupError> {
+    Ok(())
+}
+
 impl BackupManager {
     pub fn new(base_dir: PathBuf) -> Result<Self, BackupError> {
+        let preexisting = base_dir.exists();
         if let Err(source) = fs::create_dir_all(&base_dir) {
             return Err(BackupError::Io {
                 path: base_dir,
                 source,
             });
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&base_dir, fs::Permissions::from_mode(0o700));
+        // Restrict the mode only when this constructor created the directory;
+        // a pre-existing shared directory keeps its owner's permissions.
+        if !preexisting {
+            set_dir_permissions(&base_dir)?;
         }
         Ok(Self { base_dir })
     }
@@ -66,8 +94,14 @@ impl BackupManager {
         &self.base_dir
     }
 
+    /// Directory holding every backup record of one transaction. The `tx_id`
+    /// is hashed into the directory name so arbitrary `tx_id` content can
+    /// never traverse out of `base_dir`.
     pub fn backups_dir(&self, tx_id: &str) -> PathBuf {
-        self.base_dir.join(BACKUPS_SUBDIR).join(tx_id)
+        use sha2::{Digest, Sha256};
+        let hash = crate::crypto::hex_encode(Sha256::digest(tx_id.as_bytes()));
+        let short = if hash.len() >= 16 { &hash[..16] } else { &hash };
+        self.base_dir.join(BACKUPS_SUBDIR).join(short)
     }
 
     pub fn backup_file_path(&self, tx_id: &str, target_path: &Path) -> PathBuf {
@@ -118,6 +152,12 @@ impl BackupManager {
         }
 
         if meta.is_file() {
+            if meta.len() > MAX_BACKUP_BYTES {
+                return Err(BackupError::BoundExceeded {
+                    path: target_path.to_path_buf(),
+                    limit: MAX_BACKUP_BYTES,
+                });
+            }
             let content = fs::read(target_path).map_err(|source| BackupError::Io {
                 path: target_path.to_path_buf(),
                 source,
@@ -186,16 +226,17 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> Result<(), BackupError> {
             })
         }
     };
+    let preexisting = parent.exists();
     if let Err(source) = fs::create_dir_all(parent) {
         return Err(BackupError::Io {
             path: parent.to_path_buf(),
             source,
         });
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+    // Same rule as `BackupManager::new`: only directories this call created
+    // get the restrictive mode; a pre-existing parent keeps its owner's mode.
+    if !preexisting {
+        set_dir_permissions(parent)?;
     }
     let rand_id = uuid::Uuid::new_v4().simple();
     let tmp = parent.join(format!(".tmp-{}-{}", current_timestamp(), rand_id));
@@ -352,6 +393,85 @@ mod tests {
         let tx_id = "tx-unmanaged-01";
         let result = manager.backup_target(tx_id, &unmanaged_dir, false);
         assert!(matches!(result, Err(BackupError::UnmanagedDirectory(_))));
+    }
+
+    #[test]
+    fn test_oversized_target_is_refused_without_writing() {
+        let dir = tempdir().unwrap();
+        let manager = BackupManager::new(dir.path().join("state")).unwrap();
+        let file_path = dir.path().join("huge.bin");
+        let oversized = vec![b'x'; (MAX_BACKUP_BYTES + 1) as usize];
+        fs::write(&file_path, &oversized).unwrap();
+
+        let tx_id = "tx-oversized-01";
+        let result = manager.backup_target(tx_id, &file_path, false);
+        assert!(matches!(result, Err(BackupError::BoundExceeded { .. })));
+        assert!(!manager.backups_dir(tx_id).exists());
+    }
+
+    #[test]
+    fn test_tx_id_with_traversal_components_stays_inside_base_dir() {
+        let dir = tempdir().unwrap();
+        let manager = BackupManager::new(dir.path().join("state")).unwrap();
+        let file_path = dir.path().join("SKILL.md");
+        fs::write(&file_path, b"traversal payload").unwrap();
+
+        let evil_tx = "../../escape";
+        assert!(manager.backups_dir(evil_tx).starts_with(manager.base_dir()));
+
+        let backup = manager.backup_target(evil_tx, &file_path, false).unwrap();
+        match backup {
+            BackupKind::OwnedCopy {
+                backup_path: Some(p),
+                ..
+            } => assert!(p.starts_with(manager.base_dir())),
+            _ => panic!("expected owned copy backup kind"),
+        }
+        assert!(manager.read_backup(evil_tx, &file_path).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_new_restricts_mode_only_for_directories_it_creates() {
+        let dir = tempdir().unwrap();
+        let fresh = BackupManager::new(dir.path().join("fresh")).unwrap();
+        assert!(fresh.base_dir().exists());
+        let shared = dir.path().join("shared");
+        fs::create_dir_all(&shared).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&shared, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let manager = BackupManager::new(shared.clone()).unwrap();
+        assert!(manager.base_dir().exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(fresh.base_dir()), 0o700);
+            assert_eq!(mode(manager.base_dir()), 0o755);
+        }
+    }
+
+    #[test]
+    fn test_atomic_write_leaves_preexisting_parent_mode_untouched() {
+        let dir = tempdir().unwrap();
+        let parent = dir.path().join("nested");
+        fs::create_dir_all(&parent).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let target = parent.join("file.txt");
+        atomic_write(&target, b"data").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"data");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&parent).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o755);
+        }
     }
 
     #[test]
