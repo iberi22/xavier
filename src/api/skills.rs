@@ -67,8 +67,7 @@ pub async fn dispatch_skill(
     use crate::context::SkillDispatcher;
 
     let workspace_root = std::path::PathBuf::from(&workspace.workspace_id);
-    let mut registry = SkillRegistry::with_defaults(&workspace_root);
-    let _ = registry.reindex().await;
+    let registry = SkillRegistry::build_skill_registry(&workspace_root).await;
     let memory = workspace.workspace.memory.clone();
     let dispatcher = SkillDispatcher::new(registry, Some(memory));
 
@@ -181,8 +180,7 @@ pub async fn list_skills(Extension(workspace): Extension<WorkspaceContext>) -> i
     use crate::context::skill_registry::SkillRegistry;
 
     let workspace_root = std::path::PathBuf::from(&workspace.workspace_id);
-    let mut registry = SkillRegistry::with_defaults(&workspace_root);
-    let _ = registry.reindex().await;
+    let registry = SkillRegistry::build_skill_registry(&workspace_root).await;
 
     let skills: Vec<SkillListEntry> = registry
         .list()
@@ -202,4 +200,240 @@ pub async fn list_skills(Extension(workspace): Extension<WorkspaceContext>) -> i
         "count": skills.len(),
         "skills": skills
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::RuntimeConfig;
+    use crate::memory::store::MemoryBackend;
+    use crate::settings::types::DedupSettings;
+    use crate::workspace::{
+        EmbeddingProviderMode, PlanTier, SyncPolicy, WorkspaceConfig, WorkspaceState,
+    };
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        routing::{get, post},
+        Router,
+    };
+    use std::sync::Arc;
+    use tower::ServiceExt;
+
+    /// Saves the previous `HOME` and `XAVIER_SKILL_STORE` values and restores both
+    /// on drop, so a failing assertion unwinds without leaking either override into
+    /// sibling tests of this binary.
+    struct EnvGuard {
+        home: Option<String>,
+        skill_store: Option<String>,
+    }
+
+    impl EnvGuard {
+        /// Point `HOME` at the test tempdir and `XAVIER_SKILL_STORE` at an empty
+        /// store, so the registry never scans the developer's real
+        /// `~/.hermes/skills` nor reads their `~/.hermes/config.yaml`.
+        fn isolate(temp_dir: &std::path::Path) -> Self {
+            let guard = Self {
+                home: std::env::var("HOME").ok(),
+                skill_store: std::env::var("XAVIER_SKILL_STORE").ok(),
+            };
+            let empty_store = temp_dir.join("empty_store");
+            if !empty_store.exists() {
+                std::fs::create_dir_all(&empty_store)
+                    .expect("empty skill store should be creatable");
+            }
+            std::env::set_var("HOME", temp_dir);
+            std::env::set_var("XAVIER_SKILL_STORE", &empty_store);
+            guard
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, previous) in [
+                ("HOME", self.home.take()),
+                ("XAVIER_SKILL_STORE", self.skill_store.take()),
+            ] {
+                match previous {
+                    Some(val) => std::env::set_var(key, val),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    /// Build a fully explicit workspace config with a literal synthetic token:
+    /// tests must never read `XAVIER_TOKEN` from the environment, which CI does not set.
+    fn test_workspace_config() -> WorkspaceConfig {
+        WorkspaceConfig {
+            id: "test-skills-api".to_string(),
+            token: "test-token".to_string(),
+            plan: PlanTier::Personal,
+            memory_backend: MemoryBackend::Memory,
+            storage_limit_bytes: Some(10 * 1024 * 1024),
+            request_limit: Some(1000),
+            request_unit_limit: Some(1000),
+            embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: SyncPolicy::LocalOnly,
+            dedup: DedupSettings::default(),
+        }
+    }
+
+    async fn setup_test_workspace(temp_dir: &std::path::Path) -> WorkspaceContext {
+        let skills_dir = temp_dir.join("skills").join("test-skill");
+        tokio::fs::create_dir_all(&skills_dir).await.unwrap();
+        let skill_file = skills_dir.join("SKILL.md");
+        let content = r#"---
+name: test-skill
+description: A helpful test skill for memory testing
+---
+# Test Skill Instructions
+Follow these steps to analyze memory and debug issues.
+"#;
+        tokio::fs::write(&skill_file, content).await.unwrap();
+
+        let config = test_workspace_config();
+        let runtime = RuntimeConfig::from_env();
+        let state = Arc::new(
+            WorkspaceState::new(config, runtime, temp_dir.to_path_buf())
+                .await
+                .unwrap(),
+        );
+
+        WorkspaceContext {
+            workspace_id: temp_dir.to_string_lossy().to_string(),
+            workspace: state,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_skills_retains_json_fields() {
+        // Same lock as the registry tests: both mutate XAVIER_SKILL_STORE in one test binary.
+        let _lock = crate::context::skill_registry::env_lock().lock().await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _env_guard = EnvGuard::isolate(temp_dir.path());
+
+        let workspace_ctx = setup_test_workspace(temp_dir.path()).await;
+        let app = Router::new()
+            .route("/api/skill/list", get(list_skills))
+            .layer(Extension(workspace_ctx));
+
+        let req = Request::builder()
+            .uri("/api/skill/list")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["count"], 1);
+        let skills = json["skills"].as_array().unwrap();
+        assert_eq!(skills.len(), 1);
+        let skill = &skills[0];
+        assert_eq!(skill["name"], "test-skill");
+        assert_eq!(
+            skill["description"],
+            "A helpful test skill for memory testing"
+        );
+        assert!(skill["domains"].is_array());
+        assert!(skill["token_cost"].is_number());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_skill_matched_retains_json_fields() {
+        let _lock = crate::context::skill_registry::env_lock().lock().await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _env_guard = EnvGuard::isolate(temp_dir.path());
+
+        let workspace_ctx = setup_test_workspace(temp_dir.path()).await;
+        let app = Router::new()
+            .route("/api/skill/dispatch", post(dispatch_skill))
+            .layer(Extension(workspace_ctx));
+
+        let payload = serde_json::json!({
+            "task": "A helpful test skill for memory testing",
+            "max_tokens": 4000
+        });
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/skill/dispatch")
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(json["ok"], true);
+        let data = &json["data"];
+        assert_eq!(data["skill_name"], "test-skill");
+        assert_eq!(
+            data["skill_description"],
+            "A helpful test skill for memory testing"
+        );
+        assert!(data["confidence"].as_f64().unwrap() >= 0.40);
+        assert!(data["estimated_savings_pct"].is_number());
+
+        let context_pack = &data["context_pack"];
+        assert!(context_pack["system_instructions"].is_string());
+        assert!(context_pack["relevant_memories"].is_array());
+        assert!(context_pack["prior_decisions"].is_array());
+        assert!(context_pack["total_tokens"].is_number());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_skill_unmatched_retains_json_fields() {
+        let _lock = crate::context::skill_registry::env_lock().lock().await;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let _env_guard = EnvGuard::isolate(temp_dir.path());
+
+        let workspace_ctx = setup_test_workspace(temp_dir.path()).await;
+        let app = Router::new()
+            .route("/api/skill/dispatch", post(dispatch_skill))
+            .layer(Extension(workspace_ctx));
+
+        let payload = serde_json::json!({
+            "task": "completely unrelated cooking recipe for pasta",
+            "max_tokens": 4000
+        });
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/skill/dispatch")
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(json["ok"], true);
+        let data = &json["data"];
+        assert_eq!(data["skill_name"], "_none");
+        assert_eq!(data["skill_description"], "No matching skill found");
+        assert_eq!(data["confidence"], 0.0);
+        assert_eq!(data["estimated_savings_pct"], 0.0);
+
+        let context_pack = &data["context_pack"];
+        assert_eq!(context_pack["system_instructions"], "");
+        assert!(context_pack["relevant_memories"].is_array());
+        assert!(context_pack["prior_decisions"].is_array());
+        assert_eq!(context_pack["total_tokens"], 0);
+    }
 }
