@@ -102,6 +102,17 @@ fn hermes_config_path(home: &Path) -> PathBuf {
     home.join(".hermes").join("config.yaml")
 }
 
+/// Resolve canonical skill store path from an optional env value and an optional home dir.
+/// Empty or whitespace-only env values are treated as unset (defaults to Hermes store).
+fn resolve_skill_store(env_val: Option<String>, home: Option<&Path>) -> Option<PathBuf> {
+    env_val
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| home.map(hermes_store_path))
+}
+
 /// Default scan paths for an explicit home dir and an optional store override (testable helper).
 fn default_scan_paths(
     workspace_root: &Path,
@@ -279,19 +290,15 @@ impl SkillRegistry {
     /// Create with default Xavier skill paths plus the canonical Hermes store.
     /// `$HOME` is resolved from the environment at runtime, never hardcoded.
     pub fn with_defaults(workspace_root: &Path) -> Self {
-        let store_override = std::env::var_os("XAVIER_SKILL_STORE").map(PathBuf::from);
-        let config_override = std::env::var_os("XAVIER_SKILL_MANIFEST").map(PathBuf::from);
-        Self::with_paths(
-            workspace_root,
-            home_dir().as_deref(),
-            store_override,
-            config_override,
-        )
+        let home = home_dir();
+        let store_override =
+            resolve_skill_store(std::env::var("XAVIER_SKILL_STORE").ok(), home.as_deref());
+        Self::with_paths(workspace_root, home.as_deref(), store_override)
     }
 
     /// Create with default paths for an explicit home dir (testable helper).
     fn with_home(workspace_root: &Path, home: Option<&Path>) -> Self {
-        Self::with_paths(workspace_root, home, None, None)
+        Self::with_paths(workspace_root, home, None)
     }
 
     /// Create with explicit overrides for tests.
@@ -299,10 +306,9 @@ impl SkillRegistry {
         workspace_root: &Path,
         home: Option<&Path>,
         store_override: Option<PathBuf>,
-        config_override: Option<PathBuf>,
     ) -> Self {
-        let config_path = config_override.or_else(|| home.map(hermes_config_path));
-        let disabled = config_path
+        let disabled = home
+            .map(hermes_config_path)
             .map(|path| load_disabled_from_config(&path))
             .unwrap_or_default();
         Self {
@@ -1178,6 +1184,7 @@ Instructions here.
 #[cfg(test)]
 mod eval_tests_302 {
     use super::infer_domains;
+    use super::resolve_skill_store;
     use super::SkillRegistry;
     use crate::context::skill_registry::IndexedSkill;
     use std::collections::hash_map::DefaultHasher;
@@ -1335,6 +1342,52 @@ mod eval_tests_302 {
     }
 
     #[test]
+    fn test_resolve_skill_store_wiring() {
+        let home = tempfile::tempdir().unwrap();
+        let expected_hermes = super::hermes_store_path(home.path());
+
+        // Unset env var resolves to Hermes store default
+        assert_eq!(
+            resolve_skill_store(None, Some(home.path())),
+            Some(expected_hermes.clone())
+        );
+
+        // Empty env var is treated as unset
+        assert_eq!(
+            resolve_skill_store(Some("".to_string()), Some(home.path())),
+            Some(expected_hermes.clone())
+        );
+
+        // Whitespace-only env var is treated as unset
+        assert_eq!(
+            resolve_skill_store(Some("   \t  \n".to_string()), Some(home.path())),
+            Some(expected_hermes)
+        );
+
+        // Real override is respected
+        let override_dir = tempfile::tempdir().unwrap();
+        let override_path = override_dir.path().to_path_buf();
+        assert_eq!(
+            resolve_skill_store(
+                Some(override_path.to_string_lossy().to_string()),
+                Some(home.path())
+            ),
+            Some(override_path.clone())
+        );
+
+        // Real override without home is also respected
+        assert_eq!(
+            resolve_skill_store(Some(override_path.to_string_lossy().to_string()), None),
+            Some(override_path)
+        );
+
+        // Unset, empty, or whitespace without home returns None
+        assert_eq!(resolve_skill_store(None, None), None);
+        assert_eq!(resolve_skill_store(Some("".to_string()), None), None);
+        assert_eq!(resolve_skill_store(Some("   ".to_string()), None), None);
+    }
+
+    #[test]
     fn test_skill_store_env_override_respected() {
         let workspace = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
@@ -1344,7 +1397,6 @@ mod eval_tests_302 {
             workspace.path(),
             Some(home.path()),
             Some(override_store.path().to_path_buf()),
-            None,
         );
 
         let default_hermes = super::hermes_store_path(home.path());
@@ -1369,7 +1421,7 @@ mod eval_tests_302 {
     fn test_unset_home_fails_open_workspace_only() {
         let workspace = tempfile::tempdir().unwrap();
 
-        let registry = SkillRegistry::with_paths(workspace.path(), None, None, None);
+        let registry = SkillRegistry::with_paths(workspace.path(), None, None);
 
         assert_eq!(
             registry.scan_paths.len(),
