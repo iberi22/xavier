@@ -516,7 +516,7 @@
   {
    "id": "P13",
    "epic": "G7",
-   "title": "Confirm governance amendment and activate branch rules",
+   "title": "Activate branch rules (owner authorization of an outward change)",
    "decisions": [
     "Owner decides whether agent panel can accept reversible ADR/Ask design.",
     "Rule activation is an outward governance action."
@@ -536,7 +536,7 @@
      "action": "edit"
     }
    ],
-   "current_state": "ADR-035 proposed, Ask requires owner, main has no required checks.",
+   "current_state": "ADR-035 proposed, Ask requires owner, main has no required checks. The governance amendment itself was confirmed by the owner on 2026-09-27 (AGENTS.md \"Decision rights (agent panel)\").",
    "desired_state": "Owner records decision; only then policy text and main ruleset reflect the approved scope.",
    "acceptance": [
     "Owner reviews simulation and shadow gate evidence before deciding.",
