@@ -1,6 +1,6 @@
 //! E2E: clearance-based access control (C5) — permission matrix gate + audit.
 //!
-//! Design by Kimi k3 (2026-08-14) adapted to the real API:
+//! Design (2026-08-14) adapted to the real API:
 //! - `ClearanceManager::can_access(role, doc_level)` in src/security/acl/mod.rs
 //! - Roles: Viewer=Public(0), Colaborador=Confidential(2), Admin=TopSecret(4)
 //! - `ClearanceLevel` in src/security/acl/mod.rs (Public..TopSecret)
