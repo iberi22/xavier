@@ -6,6 +6,7 @@
 use super::types::*;
 use crate::codebase::issue_context::assemble_package;
 use crate::codebase::snapshot::SnapshotManager;
+use crate::context::skill_registry::build_skill_registry;
 use crate::context::{
     ContextBudgetConfig, ContextBuilder, ContextBuilderConfig, ContextDocument, ContextLevel,
     Orchestrator,
@@ -118,18 +119,6 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
             }),
         },
     ]
-}
-
-/// Build a skill registry for the workspace, mirroring
-/// `api/skills.rs::dispatch_skill` (single construction site for ranking).
-async fn build_skill_registry(
-    workspace: &WorkspaceContext,
-) -> crate::context::skill_registry::SkillRegistry {
-    use crate::context::skill_registry::SkillRegistry;
-    let workspace_root = std::path::PathBuf::from(&workspace.workspace_id);
-    let mut registry = SkillRegistry::with_defaults(&workspace_root);
-    let _ = registry.reindex().await;
-    registry
 }
 
 /// Handle context tool.
@@ -447,7 +436,7 @@ pub async fn handle_context_tool(
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
 
-            let registry = build_skill_registry(&workspace).await;
+            let registry = build_skill_registry(Path::new(&workspace.workspace_id)).await;
             let memory = workspace.workspace.memory.clone();
             let dispatcher = SkillDispatcher::new(registry, Some(memory));
             match dispatcher
@@ -488,7 +477,7 @@ pub async fn handle_context_tool(
             }
         }
         "xavier_skill_list" => {
-            let registry = build_skill_registry(&workspace).await;
+            let registry = build_skill_registry(Path::new(&workspace.workspace_id)).await;
             let skills: Vec<Value> = registry
                 .list()
                 .into_iter()
@@ -513,5 +502,155 @@ pub async fn handle_context_tool(
             )
         }
         _ => Err(anyhow::anyhow!("Unknown context tool: {}", name)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_context_tool;
+    use crate::workspace::WorkspaceContext;
+    use axum::response::IntoResponse;
+    use serde_json::{json, Value};
+    use std::path::Path;
+    use tokio::sync::MutexGuard;
+
+    /// Points `HOME` at a throwaway directory and clears `XAVIER_SKILL_STORE`
+    /// so only the test fixture is scanned, and restores both previous values
+    /// on drop so a failing assertion cannot leak overrides into sibling tests.
+    struct IsolatedHome {
+        _lock: MutexGuard<'static, ()>,
+        _home: tempfile::TempDir,
+        previous_home: Option<std::ffi::OsString>,
+        previous_store: Option<std::ffi::OsString>,
+    }
+
+    impl IsolatedHome {
+        async fn acquire() -> Self {
+            let lock = crate::context::skill_registry::env_lock().lock().await;
+            let home = tempfile::tempdir().expect("temp HOME");
+            let previous_home = std::env::var_os("HOME");
+            let previous_store = std::env::var_os("XAVIER_SKILL_STORE");
+            std::env::set_var("HOME", home.path());
+            std::env::remove_var("XAVIER_SKILL_STORE");
+            Self {
+                _lock: lock,
+                _home: home,
+                previous_home,
+                previous_store,
+            }
+        }
+    }
+
+    impl Drop for IsolatedHome {
+        fn drop(&mut self) {
+            match self.previous_home.take() {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match self.previous_store.take() {
+                Some(value) => std::env::set_var("XAVIER_SKILL_STORE", value),
+                None => std::env::remove_var("XAVIER_SKILL_STORE"),
+            }
+        }
+    }
+
+    /// Write a fixture skill in real store shape: `<root>/skills/<name>/SKILL.md`.
+    fn write_fixture_skill(root: &Path, name: &str, description: &str) {
+        let dir = root.join("skills").join(name);
+        std::fs::create_dir_all(&dir).expect("fixture skill dir");
+        std::fs::write(
+            dir.join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: \"{description}\"\n---\n\n# {name}\n\nFixture body.\n"
+            ),
+        )
+        .expect("fixture SKILL.md");
+    }
+
+    fn mcp_payload(out: &Value) -> Value {
+        let text = out["content"][0]["text"]
+            .as_str()
+            .expect("mcp text content");
+        serde_json::from_str(text).expect("tool payload is JSON")
+    }
+
+    /// Skill names of a listing payload, sorted.
+    ///
+    /// `SkillRegistry::list` walks a `HashMap`, so the per-instance order is not
+    /// stable; both surfaces must agree on the same skills and the same count.
+    fn sorted_skill_names(payload: &Value) -> Vec<String> {
+        let mut names: Vec<String> = payload["skills"]
+            .as_array()
+            .expect("skills array")
+            .iter()
+            .filter_map(|skill| skill["name"].as_str().map(str::to_string))
+            .collect();
+        names.sort();
+        names
+    }
+
+    async fn rest_skill_list(workspace: &WorkspaceContext) -> Value {
+        let response = crate::api::skills::list_skills(axum::extract::Extension(workspace.clone()))
+            .await
+            .into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .expect("rest body");
+        serde_json::from_slice(&body).expect("rest payload is JSON")
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_mcp_skill_list_matches_rest_on_same_fixture() {
+        let _home = IsolatedHome::acquire().await;
+        let work = tempfile::tempdir().expect("temp workspace");
+        for (name, description) in [
+            ("alpha", "First fixture skill for parity"),
+            ("beta", "Second fixture skill for parity"),
+            ("gamma", "Third fixture skill for parity"),
+        ] {
+            write_fixture_skill(work.path(), name, description);
+        }
+
+        let (state, mut workspace) = crate::server::mcp::tests::test_state().await;
+        workspace.workspace_id = work.path().to_string_lossy().into_owned();
+
+        let rest = rest_skill_list(&workspace).await;
+        let out = handle_context_tool(state, workspace, "xavier_skill_list", json!({}))
+            .await
+            .expect("mcp skill list never throws");
+        let mcp = mcp_payload(&out);
+
+        assert_eq!(rest["ok"], true);
+        assert_eq!(mcp["ok"], true);
+        assert_eq!(mcp["count"], 3, "isolated fixture is the only skill source");
+        assert_eq!(
+            mcp["count"], rest["count"],
+            "MCP and REST must report the same skill count"
+        );
+        // SkillRegistry::list order is unspecified, so parity is asserted on the sorted set.
+        assert_eq!(
+            sorted_skill_names(&mcp),
+            sorted_skill_names(&rest),
+            "MCP and REST must report the same skills in the same listing"
+        );
+    }
+
+    #[test]
+    fn test_mcp_context_tools_own_no_registry_constructor() {
+        let source = include_str!("tools_context.rs");
+        let production = source
+            .split("#[cfg(test)]\nmod tests")
+            .next()
+            .expect("split always yields a head");
+        assert!(
+            !production.contains("fn build_skill_registry"),
+            "MCP must not re-declare a registry constructor; the shared one is the single site"
+        );
+        assert!(
+            production.contains("skill_registry::build_skill_registry"),
+            "MCP must build the registry through the shared constructor"
+        );
     }
 }
