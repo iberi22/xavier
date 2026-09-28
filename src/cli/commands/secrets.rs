@@ -163,6 +163,86 @@ async fn import_env_cmd(from: &Path, dry_run: bool, apply: bool) -> Result<()> {
     import_env_with_vault(&vault, from, dry_run, apply)
 }
 
+/// Environment variable the child receives the secret in. The value itself
+/// never reaches this process: the server injects it into the child's
+/// environment and reports only the exit code, lease token and duration.
+pub(crate) const DEFAULT_EXEC_ENV_VAR: &str = "XAVIER_SECRET";
+
+/// Build the `POST /secrets/exec` request body.
+///
+/// `args` stays a JSON array and no field concatenates the command with its
+/// arguments, so the request cannot be reinterpreted as a shell string.
+pub(crate) fn exec_request_body(
+    secret_name: &str,
+    agent: &str,
+    ttl: u64,
+    env_var: &str,
+    command: &str,
+    args: &[String],
+) -> serde_json::Value {
+    serde_json::json!({
+        "secret_name": secret_name,
+        "agent_id": agent,
+        "ttl_seconds": ttl,
+        "env_var": env_var,
+        "command": command,
+        "args": args,
+    })
+}
+
+/// Run `command` on the server with a vault secret injected into its
+/// environment. Only the exit code, the lease token and the duration are
+/// printed: no value is ever received by this process.
+async fn exec_with_secret(
+    secret_name: &str,
+    agent: &str,
+    ttl: u64,
+    env_var: &str,
+    command: &str,
+    args: &[String],
+) -> Result<()> {
+    let token = xavier_token();
+    let url = format!("{}/secrets/exec", resolve_base_url());
+    let client = CLI_HTTP_CLIENT.clone();
+
+    let response = client
+        .post(&url)
+        .header("X-Xavier-Token", &token)
+        .json(&exec_request_body(
+            secret_name,
+            agent,
+            ttl,
+            env_var,
+            command,
+            args,
+        ))
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let detail: serde_json::Value = response.json().await.unwrap_or_default();
+        anyhow::bail!(
+            "failed to run command for secret '{}': {} ({})",
+            secret_name,
+            status,
+            detail["error"]
+        );
+    }
+    let body: serde_json::Value = response.json().await?;
+    println!("Exit code: {}", body["exit_code"]);
+    if let Some(lease) = body["lease_token"].as_str() {
+        println!("Lease token: {lease}");
+    }
+    println!("Duration: {} ms", body["duration_ms"]);
+    // Agents rely on the exit status: a failing child must fail this command too.
+    match body["exit_code"].as_i64() {
+        Some(0) => Ok(()),
+        Some(code) => anyhow::bail!("command exited with status {code}"),
+        None => anyhow::bail!("command did not report an exit status (killed or timed out)"),
+    }
+}
+
 /// Dispatch a [`SecretsCommand`] to the appropriate handler.
 pub async fn handle_secrets_command(cmd: SecretsCommand) -> Result<()> {
     match cmd {
@@ -177,6 +257,27 @@ pub async fn handle_secrets_command(cmd: SecretsCommand) -> Result<()> {
             agent,
             ttl,
         } => lend_secret(&secret_name, &agent, ttl).await,
+        SecretsCommand::Exec {
+            secret_name,
+            agent,
+            ttl,
+            argv,
+        } => {
+            // Clap guarantees at least the command itself, but the handler
+            // fails closed rather than trusting that invariant.
+            let Some((command, args)) = argv.split_first() else {
+                anyhow::bail!("exec requires a command after --");
+            };
+            exec_with_secret(
+                &secret_name,
+                &agent,
+                ttl,
+                DEFAULT_EXEC_ENV_VAR,
+                command,
+                args,
+            )
+            .await
+        }
         SecretsCommand::ListLeases => list_leases().await,
         SecretsCommand::Revoke { token } => revoke_lease(&token).await,
         SecretsCommand::Status { token } => check_lease_status(&token).await,
@@ -406,6 +507,119 @@ mod tests {
         assert!(
             rendered.contains("hardware-vault"),
             "rendered output must contain backend; got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn test_exec_command_sends_argv_array_not_a_shell_string() {
+        let args = vec!["--flag".to_string(), "value with spaces".to_string()];
+
+        let body = exec_request_body(
+            "CANARY_EXEC_SECRET",
+            "CANARY_EXEC_AGENT",
+            30,
+            DEFAULT_EXEC_ENV_VAR,
+            "/bin/echo",
+            &args,
+        );
+        let object = body.as_object().expect("body is a JSON object");
+
+        assert_eq!(
+            object["args"],
+            serde_json::json!(["--flag", "value with spaces"])
+        );
+        assert_eq!(object["command"], serde_json::json!("/bin/echo"));
+        for (field, value) in object {
+            if field == "args" {
+                assert!(value.is_array(), "args must be a JSON array");
+                continue;
+            }
+            let rendered = value.as_str().unwrap_or_default();
+            assert!(
+                !rendered.contains("value with spaces"),
+                "field '{field}' must not carry an argument: {rendered}"
+            );
+            assert!(
+                !(rendered.contains("/bin/echo") && rendered.contains("--flag")),
+                "field '{field}' concatenates command and args: {rendered}"
+            );
+        }
+    }
+
+    fn parse_exec(args: &[&str]) -> (String, String, Vec<String>) {
+        use crate::cli::state::Cli;
+        use clap::Parser;
+        match Cli::try_parse_from(args).expect("exec parses").cmd {
+            Some(crate::cli::commands::enums::Command::Secrets {
+                cmd:
+                    SecretsCommand::Exec {
+                        secret_name,
+                        agent,
+                        argv,
+                        ..
+                    },
+            }) => (secret_name, agent, argv),
+            _ => panic!("expected the exec subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_exec_parses_trailing_argv_after_separator() {
+        use crate::cli::state::Cli;
+        use clap::Parser;
+
+        let (secret_name, agent, argv) =
+            parse_exec(&["xavier", "secrets", "exec", "S", "A", "--", "/bin/true"]);
+        assert_eq!(secret_name, "S");
+        assert_eq!(agent, "A");
+        assert_eq!(argv, vec!["/bin/true"]);
+
+        let (secret_name, agent, argv) = parse_exec(&[
+            "xavier",
+            "secrets",
+            "exec",
+            "S",
+            "A",
+            "--",
+            "/bin/echo",
+            "--flag",
+            "value with spaces",
+        ]);
+        assert_eq!(secret_name, "S");
+        assert_eq!(agent, "A");
+        assert_eq!(argv, vec!["/bin/echo", "--flag", "value with spaces"]);
+
+        assert!(
+            Cli::try_parse_from(["xavier", "secrets", "exec", "S", "A", "--"]).is_err(),
+            "exec without anything after -- must be rejected"
+        );
+        assert!(
+            Cli::try_parse_from(["xavier", "secrets", "exec", "S", "A"]).is_err(),
+            "exec without -- must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_secrets_help_lists_exec_and_hides_lend() {
+        use crate::cli::state::Cli;
+        use clap::CommandFactory;
+
+        let mut app = Cli::command();
+        let help = app
+            .find_subcommand_mut("secrets")
+            .expect("secrets subcommand exists")
+            .render_help()
+            .to_string();
+
+        assert!(
+            help.contains("exec"),
+            "secrets --help must list exec: {help}"
+        );
+        assert!(
+            !help
+                .lines()
+                .any(|line| line.trim_start().starts_with("lend ")),
+            "secrets --help must not list lend: {help}"
         );
     }
 

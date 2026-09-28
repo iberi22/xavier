@@ -1,7 +1,9 @@
 //! Secret handlers for key lending and lease management.
 
+use std::sync::Arc;
+
 use axum::{
-    extract::{Path as AxumPath, State},
+    extract::{rejection::JsonRejection, Extension, Path as AxumPath, State},
     http::StatusCode,
     response::Response,
     Json,
@@ -10,6 +12,166 @@ use axum::{
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
+use xavier::coordination::KeyLendingEngine;
+use xavier::secrets::exec::{run_with_secret, ExecSecretError, SecretExecSpec};
+use xavier::secrets::vault::HardwareVault;
+
+/// Service name of the vault `POST /secrets/exec` resolves secrets from.
+const EXEC_VAULT_SERVICE: &str = "xavier";
+
+/// Environment variable the child is given when the request names none.
+const EXEC_ENV_VAR_DEFAULT: &str = "XAVIER_SECRET";
+
+/// Lease TTL and child watchdog applied when the request names none. Matches
+/// the `secrets exec` CLI default.
+const EXEC_TTL_DEFAULT: u64 = 3600;
+
+/// Request body of `POST /secrets/exec`.
+///
+/// Carries a secret *name* only: there is no field through which a value can
+/// enter the node, and `args` is an array that is forwarded verbatim, so the
+/// command is never reassembled as a shell string. `ttl_seconds` is optional
+/// and defaults to [`EXEC_TTL_DEFAULT`], the same value the CLI uses.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ExecSecretPayload {
+    /// Vault entry whose value is injected into the child.
+    pub secret_name: String,
+    /// Agent identity recorded in the lease and in the audit rows.
+    pub agent_id: String,
+    /// Lease TTL and child watchdog, in seconds (default 3600).
+    #[serde(default = "default_exec_ttl")]
+    pub ttl_seconds: u64,
+    /// Environment variable the child receives the value in.
+    #[serde(default = "default_exec_env_var")]
+    pub env_var: String,
+    /// Program to run.
+    pub command: String,
+    /// Argument vector, forwarded as an array.
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+/// Response body of `POST /secrets/exec`: the outcome of a child process whose
+/// secret was injected by the engine. It has no field able to hold a value.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ExecSecretResponse {
+    /// Exit status of the child, or `null` when it was killed by a signal.
+    pub exit_code: Option<i32>,
+    /// Always `null`: the lease is revoked inside the delegation and its token
+    /// is never handed back, so no token can be replayed from this response.
+    pub lease_token: Option<String>,
+    /// Wall-clock duration of the child run, in milliseconds.
+    pub duration_ms: u64,
+    /// Always `true` here: the engine revokes the lease before returning.
+    pub revoked: bool,
+}
+
+fn default_exec_env_var() -> String {
+    EXEC_ENV_VAR_DEFAULT.to_string()
+}
+
+fn default_exec_ttl() -> u64 {
+    EXEC_TTL_DEFAULT
+}
+
+/// `POST /secrets/exec` handler.
+///
+/// Delegates to [`run_with_secret`], which resolves the value from the vault,
+/// lends it under the TTL watchdog, injects it into exactly one environment
+/// variable of the child and revokes the lease on every exit path. The secret
+/// is never read here, so no response field, error string or log line built
+/// from this request can carry a value.
+///
+/// The vault is injected through an [`axum::Extension`] when the router
+/// carries one (tests wire an isolated store); production routers do not, so
+/// the real `xavier` vault is used.
+pub async fn exec_handler(
+    State(state): State<CliState>,
+    maybe_vault: Option<Extension<Arc<HardwareVault>>>,
+    result: Result<Json<ExecSecretPayload>, JsonRejection>,
+) -> Response {
+    let engine = Arc::clone(&state.secrets_engine);
+    let vault = match maybe_vault {
+        Some(Extension(vault)) => vault,
+        None => Arc::new(HardwareVault::new(EXEC_VAULT_SERVICE)),
+    };
+    let payload = match result {
+        Ok(Json(payload)) => payload,
+        // A missing or malformed field must be a 4xx with a clear message,
+        // never a panic: name the field the request got wrong.
+        Err(rejection) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": rejection.body_text() }),
+            );
+        }
+    };
+    exec_secret(&engine, payload, &vault).await
+}
+
+/// The body of [`exec_handler`], with the vault as an explicit parameter so
+/// tests inject an isolated store instead of the real keyring or `~/.xavier`.
+pub(crate) async fn exec_secret(
+    engine: &Arc<KeyLendingEngine>,
+    payload: ExecSecretPayload,
+    vault: &HardwareVault,
+) -> Response {
+    let spec = SecretExecSpec::new(
+        payload.secret_name.clone(),
+        payload.env_var,
+        payload.command,
+        payload.args,
+        payload.ttl_seconds,
+        payload.agent_id,
+    );
+
+    match run_with_secret(&spec, Arc::clone(engine), vault).await {
+        Ok(outcome) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(ExecSecretResponse {
+                exit_code: outcome.exit_code,
+                lease_token: None,
+                duration_ms: outcome.duration_ms,
+                revoked: true,
+            })
+            .unwrap_or_default(),
+        ),
+        Err(e) => {
+            let reason = exec_failure_reason(&e);
+            tracing::warn!(
+                secret_name = %payload.secret_name,
+                reason = %reason,
+                "secret exec refused"
+            );
+            json_response(
+                exec_failure_status(&e),
+                serde_json::json!({
+                    "error": reason,
+                    "secret_name": payload.secret_name,
+                }),
+            )
+        }
+    }
+}
+
+/// Failure reasons are fixed strings: the raw engine error can carry a
+/// filesystem path, and none of these can ever carry a secret value.
+fn exec_failure_reason(error: &ExecSecretError) -> &'static str {
+    match error {
+        ExecSecretError::Vault(_) => "secret is not available in the vault",
+        ExecSecretError::Lease(_) => "lease could not be created",
+        ExecSecretError::Io(_) => "child process could not be run",
+        ExecSecretError::Timeout(_) => "execution timed out",
+    }
+}
+
+fn exec_failure_status(error: &ExecSecretError) -> StatusCode {
+    match error {
+        ExecSecretError::Vault(_) => StatusCode::NOT_FOUND,
+        ExecSecretError::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
+        ExecSecretError::Lease(_) | ExecSecretError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
 
 /// Lend handler.
 pub async fn lend_handler(
