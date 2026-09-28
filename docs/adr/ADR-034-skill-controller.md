@@ -3,14 +3,14 @@
 | Campo | Valor |
 |-------|-------|
 | **ID** | ADR-034 |
-| **Estado** | Propuesto |
+| **Estado** | Aceptado (panel de agentes, 2026-09-27) |
 | **Fecha** | 2026-09-27 |
 | **Autores** | Xavier architecture contributors |
 | **Relacionados** | ADR-016, ADR-019 (narrow amendment proposed), REQ-060..064, Skill Controller brief |
 
 ## Contexto
 
-Xavier requires selective CLI placement, task-scoped context assembly, and drift visibility across multiple agent harnesses while remaining file-based and local-first (`.gitcore/docs/SWAL_GOAL.md:8`, `docs/design/skill-controller/00-BRIEF.md:58`). Currently, Hermes canonical discovery is hardcoded directly into the skill registry (`src/context/skill_registry.rs:105`). Moving source authority away from a single tool's discovery path must preserve existing offline file access, respect source ownership, and avoid publishing the complete catalog to all tools.
+Xavier requires selective CLI placement, task-scoped context assembly, and drift visibility across multiple agent harnesses while remaining file-based and local-first (`.gitcore/docs/SWAL_GOAL.md:8`, `docs/design/skill-controller/00-BRIEF.md:58`). Currently, Hermes canonical discovery is hardcoded directly into the skill registry (`src/context/skill_registry.rs:96-98,112`). Moving source authority away from a single tool's discovery path must preserve existing offline file access, respect source ownership, and avoid publishing the complete catalog to all tools.
 
 Adopting an in-process controller in the `xavier` application crate requires addressing ADR-019's blanket statement that everything outside the storage core leaves as a plugin or sidecar. Its storage-core membership rule and C1/C2/C3 sidecar boundaries remain binding.
 
@@ -109,10 +109,16 @@ Propose **Option C with per-skill symlinks** across harness discovery roots, gov
 
 ## Verificación posterior
 
-Before rollout and for human acceptance (P03):
+Acceptance gate (P03, decided by the agent review panel per AGENTS.md decision rights):
 1. Review the completed `skill_controller_store` simulation, its **ASSUMPTION-based** inputs, and the stable composite/primary winner C.
-2. Verify startup discovery for each supported CLI harness with Xavier stopped; CLI compatibility is not yet established.
-3. Validate atomic symlink swapping, crash recovery, and unmanaged file collision rejection in isolated test fixtures.
-4. Verify that REQ-060 and `AGENTS.md` path documentation are reconciled.
+2. Verify that REQ-060 and `AGENTS.md` path documentation are reconciled (done in P04).
 
-Review scheduled for **2026-10-27**, tracking visible skill precision, drift incidence, rollback integrity, and invocation observation coverage. If pilot validation is incomplete by that date, ADR-034 remains **Propuesto**.
+Rollout gate (before the migration go/no-go, O05 — after implementation, not before acceptance):
+1. Verify startup discovery for each supported CLI harness with Xavier stopped (O01, O02); CLI compatibility is not yet established, and a harness that fails keeps its current skill directory untouched.
+2. Validate atomic symlink swapping, crash recovery, and unmanaged file collision rejection in isolated test fixtures (projector tasks J05-J06).
+
+Review scheduled for **2026-10-27**, tracking visible skill precision, drift incidence, rollback integrity, and invocation observation coverage. If the rollout gate is not met by that date, rollout stays blocked and the decision is re-reviewed by the panel; acceptance does not imply migration approval.
+
+## Registro de aceptación
+
+Accepted 2026-09-27 by the agent review panel under `AGENTS.md` decision rights: reviewer 1 Codex `gpt-6-sol` (round 1 REJECT — circular acceptance/adapter-test gate; fixed; round 2 ACCEPT), reviewer 2 `opencode/deepseek-v4.1-flash` via `co-agent-review.sh` (ACCEPT). Verdicts and evidence: `docs/design/skill-controller/panel/ADR-034-panel.md`. Acceptance is conditional on the rollout gate above (per-CLI symlink discovery).
