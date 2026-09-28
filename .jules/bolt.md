@@ -16,3 +16,7 @@
 ## 2024-05-19 - [Extract inline map callback into memoized component to prevent O(N) re-renders]
 **Learning:** In the `MeshChatView` component, navigating between different channels/peers triggered a full re-render of every channel and peer list item because they were defined inline within `.map()` functions. When the active channel state changed, all items were re-evaluated.
 **Action:** Extract complex elements mapped from arrays into separate `React.memo` components (`RoomChannelItem` and `DirectPeerItem`). To ensure memoization works effectively, always wrap the callback props passed to these items, such as `onSelect` / `handleSelectChannel`, in a `React.useCallback` hook with an empty dependency array to maintain a stable reference across parent re-renders. This successfully changes rendering complexity from O(N) to O(1) for unselected items.
+
+## 2026-09-28 - QuotaTable row memoization
+**Learning:** In the panel-ui codebase, lists rendered via .map() without memoized children often lead to O(N) re-renders during unrelated parent state changes.
+**Action:** When encountering large lists or tables rendered with .map, wrap the list item or table row in a separate component using React.memo() and document it with the Bolt Performance Optimization JSDoc format.
