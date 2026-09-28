@@ -82,14 +82,23 @@ impl MasterKeyManager {
         let mut key = [0u8; MASTER_KEY_LEN];
         rand::thread_rng().fill_bytes(&mut key);
 
-        // Persist: save to fallback ONLY when save_to_keyring failed
-        if let Err(e) = Self::save_to_keyring(&key) {
-            tracing::debug!("Keyring save failed: {e}; falling back to encrypted file");
-            Self::save_to_fallback(&key).map_err(|fb_err| {
-                anyhow!(
+        // The master key always keeps its 0600 fallback copy: if the keyring later becomes
+        // unavailable (headless service), a missing copy would silently mint a new key and
+        // orphan every store encrypted with this one. Per-secret shadow copies are not kept.
+        let keyring_res = Self::save_to_keyring(&key);
+        if let Err(e) = &keyring_res {
+            tracing::debug!("Keyring save failed: {e}; relying on encrypted file");
+        }
+        match (Self::save_to_fallback(&key), &keyring_res) {
+            (Ok(()), _) => {}
+            (Err(fb_err), Ok(())) => {
+                tracing::warn!("Master key fallback copy not written ({fb_err}); keyring only")
+            }
+            (Err(fb_err), Err(e)) => {
+                return Err(anyhow!(
                     "Failed to persist master key to both keyring ({e}) and fallback storage ({fb_err})"
-                )
-            })?;
+                ))
+            }
         }
 
         Ok(Self { master_key: key })
