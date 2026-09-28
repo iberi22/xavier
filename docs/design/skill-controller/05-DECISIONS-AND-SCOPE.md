@@ -20,7 +20,7 @@ file wins; each decision names the source it follows. Implementation issues cite
 | D11 | Ephemeral composition is deterministic (no LLM), bounded by `ephemeral.max_tokens`, provenance-stamped, and scoped by an authorized workspace — the caller's `project` string is not authorization. Memory/decision queries must filter by that scope. | 01 §5 | LLM-written ephemeral skills (unbounded, injection-prone) |
 | D12 | Telemetry: local SQLite via the existing migration framework, opaque IDs, no task text/paths/secrets, stages `selected/delivered/invoked/completed`, 30-day retention; never used for automatic deletion. | 01 §5 | Reusing the maintainer-wallet telemetry schema |
 | D13 | Drift audit is report-only: offline checks by default; proposed diffs for human approval; never auto-edits secrets, safety or approval rules. | 01 §5, brief | Autonomous rewrites |
-| D14 | Rules block and DoD of 04 are mandatory in every implementation issue (cap: 4 files / 400 changed lines per issue). | 04 | — |
+| D14 | Rules block and DoD of 04 are mandatory in every implementation issue (cap: 4 files; 400 non-test + 400 test + 50 fixture changed lines per issue, enforced by `swal-preflight review`; amended 2026-09-28 by agent panel). | 04 | — |
 
 ## Scope
 
