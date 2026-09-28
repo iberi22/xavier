@@ -727,7 +727,7 @@ pub enum TasksCommand {
         project: Option<String>,
         #[arg(short, long)]
         status: Option<String>,
-        #[arg(short, long)]
+        #[arg(short = 'q', long)]
         search: Option<String>,
     },
     /// Synchronize tasks with configured backends
@@ -1006,7 +1006,7 @@ pub enum UsersCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum VaultCommand {
     /// Store a secret in the hardware vault
-    Set { key: String, value: String },
+    Set { key: String },
     /// Retrieve a secret from the hardware vault
     Get { key: String },
     /// Delete a secret from the hardware vault
@@ -1231,6 +1231,28 @@ pub enum SessionCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum SecretsCommand {
+    /// Store a secret in the vault from stdin
+    Put {
+        /// Secret key name
+        name: String,
+    },
+    /// Import secrets from a .env file into the hardware vault
+    #[command(group(
+        clap::ArgGroup::new("mode")
+            .required(true)
+            .args(["dry_run", "apply"]),
+    ))]
+    ImportEnv {
+        /// Path to .env file to import
+        #[arg(long)]
+        from: PathBuf,
+        /// Parse and validate without storing in the vault
+        #[arg(long)]
+        dry_run: bool,
+        /// Store parsed secrets in the hardware vault
+        #[arg(long)]
+        apply: bool,
+    },
     /// Lend a secret to an agent
     Lend {
         secret_name: String,
@@ -1325,7 +1347,7 @@ pub enum TaskCommand {
         #[arg(short, long)]
         status: Option<String>,
         /// Search query
-        #[arg(short, long)]
+        #[arg(short = 'q', long)]
         search: Option<String>,
         /// Output format: table or json
         #[arg(short, long, default_value = "table")]
