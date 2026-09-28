@@ -15,6 +15,7 @@ pub mod query_processor;
 pub mod query_router;
 pub mod regen_loop;
 pub mod reranker;
+pub mod skill_controller;
 pub mod skill_dispatcher;
 pub mod skill_registry;
 pub mod skills;
