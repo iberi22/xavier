@@ -171,6 +171,22 @@ impl NodeSecretsManager {
         }
     }
 
+    /// Create a new NodeSecretsManager with an injected HardwareVault (test-only seam).
+    #[cfg(test)]
+    pub fn with_vault(vault: HardwareVault) -> Self {
+        Self {
+            vault: Arc::new(vault),
+            lending: Arc::new(Mutex::new(KeyLendingEngine::new(DefaultAuditLogger))),
+        }
+    }
+
+    /// Create an isolated NodeSecretsManager for tests backed by a custom storage dir and synthetic key.
+    #[cfg(test)]
+    pub fn isolated_for_test(storage: std::path::PathBuf, key: [u8; 32]) -> Self {
+        let vault = HardwareVault::new(NODE_SECRETS_SERVICE).isolated(storage, key);
+        Self::with_vault(vault)
+    }
+
     /// Store a node secret.
     pub fn store(
         &self,
@@ -255,45 +271,92 @@ impl NodeSecretsManager {
 mod tests {
     use super::*;
 
+    /// Helper to assert that ~/.xavier/secrets directory listing and mtime remain untouched.
+    fn assert_real_secrets_untouched<F: FnOnce() -> R, R>(f: F) -> R {
+        let secrets_dir = dirs::home_dir().map(|h| h.join(".xavier").join("secrets"));
+        let before_snapshot = secrets_dir.as_ref().and_then(|dir| {
+            if !dir.exists() {
+                return None;
+            }
+            let mtime = std::fs::metadata(dir).ok()?.modified().ok()?;
+            let mut entries = Vec::new();
+            if let Ok(rd) = std::fs::read_dir(dir) {
+                for e in rd.flatten() {
+                    entries.push(e.file_name().to_string_lossy().to_string());
+                }
+            }
+            entries.sort();
+            Some((entries, mtime))
+        });
+
+        let res = f();
+
+        if let (Some(dir), Some((before_entries, before_mtime))) = (&secrets_dir, before_snapshot) {
+            let after_mtime = std::fs::metadata(dir).ok().and_then(|m| m.modified().ok());
+            assert_eq!(
+                Some(before_mtime),
+                after_mtime,
+                "Real ~/.xavier/secrets directory mtime was modified during test!"
+            );
+            let mut after_entries = Vec::new();
+            if let Ok(rd) = std::fs::read_dir(dir) {
+                for e in rd.flatten() {
+                    after_entries.push(e.file_name().to_string_lossy().to_string());
+                }
+            }
+            after_entries.sort();
+            assert_eq!(
+                before_entries, after_entries,
+                "Real ~/.xavier/secrets directory contents were modified during test!"
+            );
+        }
+
+        res
+    }
+
     #[test]
     fn test_node_secrets_roundtrip_and_revocation() {
-        let manager = NodeSecretsManager::new();
-        let node_id = "xv1-testnode-secret-roundtrip";
-        let provider = Provider::Supabase;
-        let token = "sbp_test_token_123456789";
+        assert_real_secrets_untouched(|| {
+            let tmp = tempfile::tempdir().unwrap();
+            let manager =
+                NodeSecretsManager::isolated_for_test(tmp.path().join("secrets"), [42u8; 32]);
+            let node_id = "xv1-testnode-secret-roundtrip";
+            let provider = Provider::Supabase;
+            let token = "sbp_test_token_123456789";
 
-        // Store
-        let lease_id = manager.store(node_id, provider, token, 3600).unwrap();
-        assert!(!lease_id.is_empty());
+            // Store
+            let lease_id = manager.store(node_id, provider, token, 3600).unwrap();
+            assert!(!lease_id.is_empty());
 
-        // Get
-        let retrieved = manager.get(node_id, &lease_id).unwrap();
-        assert_eq!(retrieved, token);
+            // Get
+            let retrieved = manager.get(node_id, &lease_id).unwrap();
+            assert_eq!(retrieved, token);
 
-        // Rotate
-        let new_token = "sbp_new_rotated_token_987654";
-        let new_lease_id = manager
-            .rotate(node_id, provider, new_token, Some(&lease_id), 3600)
-            .unwrap();
+            // Rotate
+            let new_token = "sbp_new_rotated_token_987654";
+            let new_lease_id = manager
+                .rotate(node_id, provider, new_token, Some(&lease_id), 3600)
+                .unwrap();
 
-        // Old lease must now fail
-        assert!(manager.get(node_id, &lease_id).is_err());
+            // Old lease must now fail
+            assert!(manager.get(node_id, &lease_id).is_err());
 
-        // New lease must return new token
-        let retrieved_new = manager.get(node_id, &new_lease_id).unwrap();
-        assert_eq!(retrieved_new, new_token);
+            // New lease must return new token
+            let retrieved_new = manager.get(node_id, &new_lease_id).unwrap();
+            assert_eq!(retrieved_new, new_token);
 
-        // Revoke
-        manager
-            .revoke(
-                node_id,
-                provider,
-                Some(&new_lease_id),
-                "Test deprovision",
-                true,
-            )
-            .unwrap();
+            // Revoke
+            manager
+                .revoke(
+                    node_id,
+                    provider,
+                    Some(&new_lease_id),
+                    "Test deprovision",
+                    true,
+                )
+                .unwrap();
 
-        assert!(manager.get(node_id, &new_lease_id).is_err());
+            assert!(manager.get(node_id, &new_lease_id).is_err());
+        });
     }
 }
