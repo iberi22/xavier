@@ -17,12 +17,12 @@ Xavier's stated process uses waves, a feature ledger and one PR per feature (`AG
 | Option | Description | Expected cost / complexity |
 | --- | --- | --- |
 | **A — Keep current PR flow** | Continue current CI and informal review, repair the missing ledger invocation, and add branch protection without test impact selection. | Least policy change; measured PR latency remains around current CI time and direct pushes still need restriction. |
-| **B — Protected trunk with PR Ship/Show/Ask** | Required always-run fast gate, scoped PR checks, auto-merge for low-risk Ship/Show PRs, owner approval for Ask, full async `main` verification and tracked failure response. Agents never push directly to `main`. | CI/path-classification work, ruleset administration, and possible post-merge reverts; smaller expected wait if impact selection proves sound. |
+| **B — Protected trunk with PR Ship/Show/Ask** | Required always-run fast gate, scoped PR checks, auto-merge for low-risk Ship/Show PRs, independent agent-panel approval for Ask, full async `main` verification and tracked failure response. Agents never push directly to `main`. | CI/path-classification work, ruleset administration, and possible post-merge reverts; smaller expected wait if impact selection proves sound. |
 | **C — Literal proposal, direct Ship/Show pushes** | Let authors push Ship/Show directly to `main`, run only local hooks before push, and rely on async CI for remaining failures. | Fastest nominal integration but no server-side check before an agent push under present rules; highest recovery burden and conflicts with one-PR-per-feature policy. |
 
 ## Simulation (REQUIRED)
 
-**PENDIENTE.** Do not accept this ADR until the multi-scenario simulation is run and its report is reviewed. No winner, score, margin or sensitivity result is asserted here.
+**PENDIENTE.** The independent agent panel must not accept this ADR until the multi-scenario simulation is run, deterministic gates pass, two independent models approve, and the auditable report is stored. No winner, score, margin or sensitivity result is asserted here.
 
 - **Engine:** `swal-sim/adr_sim.py`
 - **Exact command** (from the simulator directory): `python3 adr_sim.py --model trunk_based_flow --runs 5000 --seed 42 --outdir reports`
@@ -45,14 +45,14 @@ Xavier's stated process uses waves, a feature ledger and one PR per feature (`AG
 
 ## Decision
 
-**Proposed option B, subject to simulation and Phase 1/2 evidence.** Keep the feature ledger and bounded PR convention, use Ship/Show/Ask for review timing, require a server-side gate before agent merges, and run full verification after merge with incident tracking. Do not permit routine direct agent pushes. The owner must accept this ADR before updating `AGENTS.md` to explicitly distinguish structural PR ledger checks from full post-merge verification; until then, existing written obligations remain in force (`AGENTS.md:44-49`, `AGENTS.md:80-84`). A measured fast-gate miss or impact-selection miss delays protection changes rather than being waived to meet the schedule. No winning margin is claimed before simulation.
+**Proposed option B, subject to simulation and Phase 1/2 evidence.** Keep the feature ledger and bounded PR convention, use Ship/Show/Ask for review timing, require a server-side gate before agent merges, and run full verification after merge with incident tracking. Do not permit routine direct agent pushes. The independent agent panel accepts this ADR only after deterministic gates, the required simulation, two independent model approvals, and an auditable report tied to the revision. Until that acceptance, existing PR verification obligations remain in force (`AGENTS.md:44-49`, `AGENTS.md:80-84`); any later change distinguishing structural PR ledger checks from full post-merge verification needs a separate policy edit. A measured fast-gate miss or impact-selection miss delays protection changes rather than being waived to meet the schedule. No winning margin is claimed before simulation.
 
 ## Consequences
 
 - **Positive:** consistent server-side evidence for agent changes, short no-review path for bounded low-risk work, explicit visibility of red `main` runs.
-- **Negative / cost:** impact-map maintenance, CI duplication during rollout, owner time for Ask and incident response, and temporary regressions on `main` if async checks find a miss.
+- **Negative / cost:** impact-map maintenance, CI duplication during rollout, agent-panel review and incident response, and temporary regressions on `main` if async checks find a miss.
 - **Invalidation:** selected PR checks miss failures found by full checks; `main` incidents exceed the change-failure target; median recovery exceeds target; or fast-gate p90 stays above target without a safe way to split tests. In those cases restore the prior required check set and reassess the option.
 
 ## Follow-up verification
 
-After Phase 3, review four weekly cohorts of GitHub Actions and PR/issue data using the definitions in `docs/design/trunk-based/00-ANALYSIS.md`. Confirm fast-gate p50/p90, lead time, MTTR, change-failure rate, direct-push rejection and incident closure. Record the simulator report and final owner acceptance in this ADR; only then change Estado to Aceptado.
+After Phase 3, review four weekly cohorts of GitHub Actions and PR/issue data using the definitions in `docs/design/trunk-based/00-ANALYSIS.md`. Confirm fast-gate p50/p90, lead time, MTTR, change-failure rate, direct-push rejection and incident closure. Record the simulator report and agent-panel decision in this ADR; only then change Estado to Aceptado. The owner reviews the resulting product through the Product Acceptance Package.
