@@ -93,6 +93,11 @@ All autonomous agents (Jules, Hermes, Antigravity, Claude, etc.) MUST strictly r
 - **Runtime databases and caches**: `.xavier/`, `data/`, `*.db`, `*.sqlite*`, `metrics.db*`, `xavier_memory.db*` are strictly runtime caches. Never commit SQLite database files, WAL files, or SHM files. Only static configuration fixtures (such as `.xavier/maturity-anchors.json`) are tracked under `.xavier/`.
 - **Cargo & Compiler Settings**: `.cargo/` is the canonical Rust compiler configuration directory and must remain clean.
 
+## Decision rights (agent panel)
+
+- An independent agent panel decides reversible designs, ADR acceptance, Ask-class PR approval, and task plans after deterministic gates pass. Two independent models, neither the author, must approve; store their verdicts and an auditable report tied to the reviewed revision.
+- The owner alone gives final product acceptance through the Product Acceptance Package. Agents prepare credentials, paid capacity, branch rules, public releases, and production data migrations for that acceptance; they do not activate them silently.
+
 <!-- SWAL-ROUTING-START -->
 ## SWAL Routing Minimalista (SDD Hibrido F1)
 > Antes de crear `.gitcore/sdd/` aplica routing organico (gentle-ai v2.3.0).

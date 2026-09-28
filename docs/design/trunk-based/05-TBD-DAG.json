@@ -1,0 +1,456 @@
+{
+ "epics": [
+  {
+   "id": "P1",
+   "title": "Baseline and hygiene",
+   "feature_id": "ADR-035",
+   "summary": "Reconcile policy, make hooks staged-aware, and run shadow checks without changing main protection.",
+   "depends_on": []
+  },
+  {
+   "id": "P2",
+   "title": "Classify changes and prove impact selection",
+   "feature_id": "ADR-035",
+   "summary": "Implement Ship/Show/Ask policy and compare scoped checks with full checks before enabling auto-merge.",
+   "depends_on": [
+    "P1"
+   ]
+  },
+  {
+   "id": "P3",
+   "title": "Protect main and enable reviewed auto-merge",
+   "feature_id": "ADR-035",
+   "summary": "Require an always-present gate, reject agent direct pushes, and keep Ask approval by the agent panel.",
+   "depends_on": [
+    "P2"
+   ]
+  },
+  {
+   "id": "P4",
+   "title": "Operate and measure",
+   "feature_id": "ADR-035",
+   "summary": "Track incidents and GitHub delivery metrics, then adjust only from measured outcomes.",
+   "depends_on": [
+    "P3"
+   ]
+  }
+ ],
+ "tasks": [
+  {
+   "id": "T01",
+   "epic": "P1",
+   "title": "Panel acceptance of ADR-035 (simulation done)",
+   "decisions": [
+    "The agent panel records real simulator output, sensitivity and rationale; no invented score.",
+    "Change at most 400 lines total."
+   ],
+   "depends_on": [],
+   "files": [
+    {
+     "path": "docs/adr/ADR-035-trunk-based-ship-show-ask.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "ADR-035 is proposed and simulation is pending.",
+   "desired_state": "The agent panel has reviewed the simulation and recorded ADR-035 acceptance or rejection with report links.",
+   "acceptance": [
+    "From the simulator directory: python3 adr_sim.py --model trunk_based_flow --runs 5000 --seed 42 --outdir reports",
+    "rg -n 'Estado|Result|sensitivity|Report' docs/adr/ADR-035-trunk-based-ship-show-ask.md"
+   ],
+   "do_not_touch": [
+    ".gitcore/features.json",
+    "release tags"
+   ],
+   "size": "S",
+   "agent": "agent-panel",
+   "agent_reason": "Reversible decision: decided by the two-model agent panel under AGENTS.md \"Decision rights (agent panel)\"; the owner only gives final product acceptance."
+  },
+  {
+   "id": "T02",
+   "epic": "P1",
+   "title": "Reconcile AGENTS PR verification policy",
+   "decisions": [
+    "After ADR acceptance, define PR structural ledger check and full post-merge execution explicitly.",
+    "Preserve one PR per feature and never hand-promote ledger status.",
+    "Change at most 400 lines total."
+   ],
+   "depends_on": [
+    "T01"
+   ],
+   "files": [
+    {
+     "path": "AGENTS.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "AGENTS.md says the full verification pipeline runs on every PR, while CI does not invoke it.",
+   "desired_state": "Written policy matches the approved two-lane workflow and keeps the ledger authoritative.",
+   "acceptance": [
+    "rg -n 'verify-pipeline|pull request|post-merge|features.json' AGENTS.md",
+    "git diff --check -- AGENTS.md"
+   ],
+   "do_not_touch": [
+    ".gitcore/features.json",
+    "docs/SRS/REQUIREMENTS.md"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "A bounded policy edit after the agent panel accepts the ADR."
+  },
+  {
+   "id": "T03",
+   "epic": "P1",
+   "title": "Make Husky checks staged-aware",
+   "decisions": [
+    "Use staged index blobs, including newly added files; never auto-stage.",
+    "Keep Husky 9 and server-side secret scanning.",
+    "Change at most 400 lines total."
+   ],
+   "depends_on": [
+    "T01"
+   ],
+   "files": [
+    {
+     "path": ".husky/pre-commit",
+     "action": "edit"
+    },
+    {
+     "path": ".husky/pre-push",
+     "action": "edit"
+    },
+    {
+     "path": "scripts/swal-husky-guard.mjs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "A staged Rust/UI change triggers whole-project work; pre-push silently skips its guard without Node.",
+   "desired_state": "Pre-commit checks only staged content quickly and pre-push fails clearly if its required runtime is missing.",
+   "acceptance": [
+    "bash -n .husky/pre-commit",
+    "sh -n .husky/pre-push",
+    "node scripts/swal-husky-guard.mjs --test",
+    "git diff --check -- .husky/pre-commit .husky/pre-push scripts/swal-husky-guard.mjs"
+   ],
+   "do_not_touch": [
+    ".githooks/",
+    "Cargo.lock",
+    ".env"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Hook behavior needs careful index handling and failure-mode review."
+  },
+  {
+   "id": "T04",
+   "epic": "P1",
+   "title": "Add shadow fast gate and full main verification",
+   "decisions": [
+    "Keep existing CI visible during shadowing.",
+    "Require gitleaks in remote security job and keep an always-present summary check.",
+    "Change at most 400 lines total; split workflow edits if needed."
+   ],
+   "depends_on": [
+    "T02",
+    "T03"
+   ],
+   "files": [
+    {
+     "path": ".github/workflows/fast-gate.yml",
+     "action": "create"
+    },
+    {
+     "path": ".github/workflows/ci.yml",
+     "action": "edit"
+    },
+    {
+     "path": ".github/workflows/jules-ci-feedback.yml",
+     "action": "edit"
+    }
+   ],
+   "current_state": "No required fast check exists; main failures are skipped by the feedback workflow; CI omits ledger verification.",
+   "desired_state": "Shadow gate reports on every PR; full ledger verification and a linked incident run on every failed main SHA.",
+   "acceptance": [
+    "python3 -c 'import yaml; [yaml.safe_load(open(p)) for p in [\".github/workflows/fast-gate.yml\",\".github/workflows/ci.yml\",\".github/workflows/jules-ci-feedback.yml\"]]'",
+    "rg -n 'always|verify-pipeline.sh|workflow_run|main' .github/workflows/fast-gate.yml .github/workflows/ci.yml .github/workflows/jules-ci-feedback.yml",
+    "gh run list --workflow fast-gate.yml --limit 20"
+   ],
+   "do_not_touch": [
+    "branch rulesets",
+    "release.yml",
+    ".gitcore/features.json"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "The workflow needs explicit skip, cancel and incident failure handling."
+  },
+  {
+   "id": "T05",
+   "epic": "P2",
+   "title": "Implement path and actor classification",
+   "decisions": [
+    "Unknown or sensitive paths default to Ask.",
+    "Agent Ship is limited to four files and 400 changed lines; label cannot downgrade computed class.",
+    "Change at most 400 lines total."
+   ],
+   "depends_on": [
+    "T04"
+   ],
+   "files": [
+    {
+     "path": "scripts/classify-change.py",
+     "action": "create"
+    },
+    {
+     "path": "scripts/test_classify_change.py",
+     "action": "create"
+    },
+    {
+     "path": ".github/workflows/fast-gate.yml",
+     "action": "edit"
+    },
+    {
+     "path": ".github/pull_request_template.md",
+     "action": "create"
+    }
+   ],
+   "current_state": "No enforced Ship/Show/Ask classification or actor rule exists.",
+   "desired_state": "Each PR receives a fail-closed computed class and records feature ID or maintenance issue and check evidence.",
+   "acceptance": [
+    "python3 scripts/classify-change.py --help",
+    "python3 -m unittest discover -s scripts -p 'test_classify_change*.py'",
+    "rg -n 'flow:ship|flow:show|flow:ask|feature' .github/pull_request_template.md .github/workflows/fast-gate.yml"
+   ],
+   "do_not_touch": [
+    "branch rulesets",
+    ".gitcore/features.json"
+   ],
+   "size": "M",
+   "agent": "claude-cloud",
+   "agent_reason": "Independent review of agent actor and path policy is valuable before ruleset activation."
+  },
+  {
+   "id": "T06",
+   "epic": "P2",
+   "title": "Add conservative Rust impact selection",
+   "decisions": [
+    "Include reverse dependents and fail closed on manifests, lockfile, CI and unknown paths.",
+    "A zero selected-test result fails.",
+    "Change at most 400 lines total."
+   ],
+   "depends_on": [
+    "T05"
+   ],
+   "files": [
+    {
+     "path": "scripts/rust-impact.py",
+     "action": "create"
+    },
+    {
+     "path": "scripts/test_rust_impact.py",
+     "action": "create"
+    },
+    {
+     "path": ".github/workflows/fast-gate.yml",
+     "action": "edit"
+    }
+   ],
+   "current_state": "CI only has a coarse Rust path flag and root-only Clippy/test jobs.",
+   "desired_state": "Scoped checks include changed packages and reverse dependencies, with conservative full pre-merge fallback.",
+   "acceptance": [
+    "python3 scripts/rust-impact.py --help",
+    "python3 -m unittest discover -s scripts -p 'test_rust_impact*.py'",
+    "gh run list --workflow fast-gate.yml --limit 30"
+   ],
+   "do_not_touch": [
+    "Cargo.lock",
+    "crates/*/src/**",
+    "branch rulesets"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Workspace dependency edges and fail-closed selection need repo-specific implementation."
+  },
+  {
+   "id": "T07",
+   "epic": "P2",
+   "title": "Panel review of two-week shadow evidence and labels",
+   "decisions": [
+    "Require zero unclassified PRs and no missed full-suite failure before activation.",
+    "Record p50/p90 including queue time and cold-cache cohorts.",
+    "Change at most 400 lines total."
+   ],
+   "depends_on": [
+    "T06"
+   ],
+   "files": [
+    {
+     "path": "docs/design/trunk-based/00-ANALYSIS.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "Three-minute gate and impact safety are targets without shadow evidence.",
+   "desired_state": "The agent panel has a measured go/no-go record for branch protection; activating branch protection remains an owner-authorized outward step (T08).",
+   "acceptance": [
+    "gh run list --workflow fast-gate.yml --limit 100 --json databaseId,conclusion,createdAt,updatedAt",
+    "gh pr list --state merged --limit 100 --json number,labels,mergedAt",
+    "rg -n 'shadow|p50|p90|missed' docs/design/trunk-based/00-ANALYSIS.md"
+   ],
+   "do_not_touch": [
+    "branch rulesets",
+    ".gitcore/features.json"
+   ],
+   "size": "S",
+   "agent": "agent-panel",
+   "agent_reason": "Reversible decision: decided by the two-model agent panel under AGENTS.md \"Decision rights (agent panel)\"; the owner only gives final product acceptance."
+  },
+  {
+   "id": "T08",
+   "epic": "P3",
+   "title": "Configure main ruleset and auto-merge",
+   "decisions": [
+    "Require PR and always-present fast-gate; no agent bypass.",
+    "Ask requires agent-panel approval (two independent non-author models) after the latest change.",
+    "Only owner holds documented emergency direct-push bypass."
+   ],
+   "depends_on": [
+    "T07"
+   ],
+   "files": [],
+   "current_state": "Main rulesets only block deletion and force push.",
+   "desired_state": "Direct agent pushes fail and Ship/Show auto-merge only after green fast gate; Ask waits for agent-panel approval.",
+   "acceptance": [
+    "gh api repos/iberi22/xavier/rulesets --jq '.[] | {name,enforcement,rules}'",
+    "gh api repos/iberi22/xavier/rules/branches/main --jq '.[] | {type,parameters}'",
+    "gh pr list --base main --limit 20 --json number,labels,reviewDecision,autoMergeRequest"
+   ],
+   "do_not_touch": [
+    "release tags",
+    "deployment service",
+    ".gitcore/features.json"
+   ],
+   "size": "S",
+   "agent": "human",
+   "agent_reason": "Branch-protection and ruleset changes are reserved for the human owner."
+  },
+  {
+   "id": "T09",
+   "epic": "P3",
+   "title": "Drill post-merge incident and revert PR",
+   "decisions": [
+    "Create a linked issue on a failed main check; never silently auto-merge a revert.",
+    "Do not auto-revert migrations, releases or uncertain multi-commit failures.",
+    "Change at most 400 lines total."
+   ],
+   "depends_on": [
+    "T08"
+   ],
+   "files": [
+    {
+     "path": ".github/workflows/jules-ci-feedback.yml",
+     "action": "edit"
+    },
+    {
+     "path": "scripts/main-failure-triage.py",
+     "action": "create"
+    },
+    {
+     "path": "scripts/test_main_failure_triage.py",
+     "action": "create"
+    }
+   ],
+   "current_state": "Main failures are skipped by Jules feedback and no tracked response is guaranteed.",
+   "desired_state": "A failed main run creates an incident and a safe single-commit failure can produce a reviewable revert PR.",
+   "acceptance": [
+    "python3 scripts/main-failure-triage.py --help",
+    "python3 -m unittest discover -s scripts -p 'test_main_failure_triage*.py'",
+    "gh issue list --label tbd-incident --limit 20",
+    "gh pr list --state open --search 'revert' --limit 20"
+   ],
+   "do_not_touch": [
+    "main history",
+    "release tags",
+    "deployed binary"
+   ],
+   "size": "M",
+   "agent": "codex",
+   "agent_reason": "Automated failure handling needs careful attribution and guardrails."
+  },
+  {
+   "id": "T10",
+   "epic": "P4",
+   "title": "Report weekly GitHub flow metrics",
+   "decisions": [
+    "Compute lead time, MTTR and change-failure rate from linked PR/run/issue data.",
+    "Keep merge-to-release lag separate from merge lead time.",
+    "Change at most 400 lines total."
+   ],
+   "depends_on": [
+    "T09"
+   ],
+   "files": [
+    {
+     "path": "scripts/tbd-metrics.py",
+     "action": "create"
+    },
+    {
+     "path": "scripts/test_tbd_metrics.py",
+     "action": "create"
+    },
+    {
+     "path": "docs/design/trunk-based/00-ANALYSIS.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "Only a 30-run CI timing sample exists; DORA baselines are absent.",
+   "desired_state": "Four weekly cohorts contain reproducible p50/p90 fast gate, lead time, MTTR and failure-rate results.",
+   "acceptance": [
+    "python3 scripts/tbd-metrics.py --help",
+    "python3 -m unittest discover -s scripts -p 'test_tbd_metrics*.py'",
+    "gh pr list --state merged --limit 100 --json number,mergedAt,labels",
+    "gh issue list --label tbd-incident --state all --limit 100"
+   ],
+   "do_not_touch": [
+    "branch rulesets",
+    ".gitcore/features.json",
+    "release tags"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "A bounded GitHub-data reporting script can be independently reviewed."
+  },
+  {
+   "id": "T11",
+   "epic": "P4",
+   "title": "Panel review of rollout results (owner informed via the Product Acceptance Package)",
+   "decisions": [
+    "Retain, narrow or roll back gate scope based on observed missed failures and recovery times.",
+    "Do not promote feature ledger status by hand.",
+    "Change at most 400 lines total."
+   ],
+   "depends_on": [
+    "T10"
+   ],
+   "files": [
+    {
+     "path": "docs/design/trunk-based/01-DESIGN.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "The four-phase policy is proposed and may not meet latency or reliability targets.",
+   "desired_state": "The agent panel records an evidence-backed continuation or rollback decision after four weekly cohorts; the owner receives it in the next Product Acceptance Package.",
+   "acceptance": [
+    "python3 scripts/tbd-metrics.py --weeks 4",
+    "rg -n 'Phase 4|fast-gate|MTTR|change-failure' docs/design/trunk-based/01-DESIGN.md",
+    "git diff --check -- docs/design/trunk-based/01-DESIGN.md"
+   ],
+   "do_not_touch": [
+    "release tags",
+    "deployed binary",
+    ".gitcore/features.json"
+   ],
+   "size": "S",
+   "agent": "agent-panel",
+   "agent_reason": "Reversible decision: decided by the two-model agent panel under AGENTS.md \"Decision rights (agent panel)\"; the owner only gives final product acceptance."
+  }
+ ]
+}
