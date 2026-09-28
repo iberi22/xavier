@@ -12,7 +12,21 @@ use crate::context::{
 use crate::observability::token_accounting::TRACKER;
 use crate::workspace::WorkspaceContext;
 
-pub const SKILL_CONFIDENCE_THRESHOLD: f32 = 0.5;
+/// Minimum confidence score required to inject skills during Maximum-level context fusion.
+///
+/// Distinct from dispatch threshold ([`crate::context::skill_dispatcher::MIN_DISPATCH_CONFIDENCE`] at 0.40),
+/// context fusion requires higher confidence (0.50) to prevent weak skill matches from polluting
+/// prompt token budgets.
+pub const FUSION_SKILL_CONFIDENCE_THRESHOLD: f32 = 0.5;
+
+/// Backward-compatible alias for [`FUSION_SKILL_CONFIDENCE_THRESHOLD`].
+pub const SKILL_CONFIDENCE_THRESHOLD: f32 = FUSION_SKILL_CONFIDENCE_THRESHOLD;
+
+const _: () =
+    assert!(FUSION_SKILL_CONFIDENCE_THRESHOLD > 0.0 && FUSION_SKILL_CONFIDENCE_THRESHOLD <= 1.0);
+const _: () = assert!(
+    crate::context::skill_dispatcher::MIN_DISPATCH_CONFIDENCE < FUSION_SKILL_CONFIDENCE_THRESHOLD
+);
 
 /// Predicate to check if a prompt is trivial (acknowledgments, greetings, very short confirmations).
 /// Such prompts skip skill dispatch entirely (0 ms path).
@@ -190,12 +204,11 @@ pub async fn v1_context_regenerate(
 
         if !is_trivial_prompt(latest_prompt) {
             use crate::context::skill_dispatcher::SkillDispatchRequest;
-            use crate::context::skill_registry::SkillRegistry;
+            use crate::context::skill_registry::build_skill_registry;
             use crate::context::SkillDispatcher;
 
             let workspace_root = std::path::PathBuf::from(&workspace.workspace_id);
-            let mut registry = SkillRegistry::with_defaults(&workspace_root);
-            let _ = registry.reindex().await;
+            let registry = build_skill_registry(&workspace_root).await;
             let memory = workspace.workspace.memory.clone();
             let dispatcher = SkillDispatcher::new(registry, Some(memory));
 
@@ -207,7 +220,7 @@ pub async fn v1_context_regenerate(
             };
 
             if let Ok(result) = dispatcher.dispatch(&dispatch_request).await {
-                if result.confidence >= SKILL_CONFIDENCE_THRESHOLD {
+                if result.confidence >= FUSION_SKILL_CONFIDENCE_THRESHOLD {
                     let selected_tokens: usize = selected_docs.iter().map(|d| d.token_count).sum();
                     let remaining_budget = token_budget.saturating_sub(selected_tokens);
 
@@ -450,17 +463,20 @@ mod tests {
 
     #[test]
     fn test_fusion_skips_below_confidence() {
-        let confidence = 0.35f32;
-        let mut injected_skills = Vec::new();
+        // Dispatched skills below the fusion threshold (0.50), even if above
+        // the dispatch threshold (0.40), must not be injected into prompt context.
+        for confidence in [0.35f32, 0.45f32] {
+            let mut injected_skills = Vec::new();
 
-        if confidence >= SKILL_CONFIDENCE_THRESHOLD {
-            injected_skills.push("Should not be added".to_string());
+            if confidence >= FUSION_SKILL_CONFIDENCE_THRESHOLD {
+                injected_skills.push("Should not be added".to_string());
+            }
+
+            let builder = ContextBuilder::new(ContextBuilderConfig::default());
+            let context = builder.build(ContextLevel::Maximum, &[], &[], &injected_skills);
+
+            assert!(!context.contains("# Available Skills"));
         }
-
-        let builder = ContextBuilder::new(ContextBuilderConfig::default());
-        let context = builder.build(ContextLevel::Maximum, &[], &[], &injected_skills);
-
-        assert!(!context.contains("# Available Skills"));
     }
 
     #[test]
@@ -507,6 +523,25 @@ mod tests {
         assert!(context.contains("# Available Skills"));
     }
 
+    fn env_lock() -> &'static tokio::sync::Mutex<()> {
+        static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        &ENV_LOCK
+    }
+
+    struct HomeEnvGuard {
+        _lock: tokio::sync::MutexGuard<'static, ()>,
+        prev_home: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for HomeEnvGuard {
+        fn drop(&mut self) {
+            match self.prev_home.take() {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
     /// Build an isolated workspace: temp HOME (no real skill store), one
     /// fixture skill, in-memory memory + store, minimal state.
     async fn fusion_test_workspace(
@@ -516,11 +551,16 @@ mod tests {
         crate::workspace::WorkspaceContext,
         tempfile::TempDir,
         tempfile::TempDir,
-        Option<std::ffi::OsString>,
+        HomeEnvGuard,
     ) {
+        let lock = env_lock().lock().await;
         let home = tempfile::tempdir().expect("temp HOME");
         let prev_home = std::env::var_os("HOME");
         std::env::set_var("HOME", home.path());
+        let guard = HomeEnvGuard {
+            _lock: lock,
+            prev_home,
+        };
 
         let root = tempfile::tempdir().expect("temp workspace root");
         let skill_dir = root.path().join("skills").join(skill_name);
@@ -549,14 +589,11 @@ mod tests {
             workspace_id: root.path().to_string_lossy().into_owned(),
             workspace: std::sync::Arc::new(state),
         };
-        (workspace, home, root, prev_home)
+        (workspace, home, root, guard)
     }
 
-    fn restore_home(prev_home: Option<std::ffi::OsString>) {
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+    fn restore_home(guard: HomeEnvGuard) {
+        drop(guard);
     }
 
     async fn regenerate_context(

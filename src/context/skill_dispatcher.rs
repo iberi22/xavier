@@ -59,6 +59,21 @@ pub struct ContextPack {
     pub total_tokens: usize,
 }
 
+/// Minimum confidence score required to dispatch a skill.
+///
+/// Matches scoring below this threshold (0.40) fallback to a generic `_none`
+/// result instead of dispatching a weak match.
+///
+/// This threshold is intentionally lower and distinct from Maximum-level HTTP
+/// context fusion (`FUSION_SKILL_CONFIDENCE_THRESHOLD` / `SKILL_CONFIDENCE_THRESHOLD` = 0.50),
+/// which requires higher confidence before injecting skills into conversation prompt budgets.
+pub const MIN_DISPATCH_CONFIDENCE: f32 = 0.40;
+
+/// Alias for [`MIN_DISPATCH_CONFIDENCE`].
+pub const DISPATCH_CONFIDENCE_THRESHOLD: f32 = MIN_DISPATCH_CONFIDENCE;
+
+const _: () = assert!(MIN_DISPATCH_CONFIDENCE > 0.0 && MIN_DISPATCH_CONFIDENCE < 1.0);
+
 /// The dispatcher that ties the registry, memory, and retrieval together.
 pub struct SkillDispatcher {
     registry: SkillRegistry,
@@ -76,7 +91,6 @@ impl SkillDispatcher {
         let max_tokens = request.max_tokens.unwrap_or(4000);
 
         // 1. Find the best matching skill
-        const MIN_DISPATCH_CONFIDENCE: f32 = 0.40;
         let matches = self.registry.search(&request.task, 3);
 
         // Instead of unconditionally taking matches.first(), ensure the score meets minimum threshold.
