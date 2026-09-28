@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | **ID** | ADR-035 |
-| **Estado** | Propuesto |
+| **Estado** | Aceptado (panel de agentes, 2026-09-27) |
 | **Date** | 2026-09-27 |
 | **Authors** | Xavier maintainers |
 | **Related** | `docs/design/trunk-based/00-ANALYSIS.md`; `docs/design/trunk-based/01-DESIGN.md`; `AGENTS.md:44-49`, `AGENTS.md:80-90` |
@@ -60,3 +60,7 @@ B's composite of 1.000 means it dominates every metric **under the model's assum
 ## Follow-up verification
 
 Before Phase 1 rollout, record deterministic gate results and two independent model approvals in this ADR alongside the simulator report; the independent agent panel may then change Estado to Aceptado. Phase 1-2 shadow measurements validate the modeled direction before rollout. Phase 3 branch-rule activation requires its separate rollout gates and owner authorization in final product acceptance. After Phase 3, review four weekly cohorts of GitHub Actions and PR/issue data using the definitions in `docs/design/trunk-based/00-ANALYSIS.md`. Confirm fast-gate p50/p90, lead time, MTTR, change-failure rate, direct-push rejection and incident closure as rollout evidence, not ADR acceptance conditions. The owner reviews the resulting product through the Product Acceptance Package.
+
+## Acceptance record
+
+Accepted 2026-09-27 by the agent review panel (deepseek-v4.1-flash round 6 ACCEPT at cd4809dd; agy gemini-3.8-flash-medium round 5 ACCEPT). Acceptance sets the policy direction only; Phase 3 branch-rule activation and any production automation remain owner-authorized outward steps. Record: `docs/design/trunk-based/panel/ADR-035-panel.md`.
