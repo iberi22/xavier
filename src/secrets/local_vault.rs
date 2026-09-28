@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
-use crate::security::encryption_keys::MasterKeyManager;
+use crate::security::encryption_keys::{ensure_private_dir, write_private_file, MasterKeyManager};
 
 /// Local secrets vault using filesystem storage and AES-256-GCM encryption.
 pub struct LocalSecretsVault {
@@ -30,8 +30,11 @@ impl LocalSecretsVault {
         let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not find home directory"))?;
         let storage_dir = home.join(".xavier").join("secrets");
 
-        if !storage_dir.exists() {
-            fs::create_dir_all(&storage_dir)?;
+        ensure_private_dir(&storage_dir)?;
+        #[cfg(unix)]
+        if let Some(parent) = storage_dir.parent() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
         }
 
         let vault_key = master_key_mgr.vault_key()?;
@@ -40,12 +43,14 @@ impl LocalSecretsVault {
 
     /// Store a secret by name
     pub fn set(&self, name: &str, value: &str) -> Result<()> {
+        ensure_private_dir(&self.storage_dir)?;
+
         let path = self.storage_dir.join(format!("{}.enc", name));
         let nonce = NonceBytes::generate();
         let encrypted = aes_encrypt(value.as_bytes(), &self.vault_key, &nonce)
             .map_err(|e| anyhow!("Encryption failed: {}", e))?;
 
-        fs::write(path, encrypted)?;
+        write_private_file(&path, &encrypted)?;
         Ok(())
     }
 
@@ -115,5 +120,29 @@ mod tests {
 
         vault.delete(name).unwrap();
         assert!(vault.get(name).is_err());
+    }
+
+    #[test]
+    fn test_local_vault_set_writes_0600() {
+        let tmp = tempdir().unwrap();
+        let vault_key = [0u8; 32];
+        let vault = LocalSecretsVault::new(tmp.path(), vault_key);
+
+        let name = "test-secret-0600";
+        let value = "test-secret-value-abcdef";
+
+        vault.set(name, value).unwrap();
+
+        let path = tmp.path().join(format!("{}.enc", name));
+        assert!(path.exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let meta = fs::metadata(&path).unwrap();
+            assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+            let dir_meta = fs::metadata(tmp.path()).unwrap();
+            assert_eq!(dir_meta.permissions().mode() & 0o777, 0o700);
+        }
     }
 }

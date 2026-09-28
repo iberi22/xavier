@@ -9,7 +9,8 @@ use keyring::Entry;
 use rand::RngCore;
 use sha2::Sha256;
 use std::fs;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
 use crate::utils::crypto::{hex_decode, hex_encode};
@@ -17,6 +18,47 @@ use crate::utils::crypto::{hex_decode, hex_encode};
 const SERVICE_NAME: &str = "xavier-memory-runtime";
 const MASTER_KEY_ENTRY: &str = "master-key";
 const MASTER_KEY_LEN: usize = 32; // 256 bits
+
+/// Create `dir` (recursively) with `0700` from the first syscall so the umask
+/// never widens the window; pre-existing directories are tightened after.
+pub(crate) fn ensure_private_dir(dir: &Path) -> std::io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+/// Write the encrypted master key creating the file with `0600` atomically
+/// (no create-then-chmod window), then re-assert `0600` for pre-existing files.
+pub(crate) fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    drop(file);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
 
 /// Master Key Manager handles the core encryption key for the system.
 pub struct MasterKeyManager {
@@ -40,14 +82,14 @@ impl MasterKeyManager {
         let mut key = [0u8; MASTER_KEY_LEN];
         rand::thread_rng().fill_bytes(&mut key);
 
-        // Persist
-        let keyring_res = Self::save_to_keyring(&key);
-        let fallback_res = Self::save_to_fallback(&key);
-
-        if keyring_res.is_err() && fallback_res.is_err() {
-            return Err(anyhow!(
-                "Failed to persist master key to both keyring and fallback storage"
-            ));
+        // Persist: save to fallback ONLY when save_to_keyring failed
+        if let Err(e) = Self::save_to_keyring(&key) {
+            tracing::debug!("Keyring save failed: {e}; falling back to encrypted file");
+            Self::save_to_fallback(&key).map_err(|fb_err| {
+                anyhow!(
+                    "Failed to persist master key to both keyring ({e}) and fallback storage ({fb_err})"
+                )
+            })?;
         }
 
         Ok(Self { master_key: key })
@@ -117,8 +159,17 @@ impl MasterKeyManager {
 
     fn save_to_fallback(key: &[u8; MASTER_KEY_LEN]) -> Result<()> {
         let path = Self::get_fallback_path();
+        Self::write_fallback_at(key, &path)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn save_to_fallback_at(key: &[u8; MASTER_KEY_LEN], path: &Path) -> Result<()> {
+        Self::write_fallback_at(key, path)
+    }
+
+    fn write_fallback_at(key: &[u8; MASTER_KEY_LEN], path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            ensure_private_dir(parent)?;
         }
 
         let enc_key = Self::get_fallback_encryption_key();
@@ -126,7 +177,7 @@ impl MasterKeyManager {
         let encrypted = aes_encrypt(key, &enc_key, &nonce)
             .map_err(|e| anyhow!("Failed to encrypt fallback master key: {}", e))?;
 
-        fs::write(path, encrypted)?;
+        write_private_file(path, &encrypted)?;
         Ok(())
     }
 
@@ -181,5 +232,24 @@ mod tests {
         let mut key3 = [0u8; 32];
         manager.derive_key(b"other-info", &mut key3).unwrap();
         assert_ne!(key1, key3);
+    }
+
+    #[test]
+    fn test_fallback_key_file_is_0600() {
+        let tmp = tempfile::tempdir().unwrap();
+        let key_path = tmp.path().join("master.key");
+        let synthetic_key = [42u8; MASTER_KEY_LEN];
+
+        MasterKeyManager::save_to_fallback_at(&synthetic_key, &key_path).unwrap();
+        assert!(key_path.exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = std::fs::metadata(&key_path).unwrap();
+            assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+            let parent_metadata = std::fs::metadata(tmp.path()).unwrap();
+            assert_eq!(parent_metadata.permissions().mode() & 0o777, 0o700);
+        }
     }
 }
