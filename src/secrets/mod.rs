@@ -76,6 +76,7 @@ impl SecretsManager {
 // Lending engine
 pub mod audit;
 pub mod fallback_store;
+pub mod import_env;
 pub mod lending;
 pub mod local;
 pub mod local_vault;
