@@ -2589,9 +2589,10 @@
       "notes": "Skill Controller initiative, ADR-034 (Propuesto). Spec: docs/features/specs/FEATURE-feat-skill-store-config.md (Configurable Skill Store and Scan Paths). Decisions: docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md (D5, D7a). Planned test filters run as cargo test -p xavier --lib <filter> after implementation.",
       "tests": [
         "test_skill_store_env_override_respected",
-        "test_skill_roots_host_allowlist_cannot_be_widened_by_manifest",
+        "test_with_defaults_skill_store_env_wiring",
         "test_unset_skill_env_preserves_all_three_scan_roots",
-        "test_unset_home_fails_open_workspace_only"
+        "test_unset_home_fails_open_workspace_only",
+        "test_resolve_skill_store_wiring"
       ]
     },
     "feat-skill-registry-unify": {
@@ -2633,7 +2634,8 @@
         "test_projector_dry_run_writes_nothing",
         "test_projector_backup_and_atomic_swap",
         "test_projector_unmanaged_regular_file_never_deleted",
-        "test_projector_write_outside_allowlist_rejected"
+        "test_projector_write_outside_allowlist_rejected",
+        "test_skill_roots_host_allowlist_cannot_be_widened_by_manifest"
       ]
     },
     "feat-skill-ephemeral": {

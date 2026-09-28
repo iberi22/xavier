@@ -102,13 +102,30 @@ fn hermes_config_path(home: &Path) -> PathBuf {
     home.join(".hermes").join("config.yaml")
 }
 
-/// Default scan paths for an explicit home dir (pure helper, testable).
-fn default_scan_paths(workspace_root: &Path, home: Option<&Path>) -> Vec<PathBuf> {
+/// Resolve canonical skill store path from an optional env value and an optional home dir.
+/// Empty or whitespace-only env values are treated as unset (defaults to Hermes store).
+fn resolve_skill_store(env_val: Option<String>, home: Option<&Path>) -> Option<PathBuf> {
+    env_val
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| home.map(hermes_store_path))
+}
+
+/// Default scan paths for an explicit home dir and an optional store override (testable helper).
+fn default_scan_paths(
+    workspace_root: &Path,
+    home: Option<&Path>,
+    store_override: Option<PathBuf>,
+) -> Vec<PathBuf> {
     let mut paths = vec![
         workspace_root.join("skills"),
         workspace_root.join(".agents").join("skills"),
     ];
-    if let Some(home) = home {
+    if let Some(store) = store_override {
+        paths.push(store);
+    } else if let Some(home) = home {
         paths.push(hermes_store_path(home));
     }
     paths
@@ -272,19 +289,49 @@ impl SkillRegistry {
 
     /// Create with default Xavier skill paths plus the canonical Hermes store.
     /// `$HOME` is resolved from the environment at runtime, never hardcoded.
+    ///
+    /// `XAVIER_SKILL_STORE` replaces the Hermes store (it does not add to it).
+    /// A configured-but-missing store is reported once at construction so a typo
+    /// cannot silently empty the canonical catalog; the override still wins.
     pub fn with_defaults(workspace_root: &Path) -> Self {
-        Self::with_home(workspace_root, home_dir().as_deref())
+        let home = home_dir();
+        let env_store = std::env::var("XAVIER_SKILL_STORE").ok();
+        let store_override = resolve_skill_store(env_store.clone(), home.as_deref());
+        if let Some(configured) = env_store
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let configured_path = Path::new(configured);
+            if !configured_path.exists() {
+                warn!(
+                    "XAVIER_SKILL_STORE is set to a path that does not exist: {:?}; \
+                     it replaces the Hermes store, so the canonical skills are not scanned",
+                    configured_path
+                );
+            }
+        }
+        Self::with_paths(workspace_root, home.as_deref(), store_override)
     }
 
     /// Create with default paths for an explicit home dir (testable helper).
     fn with_home(workspace_root: &Path, home: Option<&Path>) -> Self {
+        Self::with_paths(workspace_root, home, None)
+    }
+
+    /// Create with explicit overrides for tests.
+    fn with_paths(
+        workspace_root: &Path,
+        home: Option<&Path>,
+        store_override: Option<PathBuf>,
+    ) -> Self {
         let disabled = home
             .map(hermes_config_path)
             .map(|path| load_disabled_from_config(&path))
             .unwrap_or_default();
         Self {
             skills: HashMap::new(),
-            scan_paths: default_scan_paths(workspace_root, home),
+            scan_paths: default_scan_paths(workspace_root, home, store_override),
             disabled,
         }
     }
@@ -1154,13 +1201,65 @@ Instructions here.
 
 #[cfg(test)]
 mod eval_tests_302 {
+    use super::home_dir;
     use super::infer_domains;
+    use super::resolve_skill_store;
     use super::SkillRegistry;
     use crate::context::skill_registry::IndexedSkill;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
+    use std::path::{Path, PathBuf};
 
     const EVAL_DIM: usize = 64;
+
+    /// Serializes tests that mutate `XAVIER_SKILL_STORE` in the shared process
+    /// environment, so no two env-mutating tests can interleave.
+    fn env_lock() -> &'static std::sync::Mutex<()> {
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        &ENV_LOCK
+    }
+
+    /// Point `XAVIER_SKILL_STORE` at `path`, returning the previous value so it
+    /// can be restored verbatim.
+    fn set_skill_store_env(path: &Path) -> Option<String> {
+        let previous = std::env::var("XAVIER_SKILL_STORE").ok();
+        std::env::set_var("XAVIER_SKILL_STORE", path);
+        previous
+    }
+
+    /// Restore the pre-test value: the captured one, or removal when unset.
+    fn restore_skill_store_env(previous: Option<String>) {
+        match previous {
+            Some(value) => std::env::set_var("XAVIER_SKILL_STORE", value),
+            None => std::env::remove_var("XAVIER_SKILL_STORE"),
+        }
+    }
+
+    /// Assert the three pre-existing discovery roots survive an unset variable:
+    /// workspace `skills/`, workspace `.agents/skills`, and `$HOME/.hermes/skills`.
+    fn assert_three_scan_roots(registry: &SkillRegistry, workspace: &Path) {
+        let home = home_dir().expect("HOME must be resolvable for the Hermes default");
+        let hermes = super::hermes_store_path(&home);
+        assert!(
+            registry.scan_paths.contains(&workspace.join("skills")),
+            "workspace skills/ must stay a scan root"
+        );
+        assert!(
+            registry
+                .scan_paths
+                .contains(&workspace.join(".agents").join("skills")),
+            "workspace .agents/skills must stay a scan root"
+        );
+        assert!(
+            registry.scan_paths.contains(&hermes),
+            "Hermes store must stay a scan root when XAVIER_SKILL_STORE is unset"
+        );
+        assert_eq!(
+            registry.scan_paths.len(),
+            3,
+            "exactly the three pre-existing discovery roots, no more"
+        );
+    }
 
     /// Deterministic hashed bag-of-words embedder (offline, zero I/O).
     /// Fixed hasher keys make vectors stable across runs of one binary.
@@ -1309,5 +1408,180 @@ mod eval_tests_302 {
             recall_at_3 >= 0.8,
             "Recall@3 {recall_at_3:.3} below 0.8 threshold"
         );
+    }
+
+    #[test]
+    fn test_resolve_skill_store_wiring() {
+        let home = tempfile::tempdir().unwrap();
+        let expected_hermes = super::hermes_store_path(home.path());
+
+        // Unset env var resolves to Hermes store default
+        assert_eq!(
+            resolve_skill_store(None, Some(home.path())),
+            Some(expected_hermes.clone())
+        );
+
+        // Empty env var is treated as unset
+        assert_eq!(
+            resolve_skill_store(Some("".to_string()), Some(home.path())),
+            Some(expected_hermes.clone())
+        );
+
+        // Whitespace-only env var is treated as unset
+        assert_eq!(
+            resolve_skill_store(Some("   \t  \n".to_string()), Some(home.path())),
+            Some(expected_hermes)
+        );
+
+        // Real override is respected
+        let override_dir = tempfile::tempdir().unwrap();
+        let override_path = override_dir.path().to_path_buf();
+        assert_eq!(
+            resolve_skill_store(
+                Some(override_path.to_string_lossy().to_string()),
+                Some(home.path())
+            ),
+            Some(override_path.clone())
+        );
+
+        // Real override without home is also respected
+        assert_eq!(
+            resolve_skill_store(Some(override_path.to_string_lossy().to_string()), None),
+            Some(override_path)
+        );
+
+        // Unset, empty, or whitespace without home returns None
+        assert_eq!(resolve_skill_store(None, None), None);
+        assert_eq!(resolve_skill_store(Some("".to_string()), None), None);
+        assert_eq!(resolve_skill_store(Some("   ".to_string()), None), None);
+    }
+
+    #[test]
+    fn test_skill_store_env_override_respected() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        let workspace = tempfile::tempdir().unwrap();
+        let override_store = tempfile::tempdir().unwrap();
+        let previous = set_skill_store_env(override_store.path());
+
+        let registry = SkillRegistry::with_defaults(workspace.path());
+
+        let home = home_dir().expect("HOME must be resolvable for the Hermes default");
+        let default_hermes = super::hermes_store_path(&home);
+        assert!(
+            !registry.scan_paths.contains(&default_hermes),
+            "Canonical hermes store should not be included when overridden"
+        );
+        assert!(
+            registry
+                .scan_paths
+                .contains(&override_store.path().to_path_buf()),
+            "Overridden store should be included in scan paths"
+        );
+        assert_eq!(
+            registry.scan_paths.len(),
+            3,
+            "Scan paths should exactly include 2 workspace defaults and the override"
+        );
+
+        restore_skill_store_env(previous);
+    }
+
+    #[tokio::test]
+    async fn test_with_defaults_skill_store_env_wiring() {
+        let guard = env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        let workspace = tempfile::tempdir().unwrap();
+        let override_store = tempfile::tempdir().unwrap();
+        let skill_dir = override_store.path().join("env-override-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: env-override-skill\ndescription: \"Skill env-override-skill for testing\"\n---\n\n# env-override-skill\n",
+        )
+        .unwrap();
+        let previous = set_skill_store_env(override_store.path());
+
+        // The public constructor must read the real environment variable, so
+        // removing the `std::env::var` read in `with_defaults` breaks this test.
+        let mut registry = SkillRegistry::with_defaults(workspace.path());
+        let home = home_dir().expect("HOME must be resolvable for the Hermes default");
+        let default_hermes = super::hermes_store_path(&home);
+        assert!(
+            !registry.scan_paths.contains(&default_hermes),
+            "XAVIER_SKILL_STORE must drop the canonical Hermes store"
+        );
+
+        // Documented behavior on a bad value: warn (see with_defaults) but the
+        // override still replaces Hermes rather than silently failing open.
+        set_skill_store_env(Path::new("/nonexistent/xavier-skill-store"));
+        let missing = SkillRegistry::with_defaults(workspace.path());
+        assert!(
+            !missing.scan_paths.contains(&default_hermes),
+            "a missing configured store still replaces the Hermes store"
+        );
+        assert!(missing
+            .scan_paths
+            .contains(&PathBuf::from("/nonexistent/xavier-skill-store")));
+
+        // The environment is only read by the constructors above; release the
+        // lock before awaiting so no std MutexGuard is held across an await.
+        restore_skill_store_env(previous);
+        drop(guard);
+
+        let indexed = registry.reindex().await.unwrap();
+        assert!(
+            indexed >= 1,
+            "expected the XAVIER_SKILL_STORE skill to be indexed"
+        );
+        assert!(
+            registry.get("env-override-skill").is_some(),
+            "the configured store must actually be scanned"
+        );
+    }
+
+    #[test]
+    fn test_unset_skill_env_preserves_all_three_scan_roots() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        let workspace = tempfile::tempdir().unwrap();
+        let previous = std::env::var("XAVIER_SKILL_STORE").ok();
+
+        // Unset keeps every current discovery root.
+        std::env::remove_var("XAVIER_SKILL_STORE");
+        let unset = SkillRegistry::with_defaults(workspace.path());
+        assert_three_scan_roots(&unset, workspace.path());
+
+        // Empty is treated as unset and keeps the same three roots.
+        set_skill_store_env(Path::new("   \t "));
+        let empty = SkillRegistry::with_defaults(workspace.path());
+        assert_three_scan_roots(&empty, workspace.path());
+
+        restore_skill_store_env(previous);
+    }
+
+    #[test]
+    fn test_unset_home_fails_open_workspace_only() {
+        let workspace = tempfile::tempdir().unwrap();
+
+        let registry = SkillRegistry::with_paths(workspace.path(), None, None);
+
+        assert_eq!(
+            registry.scan_paths.len(),
+            2,
+            "Only workspace scan paths should be included when home is not set"
+        );
+        assert!(registry
+            .scan_paths
+            .contains(&workspace.path().join("skills")));
+        assert!(registry
+            .scan_paths
+            .contains(&workspace.path().join(".agents").join("skills")));
     }
 }
