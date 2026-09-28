@@ -7,3 +7,17 @@
 - Repo rules (AGENTS.md): waves, ledger promoted only by green scripts/verify-pipeline.sh, ADR required for non-obvious decisions and for changes contradicting an ADR, "1 PR = 1 feature", CI runs fmt/clippy/tests/feature verification/secret scan on every PR.
 - Contributors are mostly AUTONOMOUS AGENTS: Google Jules (opens PRs, cannot see CI), CLI agents (codex/agy/opencode) orchestrated by Claude Code which reviews diffs before committing, plus one human owner. Observed today: agents sometimes write outside their assigned scope (agy edited a second checkout), leak personal paths, or claim tests pass without running them.
 - Public GitHub repo; release via release.yml; deploy is a local systemd user unit + ~/.local/bin binary (not continuous deploy).
+
+## Evidence (reproducible, captured 2026-09-27)
+
+- Rulesets: `gh api repos/iberi22/xavier/rulesets` then `gh api repos/iberi22/xavier/rulesets/<id>`; captured result:
+
+```json
+{"bypass": [], "conditions": ["~DEFAULT_BRANCH"], "enforcement": "active", "name": "r1", "rules": [{"p": {"required_approving_review_count": null, "required_status_checks": [], "strict_required_status_checks_policy": null}, "type": "deletion"}, {"p": {"required_approving_review_count": null, "required_status_checks": [], "strict_required_status_checks_policy": null}, "type": "non_fast_forward"}]}
+{"bypass": [], "conditions": ["~DEFAULT_BRANCH"], "enforcement": "active", "name": "ruleone", "rules": [{"p": {"required_approving_review_count": null, "required_status_checks": [], "strict_required_status_checks_policy": null}, "type": "deletion"}, {"p": {"required_approving_review_count": null, "required_status_checks": [], "strict_required_status_checks_policy": null}, "type": "non_fast_forward"}]}
+```
+
+- Classic protection: `gh api repos/iberi22/xavier/branches/main/protection` -> HTTP 404 `Branch not protected`.
+- ci.yml wall-time sample: `gh run list -R iberi22/xavier --workflow ci.yml --limit 30 --json databaseId,conclusion,event,createdAt,updatedAt,status`; run IDs: 36336129538, 36335203888, 36334908209, 36334844728, 36334751693, 36334621929, 36312871830, 36298447232, 36298407586, 36291934367, 36291922065, 36291910469, 36291899246, 36291877579, 36290838357, 36290530359, 36290529525, 36290265822, 36290256886, 36289887891, 36289528596, 36289526321, 36288706443, 36288204542, 36287843300, 36283375520, 36283372499, 36283369299, 36280621626, 36278605237.
+- Per-job medians: `gh api repos/iberi22/xavier/actions/runs/<id>/jobs` over the 10 most recent ci.yml runs whose `Parallel Rust Tests` job was not skipped (selected from the last 80 runs); duration = completed_at - started_at.
+- Local hooks: `.husky/pre-commit`, `.husky/pre-push` at the cited commit.
