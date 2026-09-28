@@ -1122,7 +1122,7 @@ Pre-merge contracts (`edit-check`, `safe-delete`, three-valued `verify`) plus ar
 
 ### Description
 
-`SkillRegistry::with_defaults` SHALL scan `workspace_root/skills`, `workspace_root/.agents/skills` and the canonical Hermes store `$HOME/.hermes/skills` (`src/context/skill_registry.rs:82-91`). `$HOME` is resolved from the environment at runtime, never hardcoded. Traversal SHALL track visited `(device, inode)` pairs and skip seen dirs so symlink cycles terminate (`collect_skill_files`, `src/context/skill_registry.rs:138-194`); file symlinks are still followed. `skills.disabled` from `$HOME/.hermes/config.yaml` SHALL exclude names, fail-open when unreadable (`src/context/skill_registry.rs:95-123`).
+`SkillRegistry::with_defaults` SHALL scan `workspace_root/skills`, `workspace_root/.agents/skills` and the configured canonical store (`src/context/skill_registry.rs:82-91`). (Planned, `feat-skill-store-config`, not yet implemented:) the canonical store becomes configurable via `XAVIER_SKILL_STORE`, defaulting to the Hermes store `$HOME/.hermes/skills` and preserving today's default scan set. `$HOME` is resolved from the environment at runtime, never hardcoded. Hermes remains the authoritative canonical store until an approved migration to the configured store completes (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md D1, D5). Traversal SHALL track visited `(device, inode)` pairs and skip seen dirs so symlink cycles terminate (`collect_skill_files`, `src/context/skill_registry.rs:138-194`); file symlinks are still followed. `skills.disabled` from `$HOME/.hermes/config.yaml` SHALL exclude names, fail-open when unreadable (`src/context/skill_registry.rs:95-123`).
 
 ### Acceptance criteria
 

@@ -1,0 +1,1325 @@
+{
+ "epics": [
+  {
+   "id": "EP-00",
+   "title": "EP-00 preconditions",
+   "feature_id": "",
+   "summary": "Resolve ADR-034 and its ADR-019 amendment, reconcile repository rules and REQ-060, and verify the existing planned feature specs and ledger entries.",
+   "depends_on": []
+  },
+  {
+   "id": "EP-10",
+   "title": "Configurable skill store",
+   "feature_id": "feat-skill-store-config",
+   "summary": "Add host-selected paths while preserving the current scan defaults.",
+   "depends_on": [
+    "EP-00"
+   ]
+  },
+  {
+   "id": "EP-20",
+   "title": "Unified skill registry",
+   "feature_id": "feat-skill-registry-unify",
+   "summary": "Use one registry constructor across REST, MCP, and session fusion; document both confidence thresholds.",
+   "depends_on": [
+    "EP-10"
+   ]
+  },
+  {
+   "id": "EP-30",
+   "title": "Skill projector",
+   "feature_id": "feat-skill-projector",
+   "summary": "Implement TOML manifest validation, filesystem policy, planning, journaled apply and rollback, and CLI commands.",
+   "depends_on": [
+    "EP-20"
+   ]
+  },
+  {
+   "id": "EP-40",
+   "title": "Ephemeral skills",
+   "feature_id": "feat-skill-ephemeral",
+   "summary": "Compose bounded task skills before spawn and deliver equivalent read-only context to live sessions.",
+   "depends_on": [
+    "EP-30"
+   ]
+  },
+  {
+   "id": "EP-50",
+   "title": "Drift audit",
+   "feature_id": "feat-skill-drift-audit",
+   "summary": "Audit packages and projections, report redacted findings, and propose reviewable diffs.",
+   "depends_on": [
+    "EP-30"
+   ]
+  },
+  {
+   "id": "EP-60",
+   "title": "Usage telemetry",
+   "feature_id": "feat-skill-usage-telemetry",
+   "summary": "Store privacy-preserving lifecycle events and expose coverage-aware summaries.",
+   "depends_on": [
+    "EP-30"
+   ]
+  },
+  {
+   "id": "EP-99",
+   "title": "EP-99 rollout",
+   "feature_id": "",
+   "summary": "Verify each CLI with Xavier stopped, review security, and migrate approved real skill sources under a human go/no-go decision.",
+   "depends_on": [
+    "EP-40",
+    "EP-50",
+    "EP-60"
+   ]
+  }
+ ],
+ "tasks": [
+  {
+   "id": "P01",
+   "epic": "EP-00",
+   "title": "Implement and run the ADR-034 store simulation",
+   "decisions": [
+    "D1",
+    "D2"
+   ],
+   "depends_on": [],
+   "files": [
+    {
+     "path": "$HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py",
+     "action": "edit"
+    }
+   ],
+   "current_state": "ADR-034 says `skill_controller_store` is absent and simulation is pending (docs/adr/ADR-034-skill-controller.md:37-59); the simulator registers models in adr_sim.py:88-93.",
+   "desired_state": "Register the A/B/C model with anchored metrics and bull/base/bear/worst scenarios specified in docs/adr/ADR-034-skill-controller.md:43-53; keep the change within 400 lines.",
+   "acceptance": [
+    "`python3 -B $HOME/proyectosSWAL/periferia/swal-sim/adr_sim.py --list` includes `skill_controller_store`.",
+    "The ADR-034 command at docs/adr/ADR-034-skill-controller.md:49-53 exits successfully and reports primary and composite winners.",
+    "The report includes p10-p90 intervals and leave-one-scenario-out sensitivity; estimated inputs are labeled `ASSUMPTION`."
+   ],
+   "do_not_touch": [
+    "Xavier production code",
+    "other simulator models",
+    "generated reports in Git"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Bounded implementation in a separate simulator worktree."
+  },
+  {
+   "id": "P02",
+   "epic": "EP-00",
+   "title": "Reconcile ADR-034 with simulation and ADR-019",
+   "decisions": [
+    "D1",
+    "D6"
+   ],
+   "depends_on": [
+    "P01"
+   ],
+   "files": [
+    {
+     "path": "docs/adr/ADR-034-skill-controller.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "ADR-034 is `Propuesto`, records a pending simulation, and proposes a narrow ADR-019 amendment (docs/adr/ADR-034-skill-controller.md:3-25,37-59).",
+   "desired_state": "Record actual simulation results, uncertainty, and the explicit application-crate exception without weakening ADR-019's core boundary (docs/adr/ADR-019-plugin-first-boundary.md:54-57,90-98).",
+   "acceptance": [
+    "`rg -n 'skill_controller_store|ADR-019|primary|sensitivity' docs/adr/ADR-034-skill-controller.md` finds the evidence and boundary.",
+    "Reported winners and figures match the simulation output from P01.",
+    "No claim of CLI compatibility or migration completion appears before its rollout test."
+   ],
+   "do_not_touch": [
+    "docs/adr/ADR-019-plugin-first-boundary.md",
+    "crates/xavier-core-logic/",
+    "production code"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "ADR text and evidence reconciliation."
+  },
+  {
+   "id": "P03",
+   "epic": "EP-00",
+   "title": "Accept or reject ADR-034",
+   "decisions": [
+    "D1",
+    "D6"
+   ],
+   "depends_on": [
+    "P02"
+   ],
+   "files": [],
+   "current_state": "Implementation requires accepted ADR-034, while its current status is `Propuesto` (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:34-36; docs/adr/ADR-034-skill-controller.md:6).",
+   "desired_state": "A human records acceptance or a reasoned rejection after reviewing the simulation and ADR-019 amendment (docs/adr/ADR-034-skill-controller.md:110-118).",
+   "acceptance": [
+    "The decision explicitly names ADR-034 and its ADR-019 exception.",
+    "The decision cites the P01 simulation report or records an explicit waiver in ADR-034.",
+    "No implementation task starts if the decision rejects the architecture."
+   ],
+   "do_not_touch": [
+    "production code",
+    ".gitcore/features.json"
+   ],
+   "size": "S",
+   "agent": "human",
+   "agent_reason": "Architectural acceptance is an owner decision."
+  },
+  {
+   "id": "P04",
+   "epic": "EP-00",
+   "title": "Correct project skill source documentation and REQ-060",
+   "decisions": [
+    "D1",
+    "D5"
+   ],
+   "depends_on": [],
+   "files": [
+    {
+     "path": "AGENTS.md",
+     "action": "edit"
+    },
+    {
+     "path": "docs/SRS/REQUIREMENTS.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "AGENTS.md:92 names `.skills/` although AGENTS.md:107 names the real `skills/` directory; REQ-060 requires Hermes as canonical (docs/SRS/REQUIREMENTS.md:1115-1125).",
+   "desired_state": "Describe `skills/` as the project source and a configurable non-Hermes canonical store, while Hermes remains authoritative until migration (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:10,37-39).",
+   "acceptance": [
+    "`rg -n '\\.skills/' AGENTS.md` has no incorrect project-source reference.",
+    "REQ-060 permits the configured store and preserves workspace `skills/` and `.agents/skills` default scans.",
+    "The documents state the Hermes-to-new-store authority transition."
+   ],
+   "do_not_touch": [
+    "other SRS requirements",
+    "runtime skill directories",
+    "production code"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "Small repository-contract and requirement edits."
+  },
+  {
+   "id": "P05",
+   "epic": "EP-00",
+   "title": "Reconcile store, registry, and projector feature specs",
+   "decisions": [
+    "D3",
+    "D4",
+    "D5",
+    "D7",
+    "D14"
+   ],
+   "depends_on": [],
+   "files": [
+    {
+     "path": "docs/features/specs/FEATURE-feat-skill-store-config.md",
+     "action": "edit"
+    },
+    {
+     "path": "docs/features/specs/FEATURE-feat-skill-registry-unify.md",
+     "action": "edit"
+    },
+    {
+     "path": "docs/features/specs/FEATURE-feat-skill-projector.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "All three specs already exist as `planned`; the store spec mentions `XAVIER_SKILL_CONFIG` beyond D5's four variables (FEATURE-feat-skill-store-config.md:13-16; docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:14).",
+   "desired_state": "Align their explicit configuration, CLI-only mutation, tests, and 4-file/400-line issue limits with D3-D7 and D14 (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:12-18,23).",
+   "acceptance": [
+    "Each spec remains `planned` and names its ledger feature ID.",
+    "The store spec's required environment contract matches D5 exactly.",
+    "The projector spec rejects globs, whole-directory links, and mutating REST/MCP operations."
+   ],
+   "do_not_touch": [
+    ".gitcore/features.json",
+    "other feature specs",
+    "production code"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "Existing specification text needs reconciliation."
+  },
+  {
+   "id": "P06",
+   "epic": "EP-00",
+   "title": "Reconcile ephemeral, drift, and telemetry feature specs",
+   "decisions": [
+    "D10",
+    "D11",
+    "D12",
+    "D13",
+    "D14"
+   ],
+   "depends_on": [],
+   "files": [
+    {
+     "path": "docs/features/specs/FEATURE-feat-skill-ephemeral.md",
+     "action": "edit"
+    },
+    {
+     "path": "docs/features/specs/FEATURE-feat-skill-drift-audit.md",
+     "action": "edit"
+    },
+    {
+     "path": "docs/features/specs/FEATURE-feat-skill-usage-telemetry.md",
+     "action": "edit"
+    }
+   ],
+   "current_state": "The three specs already exist as `planned` and describe composition, scanning, and events (FEATURE-feat-skill-ephemeral.md:1-30; FEATURE-feat-skill-drift-audit.md:1-27; FEATURE-feat-skill-usage-telemetry.md:1-30).",
+   "desired_state": "State the authorized workspace boundary, whole-package secret gate, report-only audit, acknowledged invocation, and coverage-aware usage required by D10-D13 (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:19-23).",
+   "acceptance": [
+    "Each spec remains `planned` and names its ledger feature ID.",
+    "The ephemeral spec requires scoped ordinary and decision memories.",
+    "The drift and telemetry specs prohibit automatic canonical rewrites and usage-based deletion."
+   ],
+   "do_not_touch": [
+    ".gitcore/features.json",
+    "other feature specs",
+    "production code"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "Three disjoint existing specs can be aligned within one bounded text task."
+  },
+  {
+   "id": "P07",
+   "epic": "EP-00",
+   "title": "Verify six planned ledger entries and their tests",
+   "decisions": [
+    "D14"
+   ],
+   "depends_on": [
+    "P05",
+    "P06"
+   ],
+   "files": [
+    {
+     "path": ".gitcore/features.json",
+     "action": "edit"
+    }
+   ],
+   "current_state": "All six entries already exist at `.gitcore/features.json:2576-2647`, each `planned` with an empty `tests` array.",
+   "desired_state": "Keep all six entries `planned`, reconcile names and spec references, and declare meaningful feature verification commands under the existing ledger contract (AGENTS.md:43-55).",
+   "acceptance": [
+    "`python3 -m json.tool .gitcore/features.json` succeeds.",
+    "Exactly the six IDs in docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:41-44 exist with status `planned`.",
+    "Each entry references its spec and has a runnable, feature-specific test command; no status is hand-promoted."
+   ],
+   "do_not_touch": [
+    "other ledger feature records",
+    "docs/features/specs/",
+    "production code"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "Ledger reconciliation is a governance edit; the entries are already present."
+  },
+  {
+   "id": "S01",
+   "epic": "EP-10",
+   "title": "Make skill store paths configurable with identical defaults",
+   "decisions": [
+    "D5",
+    "D7",
+    "D14"
+   ],
+   "depends_on": [
+    "P03",
+    "P04",
+    "P07"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_registry.rs",
+     "action": "refactor"
+    },
+    {
+     "path": ".env.example",
+     "action": "edit"
+    }
+   ],
+   "current_state": "Hermes paths are fixed in `src/context/skill_registry.rs:95-115`; `with_defaults` uses them at :273-289.",
+   "desired_state": "Honor D5's four documented variables, preserve workspace and Hermes defaults until migration, and retain `with_home` as the test seam (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:14-16).",
+   "acceptance": [
+    "`xavier exec \"cargo test -p xavier --lib context::skill_registry\"` passes, including the existing Hermes and cycle tests.",
+    "New isolated tests cover store override and unset-HOME workspace fallback.",
+    "`.env.example` documents every newly read `XAVIER_SKILL_*` variable; the change is at most 400 lines."
+   ],
+   "do_not_touch": [
+    "ranking math in src/context/skill_registry.rs:496-676",
+    "crates/xavier-core-logic/",
+    ".gitcore/features.json"
+   ],
+   "size": "M",
+   "agent": "jules",
+   "agent_reason": "Two-file, specified Rust refactor suitable for one PR."
+  },
+  {
+   "id": "R01",
+   "epic": "EP-20",
+   "title": "Extract the shared registry constructor",
+   "decisions": [
+    "D7",
+    "D14"
+   ],
+   "depends_on": [
+    "S01"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_registry.rs",
+     "action": "refactor"
+    }
+   ],
+   "current_state": "REST, MCP, and fusion each construct and reindex separately (src/api/skills.rs:69-71,184-185; src/server/mcp/tools_context.rs:125-133; src/server/http/context.rs:193-198).",
+   "desired_state": "Expose one `build_skill_registry(workspace)` in `src/context/skill_registry.rs` for all three callers (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:16).",
+   "acceptance": [
+    "`xavier exec \"cargo test -p xavier --lib context::skill_registry\"` passes.",
+    "A fixture test shows the helper preserves the existing default candidate set.",
+    "The helper preserves semantic ranking and confidence calibration tests."
+   ],
+   "do_not_touch": [
+    "src/api/skills.rs",
+    "src/server/mcp/tools_context.rs",
+    "src/server/http/context.rs",
+    ".gitcore/features.json"
+   ],
+   "size": "S",
+   "agent": "jules",
+   "agent_reason": "One-file Rust seam with existing tests."
+  },
+  {
+   "id": "R02",
+   "epic": "EP-20",
+   "title": "Use shared registry construction in REST",
+   "decisions": [
+    "D7",
+    "D14"
+   ],
+   "depends_on": [
+    "R01"
+   ],
+   "files": [
+    {
+     "path": "src/api/skills.rs",
+     "action": "refactor"
+    }
+   ],
+   "current_state": "REST dispatch and list each call `SkillRegistry::with_defaults` directly (src/api/skills.rs:61-71,180-185).",
+   "desired_state": "Both handlers call R01's constructor without changing their response shapes (FEATURE-feat-skill-registry-unify.md:10-15).",
+   "acceptance": [
+    "`rg -n 'SkillRegistry::with_defaults' src/api/skills.rs` returns no handler construction.",
+    "REST dispatch and list integration tests retain their existing JSON fields.",
+    "`xavier exec \"cargo check -p xavier --all-targets\"` passes."
+   ],
+   "do_not_touch": [
+    "REST route definitions",
+    "src/server/mcp/tools_context.rs",
+    "src/server/http/context.rs"
+   ],
+   "size": "S",
+   "agent": "jules",
+   "agent_reason": "Single-file endpoint refactor suitable for one PR."
+  },
+  {
+   "id": "R03",
+   "epic": "EP-20",
+   "title": "Use shared registry construction in MCP",
+   "decisions": [
+    "D7",
+    "D14"
+   ],
+   "depends_on": [
+    "R01"
+   ],
+   "files": [
+    {
+     "path": "src/server/mcp/tools_context.rs",
+     "action": "refactor"
+    }
+   ],
+   "current_state": "MCP has its own `build_skill_registry` at src/server/mcp/tools_context.rs:124-133.",
+   "desired_state": "Call R01's shared helper while preserving the two existing tool names and schemas at src/server/mcp/tools_context.rs:99-119.",
+   "acceptance": [
+    "Existing MCP dispatch and list round-trip tests pass.",
+    "A same-fixture REST/MCP test reports equal skill counts and ordering.",
+    "`xavier exec \"cargo check -p xavier --all-targets\"` passes."
+   ],
+   "do_not_touch": [
+    "src/api/skills.rs",
+    "src/server/http/context.rs",
+    "existing MCP tool schemas"
+   ],
+   "size": "S",
+   "agent": "jules",
+   "agent_reason": "Single-file MCP integration with a fixed compatibility boundary."
+  },
+  {
+   "id": "R04",
+   "epic": "EP-20",
+   "title": "Unify fusion construction and document confidence constants",
+   "decisions": [
+    "D7",
+    "D14"
+   ],
+   "depends_on": [
+    "R01"
+   ],
+   "files": [
+    {
+     "path": "src/server/http/context.rs",
+     "action": "refactor"
+    },
+    {
+     "path": "src/context/skill_dispatcher.rs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "Fusion constructs its own registry and uses 0.5 (src/server/http/context.rs:15,193-210); dispatch defines 0.40 locally (src/context/skill_dispatcher.rs:79-85).",
+   "desired_state": "Use R01's helper and name the distinct dispatch and Maximum-fusion thresholds without changing values or Minimal/Medium output (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:16).",
+   "acceptance": [
+    "All four `test_fusion_*` tests pass and Minimal/Medium output remains byte-identical.",
+    "Dispatch confidence tests retain the 0.40 behavior; fusion retains 0.50.",
+    "`xavier exec \"cargo clippy --all-targets -- -D warnings\"` passes."
+   ],
+   "do_not_touch": [
+    "src/context/skill_registry.rs ranking math",
+    "REST/MCP schemas",
+    ".gitcore/features.json"
+   ],
+   "size": "S",
+   "agent": "jules",
+   "agent_reason": "Two-file compatibility refactor with defined thresholds."
+  },
+  {
+   "id": "J01",
+   "epic": "EP-30",
+   "title": "Parse and validate TOML manifest v1",
+   "decisions": [
+    "D1",
+    "D2",
+    "D3",
+    "D14"
+   ],
+   "depends_on": [
+    "R02",
+    "R03",
+    "R04"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/manifest.rs",
+     "action": "create"
+    }
+   ],
+   "current_state": "No controller module exists; manifest fields and path rules are specified at docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:58-69,120-122.",
+   "desired_state": "Deserialize strict TOML v1 with explicit source, target, and placement records; reject unknown fields, globs, duplicate names, unsafe paths, and implied install-all.",
+   "acceptance": [
+    "Fixture tests accept a minimal valid TOML v1 manifest.",
+    "Fixture tests reject unknown versions, fields, globs, traversal, and conflicting target names.",
+    "A package's frontmatter name must match its placement name."
+   ],
+   "do_not_touch": [
+    "Cargo.toml",
+    "existing registry parser",
+    "CLI discovery configuration"
+   ],
+   "size": "M",
+   "agent": "jules",
+   "agent_reason": "One-file Rust parser with a fixed schema and tests."
+  },
+  {
+   "id": "J02",
+   "epic": "EP-30",
+   "title": "Implement host policy and publication secret gate",
+   "decisions": [
+    "D5",
+    "D10",
+    "D14"
+   ],
+   "depends_on": [
+    "J01"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/policy.rs",
+     "action": "create"
+    }
+   ],
+   "current_state": "Existing registry traversal follows links but is not an allowed-root security boundary (docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:13-15,187-191).",
+   "desired_state": "Enforce owner-supplied source and target roots with race-resistant path checks and a native whole-package secret scan before publication (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:14,19).",
+   "acceptance": [
+    "Tempdir tests reject root escapes, swapped symlink parents, special files, and unreadable package members.",
+    "A fake secret in `references/` blocks publication and reports class plus relative location only.",
+    "No matching secret bytes appear in error, log, or report output."
+   ],
+   "do_not_touch": [
+    "scripts/check-secrets.sh",
+    "canonical skill content",
+    "crates/xavier-core-logic/"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Filesystem authorization needs careful bounded implementation in a worktree."
+  },
+  {
+   "id": "J03",
+   "epic": "EP-30",
+   "title": "Build immutable dry-run plans",
+   "decisions": [
+    "D2",
+    "D3",
+    "D4",
+    "D14"
+   ],
+   "depends_on": [
+    "J02"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/planner.rs",
+     "action": "create"
+    }
+   ],
+   "current_state": "There is no write path or plan operation (docs/design/skill-controller/00-BRIEF.md:28-29); D4 makes `plan` the write-free default (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:13).",
+   "desired_state": "Inventory packages and destinations into deterministic JSON with whole-package hashes, entry identities, and destination preconditions (docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:120-124).",
+   "acceptance": [
+    "Two plans over unchanged fixtures are byte-identical and make no persistent writes.",
+    "A changed package or destination identity invalidates the saved plan.",
+    "Missing or unreadable sources produce an error without proposed deletions."
+   ],
+   "do_not_touch": [
+    "canonical skill files",
+    "target directories",
+    "src/context/skill_controller/policy.rs"
+   ],
+   "size": "M",
+   "agent": "jules",
+   "agent_reason": "One-file deterministic Rust planner with isolated fixtures."
+  },
+  {
+   "id": "J04",
+   "epic": "EP-30",
+   "title": "Implement ownership journal and backup state",
+   "decisions": [
+    "D4",
+    "D9",
+    "D14"
+   ],
+   "depends_on": [
+    "J02"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/state.rs",
+     "action": "create"
+    }
+   ],
+   "current_state": "The projector has no ownership or transaction state; crash and rollback requirements are specified at docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:176-185.",
+   "desired_state": "Persist private write-ahead records, link-object backups, owned-copy hashes, and transaction states under the resolved data directory before mutation.",
+   "acceptance": [
+    "Round-trip tests recover pending and committed transaction records.",
+    "A symlink backup preserves its `readlink` value rather than dereferenced contents.",
+    "Journal or backup write failure prevents target mutation."
+   ],
+   "do_not_touch": [
+    "workspace SQLite database schema",
+    "unmanaged skill entries",
+    "runtime state in Git"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Durable state and recovery need a focused implementation worktree."
+  },
+  {
+   "id": "J05",
+   "epic": "EP-30",
+   "title": "Apply plans with atomic per-skill publication",
+   "decisions": [
+    "D2",
+    "D4",
+    "D9",
+    "D10",
+    "D14"
+   ],
+   "depends_on": [
+    "J03",
+    "J04"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/projector.rs",
+     "action": "create"
+    },
+    {
+     "path": "Cargo.toml",
+     "action": "edit"
+    }
+   ],
+   "current_state": "No placement write path exists (docs/design/skill-controller/00-BRIEF.md:28-29); `tempfile` is currently a dev dependency (docs/design/skill-controller/03-LIBRARIES-BUILD-VS-REUSE.md:22).",
+   "desired_state": "Recheck plan preconditions, lock roots, journal before writes, promote `tempfile`, and publish one selected link per skill via temporary link, rename, and parent fsync (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:11,18).",
+   "acceptance": [
+    "Tempdir tests prove idempotent second apply and reject unmanaged regular-file collisions.",
+    "Fault injection at each mutation boundary leaves a recoverable journal and no unauthorized overwrite.",
+    "`xavier exec \"cargo check -p xavier --all-targets\"` and the projector fixture tests pass."
+   ],
+   "do_not_touch": [
+    "Cargo.lock unless dependency resolution requires it",
+    "whole discovery-directory links",
+    "unmanaged files"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Atomic filesystem mutation and crash handling are bounded but security-sensitive."
+  },
+  {
+   "id": "J06",
+   "epic": "EP-30",
+   "title": "Conditionally roll back owned projections",
+   "decisions": [
+    "D4",
+    "D9",
+    "D14"
+   ],
+   "depends_on": [
+    "J05"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/rollback.rs",
+     "action": "create"
+    }
+   ],
+   "current_state": "Rollback must distinguish owned, unchanged entries from user edits (docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:177-185).",
+   "desired_state": "Restore journaled prior link objects or owned copies only when current identity still matches, and report conflicts without deleting user changes.",
+   "acceptance": [
+    "Rollback restores an unchanged prior link and removes an unchanged newly owned link.",
+    "A user-edited destination remains intact and produces a conflict.",
+    "Repeated rollback is idempotent; no recursive deletion appears in the implementation."
+   ],
+   "do_not_touch": [
+    "unmanaged regular files",
+    "canonical packages",
+    "src/context/skill_controller/projector.rs"
+   ],
+   "size": "S",
+   "agent": "jules",
+   "agent_reason": "Single-file Rust rollback behavior with precise fixture cases."
+  },
+  {
+   "id": "J07",
+   "epic": "EP-30",
+   "title": "Implement the CLI skills handler",
+   "decisions": [
+    "D4",
+    "D14"
+   ],
+   "depends_on": [
+    "J06"
+   ],
+   "files": [
+    {
+     "path": "src/cli/handlers/skills.rs",
+     "action": "create"
+    },
+    {
+     "path": "src/cli/handlers/mod.rs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "CLI handlers are registered in src/cli/handlers/mod.rs:5-44; there is no skills handler.",
+   "desired_state": "Provide `plan`, `apply --plan`, and `rollback` handlers with JSON plans, explicit mutation, and actionable conflict errors (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:13).",
+   "acceptance": [
+    "Handler tests show bare `plan` makes no persistent writes.",
+    "`apply` without a saved plan fails before mutation.",
+    "`rollback` reports edited owned entries as conflicts and preserves them."
+   ],
+   "do_not_touch": [
+    "REST/MCP mutation surfaces",
+    "src/cli/commands/enums.rs",
+    "src/cli/commands/mod.rs"
+   ],
+   "size": "M",
+   "agent": "jules",
+   "agent_reason": "Two-file CLI handler task with defined subcommands."
+  },
+  {
+   "id": "J08",
+   "epic": "EP-30",
+   "title": "Wire controller modules and CLI subcommands",
+   "decisions": [
+    "D4",
+    "D6",
+    "D14"
+   ],
+   "depends_on": [
+    "J07"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/mod.rs",
+     "action": "create"
+    },
+    {
+     "path": "src/context/mod.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/cli/commands/enums.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/cli/commands/mod.rs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "The context module has no controller export (src/context/mod.rs:18-20), and command parsing and dispatch live in src/cli/commands/enums.rs:33 and src/cli/commands/mod.rs:68-88.",
+   "desired_state": "Compile the isolated controller files into the application crate and route `xavier skills plan|apply|rollback` to J07, without adding network mutation routes (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:13,15).",
+   "acceptance": [
+    "`xavier skills --help` lists plan, apply, and rollback.",
+    "`xavier exec \"cargo test -p xavier --lib context::skill_controller\"` passes all manifest, policy, plan, apply, and rollback fixtures.",
+    "`xavier exec \"cargo fmt --check\"` and `xavier exec \"cargo clippy --all-targets -- -D warnings\"` pass."
+   ],
+   "do_not_touch": [
+    "crates/xavier-core-logic/",
+    "src/api/skills.rs",
+    "src/server/mcp/tools_context.rs"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Four-file integration of previously isolated modules."
+  },
+  {
+   "id": "E01",
+   "epic": "EP-40",
+   "title": "Compose bounded, scoped task context",
+   "decisions": [
+    "D10",
+    "D11",
+    "D14"
+   ],
+   "depends_on": [
+    "J08"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/composer.rs",
+     "action": "create"
+    },
+    {
+     "path": "src/context/skill_dispatcher.rs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "Decision lookup filters by kind rather than authorized workspace (src/context/skill_dispatcher.rs:207); the current pack is described at docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:162-165.",
+   "desired_state": "Build deterministic, provenance-stamped output from eligible skills and scoped memories/decisions, with optional scoped CodeGraph evidence, a final token cap, and a whole-output secret gate.",
+   "acceptance": [
+    "Tests exclude both ordinary and decision memories outside the authorized workspace.",
+    "Malicious evidence cannot create frontmatter, tool grants, or escape its quoted boundary.",
+    "Output stays within `ephemeral.max_tokens`; missing graph or memory is marked unavailable."
+   ],
+   "do_not_touch": [
+    "canonical skill packages",
+    "src/server/http/context.rs",
+    "src/server/mcp/tools_context.rs"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Scoping and untrusted evidence require a bounded implementation worktree."
+  },
+  {
+   "id": "E02",
+   "epic": "EP-40",
+   "title": "Publish and release task-scoped skills before agent spawn",
+   "decisions": [
+    "D4",
+    "D11",
+    "D14"
+   ],
+   "depends_on": [
+    "E01"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/lease.rs",
+     "action": "create"
+    },
+    {
+     "path": "src/cli/commands/spawn.rs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "Spawn currently loads a skill as a reader (src/cli/commands/spawn.rs:265-279); task publication and cleanup are specified at docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:162-166.",
+   "desired_state": "Publish an owned `eph-<task>` skill and Claude link before spawning, renew active leases, and release only journaled unchanged entries on task close.",
+   "acceptance": [
+    "A spawn fixture waits for verified skill publication before starting its agent.",
+    "Release removes owned unchanged files and leaves edited or foreign entries intact.",
+    "Stale lease cleanup requires confirmed inactivity; an active task renewal prevents removal."
+   ],
+   "do_not_touch": [
+    "tracked project ignore files",
+    "canonical store",
+    "unowned worktree entries"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Task lifecycle and filesystem ownership cross two bounded files."
+  },
+  {
+   "id": "E03",
+   "epic": "EP-40",
+   "title": "Deliver the same composition to live sessions",
+   "decisions": [
+    "D4",
+    "D11",
+    "D14"
+   ],
+   "depends_on": [
+    "E02",
+    "R03",
+    "R04"
+   ],
+   "files": [
+    {
+     "path": "src/server/mcp/tools_context.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/server/http/context.rs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "MCP dispatch is read-only at src/server/mcp/tools_context.rs:427-450; Maximum fusion currently assembles its own pack at src/server/http/context.rs:193-245.",
+   "desired_state": "Reuse E01's scoped renderer for live MCP and Maximum fusion without writing files or changing existing tool schemas or Minimal/Medium output.",
+   "acceptance": [
+    "MCP live composition returns the same content hash as file composition for one fixture and creates no files.",
+    "Existing MCP tool round trips and all four fusion tests pass.",
+    "Minimal/Medium responses remain byte-identical; untrusted evidence is never placed in a system-role document."
+   ],
+   "do_not_touch": [
+    "MCP tool names and existing schemas",
+    "REST mutation routes",
+    "src/context/skill_controller/composer.rs"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Two existing delivery surfaces require compatibility checks."
+  },
+  {
+   "id": "D01",
+   "epic": "EP-50",
+   "title": "Audit drift and generate redacted proposals",
+   "decisions": [
+    "D8",
+    "D10",
+    "D13",
+    "D14"
+   ],
+   "depends_on": [
+    "J08"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_controller/audit.rs",
+     "action": "create"
+    },
+    {
+     "path": "Cargo.toml",
+     "action": "edit"
+    }
+   ],
+   "current_state": "No drift audit exists (docs/design/skill-controller/00-BRIEF.md:28-29); D8 permits `similar` only for proposals (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:17).",
+   "desired_state": "Reuse J02's scanner and package hashes; check metadata, local references, declared version conflicts, projection drift, and bounded offline endpoint evidence; emit redacted findings and safe unified diffs only.",
+   "acceptance": [
+    "Fixtures report missing description, broken local reference, declared conflict, and fake secret with rule ID and relative file:line.",
+    "A proposal test proves the source package remains byte-identical.",
+    "No secret value enters a finding or diff; `similar` is the only newly added drift dependency."
+   ],
+   "do_not_touch": [
+    "canonical skill content",
+    "scripts/check-secrets.sh",
+    "network endpoints by default"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Bounded audit engine and one approved dependency change."
+  },
+  {
+   "id": "D02",
+   "epic": "EP-50",
+   "title": "Expose report-only drift views",
+   "decisions": [
+    "D4",
+    "D13",
+    "D14"
+   ],
+   "depends_on": [
+    "D01",
+    "J07",
+    "R02"
+   ],
+   "files": [
+    {
+     "path": "src/api/skills.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/cli/handlers/skills.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/cli/server.rs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "REST skill handlers stop at dispatch/list (src/api/skills.rs:61,180); skill routes are registered near src/cli/server.rs:1050-1059.",
+   "desired_state": "Add `xavier skills audit` and authenticated read-only drift reporting while keeping all mutation in CLI (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:13,22).",
+   "acceptance": [
+    "CLI and GET route return the same redacted finding IDs on a fixture.",
+    "The GET route and handler cannot apply a proposed diff.",
+    "Existing REST dispatch/list response tests pass."
+   ],
+   "do_not_touch": [
+    "POST projection routes",
+    "canonical skill files",
+    "src/server/mcp/tools_context.rs"
+   ],
+   "size": "M",
+   "agent": "jules",
+   "agent_reason": "Three-file, specified read-only adapter PR."
+  },
+  {
+   "id": "T01",
+   "epic": "EP-60",
+   "title": "Persist privacy-preserving lifecycle events",
+   "decisions": [
+    "D12",
+    "D14"
+   ],
+   "depends_on": [
+    "J08"
+   ],
+   "files": [
+    {
+     "path": "src/storage/migrations.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/context/skill_controller/telemetry.rs",
+     "action": "create"
+    }
+   ],
+   "current_state": "The existing migration runner registers baseline migrations at src/storage/migrations.rs:33-43; skill usage has no local event table (docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:170).",
+   "desired_state": "Add a migration and bounded, fail-open event writer for opaque IDs and `selected/delivered/invoked/completed` stages, with configurable 30-day retention in the existing workspace database.",
+   "acceptance": [
+    "Migration round-trip and concurrent insert tests pass on an isolated SQLite fixture.",
+    "Duplicate event IDs are idempotent; retention removes expired events only.",
+    "Schema and logs contain no task text, absolute path, memory body, or credential."
+   ],
+   "do_not_touch": [
+    "src/data_commons/telemetry_db.rs",
+    "a second SQLite database",
+    "skill packages"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Migration and event ingestion form one bounded storage change."
+  },
+  {
+   "id": "T02",
+   "epic": "EP-60",
+   "title": "Record selection, delivery, and acknowledged use",
+   "decisions": [
+    "D11",
+    "D12",
+    "D14"
+   ],
+   "depends_on": [
+    "T01",
+    "E01"
+   ],
+   "files": [
+    {
+     "path": "src/context/skill_dispatcher.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/context/skill_controller/composer.rs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "Dispatch and composition have no usage events; a dispatch alone does not prove invocation (docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:170).",
+   "desired_state": "Emit selected/delivered events without delaying dispatch and accept invoked/completed only from explicit idempotent harness acknowledgments.",
+   "acceptance": [
+    "A database failure or full queue leaves dispatch results unchanged.",
+    "Tests distinguish selected, delivered, invoked, completed, and unknown coverage.",
+    "Repeated acknowledgment with one event ID creates one event."
+   ],
+   "do_not_touch": [
+    "prompt payload storage",
+    "automatic skill deletion",
+    "src/storage/migrations.rs"
+   ],
+   "size": "M",
+   "agent": "jules",
+   "agent_reason": "Two-file event hooks with a fixed telemetry API."
+  },
+  {
+   "id": "T03",
+   "epic": "EP-60",
+   "title": "Expose usage summaries on CLI, REST, and MCP",
+   "decisions": [
+    "D4",
+    "D12",
+    "D14"
+   ],
+   "depends_on": [
+    "T02",
+    "D02",
+    "E03"
+   ],
+   "files": [
+    {
+     "path": "src/cli/handlers/skills.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/api/skills.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/server/mcp/tools_context.rs",
+     "action": "edit"
+    },
+    {
+     "path": "src/cli/server.rs",
+     "action": "edit"
+    }
+   ],
+   "current_state": "The current surfaces expose skill list/dispatch, not usage summaries (src/api/skills.rs:61,180; src/server/mcp/tools_context.rs:99-119).",
+   "desired_state": "Expose read-only counts, retention, and invocation coverage with explicit unknown usage; preserve existing tool names and CLI-only mutation (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:13,21).",
+   "acceptance": [
+    "CLI, REST, and MCP summaries agree on a shared fixture.",
+    "A selected-only skill reports unknown invocation coverage rather than zero use.",
+    "Existing REST and MCP dispatch/list compatibility tests pass."
+   ],
+   "do_not_touch": [
+    "mutating REST/MCP endpoints",
+    "src/data_commons/telemetry_db.rs",
+    "canonical skill content"
+   ],
+   "size": "M",
+   "agent": "agy-medium",
+   "agent_reason": "Four-file adapter integration follows the earlier shared-file tasks."
+  },
+  {
+   "id": "O01",
+   "epic": "EP-99",
+   "title": "Test Codex, Claude Code, and OpenCode adapters with Xavier stopped",
+   "decisions": [
+    "D2",
+    "D4",
+    "D14"
+   ],
+   "depends_on": [
+    "T03"
+   ],
+   "files": [
+    {
+     "path": "tests/skill_controller_core_adapters.rs",
+     "action": "create"
+    }
+   ],
+   "current_state": "Per-skill symlink discovery is an unverified adapter assumption (docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:144-156,255).",
+   "desired_state": "Measure startup discovery, exact visible catalogs, and source readability for Codex, Claude Code, and OpenCode after Xavier stops; identify any measured need for copies.",
+   "acceptance": [
+    "Each of the three installed CLI adapters is launched fresh against an isolated projected fixture while Xavier is stopped.",
+    "Assertions cover intended visible names, absent names, symlink behavior, and OpenCode's union of discovery roots.",
+    "The test reports unsupported or unavailable installed versions explicitly rather than claiming a pass."
+   ],
+   "do_not_touch": [
+    "CLI discovery configuration",
+    "real home skill directories",
+    "canonical sources"
+   ],
+   "size": "M",
+   "agent": "opencode-free",
+   "agent_reason": "Bounded adapter acceptance test in an isolated worktree."
+  },
+  {
+   "id": "O02",
+   "epic": "EP-99",
+   "title": "Test Gemini, agy, Hermes, and OpenClaw adapters with Xavier stopped",
+   "decisions": [
+    "D2",
+    "D4",
+    "D14"
+   ],
+   "depends_on": [
+    "T03"
+   ],
+   "files": [
+    {
+     "path": "tests/skill_controller_other_adapters.rs",
+     "action": "create"
+    }
+   ],
+   "current_state": "Gemini nested discovery is unverified and Hermes/OpenClaw project discovery is not established (docs/design/skill-controller/00-BRIEF.md:37; docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:149-154).",
+   "desired_state": "Measure startup discovery and link support per installed adapter with Xavier stopped; enable only verified target layouts.",
+   "acceptance": [
+    "Each installed adapter gets an isolated startup test with Xavier stopped.",
+    "The tests distinguish global discovery from project discovery and record unsupported cases.",
+    "Any copy fallback is tied to a measured failing symlink test for that adapter."
+   ],
+   "do_not_touch": [
+    "CLI discovery configuration",
+    "real home skill directories",
+    "canonical sources"
+   ],
+   "size": "M",
+   "agent": "opencode-free",
+   "agent_reason": "Separate test file keeps this adapter work parallel with O01."
+  },
+  {
+   "id": "O03",
+   "epic": "EP-99",
+   "title": "Write the measured migration and rollback runbook",
+   "decisions": [
+    "D1",
+    "D2",
+    "D4",
+    "D10",
+    "D14"
+   ],
+   "depends_on": [
+    "O01",
+    "O02"
+   ],
+   "files": [
+    {
+     "path": "docs/guides/SKILL_CONTROLLER_MIGRATION.md",
+     "action": "create"
+    }
+   ],
+   "current_state": "The design specifies inventory, conflict review, backup, import, verification, and retention but has no operational runbook (docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:158,181-185).",
+   "desired_state": "Document measured per-CLI layouts and a reversible, batch-limited migration from real sources, retaining Hermes authority until approval and verification.",
+   "acceptance": [
+    "The runbook includes inventory, full-package hash, secret quarantine, divergent-name review, independent backup, preview, apply, verification, rollback, and retention steps.",
+    "Each migration batch is limited to at most four package files and 400 changed lines, with repeated batches until every inventoried source is accounted for.",
+    "It requires Xavier-stopped CLI checks and forbids automatic Git push or deletion of prior stores."
+   ],
+   "do_not_touch": [
+    "real skill sources",
+    "CLI discovery configuration",
+    "generated runtime databases"
+   ],
+   "size": "S",
+   "agent": "codex",
+   "agent_reason": "Operational documentation based on measured adapter results."
+  },
+  {
+   "id": "O04",
+   "epic": "EP-99",
+   "title": "Review security of the complete initiative",
+   "decisions": [
+    "D4",
+    "D10",
+    "D11",
+    "D12",
+    "D13",
+    "D14"
+   ],
+   "depends_on": [
+    "O03",
+    "E03",
+    "D02",
+    "T03"
+   ],
+   "files": [
+    {
+     "path": "docs/security/SKILL_CONTROLLER_REVIEW.md",
+     "action": "create"
+    }
+   ],
+   "current_state": "The design identifies path races, source escapes, secret publication, untrusted evidence, and mutation boundaries (docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:187-193).",
+   "desired_state": "Review the implemented controller and migration procedure against those threats, with reproducible findings and a release-blocking disposition for unresolved high-severity issues.",
+   "acceptance": [
+    "The report covers manifest trust, race-resistant paths, journal recovery, package secrets, prompt evidence, REST/MCP read-only boundaries, telemetry privacy, and migration.",
+    "Each finding cites implementation file:line and a reproducer or test; remediation has an owner and verification criterion.",
+    "`xavier exec \"bash scripts/check-secrets.sh\"` and the relevant controller tests are recorded."
+   ],
+   "do_not_touch": [
+    "production code",
+    "canonical skill content",
+    "security rules without a reviewed fix"
+   ],
+   "size": "M",
+   "agent": "claude-cloud",
+   "agent_reason": "Reserved for the initiative-wide security review."
+  },
+  {
+   "id": "O05",
+   "epic": "EP-99",
+   "title": "Approve migration go/no-go",
+   "decisions": [
+    "D1",
+    "D2",
+    "D10"
+   ],
+   "depends_on": [
+    "O04"
+   ],
+   "files": [],
+   "current_state": "Hermes remains authoritative until an approved migration (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md:10); prior stores must survive verification and rollback retention (docs/design/skill-controller/01-ARCHITECTURE-AND-ADR.md:158).",
+   "desired_state": "A human approves or rejects migration after reviewing adapter results, the runbook, source conflicts, backup proof, and security findings.",
+   "acceptance": [
+    "Decision records the exact source inventory, target store, backup location, and enabled adapters.",
+    "No unresolved release-blocking O04 finding remains.",
+    "A no-go decision prevents O06; a go decision specifies the rollback owner and retention window."
+   ],
+   "do_not_touch": [
+    "real skill sources before approval",
+    "prior stores",
+    "CLI discovery configuration"
+   ],
+   "size": "S",
+   "agent": "human",
+   "agent_reason": "Migration go/no-go and source conflict acceptance require the owner."
+  },
+  {
+   "id": "O06",
+   "epic": "EP-99",
+   "title": "Migrate approved real skill sources in bounded batches",
+   "decisions": [
+    "D1",
+    "D2",
+    "D4",
+    "D10",
+    "D14"
+   ],
+   "depends_on": [
+    "O05"
+   ],
+   "files": [],
+   "current_state": "Real skill files span Hermes, other home sources, and repository-local `skills/`; the brief reports divergent copies and secret-bearing packages (docs/design/skill-controller/00-BRIEF.md:45-54).",
+   "desired_state": "Execute O03 repeatedly in approved batches of at most four package files and 400 changed lines, import only reviewed clean sources, project selected views, and retain originals until the agreed rollback window ends.",
+   "acceptance": [
+    "Every inventoried real source is recorded as imported, retained under its owning repository, quarantined for human remediation, or explicitly excluded.",
+    "For each batch, the recorded file count is at most four and changed lines at most 400; hashes, backups, plan, apply, and rollback identifiers are retained outside Git.",
+    "Every enabled CLI passes its startup acceptance check with Xavier stopped; no unmanaged entry was overwritten and no secret-bearing package was published."
+   ],
+   "do_not_touch": [
+    "secret-bearing packages pending remediation",
+    "unmanaged regular files",
+    "prior stores during rollback retention",
+    "automatic Git push"
+   ],
+   "size": "L",
+   "agent": "human",
+   "agent_reason": "Real-source migration follows the owner's go decision and requires human review of conflicts; the task repeats bounded batches until the inventory is resolved."
+  }
+ ]
+}
