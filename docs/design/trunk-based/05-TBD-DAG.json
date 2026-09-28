@@ -20,7 +20,7 @@
    "id": "P3",
    "title": "Protect main and enable reviewed auto-merge",
    "feature_id": "ADR-035",
-   "summary": "Require an always-present gate, reject agent direct pushes, and keep Ask owner approval.",
+   "summary": "Require an always-present gate, reject agent direct pushes, and keep Ask approval by the agent panel.",
    "depends_on": [
     "P2"
    ]
