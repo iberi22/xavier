@@ -82,10 +82,15 @@ async fn async_main() -> Result<()> {
         .unwrap_or_else(|| "info".to_string());
 
     let log_dir = std::path::PathBuf::from(std::env::var("XAVIER_LOG_DIR").unwrap_or_else(|_| {
-        let home = std::env::var("USERPROFILE")
+        // Same state-dir precedence as `cli/server.rs` / `cli/commands/users.rs`:
+        // `XAVIER_STATE_DIR`, else `HOME`/`USERPROFILE`, else the current dir.
+        // Falling straight to the real `$HOME` here made concurrently-spawned,
+        // otherwise-isolated test servers share `$HOME/.xavier/logs` (#2736).
+        let state_dir = std::env::var("XAVIER_STATE_DIR")
             .or_else(|_| std::env::var("HOME"))
+            .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
-        format!("{}/.xavier/logs", home)
+        format!("{}/.xavier/logs", state_dir)
     }));
 
     // Initialize logging

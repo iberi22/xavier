@@ -3,7 +3,7 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use crate::ports::outbound::schema_init::SchemaInitializer;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -471,20 +471,25 @@ impl VecSqliteMemoryStore {
 
     fn migrate_embeddings_on_startup(conn: &Connection) -> Result<()> {
         // 1. Check if we already migrated embeddings (meaning memory_embeddings is not empty)
-        let current_count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM memory_embeddings", (), |row| {
+        let current_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_embeddings", (), |row| {
                 row.get(0)
-            })?;
+            })
+            .context("startup embedding migration: failed to count memory_embeddings")?;
 
         if current_count > 0 {
             return Ok(());
         }
 
         // 2. Query all existing memories with non-null embeddings
-        let mut select_stmt = conn.prepare(
-            "SELECT id, workspace_id, embedding FROM memory_records WHERE embedding IS NOT NULL",
-        )?;
-        let mut select_rows = select_stmt.query(())?;
+        let mut select_stmt = conn
+            .prepare(
+                "SELECT id, workspace_id, embedding FROM memory_records WHERE embedding IS NOT NULL",
+            )
+            .context("startup embedding migration: failed to prepare memory_records select")?;
+        let mut select_rows = select_stmt
+            .query(())
+            .context("startup embedding migration: failed to query memory_records")?;
 
         let mut migrated = 0;
         // 3. Loop and migrate each embedding to the new native vector table

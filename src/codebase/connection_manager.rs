@@ -23,6 +23,10 @@ static WAL_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Manages connection pools by project_id with LRU eviction and PRAGMA optimizations.
 pub struct ConnectionManager {
     pools: RwLock<std::collections::HashMap<String, ProjectPool>>,
+    /// Real db path used the first time a `project_id` was connected, so an
+    /// evicted pool is resurrected against the file it actually owns instead
+    /// of a guess (see [`ConnectionManager::get_or_reconnect_pool`]).
+    known_paths: RwLock<std::collections::HashMap<String, PathBuf>>,
     active: Arc<tokio::sync::RwLock<Option<String>>>,
     idle_timeout_secs: u64,
 }
@@ -117,6 +121,7 @@ impl ConnectionManager {
     pub fn new() -> Self {
         Self {
             pools: RwLock::new(std::collections::HashMap::new()),
+            known_paths: RwLock::new(std::collections::HashMap::new()),
             active: Arc::new(tokio::sync::RwLock::new(None)),
             idle_timeout_secs: 300, // 5 minutes
         }
@@ -178,6 +183,10 @@ impl ConnectionManager {
 
     /// Explicitly connect to a database file with a given project_id.
     pub fn connect_with_path(&self, project_id: &str, db_path: PathBuf) -> Result<()> {
+        self.known_paths
+            .write()
+            .insert(project_id.to_string(), db_path.clone());
+
         if !self.pools.read().contains_key(project_id) {
             if let Some(parent) = db_path.parent() {
                 if !parent.exists() {
@@ -281,8 +290,24 @@ impl ConnectionManager {
             }
         }
 
-        // Pool was evicted or not yet connected; attempt on-demand resurrection.
-        self.connect(project_id, ".")?;
+        // Pool was evicted or not yet connected. Resurrect it against the exact
+        // path it was originally opened with, never a guess: reconnecting an
+        // unregistered id via `connect(project_id, ".")` used to silently bind
+        // the pool to the wrong file for ids whose path isn't derivable from
+        // `project_id` alone (e.g. a hashed `vec_store_<sha>` id read by a
+        // health check before `VecSqliteMemoryStore::new` ever registers it).
+        // Once bound, `connect_with_path` became a no-op for that id, so the
+        // real store silently kept using the wrong pool (#2736).
+        let known_path = self.known_paths.read().get(project_id).cloned();
+        match known_path {
+            Some(db_path) => self.connect_with_path(project_id, db_path)?,
+            None => {
+                return Err(anyhow::anyhow!(
+                    "connection pool for '{}' was never established; call connect() or connect_with_path() before use",
+                    project_id
+                ))
+            }
+        }
 
         let mut pools = self.pools.write();
         let entry = pools.get_mut(project_id).ok_or_else(|| {
