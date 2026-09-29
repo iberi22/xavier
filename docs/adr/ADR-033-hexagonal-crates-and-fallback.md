@@ -1,6 +1,6 @@
 # ADR-033: Hexagonal crates for agent isolation, with explicit fallback chains
 
-*Status: PROPOSED | Date: 2026-09-29 | Extends: ADR-002*
+*Status: ACCEPTED | Date: 2026-09-29 | Extends: ADR-002*
 
 ## Context
 
