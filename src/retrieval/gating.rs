@@ -17,7 +17,7 @@ use crate::memory::entity_graph::EntityRecord;
 use crate::memory::qmd_memory::MemoryDocument;
 use crate::memory::schema::ContextZone;
 use crate::retrieval::config;
-use crate::search::rrf::{reciprocal_rank_fusion, ScoredResult};
+use crate::search::rrf::{reciprocal_rank_fusion, reciprocal_rank_fusion_weighted, ScoredResult};
 
 /// Layer weights for multi-layer retrieval fusion.
 /// These control how much each memory layer contributes to final results.
@@ -368,6 +368,8 @@ pub struct AdaptiveGating {
     policy: Option<Arc<RwLock<super::policy::NavigationPolicy>>>,
     memory: Option<Arc<crate::memory::qmd_memory::QmdMemory>>,
     zone_booster: Option<Arc<AdaptiveZoneBooster>>,
+    #[cfg(feature = "pageindex")]
+    pageindex_arm: Option<Arc<super::pageindex_arm::PageIndexArm>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +384,8 @@ impl AdaptiveGating {
             policy: None,
             memory: None,
             zone_booster: None,
+            #[cfg(feature = "pageindex")]
+            pageindex_arm: None,
         }
     }
 
@@ -395,6 +399,8 @@ impl AdaptiveGating {
             policy: Some(policy),
             memory: None,
             zone_booster: None,
+            #[cfg(feature = "pageindex")]
+            pageindex_arm: None,
         }
     }
 
@@ -407,6 +413,16 @@ impl AdaptiveGating {
     /// With booster.
     pub fn with_booster(mut self, booster: Arc<AdaptiveZoneBooster>) -> Self {
         self.zone_booster = Some(booster);
+        self
+    }
+
+    /// Add the PageIndex tree-node arm as one more RRF source (no-op when off).
+    #[cfg(feature = "pageindex")]
+    pub fn with_pageindex_arm(
+        mut self,
+        arm: Option<Arc<super::pageindex_arm::PageIndexArm>>,
+    ) -> Self {
+        self.pageindex_arm = arm;
         self
     }
 
@@ -444,6 +460,8 @@ impl AdaptiveGating {
             policy: Some(Arc::new(RwLock::new(policy))),
             memory: None,
             zone_booster: None,
+            #[cfg(feature = "pageindex")]
+            pageindex_arm: None,
         }
     }
 
@@ -541,10 +559,22 @@ impl AdaptiveGating {
         let weighted_semantic = self.apply_weights(semantic_results, weights.semantic);
 
         // 3. Fuse with RRF
-        let mut fused = reciprocal_rank_fusion(
-            vec![weighted_working, weighted_episodic, weighted_semantic],
-            self.config.rrf_k,
-        );
+        let layers = vec![weighted_working, weighted_episodic, weighted_semantic];
+        #[cfg(feature = "pageindex")]
+        let arm_source = match &self.pageindex_arm {
+            Some(arm) => arm.ranked_source(query).await,
+            None => None,
+        };
+        #[cfg(not(feature = "pageindex"))]
+        let arm_source: Option<(Vec<ScoredResult>, f32)> = None;
+        let mut fused = match arm_source {
+            Some((arm_hits, arm_weight)) => {
+                let mut sets: Vec<_> = layers.into_iter().map(|l| (l, 1.0)).collect();
+                sets.push((arm_hits, arm_weight));
+                reciprocal_rank_fusion_weighted(sets, self.config.rrf_k)
+            }
+            None => reciprocal_rank_fusion(layers, self.config.rrf_k),
+        };
 
         // 4. Optional Reranking for precision boost
         if let Some(hook) = crate::search::rerank::RerankHook::from_env() {

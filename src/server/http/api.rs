@@ -151,11 +151,29 @@ pub async fn api_auth_middleware(req: Request<Body>, next: Next) -> Response {
     }
 }
 
+#[cfg(feature = "pageindex")]
+type PageIndexArmOpt = Option<Arc<crate::retrieval::pageindex_arm::PageIndexArm>>;
+#[cfg(not(feature = "pageindex"))]
+type PageIndexArmOpt = Option<()>;
+
 /// Memory retrieve.
 pub async fn memory_retrieve(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<MultiLayerRetrieveRequest>,
 ) -> impl IntoResponse {
+    // `None` unless XAVIER_PAGEINDEX_ARM_ENABLED is set: default path is unchanged.
+    #[cfg(feature = "pageindex")]
+    let arm = crate::retrieval::pageindex_arm::PageIndexArm::from_env(&workspace.workspace_id);
+    #[cfg(not(feature = "pageindex"))]
+    let arm = None;
+    retrieve_with_arm(workspace, payload, arm).await
+}
+
+async fn retrieve_with_arm(
+    workspace: WorkspaceContext,
+    payload: MultiLayerRetrieveRequest,
+    arm: PageIndexArmOpt,
+) -> Json<MultiLayerRetrieveResponse> {
     let settings = crate::settings::XavierSettings::current();
     let active_zones = payload
         .active_zones
@@ -202,6 +220,12 @@ pub async fn memory_retrieve(
     gating = gating
         .with_memory(Arc::clone(&workspace.workspace.memory))
         .with_booster(Arc::clone(&workspace.workspace.zone_booster));
+    #[cfg(feature = "pageindex")]
+    {
+        gating = gating.with_pageindex_arm(arm);
+    }
+    #[cfg(not(feature = "pageindex"))]
+    let _ = arm;
 
     let working_docs = workspace.workspace.working_documents().await;
 
@@ -516,5 +540,95 @@ pub async fn memory_reflect(
     match task.reflect(&workspace).await {
         Ok(result) => Json(serde_json::json!({ "status": "ok", "data": result })).into_response(),
         Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
+    }
+}
+
+#[cfg(all(test, feature = "pageindex"))]
+mod pageindex_arm_tests {
+    use super::*;
+    use crate::pageindex_glue::{PageIndexSettings, PageIndexState};
+    use crate::retrieval::pageindex_arm::PageIndexArm;
+    use xavier_pageindex::store::SqliteStore;
+    use xavier_pageindex::{IngestOptions, Source};
+
+    const MANUAL: &str = "# Manual\n\nIntro text.\n\n## Battery\n\nThe battery lasts twelve hours and charges through the usb port.\n";
+
+    async fn workspace(id: &str) -> WorkspaceContext {
+        let root = tempfile::tempdir().expect("tempdir");
+        let memory = Arc::new(crate::memory::qmd_memory::QmdMemory::new(Arc::new(
+            tokio::sync::RwLock::new(Vec::new()),
+        )));
+        let store: Arc<dyn crate::memory::store::MemoryStore> =
+            Arc::new(crate::memory::store::InMemoryMemoryStore::default());
+        let state = crate::workspace::WorkspaceState::new_minimal(
+            id.to_string(),
+            root.path().to_path_buf(),
+            memory,
+            store,
+        )
+        .await;
+        WorkspaceContext {
+            workspace_id: id.to_string(),
+            workspace: Arc::new(state),
+        }
+    }
+
+    fn request() -> MultiLayerRetrieveRequest {
+        serde_json::from_value(serde_json::json!({
+            "query": "battery usb charges",
+            "relevance_threshold": 0.0,
+            "grounding_enabled": false
+        }))
+        .expect("request")
+    }
+
+    fn state_with_doc(ws: &str) -> Arc<PageIndexState> {
+        let st = Arc::new(PageIndexState::with_store(
+            PageIndexSettings::default(),
+            SqliteStore::open_in_memory().expect("store"),
+        ));
+        st.index()
+            .unwrap()
+            .ingest(
+                ws,
+                "manual.md",
+                Source::Markdown(MANUAL),
+                IngestOptions::default(),
+            )
+            .expect("ingest");
+        st
+    }
+
+    #[tokio::test]
+    async fn test_http_retrieve_arm_disabled_results_identical() {
+        let ws = workspace("pi-off").await;
+        let st = state_with_doc("pi-off");
+        let off = Arc::new(PageIndexArm::new(st, "pi-off"));
+        assert!(!off.is_enabled());
+        let plain = retrieve_with_arm(ws.clone(), request(), None).await;
+        let gated = retrieve_with_arm(ws, request(), Some(off)).await;
+        let a = serde_json::to_value(&plain.0).unwrap();
+        let b = serde_json::to_value(&gated.0).unwrap();
+        assert_eq!(a, b);
+        assert!(plain
+            .0
+            .results
+            .iter()
+            .all(|r| !r.id.starts_with("pageindex/")));
+    }
+
+    #[tokio::test]
+    async fn test_http_retrieve_arm_enabled_adds_pageindex_node_hit() {
+        let ws = workspace("pi-on").await;
+        let st = state_with_doc("pi-on");
+        let on = Arc::new(PageIndexArm::new(st, "pi-on").with_enabled(true));
+        let res = retrieve_with_arm(ws, request(), Some(on)).await;
+        let hit = res
+            .0
+            .results
+            .iter()
+            .find(|r| r.id.starts_with("pageindex/manual.md"))
+            .expect("pageindex node hit in fused results");
+        assert!(hit.content.contains("Battery"));
     }
 }

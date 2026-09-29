@@ -1218,6 +1218,94 @@ REQ-060..064 SHALL cite merged code evidence (`file:line`); the six `FEATURE-fea
 - [ ] Every cited `path:line` exists; `verify-pipeline.sh --check-only` exit 0
 - [ ] Zero `src/` changes under this REQ (docs-only)
 
+## REQ-080: PageIndex Tree Data Model + Builders (no LLM)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `crates/xavier-pageindex/src/{model,builders/*}.rs`
+- **Features:** `feat-pageindex-tree-core`
+
+### Description
+
+The `xavier-pageindex` crate SHALL represent a document as a hierarchical tree (`title`, `node_id`, `start`/`end` page or line range, optional `summary`, `children`) and SHALL build it from markdown headings, plain-text numbered headings and legal patterns without any LLM or network access. Trees SHALL validate (ordered, non-overlapping siblings, where adjacent siblings may share exactly one boundary page (`prev.end <= next.start`) and deeper overlap is rejected; children inside the parent range).
+
+### Acceptance criteria
+
+- [ ] `cargo test -p xavier-pageindex` green incl. `test_md_headings_build_nested_tree`, `test_legal_articles_nest_under_chapters`
+- [ ] The crate has no dependency on the `xavier` package (`! cargo tree -p xavier-pageindex -e normal --prefix none | grep -qE '^xavier v'` exits 0)
+
+## REQ-081: PageIndex Persistence + Read Tools (MCP and HTTP)
+
+- **Category:** Functional
+- **Priority:** High
+- **SRS Status:** `implemented`
+- **Files:** `crates/xavier-pageindex/src/store/*`, `src/pageindex_glue/*`, `src/server/pageindex_routes.rs`, `src/server/mcp/tools_pageindex.rs`
+- **Features:** `feat-pageindex-tree-core`
+
+### Description
+
+Trees and page text SHALL persist in a workspace-scoped SQLite store. Xavier SHALL expose `pageindex_browse_documents`, `pageindex_get_document`, `pageindex_get_document_structure`, `pageindex_get_page_content`, `pageindex_search` (read) and `pageindex_index_document` (role-gated write) over MCP, and the same operations under `/v1/pageindex/*`. Tool failures SHALL be returned as `{ok:false,error}` envelopes, never panics. Existing MCP tool names and schemas SHALL be unchanged.
+
+### Acceptance criteria
+
+- [ ] MCP `tools/list` contains the six tools; round-trip ingest -> structure -> pages works
+- [ ] Read-only role cannot call `pageindex_index_document`
+- [ ] `cargo test -p xavier --lib test_mcp_pageindex` green
+
+## REQ-082: PageIndex PDF Trees Behind Cargo Features
+
+- **Category:** Functional
+- **Priority:** Medium
+- **SRS Status:** `implemented`
+- **Files:** `crates/xavier-pageindex/src/pdf/*`, `crates/xavier-pageindex/Cargo.toml`
+- **Features:** `feat-pageindex-pdf`
+
+### Description
+
+PDF trees SHALL be built by a cascade: embedded bookmarks (`pdf-outline`, pure Rust) -> layout-heuristic headings (`pdf-layout`, pdfium bound dynamically at runtime) -> optional LLM ToC -> fixed windows. Default and `ci-safe` builds SHALL compile and pass without any native PDF library; a missing pdfium SHALL yield a typed error, not a panic. Optional tree optimization (merge tiny / split huge nodes) and LLM node summaries SHALL preserve page coverage and never be required to build a tree.
+
+### Acceptance criteria
+
+- [ ] `cargo check -p xavier-pageindex` (default features) needs no pdfium
+- [ ] `test_pdf_cascade_prefers_bookmarks`, `test_optimize_preserves_page_coverage`, `test_tree_builds_with_no_llm_configured` green
+
+## REQ-083: PageIndex Hybrid Retrieval Arm
+
+- **Category:** Functional
+- **Priority:** Medium
+- **SRS Status:** `implemented`
+- **Files:** `src/retrieval/pageindex_arm.rs`, `src/retrieval/gating.rs`, `src/retrieval/mod.rs`
+- **Features:** `feat-pageindex-hybrid`
+
+### Description
+
+A retrieval arm SHALL return candidate tree nodes with their page ranges and be fused by RRF in the gating layer. This wave delivers the BM25 node leg: BM25 over node title + summary + the node's own page text, cached per workspace and fused as one weighted RRF source. The arm is disabled by default (`XAVIER_PAGEINDEX_ARM_ENABLED`), fail-open, workspace-scoped, and leaves existing retrieval behaviour byte-identical when disabled.
+
+**Scope note.** The vector leg (node summaries persisted through the memory embedding API with doc/node/page tags, queried only over pageindex records and fused with the BM25 leg before gating RRF) is NOT part of this wave. It is an explicit planned follow-up: `.gitcore/waves/wave-pageindex/issue-15-followup-vector-leg.md`. BM25 shipped first because the spec's evaluation shows search-first navigation already cut pages read per question from 11.6 to 1.7 at 60/62 correct, so a lexical leg captures most of the practical value at no embedding cost.
+
+### Acceptance criteria
+
+- [ ] `test_gating_arm_disabled_by_default_no_behavior_change`, `test_gating_arm_failure_is_fail_open` green
+- [ ] Existing `retrieval::gating` tests unchanged and green
+
+## REQ-084: PageIndex Retrieval Evaluation
+
+- **Category:** Quality
+- **Priority:** Medium
+- **SRS Status:** `implemented`
+- **Files:** `tests/pageindex_eval.rs`, `tests/fixtures/pageindex/*`
+- **Features:** `feat-pageindex-hybrid`
+
+### Description
+
+An LLM-free harness SHALL measure page-range hit-rate@k and MRR for DocBot, tree and hybrid retrieval on an in-repo fixture set with gold page ranges, and optionally on a PageIndex-OSS-Benchmark subset loaded from JSONL. The comparison result SHALL be recorded in the feature spec with measured numbers.
+
+### Acceptance criteria
+
+- [ ] `test_eval_report_compares_docbot_tree_hybrid` green (deterministic, no network)
+- [ ] Spec records measured hit@1/hit@3/MRR per arm
+
 *WAVE-10 (2026-09-21): REQ-060..065 added (skill-injection wave: scan-paths, semantic-rank, loader-fate, fusion-gates, MCP-tools, ledger-docs). Implemented live: registry scans canonical store, cosine rank w/ keyword tiebreak, fusion gate 0.5 + ack-gate, MCP dispatch/list tools. Measured: Recall@3 0.950 / MRR 0.950 (20-query offline eval), live E2E post 0.2.5 restart. Full `verify-pipeline` green deferred: pre-existing zero-match filters outside the wave need ledger-wide cleanup (see rescan report).*
 
 *Domain-specific REQ-020..027 added 2026-08-08 (F12 preservation + mini-experts vision). Updated 2026-08-04 (honesty reconciliation: 27 features ↔ REQ-001..019 ↔ US-001..032). REQ-029..030 added 2026-08-14 (node provisioning — Olas M6/M7). Note: REQ-028/US-041 are reserved by `feat-issue-context-packager` (see features.json); new IDs use REQ-029..030 / US-042..043 to avoid collision. WAVE-3 (2026-08-31): REQ-031..040 added, 10 deltas, features 46→52 (4 promotions + 6 new), Docs + harness verified. WAVE-4 (2026-08-31): REQ-012,020,021,022,023,024,025,026,027,029,030 promoted to `verified` 100% (9 PRs 1753-1767 + 1758), `cargo test --package xavier --lib --features ci-safe` 2009 passed + `xavier-wasm` 4 + `code-graph` 81 + `xavier-core-logic` 24, clippy 0, fmt 0, panel-ui build 0. WAVE-5 (2026-09-01): REQ-044 added for panel browser compat. WAVE-6 (2026-09-03): REQ-045..046 added for Desktop One-Click installer & Cloudflare Edge Persistence. REQ-047 added 2026-09-05 for RTK Kernel CLI Proxy. WAVE-8 2026-09-12: REQ-048..052 added (HumanChallenge curation pipeline, introspection mode, privacy pipeline, enterprise ZDR, informed consent). Module: humanchallenge + data_commons + enterprise + panel-ui. WAVE-9 (2026-09-18): REQ-053..059 added (ripwire+graphify extraction O1-O7: honest-confidence, language-registry, blast-testgate, incremental-ids, budget-query, pagerank-router, contracts-arch; US-101..US-114; specs docs/features/specs/FEATURE-feat-cg-*.md; doc docs/EXTRACTION-RIPWIRE-GRAPHIFY.md; ADR-032/033).*

@@ -1,0 +1,27 @@
+[package]
+name = "xavier-pageindex"
+version = "0.1.0"
+authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
+edition = "2021"
+rust-version = "1.94"
+description = "PageIndex-style hierarchical tree retrieval for documents (standalone, no dependency on xavier)"
+license = "AGPL-3.0"
+
+[features]
+default = ["sqlite", "markdown"]
+sqlite = ["dep:rusqlite"]
+markdown = ["dep:pulldown-cmark"]
+# Bookmarks + per-page text (pure Rust).
+pdf-outline = ["dep:lopdf"]
+# Font-based heading detection; libpdfium is bound at runtime (never `static`).
+pdf-layout = ["dep:pdfium-render"]
+
+[dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+thiserror = "2.0.18"
+sha2 = "0.11"
+rusqlite = { version = "0.32.0", features = ["bundled"], optional = true }
+pulldown-cmark = { version = "0.13.4", optional = true }
+lopdf = { version = "0.45.0", optional = true }
+pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_6996", "thread_safe"], optional = true }

@@ -52,6 +52,8 @@ pub mod node_identity;
 pub mod nodes;
 pub mod notifications;
 pub mod observability;
+#[cfg(feature = "pageindex")]
+pub mod pageindex_glue;
 pub mod plugins;
 pub mod polygon_anchor;
 pub mod rag;

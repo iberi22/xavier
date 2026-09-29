@@ -14,6 +14,8 @@ pub fn get_xavier_tools() -> Vec<MCPTool> {
     tools.extend(super::tools_memory::get_xavier_memory_tools());
     tools.extend(super::tools_context::get_xavier_context_tools());
     tools.extend(super::telecom_tools::register_telecom_mcp_tools());
+    #[cfg(feature = "pageindex")]
+    tools.extend(super::tools_pageindex::get_pageindex_tools());
     tools
 }
 
@@ -107,6 +109,17 @@ pub async fn handle_tool_call(
                 ));
             }
         }
+    }
+
+    #[cfg(feature = "pageindex")]
+    if super::tools_pageindex::is_pageindex_tool(name) {
+        return super::tools_pageindex::handle_pageindex_tool(
+            &workspace,
+            claims.map(|c| &c.role),
+            name,
+            arguments,
+        )
+        .await;
     }
 
     if super::tools_core::is_core_tool(name) {

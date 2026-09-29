@@ -1,0 +1,37 @@
+# Gold page ranges (8 lines per virtual page). One JSON object per line.
+{"id": "q01", "doc": "manual.md", "query": "How long does the first startup take after plugging in power?", "start_page": 3, "end_page": 3, "evidence": "first boot takes about ninety seconds"}
+{"id": "q02", "doc": "manual.md", "query": "Which way should I place the router to get better wireless coverage?", "start_page": 2, "end_page": 2, "evidence": "central, elevated position"}
+{"id": "q03", "doc": "manual.md", "query": "What is the address of the admin web interface?", "start_page": 4, "end_page": 4, "evidence": "192.168.50.1"}
+{"id": "q04", "doc": "manual.md", "query": "Which wifi channels avoid overlap with neighbours?", "start_page": 5, "end_page": 5, "evidence": "channel 1, 6 or 11"}
+{"id": "q05", "doc": "manual.md", "query": "How do I keep visitors away from my printers?", "start_page": 6, "end_page": 6, "evidence": "Guests can reach the internet but not the local printers"}
+{"id": "q06", "doc": "manual.md", "query": "How do I make an internal server reachable from outside?", "start_page": 7, "end_page": 7, "evidence": "add a rule with the external port"}
+{"id": "q07", "doc": "manual.md", "query": "Should the router install patches automatically?", "start_page": 8, "end_page": 8, "evidence": "Enable automatic updates"}
+{"id": "q08", "doc": "manual.md", "query": "Can I restrict how long my kids use the internet?", "start_page": 9, "end_page": 9, "evidence": "limit internet time per device"}
+{"id": "q09", "doc": "manual.md", "query": "Which UDP port does the remote access tunnel use?", "start_page": 10, "end_page": 10, "evidence": "UDP port 51820"}
+{"id": "q10", "doc": "manual.md", "query": "How do I wipe all settings with the pinhole button?", "start_page": 11, "end_page": 11, "evidence": "hold the recessed reset button for ten seconds"}
+{"id": "q11", "doc": "manual.md", "query": "What if I lose the admin password?", "start_page": 12, "end_page": 12, "evidence": "a factory reset is the only recovery method"}
+{"id": "q12", "doc": "manual.md", "query": "What does the guarantee exclude?", "start_page": 13, "end_page": 13, "evidence": "Damage caused by liquids, lightning"}
+{"id": "q13", "doc": "contract.txt", "query": "How many days does the client have to pay an invoice?", "start_page": 4, "end_page": 4, "evidence": "within thirty days of receipt"}
+{"id": "q14", "doc": "contract.txt", "query": "What interest applies to late payments?", "start_page": 4, "end_page": 4, "evidence": "one and a half"}
+{"id": "q15", "doc": "contract.txt", "query": "Who owns the software once it is fully paid?", "start_page": 5, "end_page": 5, "evidence": "all rights in the Deliverables transfer to the Client"}
+{"id": "q16", "doc": "contract.txt", "query": "How long must secrets be kept after the contract ends?", "start_page": 6, "end_page": 6, "evidence": "five years after termination"}
+{"id": "q17", "doc": "contract.txt", "query": "How fast must a data breach be reported?", "start_page": 7, "end_page": 7, "evidence": "seventy-two hours"}
+{"id": "q18", "doc": "contract.txt", "query": "How much notice is needed to end the contract without cause?", "start_page": 8, "end_page": 8, "evidence": "thirty days notice"}
+{"id": "q19", "doc": "contract.txt", "query": "What is the cap on the provider's financial responsibility?", "start_page": 8, "end_page": 8, "evidence": "shall not exceed the fees paid"}
+{"id": "q20", "doc": "contract.txt", "query": "How long is the defect repair guarantee?", "start_page": 9, "end_page": 9, "evidence": "ninety days after"}
+{"id": "q21", "doc": "contract.txt", "query": "Which state's law applies and where is arbitration held?", "start_page": 10, "end_page": 10, "evidence": "State of Delaware"}
+{"id": "q22", "doc": "contract.txt", "query": "What happens if a hurricane or strike delays the work?", "start_page": 10, "end_page": 10, "evidence": "events beyond its reasonable control"}
+{"id": "q23", "doc": "contract.txt", "query": "Can either side transfer the contract to a third party?", "start_page": 11, "end_page": 11, "evidence": "without the prior written consent"}
+{"id": "q24", "doc": "contract.txt", "query": "What is the total price and how is it split?", "start_page": 3, "end_page": 3, "evidence": "fixed fee of one hundred and twenty thousand dollars"}
+{"id": "q25", "doc": "handbook.txt", "query": "Which hive style is cheaper but harder to move combs?", "start_page": 2, "end_page": 2, "evidence": "top-bar hive is cheaper"}
+{"id": "q26", "doc": "handbook.txt", "query": "Which direction should the hive entrance face?", "start_page": 3, "end_page": 3, "evidence": "south east"}
+{"id": "q27", "doc": "handbook.txt", "query": "How many days does a worker take to develop?", "start_page": 4, "end_page": 4, "evidence": "twenty-one days"}
+{"id": "q28", "doc": "handbook.txt", "query": "How do I prevent the colony from leaving in a swarm?", "start_page": 5, "end_page": 5, "evidence": "remove queen cells during weekly inspections"}
+{"id": "q29", "doc": "handbook.txt", "query": "When is honey ready to be taken from a frame?", "start_page": 7, "end_page": 7, "evidence": "at least eighty percent of the cells"}
+{"id": "q30", "doc": "handbook.txt", "query": "How do I keep mice out before the cold season?", "start_page": 7, "end_page": 7, "evidence": "mouse guard"}
+{"id": "q31", "doc": "handbook.txt", "query": "Why tilt the hive forward in the cold months?", "start_page": 8, "end_page": 8, "evidence": "condensation runs out"}
+{"id": "q32", "doc": "handbook.txt", "query": "Which treatments work against the parasitic mite?", "start_page": 9, "end_page": 9, "evidence": "oxalic acid vapour in winter"}
+{"id": "q33", "doc": "handbook.txt", "query": "What disease turns larvae into a brown ropey mass?", "start_page": 10, "end_page": 10, "evidence": "brown, ropey mass"}
+{"id": "q34", "doc": "handbook.txt", "query": "How can I protect against robbing insects in late summer?", "start_page": 10, "end_page": 10, "evidence": "wasps rob weak colonies"}
+{"id": "q35", "doc": "handbook.txt", "query": "How many eggs does the queen lay daily in spring?", "start_page": 3, "end_page": 3, "evidence": "two thousand eggs per day"}
+{"id": "q36", "doc": "handbook.txt", "query": "Do I need a permit before getting bees?", "start_page": 1, "end_page": 1, "evidence": "check local regulations"}
