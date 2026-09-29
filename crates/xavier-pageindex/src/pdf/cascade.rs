@@ -188,12 +188,52 @@ fn layout_strategy(
     if heads.len() < MIN_LAYOUT_HEADINGS {
         return None;
     }
-    let flat: Vec<(u32, String, u32)> = heads
+    let mut flat: Vec<(u32, String, u32)> = heads
         .into_iter()
         .map(|h| (h.level.max(1), h.title, h.page))
         .collect();
+    cap_outline(&mut flat);
     let tree = outline::outline_to_tree(doc_id, &nest(&flat), page_count);
     (!tree.roots.is_empty()).then_some((tree, TocSource::Layout))
+}
+
+#[cfg(feature = "pdf-layout")]
+/// Most entries a detected outline may have before its deepest level is dropped.
+pub const MAX_OUTLINE_ENTRIES: usize = 300;
+#[cfg(feature = "pdf-layout")]
+/// Most children a parent may have (below the root level) before the deepest level is dropped.
+pub const MAX_OUTLINE_SIBLINGS: usize = 150;
+
+#[cfg(feature = "pdf-layout")]
+/// Largest sibling group among nested (non-root) entries of a flat outline.
+fn widest_nested_group(flat: &[(u32, String, u32)]) -> usize {
+    let mut widest = 0;
+    let mut stack: Vec<usize> = Vec::new();
+    for (level, _, _) in flat {
+        stack.truncate(*level as usize);
+        while stack.len() < *level as usize {
+            stack.push(0);
+        }
+        if let Some(n) = stack.last_mut() {
+            *n += 1;
+        }
+        if *level > 1 {
+            widest = widest.max(stack[*level as usize - 1]);
+        }
+    }
+    widest
+}
+
+#[cfg(feature = "pdf-layout")]
+/// Keeps a detected outline navigable: while it is too big or has a parent with
+/// too many children, the deepest level is dropped (at least one level stays).
+fn cap_outline(flat: &mut Vec<(u32, String, u32)>) {
+    while let Some(deepest) = flat.iter().map(|e| e.0).max().filter(|d| *d > 1) {
+        if flat.len() <= MAX_OUTLINE_ENTRIES && widest_nested_group(flat) <= MAX_OUTLINE_SIBLINGS {
+            break;
+        }
+        flat.retain(|e| e.0 < deepest);
+    }
 }
 
 fn llm_strategy(
@@ -384,6 +424,44 @@ mod tests {
             bold: false,
             chars: text.len() as u32,
         }
+    }
+
+    fn entry(level: u32, n: usize) -> (u32, String, u32) {
+        (level, format!("h{n}"), 1)
+    }
+
+    #[test]
+    fn test_cap_outline_drops_deepest_level_when_too_big() {
+        let mut flat = Vec::new();
+        for i in 0..10 {
+            flat.push(entry(1, i));
+            for j in 0..40 {
+                flat.push(entry(2, i * 100 + j));
+            }
+        }
+        assert!(flat.len() > MAX_OUTLINE_ENTRIES);
+        cap_outline(&mut flat);
+        assert_eq!(flat.len(), 10);
+        assert!(flat.iter().all(|e| e.0 == 1));
+    }
+
+    #[test]
+    fn test_cap_outline_drops_level_with_hundreds_of_siblings() {
+        let mut flat = vec![entry(1, 0)];
+        flat.extend((1..=MAX_OUTLINE_SIBLINGS + 1).map(|i| entry(2, i)));
+        cap_outline(&mut flat);
+        assert_eq!(flat.len(), 1);
+    }
+
+    #[test]
+    fn test_cap_outline_keeps_a_navigable_outline_and_a_single_level() {
+        let mut small: Vec<_> = (0..30).map(|i| entry(1 + (i % 3 == 1) as u32, i)).collect();
+        let before = small.clone();
+        cap_outline(&mut small);
+        assert_eq!(small, before);
+        let mut flat: Vec<_> = (0..MAX_OUTLINE_ENTRIES + 50).map(|i| entry(1, i)).collect();
+        cap_outline(&mut flat);
+        assert_eq!(flat.len(), MAX_OUTLINE_ENTRIES + 50, "last level is kept");
     }
 
     #[test]

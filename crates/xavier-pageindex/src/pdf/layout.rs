@@ -68,9 +68,17 @@ impl Default for LayoutParams {
 }
 
 fn norm_key(text: &str) -> String {
-    text.chars()
-        .map(|c| if c.is_ascii_digit() { '#' } else { c })
-        .collect::<String>()
+    let mut collapsed = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_ascii_digit() {
+            if !collapsed.ends_with('#') {
+                collapsed.push('#');
+            }
+        } else {
+            collapsed.push(c);
+        }
+    }
+    collapsed
         .to_lowercase()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -104,6 +112,21 @@ fn repeated_margin_lines(lines: &[LineRecord], band: f32) -> HashSet<usize> {
         .collect()
 }
 
+/// Normalised texts printed on many pages anywhere on the page (running
+/// headers that drift out of the margin band, repeated boilerplate lines).
+fn repeated_page_keys(lines: &[LineRecord]) -> HashSet<String> {
+    let pages: HashSet<u32> = lines.iter().map(|l| l.page).collect();
+    let mut per_key: HashMap<String, HashSet<u32>> = HashMap::new();
+    for l in lines {
+        per_key.entry(norm_key(&l.text)).or_default().insert(l.page);
+    }
+    per_key
+        .into_iter()
+        .filter(|(_, p)| p.len() >= MIN_FURNITURE_PAGES && p.len() * 4 >= pages.len())
+        .map(|(k, _)| k)
+        .collect()
+}
+
 /// Mode of char-weighted sizes, rounded to 0.5pt; also whether body text is mostly bold.
 fn body_stats(lines: &[&LineRecord]) -> Option<(f32, bool)> {
     let mut by_size: BTreeMap<i32, (u64, u64)> = BTreeMap::new();
@@ -122,9 +145,144 @@ fn body_stats(lines: &[&LineRecord]) -> Option<(f32, bool)> {
         .map(|(k, (n, b))| (k as f32 / 2.0, n > 0 && b * 2 >= n))
 }
 
+/// Titles with more words than this are body text, whatever their style.
+const MAX_TITLE_WORDS: usize = 16;
+/// Sentence-like (terminal period) titles may have at most this many words.
+const MAX_PERIOD_TITLE_WORDS: usize = 5;
+/// Metadata stamps (`EFiled: ... Filing ID 48897809`) carry this many digits.
+const STAMP_DIGITS: usize = 6;
+/// Titles this long are tested for a mostly-lowercase (sentence) shape.
+const MIN_WORDS_FOR_CASE_TEST: usize = 6;
+/// Percentage of lowercase-initial words above which a long title is a sentence.
+const MAX_LOWERCASE_PCT: usize = 55;
+/// A text on at least this many pages (and a quarter of all) is page furniture.
+const MIN_FURNITURE_PAGES: usize = 3;
+/// A title repeated this many times in the candidate list is furniture.
+const MAX_TITLE_REPEATS: usize = 4;
+
+/// Leading words of page furniture that is never a heading.
+const FURNITURE_PREFIXES: [&str; 7] = [
+    "efiled",
+    "(cite as",
+    "copyright",
+    "\u{a9}",
+    "confidential",
+    "printed on",
+    "page ",
+];
+
+/// Rank of a canonical numbered section title (`PART II`, `Item 1A.`, ...):
+/// lower ranks are higher in the hierarchy. `None` for ordinary titles.
+pub fn numbered_rank(title: &str) -> Option<u32> {
+    let mut words = title.split_whitespace();
+    let kw = words
+        .next()?
+        .trim_end_matches(['.', ':'])
+        .to_ascii_lowercase();
+    let num = words.next()?.trim_end_matches(['.', ':', '-', '\u{2013}']);
+    let roman = !num.is_empty() && num.chars().all(|c| "IVXLCivxlc".contains(c));
+    let arabic = num.chars().next().is_some_and(|c| c.is_ascii_digit())
+        && num
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c.is_ascii_uppercase());
+    match kw.as_str() {
+        "part" | "chapter" if roman || arabic || num.len() == 1 => Some(1),
+        "item" | "section" | "article" if roman || arabic => Some(2),
+        _ => None,
+    }
+}
+
+/// Last words that cannot end a title.
+const DANGLING_WORDS: [&str; 16] = [
+    "of", "and", "the", "to", "a", "an", "in", "for", "by", "with", "or", "on", "at", "as", "from",
+    "than",
+];
+
+/// `PART I 4`, `Item 7. Discussion 32`: keyword title followed by a page number.
+fn ends_with_page_number(t: &str) -> bool {
+    let toks: Vec<&str> = t.split_whitespace().collect();
+    toks.len() >= 3
+        && toks
+            .last()
+            .is_some_and(|w| w.len() <= 3 && w.chars().all(|c| c.is_ascii_digit()))
+}
+
+fn digit_count(t: &str) -> usize {
+    t.chars().filter(char::is_ascii_digit).count()
+}
+
+fn is_furniture_text(t: &str, in_margin: bool) -> bool {
+    let low = t.to_lowercase();
+    FURNITURE_PREFIXES.iter().any(|p| low.starts_with(p))
+        || (in_margin && digit_count(t) >= STAMP_DIGITS)
+}
+
 fn plausible_title(t: &str, max_chars: usize) -> bool {
     let n = t.chars().count();
-    n >= 2 && n <= max_chars && t.chars().any(char::is_alphanumeric) && !t.ends_with([',', ';'])
+    let words = t.split_whitespace().count();
+    if n < 2 || n > max_chars || words > MAX_TITLE_WORDS {
+        return false;
+    }
+    // Bare numbers, page numbers and punctuation-only runs.
+    if !t.chars().any(char::is_alphabetic) {
+        return false;
+    }
+    // Drop-cap fragments and stray marks ("2 N", "I").
+    if numbered_rank(t).is_none() && t.chars().filter(|c| c.is_alphanumeric()).count() < 3 {
+        return false;
+    }
+    if t.ends_with([',', ';']) {
+        return false;
+    }
+    // Table-of-contents entries: dot leaders or a trailing page number.
+    if t.contains("....") || (numbered_rank(t).is_some() && ends_with_page_number(t)) {
+        return false;
+    }
+    if numbered_rank(t).is_some() {
+        return true;
+    }
+    // Cut-off phrases ("Increase the number of").
+    let last = t
+        .split_whitespace()
+        .next_back()
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .unwrap_or_default();
+    if words > 1 && DANGLING_WORDS.contains(&last.as_str()) {
+        return false;
+    }
+    // Sentences: continuation (lowercase start), terminal period, form answers.
+    if t.chars().next().is_some_and(char::is_lowercase) {
+        return false;
+    }
+    if t.ends_with('.') && words > MAX_PERIOD_TITLE_WORDS {
+        return false;
+    }
+    // Sentence punctuation inside the text ("... Apply online. Submit ...").
+    let body = t
+        .split_once(' ')
+        .filter(|(h, _)| h.ends_with('.'))
+        .map_or(t, |(_, r)| r);
+    if body
+        .as_bytes()
+        .windows(2)
+        .any(|w| matches!(w[0], b'.' | b'!' | b'?') && w[1] == b' ')
+    {
+        return false;
+    }
+    // Mostly lowercase words: running text, not a title.
+    if words >= MIN_WORDS_FOR_CASE_TEST {
+        let lower = t
+            .split_whitespace()
+            .filter(|w| w.chars().next().is_some_and(char::is_lowercase))
+            .count();
+        if lower * 100 > words * MAX_LOWERCASE_PCT {
+            return false;
+        }
+    }
+    true
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -141,6 +299,7 @@ struct Cand {
 /// Pure classifier: line style statistics -> heading candidates in reading order.
 pub fn classify_headings(lines: &[LineRecord], params: &LayoutParams) -> Vec<HeadingCandidate> {
     let drop = repeated_margin_lines(lines, params.margin_band);
+    let furniture_keys = repeated_page_keys(lines);
     let kept: Vec<usize> = (0..lines.len())
         .filter(|i| !drop.contains(i) && !lines[*i].text.trim().is_empty())
         .collect();
@@ -154,7 +313,11 @@ pub fn classify_headings(lines: &[LineRecord], params: &LayoutParams) -> Vec<Hea
     for &i in &kept {
         let l = &lines[i];
         let t = l.text.trim();
-        let kind = if l.font_size >= body * params.min_size_ratio
+        let furniture = furniture_keys.contains(&norm_key(t))
+            || is_furniture_text(t, in_margin(l, params.margin_band));
+        let kind = if furniture {
+            None
+        } else if l.font_size >= body * params.min_size_ratio
             && plausible_title(t, params.max_title_chars)
         {
             Some(Kind::Size)
@@ -231,6 +394,33 @@ pub fn classify_headings(lines: &[LineRecord], params: &LayoutParams) -> Vec<Hea
         }
         prev = Some((c.idx, c.kind));
     }
+    finalize_levels(out)
+}
+
+/// Drops titles repeated many times (labels, running text) and lifts canonical
+/// numbered sections (`PART I`, `Item 7.`) above the size-derived levels.
+fn finalize_levels(mut out: Vec<HeadingCandidate>) -> Vec<HeadingCandidate> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for h in &out {
+        *counts.entry(norm_key(&h.title)).or_default() += 1;
+    }
+    out.retain(|h| {
+        numbered_rank(&h.title).is_some()
+            || counts.get(&norm_key(&h.title)).copied().unwrap_or(0) < MAX_TITLE_REPEATS
+    });
+    let mut ranks: Vec<u32> = out.iter().filter_map(|h| numbered_rank(&h.title)).collect();
+    ranks.sort_unstable();
+    ranks.dedup();
+    let lift = ranks.len() as u32;
+    for h in &mut out {
+        h.level = match numbered_rank(&h.title) {
+            Some(r) => ranks
+                .iter()
+                .position(|x| *x == r)
+                .map_or(1, |i| i as u32 + 1),
+            None => h.level + lift,
+        };
+    }
     out
 }
 
@@ -258,7 +448,7 @@ pub struct Glyph {
 /// Glyphs examined when looking for an overprinted twin.
 const OVERPRINT_LOOKBACK: usize = 64;
 /// Horizontal ink gap (fraction of the font size) that reads as a word space.
-const WORD_GAP: f32 = 0.25;
+const WORD_GAP: f32 = 0.6;
 
 /// Drops glyphs printed twice at (almost) the same spot (fake bold / shadow
 /// overprinting, "NNEEBBRRAASSKKAA"). The surviving glyph is marked bold.

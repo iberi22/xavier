@@ -272,6 +272,125 @@ fn test_layout_pdfium_detects_headings_from_generated_pdf() {
     assert!(detect_headings(&pdf).is_some());
 }
 
+fn titles_of(lines: &[LineRecord]) -> Vec<String> {
+    classify_headings(lines, &LayoutParams::default())
+        .into_iter()
+        .map(|c| c.title)
+        .collect()
+}
+
+#[test]
+fn test_layout_running_header_variants_are_not_titles() {
+    let mut lines = Vec::new();
+    for p in 1..=8 {
+        // Outside the margin band, differing digits, bold: still furniture.
+        lines.push(line(
+            p,
+            110.0,
+            &format!("(Cite as: 2012 WL {}00 (Del.Super.))", 3860 + p),
+            11.0,
+            true,
+        ));
+        lines.push(body(p, 200.0));
+        lines.push(body(p, 215.0));
+        lines.push(body(p, 230.0));
+    }
+    // A one-off metadata stamp in the top band.
+    lines.push(line(
+        1,
+        20.0,
+        "EFiled: Jan 14 2013 09:42AM EST Filing ID 48897809",
+        14.0,
+        true,
+    ));
+    lines.push(line(3, 300.0, "Real Heading", 16.0, true));
+    assert_eq!(titles_of(&lines), vec!["Real Heading"]);
+}
+
+#[test]
+fn test_layout_bare_numbers_and_sentences_are_not_titles() {
+    let mut lines = vec![
+        body(1, 100.0),
+        body(1, 115.0),
+        body(1, 130.0),
+        line(1, 300.0, "23", 14.0, true),
+        line(1, 330.0, "Page 4 of 9", 14.0, true),
+        line(
+            1,
+            360.0,
+            "We believe this approach is right for the business.",
+            14.0,
+            true,
+        ),
+        line(1, 390.0, "continued from the previous page", 14.0, true),
+        line(1, 420.0, "Is it changed? No", 14.0, true),
+        line(1, 450.0, "Increase the number of", 14.0, true),
+        line(1, 480.0, "Contents .................. 4", 14.0, true),
+        line(1, 510.0, "Financial Results", 14.0, true),
+    ];
+    lines.push(body(1, 540.0));
+    assert_eq!(titles_of(&lines), vec!["Financial Results"]);
+}
+
+#[test]
+fn test_layout_numbered_sections_become_top_levels() {
+    let mut lines = Vec::new();
+    for (p, name) in [
+        (1, "PART I"),
+        (1, "Item 1. Business"),
+        (2, "Item 1A. Risk Factors"),
+        (3, "PART II"),
+        (3, "Item 7. Discussion"),
+    ] {
+        // Numbered headings are bold at body size, sub-headings are larger.
+        lines.push(line(p, 100.0, name, 11.0, true));
+        lines.push(line(p, 140.0, &format!("Overview {p}{name}"), 15.0, false));
+        lines.push(body(p, 180.0));
+        lines.push(body(p, 195.0));
+        lines.push(body(p, 210.0));
+    }
+    let h = classify_headings(&lines, &LayoutParams::default());
+    let lvl = |t: &str| h.iter().find(|c| c.title == t).map(|c| c.level);
+    assert_eq!(lvl("PART I"), Some(1));
+    assert_eq!(lvl("PART II"), Some(1));
+    assert_eq!(lvl("Item 1. Business"), Some(2));
+    assert_eq!(lvl("Item 7. Discussion"), Some(2));
+    assert!(
+        h.iter()
+            .filter(|c| c.title.starts_with("Overview"))
+            .all(|c| c.level > 2),
+        "{h:?}"
+    );
+}
+
+#[test]
+fn test_layout_table_of_contents_entries_are_not_numbered_sections() {
+    let lines = vec![
+        line(1, 100.0, "PART I 4", 12.0, true),
+        line(1, 120.0, "Item 1. Business 4", 12.0, true),
+        body(1, 200.0),
+        body(1, 215.0),
+        body(1, 230.0),
+        line(2, 100.0, "PART I", 12.0, true),
+        body(2, 200.0),
+        body(2, 215.0),
+    ];
+    assert_eq!(titles_of(&lines), vec!["PART I"]);
+}
+
+#[test]
+fn test_layout_title_repeated_many_times_is_dropped() {
+    let mut lines = Vec::new();
+    for p in 1..=12 {
+        lines.push(line(p, 150.0, "Note", 15.0, true));
+        lines.push(body(p, 200.0));
+        lines.push(body(p, 215.0));
+        lines.push(body(p, 230.0));
+    }
+    lines.push(line(6, 300.0, "Unique Chapter", 18.0, true));
+    assert_eq!(titles_of(&lines), vec!["Unique Chapter"]);
+}
+
 mod glyphs {
     use xavier_pageindex::pdf::layout::{build_lines, Glyph};
 
@@ -328,8 +447,8 @@ mod glyphs {
     fn test_glyphs_words_on_one_baseline_join_into_one_line() {
         // Words placed separately with ink gaps and no space glyphs at all.
         let mut g = run("Our", 10.0, 100.0, 10.0);
-        g.extend(run("comprehensive", 10.0 + 3.0 * 5.0 + 4.0, 100.0, 10.0));
-        g.extend(run("solutions", 10.0 + 16.0 * 5.0 + 8.0, 100.0, 10.0));
+        g.extend(run("comprehensive", 10.0 + 3.0 * 5.0 + 9.0, 100.0, 10.0));
+        g.extend(run("solutions", 10.0 + 16.0 * 5.0 + 18.0, 100.0, 10.0));
         let l = build_lines(1, 800.0, &g);
         assert_eq!(l.len(), 1, "{l:?}");
         assert_eq!(l[0].text, "Our comprehensive solutions");

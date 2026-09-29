@@ -26,7 +26,10 @@ fn quality(roots: &[xavier_pageindex::TreeNode]) -> Quality {
             q.depth = q.depth.max(d);
             let t = n.title.trim();
             let words = t.split_whitespace().count();
-            if t.ends_with('.') || words > 12 || t.chars().next().is_some_and(char::is_lowercase) {
+            if (t.ends_with('.') && words > 5)
+                || words > 12
+                || t.chars().next().is_some_and(char::is_lowercase)
+            {
                 q.sentence += 1;
             }
             if t.chars().all(|c| c.is_ascii_digit() || c.is_whitespace()) {
