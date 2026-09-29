@@ -824,11 +824,9 @@ pub async fn start_http_server(
             #[cfg(feature = "pageindex")]
             let pageindex = Router::new().nest(
                 "/v1/pageindex",
-                xavier::server::pageindex_routes::router(Arc::new(
-                    xavier::pageindex_glue::PageIndexState::new(
-                        xavier::pageindex_glue::PageIndexSettings::from_env(),
-                    ),
-                )),
+                xavier::server::pageindex_routes::router(
+                    xavier::pageindex_glue::state::shared_state(),
+                ),
             );
             #[cfg(not(feature = "pageindex"))]
             let pageindex = Router::new();

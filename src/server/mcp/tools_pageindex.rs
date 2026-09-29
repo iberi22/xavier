@@ -2,7 +2,7 @@
 //! live in `pageindex_glue::tools`; this module only maps them onto MCP types
 //! and derives write access from the caller's role.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -11,13 +11,8 @@ use crate::pageindex_glue::{self, PageIndexSettings, PageIndexState, ToolContext
 use crate::security::auth::{Permission, UserRole};
 use crate::workspace::WorkspaceContext;
 
-static SHARED_STATE: OnceLock<Arc<PageIndexState>> = OnceLock::new();
-
-/// Process-wide PageIndex state; the store opens lazily on first tool call.
 fn shared_state() -> Arc<PageIndexState> {
-    SHARED_STATE
-        .get_or_init(|| Arc::new(PageIndexState::new(PageIndexSettings::from_env())))
-        .clone()
+    pageindex_glue::state::shared_state()
 }
 
 /// Tools exposed by the PageIndex module.
@@ -93,7 +88,7 @@ mod tests {
             PageIndexSettings::default(),
             SqliteStore::open_in_memory().expect("in-memory store"),
         );
-        let _ = SHARED_STATE.set(Arc::new(st));
+        let _ = pageindex_glue::state::install_shared_state(st);
     }
 
     fn claims(role: UserRole) -> Claims {

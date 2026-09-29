@@ -1,6 +1,6 @@
 //! Shared, lazily opened PageIndex instance.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use xavier_pageindex::store::SqliteStore;
 use xavier_pageindex::{PageIndex, PageIndexConfig, PageIndexError};
@@ -62,4 +62,20 @@ impl PageIndexState {
         *guard = Some(Arc::clone(&idx));
         Ok(idx)
     }
+}
+
+static SHARED_STATE: OnceLock<Arc<PageIndexState>> = OnceLock::new();
+
+/// Process-wide PageIndex state shared by the HTTP routes and the MCP tools,
+/// so both see one store. The database opens lazily on first use.
+pub fn shared_state() -> Arc<PageIndexState> {
+    SHARED_STATE
+        .get_or_init(|| Arc::new(PageIndexState::new(PageIndexSettings::from_env())))
+        .clone()
+}
+
+/// Install the shared state before first use (tests). Returns false if one
+/// was already installed.
+pub fn install_shared_state(state: PageIndexState) -> bool {
+    SHARED_STATE.set(Arc::new(state)).is_ok()
 }
