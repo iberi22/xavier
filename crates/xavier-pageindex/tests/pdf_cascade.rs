@@ -27,7 +27,9 @@ mod with_pdf {
 
     use lopdf::content::{Content, Operation};
     use lopdf::{dictionary, Document, Object, Stream, StringFormat};
-    use xavier_pageindex::pdf::cascade::{build_pdf_tree, TocSource, FIXED_WINDOW_PAGES};
+    use xavier_pageindex::pdf::cascade::{
+        build_pdf_tree, TocSource, FIXED_WINDOW_PAGES, MAX_PAGES_PER_NODE,
+    };
     use xavier_pageindex::summarize::Summarizer;
     use xavier_pageindex::PageIndexError;
 
@@ -297,6 +299,68 @@ mod with_pdf {
         );
         assert_eq!(b.tree.roots[2].end_page, 12);
         b.tree.validate(12).unwrap();
+    }
+
+    fn filler_pages(n: usize) -> Vec<Vec<Line>> {
+        (0..n).map(|_| filler()).collect()
+    }
+
+    fn count(nodes: &[xavier_pageindex::TreeNode]) -> usize {
+        nodes.iter().map(|n| 1 + count(&n.children)).sum()
+    }
+
+    #[test]
+    fn test_pdf_cascade_single_bookmark_falls_through() {
+        let bytes = make_pdf(&filler_pages(12), &[("Only", 1)]);
+        let b = build_pdf_tree("d", &bytes, None).unwrap();
+        assert_ne!(b.source, TocSource::Bookmarks);
+        assert!(count(&b.tree.roots) >= 2);
+        b.tree.validate(12).unwrap();
+        // A short document may keep its single bookmark.
+        let short = make_pdf(&filler_pages(3), &[("Only", 1)]);
+        let b = build_pdf_tree("d", &short, None).unwrap();
+        assert_eq!(b.source, TocSource::Bookmarks);
+    }
+
+    #[test]
+    fn test_pdf_oversized_leaf_is_split_into_windows() {
+        let bytes = make_pdf(&filler_pages(30), &[("A", 1), ("B", 25)]);
+        let b = build_pdf_tree("d", &bytes, None).unwrap();
+        assert_eq!(b.source, TocSource::Bookmarks);
+        b.tree.validate(30).unwrap();
+        let a = &b.tree.roots[0];
+        assert_eq!((a.start_page, a.end_page), (1, 25));
+        assert!(a.children.len() >= 2);
+        assert_eq!(a.children[0].start_page, 1);
+        assert_eq!(a.children.last().unwrap().end_page, 25);
+        fn leaves_ok(nodes: &[xavier_pageindex::TreeNode]) -> bool {
+            nodes.iter().all(|n| {
+                if n.children.is_empty() {
+                    n.end_page - n.start_page < MAX_PAGES_PER_NODE
+                } else {
+                    leaves_ok(&n.children)
+                }
+            })
+        }
+        // "B" (25..30) is within the limit and stays a leaf.
+        assert!(leaves_ok(&b.tree.roots));
+        assert!(b.tree.roots[1].children.is_empty());
+    }
+
+    #[test]
+    fn test_pdf_nodes_have_token_estimates() {
+        let bytes = make_pdf(&filler_pages(30), &[("A", 1), ("B", 25)]);
+        for built in [
+            build_pdf_tree("d", &bytes, None).unwrap(),
+            build_pdf_tree("d", &make_pdf(&filler_pages(12), &[]), None).unwrap(),
+        ] {
+            fn all_positive(nodes: &[xavier_pageindex::TreeNode]) -> bool {
+                nodes
+                    .iter()
+                    .all(|n| n.token_estimate > 0 && all_positive(&n.children))
+            }
+            assert!(all_positive(&built.tree.roots));
+        }
     }
 
     #[test]

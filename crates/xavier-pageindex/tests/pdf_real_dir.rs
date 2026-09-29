@@ -8,7 +8,8 @@ fn real_pdfs_produce_trees() {
     use xavier_pageindex::pdf::cascade::build_pdf_tree;
 
     let Ok(dir) = std::env::var("XAVIER_PAGEINDEX_PDF_DIR") else {
-        panic!("set XAVIER_PAGEINDEX_PDF_DIR");
+        eprintln!("XAVIER_PAGEINDEX_PDF_DIR not set; skipping");
+        return;
     };
     let only: Vec<String> = std::env::var("XAVIER_PAGEINDEX_PDF_ONLY")
         .map(|v| v.split(',').map(str::to_string).collect())

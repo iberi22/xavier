@@ -11,11 +11,20 @@ use crate::summarize::Summarizer;
 
 /// Pages per node in the last-resort fixed-window tree.
 pub const FIXED_WINDOW_PAGES: u32 = 5;
+/// Documents with fewer pages than this may legitimately have a tiny tree.
+pub const MIN_PAGES_FOR_STRUCTURE: u32 = 6;
+/// Fewest nodes a tree needs to count as a structure for a larger document.
+pub const MIN_TREE_NODES: usize = 2;
+/// Leaves spanning more pages than this are split into page windows.
+pub const MAX_PAGES_PER_NODE: u32 = 10;
+/// Pages per child when an oversized leaf is split.
+pub const SPLIT_WINDOW_PAGES: u32 = 5;
 /// Leading pages shown to the LLM when it is asked for a table of contents.
 const TOC_SCAN_PAGES: usize = 12;
 /// Chars of each scanned page shown to the LLM.
 const TOC_PAGE_CHARS: usize = 3000;
 /// Fewest heading candidates for the layout strategy to count as a structure.
+#[cfg(feature = "pdf-layout")]
 const MIN_LAYOUT_HEADINGS: usize = 2;
 /// Fewest verified LLM entries for the LLM strategy to count as a structure.
 const MIN_LLM_ENTRIES: usize = 2;
@@ -66,6 +75,7 @@ pub fn build_pdf_tree(
     bytes: &[u8],
     llm: Option<&dyn Summarizer>,
 ) -> Result<BuiltPdf, PageIndexError> {
+    #[cfg_attr(not(feature = "pdf-layout"), allow(unused_mut))]
     let mut texts = outline::extract_pages(bytes)?;
     if texts.is_empty() {
         return Err(PageIndexError::Build("PDF has no pages".into()));
@@ -73,27 +83,41 @@ pub fn build_pdf_tree(
     let page_count = texts.len() as u32;
     let outline_nodes = outline::extract_outline(bytes)?;
 
-    let mut source = None;
+    // First non-degenerate result wins; otherwise the richest one is kept.
+    let mut candidates: Vec<(DocumentTree, TocSource)> = Vec::new();
     if let Some(nodes) = outline_nodes {
         let tree = outline::outline_to_tree(doc_id, &nodes, page_count);
         if !tree.roots.is_empty() {
-            source = Some((tree, TocSource::Bookmarks));
+            candidates.push((tree, TocSource::Bookmarks));
         }
     }
 
     #[cfg(feature = "pdf-layout")]
-    if source.is_none() {
-        source = layout_strategy(doc_id, bytes, &mut texts, page_count);
+    if !has_usable(&candidates, page_count) {
+        candidates.extend(layout_strategy(doc_id, bytes, &mut texts, page_count));
     }
 
-    if source.is_none() {
+    if !has_usable(&candidates, page_count) {
         if let Some(sm) = llm {
-            source = llm_strategy(doc_id, sm, &texts, page_count);
+            candidates.extend(llm_strategy(doc_id, sm, &texts, page_count));
         }
     }
 
-    let (tree, source) =
-        source.unwrap_or_else(|| (fixed_windows(doc_id, page_count), TocSource::FixedWindows));
+    if !has_usable(&candidates, page_count) {
+        candidates.push((fixed_windows(doc_id, page_count), TocSource::FixedWindows));
+    }
+    let best = candidates
+        .iter()
+        .position(|(t, _)| !is_degenerate(t, page_count))
+        .unwrap_or_else(|| {
+            (0..candidates.len())
+                .max_by_key(|&i| (count_nodes(&candidates[i].0.roots), std::cmp::Reverse(i)))
+                .unwrap_or(0)
+        });
+    let (mut tree, source) = candidates.swap_remove(best);
+    split_oversized_leaves(&mut tree.roots);
+    tree.assign_node_ids();
+    fill_token_estimates(&mut tree.roots, &texts);
     let pages = texts
         .into_iter()
         .enumerate()
@@ -262,4 +286,60 @@ fn fixed_windows(doc_id: &str, page_count: u32) -> DocumentTree {
     };
     tree.assign_node_ids();
     tree
+}
+
+fn count_nodes(nodes: &[TreeNode]) -> usize {
+    nodes.iter().map(|n| 1 + count_nodes(&n.children)).sum()
+}
+
+/// A tree too thin to guide navigation of a document of this size.
+fn is_degenerate(tree: &DocumentTree, page_count: u32) -> bool {
+    page_count >= MIN_PAGES_FOR_STRUCTURE && count_nodes(&tree.roots) < MIN_TREE_NODES
+}
+
+fn has_usable(candidates: &[(DocumentTree, TocSource)], page_count: u32) -> bool {
+    candidates
+        .iter()
+        .any(|(t, _)| !is_degenerate(t, page_count))
+}
+
+/// Give every leaf spanning more than `MAX_PAGES_PER_NODE` pages consecutive
+/// non-overlapping page-window children, so no leaf forces a long read.
+fn split_oversized_leaves(nodes: &mut [TreeNode]) {
+    for n in nodes {
+        if !n.children.is_empty() {
+            split_oversized_leaves(&mut n.children);
+        } else if n.end_page - n.start_page + 1 > MAX_PAGES_PER_NODE {
+            let mut start = n.start_page;
+            while start <= n.end_page {
+                let end = (start + SPLIT_WINDOW_PAGES - 1).min(n.end_page);
+                n.children.push(TreeNode {
+                    node_id: String::new(),
+                    title: format!("{} (pages {start}-{end})", n.title),
+                    start_page: start,
+                    end_page: end,
+                    summary: None,
+                    token_estimate: 0,
+                    children: Vec::new(),
+                });
+                start = end + 1;
+            }
+        }
+    }
+}
+
+/// Same estimator as the plain-text builder: words * 1.3.
+fn estimate_tokens(words: usize) -> u32 {
+    (words as f64 * 1.3).ceil() as u32
+}
+
+fn fill_token_estimates(nodes: &mut [TreeNode], texts: &[String]) {
+    for n in nodes {
+        let words: usize = (n.start_page..=n.end_page)
+            .filter_map(|p| texts.get(p as usize - 1))
+            .map(|t| t.split_whitespace().count())
+            .sum();
+        n.token_estimate = estimate_tokens(words);
+        fill_token_estimates(&mut n.children, texts);
+    }
 }
