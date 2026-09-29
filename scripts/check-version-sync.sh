@@ -59,6 +59,24 @@ if [ -f "$CWD/panel-ui/package.json" ]; then
     fi
 fi
 
+# Verify the Tauri desktop shell (tauri.conf.json + src-tauri/Cargo.toml) tracks the release version
+TAURI_CONF="$CWD/panel-ui/src-tauri/tauri.conf.json"
+TAURI_CARGO="$CWD/panel-ui/src-tauri/Cargo.toml"
+if [ -n "$CARGO_VER" ] && [ -f "$TAURI_CONF" ]; then
+    TAURI_CONF_VER=$(python3 -c "import json; print(json.load(open('$TAURI_CONF')).get('version', ''))" 2>/dev/null || echo "")
+    if [ "$TAURI_CONF_VER" != "$CARGO_VER" ]; then
+        echo "ERROR: Version drift detected! Cargo.toml ($CARGO_VER) vs panel-ui/src-tauri/tauri.conf.json ($TAURI_CONF_VER)" >&2
+        exit 1
+    fi
+fi
+if [ -n "$CARGO_VER" ] && [ -f "$TAURI_CARGO" ]; then
+    TAURI_CARGO_VER=$(grep -m1 '^version =' "$TAURI_CARGO" | sed -E 's/version = "(.*)"/\1/' | tr -d '[:space:]')
+    if [ "$TAURI_CARGO_VER" != "$CARGO_VER" ]; then
+        echo "ERROR: Version drift detected! Cargo.toml ($CARGO_VER) vs panel-ui/src-tauri/Cargo.toml ($TAURI_CARGO_VER)" >&2
+        exit 1
+    fi
+fi
+
 # Verify CHANGELOG.md has [Unreleased]
 if [ -f "$CWD/CHANGELOG.md" ]; then
     if ! grep -qi "\[Unreleased\]" "$CWD/CHANGELOG.md"; then

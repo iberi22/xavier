@@ -41,6 +41,10 @@ scripts/verify-pipeline.sh
 # Exit code 0 = all green. Any failure = the ledger is lying.
 ```
 
+## Feature guides
+
+- [PageIndex: tree-based document retrieval](pageindex.md)
+
 ## Adding a feature
 
 1. Write the spec: `docs/features/specs/FEATURE-<id>.md`

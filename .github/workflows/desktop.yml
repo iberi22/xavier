@@ -1,0 +1,123 @@
+name: Desktop (AppImage + deb)
+
+# Builds the Tauri desktop shell for Linux. Reused by release.yml (tag) and
+# runnable by hand from any branch (Actions > Desktop > Run workflow) so the
+# AppImage can be tested before tagging. Never publishes a release itself.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-desktop:
+    name: Build desktop (ubuntu-22.04)
+    # 22.04 keeps the glibc baseline low so the AppImage runs on older distros.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libsqlite3-dev \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf file xdg-utils
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            panel-ui/src-tauri -> target
+          key: desktop
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.24.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install JS dependencies
+        run: pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true
+
+      - name: Build Xavier sidecar
+        # ci-safe = portable release feature set; pageindex-pdfium binds
+        # libpdfium at runtime only (no native link dependency).
+        run: cargo build --release --bin xavier --features "ci-safe,pageindex-pdfium"
+
+      - name: Stage sidecar (Tauri externalBin naming)
+        run: |
+          TRIPLE="$(rustc -Vv | sed -n 's/^host: //p')"
+          mkdir -p panel-ui/src-tauri/binaries
+          cp target/release/xavier "panel-ui/src-tauri/binaries/xavier-${TRIPLE}"
+          chmod +x "panel-ui/src-tauri/binaries/xavier-${TRIPLE}"
+
+      - name: Fetch libpdfium (optional PDF layout support)
+        continue-on-error: true
+        run: |
+          PDFIUM_TAG="chromium/8076"
+          PDFIUM_SHA256="d9d67bc40af03aef4fe28a60b19b1086f28ace019c8c9caf19cb7fe3d14ceca3"
+          curl -fsSL --retry 3 -o pdfium.tgz \
+            "https://github.com/bblanchon/pdfium-binaries/releases/download/${PDFIUM_TAG}/pdfium-linux-x64.tgz"
+          echo "${PDFIUM_SHA256}  pdfium.tgz" | sha256sum -c -
+          mkdir pdfium && tar -xzf pdfium.tgz -C pdfium
+          cp pdfium/lib/libpdfium.so panel-ui/src-tauri/resources/libpdfium.so
+
+      - name: Build AppImage and deb
+        working-directory: panel-ui
+        env:
+          # AppImage tooling needs FUSE-less extraction on CI runners.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
+        run: pnpm exec tauri build --bundles appimage,deb
+
+      - name: Repack AppImage without bundled libwayland
+        # linuxdeploy bundles Ubuntu's libwayland-*; on hosts with a newer Mesa
+        # they make WebKit abort ("Could not create default EGL display:
+        # EGL_BAD_PARAMETER"). The host's libwayland (a GTK3 dependency) is used.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          ARCH: x86_64
+        run: |
+          B=panel-ui/src-tauri/target/release/bundle
+          [ -d "$B" ] || B=target/release/bundle
+          IMG="$(ls "$B"/appimage/*.AppImage)"
+          curl -fsSL --retry 3 -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          rm -rf squashfs-root
+          "$IMG" --appimage-extract >/dev/null
+          rm -f squashfs-root/usr/lib/libwayland-*.so*
+          if ls squashfs-root/usr/lib | grep -q '^libwayland-'; then exit 1; fi
+          ./appimagetool --no-appstream squashfs-root "$IMG"
+          rm -rf squashfs-root appimagetool
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist-desktop
+          B=panel-ui/src-tauri/target/release/bundle
+          [ -d "$B" ] || B=target/release/bundle
+          cp "$B"/appimage/*.AppImage "$B"/deb/*.deb dist-desktop/
+          cd dist-desktop && sha256sum * > SHA256SUMS-desktop.txt && ls -la
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-linux
+          path: dist-desktop/*
+          retention-days: 14

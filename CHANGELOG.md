@@ -4,7 +4,17 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.16] — 2026-09-29 — PageIndex + Linux desktop app
+
+### Added
+- **PageIndex tree-based document retrieval** (ADR-036, #2735; inspired by Vectify AI's MIT-licensed [PageIndex](https://github.com/VectifyAI/PageIndex), reimplemented in Rust in the new `crates/xavier-pageindex`): documents are indexed as a hierarchical ToC tree and navigated by the calling agent. Six MCP tools and `/v1/pageindex/*` routes: `pageindex_browse_documents`, `pageindex_get_document`, `pageindex_get_document_structure`, `pageindex_get_page_content`, `pageindex_search` (in-document BM25 search with node id, breadcrumb and snippet) and `pageindex_index_document`. Builders for markdown, plain text, legal text and PDF; the PDF cascade is bookmarks, pdfium layout analysis, optional LLM ToC, then titled fixed windows (empty-password PDFs open). Trees build with no LLM. Optional BM25 tree-node arm in gating, off by default (`XAVIER_PAGEINDEX_ARM_ENABLED`); its vector leg is follow-up issue 15. Cargo features `pageindex` (default), `pageindex-pdf`, `pageindex-pdfium`. Evaluated on PageIndex-OSS-Benchmark (62 questions, 34 PDFs): 61/62 tree-only at 11.6 pages/question and 60/62 with in-document search at 1.7 pages/question, versus 0.484 hit@1 for a page-level BM25 baseline; the LLM-free fixture eval is weak, so it complements BM25/vector retrieval. Guide: `docs/features/pageindex.md`; reproduce with `scripts/pageindex-e2e/`.
+- **Linux desktop app (AppImage + .deb)**: the Tauri shell now bundles the `xavier` sidecar (built with `ci-safe` + `pageindex-pdfium`, optional bundled libpdfium) and ships from `.github/workflows/desktop.yml` (also called by `release.yml` on tag). The shell attaches to an already-running Xavier on `127.0.0.1:${XAVIER_PORT:-8006}` and never stops one it did not start; the old "kill existing Xavier" path was removed. See `docs/desktop.md`.
+
+### Changed
+- **`scripts/verify-pipeline.sh`**: crate tests under `crates/<name>/tests/*.rs` run as `--test <name>` with `--all-features`, crates that declare cargo features run their lib tests with all features so gated tests execute, and `--test` filters are matched correctly when the invocation carries a package prefix.
+
 ### Fixed
+- **`shell.nix`**: the `CARGO_TARGET_DIR` default guard escaped `${...}` correctly for Nix (`''${CARGO_TARGET_DIR:-}`), and the shell now provides `pdfium-binaries` and sets `XAVIER_PAGEINDEX_PDFIUM_LIB` for the `pageindex-pdfium` feature.
 - **Dead `/v1/auth/*` user-login API removed** (#2545): `/v1/auth/login`, `/register`, `/refresh`, `/logout`, `/totp/verify` and `/totp/setup` were backed by `security::auth_store::AuthStore`, a user store nothing in the codebase ever wrote a user into — every login against it failed forever, on every fresh install. These paths now answer `308 Permanent Redirect` (login/register/refresh/logout/recover, same or superset request body) or `410 Gone` (totp/verify, totp/setup — no compatible successor) with a JSON body naming the real `/auth/*` route. The dead `AuthStore` login/TOTP/recovery methods were removed; `AuthStore` itself stays (still backs the unrelated `/v1/auth/sessions` root-token session endpoints). `docs/api/openapi.yaml`, `docs/api/README.md` and the Postman collection now document the real `/auth/*` flow (register, login with inline `totp_code`, refresh, logout, 2FA setup/verify, recovery) instead of the dead one.
 
 ## [0.2.15] — 2026-09-24 — license embed fix release
