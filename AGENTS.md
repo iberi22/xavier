@@ -35,6 +35,13 @@ cargo test --workspace                         # full suite
 cargo clippy --all-targets -- -D warnings      # warnings are errors
 ```
 
+### Remote agents (Jules, cloud sandboxes)
+
+Do **not** run the setup commands above in a remote sandbox: a full release build of this
+workspace exceeds typical sandbox limits (Jules fails while "preparing the virtual machine
+environment"). Remote agents only need `rustfmt`; they write code and tests, and CI verifies
+every PR (fmt, clippy `-D warnings`, tests). Use a light setup: `rustup component add rustfmt`.
+
 ## 3. Development by waves
 
 - Work is organized in waves: research → issues → execution → verification.
