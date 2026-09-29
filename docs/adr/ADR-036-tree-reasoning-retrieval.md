@@ -3,7 +3,7 @@
 | Campo | Valor |
 |-------|--------|
 | **ID** | ADR-036 |
-| **Estado** | Propuesto |
+| **Estado** | Aceptado (2026-09-29, wave-pageindex closed) |
 | **Fecha** | 2026-09-28 |
 | **Autores** | Claude Code (F0 design agent), owner review pending |
 | **Relacionados** | `docs/features/specs/FEATURE-pageindex-tree-retrieval.md`, REQ-080..084, `.gitcore/waves/wave-pageindex/`, ADR-019 (plugin-first boundary), ADR-034 (skill controller) |
@@ -56,9 +56,9 @@ Constraints in force:
 ## Simulation (OBLIGATORIO)
 
 - **Estado:** NO EJECUTADA. The `swal-sim` engine (`adr_sim.py`) was not run in the F0
-  design phase; this ADR therefore stays `Propuesto`, not `Aceptado`.
-- **Pendiente:** run `python3 adr_sim.py --model ADR-036 --runs 5000 --seed 42`
-  before acceptance and record winner, composite, and sensitivity here.
+  design phase; this ADR was `Propuesto` at design time and became `Aceptado` when the wave closed (2026-09-29).
+- **Nota de aceptacion:** the simulation was never run; acceptance rests on the measured
+  end-to-end evaluation on real PDFs (see "Verificacion posterior"), not on a simulated score.
 - **Sensitivity:** unknown until run.
 
 ## Supuestos y su anclaje
@@ -136,5 +136,34 @@ Xavier consumes it in two ways:
   with breadcrumb and page range at low read cost. The arm ships OFF by default
   (`XAVIER_PAGEINDEX_ARM_ENABLED`). Still open: fusion with DocBot chunks, a node-summary vector leg, and
   the real-LLM run.
+- E2E on real PDFs (2026-09-29, measured): see below. Key finding: an LLM navigating the LLM-free tree matches
+  PageIndex's published accuracy (61/62), and adding in-document search cut pages read per question from 11.6 to
+  1.7 at 60/62. Lexical-only tree navigation without an LLM is weak (fixture eval), so the value is the
+  agent-facing tools plus the hybrid arm, not a replacement of BM25/vector retrieval.
+
+### End-to-end evaluation (real PDFs)
+
+Measured 2026-09-29 on the public PageIndex-OSS-Benchmark (github.com/VectifyAI/PageIndex-OSS-Benchmark): 62 lookup questions, 34 public PDFs, 1,945 pages. Harness: `scripts/pageindex-e2e/`.
+
+**Setup.** xavier `feat/pageindex` release build, isolated instance, all 34 PDFs indexed over MCP (`/mcp/tools/call` `pageindex_index_document`), LLM-free tree (no summaries). The navigator is Claude Sonnet 5.5 subagents using only the pageindex MCP tools, blind to the answers. Correctness is a normalized string match plus manual review by the orchestrator.
+
+**Ingest.** 34/34 PDFs, 12 via bookmarks, 22 via pdfium layout, about 10 s total.
+
+| Run | Correct | Pages read / question | Calls / question | Evidence page read |
+|-----|---------|-----------------------|------------------|--------------------|
+| BM25 page baseline (no LLM) | hit@1 0.484, hit@3 0.629, hit@5 0.742 | - | - | - |
+| Round 1: tree only | 61/62 | 11.58 | 4.03 | 0.855 |
+| Round 2: tree + `pageindex_search` + PDF quality fixes | 60/62 | 1.71 | 3.02 | 0.742 |
+
+Round 2 tool usage: `pageindex_search` 84, `get_page_content` 96, `get_document_structure` 3, `get_document` 4.
+
+Wrong answers in round 2: q25 answered 7 (Mainland China data centers) vs reference 18 (global); q50 answered 496 (cash-flow statement) vs reference 495 (equity note), same in round 1.
+
+Reference, PageIndex Python as published: gpt-5.6-luna high 60/62, gpt-5.6-terra medium 61/62, gpt-5.6-sol medium 62/62.
+
+**Caveats.** Different navigator model than PageIndex's published runs; single run per round; the judge is the orchestrator (manual review), not an LLM judge.
+
+**Reading.** An LLM navigating the LLM-free tree matches PageIndex's published accuracy (61/62). Adding in-document search cut pages read per question from 11.6 to 1.7 at 60/62. Lexical-only navigation without an LLM is weak (see "Eval results", fixture eval), so the value is the agent-facing tools plus the hybrid arm, not a replacement of BM25/vector retrieval.
+
 - Note: a flaky CI job, "Rust Integration (Observability Contract)" (#2701), is
   pre-existing on main and unrelated to this initiative.

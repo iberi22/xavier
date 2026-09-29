@@ -1,6 +1,17 @@
 # Wave pageindex — tree-reasoning retrieval (ADR-036)
 
-Spec: `docs/features/specs/FEATURE-pageindex-tree-retrieval.md` | REQ-080..084 | Ledger: `feat-pageindex-tree-core`, `feat-pageindex-pdf`, `feat-pageindex-hybrid` (all `planned`).
+Spec: `docs/features/specs/FEATURE-pageindex-tree-retrieval.md` | REQ-080..084 | Ledger: `feat-pageindex-tree-core`, `feat-pageindex-pdf`, `feat-pageindex-hybrid` (all `stable`).
+
+**Status: CLOSED 2026-09-29.** All 14 issues shipped; ADR-036 accepted.
+
+Shipped beyond the plan:
+- Issue 01b: boundary pages may be shared between sibling nodes (`test_tree_validate_allows_shared_boundary_page`).
+- pdfium 6996 binding (`pdfium_6996` feature of pdfium-render, bound at runtime).
+- Shared state between MCP and HTTP (`src/pageindex_glue/state.rs`).
+- `pageindex_search` in-document search tool (MCP and HTTP).
+- PDF quality fixes: glyph-level line rebuild with overprint dedupe, running headers/sentences/page numbers dropped as headings, numbered sections lifted, outline size cap, fixed/split windows titled by first meaningful line.
+- PDFs with an empty user password open instead of failing as encrypted.
+- End-to-end evaluation on real PDFs and its reproducible harness (`scripts/pageindex-e2e/`).
 
 | # | Title | Phase | Depends on | Parallel group |
 |---|-------|-------|-----------|----------------|

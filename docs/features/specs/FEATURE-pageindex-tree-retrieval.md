@@ -301,6 +301,30 @@ Optional modes (never in CI, both `#[ignore]`d):
   `questions.json` and PDFs; its exact schema was not verified, so this loader expects the converted form and the
   PDF documents need the `pageindex-pdf` feature. Unset means skipped; nothing is downloaded.
 
+## End-to-end evaluation (real PDFs)
+
+Measured 2026-09-29 on the public PageIndex-OSS-Benchmark (github.com/VectifyAI/PageIndex-OSS-Benchmark): 62 lookup questions, 34 public PDFs, 1,945 pages. Harness: `scripts/pageindex-e2e/`.
+
+**Setup.** xavier `feat/pageindex` release build, isolated instance, all 34 PDFs indexed over MCP (`/mcp/tools/call` `pageindex_index_document`), LLM-free tree (no summaries). The navigator is Claude Sonnet 5.5 subagents using only the pageindex MCP tools, blind to the answers. Correctness is a normalized string match plus manual review by the orchestrator.
+
+**Ingest.** 34/34 PDFs, 12 via bookmarks, 22 via pdfium layout, about 10 s total.
+
+| Run | Correct | Pages read / question | Calls / question | Evidence page read |
+|-----|---------|-----------------------|------------------|--------------------|
+| BM25 page baseline (no LLM) | hit@1 0.484, hit@3 0.629, hit@5 0.742 | - | - | - |
+| Round 1: tree only | 61/62 | 11.58 | 4.03 | 0.855 |
+| Round 2: tree + `pageindex_search` + PDF quality fixes | 60/62 | 1.71 | 3.02 | 0.742 |
+
+Round 2 tool usage: `pageindex_search` 84, `get_page_content` 96, `get_document_structure` 3, `get_document` 4.
+
+Wrong answers in round 2: q25 answered 7 (Mainland China data centers) vs reference 18 (global); q50 answered 496 (cash-flow statement) vs reference 495 (equity note), same in round 1.
+
+Reference, PageIndex Python as published: gpt-5.6-luna high 60/62, gpt-5.6-terra medium 61/62, gpt-5.6-sol medium 62/62.
+
+**Caveats.** Different navigator model than PageIndex's published runs; single run per round; the judge is the orchestrator (manual review), not an LLM judge.
+
+**Reading.** An LLM navigating the LLM-free tree matches PageIndex's published accuracy (61/62). Adding in-document search cut pages read per question from 11.6 to 1.7 at 60/62. Lexical-only navigation without an LLM is weak (see "Eval results", fixture eval), so the value is the agent-facing tools plus the hybrid arm, not a replacement of BM25/vector retrieval.
+
 ## 11. Risks & notes
 
 - pdfium provisioning (NixOS/CI) is the main external risk; contained by feature flags and runtime binding.
