@@ -53,3 +53,39 @@ some are not wired at all (`FallbackSecretStore::chain_from_env` has no producti
   become stable contracts.
 - Measure of progress: number of module cycles (target 0), share of code outside the root crate, and one
   `FallbackChain` per outbound port with a degraded-mode test.
+
+## Addendum A — crate map and build/test-time plan (measured 2026-09-29)
+
+**Why build time is the bottleneck.** The root crate is one compilation unit of 280k lines: touching a leaf
+module nobody imports (`a2a`) costs ~19 s of `cargo check`, and every test run links one huge binary.
+Split crates are compiled in parallel, cached independently, and tested with `cargo test -p <crate>`.
+
+**Extractable now (no cycles, 0–1 internal deps outside utils/settings/error/models/time/domain/ports):**
+`a2a`, `curation`, `plugins`, `self_manage`, `system`, `utils`, `clavis`, `consistency`, `consolidation`,
+`documents`, `gateways`, `maturity`, `polygon_anchor`, `rag`, `tools`, `verification`, `billing`
+(~23k lines). These can be extracted in parallel by independent agents.
+
+**Optional product crates (fan-in 0 — no module imports them), moved behind Cargo features so the default
+build and the default test run skip them:** `a2a`, `plugins`, `gateways`, `maturity`, `billing`, `auth2`,
+`chronicle`, `telegram`, `api`, `ui` (and later `enterprise`, `telecom`, `humanchallenge`). Nothing is
+deleted (Anti-Destruction rule): capabilities stay, they just stop being compiled when not requested.
+
+**Heavy dependencies to gate or replace:**
+- `sqlx` (Postgres) is always compiled but used by 4 modules (`agents`, `memory`, `nodes`, `workspace`) → a `postgres` feature/adapter crate.
+- `image` is always compiled, used only by `documents` → moves with the `documents` crate.
+- `oqs` (liboqs: C + CMake + libclang) → replace with the pure-Rust RustCrypto `ml-kem` / `ml-dsa`, as swal-vault did (VAULT-01/04).
+- Already optional and kept so: `candle-*`, `gllm`, `alloy`, `tauri`, `teloxide`.
+
+**Core cluster, extracted last (after Wave 0 removes the cycles):** `crypto`, `mesh`, `node_identity`,
+`security`, `secrets`, `agents`, `memory` (42k lines, split in slices), `server`, `cli`.
+
+**Wave plan:**
+- Wave 30 (Wave 0): break the 44 module cycles — 15 issues, disjoint file islands, ready.
+- Wave 31 (Wave 1a): foundation crates (`xavier-utils`, `xavier-error`, `xavier-settings`) + the 17 leaf crates above.
+- Wave 32 (Wave 1b): feature-gate the optional product crates; `postgres` feature; `oqs` → RustCrypto.
+- Wave 33 (Wave 2): `xavier-domain` + `xavier-ports`; embedding and LLM adapters with `FallbackChain`.
+- Wave 34+: secrets, mesh, storage, then `memory` slices; CI switches to "test only affected crates".
+
+**Complexity reduction without losing functionality:** fewer cross-module edges (44 cycles → 0), one
+`FallbackChain` replacing ~6 ad hoc fallback implementations, and a smaller default build — with every
+existing capability still available behind its crate/feature.
