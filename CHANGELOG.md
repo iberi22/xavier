@@ -4,6 +4,12 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+## [0.2.17] — 2026-09-29 — desktop attach fix
+
+### Fixed
+- **Desktop app did not attach to a running Xavier** (v0.2.16): the identity check added to `probe_health` required a `service` field that the `xavier http` health snapshot does not return, so the app reported "Port 8006 is in use by another application". It now also accepts Xavier's stable health shape (`database`, `embedding` and `vector_db` objects plus `status`); a unit test uses the real 0.2.16 response.
+- **Windows release build** (#2748): `skill_controller` symlink import gated by `cfg(unix)` / `symlink_dir` on Windows.
+
 ## [0.2.16] — 2026-09-29 — PageIndex + Linux desktop app
 
 ### Added

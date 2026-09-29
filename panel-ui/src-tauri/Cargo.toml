@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.2.16"
+version = "0.2.17"
 description = "Xavier — Cognitive Memory System for AI Agents"
 authors = ["SWAL Systems <dev@swal.dev>"]
 license = "AGPL-3.0"
