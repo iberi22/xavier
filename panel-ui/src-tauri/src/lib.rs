@@ -24,52 +24,6 @@ use tauri_plugin_shell::ShellExt;
 const DEFAULT_PORT: u16 = 8006;
 const HEALTH_POLL_ATTEMPTS: u32 = 60;
 
-// ── Xavier token ───────────────────────────────────────────────
-
-#[tauri::command]
-fn get_xavier_token() -> Result<String, String> {
-    if let Ok(token) = std::env::var("XAVIER_TOKEN") {
-        return Ok(token);
-    }
-
-    // Read from config file. XDG-aware: prefer XDG_CONFIG_HOME then HOME then USERPROFILE (Windows compat).
-    let config_path =
-        if let Some(mut xdg) = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from) {
-            xdg.push("xavier");
-            xdg.push("xavier.config.json");
-            Some(xdg)
-        } else if let Some(mut home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
-            home.push(".config");
-            home.push("xavier");
-            home.push("xavier.config.json");
-            Some(home)
-        } else if let Some(mut userprofile) =
-            std::env::var_os("USERPROFILE").map(std::path::PathBuf::from)
-        {
-            userprofile.push(".xavier");
-            userprofile.push("config");
-            userprofile.push("xavier.config.json");
-            Some(userprofile)
-        } else {
-            None
-        };
-
-    if let Some(p) = config_path {
-        if let Ok(contents) = std::fs::read_to_string(&p) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) {
-                if let Some(token) = json
-                    .get("security")
-                    .and_then(|s| s.get("token_secret"))
-                    .and_then(|t| t.as_str())
-                {
-                    return Ok(token.to_string());
-                }
-            }
-        }
-    }
-    Err("Token not found in environment or config file".to_string())
-}
-
 // ── System scan command ────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -271,8 +225,30 @@ fn configured_port() -> u16 {
         .unwrap_or(DEFAULT_PORT)
 }
 
+/// Validates a raw HTTP response from `GET /health`.
+/// Accepts only HTTP 200 responses with valid JSON where `service == "xavier"`
+/// and `status` is a string (e.g. "healthy", "degraded", "warn").
+fn is_xavier_health_response(text: &str) -> bool {
+    let ok_status = text.lines().next().is_some_and(|l| l.contains(" 200"));
+    if !ok_status {
+        return false;
+    }
+    let body = if let Some((_, b)) = text.split_once("\r\n\r\n") {
+        b
+    } else if let Some((_, b)) = text.split_once("\n\n") {
+        b
+    } else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(body.trim()) else {
+        return false;
+    };
+    json.get("service").and_then(|v| v.as_str()) == Some("xavier")
+        && json.get("status").and_then(|v| v.as_str()).is_some()
+}
+
 /// Minimal dependency-free `GET /health`; true when a Xavier-shaped answer
-/// (HTTP 200 with a JSON `status`) comes back.
+/// (HTTP 200 with service == "xavier" and a JSON `status`) comes back.
 fn probe_health(port: u16) -> bool {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(800)) else {
@@ -287,8 +263,7 @@ fn probe_health(port: u16) -> bool {
     let mut buf = Vec::new();
     let _ = stream.take(16 * 1024).read_to_end(&mut buf);
     let text = String::from_utf8_lossy(&buf);
-    let ok_status = text.lines().next().is_some_and(|l| l.contains(" 200"));
-    ok_status && text.contains("\"status\"")
+    is_xavier_health_response(&text)
 }
 
 fn port_is_bound(port: u16) -> bool {
@@ -497,7 +472,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_xavier_token,
             scan_system,
             save_initial_config,
             register_window,
@@ -567,4 +541,45 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 #[tauri::command]
 fn register_window(_window: tauri::Window) {
     log::info!("Frontend registered for tray events");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_xavier_health_response_accept() {
+        let valid_crlf = "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"healthy\",\"service\":\"xavier\",\"version\":\"0.2.16\"}";
+        assert!(is_xavier_health_response(valid_crlf));
+
+        let valid_lf = "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"status\":\"degraded\",\"service\":\"xavier\"}";
+        assert!(is_xavier_health_response(valid_lf));
+    }
+
+    #[test]
+    fn test_xavier_health_response_reject() {
+        // Non-200 status
+        let status_500 = "HTTP/1.0 500 Internal Server Error\r\n\r\n{\"status\":\"unhealthy\",\"service\":\"xavier\"}";
+        assert!(!is_xavier_health_response(status_500));
+
+        // Missing service identifier
+        let no_service = "HTTP/1.0 200 OK\r\n\r\n{\"status\":\"healthy\"}";
+        assert!(!is_xavier_health_response(no_service));
+
+        // Unrelated service
+        let other_service = "HTTP/1.0 200 OK\r\n\r\n{\"status\":\"healthy\",\"service\":\"nginx\"}";
+        assert!(!is_xavier_health_response(other_service));
+
+        // Missing status field
+        let no_status = "HTTP/1.0 200 OK\r\n\r\n{\"service\":\"xavier\"}";
+        assert!(!is_xavier_health_response(no_status));
+
+        // Non-JSON body
+        let html_body = "HTTP/1.0 200 OK\r\n\r\n<html><body>status: ok</body></html>";
+        assert!(!is_xavier_health_response(html_body));
+
+        // Empty body or malformed headers
+        assert!(!is_xavier_health_response("HTTP/1.0 200 OK"));
+        assert!(!is_xavier_health_response(""));
+    }
 }

@@ -56,7 +56,7 @@ The sidecar never uses `~/.xavier`, so it cannot collide with a production insta
 
 ## Authentication
 
-The panel authenticates with its own `/auth/*` session (register / login, optional 2FA), the same as the browser panel at `http://127.0.0.1:8006/`. The app does not read or inject `XAVIER_TOKEN` into the UI, so no raw API token is ever placed in the webview. Attaching to an existing server therefore shows the panel's login screen; use an account on that server. A fresh sidecar starts empty: register an account on first run.
+The panel authenticates with its own `/auth/*` session (register / login, optional 2FA), the same as the browser panel at `http://127.0.0.1:8006/`. The app does not read or inject `XAVIER_TOKEN` into the UI (the unused `get_xavier_token` Tauri command has been removed), so no raw API token is ever placed in the webview. Attaching to an existing server therefore shows the panel's login screen; use an account on that server. A fresh sidecar starts empty: register an account on first run.
 
 The shell points the panel at the resolved server by setting `localStorage.xavier_remote_url` to `http://127.0.0.1:<port>`; a non-loopback URL you chose in Settings is left alone.
 
