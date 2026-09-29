@@ -243,8 +243,15 @@ fn is_xavier_health_response(text: &str) -> bool {
     let Ok(json) = serde_json::from_str::<serde_json::Value>(body.trim()) else {
         return false;
     };
+    if json.get("status").and_then(|v| v.as_str()).is_none() {
+        return false;
+    }
+    // `xavier http` (CLI server) serves the health snapshot without a `service`
+    // field, so also accept its stable shape: database/embedding/vector_db objects.
     json.get("service").and_then(|v| v.as_str()) == Some("xavier")
-        && json.get("status").and_then(|v| v.as_str()).is_some()
+        || ["database", "embedding", "vector_db"]
+            .iter()
+            .all(|k| json.get(*k).is_some_and(|v| v.is_object()))
 }
 
 /// Minimal dependency-free `GET /health`; true when a Xavier-shaped answer
@@ -554,6 +561,10 @@ mod tests {
 
         let valid_lf = "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"status\":\"degraded\",\"service\":\"xavier\"}";
         assert!(is_xavier_health_response(valid_lf));
+
+        // Shape served by `xavier http` 0.2.16 (no `service` field).
+        let cli_server = "HTTP/1.0 200 OK\r\ncontent-type: application/json\r\n\r\n{\"database\":{\"status\":\"healthy\"},\"degraded_reasons\":[\"host:disk\"],\"embedding\":{\"status\":\"healthy\"},\"status\":\"degraded\",\"vector_db\":{\"status\":\"healthy\"},\"version\":\"0.2.16\"}";
+        assert!(is_xavier_health_response(cli_server));
     }
 
     #[test]
@@ -565,6 +576,11 @@ mod tests {
         // Missing service identifier
         let no_service = "HTTP/1.0 200 OK\r\n\r\n{\"status\":\"healthy\"}";
         assert!(!is_xavier_health_response(no_service));
+
+        // Partial Xavier-like shape (missing vector_db) is not enough.
+        let partial =
+            "HTTP/1.0 200 OK\r\n\r\n{\"status\":\"healthy\",\"database\":{},\"embedding\":{}}";
+        assert!(!is_xavier_health_response(partial));
 
         // Unrelated service
         let other_service = "HTTP/1.0 200 OK\r\n\r\n{\"status\":\"healthy\",\"service\":\"nginx\"}";
