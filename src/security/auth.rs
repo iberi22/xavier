@@ -228,34 +228,128 @@ pub enum TokenConfigStatus {
     Valid,
     Unset,
     SuspectComment,
+    #[serde(alias = "vault")]
+    VaultBacked,
+}
+
+impl TokenConfigStatus {
+    /// Canonical name of the source providing the token configuration.
+    pub fn source(&self) -> &'static str {
+        match self {
+            Self::Valid => "environment",
+            Self::Unset => "none",
+            Self::SuspectComment => "environment_comment",
+            Self::VaultBacked => "vault",
+        }
+    }
+}
+
+impl std::fmt::Display for TokenConfigStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Valid => write!(f, "valid"),
+            Self::Unset => write!(f, "unset"),
+            Self::SuspectComment => write!(f, "suspect_comment"),
+            Self::VaultBacked => write!(f, "vault_backed"),
+        }
+    }
+}
+
+/// Dedicated vault entry name for the Xavier token.
+pub const XAVIER_TOKEN_VAULT_ENTRY: &str = "XAVIER_TOKEN";
+
+/// Service name of the production secrets vault.
+const PRODUCTION_VAULT_SERVICE: &str = "xavier";
+
+#[cfg(test)]
+static TEST_VAULT: std::sync::RwLock<Option<std::sync::Arc<crate::secrets::vault::HardwareVault>>> =
+    std::sync::RwLock::new(None);
+
+#[cfg(test)]
+pub(crate) struct TestVaultGuard;
+
+#[cfg(test)]
+impl Drop for TestVaultGuard {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = TEST_VAULT.write() {
+            *guard = None;
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn with_test_vault(vault: crate::secrets::vault::HardwareVault) -> TestVaultGuard {
+    if let Ok(mut guard) = TEST_VAULT.write() {
+        *guard = Some(std::sync::Arc::new(vault));
+    }
+    TestVaultGuard
+}
+
+/// Resolves the token from the hardware vault if present and non-empty.
+///
+/// Test builds never fall back to the production vault: without an active
+/// `with_test_vault` guard this returns `None` instead of touching the real
+/// OS keyring or `~/.xavier/secrets`.
+#[cfg(test)]
+fn get_vault_token() -> Option<String> {
+    let guard = TEST_VAULT.read().ok()?;
+    let vault = guard.as_ref()?;
+    vault
+        .get_secret(XAVIER_TOKEN_VAULT_ENTRY)
+        .ok()
+        .filter(|t| !t.trim().is_empty())
+}
+
+/// Resolves the token from the hardware vault if present and non-empty.
+#[cfg(not(test))]
+fn get_vault_token() -> Option<String> {
+    crate::secrets::vault::HardwareVault::new(PRODUCTION_VAULT_SERVICE)
+        .get_secret(XAVIER_TOKEN_VAULT_ENTRY)
+        .ok()
+        .filter(|t| !t.trim().is_empty())
 }
 
 /// Inspects current XAVIER_TOKEN configuration
 pub fn inspect_xavier_token() -> (TokenConfigStatus, Option<&'static str>) {
     match std::env::var("XAVIER_TOKEN") {
-        Ok(t) if t.trim().is_empty() => (
-            TokenConfigStatus::Unset,
-            Some("XAVIER_TOKEN is empty. Set a non-empty token in your environment or .env file."),
-        ),
         Ok(t) if t.contains('#') => (
             TokenConfigStatus::SuspectComment,
             Some("XAVIER_TOKEN contains a '#' character. Check for unquoted inline comments in your .env file."),
         ),
-        Ok(_) => (TokenConfigStatus::Valid, None),
-        Err(_) => (
-            TokenConfigStatus::Unset,
-            Some("XAVIER_TOKEN is unset in the environment. Configure XAVIER_TOKEN in .env or systemd EnvironmentFile."),
-        ),
+        Ok(t) if !t.trim().is_empty() => (TokenConfigStatus::Valid, None),
+        Ok(_) => {
+            if get_vault_token().is_some() {
+                (TokenConfigStatus::VaultBacked, None)
+            } else {
+                (
+                    TokenConfigStatus::Unset,
+                    Some("XAVIER_TOKEN is empty. Set a non-empty token in your environment or .env file."),
+                )
+            }
+        }
+        Err(_) => {
+            if get_vault_token().is_some() {
+                (TokenConfigStatus::VaultBacked, None)
+            } else {
+                (
+                    TokenConfigStatus::Unset,
+                    Some("XAVIER_TOKEN is unset in the environment. Configure XAVIER_TOKEN in .env or systemd EnvironmentFile."),
+                )
+            }
+        }
     }
 }
 
-/// Resolves the Xavier token from environment variable
+/// Resolves the Xavier token from environment variable or hardware vault
 pub fn resolve_xavier_token() -> String {
     let (status, warning) = inspect_xavier_token();
     if let Some(msg) = warning {
         tracing::warn!(token_status = ?status, "{msg}");
     }
-    std::env::var("XAVIER_TOKEN").unwrap_or_default()
+    match std::env::var("XAVIER_TOKEN") {
+        Ok(t) if !t.trim().is_empty() => t,
+        _ => get_vault_token().unwrap_or_default(),
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -279,6 +373,10 @@ mod tests {
     #[test]
     fn test_inspect_xavier_token_branches() {
         let _temp_env = crate::settings::tests::TempEnv::new();
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let vault = crate::secrets::vault::HardwareVault::new("xavier")
+            .isolated(temp_dir.path().join("secrets"), [42u8; 32]);
+        let _vault_guard = with_test_vault(vault);
 
         // Valid token
         std::env::set_var("XAVIER_TOKEN", "valid-secret-token");
@@ -306,6 +404,117 @@ mod tests {
 
         // Restore
         std::env::set_var("XAVIER_TOKEN", "test-token");
+    }
+
+    #[test]
+    fn test_resolve_xavier_token_prefers_environment() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_TOKEN", "env-token-priority");
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let vault = crate::secrets::vault::HardwareVault::new("xavier")
+            .isolated(temp_dir.path().join("secrets"), [42u8; 32]);
+        vault
+            .store_secret(XAVIER_TOKEN_VAULT_ENTRY, "vault-token-secondary")
+            .expect("store secret");
+        let _vault_guard = with_test_vault(vault);
+
+        assert_eq!(resolve_xavier_token(), "env-token-priority");
+        let (status, warn) = inspect_xavier_token();
+        assert_eq!(status, TokenConfigStatus::Valid);
+        assert!(warn.is_none());
+    }
+
+    #[test]
+    fn test_resolve_xavier_token_falls_back_to_vault() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        std::env::remove_var("XAVIER_TOKEN");
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let vault = crate::secrets::vault::HardwareVault::new("xavier")
+            .isolated(temp_dir.path().join("secrets"), [42u8; 32]);
+        vault
+            .store_secret(XAVIER_TOKEN_VAULT_ENTRY, "vault-token-fallback")
+            .expect("store secret");
+        let _vault_guard = with_test_vault(vault);
+
+        assert_eq!(resolve_xavier_token(), "vault-token-fallback");
+        let (status, warn) = inspect_xavier_token();
+        assert_eq!(status, TokenConfigStatus::VaultBacked);
+        assert!(warn.is_none());
+
+        // Also test when environment variable is present but empty / blank
+        std::env::set_var("XAVIER_TOKEN", "   ");
+        assert_eq!(resolve_xavier_token(), "vault-token-fallback");
+        let (status_blank, warn_blank) = inspect_xavier_token();
+        assert_eq!(status_blank, TokenConfigStatus::VaultBacked);
+        assert!(warn_blank.is_none());
+    }
+
+    #[test]
+    fn test_resolve_xavier_token_returns_empty_when_absent() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        std::env::remove_var("XAVIER_TOKEN");
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let vault = crate::secrets::vault::HardwareVault::new("xavier")
+            .isolated(temp_dir.path().join("secrets"), [42u8; 32]);
+        let _vault_guard = with_test_vault(vault);
+
+        assert_eq!(resolve_xavier_token(), "");
+        let (status, warn) = inspect_xavier_token();
+        assert_eq!(status, TokenConfigStatus::Unset);
+        assert!(warn.is_some());
+    }
+
+    #[test]
+    fn test_inspect_xavier_token_reports_vault_source() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        std::env::remove_var("XAVIER_TOKEN");
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let vault = crate::secrets::vault::HardwareVault::new("xavier")
+            .isolated(temp_dir.path().join("secrets"), [42u8; 32]);
+        let synthetic_token = "synthetic-canary-secret";
+        vault
+            .store_secret(XAVIER_TOKEN_VAULT_ENTRY, synthetic_token)
+            .expect("store secret");
+        let _vault_guard = with_test_vault(vault);
+
+        let (status, warn) = inspect_xavier_token();
+        assert_eq!(status, TokenConfigStatus::VaultBacked);
+        assert!(warn.is_none());
+        assert_eq!(status.source(), "vault");
+
+        let debug_repr = format!("{status:?}");
+        assert!(
+            debug_repr.to_lowercase().contains("vault"),
+            "status must name the vault source"
+        );
+        assert!(
+            !debug_repr.contains(synthetic_token),
+            "status must never contain the token"
+        );
+
+        let display_repr = format!("{status}");
+        assert!(
+            display_repr.contains("vault"),
+            "display status must name the vault source"
+        );
+        assert!(
+            !display_repr.contains(synthetic_token),
+            "display status must never contain the token"
+        );
+
+        let serialized = serde_json::to_string(&status).expect("serialize status");
+        assert!(
+            serialized.contains("vault"),
+            "serialized status must name the vault source"
+        );
+        assert!(
+            !serialized.contains(synthetic_token),
+            "serialized status must never contain the token"
+        );
     }
 
     #[test]
