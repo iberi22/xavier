@@ -129,6 +129,9 @@ impl<S: Store> PageIndex<S> {
             Source::Markdown(t) | Source::PlainText(t) | Source::Legal(t) => {
                 hex(&Sha256::digest(t.as_bytes()))
             }
+            #[cfg(feature = "pdf-outline")]
+            Source::Pdf(b) => hex(&Sha256::digest(b)),
+            #[cfg(not(feature = "pdf-outline"))]
             Source::Pdf(_) => return Err(PageIndexError::FeatureDisabled("pdf")),
         };
         let doc_id = format!(
@@ -169,6 +172,15 @@ impl<S: Store> PageIndex<S> {
                     b.pages,
                 )
             }
+            #[cfg(feature = "pdf-outline")]
+            Source::Pdf(b) => {
+                // The LLM table of contents is only tried when summaries are requested.
+                let llm = self.summarizer.as_deref().filter(|_| opts.summarize);
+                let b = pdf::cascade::build_pdf_tree(&doc_id, b, llm)?;
+                let label = b.builder();
+                (SourceKind::Pdf, PageUnit::Page, label, b.tree, b.pages)
+            }
+            #[cfg(not(feature = "pdf-outline"))]
             Source::Pdf(_) => return Err(PageIndexError::FeatureDisabled("pdf")),
         };
         tree.doc_id = doc_id.clone();

@@ -73,10 +73,14 @@ fn test_browse_lists_docs_with_status_and_page_count() {
         .ingest(WS, "a.md", Source::Markdown("# A\n\ntext\n"), opts(10))
         .unwrap();
     assert_eq!(again.doc_id, info.doc_id);
+    let bad_pdf = pi.ingest(WS, "x.pdf", Source::Pdf(b"%PDF"), opts(10));
+    #[cfg(not(feature = "pdf-outline"))]
     assert!(matches!(
-        pi.ingest(WS, "x.pdf", Source::Pdf(b"%PDF"), opts(10)),
+        bad_pdf,
         Err(PageIndexError::FeatureDisabled("pdf"))
     ));
+    #[cfg(feature = "pdf-outline")]
+    assert!(matches!(bad_pdf, Err(PageIndexError::Build(_))));
 }
 
 #[test]

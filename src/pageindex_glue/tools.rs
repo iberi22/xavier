@@ -77,7 +77,7 @@ pub fn tool_specs() -> Vec<ToolSpec> {
             input_schema: json!({"type":"object","properties":{
                 "doc_name":{"type":"string"},
                 "content":{"type":"string"},
-                "path":{"type":"string","description":"File under XAVIER_PAGEINDEX_INGEST_ROOTS"},
+                "path":{"type":"string","description":"File under XAVIER_PAGEINDEX_INGEST_ROOTS (required for pdf)"},
                 "format":{"type":"string","enum":["markdown","text","legal","pdf"]},
                 "summarize":{"type":"boolean"},
                 "optimize":{"type":"boolean"}},
@@ -111,7 +111,7 @@ fn from_error(e: &PageIndexError) -> Value {
             "Fix the range; use pageindex_get_document for page_count"
         }
         PageIndexError::FeatureDisabled(_) => {
-            "This build lacks that format; use markdown, text or legal"
+            "This build lacks that format (PDF needs the pageindex-pdf feature); use markdown, text or legal"
         }
         PageIndexError::PdfiumUnavailable(_) => {
             "Set XAVIER_PAGEINDEX_PDFIUM_LIB to a pdfium library"
@@ -261,6 +261,12 @@ fn index_document(state: &PageIndexState, args: &Value, ctx: &ToolContext) -> Re
         .or(ext_format)
         .unwrap_or("text")
         .to_ascii_lowercase();
+    if format == "pdf" && path.is_none() {
+        return Err(fail(
+            "PDF ingest needs 'path' (binary files cannot travel as inline content)",
+            "Pass 'path' to a .pdf under XAVIER_PAGEINDEX_INGEST_ROOTS",
+        ));
+    }
     let text = |b: &[u8]| {
         std::str::from_utf8(b).map(str::to_string).map_err(|_| {
             fail(
@@ -564,5 +570,42 @@ mod tests {
         .await;
         assert_eq!(v["ok"], false);
         assert!(v["error"].as_str().unwrap().contains("disabled"), "{v}");
+    }
+
+    #[tokio::test]
+    async fn test_pdf_ingest_requires_path_not_inline_content() {
+        let st = state_with(vec![]);
+        let v = call(
+            &st,
+            TOOL_INDEX,
+            &json!({"doc_name": "p", "content": "%PDF-1.4", "format": "pdf"}),
+            &rw(),
+        )
+        .await;
+        assert_eq!(v["ok"], false, "{v}");
+        assert!(v["error"].as_str().unwrap().contains("'path'"), "{v}");
+    }
+
+    #[tokio::test]
+    async fn test_pdf_path_ingest_envelope_matches_build_features() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("a.pdf"), b"%PDF-1.4 not really").unwrap();
+        let st = state_with(vec![root.path().to_path_buf()]);
+        let v = call(
+            &st,
+            TOOL_INDEX,
+            &json!({"doc_name": "a", "path": root.path().join("a.pdf")}),
+            &rw(),
+        )
+        .await;
+        assert_eq!(v["ok"], false, "{v}");
+        let err = v["error"].as_str().unwrap();
+        if cfg!(feature = "pageindex-pdf") {
+            // Extension picks format=pdf; the broken file is a build error.
+            assert!(err.starts_with("build error"), "{v}");
+        } else {
+            assert!(err.contains("feature disabled: pdf"), "{v}");
+        }
+        assert!(v["hint"].is_string());
     }
 }
