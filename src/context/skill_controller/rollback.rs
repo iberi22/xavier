@@ -246,13 +246,13 @@ mod tests {
     const MANIFEST_1: &str = concat!(
         "version = 1\n[sources]\ncanonical = \"$STORE\"\n",
         "[[targets]]\nid = \"t1\"\ntools = [\"codex\"]\nroot = \"$ROOT\"\nmode = \"symlink\"\n",
-        "[[placements]]\nsource = \"canonical\"\npath = \"pkg_a\"\nname = \"keep\"\ntargets = [\"t1\"]\n",
+        "[[placements]]\nsource = \"canonical\"\npath = \"pkg_a/keep\"\nname = \"keep\"\ntargets = [\"t1\"]\n",
     );
     const MANIFEST_2: &str = concat!(
         "version = 1\n[sources]\ncanonical = \"$STORE\"\n",
         "[[targets]]\nid = \"t1\"\ntools = [\"codex\"]\nroot = \"$ROOT\"\nmode = \"symlink\"\n",
-        "[[placements]]\nsource = \"canonical\"\npath = \"pkg_a2\"\nname = \"keep\"\ntargets = [\"t1\"]\n",
-        "[[placements]]\nsource = \"canonical\"\npath = \"pkg_b\"\nname = \"newone\"\ntargets = [\"t1\"]\n",
+        "[[placements]]\nsource = \"canonical\"\npath = \"pkg_a2/keep\"\nname = \"keep\"\ntargets = [\"t1\"]\n",
+        "[[placements]]\nsource = \"canonical\"\npath = \"pkg_b/newone\"\nname = \"newone\"\ntargets = [\"t1\"]\n",
     );
 
     fn member(dir: &Path, relative: &str, body: &str) {
@@ -281,17 +281,17 @@ mod tests {
         fs::create_dir_all(&target).expect("mkdir target");
         member(
             &source,
-            "pkg_a/SKILL.md",
+            "pkg_a/keep/SKILL.md",
             "---\nname: keep\n---\n\nBody A.\n",
         );
         member(
             &source,
-            "pkg_a2/SKILL.md",
+            "pkg_a2/keep/SKILL.md",
             "---\nname: keep\n---\n\nBody A2.\n",
         );
         member(
             &source,
-            "pkg_b/SKILL.md",
+            "pkg_b/newone/SKILL.md",
             "---\nname: newone\n---\n\nBody B.\n",
         );
         let roots = ResolvedRoots {
