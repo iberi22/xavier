@@ -9,6 +9,7 @@
 //! wires [`HardwareVault::new`], tests wire a tempdir-scoped vault, so a test
 //! never reaches the real keyring and concurrent tests never share a vault.
 
+use std::io::Read;
 use std::sync::{Arc, OnceLock};
 
 use serde_json::{json, Value};
@@ -215,6 +216,12 @@ const _: () = assert!(MAX_SECRET_EXEC_OUTPUT_BYTES == 65536);
 /// Truncation marker appended when child output exceeds [`MAX_SECRET_EXEC_OUTPUT_BYTES`].
 pub const TRUNCATION_MARKER: &str = "\n[TRUNCATED]";
 
+/// Hard cap on bytes loaded into memory from the child's stdout file,
+/// independent of how much the child actually wrote. Twice the returned-output
+/// cap leaves room for a secret occurrence straddling the truncation boundary
+/// in [`redact_and_truncate`] while still bounding memory for a runaway child.
+const MAX_STDOUT_READ_BYTES: usize = MAX_SECRET_EXEC_OUTPUT_BYTES * 2;
+
 /// Temporary stdout capture file with restrictive `0600` permissions, removed on drop.
 pub(crate) struct TempStdoutGuard {
     path: std::path::PathBuf,
@@ -251,9 +258,16 @@ impl TempStdoutGuard {
         &self.path
     }
 
-    /// Read the captured output and delete the file immediately.
+    /// Read the captured output (capped at [`MAX_STDOUT_READ_BYTES`]) and
+    /// delete the file immediately.
     pub(crate) fn read_and_delete(&mut self) -> String {
-        let content = std::fs::read(&self.path)
+        let content = std::fs::File::open(&self.path)
+            .and_then(|file| {
+                let mut buf = Vec::new();
+                file.take(MAX_STDOUT_READ_BYTES as u64)
+                    .read_to_end(&mut buf)?;
+                Ok(buf)
+            })
             .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
             .unwrap_or_default();
         let _ = std::fs::remove_file(&self.path);
@@ -330,6 +344,16 @@ pub async fn handle_secrets_tool(
             let ttl_seconds = optional_u64(&arguments, "ttl_seconds", 3600);
             let agent_id = optional_str(&arguments, "agent_id", "mcp_secret_exec");
 
+            // Resolved before the child runs, not after: `run_with_secret`
+            // deliberately never returns the value it injected, and reading it
+            // back from the vault only after the child exits would redact
+            // against whatever value is current then. If the secret rotates
+            // during the run (TTL defaults to an hour) that mismatches what the
+            // child actually saw, letting the real value slip through
+            // unredacted. Resolving up front narrows that window to the gap
+            // between this read and `run_with_secret`'s own internal read.
+            let secret_val = ctx.vault.resolve_secret(secret_name).ok();
+
             let mut stdout_guard = TempStdoutGuard::new()?;
             let spec =
                 SecretExecSpec::new(secret_name, env_var, command, args, ttl_seconds, agent_id)
@@ -355,7 +379,6 @@ pub async fn handle_secrets_tool(
             };
 
             let raw_output = stdout_guard.read_and_delete();
-            let secret_val = ctx.vault.resolve_secret(secret_name).ok();
             let (stdout_text, truncated) = redact_and_truncate(raw_output, secret_val.as_deref());
 
             let payload = json!({
@@ -601,7 +624,7 @@ pub mod tests {
     }
 
     #[tokio::test]
-    async fn test_secret_exec_temp_file_removed_on_error() {
+    async fn test_secret_exec_temp_file_removed_on_nonzero_exit_status() {
         let f = Fixture::new();
         let args = json!({
             "secret_name": f.secret_name,
@@ -630,7 +653,60 @@ pub mod tests {
         let temp_path = std::path::Path::new(first_line);
         assert!(
             !temp_path.exists(),
-            "temporary output file must be removed after error exit"
+            "temporary output file must be removed after a nonzero exit status"
+        );
+    }
+
+    /// Number of leftover `xavier_exec_stdout_*` files sitting in the system
+    /// temp dir, used to prove cleanup on a path that never spawns a child (so
+    /// there is no child-printed path to assert against directly).
+    fn count_temp_stdout_files() -> usize {
+        std::fs::read_dir(std::env::temp_dir())
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok())
+                    .filter(|entry| {
+                        entry
+                            .file_name()
+                            .to_str()
+                            .map(|name| name.starts_with("xavier_exec_stdout_"))
+                            .unwrap_or(false)
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    /// Exercises the genuine `Err(err) => { drop(stdout_guard); ... }` branch of
+    /// `handle_secrets_tool`: a secret name absent from the vault fails inside
+    /// `run_with_secret` before any child ever spawns, so this is not the
+    /// success-with-nonzero-exit path covered above.
+    #[tokio::test]
+    async fn test_secret_exec_temp_file_removed_on_error() {
+        let f = Fixture::new();
+        let before = count_temp_stdout_files();
+        let args = json!({
+            "secret_name": "MCP_SECRET_ABSENT_FROM_VAULT_FOR_ERROR_TEST",
+            "command": "true",
+            "args": []
+        });
+
+        let res = handle_secrets_tool(&f.ctx, "secret_exec", args)
+            .await
+            .expect("exec returns a response even when the vault lookup fails");
+        f.assert_canary_absent(&res);
+
+        let structured = &res["structuredContent"];
+        assert!(
+            structured["error"].as_str().is_some(),
+            "expected the vault-lookup failure surfaced as an error"
+        );
+        assert_eq!(structured["revoked"], true);
+
+        assert_eq!(
+            count_temp_stdout_files(),
+            before,
+            "temporary stdout file must be removed on the genuine Err(...) exit path"
         );
     }
 
