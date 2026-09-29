@@ -36,10 +36,23 @@ def bm25(q, pages, k1=1.5, b=0.75):
                 s += idf * tf[w] * (k1 + 1) / (tf[w] + k1 * (1 - b + b * len(d) / avg))
         sc[p] = s
     return [int(p) for p, _ in sorted(sc.items(), key=lambda x: -x[1])]
-info = {d["doc_id"]: d["pages"] for d in json.load(open(sys.argv[2]))}
+def page_counts(rows):
+    """Map ingested doc name -> page count from ingest.py rows {doc, doc_info}."""
+    out = {}
+    for r in rows:
+        sc = (r.get("doc_info") or {}).get("structuredContent") or {}
+        if sc.get("ok") and "page_count" in sc: out[r["doc"]] = sc["page_count"]
+    return out
+def resolve(doc_id, info):
+    """Benchmark doc_id may omit the .pdf suffix that ingest.py used as the doc name."""
+    for name in (doc_id, doc_id + ".pdf"):
+        if name in info: return name
+    raise SystemExit(f"doc {doc_id!r} not found in {sys.argv[2]} (ingest it first)")
+info = page_counts(json.load(open(sys.argv[2])))
 res = []
 for q in qs:
-    pages = pages_of(q["doc_id"], info[q["doc_id"]])
+    name = resolve(q["doc_id"], info)
+    pages = pages_of(name, info[name])
     rank = bm25(q["question"], pages)
     gold = set(json.loads(q["evidence_pages"]))
     res.append({"q": q["question"], "gold": sorted(gold), "top5": rank[:5],

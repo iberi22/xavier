@@ -34,7 +34,7 @@ export BENCH_DOCS=$HOME/pageindex-bench/documents PDFIUM_LIB_DIR=/path/to/pdfium
 
 ```bash
 ./ingest.py "$BENCH_DOCS"                                   # writes ingest_results.json
-./bm25_baseline.py "$BENCH_QUESTIONS" ingest_results.json   # page-level BM25 hit@1/3/5 (no LLM)
+./bm25_baseline.py "$BENCH_QUESTIONS" ingest_results.json   # page-level BM25 hit@1/3/5 (no LLM); benchmark doc_id may omit the .pdf suffix ingest.py used
 ```
 
 Navigation: give each agent `nav_protocol.md` plus a batch of questions (without the answer
