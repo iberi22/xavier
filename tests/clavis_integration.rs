@@ -266,18 +266,24 @@ async fn test_clavis_proxy_integration() -> Result<()> {
 
 #[tokio::test]
 async fn test_mcp_tool_secret_resolution_lease_revocation() -> Result<()> {
-    use xavier::secrets::audit::QmdAuditLogger;
-    use xavier::server::mcp::tools_core::resolve_tool_secret;
+    use xavier::secrets::local_vault::LocalSecretsVault;
+    use xavier::server::mcp::tools_secrets::{resolve_tool_secret, shared_secret_engine};
 
-    // Set environment variable for test secret resolution
-    std::env::set_var("GITHUB_TOKEN", "ghp_test_mcp_tool_secret_token_456");
+    // Seed the secret into a tempdir-scoped store instead of std::env: no
+    // process-wide env mutation, and the value never touches the real
+    // keyring or `~/.xavier`.
+    let temp_dir = tempfile::tempdir()?;
+    let vault = LocalSecretsVault::new(temp_dir.path(), [7u8; 32]);
+    let secret_value = "ghp_test_mcp_tool_secret_token_456";
+    vault.set("GITHUB_TOKEN", secret_value)?;
 
-    let agent_id = "mcp_ticket_create";
+    let agent_id = "mcp_ticket_create_lease_revocation_test";
 
-    // Call resolve_tool_secret helper which borrows the secret via KeyLendingEngine::lend()
-    let result = resolve_tool_secret("GITHUB_TOKEN", agent_id, |secret_opt| async move {
+    // Call resolve_tool_secret, which borrows the secret from the shared
+    // engine via KeyLendingEngine::lend().
+    let result = resolve_tool_secret(&vault, "GITHUB_TOKEN", agent_id, |secret_opt| async move {
         let val = secret_opt.expect("Secret value should be provided via lease");
-        assert_eq!(val, "ghp_test_mcp_tool_secret_token_456");
+        assert_eq!(val, secret_value);
         Ok::<_, anyhow::Error>("tool_execution_success".to_string())
     })
     .await;
@@ -285,12 +291,12 @@ async fn test_mcp_tool_secret_resolution_lease_revocation() -> Result<()> {
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), "tool_execution_success");
 
-    // Verify lease revocation using KeyLendingEngine active lease checks
-    let logger = Box::new(QmdAuditLogger::new());
-    let engine = KeyLendingEngine::new(logger, None);
+    // Verify revocation against the shared engine (the one the tool actually
+    // leases from), not a throwaway engine that never saw the lease.
+    let engine = shared_secret_engine();
     let active_leases = engine.list_leases().await;
     assert!(
-        active_leases.is_empty(),
+        !active_leases.iter().any(|l| l.agent_id == agent_id),
         "Lease must be revoked immediately after MCP tool execution complete"
     );
 
