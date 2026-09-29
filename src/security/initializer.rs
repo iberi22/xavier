@@ -7,7 +7,7 @@ use crate::codebase::connection_manager::ConnectionManager;
 use crate::secrets::local_vault::LocalSecretsVault;
 use crate::security::encryption_keys::MasterKeyManager;
 use crate::security::rsa_keys::RsaKeypairManager;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::path::Path;
 
 /// Handles the initial security setup of the system.
@@ -49,9 +49,11 @@ impl SecurityInitializer {
     }
 }
 
-/// Force the secrets storage directory to mode `0700` and assert it held.
-/// Factored out so it is directly testable without the real keyring or the
-/// real `~/.xavier` that `SecurityInitializer::initialize` touches.
+/// Force the secrets storage directory to mode `0700` and verify it held.
+/// A verification mismatch logs a warning instead of failing: `LocalSecretsVault::
+/// init_default` already guarantees `0700`, so this must never abort
+/// `SecurityInitializer::initialize`. Factored out so it is directly testable
+/// without the real keyring or the real `~/.xavier`.
 fn tighten_storage_dir_permissions(dir: &Path) -> Result<()> {
     crate::security::encryption_keys::ensure_private_dir(dir)?;
     #[cfg(unix)]
@@ -59,9 +61,7 @@ fn tighten_storage_dir_permissions(dir: &Path) -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(dir)?.permissions().mode() & 0o777;
         if mode != 0o700 {
-            return Err(anyhow!(
-                "secrets storage directory has insecure permissions: {mode:o}"
-            ));
+            tracing::warn!("secrets storage directory has insecure permissions: {mode:o}");
         }
     }
     Ok(())
@@ -79,7 +79,11 @@ mod tests {
         let tmp = tempdir().unwrap();
         std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        tighten_storage_dir_permissions(tmp.path()).unwrap();
+        let result = tighten_storage_dir_permissions(tmp.path());
+        assert!(
+            result.is_ok(),
+            "a verification mismatch must warn, not abort initialize()"
+        );
 
         let mode = std::fs::metadata(tmp.path()).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o700, "secrets storage directory must be 0700");

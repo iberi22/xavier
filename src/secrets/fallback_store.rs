@@ -106,12 +106,6 @@ impl SecretStore for FallbackSecretStore {
 mod tests {
     use super::*;
     use crate::secrets::local::LocalSecretStore;
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     #[tokio::test]
     async fn test_fallback_get_set() {
@@ -137,16 +131,10 @@ mod tests {
 
     #[test]
     fn test_chain_from_env_default_excludes_local() {
-        let _guard = env_lock().lock().expect("test assertion");
-        let prev = std::env::var("XAVIER_SECRET_FALLBACK").ok();
+        let _temp_env = crate::settings::tests::TempEnv::new();
         std::env::remove_var("XAVIER_SECRET_FALLBACK");
 
         let chain = FallbackSecretStore::chain_from_env();
-
-        match prev {
-            Some(v) => std::env::set_var("XAVIER_SECRET_FALLBACK", v),
-            None => std::env::remove_var("XAVIER_SECRET_FALLBACK"),
-        }
 
         assert_eq!(chain, vec!["vault", "openbao"]);
         assert!(!chain.iter().any(|s| s == "local"));
