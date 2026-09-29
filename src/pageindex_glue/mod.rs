@@ -4,6 +4,7 @@
 
 pub mod settings;
 pub mod state;
+pub mod summarizer;
 pub mod tools;
 
 pub use settings::PageIndexSettings;

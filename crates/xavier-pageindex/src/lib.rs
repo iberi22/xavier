@@ -19,6 +19,8 @@ pub use query::{
     StructureNode, StructureOpts, StructureView,
 };
 
+use std::sync::Arc;
+
 use sha2::{Digest, Sha256};
 
 use crate::builders::plain::{self, DEFAULT_LINES_PER_PAGE};
@@ -28,6 +30,9 @@ use crate::query::{
     STRUCTURE_FIRST_PAGE_THRESHOLD,
 };
 use crate::store::Store;
+use crate::summarize::{summarize_tree, Summarizer, SummaryCache};
+
+pub use crate::optimize::OptimizeOpts;
 
 /// Raw document handed to [`PageIndex::ingest`].
 pub enum Source<'a> {
@@ -39,9 +44,9 @@ pub enum Source<'a> {
 
 #[derive(Debug, Clone)]
 pub struct IngestOptions {
-    /// Reserved for the summarizer (not wired yet).
+    /// Summarize nodes; a no-op unless a summarizer is set on the facade.
     pub summarize: bool,
-    /// Reserved for the tree optimizer (not wired yet).
+    /// Merge tiny and split huge nodes (deterministic, no LLM).
     pub optimize: bool,
     /// Virtual page size for text sources; 0 means the default.
     pub lines_per_page: u32,
@@ -61,7 +66,13 @@ impl Default for IngestOptions {
 pub struct PageIndex<S> {
     store: S,
     cfg: PageIndexConfig,
+    optimize: OptimizeOpts,
+    summarizer: Option<Arc<dyn Summarizer>>,
+    summaries: SummaryCache,
 }
+
+/// Threads used for summarizing nodes of one tree level.
+const SUMMARY_CONCURRENCY: usize = 4;
 
 impl<S> PageIndex<S> {
     pub fn new(store: S) -> Self {
@@ -69,7 +80,25 @@ impl<S> PageIndex<S> {
     }
 
     pub fn with_config(store: S, cfg: PageIndexConfig) -> Self {
-        Self { store, cfg }
+        Self {
+            store,
+            cfg,
+            optimize: OptimizeOpts::default(),
+            summarizer: None,
+            summaries: SummaryCache::new(),
+        }
+    }
+
+    /// Thresholds used when `IngestOptions::optimize` is set.
+    pub fn with_optimize_opts(mut self, opts: OptimizeOpts) -> Self {
+        self.optimize = opts;
+        self
+    }
+
+    /// Summarizer used when `IngestOptions::summarize` is set.
+    pub fn with_summarizer(mut self, summarizer: Arc<dyn Summarizer>) -> Self {
+        self.summarizer = Some(summarizer);
+        self
     }
 }
 
@@ -147,7 +176,20 @@ impl<S: Store> PageIndex<S> {
             p.doc_id = doc_id.clone();
         }
         let page_count = pages.len() as u32;
+        if opts.optimize {
+            optimize::optimize(&mut tree, &pages, self.optimize);
+        }
         tree.validate(page_count)?;
+        if let (true, Some(sm)) = (opts.summarize, &self.summarizer) {
+            // Failed nodes keep `summary = None`; the tree stays valid.
+            summarize_tree(
+                &mut tree,
+                &pages,
+                sm.as_ref(),
+                &self.summaries,
+                SUMMARY_CONCURRENCY,
+            );
+        }
         let doc = Document {
             doc_id,
             workspace: ws.to_string(),
