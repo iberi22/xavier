@@ -97,6 +97,11 @@ async fn start_server() -> (u16, ServerInstance) {
         .arg("--mcp-port")
         .arg("0")
         .current_dir(&cwd)
+        // Isolates every `dirs::home_dir()` consumer (conversation DBs, the
+        // `$HOME/.xavier/logs` fallback in main.rs), not just the state dir:
+        // two servers sharing the real $HOME raced on it (#2736).
+        .env("HOME", data_dir.path())
+        .env("USERPROFILE", data_dir.path())
         .env("XAVIER_HOME", data_dir.path())
         .env("XAVIER_STATE_DIR", data_dir.path())
         .env("XAVIER_DATA_DIR", &data_subdir)
