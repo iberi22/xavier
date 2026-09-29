@@ -97,6 +97,11 @@ impl<S> PageIndex<S> {
         self
     }
 
+    /// Whether a summarizer is attached.
+    pub fn has_summarizer(&self) -> bool {
+        self.summarizer.is_some()
+    }
+
     /// Summarizer used when `IngestOptions::summarize` is set.
     pub fn with_summarizer(mut self, summarizer: Arc<dyn Summarizer>) -> Self {
         self.summarizer = Some(summarizer);

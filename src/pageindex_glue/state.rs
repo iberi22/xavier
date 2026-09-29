@@ -6,6 +6,8 @@ use xavier_pageindex::store::SqliteStore;
 use xavier_pageindex::{PageIndex, PageIndexConfig, PageIndexError};
 
 use super::settings::PageIndexSettings;
+use super::summarizer::LlmSummarizer;
+use crate::rag::llm_adapter::LlmConfig;
 
 pub type SharedIndex = Arc<PageIndex<SqliteStore>>;
 
@@ -41,6 +43,15 @@ impl PageIndexState {
 
     /// Blocking: may open the database. Call from `spawn_blocking`.
     pub fn index(&self) -> Result<SharedIndex, PageIndexError> {
+        self.index_with_llm(LlmConfig::from_env)
+    }
+
+    /// Like [`Self::index`], with the LLM config supplied lazily (only read
+    /// when the index is first built).
+    fn index_with_llm(
+        &self,
+        llm: impl FnOnce() -> LlmConfig,
+    ) -> Result<SharedIndex, PageIndexError> {
         let mut guard = self
             .index
             .lock()
@@ -58,7 +69,18 @@ impl PageIndexState {
                 .map_err(|e| PageIndexError::Store(format!("create {}: {e}", parent.display())))?;
         }
         let store = SqliteStore::open(&self.settings.db_path)?;
-        let idx = Arc::new(PageIndex::with_config(store, config_for(&self.settings)));
+        let mut idx = PageIndex::with_config(store, config_for(&self.settings));
+        // The setting is only the per-request default, so a request may ask for
+        // summaries even when it is off. Without a configured LLM there is no
+        // summarizer and `summarize` stays a no-op.
+        let enabled = PageIndexSettings {
+            summarize: true,
+            ..self.settings.clone()
+        };
+        if let Some(sm) = LlmSummarizer::from_settings(&enabled, llm()) {
+            idx = idx.with_summarizer(Arc::new(sm));
+        }
+        let idx = Arc::new(idx);
         *guard = Some(Arc::clone(&idx));
         Ok(idx)
     }
@@ -78,4 +100,58 @@ pub fn shared_state() -> Arc<PageIndexState> {
 /// was already installed.
 pub fn install_shared_state(state: PageIndexState) -> bool {
     SHARED_STATE.set(Arc::new(state)).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rag::llm_adapter::LlmBackend;
+
+    fn state(summarize: bool, dir: &tempfile::TempDir) -> PageIndexState {
+        PageIndexState::new(PageIndexSettings {
+            db_path: dir.path().join("pi.sqlite3"),
+            summarize,
+            ..Default::default()
+        })
+    }
+
+    fn cfg(backend: LlmBackend) -> LlmConfig {
+        LlmConfig {
+            backend,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_state_index_attaches_summarizer_when_llm_configured() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let dir = tempfile::tempdir().unwrap();
+        let idx = state(true, &dir)
+            .index_with_llm(|| cfg(LlmBackend::Ollama))
+            .unwrap();
+        assert!(idx.has_summarizer());
+    }
+
+    #[test]
+    fn test_state_index_has_no_summarizer_without_llm() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let dir = tempfile::tempdir().unwrap();
+        let idx = state(true, &dir)
+            .index_with_llm(|| cfg(LlmBackend::RetrievalOnly))
+            .unwrap();
+        assert!(!idx.has_summarizer());
+    }
+
+    #[test]
+    fn test_state_index_attaches_summarizer_even_when_default_is_off() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let dir = tempfile::tempdir().unwrap();
+        let idx = state(false, &dir)
+            .index_with_llm(|| cfg(LlmBackend::Ollama))
+            .unwrap();
+        assert!(idx.has_summarizer());
+    }
 }
