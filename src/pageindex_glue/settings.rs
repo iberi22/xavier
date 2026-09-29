@@ -7,9 +7,10 @@ const DEFAULT_LINES_PER_PAGE: u32 = 60;
 const DEFAULT_SUMMARY_MAX_WORDS: usize = 60;
 const DEFAULT_MIN_NODE_TOKENS: u32 = 200;
 const DEFAULT_MAX_NODE_TOKENS: u32 = 6000;
+const DEFAULT_ARM_WEIGHT: f32 = 1.0;
 const DB_FILE_NAME: &str = "pageindex.sqlite3";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PageIndexSettings {
     /// SQLite tree store path.
     pub db_path: PathBuf,
@@ -21,6 +22,10 @@ pub struct PageIndexSettings {
     pub summary_max_words: usize,
     pub min_node_tokens: u32,
     pub max_node_tokens: u32,
+    /// Adds the tree-node arm to gating fusion (off by default).
+    pub arm_enabled: bool,
+    /// RRF weight of the arm relative to the memory layers.
+    pub arm_weight: f32,
 }
 
 impl PageIndexSettings {
@@ -56,6 +61,9 @@ impl PageIndexSettings {
         let summarize = text("XAVIER_PAGEINDEX_SUMMARIZE")
             .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
             .unwrap_or(false);
+        let arm_enabled = text("XAVIER_PAGEINDEX_ARM_ENABLED")
+            .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false);
         Self {
             db_path,
             ingest_roots,
@@ -80,6 +88,8 @@ impl PageIndexSettings {
                 text("XAVIER_PAGEINDEX_MAX_NODE_TOKENS"),
                 DEFAULT_MAX_NODE_TOKENS,
             ),
+            arm_enabled,
+            arm_weight: num(text("XAVIER_PAGEINDEX_ARM_WEIGHT"), DEFAULT_ARM_WEIGHT),
         }
     }
 }
@@ -106,6 +116,8 @@ mod tests {
         assert_eq!(s.summary_max_words, 60);
         assert_eq!(s.min_node_tokens, 200);
         assert_eq!(s.max_node_tokens, 6000);
+        assert!(!s.arm_enabled);
+        assert_eq!(s.arm_weight, 1.0);
     }
 
     #[test]
