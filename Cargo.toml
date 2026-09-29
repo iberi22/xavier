@@ -381,11 +381,13 @@ zstd = "0.14.0"
 zip = { version = "8.6.0", features = ["deflate-flate2"] }
 image = "0.25"
 
+# Skill controller: atomic writes via temp file/symlink + rename (D8)
+tempfile = "3.27.0"
+
 [dev-dependencies]
 serial_test = "3.2"
 mockito = "1.6"
 proptest = "1.11.0"
-tempfile = "3.27.0"
 criterion = "0.5"
 axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
