@@ -65,7 +65,7 @@ async fn handle_with_state(
 mod tests {
     use super::*;
     use crate::pageindex_glue::tools::{
-        TOOL_BROWSE, TOOL_GET_DOCUMENT, TOOL_GET_PAGES, TOOL_GET_STRUCTURE, TOOL_INDEX,
+        TOOL_BROWSE, TOOL_GET_DOCUMENT, TOOL_GET_PAGES, TOOL_GET_STRUCTURE, TOOL_INDEX, TOOL_SEARCH,
     };
     use crate::security::auth::Claims;
     use crate::server::mcp::server::{get_xavier_tools, handle_tool_call};
@@ -73,11 +73,12 @@ mod tests {
     use serde_json::json;
     use xavier_pageindex::store::SqliteStore;
 
-    const PI_TOOLS: [&str; 5] = [
+    const PI_TOOLS: [&str; 6] = [
         TOOL_BROWSE,
         TOOL_GET_DOCUMENT,
         TOOL_GET_STRUCTURE,
         TOOL_GET_PAGES,
+        TOOL_SEARCH,
         TOOL_INDEX,
     ];
 
@@ -117,6 +118,41 @@ mod tests {
         assert!(get_pageindex_tools()
             .iter()
             .all(|t| is_pageindex_tool(&t.name)));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_pageindex_search_tool_listed_and_callable() {
+        assert!(get_xavier_tools().iter().any(|t| t.name == TOOL_SEARCH));
+        install_memory_state();
+        let (state, workspace) = test_state().await;
+        let admin = claims(UserRole::Admin);
+        let put = json!({
+            "doc_name": "mcp-search",
+            "content": "# One\nalpha text\n## Two\nzebra stripes\n",
+            "format": "markdown"
+        });
+        handle_tool_call(
+            state.clone(),
+            workspace.clone(),
+            Some(&admin),
+            TOOL_INDEX,
+            put,
+        )
+        .await
+        .expect("ingest dispatch");
+        // Read-only callers may search.
+        let ro = claims(UserRole::Readonly);
+        let res = handle_tool_call(
+            state,
+            workspace,
+            Some(&ro),
+            TOOL_SEARCH,
+            json!({"doc_name": "mcp-search", "query": "zebra"}),
+        )
+        .await
+        .expect("search dispatch");
+        assert_eq!(res["isError"], false, "{res}");
+        assert_eq!(payload(&res)["hits"][0]["page_no"], 1, "{res}");
     }
 
     #[test]

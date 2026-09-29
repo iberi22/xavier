@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::PageIndexError;
 use crate::model::TreeNode;
+use crate::search::bm25_term_score;
 pub use metrics::{first_hit_rank, page_range_overlap, HitAtK, Mrr, Span};
 
 /// One question with its gold page range.
@@ -110,9 +111,6 @@ pub fn tokenize(s: &str) -> Vec<String> {
         .collect()
 }
 
-const BM25_K1: f64 = 1.2;
-const BM25_B: f64 = 0.75;
-
 /// BM25 scorer whose idf comes from all node texts of the corpus.
 struct Bm25 {
     df: HashMap<String, usize>,
@@ -147,9 +145,7 @@ impl Bm25 {
                 continue;
             }
             let df = *self.df.get(q).unwrap_or(&0) as f64;
-            let idf = (1.0 + (self.n as f64 - df + 0.5) / (df + 0.5)).ln();
-            let norm = 1.0 - BM25_B + BM25_B * doc.len() as f64 / self.avg_len;
-            s += idf * tf * (BM25_K1 + 1.0) / (tf + BM25_K1 * norm);
+            s += bm25_term_score(tf, doc.len() as f64, df, self.n as f64, self.avg_len);
         }
         s
     }

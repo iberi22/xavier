@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use crate::pageindex_glue::tools::{
-    TOOL_BROWSE, TOOL_GET_DOCUMENT, TOOL_GET_PAGES, TOOL_GET_STRUCTURE, TOOL_INDEX,
+    TOOL_BROWSE, TOOL_GET_DOCUMENT, TOOL_GET_PAGES, TOOL_GET_STRUCTURE, TOOL_INDEX, TOOL_SEARCH,
 };
 use crate::pageindex_glue::{call, PageIndexState, ToolContext};
 use crate::security::auth::{Claims, Permission};
@@ -35,6 +35,10 @@ pub fn router(state: Arc<PageIndexState>) -> Router {
         )
         .route("/documents/{name}/structure", get(structure))
         .route("/documents/{name}/pages", get(pages))
+        .route(
+            "/documents/{name}/search",
+            get(search_get).post(search_post),
+        )
         .layer(Extension(state))
 }
 
@@ -49,6 +53,12 @@ struct BrowseParams {
 struct StructureParams {
     max_depth: Option<usize>,
     node_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchParams {
+    query: Option<String>,
+    limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -204,6 +214,45 @@ async fn pages(
     .await
 }
 
+async fn search_get(
+    Extension(state): Extension<Arc<PageIndexState>>,
+    claims: Option<Extension<Claims>>,
+    workspace: Option<Extension<WorkspaceContext>>,
+    Path(name): Path<String>,
+    Query(p): Query<SearchParams>,
+) -> Response {
+    search(&state, &claims, &workspace, name, p).await
+}
+
+/// Body: `{query, limit?}`.
+async fn search_post(
+    Extension(state): Extension<Arc<PageIndexState>>,
+    claims: Option<Extension<Claims>>,
+    workspace: Option<Extension<WorkspaceContext>>,
+    Path(name): Path<String>,
+    Json(p): Json<SearchParams>,
+) -> Response {
+    search(&state, &claims, &workspace, name, p).await
+}
+
+async fn search(
+    state: &Arc<PageIndexState>,
+    claims: &Option<Extension<Claims>>,
+    workspace: &Option<Extension<WorkspaceContext>>,
+    name: String,
+    p: SearchParams,
+) -> Response {
+    let mut args = Map::new();
+    args.insert("doc_name".into(), json!(name));
+    if let Some(q) = p.query {
+        args.insert("query".into(), json!(q));
+    }
+    if let Some(l) = p.limit {
+        args.insert("limit".into(), json!(l));
+    }
+    run(state, TOOL_SEARCH, Value::Object(args), claims, workspace).await
+}
+
 /// Body: `{name, path|content, format?, summarize?, optimize?}`.
 async fn ingest(
     Extension(state): Extension<Arc<PageIndexState>>,
@@ -332,6 +381,44 @@ mod tests {
         assert_eq!(st, StatusCode::OK, "{v}");
         let (st, v) = send(a, "DELETE", "/documents/guide", None).await;
         assert_eq!(st, StatusCode::OK, "{v}");
+    }
+
+    #[tokio::test]
+    async fn test_pageindex_routes_search_get_and_post() {
+        let a_rw = app(Some(UserRole::User));
+        let body = json!({"name": "guide", "content": "# One\nalpha\n## Two\nzebra stripes\n", "format": "markdown"});
+        let (st, v) = send(a_rw.clone(), "POST", "/documents", Some(body)).await;
+        assert_eq!(st, StatusCode::OK, "{v}");
+
+        let (st, v) = send(
+            a_rw.clone(),
+            "GET",
+            "/documents/guide/search?query=zebra&limit=3",
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK, "{v}");
+        assert_eq!(v["hits"][0]["page_no"], 1, "{v}");
+        let (st, v) = send(
+            a_rw.clone(),
+            "POST",
+            "/documents/guide/search",
+            Some(json!({"query": "zebra"})),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK, "{v}");
+        assert!(
+            v["hits"][0]["snippet"].as_str().unwrap().contains("zebra"),
+            "{v}"
+        );
+
+        let (st, v) = send(a_rw.clone(), "GET", "/documents/nope/search?query=x", None).await;
+        assert_eq!(st, StatusCode::NOT_FOUND, "{v}");
+        let (st, v) = send(a_rw, "GET", "/documents/guide/search", None).await;
+        assert_eq!(st, StatusCode::BAD_REQUEST, "{v}");
+        // Unauthenticated callers are rejected.
+        let (st, _) = send(app(None), "GET", "/documents/guide/search?query=x", None).await;
+        assert_eq!(st, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

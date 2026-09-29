@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use xavier_pageindex::eval::tokenize;
+use xavier_pageindex::search::bm25_term_score;
 use xavier_pageindex::store::SqliteStore;
 use xavier_pageindex::{BrowseQuery, PageIndex, PageIndexError, StructureNode, StructureOpts};
 
@@ -29,8 +30,6 @@ const PAGES_PER_FETCH: u32 = 20;
 const BROWSE_PAGE: usize = 50;
 const BIG: usize = 50_000_000;
 const LEAD_CHARS: usize = 300;
-const BM25_K1: f64 = 1.2;
-const BM25_B: f64 = 0.75;
 pub const ARM_SOURCE: &str = "pageindex";
 
 /// One scored tree node with everything needed to expand it.
@@ -121,10 +120,13 @@ impl Corpus {
         for q in query {
             let Some(&tf) = e.tf.get(q) else { continue };
             let df = *self.df.get(q).unwrap_or(&0) as f64;
-            let idf = (1.0 + (self.n as f64 - df + 0.5) / (df + 0.5)).ln();
-            let norm = 1.0 - BM25_B + BM25_B * f64::from(e.len) / self.avg_len;
-            let tf = f64::from(tf);
-            s += idf * tf * (BM25_K1 + 1.0) / (tf + BM25_K1 * norm);
+            s += bm25_term_score(
+                f64::from(tf),
+                f64::from(e.len),
+                df,
+                self.n as f64,
+                self.avg_len,
+            );
         }
         s
     }

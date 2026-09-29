@@ -8,6 +8,7 @@ pub mod optimize;
 #[cfg(any(feature = "pdf-outline", feature = "pdf-layout"))]
 pub mod pdf;
 pub mod query;
+pub mod search;
 pub mod store;
 pub mod summarize;
 
@@ -18,6 +19,7 @@ pub use query::{
     BrowsePage, BrowseQuery, DocumentInfo, DocumentSummary, PageContent, PageIndexConfig, PageText,
     StructureNode, StructureOpts, StructureView,
 };
+pub use search::{SearchHit, SearchResults};
 
 use std::sync::Arc;
 
@@ -419,6 +421,35 @@ impl<S: Store> PageIndex<S> {
             .filter(|p| wanted.binary_search(&p.page_no).is_ok())
             .collect();
         Ok(cap_pages(doc, wanted, fetched, cap))
+    }
+
+    /// BM25 search inside one document: ranked pages with breadcrumb and
+    /// snippet. `limit` 0 means the default; it is clamped to the maximum.
+    pub fn search(
+        &self,
+        ws: &str,
+        name: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchResults, PageIndexError> {
+        let doc = self.resolve_ready(ws, name)?;
+        let tree = self
+            .store
+            .get_tree(ws, &doc.doc_id)?
+            .ok_or_else(|| PageIndexError::NotFound(format!("tree of '{name}' is missing")))?;
+        let pages = self.store.get_pages(ws, &doc.doc_id, 1, doc.page_count)?;
+        let limit = match limit {
+            0 => search::DEFAULT_SEARCH_LIMIT,
+            n => n.min(search::MAX_SEARCH_LIMIT),
+        };
+        search::search_document(
+            &doc,
+            &tree.roots,
+            &pages,
+            query,
+            limit,
+            self.cfg.response_char_cap,
+        )
     }
 
     pub fn delete(&self, ws: &str, name: &str) -> Result<(), PageIndexError> {

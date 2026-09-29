@@ -176,6 +176,7 @@ skill-tool convention; no tool throws.
 | `pageindex_get_document` | `doc_name*` | `{ok, name, status, page_count, page_unit, builder, has_summaries, structure_first: bool}` (`structure_first` true when `page_count > 20`, as PageIndex) |
 | `pageindex_get_document_structure` | `doc_name*`, `max_depth?`, `node_id?` (subtree) | `{ok, name, structure:[{node_id,title,start_page,end_page,summary?,nodes:[...]}], truncated: bool}`; never includes page text; truncated by `XAVIER_PAGEINDEX_MAX_RESPONSE_CHARS` |
 | `pageindex_get_page_content` | `doc_name*`, `pages*` (`"5-7,12"`, max 20 pages/call) | `{ok, name, pages:[{page, text}], truncated}`; out-of-range => error with valid range |
+| `pageindex_search` | `doc_name*`, `query*`, `limit?` (default 10, max 30) | `{ok, doc_name, query, hits:[{page_no, node_id, breadcrumb:[titles], score, snippet}], total_matches, truncated, next_steps}`; BM25 over pages plus node title/summary (heading pages get a boost); snippets are ~220 chars around the first match, never full pages; read-only (no write gating); unknown doc => error with similar names |
 | `pageindex_index_document` (write) | `doc_name*`, exactly one of `path` / `content*`, `format?` (`markdown\|text\|legal\|pdf`, auto by extension), `summarize?` (default false), `optimize?` (default true) | `{ok, name, page_count, node_count, builder, unchanged: bool}`; requires a role that may write memory; `path` must sit under `XAVIER_PAGEINDEX_INGEST_ROOTS` |
 
 Error hints for unknown `doc_name`: up to 3 closest names (difflib-style), as PageIndex.
@@ -190,6 +191,7 @@ Role gating for `pageindex_index_document` is enforced INSIDE the handler (uses 
 | GET | `/v1/pageindex/documents/{name}` | get_document |
 | GET | `/v1/pageindex/documents/{name}/structure?max_depth=&node_id=` | structure |
 | GET | `/v1/pageindex/documents/{name}/pages?pages=5-7,12` | page content |
+| GET / POST | `/v1/pageindex/documents/{name}/search?query=&limit=` (POST body `{query, limit?}`) | in-document search |
 | POST | `/v1/pageindex/documents` | ingest (`{name, path\|content, format?, summarize?, optimize?}`) |
 | DELETE | `/v1/pageindex/documents/{name}` | delete |
 

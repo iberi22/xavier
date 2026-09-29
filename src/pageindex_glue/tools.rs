@@ -18,11 +18,13 @@ pub const TOOL_GET_DOCUMENT: &str = "pageindex_get_document";
 pub const TOOL_GET_STRUCTURE: &str = "pageindex_get_document_structure";
 pub const TOOL_GET_PAGES: &str = "pageindex_get_page_content";
 pub const TOOL_INDEX: &str = "pageindex_index_document";
+pub const TOOL_SEARCH: &str = "pageindex_search";
 
 /// Largest file `path` ingest will read.
 const MAX_INGEST_BYTES: u64 = 64 * 1024 * 1024;
 const BROWSE_DEFAULT_LIMIT: usize = 20;
 const BROWSE_MAX_LIMIT: usize = 100;
+const SEARCH_MAX_LIMIT: usize = 30;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolSpec {
@@ -70,6 +72,15 @@ pub fn tool_specs() -> Vec<ToolSpec> {
                 "doc_name":{"type":"string"},
                 "pages":{"type":"string","description":"e.g. \"5-7,12\""}},
                 "required":["doc_name","pages"]}),
+        },
+        ToolSpec {
+            name: TOOL_SEARCH,
+            description: "BM25 search inside one document: ranked pages with section breadcrumb and a short snippet, no full text.",
+            input_schema: json!({"type":"object","properties":{
+                "doc_name":{"type":"string"},
+                "query":{"type":"string"},
+                "limit":{"type":"integer","minimum":1,"maximum":SEARCH_MAX_LIMIT}},
+                "required":["doc_name","query"]}),
         },
         ToolSpec {
             name: TOOL_INDEX,
@@ -167,7 +178,7 @@ fn dispatch(state: &PageIndexState, name: &str, args: &Value, ctx: &ToolContext)
     let run = || -> Result<Value, Value> {
         match name {
             TOOL_INDEX => index_document(state, args, ctx),
-            TOOL_BROWSE | TOOL_GET_DOCUMENT | TOOL_GET_STRUCTURE | TOOL_GET_PAGES => {
+            TOOL_BROWSE | TOOL_GET_DOCUMENT | TOOL_GET_STRUCTURE | TOOL_GET_PAGES | TOOL_SEARCH => {
                 let idx = state.index().map_err(|e| from_error(&e))?;
                 read_tool(&idx, name, args, ctx)
             }
@@ -219,6 +230,19 @@ fn read_tool(
                 char_budget: None,
             };
             idx.get_structure(ws, doc, opts).map(ok_with).map_err(map)
+        }
+        TOOL_SEARCH => {
+            let doc = need_str(args, "doc_name")?;
+            let query = need_str(args, "query")?;
+            let limit = usize_arg(args, "limit").unwrap_or(0);
+            idx.search(ws, doc, query, limit)
+                .map(ok_with)
+                .map_err(|e| match e {
+                    PageIndexError::InvalidRange(m) => {
+                        fail(m, "Pass words of 2+ letters or digits as 'query'")
+                    }
+                    other => from_error(&other),
+                })
         }
         _ => {
             let doc = need_str(args, "doc_name")?;
@@ -409,6 +433,7 @@ mod tests {
                 TOOL_GET_DOCUMENT,
                 TOOL_GET_STRUCTURE,
                 TOOL_GET_PAGES,
+                TOOL_SEARCH,
                 TOOL_INDEX
             ]
         );
@@ -423,6 +448,7 @@ mod tests {
         assert_eq!(required(TOOL_GET_DOCUMENT), ["doc_name"]);
         assert_eq!(required(TOOL_GET_STRUCTURE), ["doc_name"]);
         assert_eq!(required(TOOL_GET_PAGES), ["doc_name", "pages"]);
+        assert_eq!(required(TOOL_SEARCH), ["doc_name", "query"]);
         assert_eq!(required(TOOL_INDEX), ["doc_name"]);
         assert!(specs.iter().all(|s| s.description.len() <= 200));
     }

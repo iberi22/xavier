@@ -246,3 +246,70 @@ fn test_unknown_doc_returns_similar_names() {
     assert!(pi.delete(WS, "Quarterly Report.md").is_ok());
     assert!(pi.delete(WS, "Quarterly Report.md").is_err());
 }
+
+fn search_doc() -> PageIndex<SqliteStore> {
+    let pi = index();
+    let mut md = String::from("# Manual\n\nIntro filler.\n\n## Battery\n\n");
+    for i in 0..6 {
+        md.push_str(&format!("battery filler line {i} about nothing\n"));
+    }
+    md.push_str("\n## Cleaning\n\n");
+    for i in 0..6 {
+        md.push_str(&format!("wipe the lens filler {i}\n"));
+    }
+    md.push_str("the rare quokka term appears exactly here in the cleaning chapter\n");
+    for i in 0..30 {
+        md.push_str(&format!("tail filler {i} {}\n", "x".repeat(20)));
+    }
+    pi.ingest(WS, "manual.md", Source::Markdown(&md), opts(5))
+        .unwrap();
+    pi
+}
+
+#[test]
+fn test_search_ranks_page_with_terms_first() {
+    let pi = search_doc();
+    let r = pi.search(WS, "manual.md", "quokka term", 5).unwrap();
+    assert!(!r.hits.is_empty());
+    let page = pi
+        .get_pages(WS, "manual.md", &r.hits[0].page_no.to_string(), 0)
+        .unwrap();
+    assert!(page.pages[0].text.contains("quokka"), "{r:?}");
+    assert!(r.hits[0].score >= r.hits.last().unwrap().score);
+    assert!(r.next_steps[0].contains("get_page_content"));
+}
+
+#[test]
+fn test_search_returns_breadcrumb_and_snippet_not_full_text() {
+    let pi = search_doc();
+    let r = pi.search(WS, "manual.md", "quokka", 3).unwrap();
+    let h = &r.hits[0];
+    assert!(h.snippet.contains("quokka"), "{h:?}");
+    let full = pi
+        .get_pages(WS, "manual.md", &h.page_no.to_string(), 0)
+        .unwrap()
+        .pages[0]
+        .text
+        .chars()
+        .count();
+    assert!(h.snippet.chars().count() < full.max(300), "{h:?}");
+    assert!(h.snippet.chars().count() <= 224, "{h:?}");
+    assert_eq!(h.breadcrumb.first().map(String::as_str), Some("Manual"));
+    assert!(h.breadcrumb.iter().any(|t| t == "Cleaning"), "{h:?}");
+    assert!(h.node_id.is_some());
+    // Limit is honoured and a term-less query is a typed error.
+    assert!(pi.search(WS, "manual.md", "filler", 2).unwrap().hits.len() <= 2);
+    assert!(matches!(
+        pi.search(WS, "manual.md", "! ?", 2),
+        Err(PageIndexError::InvalidRange(_))
+    ));
+}
+
+#[test]
+fn test_search_unknown_doc_suggests_names() {
+    let pi = search_doc();
+    match pi.search(WS, "manuel.md", "quokka", 3) {
+        Err(PageIndexError::NotFound(m)) => assert!(m.contains("manual.md"), "{m}"),
+        other => panic!("expected NotFound, got {other:?}"),
+    }
+}
