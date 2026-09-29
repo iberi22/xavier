@@ -271,3 +271,104 @@ fn test_layout_pdfium_detects_headings_from_generated_pdf() {
     );
     assert!(detect_headings(&pdf).is_some());
 }
+
+mod glyphs {
+    use xavier_pageindex::pdf::layout::{build_lines, Glyph};
+
+    /// Lays `text` out left to right (0.5em advance) starting at `x0`.
+    fn run(text: &str, x0: f32, top: f32, size: f32) -> Vec<Glyph> {
+        text.chars()
+            .enumerate()
+            .map(|(i, ch)| {
+                let x = x0 + i as f32 * size * 0.5;
+                Glyph {
+                    ch,
+                    x,
+                    right: x + size * 0.45,
+                    top,
+                    size,
+                    bold: false,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_glyphs_overprinted_letters_are_deduplicated() {
+        // Every glyph printed twice, 0.4pt apart: "NNEEBBRRAASSKKAA".
+        let mut g = Vec::new();
+        for (i, ch) in "NEBRASKA HISTORIC".chars().enumerate() {
+            for dx in [0.0, 0.4] {
+                let x = i as f32 * 6.0 + dx;
+                g.push(Glyph {
+                    ch,
+                    x,
+                    right: x + 5.0,
+                    top: 100.0,
+                    size: 12.0,
+                    bold: false,
+                });
+            }
+        }
+        let l = build_lines(1, 800.0, &g);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].text, "NEBRASKA HISTORIC");
+        assert!(l[0].bold, "overprinted text is fake bold");
+    }
+
+    #[test]
+    fn test_glyphs_whole_string_overprint_and_real_double_letters() {
+        let mut g = run("Keep balloon", 10.0, 50.0, 10.0);
+        g.extend(run("Keep balloon", 10.2, 50.0, 10.0));
+        let l = build_lines(1, 800.0, &g);
+        assert_eq!(l[0].text, "Keep balloon");
+    }
+
+    #[test]
+    fn test_glyphs_words_on_one_baseline_join_into_one_line() {
+        // Words placed separately with ink gaps and no space glyphs at all.
+        let mut g = run("Our", 10.0, 100.0, 10.0);
+        g.extend(run("comprehensive", 10.0 + 3.0 * 5.0 + 4.0, 100.0, 10.0));
+        g.extend(run("solutions", 10.0 + 16.0 * 5.0 + 8.0, 100.0, 10.0));
+        let l = build_lines(1, 800.0, &g);
+        assert_eq!(l.len(), 1, "{l:?}");
+        assert_eq!(l[0].text, "Our comprehensive solutions");
+    }
+
+    #[test]
+    fn test_glyphs_superscript_marker_gets_spaces() {
+        let mut g = run("levels", 10.0, 100.0, 10.0);
+        let x = 10.0 + 6.0 * 5.0;
+        g.push(Glyph {
+            ch: '1',
+            x,
+            right: x + 3.0,
+            top: 96.5,
+            size: 6.0,
+            bold: false,
+        });
+        g.extend(run("After", x + 3.0, 100.0, 10.0));
+        let l = build_lines(1, 800.0, &g);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].text, "levels 1 After");
+    }
+
+    #[test]
+    fn test_glyphs_newline_and_baseline_jump_split_lines() {
+        let mut g = run("first", 10.0, 100.0, 10.0);
+        g.push(Glyph {
+            ch: '\n',
+            x: 60.0,
+            right: 60.0,
+            top: 100.0,
+            size: 10.0,
+            bold: false,
+        });
+        g.extend(run("second", 10.0, 112.0, 10.0));
+        g.extend(run("third", 10.0, 124.0, 10.0));
+        let l = build_lines(2, 800.0, &g);
+        let t: Vec<&str> = l.iter().map(|x| x.text.as_str()).collect();
+        assert_eq!(t, ["first", "second", "third"]);
+        assert!(l.iter().all(|x| x.page == 2));
+    }
+}

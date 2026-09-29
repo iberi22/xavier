@@ -241,6 +241,136 @@ fn is_bold_name(name: &str) -> bool {
         .any(|k| n.contains(k))
 }
 
+/// One positioned glyph as reported by pdfium (`top` is measured from the page top).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Glyph {
+    pub ch: char,
+    /// Left edge of the glyph ink, in points.
+    pub x: f32,
+    /// Right edge of the glyph ink, in points.
+    pub right: f32,
+    /// Baseline distance from the page top, in points.
+    pub top: f32,
+    pub size: f32,
+    pub bold: bool,
+}
+
+/// Glyphs examined when looking for an overprinted twin.
+const OVERPRINT_LOOKBACK: usize = 64;
+/// Horizontal ink gap (fraction of the font size) that reads as a word space.
+const WORD_GAP: f32 = 0.25;
+
+/// Drops glyphs printed twice at (almost) the same spot (fake bold / shadow
+/// overprinting, "NNEEBBRRAASSKKAA"). The surviving glyph is marked bold.
+fn dedupe_overprint(glyphs: &[Glyph]) -> Vec<Glyph> {
+    let mut kept: Vec<Glyph> = Vec::with_capacity(glyphs.len());
+    for g in glyphs {
+        if !g.ch.is_whitespace() {
+            let start = kept.len().saturating_sub(OVERPRINT_LOOKBACK);
+            let size = g.size.max(1.0);
+            if let Some(twin) = kept[start..].iter_mut().rev().find(|k| {
+                k.ch == g.ch
+                    && (k.x - g.x).abs() <= size * 0.15
+                    && (k.top - g.top).abs() <= size * 0.3
+            }) {
+                twin.bold = true;
+                continue;
+            }
+        }
+        kept.push(g.clone());
+    }
+    kept
+}
+
+/// Rebuilds visual lines from a page's glyphs (stream order): words on one
+/// baseline are joined, gaps become spaces, overprinted glyphs collapse.
+pub fn build_lines(page: u32, page_height: f32, glyphs: &[Glyph]) -> Vec<LineRecord> {
+    struct Acc {
+        text: String,
+        top: f32,
+        sizes: BTreeMap<i32, u32>,
+        bold: u32,
+        chars: u32,
+        last: Option<Glyph>,
+    }
+    fn flush(cur: &mut Option<Acc>, out: &mut Vec<LineRecord>, page: u32, height: f32) {
+        let Some(a) = cur.take() else { return };
+        if a.chars == 0 {
+            return;
+        }
+        let size_key = a
+            .sizes
+            .iter()
+            .max_by_key(|(_, n)| **n)
+            .map_or(0, |(k, _)| *k);
+        out.push(LineRecord {
+            page,
+            top: a.top,
+            page_height: height,
+            text: a.text.split_whitespace().collect::<Vec<_>>().join(" "),
+            font_size: size_key as f32 / 10.0,
+            bold: a.bold * 2 >= a.chars,
+            chars: a.chars,
+        });
+    }
+    let mut lines = Vec::new();
+    let mut cur: Option<Acc> = None;
+    for g in dedupe_overprint(glyphs) {
+        if g.ch == '\r' || g.ch == '\n' {
+            flush(&mut cur, &mut lines, page, page_height);
+            continue;
+        }
+        if g.ch.is_control() {
+            continue;
+        }
+        // A jump in baseline larger than half the font size starts a new line.
+        if cur.as_ref().is_some_and(|a| {
+            let size = a.last.as_ref().map_or(g.size, |p| p.size.max(g.size));
+            (a.top - g.top).abs() > size.max(1.0) * 0.5
+        }) {
+            flush(&mut cur, &mut lines, page, page_height);
+        }
+        let a = cur.get_or_insert_with(|| Acc {
+            text: String::new(),
+            top: g.top,
+            sizes: BTreeMap::new(),
+            bold: 0,
+            chars: 0,
+            last: None,
+        });
+        if let Some(prev) = a.last.as_ref().filter(|_| !g.ch.is_whitespace()) {
+            let size = g.size.max(prev.size).max(1.0);
+            let gap = g.x - prev.right;
+            // Superscript-like shift: different size on a shifted baseline.
+            let shifted = (g.top - prev.top).abs() > size * 0.15
+                && (g.size / prev.size.max(0.1) < 0.8 || g.size / prev.size.max(0.1) > 1.25);
+            if !a.text.ends_with(' ') && (gap > size * WORD_GAP || shifted) {
+                a.text.push(' ');
+            }
+        }
+        a.text.push(g.ch);
+        if !g.ch.is_whitespace() {
+            *a.sizes.entry((g.size * 10.0).round() as i32).or_default() += 1;
+            a.bold += u32::from(g.bold);
+            a.chars += 1;
+            a.last = Some(g);
+        }
+    }
+    flush(&mut cur, &mut lines, page, page_height);
+    lines
+}
+
+fn glyph_is_bold(ch: &pdfium_render::prelude::PdfPageTextChar) -> bool {
+    use pdfium_render::prelude::PdfFontWeight as W;
+    ch.font_weight().is_some_and(|w| {
+        matches!(
+            w,
+            W::Weight600 | W::Weight700Bold | W::Weight800 | W::Weight900
+        ) || matches!(w, W::Custom(n) if n >= 600)
+    }) || ch.font_is_bold_reenforced()
+        || is_bold_name(&ch.font_name())
+}
+
 /// Extracts styled lines from every page via pdfium (char level).
 pub fn extract_lines(bytes: &[u8]) -> Result<Vec<LineRecord>, PageIndexError> {
     use pdfium_render::prelude::PdfiumError;
@@ -255,82 +385,26 @@ pub fn extract_lines(bytes: &[u8]) -> Result<Vec<LineRecord>, PageIndexError> {
             other => PageIndexError::Build(format!("pdfium could not open document: {other}")),
         })?;
 
-    struct Acc {
-        text: String,
-        top: f32,
-        sizes: BTreeMap<i32, u32>,
-        bold: u32,
-        chars: u32,
-    }
     let mut lines = Vec::new();
     for (pi, page) in doc.pages().iter().enumerate() {
         let height = page.height().value;
         let Ok(text) = page.text() else { continue };
-        let mut cur: Option<Acc> = None;
-        let flush = |cur: &mut Option<Acc>, lines: &mut Vec<LineRecord>| {
-            if let Some(a) = cur.take() {
-                if a.chars > 0 {
-                    let size_key = a
-                        .sizes
-                        .iter()
-                        .max_by_key(|(_, n)| **n)
-                        .map_or(0, |(k, _)| *k);
-                    lines.push(LineRecord {
-                        page: pi as u32 + 1,
-                        top: a.top,
-                        page_height: height,
-                        text: a.text.split_whitespace().collect::<Vec<_>>().join(" "),
-                        font_size: size_key as f32 / 10.0,
-                        bold: a.bold * 2 >= a.chars,
-                        chars: a.chars,
-                    });
-                }
-            }
-        };
+        let mut glyphs: Vec<Glyph> = Vec::new();
         for ch in text.chars().iter() {
             let Some(c) = ch.unicode_char() else { continue };
-            if c == '\r' || c == '\n' {
-                flush(&mut cur, &mut lines);
-                continue;
-            }
-            if c.is_control() {
-                continue;
-            }
+            let x = ch.origin_x().map(|p| p.value).unwrap_or(0.0);
             let y = ch.origin_y().map(|p| p.value).unwrap_or(0.0);
-            let size = ch.scaled_font_size().value;
-            let top = height - y;
-            // A jump in baseline larger than half the font size starts a new line.
-            if cur
-                .as_ref()
-                .is_some_and(|a| (a.top - top).abs() > size.max(1.0) * 0.5)
-            {
-                flush(&mut cur, &mut lines);
-            }
-            let a = cur.get_or_insert_with(|| Acc {
-                text: String::new(),
-                top,
-                sizes: BTreeMap::new(),
-                bold: 0,
-                chars: 0,
+            let right = ch.tight_bounds().map_or(x, |r| r.right().value);
+            glyphs.push(Glyph {
+                ch: c,
+                x,
+                right,
+                top: height - y,
+                size: ch.scaled_font_size().value,
+                bold: !c.is_whitespace() && glyph_is_bold(&ch),
             });
-            a.text.push(c);
-            if !c.is_whitespace() {
-                *a.sizes.entry((size * 10.0).round() as i32).or_default() += 1;
-                let bold = ch.font_weight().is_some_and(|w| {
-                    matches!(
-                        w,
-                        pdfium_render::prelude::PdfFontWeight::Weight600
-                            | pdfium_render::prelude::PdfFontWeight::Weight700Bold
-                            | pdfium_render::prelude::PdfFontWeight::Weight800
-                            | pdfium_render::prelude::PdfFontWeight::Weight900
-                    ) || matches!(w, pdfium_render::prelude::PdfFontWeight::Custom(n) if n >= 600)
-                }) || ch.font_is_bold_reenforced()
-                    || is_bold_name(&ch.font_name());
-                a.bold += u32::from(bold);
-                a.chars += 1;
-            }
         }
-        flush(&mut cur, &mut lines);
+        lines.extend(build_lines(pi as u32 + 1, height, &glyphs));
     }
     Ok(lines)
 }

@@ -80,6 +80,14 @@ pub fn build_pdf_tree(
     if texts.is_empty() {
         return Err(PageIndexError::Build("PDF has no pages".into()));
     }
+    // One pdfium extraction feeds both page text and heading detection, so the
+    // structure and the text always describe the same page content.
+    #[cfg(feature = "pdf-layout")]
+    let lines = crate::pdf::layout::extract_lines(bytes).ok();
+    #[cfg(feature = "pdf-layout")]
+    if let Some(ls) = &lines {
+        merge_pdfium_text(&mut texts, ls);
+    }
     let page_count = texts.len() as u32;
     let outline_nodes = outline::extract_outline(bytes)?;
 
@@ -94,7 +102,9 @@ pub fn build_pdf_tree(
 
     #[cfg(feature = "pdf-layout")]
     if !has_usable(&candidates, page_count) {
-        candidates.extend(layout_strategy(doc_id, bytes, &mut texts, page_count));
+        if let Some(ls) = &lines {
+            candidates.extend(layout_strategy(doc_id, ls, page_count));
+        }
     }
 
     if !has_usable(&candidates, page_count) {
@@ -134,32 +144,47 @@ pub fn build_pdf_tree(
     })
 }
 
-/// Layout headings via pdfium. As a side effect prefers pdfium page text over
-/// lopdf text for pages where pdfium found any. Skips silently when pdfium is
-/// unavailable or the document cannot be read by it.
+/// Alphanumeric chars: the yardstick for "has real text".
+#[cfg(feature = "pdf-layout")]
+fn alnum_count(s: &str) -> usize {
+    s.chars().filter(|c| c.is_alphanumeric()).count()
+}
+
+/// Pages whose pdfium text is at most this many alphanumerics are "near empty".
+#[cfg(feature = "pdf-layout")]
+const NEAR_EMPTY_ALNUM: usize = 20;
+
+/// Prefers pdfium text (rebuilt from glyph positions) per page; keeps the lopdf
+/// text where pdfium found nothing or clearly less than lopdf did.
+#[cfg(feature = "pdf-layout")]
+fn merge_pdfium_text(texts: &mut [String], lines: &[crate::pdf::layout::LineRecord]) {
+    let mut by_page: std::collections::BTreeMap<u32, Vec<&str>> = Default::default();
+    for l in lines {
+        by_page.entry(l.page).or_default().push(&l.text);
+    }
+    for (i, slot) in texts.iter_mut().enumerate() {
+        let joined = by_page
+            .get(&(i as u32 + 1))
+            .map(|ls| ls.join("\n"))
+            .unwrap_or_default();
+        let (p, l) = (alnum_count(&joined), alnum_count(slot));
+        let pdfium_thin = p == 0 || (p < NEAR_EMPTY_ALNUM && l > p * 3);
+        if !pdfium_thin {
+            *slot = joined;
+        }
+    }
+}
+
+/// Layout headings from pdfium lines. `None` when too few were found.
 #[cfg(feature = "pdf-layout")]
 fn layout_strategy(
     doc_id: &str,
-    bytes: &[u8],
-    texts: &mut [String],
+    lines: &[crate::pdf::layout::LineRecord],
     page_count: u32,
 ) -> Option<(DocumentTree, TocSource)> {
-    use crate::pdf::layout::{classify_headings, extract_lines, LayoutParams};
+    use crate::pdf::layout::{classify_headings, LayoutParams};
 
-    let lines = extract_lines(bytes).ok()?;
-    let mut by_page: std::collections::BTreeMap<u32, Vec<&str>> = Default::default();
-    for l in &lines {
-        by_page.entry(l.page).or_default().push(&l.text);
-    }
-    for (page, ls) in by_page {
-        if let Some(slot) = texts.get_mut(page as usize - 1) {
-            let joined = ls.join("\n");
-            if !joined.trim().is_empty() {
-                *slot = joined;
-            }
-        }
-    }
-    let heads = classify_headings(&lines, &LayoutParams::default());
+    let heads = classify_headings(lines, &LayoutParams::default());
     if heads.len() < MIN_LAYOUT_HEADINGS {
         return None;
     }
@@ -341,5 +366,43 @@ fn fill_token_estimates(nodes: &mut [TreeNode], texts: &[String]) {
             .sum();
         n.token_estimate = estimate_tokens(words);
         fill_token_estimates(&mut n.children, texts);
+    }
+}
+
+#[cfg(all(test, feature = "pdf-layout"))]
+mod tests {
+    use super::*;
+    use crate::pdf::layout::LineRecord;
+
+    fn line(page: u32, text: &str) -> LineRecord {
+        LineRecord {
+            page,
+            top: 100.0,
+            page_height: 800.0,
+            text: text.into(),
+            font_size: 10.0,
+            bold: false,
+            chars: text.len() as u32,
+        }
+    }
+
+    #[test]
+    fn test_merge_uses_pdfium_text_and_falls_back_per_page() {
+        let mut texts = vec![
+            "one\nword\nper\nline".to_string(),
+            "lopdf has the only real text on this page, plenty of it".to_string(),
+            String::new(),
+            String::new(),
+        ];
+        let lines = vec![
+            line(1, "one word per line"),
+            line(2, "x"),
+            line(3, "pdfium text where lopdf found nothing at all"),
+        ];
+        merge_pdfium_text(&mut texts, &lines);
+        assert_eq!(texts[0], "one word per line");
+        assert!(texts[1].starts_with("lopdf has"), "near-empty pdfium loses");
+        assert!(texts[2].starts_with("pdfium text"));
+        assert_eq!(texts[3], "", "no text in either extractor stays empty");
     }
 }

@@ -2,6 +2,51 @@
 //! The PDFs are never committed.
 
 #[cfg(feature = "pdf-outline")]
+#[derive(Default)]
+struct Quality {
+    nodes: usize,
+    depth: usize,
+    sentence: usize,
+    bare_numbers: usize,
+    dup_titles: usize,
+    max_span: u32,
+}
+
+/// Tree quality counters: sentence-like titles, bare numbers, repeated titles.
+#[cfg(feature = "pdf-outline")]
+fn quality(roots: &[xavier_pageindex::TreeNode]) -> Quality {
+    fn walk(
+        ns: &[xavier_pageindex::TreeNode],
+        d: usize,
+        q: &mut Quality,
+        seen: &mut std::collections::HashMap<String, usize>,
+    ) {
+        for n in ns {
+            q.nodes += 1;
+            q.depth = q.depth.max(d);
+            let t = n.title.trim();
+            let words = t.split_whitespace().count();
+            if t.ends_with('.') || words > 12 || t.chars().next().is_some_and(char::is_lowercase) {
+                q.sentence += 1;
+            }
+            if t.chars().all(|c| c.is_ascii_digit() || c.is_whitespace()) {
+                q.bare_numbers += 1;
+            }
+            *seen.entry(t.to_lowercase()).or_default() += 1;
+            if n.children.is_empty() {
+                q.max_span = q.max_span.max(n.end_page - n.start_page + 1);
+            }
+            walk(&n.children, d + 1, q, seen);
+        }
+    }
+    let mut q = Quality::default();
+    let mut seen = std::collections::HashMap::new();
+    walk(roots, 1, &mut q, &mut seen);
+    q.dup_titles = seen.values().filter(|&&c| c > 2).map(|c| c - 1).sum();
+    q
+}
+
+#[cfg(feature = "pdf-outline")]
 #[test]
 #[ignore = "reads PDFs from XAVIER_PAGEINDEX_PDF_DIR"]
 fn real_pdfs_produce_trees() {
@@ -30,32 +75,38 @@ fn real_pdfs_produce_trees() {
         match build_pdf_tree("d", &bytes, None) {
             Ok(b) => {
                 let n = b.pages.len() as u32;
-                let mut total = 0;
-                let mut zero_tok = 0;
-                let mut max_span = 0;
-                fn walk(
-                    ns: &[xavier_pageindex::TreeNode],
-                    t: &mut usize,
-                    z: &mut usize,
-                    m: &mut u32,
-                ) {
-                    for n in ns {
-                        *t += 1;
-                        if n.token_estimate == 0 {
-                            *z += 1;
-                        }
-                        if n.children.is_empty() {
-                            *m = (*m).max(n.end_page - n.start_page + 1);
-                        }
-                        walk(&n.children, t, z, m);
-                    }
-                }
-                walk(&b.tree.roots, &mut total, &mut zero_tok, &mut max_span);
                 b.tree.validate(n).unwrap();
+                let q = quality(&b.tree.roots);
+                let empty_pages = b
+                    .pages
+                    .iter()
+                    .filter(|p| p.text.split_whitespace().count() == 0)
+                    .count();
+                if std::env::var("XAVIER_PAGEINDEX_DUMP").is_ok() {
+                    fn dump(ns: &[xavier_pageindex::TreeNode], d: usize) {
+                        for n in ns {
+                            println!(
+                                "  {}{} [{}-{}]",
+                                "  ".repeat(d),
+                                n.title,
+                                n.start_page,
+                                n.end_page
+                            );
+                            dump(&n.children, d + 1);
+                        }
+                    }
+                    dump(&b.tree.roots, 0);
+                }
                 println!(
-                    "{name}: pages={n} builder={} roots={} nodes={total} zero_tokens={zero_tok} max_leaf_span={max_span}",
+                    "QR {name}: pages={n} builder={} roots={} nodes={} depth={} sentence%={:.0} bare_num={} dup_titles={} max_leaf_span={} empty_pages={empty_pages}",
                     b.builder(),
-                    b.tree.roots.len()
+                    b.tree.roots.len(),
+                    q.nodes,
+                    q.depth,
+                    if q.nodes == 0 { 0.0 } else { 100.0 * q.sentence as f64 / q.nodes as f64 },
+                    q.bare_numbers,
+                    q.dup_titles,
+                    q.max_span,
                 );
             }
             Err(e) => {
