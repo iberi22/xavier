@@ -4,6 +4,9 @@ All notable changes to **Xavier** are documented in this file in adherence to [K
 
 ## [Unreleased]
 
+### Added
+- **Linux desktop app (AppImage + .deb)**: the Tauri shell now bundles the `xavier` sidecar (built with `ci-safe` + `pageindex-pdfium`, optional bundled libpdfium) and ships from `.github/workflows/desktop.yml` (also called by `release.yml` on tag). The shell attaches to an already-running Xavier on `127.0.0.1:${XAVIER_PORT:-8006}` and never stops one it did not start; the old "kill existing Xavier" path was removed. See `docs/desktop.md`.
+
 ### Fixed
 - **Dead `/v1/auth/*` user-login API removed** (#2545): `/v1/auth/login`, `/register`, `/refresh`, `/logout`, `/totp/verify` and `/totp/setup` were backed by `security::auth_store::AuthStore`, a user store nothing in the codebase ever wrote a user into — every login against it failed forever, on every fresh install. These paths now answer `308 Permanent Redirect` (login/register/refresh/logout/recover, same or superset request body) or `410 Gone` (totp/verify, totp/setup — no compatible successor) with a JSON body naming the real `/auth/*` route. The dead `AuthStore` login/TOTP/recovery methods were removed; `AuthStore` itself stays (still backs the unrelated `/v1/auth/sessions` root-token session endpoints). `docs/api/openapi.yaml`, `docs/api/README.md` and the Postman collection now document the real `/auth/*` flow (register, login with inline `totp_code`, refresh, logout, 2FA setup/verify, recovery) instead of the dead one.
 

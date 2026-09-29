@@ -11,3 +11,4 @@
 
 # Built sidecar binaries (recreated by cargo build / release pipeline)
 /binaries/*.exe
+/resources/libpdfium.so
