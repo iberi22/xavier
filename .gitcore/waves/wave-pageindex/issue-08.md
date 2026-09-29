@@ -12,7 +12,7 @@
 
 ## Desired State (DELTA)
 
-`tools_pageindex.rs` wraps `pageindex_glue::tools` into `MCPTool` defs (`get_pageindex_tools()`) and `handle_pageindex_tool(state, workspace, role, name, args)`. The ONLY edits to shared MCP files: `mod.rs` `pub mod tools_pageindex;` (+cfg), `server.rs` one line extending the tool list and one `else if name.starts_with("pageindex_")` dispatch arm. No role arm in `server.rs` (gating is inside the handler). MUST be done after rebasing on main once V6 has merged; if V6 is not merged, wait. Also live-verify after service restart (`tools/list` shows 5 tools).
+`tools_pageindex.rs` wraps `pageindex_glue::tools` into `MCPTool` defs (`get_pageindex_tools()`) and `handle_pageindex_tool(state, workspace, role, name, args)`. The ONLY edits to shared MCP files: `mod.rs` `pub mod tools_pageindex;` (+cfg), `server.rs` one line extending the tool list and one `else if name.starts_with("pageindex_")` dispatch arm. No role arm in `server.rs` (gating is inside the handler). MUST be done after rebasing on main once V6 has merged; if V6 is not merged, wait. Also live-verify after service restart (`tools/list` shows 6 tools).
 
 ## Files to Modify
 

@@ -1222,34 +1222,34 @@ REQ-060..064 SHALL cite merged code evidence (`file:line`); the six `FEATURE-fea
 
 - **Category:** Functional
 - **Priority:** High
-- **SRS Status:** `planned`
+- **SRS Status:** `implemented`
 - **Files:** `crates/xavier-pageindex/src/{model,builders/*}.rs`
 - **Features:** `feat-pageindex-tree-core`
 
 ### Description
 
-The `xavier-pageindex` crate SHALL represent a document as a hierarchical tree (`title`, `node_id`, `start`/`end` page or line range, optional `summary`, `children`) and SHALL build it from markdown headings, plain-text numbered headings and legal patterns without any LLM or network access. Trees SHALL validate (ordered, non-overlapping siblings, children inside the parent range).
+The `xavier-pageindex` crate SHALL represent a document as a hierarchical tree (`title`, `node_id`, `start`/`end` page or line range, optional `summary`, `children`) and SHALL build it from markdown headings, plain-text numbered headings and legal patterns without any LLM or network access. Trees SHALL validate (ordered, non-overlapping siblings, where adjacent siblings may share exactly one boundary page (`prev.end <= next.start`) and deeper overlap is rejected; children inside the parent range).
 
 ### Acceptance criteria
 
 - [ ] `cargo test -p xavier-pageindex` green incl. `test_md_headings_build_nested_tree`, `test_legal_articles_nest_under_chapters`
-- [ ] The crate has no dependency on the `xavier` package (`cargo tree -p xavier-pageindex | grep -c "^xavier "` = 0)
+- [ ] The crate has no dependency on the `xavier` package (`! cargo tree -p xavier-pageindex -e normal --prefix none | grep -qE '^xavier v'` exits 0)
 
 ## REQ-081: PageIndex Persistence + Read Tools (MCP and HTTP)
 
 - **Category:** Functional
 - **Priority:** High
-- **SRS Status:** `planned`
+- **SRS Status:** `implemented`
 - **Files:** `crates/xavier-pageindex/src/store/*`, `src/pageindex_glue/*`, `src/server/pageindex_routes.rs`, `src/server/mcp/tools_pageindex.rs`
 - **Features:** `feat-pageindex-tree-core`
 
 ### Description
 
-Trees and page text SHALL persist in a workspace-scoped SQLite store. Xavier SHALL expose `pageindex_browse_documents`, `pageindex_get_document`, `pageindex_get_document_structure`, `pageindex_get_page_content` (read) and `pageindex_index_document` (role-gated write) over MCP, and the same operations under `/v1/pageindex/*`. Tool failures SHALL be returned as `{ok:false,error}` envelopes, never panics. Existing MCP tool names and schemas SHALL be unchanged.
+Trees and page text SHALL persist in a workspace-scoped SQLite store. Xavier SHALL expose `pageindex_browse_documents`, `pageindex_get_document`, `pageindex_get_document_structure`, `pageindex_get_page_content`, `pageindex_search` (read) and `pageindex_index_document` (role-gated write) over MCP, and the same operations under `/v1/pageindex/*`. Tool failures SHALL be returned as `{ok:false,error}` envelopes, never panics. Existing MCP tool names and schemas SHALL be unchanged.
 
 ### Acceptance criteria
 
-- [ ] MCP `tools/list` contains the five tools; round-trip ingest -> structure -> pages works
+- [ ] MCP `tools/list` contains the six tools; round-trip ingest -> structure -> pages works
 - [ ] Read-only role cannot call `pageindex_index_document`
 - [ ] `cargo test -p xavier --lib test_mcp_pageindex` green
 
@@ -1257,7 +1257,7 @@ Trees and page text SHALL persist in a workspace-scoped SQLite store. Xavier SHA
 
 - **Category:** Functional
 - **Priority:** Medium
-- **SRS Status:** `planned`
+- **SRS Status:** `implemented`
 - **Files:** `crates/xavier-pageindex/src/pdf/*`, `crates/xavier-pageindex/Cargo.toml`
 - **Features:** `feat-pageindex-pdf`
 
@@ -1274,7 +1274,7 @@ PDF trees SHALL be built by a cascade: embedded bookmarks (`pdf-outline`, pure R
 
 - **Category:** Functional
 - **Priority:** Medium
-- **SRS Status:** `planned`
+- **SRS Status:** `implemented`
 - **Files:** `src/retrieval/pageindex_arm.rs`, `src/retrieval/gating.rs`, `src/retrieval/mod.rs`
 - **Features:** `feat-pageindex-hybrid`
 
@@ -1291,7 +1291,7 @@ Node summaries SHALL be embedded into the Xavier store with document/node tags; 
 
 - **Category:** Quality
 - **Priority:** Medium
-- **SRS Status:** `planned`
+- **SRS Status:** `implemented`
 - **Files:** `tests/pageindex_eval.rs`, `tests/fixtures/pageindex/*`
 - **Features:** `feat-pageindex-hybrid`
 

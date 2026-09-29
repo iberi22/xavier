@@ -37,7 +37,7 @@ New workspace member. ALSO creates EMPTY stub files (module doc comment only) fo
 - [ ] `cargo test -p xavier-pageindex`
 - [ ] `cargo clippy -p xavier-pageindex --all-targets -- -D warnings`
 - [ ] `cargo fmt --all -- --check`
-- [ ] `cargo tree -p xavier-pageindex | grep -c '^xavier ' # must print 0`
+- [ ] `! cargo tree -p xavier-pageindex -e normal --prefix none | grep -qE '^xavier v'` # exit 0 = no `xavier` package in the dependency graph
 - [ ] `git status --porcelain` lists ONLY the files in the table above
 - [ ] Tests listed above exist and pass (no `#[ignore]` except pdfium-backed ones in issue 10)
 

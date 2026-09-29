@@ -37,7 +37,7 @@
 ## Acceptance Criteria (VERIFICABLES POR COMANDO)
 
 - [ ] `cargo test -p xavier --lib --features ci-safe retrieval::`
-- [ ] `cargo test -p xavier --lib --features ci-safe test_arm_ test_gating_`
+- [ ] `cargo test -p xavier --lib --features ci-safe -- test_arm_ test_gating_`
 - [ ] `cargo clippy -p xavier --all-targets --features ci-safe -- -D warnings`
 - [ ] `git status --porcelain` lists ONLY the files in the table above
 - [ ] Tests listed above exist and pass (no `#[ignore]` except pdfium-backed ones in issue 10)

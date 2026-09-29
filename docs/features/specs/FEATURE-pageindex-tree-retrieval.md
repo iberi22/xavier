@@ -2,7 +2,7 @@
 
 **Base:** `origin/main bcfc2e06` | **ADR:** ADR-036 | **REQ:** REQ-080..084
 **Ledger:** `feat-pageindex-tree-core` (F1), `feat-pageindex-pdf` (F2), `feat-pageindex-hybrid` (F3)
-**Status:** `planned` | **Wave:** `.gitcore/waves/wave-pageindex/`
+**Status:** `stable` (ledger promoted; ADR-036 accepted) | **Wave:** `.gitcore/waves/wave-pageindex/`
 
 ---
 
@@ -10,9 +10,9 @@
 
 Port the idea of VectifyAI/PageIndex (MIT) to Rust as the independent workspace crate
 `crates/xavier-pageindex`: index each document as a hierarchical ToC tree and let the
-calling agent navigate it with four read tools. Xavier needs no LLM at query time.
+calling agent navigate it with five read tools. Xavier needs no LLM at query time.
 
-In scope: tree model, builders (markdown, plain text, legal, PDF), storage, 5 MCP
+In scope: tree model, builders (markdown, plain text, legal, PDF), storage, 6 MCP
 tools, HTTP routes, optional node summaries, tree optimize, hybrid retrieval arm, eval.
 Out of scope: OCR of scanned PDFs, image/table extraction, cloud PageIndex API, any
 change to `src/context/skill_controller/*`, Xavier core SQLite migrations.
@@ -79,7 +79,7 @@ pub enum PageIndexError {
 }
 ```
 
-Invariants (`DocumentTree::validate`): siblings ordered and non-overlapping; child
+Invariants (`DocumentTree::validate`): siblings ordered and non-overlapping (adjacent siblings may share exactly one boundary page: `prev.end <= next.start`; deeper overlap is rejected); child
 range inside parent; `1 <= start <= end <= page_count`; `node_id` unique, preorder.
 
 ### Storage decision: own SQLite file, WAL, owned by the crate
@@ -246,7 +246,7 @@ optional `PAGEINDEX_OSS_BENCHMARK_DIR` JSONL (never downloaded in CI).
 
 ## 10. Acceptance criteria
 
-- F1: `cargo test -p xavier-pageindex` green; `cargo tree -p xavier-pageindex` shows no `xavier` package; MCP `tools/list` shows 5 new tools and prior tool names byte-identical; ingest -> structure -> pages round-trip live on :8006 after restart; `cargo clippy --all-targets -- -D warnings` clean; default/`ci-safe` build has no new native dep.
+- F1: `cargo test -p xavier-pageindex` green; `cargo tree -p xavier-pageindex` shows no `xavier` package; MCP `tools/list` shows 6 new tools and prior tool names byte-identical; ingest -> structure -> pages round-trip live on :8006 after restart; `cargo clippy --all-targets -- -D warnings` clean; default/`ci-safe` build has no new native dep.
 - F2: default-features `cargo check -p xavier-pageindex` needs no pdfium; PDF with bookmarks produces a valid tree; PDF without bookmarks and without pdfium degrades to LLM-ToC/fixed windows with a `builder` label saying so; optimize preserves page coverage and is idempotent; a tree builds with zero LLM configuration.
 - F3: arm off by default with byte-identical existing gating tests; on, it returns nodes with page ranges; eval report prints hit@1/hit@3/MRR for DocBot, tree, hybrid and the numbers are recorded in this spec; decision review per ADR-036 invalidation criteria.
 - Ledger: promotion only by green `scripts/verify-pipeline.sh`, never by hand.

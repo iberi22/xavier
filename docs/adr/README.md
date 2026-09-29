@@ -8,7 +8,7 @@
 
 *Lista de decisiones de arquitectura*
 
-- [ADR-036 — Tree-reasoning retrieval (PageIndex idea) as an independent crate](ADR-036-tree-reasoning-retrieval.md) — Propuesto, 2026-09-28
+- [ADR-036 — Tree-reasoning retrieval (PageIndex idea) as an independent crate](ADR-036-tree-reasoning-retrieval.md) — Aceptado, 2026-09-29
 
 ---
 

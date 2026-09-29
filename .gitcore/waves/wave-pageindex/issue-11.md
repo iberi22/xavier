@@ -39,7 +39,7 @@ Crate: `optimize::{merge_tiny, split_huge, optimize}` (thresholds `min/max_node_
 
 ## Acceptance Criteria (VERIFICABLES POR COMANDO)
 
-- [ ] `cargo test -p xavier-pageindex optimize_ summarize_ test_tree_builds`
+- [ ] `cargo test -p xavier-pageindex -- optimize_ summarize_ test_tree_builds`
 - [ ] `cargo test -p xavier --lib --features ci-safe test_summarizer_adapter`
 - [ ] `cargo clippy --all-targets -- -D warnings`
 - [ ] `git status --porcelain` lists ONLY the files in the table above

@@ -32,7 +32,7 @@
 
 ## Acceptance Criteria (VERIFICABLES POR COMANDO)
 
-- [ ] `cargo test -p xavier-pageindex plain_ legal_`
+- [ ] `cargo test -p xavier-pageindex -- plain_ legal_`
 - [ ] `cargo clippy -p xavier-pageindex --all-targets -- -D warnings`
 - [ ] `git status --porcelain` lists ONLY the files in the table above
 - [ ] Tests listed above exist and pass (no `#[ignore]` except pdfium-backed ones in issue 10)

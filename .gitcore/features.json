@@ -2709,7 +2709,7 @@
       "category": "retrieval",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Independent crate xavier-pageindex: hierarchical document tree, markdown/plain/legal builders without LLM, SQLite store, 5 MCP tools and /v1/pageindex routes",
+      "description": "Independent crate xavier-pageindex: hierarchical document tree, markdown/plain/legal builders without LLM, SQLite store, 6 MCP tools and /v1/pageindex routes",
       "steps": [
         "Create crates/xavier-pageindex with tree model and validation",
         "Build markdown, plain-text and legal trees with no LLM",

@@ -89,8 +89,8 @@ Adopt **Option A**. Build `crates/xavier-pageindex`, an independent workspace cr
 
 Xavier consumes it in two ways:
 
-1. **MCP tools + HTTP routes** (four read tools mirroring PageIndex plus one
-   role-gated ingest tool), so the calling agent navigates the tree. Xavier needs
+1. **MCP tools + HTTP routes** (five read tools: four mirroring PageIndex plus `pageindex_search`,
+   and one role-gated ingest tool), so the calling agent navigates the tree. Xavier needs
    no LLM at query time. MCP code lives in its own module
    (`src/server/mcp/tools_pageindex.rs`) with a single, late, isolated registration.
 2. **A retrieval arm** (`src/retrieval/pageindex_arm.rs`) fused by RRF in the gating
