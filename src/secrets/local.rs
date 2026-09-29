@@ -1,7 +1,10 @@
 //! Local secrets storage backend
 //!
-//! Provides the implementation and data structures for this module's
-//! responsibilities within the Xavier cognitive memory system.
+//! `LocalSecretStore` keeps values in a process-memory `Mutex<HashMap<String,
+//! String>>`: everything stored here is lost when the process exits. It is
+//! intended for tests only and must not be used as a production secret
+//! store; `crate::secrets::vault::HardwareVault` is the production-grade
+//! store.
 use crate::secrets::store::SecretStore;
 use crate::secrets::SecretResult;
 use std::collections::HashMap;
@@ -9,16 +12,21 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Mutex;
 
+#[deprecated(
+    note = "process-memory store for tests only, values do not survive process exit; use crate::secrets::vault::HardwareVault for production secrets"
+)]
 pub struct LocalSecretStore {
     storage: Mutex<HashMap<String, String>>,
 }
 
+#[allow(deprecated)]
 impl Default for LocalSecretStore {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[allow(deprecated)]
 impl LocalSecretStore {
     /// New.
     pub fn new() -> Self {
@@ -28,6 +36,7 @@ impl LocalSecretStore {
     }
 }
 
+#[allow(deprecated)]
 impl SecretStore for LocalSecretStore {
     fn get<'a>(
         &'a self,

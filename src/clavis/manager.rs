@@ -2,6 +2,13 @@
 //!
 //! Intercepts ModelProviderClient to auto-lend ephemeral leases when a task starts.
 //! Leases are short-lived (TTL 15m default) and tied to agent_id + task_id.
+//!
+//! `KeyLeaseManager` predates `crate::coordination::KeyLendingEngine` (V9),
+//! which persists leases instead of keeping them only in an in-memory map.
+//! This module keeps its own independent, non-persisted lease map alongside
+//! that engine; `KeyLeaseManager` is deprecated in favour of it. This
+//! duplication is otherwise unchanged: `intercept_headers` and the rest of
+//! this module's behaviour still work exactly as before.
 
 use anyhow::Result;
 use std::collections::HashMap;
@@ -11,12 +18,16 @@ use uuid::Uuid;
 use crate::secrets::lending::{AuditLogger, DefaultAuditLogger, EphemeralLease};
 
 /// Clavis KeyLeaseManager — auto-lends keys on task_start
+#[deprecated(
+    note = "keeps a duplicate, non-persisted lease map; use crate::coordination::KeyLendingEngine, which persists leases (V9)"
+)]
 pub struct KeyLeaseManager<A: AuditLogger = DefaultAuditLogger> {
     leases: RwLock<HashMap<String, EphemeralLease>>,
     audit: A,
     default_ttl_secs: u64,
 }
 
+#[allow(deprecated)]
 impl<A: AuditLogger> KeyLeaseManager<A> {
     pub fn new(audit: A, default_ttl_secs: u64) -> Self {
         Self {
@@ -115,6 +126,7 @@ impl<A: AuditLogger> KeyLeaseManager<A> {
     }
 }
 
+#[allow(deprecated)]
 impl Default for KeyLeaseManager<DefaultAuditLogger> {
     fn default() -> Self {
         Self {
@@ -126,8 +138,10 @@ impl Default for KeyLeaseManager<DefaultAuditLogger> {
 }
 
 /// Global singleton for Clavis manager
+#[allow(deprecated)]
 static GLOBAL_MANAGER: std::sync::OnceLock<Arc<KeyLeaseManager>> = std::sync::OnceLock::new();
 
+#[allow(deprecated)]
 pub fn global_manager() -> Arc<KeyLeaseManager> {
     GLOBAL_MANAGER
         .get_or_init(|| Arc::new(KeyLeaseManager::default()))
@@ -135,6 +149,7 @@ pub fn global_manager() -> Arc<KeyLeaseManager> {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

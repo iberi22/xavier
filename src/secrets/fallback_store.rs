@@ -1,7 +1,10 @@
-//! FallbackSecretStore — Local→OpenBao→Memory (WAVE-1.02)
+//! FallbackSecretStore — durable backends only (WAVE-1.02)
 //!
 //! Tries SecretStore backends in order until one succeeds (get returns Ok).
-//! Set/delete try all and succeed if any succeeds.
+//! Set/delete try all and succeed if any succeeds. The default chain
+//! (`vault,openbao`) contains only durable backends: it never starts with
+//! the deprecated, process-memory `LocalSecretStore`, which does not
+//! survive process exit and is for tests only.
 
 use crate::secrets::store::SecretStore;
 use crate::secrets::{SecretError, SecretResult};
@@ -19,7 +22,7 @@ impl FallbackSecretStore {
         Self { stores }
     }
 
-    /// Build from env XAVIER_SECRET_FALLBACK (default: local,openbao,memory)
+    /// Build from env XAVIER_SECRET_FALLBACK (default: vault,openbao)
     pub fn from_env_with_stores(stores: Vec<Arc<dyn SecretStore>>) -> Self {
         Self::new(stores)
     }
@@ -33,8 +36,8 @@ impl FallbackSecretStore {
     }
 
     pub fn chain_from_env() -> Vec<String> {
-        let chain = std::env::var("XAVIER_SECRET_FALLBACK")
-            .unwrap_or_else(|_| "local,openbao,memory".to_string());
+        let chain =
+            std::env::var("XAVIER_SECRET_FALLBACK").unwrap_or_else(|_| "vault,openbao".to_string());
         Self::from_chain_str(&chain)
     }
 }
@@ -98,6 +101,8 @@ impl SecretStore for FallbackSecretStore {
 }
 
 #[cfg(test)]
+// LocalSecretStore is deprecated for production use; these tests are exactly its intended use.
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::secrets::local::LocalSecretStore;
@@ -119,8 +124,19 @@ mod tests {
     #[test]
     fn test_chain_parse() {
         assert_eq!(
-            FallbackSecretStore::from_chain_str("local,openbao,memory"),
-            vec!["local", "openbao", "memory"]
+            FallbackSecretStore::from_chain_str("vault,openbao,memory"),
+            vec!["vault", "openbao", "memory"]
         );
+    }
+
+    #[test]
+    fn test_chain_from_env_default_excludes_local() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        std::env::remove_var("XAVIER_SECRET_FALLBACK");
+
+        let chain = FallbackSecretStore::chain_from_env();
+
+        assert_eq!(chain, vec!["vault", "openbao"]);
+        assert!(!chain.iter().any(|s| s == "local"));
     }
 }
