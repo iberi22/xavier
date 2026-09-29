@@ -15,7 +15,10 @@ struct Heading {
 struct Raw {
     title: String,
     level: u8,
-    start: u32,
+    /// First line (0-based) of the section.
+    line: usize,
+    /// Exclusive end line, including nested sections.
+    end_line: usize,
     children: Vec<usize>,
 }
 
@@ -72,42 +75,40 @@ fn scan_headings(text: &str) -> Vec<Heading> {
     out
 }
 
-fn to_tree_node(raw: &[Raw], idx: usize, end: u32, pages: &[Page]) -> TreeNode {
-    let r = &raw[idx];
-    let children = to_nodes(raw, &r.children, end, pages);
-    let chars: usize = pages[(r.start - 1) as usize..end as usize]
-        .iter()
-        .map(|p| p.text.chars().count())
-        .sum();
-    TreeNode {
-        node_id: String::new(),
-        title: r.title.clone(),
-        start_page: r.start,
-        end_page: end,
-        summary: None,
-        token_estimate: chars.div_ceil(4) as u32,
-        children,
-    }
+struct Layout<'a> {
+    lines: &'a [&'a str],
+    per_page: usize,
 }
 
-/// Each sibling ends where the next begins; the last one ends at `parent_end`.
-fn to_nodes(raw: &[Raw], ids: &[usize], parent_end: u32, pages: &[Page]) -> Vec<TreeNode> {
-    ids.iter()
-        .enumerate()
-        .map(|(i, &id)| {
-            let end = ids
-                .get(i + 1)
-                .map_or(parent_end, |&next| raw[next].start - 1);
-            to_tree_node(raw, id, end, pages)
-        })
-        .collect()
+impl Layout<'_> {
+    fn page_of(&self, line: usize) -> u32 {
+        (line / self.per_page) as u32 + 1
+    }
+
+    /// Node over its own line range; sections share boundary pages.
+    fn to_node(&self, raw: &[Raw], idx: usize) -> TreeNode {
+        let r = &raw[idx];
+        let chars: usize = self.lines[r.line..r.end_line]
+            .iter()
+            .map(|l| l.chars().count() + 1)
+            .sum();
+        TreeNode {
+            node_id: String::new(),
+            title: r.title.clone(),
+            start_page: self.page_of(r.line),
+            end_page: self.page_of(r.end_line - 1),
+            summary: None,
+            token_estimate: chars.div_ceil(4) as u32,
+            children: r.children.iter().map(|&c| self.to_node(raw, c)).collect(),
+        }
+    }
 }
 
 /// Build a heading tree plus virtual pages of `lines_per_page` lines each.
 ///
-/// Sibling page ranges must be disjoint, so a heading that lands on a page
-/// already claimed by its previous sibling's subtree is absorbed into that
-/// sibling instead of becoming a node. `doc_id` is left empty for the caller.
+/// Headings may share a virtual page: a node spans the pages of its first to
+/// last line, so consecutive siblings can share one boundary page. `doc_id` is
+/// left empty for the caller.
 pub fn build(text: &str, lines_per_page: usize) -> (DocumentTree, Vec<Page>) {
     let per_page = lines_per_page.max(1);
     let lines: Vec<&str> = text.lines().collect();
@@ -120,49 +121,44 @@ pub fn build(text: &str, lines_per_page: usize) -> (DocumentTree, Vec<Page>) {
                 .join("\n"),
         })
         .collect();
-    let page_of = |line: usize| (line / per_page) as u32 + 1;
 
     let headings = scan_headings(text);
     let mut raw: Vec<Raw> = Vec::new();
     let mut roots: Vec<usize> = Vec::new();
     let mut stack: Vec<usize> = Vec::new();
-    let mut last_start = 0u32;
 
-    // Text before the first heading becomes a root of its own, when it has
-    // its own page(s) to occupy.
+    // Text before the first heading becomes a root of its own.
+    let mut has_preamble = false;
     if let Some(first) = headings.first() {
-        let has_preamble = lines[..first.line.min(lines.len())]
+        has_preamble = lines[..first.line.min(lines.len())]
             .iter()
             .any(|l| !l.trim().is_empty());
-        if has_preamble && page_of(first.line) > 1 {
+        if has_preamble {
             raw.push(Raw {
                 title: "Preamble".to_string(),
                 level: 0,
-                start: 1,
+                line: 0,
+                end_line: first.line,
                 children: Vec::new(),
             });
             roots.push(0);
-            last_start = 1;
         }
     }
 
     for h in &headings {
-        let page = page_of(h.line);
-        while stack.last().is_some_and(|&s| raw[s].level >= h.level) {
+        while let Some(&s) = stack.last() {
+            if raw[s].level < h.level {
+                break;
+            }
+            raw[s].end_line = h.line;
             stack.pop();
-        }
-        let siblings = match stack.last() {
-            Some(&p) => &raw[p].children,
-            None => &roots,
-        };
-        if !siblings.is_empty() && page <= last_start {
-            continue;
         }
         let id = raw.len();
         raw.push(Raw {
             title: h.title.clone(),
             level: h.level,
-            start: page,
+            line: h.line,
+            end_line: lines.len(),
             children: Vec::new(),
         });
         match stack.last() {
@@ -170,17 +166,22 @@ pub fn build(text: &str, lines_per_page: usize) -> (DocumentTree, Vec<Page>) {
             None => roots.push(id),
         }
         stack.push(id);
-        last_start = page;
     }
 
+    let layout = Layout {
+        lines: &lines,
+        per_page,
+    };
+    let mut nodes: Vec<TreeNode> = roots.iter().map(|&r| layout.to_node(&raw, r)).collect();
     // Cover leading pages that hold no preamble node.
-    if let Some(&first) = roots.first() {
-        raw[first].start = 1;
+    if !has_preamble {
+        if let Some(first) = nodes.first_mut() {
+            first.start_page = 1;
+        }
     }
-
     let mut tree = DocumentTree {
         doc_id: String::new(),
-        roots: to_nodes(&raw, &roots, page_count as u32, &pages),
+        roots: nodes,
     };
     tree.assign_node_ids();
     (tree, pages)

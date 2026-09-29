@@ -24,7 +24,7 @@ fn assert_covers(tree: &DocumentTree, page_count: u32) {
     assert_eq!(tree.roots.first().unwrap().start_page, 1);
     assert_eq!(tree.roots.last().unwrap().end_page, page_count);
     for w in tree.roots.windows(2) {
-        assert_eq!(w[0].end_page + 1, w[1].start_page);
+        assert!(w[0].end_page <= w[1].start_page);
     }
 }
 
@@ -76,4 +76,18 @@ fn test_md_preamble_becomes_root_node() {
     assert_eq!(titles(&tree.roots), ["Preamble", "First", "Second"]);
     assert_eq!(tree.roots[0].start_page, 1);
     assert_covers(&tree, pages.len() as u32);
+}
+
+#[test]
+fn test_md_multiple_headings_on_one_page_are_kept() {
+    let text = "# A\ntext\n# B\ntext\n## B1\n## B2\n# C\n";
+    let (tree, pages) = build(text, 100);
+    assert_eq!(pages.len(), 1);
+    assert_eq!(titles(&tree.roots), ["A", "B", "C"]);
+    assert_eq!(titles(&tree.roots[1].children), ["B1", "B2"]);
+    assert!(tree
+        .roots
+        .iter()
+        .all(|n| (n.start_page, n.end_page) == (1, 1)));
+    tree.validate(1).unwrap();
 }
