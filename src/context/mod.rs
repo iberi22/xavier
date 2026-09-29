@@ -41,6 +41,13 @@ pub use pipeline::{ContextRegenerationPipeline, RecallMetrics};
 pub use query_processor::QueryProcessor;
 pub use regen_loop::{RegenDecision, RegenerationConfig, RegenerationLoop, SessionRegenStats};
 pub use reranker::*;
+pub use skill_controller::manifest::Manifest as SkillManifest;
+pub use skill_controller::plan::{ProjectionPlan, ResolvedRoots as SkillResolvedRoots};
+pub use skill_controller::planner::build_plan as build_skill_plan;
+pub use skill_controller::policy::FsPolicy as SkillFsPolicy;
+pub use skill_controller::projector::{apply_plan as apply_skill_plan, ApplyReport, EntryOutcome};
+pub use skill_controller::rollback::{rollback_transaction, RollbackOutcome, RollbackReport};
+pub use skill_controller::state::Journal as SkillJournal;
 pub use skill_dispatcher::{
     ContextPack, SkillDispatchRequest, SkillDispatchResult, SkillDispatcher,
 };

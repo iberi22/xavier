@@ -401,6 +401,370 @@ impl Cli {
             }
             Command::MirrorImport { input } => mirror::handle_mirror_import(input.clone()).await,
             Command::Airgap(args) => airgap::handle_airgap_command(args.clone()).await,
+            Command::Skills { cmd } => handle_skills_command(cmd.clone()).await,
+        }
+    }
+}
+
+/// Read and parse the skill manifest at `path`; blocking IO never runs on the async worker.
+async fn read_skill_manifest(path: String) -> Result<xavier::context::SkillManifest> {
+    tokio::task::spawn_blocking(move || {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| anyhow::anyhow!("cannot read manifest '{path}': {e}"))?;
+        xavier::context::SkillManifest::from_toml(&content)
+            .map_err(|e| anyhow::anyhow!("invalid manifest '{path}': {e}"))
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("manifest read task failed: {e}"))?
+}
+
+/// The policy allowlist and resolved roots come straight from the manifest's own declared
+/// source/target directories (D5), matching the HTTP skill handlers in
+/// `crate::cli::handlers::skills`.
+fn skill_roots_and_policy(
+    manifest: &xavier::context::SkillManifest,
+) -> Result<(
+    xavier::context::SkillResolvedRoots,
+    xavier::context::SkillFsPolicy,
+)> {
+    let sources: Vec<std::path::PathBuf> = manifest
+        .sources
+        .values()
+        .map(std::path::PathBuf::from)
+        .collect();
+    let targets: Vec<std::path::PathBuf> = manifest
+        .targets
+        .iter()
+        .map(|t| std::path::PathBuf::from(&t.root))
+        .collect();
+    let policy = xavier::context::SkillFsPolicy::new(&sources, &targets)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let roots = xavier::context::SkillResolvedRoots {
+        sources: manifest
+            .sources
+            .iter()
+            .map(|(id, dir)| (id.clone(), std::path::PathBuf::from(dir)))
+            .collect(),
+        targets: manifest
+            .targets
+            .iter()
+            .map(|t| (t.id.clone(), std::path::PathBuf::from(&t.root)))
+            .collect(),
+    };
+    Ok((roots, policy))
+}
+
+/// `ApplyReport`/`RollbackReport` and their per-entry outcomes intentionally do not derive
+/// `Serialize` in the controller crate, so render them to JSON here (mirrors
+/// `crate::cli::handlers::skills::render_apply_report`/`render_rollback_report`).
+fn entry_outcome_json(outcome: &xavier::context::EntryOutcome) -> serde_json::Value {
+    use xavier::context::EntryOutcome;
+    match outcome {
+        EntryOutcome::Created => serde_json::json!({"kind": "created"}),
+        EntryOutcome::Refreshed => serde_json::json!({"kind": "refreshed"}),
+        EntryOutcome::Unchanged => serde_json::json!({"kind": "unchanged"}),
+        EntryOutcome::SkippedConflict => serde_json::json!({
+            "kind": "conflict",
+            "detail": "destination is not controller-owned; remove or rename it, then plan again",
+        }),
+        EntryOutcome::BlockedSecret(summary) => serde_json::json!({
+            "kind": "blocked_secret",
+            "detail": format!(
+                "publication blocked: {summary}; remove the secret from the source package, then plan again"
+            ),
+        }),
+    }
+}
+
+fn render_apply_report(report: &xavier::context::ApplyReport) -> serde_json::Value {
+    let applied: Vec<serde_json::Value> = report
+        .applied
+        .iter()
+        .map(|(name, target, outcome)| {
+            serde_json::json!({
+                "name": name,
+                "target": target,
+                "outcome": entry_outcome_json(outcome),
+            })
+        })
+        .collect();
+    let removed: Vec<serde_json::Value> = report
+        .removed
+        .iter()
+        .map(|(name, target)| serde_json::json!({"name": name, "target": target}))
+        .collect();
+    serde_json::json!({
+        "tx_id": report.tx_id,
+        "dry_run": report.dry_run,
+        "applied": applied,
+        "removed": removed,
+    })
+}
+
+fn rollback_outcome_json(outcome: &xavier::context::RollbackOutcome) -> serde_json::Value {
+    use xavier::context::RollbackOutcome;
+    match outcome {
+        RollbackOutcome::RestoredLink { to } => {
+            serde_json::json!({"kind": "restored_link", "to": to.to_string_lossy()})
+        }
+        RollbackOutcome::RestoredCopy => serde_json::json!({"kind": "restored_copy"}),
+        RollbackOutcome::Removed => serde_json::json!({"kind": "removed"}),
+        RollbackOutcome::AlreadyRolledBack => serde_json::json!({"kind": "already_rolled_back"}),
+        RollbackOutcome::Conflict(detail) => serde_json::json!({
+            "kind": "conflict",
+            "detail": format!("{detail}; left untouched, resolve manually then roll back again"),
+        }),
+    }
+}
+
+fn render_rollback_report(report: &xavier::context::RollbackReport) -> serde_json::Value {
+    let entries: Vec<serde_json::Value> = report
+        .entries
+        .iter()
+        .map(|(path, outcome)| {
+            serde_json::json!({
+                "path": path.to_string_lossy(),
+                "outcome": rollback_outcome_json(outcome),
+            })
+        })
+        .collect();
+    serde_json::json!({"tx_id": report.tx_id, "dry_run": report.dry_run, "entries": entries})
+}
+
+/// `xavier skills plan|apply|rollback`: the skill controller's only mutation surface (D4).
+/// This calls the controller directly rather than the HTTP handlers in
+/// `crate::cli::handlers::skills`, so no new network mutation route is added (D6).
+async fn handle_skills_command(cmd: enums::SkillsCommand) -> Result<()> {
+    match cmd {
+        enums::SkillsCommand::Plan { manifest } => {
+            let manifest = read_skill_manifest(manifest).await?;
+            let (roots, policy) = skill_roots_and_policy(&manifest)?;
+            let plan = xavier::context::build_skill_plan(&manifest, &policy, &roots)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            println!("{}", serde_json::to_string_pretty(&plan)?);
+            Ok(())
+        }
+        enums::SkillsCommand::Apply {
+            manifest,
+            plan,
+            apply,
+        } => {
+            let plan_path = plan;
+            let plan: xavier::context::ProjectionPlan = tokio::task::spawn_blocking({
+                let plan_path = plan_path.clone();
+                move || -> Result<xavier::context::ProjectionPlan> {
+                    let content = std::fs::read_to_string(&plan_path)
+                        .map_err(|e| anyhow::anyhow!("no saved plan at '{plan_path}': {e}"))?;
+                    serde_json::from_str(&content).map_err(|e| {
+                        anyhow::anyhow!("saved plan at '{plan_path}' is not valid: {e}")
+                    })
+                }
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("plan read task failed: {e}"))??;
+            let manifest = read_skill_manifest(manifest).await?;
+            let (roots, policy) = skill_roots_and_policy(&manifest)?;
+            let journal = xavier::context::SkillJournal::from_settings()
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let tx_id = uuid::Uuid::new_v4().to_string();
+            let dry_run = !apply;
+            let report = tokio::task::spawn_blocking(move || {
+                xavier::context::apply_skill_plan(
+                    &plan, &manifest, &policy, &roots, &journal, &tx_id, dry_run,
+                )
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("apply task failed: {e}"))?
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&render_apply_report(&report))?
+            );
+            Ok(())
+        }
+        enums::SkillsCommand::Rollback {
+            manifest,
+            tx_id,
+            apply,
+        } => {
+            let manifest = read_skill_manifest(manifest).await?;
+            let (_roots, policy) = skill_roots_and_policy(&manifest)?;
+            let journal = xavier::context::SkillJournal::from_settings()
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let dry_run = !apply;
+            let report = tokio::task::spawn_blocking(move || {
+                xavier::context::rollback_transaction(&journal, &policy, &tx_id, dry_run)
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("rollback task failed: {e}"))?
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&render_rollback_report(&report))?
+            );
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod skills_command_tests {
+    use super::*;
+    use clap::CommandFactory;
+    use std::fs;
+    use std::path::Path;
+    use tempfile::TempDir;
+
+    #[test]
+    fn skills_help_lists_plan_apply_rollback() {
+        let cli = crate::cli::state::Cli::command();
+        let skills = cli
+            .get_subcommands()
+            .find(|c| c.get_name() == "skills")
+            .expect("skills subcommand is registered");
+        let names: Vec<&str> = skills.get_subcommands().map(|c| c.get_name()).collect();
+        assert!(names.contains(&"plan"), "missing plan: {names:?}");
+        assert!(names.contains(&"apply"), "missing apply: {names:?}");
+        assert!(names.contains(&"rollback"), "missing rollback: {names:?}");
+    }
+
+    fn write_package(source: &Path, name: &str) {
+        let dir = source.join(name);
+        fs::create_dir_all(&dir).expect("mkdir package");
+        fs::write(
+            dir.join("SKILL.md"),
+            format!("---\nname: {name}\n---\n\nBody.\n"),
+        )
+        .expect("write SKILL.md");
+    }
+
+    fn manifest_toml(source: &Path, target: &Path) -> String {
+        format!(
+            "version = 1\n[sources]\ncanonical = \"{}\"\n\
+             [[targets]]\nid = \"t1\"\ntools = [\"codex\"]\nroot = \"{}\"\nmode = \"symlink\"\n\
+             [[placements]]\nsource = \"canonical\"\npath = \"demo\"\nname = \"demo\"\ntargets = [\"t1\"]\n",
+            source.display(),
+            target.display(),
+        )
+    }
+
+    #[tokio::test]
+    async fn skills_plan_writes_nothing() {
+        let tmp = TempDir::new().expect("tmp");
+        let source = tmp.path().join("store");
+        let target = tmp.path().join("tools/skills");
+        fs::create_dir_all(&source).expect("mkdir source");
+        fs::create_dir_all(&target).expect("mkdir target");
+        write_package(&source, "demo");
+        let manifest_path = tmp.path().join("manifest.toml");
+        fs::write(&manifest_path, manifest_toml(&source, &target)).expect("write manifest");
+
+        handle_skills_command(enums::SkillsCommand::Plan {
+            manifest: manifest_path.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("plan succeeds");
+
+        assert!(
+            fs::read_dir(&target).expect("read target").next().is_none(),
+            "plan must not write to the target root"
+        );
+    }
+
+    #[tokio::test]
+    async fn skills_apply_defaults_to_dry_run_then_rollback_round_trips() {
+        let _guard = crate::context::skill_registry::env_lock().lock().await;
+        let previous_data_dir = std::env::var("XAVIER_DATA_DIR").ok();
+
+        let tmp = TempDir::new().expect("tmp");
+        std::env::set_var("XAVIER_DATA_DIR", tmp.path().join("journal"));
+
+        let source = tmp.path().join("store");
+        let target = tmp.path().join("tools/skills");
+        fs::create_dir_all(&source).expect("mkdir source");
+        fs::create_dir_all(&target).expect("mkdir target");
+        write_package(&source, "demo");
+        let manifest_path = tmp.path().join("manifest.toml");
+        fs::write(&manifest_path, manifest_toml(&source, &target)).expect("write manifest");
+
+        let manifest_obj = read_skill_manifest(manifest_path.to_string_lossy().into_owned())
+            .await
+            .expect("read manifest");
+        let (roots, policy) = skill_roots_and_policy(&manifest_obj).expect("roots and policy");
+        let plan =
+            xavier::context::build_skill_plan(&manifest_obj, &policy, &roots).expect("build plan");
+        let plan_path = tmp.path().join("plan.json");
+        fs::write(
+            &plan_path,
+            serde_json::to_string(&plan).expect("serialize plan"),
+        )
+        .expect("write plan");
+
+        let dest = target.join("demo");
+
+        handle_skills_command(enums::SkillsCommand::Apply {
+            manifest: manifest_path.to_string_lossy().into_owned(),
+            plan: plan_path.to_string_lossy().into_owned(),
+            apply: false,
+        })
+        .await
+        .expect("dry-run apply succeeds");
+        assert!(
+            fs::symlink_metadata(&dest).is_err(),
+            "apply without --apply must not mutate the target (D4)"
+        );
+
+        handle_skills_command(enums::SkillsCommand::Apply {
+            manifest: manifest_path.to_string_lossy().into_owned(),
+            plan: plan_path.to_string_lossy().into_owned(),
+            apply: true,
+        })
+        .await
+        .expect("apply succeeds");
+        assert!(
+            fs::symlink_metadata(&dest)
+                .expect("dest metadata")
+                .file_type()
+                .is_symlink(),
+            "apply --apply must publish an owned symlink"
+        );
+
+        let journal = xavier::context::SkillJournal::from_settings().expect("journal");
+        let tx_id = journal
+            .list_transactions()
+            .expect("list transactions")
+            .into_iter()
+            .next()
+            .expect("one transaction recorded")
+            .id;
+
+        handle_skills_command(enums::SkillsCommand::Rollback {
+            manifest: manifest_path.to_string_lossy().into_owned(),
+            tx_id: tx_id.clone(),
+            apply: false,
+        })
+        .await
+        .expect("dry-run rollback succeeds");
+        assert!(
+            fs::symlink_metadata(&dest).is_ok(),
+            "rollback without --apply must not mutate the target (D4)"
+        );
+
+        handle_skills_command(enums::SkillsCommand::Rollback {
+            manifest: manifest_path.to_string_lossy().into_owned(),
+            tx_id,
+            apply: true,
+        })
+        .await
+        .expect("apply rollback succeeds");
+        assert!(
+            fs::symlink_metadata(&dest).is_err(),
+            "apply rollback must remove the entry created by apply (D14)"
+        );
+
+        match previous_data_dir {
+            Some(v) => std::env::set_var("XAVIER_DATA_DIR", v),
+            None => std::env::remove_var("XAVIER_DATA_DIR"),
         }
     }
 }
