@@ -137,6 +137,7 @@ Data: 3 committed documents, 36 questions with gold page ranges, no LLM, no netw
 | BM25, 512-token chunks | 0.722 | 0.917 | 0.815 | 13.42 |
 | BM25, 64-token chunks | 0.611 | 0.806 | 0.708 | 3.11 |
 | Lexical tree navigator (titles) | 0.083 | 0.139 | 0.102 | 3.56 |
+| Lexical tree navigator (titles+lead) | 0.222 | 0.222 | 0.222 | 3.19 |
 | Hybrid arm (gating + tree nodes) | 0.722 | 0.778 | 0.750 | 4.14 |
 
 Honest limitation: without an LLM, lexical navigation of the tree is weak, and the
