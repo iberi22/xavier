@@ -59,6 +59,8 @@ pkgs.mkShell {
 
     # Build tools
     cmake
+    nodejs
+    pnpm
     openssl.dev
     glib.dev
     glib

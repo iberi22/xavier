@@ -30,9 +30,8 @@ if [ "${1:-}" != "--no-build" ]; then
     if [ -x "$PREFIX/bin/xavier" ]; then ln -s "$PREFIX/bin/xavier" "$SIDECAR"
     else printf '#!/bin/sh\nexit 1\n' >"$SIDECAR"; chmod +x "$SIDECAR"; fi
   fi
-  (cd "$REPO" && pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true)
   (cd "$REPO" && CARGO_TARGET_DIR="$TARGET" nice -n 19 \
-    nix-shell shell.nix --run 'cd panel-ui && pnpm exec tauri build --no-bundle')
+    nix-shell shell.nix --run 'pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true && cd panel-ui && pnpm exec tauri build --no-bundle')
 fi
 BIN="$TARGET/release/xavier-desktop"
 [ -x "$BIN" ] || { echo "missing $BIN (run without --no-build)" >&2; exit 1; }
