@@ -165,8 +165,9 @@ pub fn resolve_package<'a>(
 }
 
 /// Digest the whole package, not just `SKILL.md`: sorted relative paths, entry types, executable bits and
-/// bytes. Bounded like the secret scan; a member that is not a regular file or a directory (a link, a
-/// socket) aborts, because it cannot be inventoried.
+/// bytes. Bounded like the secret scan: content deeper than the bound aborts instead of being skipped;
+/// a member that is not a regular file or a directory (a link, a socket) aborts, because it cannot be
+/// inventoried.
 pub fn hash_package(
     dir: &AuthorizedDir,
     placement: &PlacementRecord,
@@ -180,7 +181,7 @@ pub fn hash_package(
     let (mut total, mut nodes) = (0u64, 0usize);
     for entry in WalkDir::new(dir.path())
         .follow_links(false)
-        .max_depth(PACKAGE_BOUNDS.0)
+        .max_depth(PACKAGE_BOUNDS.0 + 1)
     {
         let entry = entry.map_err(|e| rejected(e.to_string()))?;
         nodes += 1;
@@ -188,6 +189,12 @@ pub fn hash_package(
             return Err(PlannerError::BoundExceeded {
                 scope: "package",
                 bound: "node count",
+            });
+        }
+        if entry.depth() > PACKAGE_BOUNDS.0 {
+            return Err(PlannerError::BoundExceeded {
+                scope: "package",
+                bound: "directory depth",
             });
         }
         let relative = relative_to(dir.path(), entry.path());
@@ -553,5 +560,165 @@ mod tests {
 
         assert_eq!(tool_name(Tool::Claude), "claude");
         assert_eq!(tool_name(Tool::Codex), "codex");
+    }
+
+    #[test]
+    fn test_identical_placements_coalesce_and_different_packages_diverge() {
+        let tmp = TempDir::new().expect("temp dir");
+        let source_root = tmp.path().join("store");
+        fs::create_dir_all(&source_root).expect("create source");
+        write_file(
+            &source_root,
+            "shared/SKILL.md",
+            "---\nname: shared\n---\n\nBody A.\n",
+        );
+        write_file(
+            &source_root,
+            "other/SKILL.md",
+            "---\nname: shared\n---\n\nBody B.\n",
+        );
+
+        let policy = FsPolicy::new(std::slice::from_ref(&source_root), &[]).expect("policy");
+        let roots = ResolvedRoots {
+            sources: BTreeMap::from([("src".to_string(), source_root.clone())]),
+            targets: BTreeMap::new(),
+        };
+        let placement = |name: &str, path: &str| PlacementRecord {
+            source: "src".to_string(),
+            path: path.to_string(),
+            name: name.to_string(),
+            targets: vec!["t1".to_string()],
+        };
+
+        let mut cache = BTreeMap::new();
+        let shared = placement("shared", "shared");
+        let first = resolve_package(&shared, &policy, &roots, &mut cache).expect("resolve first");
+        let second = resolve_package(&shared, &policy, &roots, &mut cache).expect("resolve second");
+        assert_eq!(
+            first, second,
+            "identical duplicate placements must coalesce on one identity"
+        );
+
+        let mut fresh = BTreeMap::new();
+        let other_placement = placement("shared", "other");
+        let other =
+            resolve_package(&other_placement, &policy, &roots, &mut fresh).expect("resolve other");
+        assert_ne!(
+            first.hash, other.hash,
+            "different packages under one name must diverge so the conflict is detectable"
+        );
+    }
+
+    #[test]
+    fn test_hash_package_bound_enforcement() {
+        let tmp = TempDir::new().expect("temp dir");
+        let source_root = tmp.path().join("store");
+        fs::create_dir_all(&source_root).expect("create source");
+        let policy = FsPolicy::new(std::slice::from_ref(&source_root), &[]).expect("policy");
+        let placement = |name: &str| PlacementRecord {
+            source: "src".to_string(),
+            path: name.to_string(),
+            name: name.to_string(),
+            targets: vec![],
+        };
+        let authorize = |name: &str| {
+            policy
+                .authorize(RootKind::Source, &source_root.join(name))
+                .expect("auth")
+        };
+        let refuse = |name: &str, expected: &str| {
+            let err = hash_package(&authorize(name), &placement(name)).expect_err("bound refused");
+            match err {
+                PlannerError::BoundExceeded { scope, bound } => {
+                    assert_eq!(scope, "package");
+                    assert_eq!(bound, expected);
+                }
+                other => panic!("expected BoundExceeded, got {other:?}"),
+            }
+        };
+        let skill_md = |name: &str| format!("---\nname: {name}\n---\n");
+
+        // Directory depth: content at depth 8 hashes, depth 9 aborts instead of being skipped.
+        let mut nested = source_root.join("deep_ok");
+        fs::create_dir_all(&nested).expect("mkdir");
+        fs::write(nested.join("SKILL.md"), skill_md("deep_ok")).expect("write skill");
+        for level in 1..=7 {
+            nested = nested.join(format!("l{level}"));
+        }
+        fs::create_dir_all(&nested).expect("mkdir depth 7");
+        fs::write(nested.join("ok.txt"), "ok\n").expect("write depth 8");
+        let ident =
+            hash_package(&authorize("deep_ok"), &placement("deep_ok")).expect("depth 8 hashes");
+        assert_eq!(ident.hash.len(), 64);
+
+        let mut nested = source_root.join("deep_bad");
+        fs::create_dir_all(&nested).expect("mkdir");
+        fs::write(nested.join("SKILL.md"), skill_md("deep_bad")).expect("write skill");
+        for level in 1..=8 {
+            nested = nested.join(format!("l{level}"));
+        }
+        fs::create_dir_all(&nested).expect("mkdir depth 8");
+        fs::write(nested.join("bad.txt"), "bad\n").expect("write depth 9");
+        refuse("deep_bad", "directory depth");
+
+        // Node count: PACKAGE_BOUNDS.1 nodes hash, one more aborts.
+        fs::create_dir_all(source_root.join("many_ok")).expect("mkdir");
+        fs::write(source_root.join("many_ok/SKILL.md"), skill_md("many_ok")).expect("write skill");
+        for index in 0..510 {
+            write_file(&source_root, &format!("many_ok/f{index}.txt"), "x");
+        }
+        hash_package(&authorize("many_ok"), &placement("many_ok")).expect("512 nodes hash");
+
+        fs::create_dir_all(source_root.join("many_bad")).expect("mkdir");
+        fs::write(source_root.join("many_bad/SKILL.md"), skill_md("many_bad"))
+            .expect("write skill");
+        for index in 0..511 {
+            write_file(&source_root, &format!("many_bad/f{index}.txt"), "x");
+        }
+        refuse("many_bad", "node count");
+
+        // Member size: a 1MB member hashes, one byte more aborts.
+        fs::create_dir_all(source_root.join("big_ok")).expect("mkdir");
+        fs::write(source_root.join("big_ok/SKILL.md"), skill_md("big_ok")).expect("write skill");
+        fs::write(source_root.join("big_ok/blob.bin"), vec![b'a'; 1 << 20]).expect("write 1MB");
+        hash_package(&authorize("big_ok"), &placement("big_ok")).expect("1MB member hashes");
+
+        fs::create_dir_all(source_root.join("big_bad")).expect("mkdir");
+        fs::write(source_root.join("big_bad/SKILL.md"), skill_md("big_bad")).expect("write skill");
+        fs::write(
+            source_root.join("big_bad/blob.bin"),
+            vec![b'a'; (1 << 20) + 1],
+        )
+        .expect("write 1MB+1");
+        refuse("big_bad", "member size");
+
+        // Total bytes: just under 4MB across members hashes, one MB more aborts.
+        fs::create_dir_all(source_root.join("total_ok")).expect("mkdir");
+        fs::write(source_root.join("total_ok/SKILL.md"), skill_md("total_ok"))
+            .expect("write skill");
+        for index in 0..4 {
+            fs::write(
+                source_root.join(format!("total_ok/part{index}.bin")),
+                vec![b'b'; (1 << 20) - 1024],
+            )
+            .expect("write ~1MB");
+        }
+        hash_package(&authorize("total_ok"), &placement("total_ok"))
+            .expect("just under 4MB hashes");
+
+        fs::create_dir_all(source_root.join("total_bad")).expect("mkdir");
+        fs::write(
+            source_root.join("total_bad/SKILL.md"),
+            skill_md("total_bad"),
+        )
+        .expect("write skill");
+        for index in 0..5 {
+            fs::write(
+                source_root.join(format!("total_bad/part{index}.bin")),
+                vec![b'c'; 1 << 20],
+            )
+            .expect("write 1MB");
+        }
+        refuse("total_bad", "total bytes");
     }
 }
