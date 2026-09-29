@@ -1,17 +1,23 @@
 //! OpenBao/Vault secrets backend
 //!
-//! Provides the implementation and data structures for this module's
-//! responsibilities within the Xavier cognitive memory system.
+//! `OpenBaoSecretStore` is a non-functional stub: every `SecretStore` method
+//! unconditionally returns `SecretError::ProviderError`. It is not wired to a
+//! real OpenBao/Vault server and must not be treated as an available backend.
+//! `crate::secrets::vault::HardwareVault` is the actual vault-backed store.
 use crate::secrets::store::SecretStore;
 use crate::secrets::{SecretError, SecretResult};
 use std::future::Future;
 use std::pin::Pin;
 
+#[deprecated(
+    note = "non-functional stub, all methods return ProviderError; use crate::secrets::vault::HardwareVault instead"
+)]
 pub struct OpenBaoSecretStore {
     _address: String,
     _token: String,
 }
 
+#[allow(deprecated)]
 impl OpenBaoSecretStore {
     /// New.
     pub fn new(address: &str, token: &str) -> Self {
@@ -22,6 +28,7 @@ impl OpenBaoSecretStore {
     }
 }
 
+#[allow(deprecated)]
 impl SecretStore for OpenBaoSecretStore {
     fn get<'a>(
         &'a self,

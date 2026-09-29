@@ -7,7 +7,8 @@ use crate::codebase::connection_manager::ConnectionManager;
 use crate::secrets::local_vault::LocalSecretsVault;
 use crate::security::encryption_keys::MasterKeyManager;
 use crate::security::rsa_keys::RsaKeypairManager;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use std::path::Path;
 
 /// Handles the initial security setup of the system.
 pub struct SecurityInitializer;
@@ -26,8 +27,15 @@ impl SecurityInitializer {
         rsa_mgr.ensure_keypair()?;
         println!("✅ RSA Keypair secured");
 
-        // 3. Initialize Local Secrets Vault
-        let _vault = LocalSecretsVault::init_default(&master_mgr)?;
+        // 3. Initialize Local Secrets Vault, then use the instance to tighten
+        // and verify the storage directory permissions instead of dropping it.
+        let vault = LocalSecretsVault::init_default(&master_mgr)?;
+        vault.list()?;
+        let storage_dir = dirs::home_dir()
+            .ok_or_else(|| anyhow!("Could not find home directory"))?
+            .join(".xavier")
+            .join("secrets");
+        tighten_storage_dir_permissions(&storage_dir)?;
         println!("✅ Local Secrets Vault ready");
 
         // 4. Trigger auth database creation/encryption
@@ -43,5 +51,42 @@ impl SecurityInitializer {
 
         println!("Xavier security system initialization complete.");
         Ok(())
+    }
+}
+
+/// Force the secrets storage directory to mode `0700` and assert it held.
+/// Factored out so it is directly testable without the real keyring or the
+/// real `~/.xavier` that `SecurityInitializer::initialize` touches.
+fn tighten_storage_dir_permissions(dir: &Path) -> Result<()> {
+    crate::security::encryption_keys::ensure_private_dir(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(dir)?.permissions().mode() & 0o777;
+        if mode != 0o700 {
+            return Err(anyhow!(
+                "secrets storage directory has insecure permissions: {mode:o}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    #[cfg(unix)]
+    fn test_tighten_storage_dir_permissions_forces_0700() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempdir().unwrap();
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        tighten_storage_dir_permissions(tmp.path()).unwrap();
+
+        let mode = std::fs::metadata(tmp.path()).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "secrets storage directory must be 0700");
     }
 }
