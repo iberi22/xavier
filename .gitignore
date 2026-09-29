@@ -111,3 +111,12 @@ docs/source/
 
 # SvelteKit build output (any package)
 .svelte-kit/
+
+# pageindex e2e harness outputs
+scripts/pageindex-e2e/work/
+scripts/pageindex-e2e/token
+scripts/pageindex-e2e/*_results.json
+scripts/pageindex-e2e/pages_cache.json
+scripts/pageindex-e2e/nav_*.json
+scripts/pageindex-e2e/nav_logs/
+scripts/pageindex-e2e/__pycache__/

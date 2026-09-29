@@ -1,0 +1,493 @@
+#![cfg(feature = "pdf-layout")]
+
+use std::path::{Path, PathBuf};
+use xavier_pageindex::error::PageIndexError;
+use xavier_pageindex::pdf::layout::{
+    classify_headings, detect_headings, try_detect_headings, LayoutParams, LineRecord,
+};
+use xavier_pageindex::pdf::pdfium_loader::{bind_first, candidate_paths};
+
+fn line(page: u32, top: f32, text: &str, size: f32, bold: bool) -> LineRecord {
+    LineRecord {
+        page,
+        top,
+        page_height: 800.0,
+        text: text.into(),
+        font_size: size,
+        bold,
+        chars: text.chars().filter(|c| !c.is_whitespace()).count() as u32,
+    }
+}
+
+fn body(page: u32, top: f32) -> LineRecord {
+    line(
+        page,
+        top,
+        "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do",
+        11.0,
+        false,
+    )
+}
+
+#[test]
+fn test_layout_font_size_clusters_map_to_levels() {
+    let lines = vec![
+        line(1, 100.0, "Big Title", 24.0, true),
+        body(1, 130.0),
+        body(1, 145.0),
+        body(1, 160.0),
+        line(1, 200.0, "Section One", 16.0, true),
+        body(1, 230.0),
+        body(1, 245.0),
+        line(2, 100.0, "Another Section", 16.2, true),
+        body(2, 130.0),
+        line(2, 300.0, "Subsection", 13.0, false),
+        body(2, 330.0),
+        body(2, 345.0),
+    ];
+    let h = classify_headings(&lines, &LayoutParams::default());
+    let got: Vec<(&str, u32, u32)> = h
+        .iter()
+        .map(|c| (c.title.as_str(), c.page, c.level))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("Big Title", 1, 1),
+            ("Section One", 1, 2),
+            ("Another Section", 2, 2),
+            ("Subsection", 2, 3),
+        ]
+    );
+}
+
+#[test]
+fn test_layout_headers_footers_filtered() {
+    let mut lines = Vec::new();
+    for p in 1..=4 {
+        // Running header in a larger size and a page-number footer.
+        lines.push(line(p, 20.0, "ACME Annual Report", 14.0, true));
+        lines.push(body(p, 200.0));
+        lines.push(body(p, 215.0));
+        lines.push(line(p, 780.0, &format!("Page {p}"), 9.0, false));
+    }
+    lines.push(line(2, 100.0, "Real Heading", 18.0, true));
+    let h = classify_headings(&lines, &LayoutParams::default());
+    let titles: Vec<&str> = h.iter().map(|c| c.title.as_str()).collect();
+    assert_eq!(titles, vec!["Real Heading"]);
+}
+
+#[test]
+fn test_layout_bold_short_line_is_heading_candidate() {
+    let lines = vec![
+        line(1, 100.0, "Overview", 11.0, true),
+        body(1, 120.0),
+        body(1, 135.0),
+        body(1, 150.0),
+        // Long bold sentence is emphasis, not a heading.
+        line(
+            1,
+            170.0,
+            "This entire sentence is bold but it is far too long to be a section heading in any document ever written",
+            11.0,
+            true,
+        ),
+        body(1, 190.0),
+    ];
+    let h = classify_headings(&lines, &LayoutParams::default());
+    assert_eq!(h.len(), 1);
+    assert_eq!(h[0].title, "Overview");
+    assert_eq!(h[0].level, 1);
+}
+
+#[test]
+fn test_layout_missing_pdfium_returns_typed_error_not_panic() {
+    let missing = vec![PathBuf::from("/nonexistent/xavier/libpdfium.so")];
+    let Err(err) = bind_first(&missing, false) else {
+        panic!("must fail")
+    };
+    assert!(
+        matches!(err, PageIndexError::PdfiumUnavailable(_)),
+        "{err:?}"
+    );
+
+    // A file that exists but is not a shared library also yields the typed error.
+    let junk = std::env::temp_dir().join("xavier_pageindex_not_a_lib.so");
+    std::fs::write(&junk, b"not a library").unwrap();
+    let res = bind_first(std::slice::from_ref(&junk), false);
+    let _ = std::fs::remove_file(&junk);
+    let Err(err) = res else { panic!("must fail") };
+    assert!(
+        matches!(err, PageIndexError::PdfiumUnavailable(_)),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn test_layout_pdfium_path_resolution_env_order() {
+    let dir = std::env::temp_dir();
+    let exe = Path::new("/opt/app");
+    let c = candidate_paths(
+        Some("/a/libpdfium.so"),
+        Some(dir.to_str().unwrap()),
+        Some(exe),
+    );
+    assert_eq!(c.len(), 3);
+    assert_eq!(c[0], Path::new("/a/libpdfium.so"));
+    assert!(
+        c[1].starts_with(&dir)
+            && c[1]
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("pdfium")
+    );
+    assert!(c[2].starts_with(exe));
+
+    // Empty values are skipped; the executable dir stays last.
+    let c = candidate_paths(Some("  "), None, Some(exe));
+    assert_eq!(c.len(), 1);
+    assert!(c[0].starts_with(exe));
+}
+
+/// Minimal 2-page PDF: Helvetica body, Helvetica-Bold headings of two sizes.
+fn sample_pdf() -> Vec<u8> {
+    fn page_stream(items: &[(&str, f32, f32, &str)]) -> String {
+        let mut s = String::new();
+        for (font, size, y, text) in items {
+            s.push_str(&format!("BT /{font} {size} Tf 72 {y} Td ({text}) Tj ET\n"));
+        }
+        s
+    }
+    let p1 = page_stream(&[
+        ("F2", 24.0, 720.0, "Main Title"),
+        (
+            "F1",
+            11.0,
+            690.0,
+            "Body text line one of the introduction paragraph.",
+        ),
+        (
+            "F1",
+            11.0,
+            675.0,
+            "Body text line two of the introduction paragraph.",
+        ),
+        (
+            "F1",
+            11.0,
+            660.0,
+            "Body text line three of the introduction paragraph.",
+        ),
+        ("F2", 16.0, 600.0, "First Section"),
+        (
+            "F1",
+            11.0,
+            570.0,
+            "Section body text goes here and continues on.",
+        ),
+        (
+            "F1",
+            11.0,
+            555.0,
+            "More section body text goes here and continues.",
+        ),
+    ]);
+    let p2 = page_stream(&[
+        ("F2", 16.0, 720.0, "Second Section"),
+        (
+            "F1",
+            11.0,
+            690.0,
+            "Second page body text goes here and continues.",
+        ),
+        (
+            "F1",
+            11.0,
+            675.0,
+            "More second page body text goes here as well.",
+        ),
+        (
+            "F1",
+            11.0,
+            660.0,
+            "Yet more second page body text for statistics.",
+        ),
+    ]);
+    let objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 7 0 R /F2 8 0 R >> >> >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 7 0 R /F2 8 0 R >> >> >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{}endstream", p1.len(), p1),
+        format!("<< /Length {} >>\nstream\n{}endstream", p2.len(), p2),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>".to_string(),
+    ];
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend(format!("{} 0 obj\n{}\nendobj\n", i + 1, o).into_bytes());
+    }
+    let xref = out.len();
+    out.extend(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).into_bytes());
+    for off in offsets {
+        out.extend(format!("{off:010} 00000 n \n").into_bytes());
+    }
+    out.extend(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+            objs.len() + 1
+        )
+        .into_bytes(),
+    );
+    out
+}
+
+#[test]
+#[ignore = "needs libpdfium (XAVIER_PAGEINDEX_PDFIUM_LIB / PDFIUM_DYNAMIC_LIB_PATH); run with --include-ignored"]
+fn test_layout_pdfium_detects_headings_from_generated_pdf() {
+    let pdf = sample_pdf();
+    let h = match try_detect_headings(&pdf) {
+        Ok(h) => h,
+        Err(PageIndexError::PdfiumUnavailable(m)) => {
+            eprintln!("skipped: {m}");
+            return;
+        }
+        Err(e) => panic!("unexpected error: {e}"),
+    };
+    let got: Vec<(&str, u32, u32)> = h
+        .iter()
+        .map(|c| (c.title.as_str(), c.page, c.level))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("Main Title", 1, 1),
+            ("First Section", 1, 2),
+            ("Second Section", 2, 2)
+        ]
+    );
+    assert!(detect_headings(&pdf).is_some());
+}
+
+fn titles_of(lines: &[LineRecord]) -> Vec<String> {
+    classify_headings(lines, &LayoutParams::default())
+        .into_iter()
+        .map(|c| c.title)
+        .collect()
+}
+
+#[test]
+fn test_layout_running_header_variants_are_not_titles() {
+    let mut lines = Vec::new();
+    for p in 1..=8 {
+        // Outside the margin band, differing digits, bold: still furniture.
+        lines.push(line(
+            p,
+            110.0,
+            &format!("(Cite as: 2012 WL {}00 (Del.Super.))", 3860 + p),
+            11.0,
+            true,
+        ));
+        lines.push(body(p, 200.0));
+        lines.push(body(p, 215.0));
+        lines.push(body(p, 230.0));
+    }
+    // A one-off metadata stamp in the top band.
+    lines.push(line(
+        1,
+        20.0,
+        "EFiled: Jan 14 2013 09:42AM EST Filing ID 48897809",
+        14.0,
+        true,
+    ));
+    lines.push(line(3, 300.0, "Real Heading", 16.0, true));
+    assert_eq!(titles_of(&lines), vec!["Real Heading"]);
+}
+
+#[test]
+fn test_layout_bare_numbers_and_sentences_are_not_titles() {
+    let mut lines = vec![
+        body(1, 100.0),
+        body(1, 115.0),
+        body(1, 130.0),
+        line(1, 300.0, "23", 14.0, true),
+        line(1, 330.0, "Page 4 of 9", 14.0, true),
+        line(
+            1,
+            360.0,
+            "We believe this approach is right for the business.",
+            14.0,
+            true,
+        ),
+        line(1, 390.0, "continued from the previous page", 14.0, true),
+        line(1, 420.0, "Is it changed? No", 14.0, true),
+        line(1, 450.0, "Increase the number of", 14.0, true),
+        line(1, 480.0, "Contents .................. 4", 14.0, true),
+        line(1, 510.0, "Financial Results", 14.0, true),
+    ];
+    lines.push(body(1, 540.0));
+    assert_eq!(titles_of(&lines), vec!["Financial Results"]);
+}
+
+#[test]
+fn test_layout_numbered_sections_become_top_levels() {
+    let mut lines = Vec::new();
+    for (p, name) in [
+        (1, "PART I"),
+        (1, "Item 1. Business"),
+        (2, "Item 1A. Risk Factors"),
+        (3, "PART II"),
+        (3, "Item 7. Discussion"),
+    ] {
+        // Numbered headings are bold at body size, sub-headings are larger.
+        lines.push(line(p, 100.0, name, 11.0, true));
+        lines.push(line(p, 140.0, &format!("Overview {p}{name}"), 15.0, false));
+        lines.push(body(p, 180.0));
+        lines.push(body(p, 195.0));
+        lines.push(body(p, 210.0));
+    }
+    let h = classify_headings(&lines, &LayoutParams::default());
+    let lvl = |t: &str| h.iter().find(|c| c.title == t).map(|c| c.level);
+    assert_eq!(lvl("PART I"), Some(1));
+    assert_eq!(lvl("PART II"), Some(1));
+    assert_eq!(lvl("Item 1. Business"), Some(2));
+    assert_eq!(lvl("Item 7. Discussion"), Some(2));
+    assert!(
+        h.iter()
+            .filter(|c| c.title.starts_with("Overview"))
+            .all(|c| c.level > 2),
+        "{h:?}"
+    );
+}
+
+#[test]
+fn test_layout_table_of_contents_entries_are_not_numbered_sections() {
+    let lines = vec![
+        line(1, 100.0, "PART I 4", 12.0, true),
+        line(1, 120.0, "Item 1. Business 4", 12.0, true),
+        body(1, 200.0),
+        body(1, 215.0),
+        body(1, 230.0),
+        line(2, 100.0, "PART I", 12.0, true),
+        body(2, 200.0),
+        body(2, 215.0),
+    ];
+    assert_eq!(titles_of(&lines), vec!["PART I"]);
+}
+
+#[test]
+fn test_layout_title_repeated_many_times_is_dropped() {
+    let mut lines = Vec::new();
+    for p in 1..=12 {
+        lines.push(line(p, 150.0, "Note", 15.0, true));
+        lines.push(body(p, 200.0));
+        lines.push(body(p, 215.0));
+        lines.push(body(p, 230.0));
+    }
+    lines.push(line(6, 300.0, "Unique Chapter", 18.0, true));
+    assert_eq!(titles_of(&lines), vec!["Unique Chapter"]);
+}
+
+mod glyphs {
+    use xavier_pageindex::pdf::layout::{build_lines, Glyph};
+
+    /// Lays `text` out left to right (0.5em advance) starting at `x0`.
+    fn run(text: &str, x0: f32, top: f32, size: f32) -> Vec<Glyph> {
+        text.chars()
+            .enumerate()
+            .map(|(i, ch)| {
+                let x = x0 + i as f32 * size * 0.5;
+                Glyph {
+                    ch,
+                    x,
+                    right: x + size * 0.45,
+                    top,
+                    size,
+                    bold: false,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_glyphs_overprinted_letters_are_deduplicated() {
+        // Every glyph printed twice, 0.4pt apart: "NNEEBBRRAASSKKAA".
+        let mut g = Vec::new();
+        for (i, ch) in "NEBRASKA HISTORIC".chars().enumerate() {
+            for dx in [0.0, 0.4] {
+                let x = i as f32 * 6.0 + dx;
+                g.push(Glyph {
+                    ch,
+                    x,
+                    right: x + 5.0,
+                    top: 100.0,
+                    size: 12.0,
+                    bold: false,
+                });
+            }
+        }
+        let l = build_lines(1, 800.0, &g);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].text, "NEBRASKA HISTORIC");
+        assert!(l[0].bold, "overprinted text is fake bold");
+    }
+
+    #[test]
+    fn test_glyphs_whole_string_overprint_and_real_double_letters() {
+        let mut g = run("Keep balloon", 10.0, 50.0, 10.0);
+        g.extend(run("Keep balloon", 10.2, 50.0, 10.0));
+        let l = build_lines(1, 800.0, &g);
+        assert_eq!(l[0].text, "Keep balloon");
+    }
+
+    #[test]
+    fn test_glyphs_words_on_one_baseline_join_into_one_line() {
+        // Words placed separately with ink gaps and no space glyphs at all.
+        let mut g = run("Our", 10.0, 100.0, 10.0);
+        g.extend(run("comprehensive", 10.0 + 3.0 * 5.0 + 9.0, 100.0, 10.0));
+        g.extend(run("solutions", 10.0 + 16.0 * 5.0 + 18.0, 100.0, 10.0));
+        let l = build_lines(1, 800.0, &g);
+        assert_eq!(l.len(), 1, "{l:?}");
+        assert_eq!(l[0].text, "Our comprehensive solutions");
+    }
+
+    #[test]
+    fn test_glyphs_superscript_marker_gets_spaces() {
+        let mut g = run("levels", 10.0, 100.0, 10.0);
+        let x = 10.0 + 6.0 * 5.0;
+        g.push(Glyph {
+            ch: '1',
+            x,
+            right: x + 3.0,
+            top: 96.5,
+            size: 6.0,
+            bold: false,
+        });
+        g.extend(run("After", x + 3.0, 100.0, 10.0));
+        let l = build_lines(1, 800.0, &g);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].text, "levels 1 After");
+    }
+
+    #[test]
+    fn test_glyphs_newline_and_baseline_jump_split_lines() {
+        let mut g = run("first", 10.0, 100.0, 10.0);
+        g.push(Glyph {
+            ch: '\n',
+            x: 60.0,
+            right: 60.0,
+            top: 100.0,
+            size: 10.0,
+            bold: false,
+        });
+        g.extend(run("second", 10.0, 112.0, 10.0));
+        g.extend(run("third", 10.0, 124.0, 10.0));
+        let l = build_lines(2, 800.0, &g);
+        let t: Vec<&str> = l.iter().map(|x| x.text.as_str()).collect();
+        assert_eq!(t, ["first", "second", "third"]);
+        assert!(l.iter().all(|x| x.page == 2));
+    }
+}

@@ -5,14 +5,14 @@
     "project": "Xavier",
     "version": "1.0.0",
     "created": "2026-03-05",
-      "last_verified": "2026-09-18",
+    "last_verified": "2026-09-18",
     "total_features": 73,
     "features_complete": 57,
     "features_beta": 3,
     "features_draft": 0,
-      "features_planned": 0,
+    "features_planned": 0,
     "features_designed": 0,
-      "features_stable": 70,
+    "features_stable": 70,
     "overall_progress_pct": 98.3,
     "complete": 6,
     "percent": 98.3,
@@ -2701,6 +2701,129 @@
         "test_telemetry_coverage_aware_summary_reports_unobserved_usage",
         "test_telemetry_prohibits_usage_based_deletion",
         "test_telemetry_ttl_retention_prune_removes_events_only"
+      ]
+    },
+    "feat-pageindex-tree-core": {
+      "id": "feat-pageindex-tree-core",
+      "name": "PageIndex Tree Core (crate, builders, store, MCP/HTTP)",
+      "category": "retrieval",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Independent crate xavier-pageindex: hierarchical document tree, markdown/plain/legal builders without LLM, SQLite store, 6 MCP tools and /v1/pageindex routes",
+      "steps": [
+        "Create crates/xavier-pageindex with tree model and validation",
+        "Build markdown, plain-text and legal trees with no LLM",
+        "Persist trees and pages in a workspace-scoped SQLite store",
+        "Expose pageindex_* MCP tools (own module, late registration) and /v1/pageindex HTTP routes"
+      ],
+      "passes": true,
+      "verified_by": "wave-pageindex",
+      "last_tested": "2026-09-29",
+      "notes": "ADR-036 (Aceptado). Spec: docs/features/specs/FEATURE-pageindex-tree-retrieval.md. Wave: .gitcore/waves/wave-pageindex/ (pageindex F1). WAVE-PAGEINDEX 2026-09-29 CLOSED: all planned tests implemented; ledger tests reconciled to real names; verify-pipeline maps crates/*/tests and feature-gated crates with --all-features. Pdfium-backed tests stay #[ignore]. See ADR-036 and the spec for measured e2e numbers.",
+      "implemented_in": "crates/xavier-pageindex/src/lib.rs, crates/xavier-pageindex/src/model.rs, crates/xavier-pageindex/src/error.rs, crates/xavier-pageindex/src/query.rs, crates/xavier-pageindex/src/search.rs, crates/xavier-pageindex/src/builders/, crates/xavier-pageindex/src/store/, src/pageindex_glue/, src/server/mcp/tools_pageindex.rs, src/server/pageindex_routes.rs",
+      "tests": [
+        "test_tree_node_serde_roundtrip_stable_json",
+        "test_tree_validate_rejects_overlapping_siblings",
+        "test_tree_validate_allows_shared_boundary_page",
+        "test_md_headings_build_nested_tree",
+        "test_md_ignores_hashes_inside_code_fences",
+        "test_plain_numbered_headings_detected",
+        "test_legal_articles_nest_under_chapters",
+        "test_legal_parity_with_legal_chunker_fixture",
+        "test_store_roundtrip_document_tree",
+        "test_store_workspace_isolation",
+        "test_get_document_structure_strips_text",
+        "test_get_page_content_parses_ranges",
+        "test_search_ranks_page_with_terms_first",
+        "test_tool_errors_are_envelopes_not_panics",
+        "test_ingest_tool_denied_for_readonly_role",
+        "test_pageindex_routes_browse_ok",
+        "test_pageindex_routes_require_auth",
+        "test_mcp_pageindex_tools_announced",
+        "test_mcp_pageindex_roundtrip_ingest_structure_pages",
+        "test_mcp_existing_tool_names_unchanged"
+      ],
+      "req_ids": [
+        "REQ-080",
+        "REQ-081"
+      ]
+    },
+    "feat-pageindex-pdf": {
+      "id": "feat-pageindex-pdf",
+      "name": "PageIndex PDF Trees, Optimize and Summaries",
+      "category": "retrieval",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "PDF tree cascade (bookmarks via lopdf, layout headings via runtime-bound pdfium, optional LLM ToC, fixed windows), tree optimize and optional LLM node summaries; all behind cargo features",
+      "steps": [
+        "Extract PDF bookmarks and per-page text with pure-Rust lopdf (feature pdf-outline)",
+        "Detect headings by font size/weight via dynamically bound pdfium (feature pdf-layout)",
+        "Merge tiny and split huge nodes preserving page coverage",
+        "Optional bottom-up LLM summaries through the existing llm_adapter",
+        "Cascade bookmarks -> layout -> LLM ToC -> fixed windows"
+      ],
+      "passes": true,
+      "verified_by": "wave-pageindex",
+      "last_tested": "2026-09-29",
+      "notes": "ADR-036 (Aceptado). Spec: docs/features/specs/FEATURE-pageindex-tree-retrieval.md. Wave: .gitcore/waves/wave-pageindex/ (pageindex F2). WAVE-PAGEINDEX 2026-09-29 CLOSED: all planned tests implemented; ledger tests reconciled to real names; verify-pipeline maps crates/*/tests and feature-gated crates with --all-features. Pdfium-backed tests stay #[ignore]. See ADR-036 and the spec for measured e2e numbers.",
+      "implemented_in": "crates/xavier-pageindex/src/pdf/, crates/xavier-pageindex/src/optimize.rs, crates/xavier-pageindex/src/summarize.rs, src/pageindex_glue/summarizer.rs, src/pageindex_glue/tools.rs",
+      "tests": [
+        "test_pdf_outline_bookmarks_to_tree",
+        "test_pdf_without_outline_returns_none",
+        "test_pdf_encrypted_returns_typed_error",
+        "test_pdf_empty_user_password_opens",
+        "test_layout_font_size_clusters_map_to_levels",
+        "test_layout_missing_pdfium_returns_typed_error_not_panic",
+        "test_layout_running_header_variants_are_not_titles",
+        "test_optimize_preserves_page_coverage",
+        "test_optimize_is_idempotent",
+        "test_summarize_cache_hit_skips_llm",
+        "test_summarize_failure_leaves_summary_none_and_tree_valid",
+        "test_tree_builds_with_no_llm_configured",
+        "test_pdf_cascade_prefers_bookmarks",
+        "test_pdf_cascade_final_fallback_fixed_windows",
+        "test_pdf_fixed_windows_are_titled_by_first_meaningful_line",
+        "test_pdf_path_ingest_envelope_matches_build_features"
+      ],
+      "req_ids": [
+        "REQ-082"
+      ]
+    },
+    "feat-pageindex-hybrid": {
+      "id": "feat-pageindex-hybrid",
+      "name": "PageIndex Hybrid Retrieval Arm and Eval",
+      "category": "retrieval",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Embed node summaries into the Xavier store, add an opt-in retrieval arm fused by RRF in gating, and an LLM-free page-range eval comparing DocBot, tree and hybrid",
+      "steps": [
+        "Embed node summaries with doc/node tags and replace them on re-ingest",
+        "Add pageindex_arm returning nodes with page ranges, fused by RRF, off by default and fail-open",
+        "Build page-range hit@k/MRR eval over in-repo fixtures and optional PageIndex-OSS-Benchmark JSONL",
+        "Record measured DocBot vs tree vs hybrid numbers in the spec"
+      ],
+      "passes": true,
+      "verified_by": "wave-pageindex",
+      "last_tested": "2026-09-29",
+      "notes": "ADR-036 (Aceptado). Spec: docs/features/specs/FEATURE-pageindex-tree-retrieval.md. Wave: .gitcore/waves/wave-pageindex/ (pageindex F3). WAVE-PAGEINDEX 2026-09-29 CLOSED: all planned tests implemented; ledger tests reconciled to real names; verify-pipeline maps crates/*/tests and feature-gated crates with --all-features. Pdfium-backed tests stay #[ignore]. See ADR-036 and the spec for measured e2e numbers.",
+      "implemented_in": "src/retrieval/pageindex_arm.rs, src/retrieval/gating.rs, crates/xavier-pageindex/src/eval/, tests/pageindex_eval.rs",
+      "tests": [
+        "test_arm_embeds_node_summaries_with_doc_and_node_tags",
+        "test_arm_reingest_replaces_stale_embeddings",
+        "test_arm_results_carry_doc_node_page_range",
+        "test_arm_workspace_scoped",
+        "test_gating_arm_disabled_by_default_no_behavior_change",
+        "test_gating_rrf_fuses_arm_with_layers",
+        "test_gating_arm_failure_is_fail_open",
+        "test_eval_page_range_hit_metric",
+        "test_eval_hit_at_k_and_mrr",
+        "test_eval_fixture_set_has_gold_ranges",
+        "test_eval_tree_navigator_lexical_baseline_deterministic",
+        "test_eval_report_compares_docbot_tree_hybrid"
+      ],
+      "req_ids": [
+        "REQ-083",
+        "REQ-084"
       ]
     }
   },

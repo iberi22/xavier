@@ -8,6 +8,8 @@ pub mod cross_encoder;
 pub mod eval;
 pub mod gating;
 pub mod history;
+#[cfg(feature = "pageindex")]
+pub mod pageindex_arm;
 pub mod policy;
 pub mod regeneration;
 pub mod tuner;
