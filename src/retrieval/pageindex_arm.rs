@@ -13,12 +13,12 @@
 //! same RRF later.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use xavier_pageindex::eval::tokenize;
 use xavier_pageindex::search::bm25_term_score;
 use xavier_pageindex::store::SqliteStore;
-use xavier_pageindex::{BrowseQuery, PageIndex, PageIndexError, StructureNode, StructureOpts};
+use xavier_pageindex::{PageIndex, PageIndexError, StructureNode, StructureOpts};
 
 use crate::pageindex_glue::state::shared_state;
 use crate::pageindex_glue::PageIndexState;
@@ -27,7 +27,6 @@ use crate::search::rrf::ScoredResult;
 /// Nodes the arm contributes to the fusion.
 pub const ARM_TOP_K: usize = 10;
 const PAGES_PER_FETCH: u32 = 20;
-const BROWSE_PAGE: usize = 50;
 const BIG: usize = 50_000_000;
 const LEAD_CHARS: usize = 300;
 pub const ARM_SOURCE: &str = "pageindex";
@@ -138,7 +137,29 @@ pub struct PageIndexArm {
     enabled: bool,
     weight: f32,
     corpus: Mutex<Corpus>,
+    /// Documents (re)built into the corpus; lets tests prove reuse.
+    #[cfg(test)]
+    builds: std::sync::atomic::AtomicUsize,
 }
+
+/// Arms per workspace, so the corpus survives across requests.
+#[derive(Default)]
+pub struct ArmCache {
+    arms: Mutex<HashMap<String, Arc<PageIndexArm>>>,
+}
+
+impl ArmCache {
+    /// The cached arm of `workspace`, created on first use.
+    pub fn get_or_create(&self, state: &Arc<PageIndexState>, workspace: &str) -> Arc<PageIndexArm> {
+        let mut arms = self.arms.lock().unwrap_or_else(|p| p.into_inner());
+        Arc::clone(
+            arms.entry(workspace.to_string())
+                .or_insert_with(|| Arc::new(PageIndexArm::new(Arc::clone(state), workspace))),
+        )
+    }
+}
+
+static ARMS: OnceLock<ArmCache> = OnceLock::new();
 
 impl std::fmt::Debug for PageIndexArm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -160,13 +181,22 @@ impl PageIndexArm {
             enabled,
             weight,
             corpus: Mutex::new(Corpus::default()),
+            #[cfg(test)]
+            builds: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
-    /// Arm over the process-wide index; `None` unless the env enables it.
+    /// Cached arm over the process-wide index (one per workspace, so its
+    /// corpus is reused across requests); `None` unless the env enables it.
     pub fn from_env(workspace: &str) -> Option<Arc<Self>> {
-        let arm = Self::new(shared_state(), workspace);
-        arm.enabled.then(|| Arc::new(arm))
+        let state = shared_state();
+        if !state.settings.arm_enabled {
+            return None;
+        }
+        Some(
+            ARMS.get_or_init(ArmCache::default)
+                .get_or_create(&state, workspace),
+        )
     }
 
     pub fn with_enabled(mut self, enabled: bool) -> Self {
@@ -191,6 +221,7 @@ impl PageIndexArm {
     pub fn embed_document(&self, doc: &str) -> Result<usize, PageIndexError> {
         let idx = self.state.index()?;
         let doc_id = idx.get_document(&self.workspace, doc)?.doc_id;
+        self.count_build();
         let entries = build_entries(&idx, &self.workspace, doc)?;
         let count = entries.len();
         let mut c = self.lock();
@@ -212,51 +243,50 @@ impl PageIndexArm {
         self.corpus.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    /// Bring the corpus in line with the store: new or re-ingested documents
-    /// are rebuilt, deleted ones dropped.
+    /// Bring the corpus in line with the store: only new or re-ingested
+    /// documents are rebuilt, deleted ones dropped. The corpus lock is not
+    /// held while reading pages.
     fn sync(&self, idx: &PageIndex<SqliteStore>) -> Result<(), PageIndexError> {
-        let mut names = Vec::new();
-        let mut offset = 0;
-        loop {
-            let page = idx.browse(
-                &self.workspace,
-                BrowseQuery {
-                    query: None,
-                    offset,
-                    limit: BROWSE_PAGE,
-                },
-            )?;
-            names.extend(page.documents.into_iter().map(|d| d.name));
-            match page.next_offset {
-                Some(o) => offset = o,
-                None => break,
-            }
-        }
-        let mut changed = false;
-        let mut c = self.lock();
-        let before = c.docs.len();
-        c.docs.retain(|name, _| names.contains(name));
-        changed |= c.docs.len() != before;
-        for name in names {
-            let Ok(info) = idx.get_document(&self.workspace, &name) else {
-                continue;
-            };
-            if c.docs.get(&name).is_some_and(|(id, _)| *id == info.doc_id) {
-                continue;
-            }
+        let ready = idx.ready_document_ids(&self.workspace)?;
+        let stale: Vec<(String, String)> = {
+            let c = self.lock();
+            ready
+                .iter()
+                .filter(|(name, id)| c.docs.get(name).is_none_or(|(have, _)| have != id))
+                .cloned()
+                .collect()
+        };
+        let mut built = Vec::with_capacity(stale.len());
+        for (name, doc_id) in stale {
+            self.count_build();
             match build_entries(idx, &self.workspace, &name) {
-                Ok(entries) => {
-                    c.docs.insert(name, (info.doc_id, entries));
-                    changed = true;
-                }
+                Ok(entries) => built.push((name, doc_id, entries)),
                 Err(e) => tracing::debug!("pageindex arm: skip '{name}': {e}"),
             }
+        }
+        let mut c = self.lock();
+        let before = c.docs.len();
+        c.docs
+            .retain(|name, _| ready.iter().any(|(n, _)| n == name));
+        let mut changed = c.docs.len() != before;
+        for (name, doc_id, entries) in built {
+            c.docs.insert(name, (doc_id, entries));
+            changed = true;
         }
         if changed {
             c.recompute();
         }
         Ok(())
     }
+
+    #[cfg(test)]
+    fn count_build(&self) {
+        self.builds
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    #[cfg(not(test))]
+    fn count_build(&self) {}
 
     /// Top `k` nodes by BM25 over title + summary + own text. Blocking.
     pub fn search_nodes(&self, query: &str, k: usize) -> Result<Vec<NodeHit>, PageIndexError> {
@@ -456,6 +486,32 @@ mod tests {
         assert!(a.search_nodes("battery usb", 3).unwrap().is_empty());
         let hits = a.search_nodes("warranty defects", 3).unwrap();
         assert_eq!(hits[0].breadcrumb.last().unwrap(), "Warranty");
+    }
+
+    #[test]
+    fn test_arm_cache_reuses_corpus_across_requests() {
+        use std::sync::atomic::Ordering;
+        let st = state();
+        ingest(&st, "w", "manual.md", MANUAL);
+        let cache = ArmCache::default();
+        let first = cache.get_or_create(&st, "w");
+        assert!(Arc::ptr_eq(&first, &cache.get_or_create(&st, "w")));
+        assert!(!Arc::ptr_eq(&first, &cache.get_or_create(&st, "other")));
+        first.search_nodes("battery", 3).unwrap();
+        cache
+            .get_or_create(&st, "w")
+            .search_nodes("battery usb", 3)
+            .unwrap();
+        assert_eq!(first.builds.load(Ordering::SeqCst), 1);
+        // Only the new document is rebuilt.
+        ingest(&st, "w", "v2.md", MANUAL_V2);
+        first.search_nodes("warranty", 3).unwrap();
+        assert_eq!(first.builds.load(Ordering::SeqCst), 2);
+        // Deleting a document drops its nodes without any rebuild.
+        let idx = st.index().unwrap();
+        idx.delete("w", "manual.md").unwrap();
+        assert!(first.search_nodes("battery usb", 3).unwrap().is_empty());
+        assert_eq!(first.builds.load(Ordering::SeqCst), 2);
     }
 
     #[test]

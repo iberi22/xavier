@@ -304,6 +304,17 @@ impl<S: Store> PageIndex<S> {
         }
     }
 
+    /// `(name, doc_id)` of every ready document; a cheap change probe (no trees).
+    pub fn ready_document_ids(&self, ws: &str) -> Result<Vec<(String, String)>, PageIndexError> {
+        Ok(self
+            .store
+            .list_documents(ws)?
+            .into_iter()
+            .filter(|d| d.status == DocStatus::Completed)
+            .map(|d| (d.name, d.doc_id))
+            .collect())
+    }
+
     /// Names of stored documents closest to `name` (top 3).
     pub fn similar_document_names(
         &self,
