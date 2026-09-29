@@ -10,10 +10,12 @@
 //! without `spawn_blocking`; it reads no environment variable itself, so no
 //! `.env.example` key is added here.
 
-use super::backup::{atomic_write, BackupError, BackupKind};
+use super::backup::{atomic_write, BackupError, BackupKind, MAX_BACKUP_BYTES};
 use super::policy::{FsPolicy, RootKind};
+use super::projector::{ProjectorError, RootLock, LOCKS_SUBDIR};
 use super::state::{Journal, JournalAction, JournalEntry, StateError};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::os::unix::fs::symlink;
@@ -26,6 +28,8 @@ pub enum RollbackError {
     State(#[from] StateError),
     #[error("transaction '{0}' not found")]
     TransactionNotFound(String),
+    #[error("could not acquire target root lock: {0}")]
+    Lock(#[from] ProjectorError),
 }
 
 /// What happened to one journaled entry during rollback (or would happen, under `dry_run`).
@@ -69,6 +73,21 @@ pub fn rollback_transaction(
     let tx = journal
         .get_transaction(tx_id)?
         .ok_or_else(|| RollbackError::TransactionNotFound(tx_id.to_string()))?;
+
+    let root_paths: BTreeSet<PathBuf> = tx
+        .entries
+        .iter()
+        .filter_map(|entry| entry.target_path.parent().map(Path::to_path_buf))
+        .collect();
+    let _locks: Vec<RootLock> = if dry_run {
+        Vec::new()
+    } else {
+        let lock_dir = journal.base_dir().join(LOCKS_SUBDIR);
+        root_paths
+            .iter()
+            .map(|root| RootLock::acquire(&lock_dir, root))
+            .collect::<Result<_, _>>()?
+    };
 
     let entries = tx
         .entries
@@ -185,9 +204,14 @@ fn is_symlink_pointing_to(path: &Path, expected: &Path) -> bool {
     }
 }
 
+/// Mirrors `BackupManager::backup_target`'s bound check: a destination over the cap is
+/// never read, and is conservatively reported as not matching (a conflict), the same as an
+/// unrelated file.
 fn is_file_with_hash(path: &Path, expected_hash: &str) -> bool {
     match fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_file() => hash_file(path).map(|h| h == expected_hash).unwrap_or(false),
+        Ok(meta) if meta.is_file() && meta.len() <= MAX_BACKUP_BYTES => {
+            hash_file(path).map(|h| h == expected_hash).unwrap_or(false)
+        }
         _ => false,
     }
 }
@@ -460,6 +484,64 @@ mod tests {
             TransactionState::Committed,
             "dry run must not change transaction state"
         );
+    }
+
+    /// The recorded hash genuinely matches the on-disk bytes: absent the size cap, this would
+    /// look like an unchanged owned copy and its `Absent` prior state would delete it.
+    #[test]
+    fn test_oversized_destination_is_reported_as_conflict_without_reading() {
+        let (tmp, source, target, _roots) = fixture();
+        let policy = policy_for(&source, &target);
+        let journal = journal_for(tmp.path());
+
+        let destination = target.join("huge");
+        let oversized = vec![b'x'; (MAX_BACKUP_BYTES + 1) as usize];
+        fs::write(&destination, &oversized).expect("write oversized");
+        let hash = crate::crypto::hex_encode(Sha256::digest(&oversized));
+        let entry = JournalEntry {
+            target_path: destination.clone(),
+            action: JournalAction::WriteCopy {
+                source: source.join("pkg/huge"),
+                hash,
+            },
+            prior_state: BackupKind::Absent,
+            owned_hash: None,
+        };
+        journal
+            .begin_transaction("tx-huge", vec![entry], false)
+            .expect("begin tx");
+
+        let report = rollback_transaction(&journal, &policy, "tx-huge", false).expect("rollback");
+        assert!(matches!(
+            outcome_for(&report, "huge"),
+            RollbackOutcome::Conflict(_)
+        ));
+        assert_eq!(fs::read(&destination).expect("still there"), oversized);
+    }
+
+    #[test]
+    fn test_rollback_fails_cleanly_when_target_root_is_locked() {
+        let (tmp, source, target, roots) = fixture();
+        let policy = policy_for(&source, &target);
+        let journal = journal_for(tmp.path());
+        seed_refresh_and_create(&policy, &roots, &journal);
+        let before_keep = fs::read_link(target.join("keep")).expect("link before");
+
+        let lock_dir = journal.base_dir().join(LOCKS_SUBDIR);
+        let _held = RootLock::acquire(&lock_dir, &target).expect("acquire lock");
+
+        let err = rollback_transaction(&journal, &policy, "tx-2", false).expect_err("locked");
+        assert!(matches!(err, RollbackError::Lock(_)));
+        assert_eq!(
+            fs::read_link(target.join("keep")).expect("unchanged"),
+            before_keep
+        );
+        assert!(fs::symlink_metadata(target.join("newone")).is_ok());
+        let tx = journal
+            .get_transaction("tx-2")
+            .expect("read")
+            .expect("exists");
+        assert_eq!(tx.state, TransactionState::Committed);
     }
 
     #[test]
