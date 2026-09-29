@@ -10,6 +10,7 @@ use serde_json::Value;
 /// Get xavier tools.
 pub fn get_xavier_tools() -> Vec<MCPTool> {
     let mut tools = super::tools_core::get_xavier_core_tools();
+    tools.extend(super::tools_secrets::get_xavier_secrets_tools());
     tools.extend(super::tools_memory::get_xavier_memory_tools());
     tools.extend(super::tools_context::get_xavier_context_tools());
     tools.extend(super::telecom_tools::register_telecom_mcp_tools());
@@ -45,6 +46,12 @@ pub async fn handle_tool_call(
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
+    if claims.is_none() && matches!(name, "secret_lend" | "secret_exec") {
+        return Err(anyhow::anyhow!(
+            "Forbidden: Insufficient permissions for anonymous role to execute tool '{name}'"
+        ));
+    }
+
     if let Some(claims) = claims {
         let role = &claims.role;
         use crate::security::auth::Permission;
@@ -72,10 +79,10 @@ pub async fn handle_tool_call(
                     name
                 ));
             }
-            // Shell execution (arbitrary `sh -c` + caller-controlled cwd):
-            // admin-only. can_edit_config() is Admin-only in the Permission
-            // trait; lesser JWT roles must never reach the runner.
-            "xavier_run_command" if !role.can_edit_config() => {
+            // Shell execution (arbitrary `sh -c` + caller-controlled cwd)
+            // and secret access: admin-only. can_edit_config() is Admin-only
+            // in the Permission trait; lesser JWT roles must never reach them.
+            "xavier_run_command" | "secret_lend" | "secret_exec" if !role.can_edit_config() => {
                 return Err(anyhow::anyhow!(
                     "Forbidden: Insufficient permissions for role {:?} to execute tool '{}'",
                     role,
@@ -104,6 +111,9 @@ pub async fn handle_tool_call(
 
     if super::tools_core::is_core_tool(name) {
         super::tools_core::handle_core_tool(state, workspace, name, arguments).await
+    } else if super::tools_secrets::is_secrets_tool(name) {
+        let ctx = super::tools_secrets::SecretToolContext::production();
+        super::tools_secrets::handle_secrets_tool(&ctx, name, arguments).await
     } else if name.starts_with("xavier_context")
         || name == "xavier_token_savings"
         || name == "xavier_issue_context_package"
