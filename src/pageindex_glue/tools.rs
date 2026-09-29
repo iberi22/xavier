@@ -97,6 +97,9 @@ pub fn tool_specs() -> Vec<ToolSpec> {
     ]
 }
 
+/// Value of the envelope `kind` field for storage failures (HTTP 500).
+pub const ERROR_KIND_STORE: &str = "store";
+
 fn fail(error: impl Into<String>, hint: impl Into<String>) -> Value {
     json!({"ok": false, "error": error.into(), "hint": hint.into()})
 }
@@ -131,7 +134,11 @@ fn from_error(e: &PageIndexError) -> Value {
         PageIndexError::Store(_) => "Storage failed; check XAVIER_PAGEINDEX_DB is writable",
         PageIndexError::Build(_) => "Check document status with pageindex_get_document",
     };
-    fail(e.to_string(), hint)
+    let mut envelope = fail(e.to_string(), hint);
+    if let (PageIndexError::Store(_), Some(obj)) = (e, envelope.as_object_mut()) {
+        obj.insert("kind".into(), json!(ERROR_KIND_STORE));
+    }
+    envelope
 }
 
 fn str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {

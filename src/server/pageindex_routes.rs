@@ -17,7 +17,8 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use crate::pageindex_glue::tools::{
-    TOOL_BROWSE, TOOL_GET_DOCUMENT, TOOL_GET_PAGES, TOOL_GET_STRUCTURE, TOOL_INDEX, TOOL_SEARCH,
+    ERROR_KIND_STORE, TOOL_BROWSE, TOOL_GET_DOCUMENT, TOOL_GET_PAGES, TOOL_GET_STRUCTURE,
+    TOOL_INDEX, TOOL_SEARCH,
 };
 use crate::pageindex_glue::{call, PageIndexState, ToolContext};
 use crate::security::auth::{Claims, Permission};
@@ -100,14 +101,12 @@ fn status_for(envelope: &Value) -> StatusCode {
         .get("error")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    let store_failure = envelope.get("kind").and_then(Value::as_str) == Some(ERROR_KIND_STORE);
     if err.starts_with("permission denied") {
         StatusCode::FORBIDDEN
     } else if err.starts_with("not found") {
         StatusCode::NOT_FOUND
-    } else if err.starts_with("storage")
-        || err.starts_with("internal")
-        || err.contains("task failed")
-    {
+    } else if store_failure || err.starts_with("internal") || err.contains("task failed") {
         StatusCode::INTERNAL_SERVER_ERROR
     } else {
         StatusCode::BAD_REQUEST
@@ -355,6 +354,25 @@ mod tests {
             status,
             serde_json::from_slice(&bytes).unwrap_or(Value::Null),
         )
+    }
+
+    #[tokio::test]
+    async fn test_pageindex_routes_store_failure_is_500() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory as db path: opening the store fails.
+        let state = Arc::new(PageIndexState::new(PageIndexSettings {
+            db_path: dir.path().to_path_buf(),
+            ..Default::default()
+        }));
+        let a = router(state).layer(Extension(Claims::new(
+            "u".into(),
+            "u@x.dev".into(),
+            UserRole::User,
+            chrono::Duration::hours(1),
+        )));
+        let (st, v) = send(a, "GET", "/documents", None).await;
+        assert_eq!(st, StatusCode::INTERNAL_SERVER_ERROR, "{v}");
+        assert_eq!(v["kind"], "store");
     }
 
     #[tokio::test]
