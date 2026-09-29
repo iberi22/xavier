@@ -22,6 +22,7 @@ struct Fixture {
     engine: Arc<KeyLendingEngine>,
     vault: Arc<HardwareVault>,
     secret_name: String,
+    project_id: String,
     _dir: tempfile::TempDir,
 }
 
@@ -61,12 +62,19 @@ async fn setup() -> Fixture {
     vault
         .store_secret(&secret_name, CANARY)
         .expect("store canary");
-    let audit = Box::new(QmdAuditLogger::new());
+    let project_id = format!("test_exec_http_secrets_{}", uuid::Uuid::new_v4());
+    ConnectionManager::global()
+        .connect_with_path(&project_id, dir.path().join("metrics.db"))
+        .expect("connect isolated metrics db");
+    let audit = Box::new(QmdAuditLogger::for_project(&project_id));
     audit.init_schema_async().await.expect("audit schema");
+    let engine =
+        Arc::new(KeyLendingEngine::new(audit, None).with_leases_project(project_id.clone()));
     Fixture {
-        engine: Arc::new(KeyLendingEngine::new(audit, None)),
+        engine,
         vault,
         secret_name,
+        project_id,
         _dir: dir,
     }
 }
@@ -165,10 +173,12 @@ async fn body_of(response: Response) -> serde_json::Value {
     serde_json::from_slice(&bytes).expect("json body")
 }
 
-async fn audit_rows(agent_id: &str, event: &str) -> i64 {
-    let (agent, kind) = (agent_id.to_string(), event.to_string());
+async fn audit_rows(project_id: &str, agent_id: &str, event: &str) -> i64 {
+    let project_id = project_id.to_string();
+    let agent = agent_id.to_string();
+    let kind = event.to_string();
     ConnectionManager::global()
-        .with_conn("metrics", move |conn| {
+        .with_conn(&project_id, move |conn| {
             conn.query_row(
                 "SELECT COUNT(*) FROM secret_audit_logs WHERE agent_id = ?1 AND event_type = ?2",
                 rusqlite::params![agent, kind],
@@ -180,12 +190,12 @@ async fn audit_rows(agent_id: &str, event: &str) -> i64 {
         .expect("metrics audit query")
 }
 
-async fn wait_for_audit_pair(agent_id: &str) -> (i64, i64) {
+async fn wait_for_audit_pair(project_id: &str, agent_id: &str) -> (i64, i64) {
     let mut counts = (0, 0);
     for _ in 0..100 {
         counts = (
-            audit_rows(agent_id, "LEND").await,
-            audit_rows(agent_id, "REVOKE").await,
+            audit_rows(project_id, agent_id, "LEND").await,
+            audit_rows(project_id, agent_id, "REVOKE").await,
         );
         if counts == (1, 1) {
             return counts;
@@ -224,7 +234,10 @@ async fn test_exec_handler_records_lend_and_revoke() {
 
     let _ = exec_secret(&f.engine, f.payload(), &f.vault).await;
 
-    assert_eq!(wait_for_audit_pair(&f.secret_name).await, (1, 1));
+    assert_eq!(
+        wait_for_audit_pair(&f.project_id, &f.secret_name).await,
+        (1, 1)
+    );
     assert!(f.engine.list_leases().await.is_empty());
 }
 
