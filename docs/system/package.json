@@ -11,9 +11,9 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/svelte": "^6.0.0",
-    "@astrojs/node": "^10.0.5",
-    "astro": "^6.1.6",
+    "@astrojs/svelte": "^9.0.1",
+    "@astrojs/node": "^11.1.5",
+    "astro": "^7.3.2",
     "svelte": "^5.0.0",
     "marked": "^15.0.0",
     "gray-matter": "^4.0.3",
@@ -24,7 +24,7 @@
     "@types/node": "^20.0.0"
   },
   "overrides": {
-    "js-yaml@3": "3.15.0",
-    "js-yaml@4": "4.3.0"
+    "js-yaml@3": "3.15.2",
+    "js-yaml@4": "4.3.2"
   }
 }
