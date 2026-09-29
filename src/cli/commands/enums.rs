@@ -477,6 +477,47 @@ pub enum Command {
 
     /// Air-gap offline storage capsule protocol (USB detection, pack, unpack, inspect)
     Airgap(crate::cli::commands::airgap::AirgapArgs),
+
+    /// Skill controller: build, apply, and roll back skill projection plans (D4)
+    Skills {
+        #[command(subcommand)]
+        cmd: SkillsCommand,
+    },
+}
+
+/// Subcommands for the skill controller's plan/apply/rollback workflow (D4, D6, D14).
+#[derive(Subcommand, Debug, Clone)]
+pub enum SkillsCommand {
+    /// Build a projection plan from a manifest; writes nothing (D4)
+    Plan {
+        /// Path to the skill manifest TOML
+        #[arg(long)]
+        manifest: String,
+    },
+    /// Apply a saved plan; only mutates the filesystem when --apply is set (D4)
+    Apply {
+        /// Path to the skill manifest TOML
+        #[arg(long)]
+        manifest: String,
+        /// Path to a plan JSON file previously saved from `xavier skills plan`
+        #[arg(long)]
+        plan: String,
+        /// Actually write changes (default is dry-run)
+        #[arg(long)]
+        apply: bool,
+    },
+    /// Roll back one journaled transaction by id; conflicts are left untouched (D14)
+    Rollback {
+        /// Path to the skill manifest TOML
+        #[arg(long)]
+        manifest: String,
+        /// Transaction id returned by a previous `xavier skills apply`
+        #[arg(long = "tx-id")]
+        tx_id: String,
+        /// Actually write changes (default is dry-run)
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 /// Subcommands for the auto-improvement loop.
