@@ -6,6 +6,13 @@ name: Desktop (AppImage + deb)
 on:
   workflow_call:
   workflow_dispatch:
+  # Pre-tag test builds: GitHub only lists dispatchable workflows from the
+  # default branch, so a new workflow is also triggered by pushes to this branch.
+  push:
+    branches: [feat/desktop-v0216]
+    paths:
+      - '.github/workflows/desktop.yml'
+      - 'panel-ui/src-tauri/**'
 
 permissions:
   contents: read
