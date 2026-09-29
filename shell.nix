@@ -105,7 +105,7 @@ pkgs.mkShell {
 
     # Default target dir: local ./target so nix-shell users find their
     # binary at ./target/release/xavier. Respects a pre-set CARGO_TARGET_DIR.
-    if [ -z "${CARGO_TARGET_DIR:-}" ]; then
+    if [ -z "''${CARGO_TARGET_DIR:-}" ]; then
         export CARGO_TARGET_DIR="$(pwd)/target"
     fi
     echo "✅ Nix shell ready — CARGO_TARGET_DIR=$CARGO_TARGET_DIR (local disk)"
