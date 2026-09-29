@@ -1,5 +1,6 @@
 //! SQLite store implementation.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
@@ -311,7 +312,7 @@ impl Store for SqliteStore {
         let mut stmt = conn
             .prepare(
                 "SELECT node_id, parent_id, title, start_page, end_page, summary, \
-                 token_estimate FROM pi_nodes WHERE doc_id = ?1 ORDER BY node_id",
+                 token_estimate FROM pi_nodes WHERE doc_id = ?1 ORDER BY rowid",
             )
             .map_err(db_err)?;
         let rows = stmt
@@ -330,29 +331,43 @@ impl Store for SqliteStore {
                 ))
             })
             .map_err(db_err)?;
-        // Preorder ids guarantee a parent sorts before its children and
-        // siblings keep their relative order.
+        // Rows were inserted in preorder, so rowid order keeps a parent ahead
+        // of its children and siblings in their stored order.
         let mut flat: Vec<(Option<String>, TreeNode)> = Vec::new();
         for r in rows {
             flat.push(r.map_err(db_err)?);
         }
-        // Attach children back to front so each node is complete before moving.
+        let index: HashMap<String, usize> = flat
+            .iter()
+            .enumerate()
+            .map(|(i, (_, n))| (n.node_id.clone(), i))
+            .collect();
+        // Attach back to front: children are pushed in reverse and flipped
+        // once the node is complete.
         let mut roots = Vec::new();
         let mut slots: Vec<Option<(Option<String>, TreeNode)>> =
             flat.into_iter().map(Some).collect();
         for i in (0..slots.len()).rev() {
-            let (parent, node) = slots[i].take().expect("slot taken once");
+            let (parent, mut node) = slots[i].take().expect("slot taken once");
+            node.children.reverse();
             match parent {
                 None => roots.push(node),
                 Some(pid) => {
-                    let idx = slots[..i]
-                        .iter()
-                        .rposition(|s| s.as_ref().is_some_and(|(_, n)| n.node_id == pid))
-                        .ok_or_else(|| {
-                            PageIndexError::Store(format!("orphan node {}", node.node_id))
-                        })?;
-                    let p = &mut slots[idx].as_mut().expect("checked").1;
-                    p.children.insert(0, node);
+                    let idx = match index.get(&pid) {
+                        Some(&idx) if idx < i => idx,
+                        _ => {
+                            return Err(PageIndexError::Store(format!(
+                                "orphan node {}",
+                                node.node_id
+                            )))
+                        }
+                    };
+                    slots[idx]
+                        .as_mut()
+                        .expect("parent not yet taken")
+                        .1
+                        .children
+                        .push(node);
                 }
             }
         }

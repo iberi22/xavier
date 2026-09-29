@@ -179,3 +179,19 @@ fn test_store_workspace_isolation() {
     assert_eq!(store.list_documents("ws1").unwrap().len(), 1);
     assert!(store.get_document("ws1", "d1").unwrap().is_some());
 }
+
+#[test]
+fn test_store_roundtrip_more_than_10000_nodes_keeps_preorder() {
+    let (_d, store) = temp_store();
+    let (doc, _, pages) = fixture("ws", "big.md", "dbig", "hb");
+    let roots: Vec<TreeNode> = (0..10_050)
+        .map(|i| node(&format!("n{i}"), 1, 1, vec![node("leaf", 1, 1, vec![])]))
+        .collect();
+    let mut tree = DocumentTree {
+        doc_id: "dbig".into(),
+        roots,
+    };
+    tree.assign_node_ids();
+    store.put_document(&doc, &tree, &pages).unwrap();
+    assert_eq!(store.get_tree("ws", "dbig").unwrap().unwrap(), tree);
+}
