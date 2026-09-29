@@ -32,6 +32,13 @@ pub trait AuditLogger {
     fn log_lend(&self, agent_id: &str, secret_id: &str, session_token: &str, ttl_secs: u64);
     fn log_revoke(&self, agent_id: &str, session_token: &str, reason: &str);
     fn log_proxy_use(&self, agent_id: &str, lease_token: &str, endpoint: &str);
+
+    /// Records a lend request that was rejected before a lease was created
+    /// (e.g. an anti-exfiltration rate limit). Default implementation reuses
+    /// `log_revoke` so existing loggers persist denials without an override.
+    fn log_deny(&self, agent_id: &str, secret_id: &str, reason: &str) {
+        self.log_revoke(agent_id, secret_id, reason);
+    }
 }
 
 pub struct DefaultAuditLogger;
@@ -53,6 +60,12 @@ impl AuditLogger for DefaultAuditLogger {
         println!(
             "[AUDIT] PROXY USE by agent '{}' with lease '{}' on endpoint '{}'",
             agent_id, lease_token, endpoint
+        );
+    }
+    fn log_deny(&self, agent_id: &str, secret_id: &str, reason: &str) {
+        println!(
+            "[AUDIT] DENIED lend of secret '{}' to agent '{}' (Reason: {})",
+            secret_id, agent_id, reason
         );
     }
 }
@@ -200,6 +213,9 @@ impl AntiExfilDetector {
         Ok(())
     }
 
+    /// Checks whether `ip` is allowed to use a leased secret via the proxy path
+    /// (`src/app/proxy_use_case.rs`). This does not gate vault reads or `lend`
+    /// itself -- it is a helper for the proxy enforcement point, not one on its own.
     pub fn is_allowed_ip(&self, ip: &str) -> bool {
         if !self.block_external_ips {
             return true;
@@ -252,4 +268,19 @@ pub fn dashboard_leases<A: AuditLogger>(engine: &KeyLendingEngine<A>) -> Vec<Vau
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_anti_exfil_detector_blocks_past_limit() {
+        let mut detector = AntiExfilDetector::new(10);
+        for _ in 0..10 {
+            assert!(detector.check_and_record("agent-1").is_ok());
+        }
+        let err = detector.check_and_record("agent-1").unwrap_err();
+        assert!(matches!(err, SecretError::ApprovalDenied(_)));
+    }
 }
