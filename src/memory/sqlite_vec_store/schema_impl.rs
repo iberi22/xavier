@@ -94,6 +94,12 @@ impl VecSqliteMemoryStore {
         let old_model = self
             .conn_provider
             .with_conn(&project_id_c, move |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS embedding_model_meta (
+                        key TEXT PRIMARY KEY,
+                        value TEXT
+                    );",
+                )?;
                 let mut stmt =
                     conn.prepare("SELECT value FROM embedding_model_meta WHERE key = 'active'")?;
                 let mut rows = stmt.query([])?;
@@ -432,6 +438,12 @@ impl VecSqliteMemoryStore {
         conn: &Connection,
         active_model: &str,
     ) -> Result<ReindexAction> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS embedding_model_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );",
+        )?;
         let mut stmt =
             conn.prepare("SELECT value FROM embedding_model_meta WHERE key = 'active'")?;
         let mut rows = stmt.query([])?;

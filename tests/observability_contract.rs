@@ -53,7 +53,12 @@ impl ServerInstance {
     /// Last log lines, so a boot failure says why instead of only that it happened.
     fn log_tail(&self) -> String {
         let log = std::fs::read_to_string(&self.log_path).unwrap_or_default();
-        log.lines().rev().take(20).collect::<Vec<_>>().join("\n")
+        let lines: Vec<&str> = log.lines().collect();
+        if lines.len() <= 50 {
+            log
+        } else {
+            lines[lines.len() - 50..].join("\n")
+        }
     }
 }
 
@@ -82,6 +87,8 @@ async fn start_server() -> (u16, ServerInstance) {
     // Hermetic: state, data and cwd all live in the temp dir, never ~/.xavier.
     let cwd = data_dir.path().join("cwd");
     std::fs::create_dir_all(&cwd).expect("create isolated cwd");
+    let data_subdir = data_dir.path().join("data");
+    std::fs::create_dir_all(&data_subdir).expect("create isolated data dir");
 
     let child = std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
         .arg("http")
@@ -92,7 +99,7 @@ async fn start_server() -> (u16, ServerInstance) {
         .current_dir(&cwd)
         .env("XAVIER_HOME", data_dir.path())
         .env("XAVIER_STATE_DIR", data_dir.path())
-        .env("XAVIER_DATA_DIR", data_dir.path().join("data"))
+        .env("XAVIER_DATA_DIR", &data_subdir)
         .env("XAVIER_HOST", "127.0.0.1")
         .env("XAVIER_URL", format!("http://127.0.0.1:{port}"))
         .env("XAVIER_PORT", port.to_string())
@@ -107,7 +114,7 @@ async fn start_server() -> (u16, ServerInstance) {
         .spawn()
         .expect("spawn xavier http");
 
-    let server = ServerInstance {
+    let mut server = ServerInstance {
         _data_dir: data_dir,
         child,
         log_path,
@@ -118,6 +125,13 @@ async fn start_server() -> (u16, ServerInstance) {
     let deadline = Instant::now() + BOOT_TIMEOUT;
     let mut last_error = "no request attempted".to_string();
     while Instant::now() < deadline {
+        if let Ok(Some(status)) = server.child.try_wait() {
+            panic!(
+                "xavier http exited during startup with status {status}\n\
+                 --- server log ---\n{}",
+                server.log_tail()
+            );
+        }
         match client.get(format!("{url}/health")).send().await {
             Ok(resp) if resp.status().is_success() => return (port, server),
             Ok(resp) => last_error = format!("GET /health -> HTTP {}", resp.status()),
