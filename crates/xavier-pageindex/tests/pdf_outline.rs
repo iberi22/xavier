@@ -166,16 +166,31 @@ fn test_pdf_page_text_extracted_per_page() {
     }
 }
 
+/// Standard-security PDF (RC4-128) with the given user password.
+fn encrypted_pdf(user_password: &str) -> Vec<u8> {
+    let (mut doc, _, _) = base_pdf(2);
+    doc.trailer.set(
+        "ID",
+        Object::Array(vec![
+            Object::String(vec![1; 16], StringFormat::Literal),
+            Object::String(vec![2; 16], StringFormat::Literal),
+        ]),
+    );
+    let version = lopdf::EncryptionVersion::V2 {
+        document: &doc,
+        owner_password: "owner-secret",
+        user_password,
+        key_length: 128,
+        permissions: lopdf::Permissions::all(),
+    };
+    let state = lopdf::EncryptionState::try_from(version).unwrap();
+    doc.encrypt(&state).unwrap();
+    to_bytes(doc)
+}
+
 #[test]
 fn test_pdf_encrypted_returns_typed_error() {
-    let (mut doc, _, _) = base_pdf(1);
-    let enc = doc.add_object(dictionary! {
-        "Filter" => "Standard", "V" => 1, "R" => 2, "P" => -4,
-        "O" => title("0123456789abcdef0123456789abcdef"),
-        "U" => title("0123456789abcdef0123456789abcdef"),
-    });
-    doc.trailer.set("Encrypt", enc);
-    let bytes = to_bytes(doc);
+    let bytes = encrypted_pdf("user-secret");
     assert!(matches!(
         extract_outline(&bytes),
         Err(PageIndexError::Encrypted)
@@ -184,6 +199,25 @@ fn test_pdf_encrypted_returns_typed_error() {
         extract_pages(&bytes),
         Err(PageIndexError::Encrypted)
     ));
+    // Undecodable /Encrypt dictionary is not "password required": generic error.
+    let (mut doc, _, _) = base_pdf(1);
+    let enc = doc.add_object(dictionary! {
+        "Filter" => "Standard", "V" => 1, "R" => 2, "P" => -4,
+        "O" => title("0123456789abcdef0123456789abcdef"),
+        "U" => title("0123456789abcdef0123456789abcdef"),
+    });
+    doc.trailer.set("Encrypt", enc);
+    assert!(extract_pages(&to_bytes(doc)).is_err());
+}
+
+#[test]
+fn test_pdf_empty_user_password_opens() {
+    let bytes = encrypted_pdf("");
+    assert!(bytes.windows(8).any(|w| w == b"/Encrypt"));
+    let pages = extract_pages(&bytes).unwrap();
+    assert_eq!(pages.len(), 2);
+    assert!(!pages[0].trim().is_empty(), "text must be decrypted");
+    assert!(extract_outline(&bytes).is_ok());
 }
 
 #[test]

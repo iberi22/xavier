@@ -32,13 +32,22 @@ fn build_err(e: impl std::fmt::Display) -> PageIndexError {
 fn load(bytes: &[u8]) -> Result<Document, PageIndexError> {
     let loaded = catch_unwind(AssertUnwindSafe(|| Document::load_mem(bytes)))
         .map_err(|_| build_err("parser panicked on malformed input"))?;
+    // lopdf tries the empty user password on load and decrypts in place, so a
+    // document that is still encrypted afterwards needs a real password.
     match loaded {
-        Ok(doc) if doc.is_encrypted() || doc.was_encrypted() => Err(PageIndexError::Encrypted),
+        Ok(doc) if doc.is_encrypted() => Err(PageIndexError::Encrypted),
         Ok(doc) => Ok(doc),
-        Err(lopdf::Error::Decryption(_)) => Err(PageIndexError::Encrypted),
-        Err(_) if bytes.windows(8).any(|w| w == b"/Encrypt") => Err(PageIndexError::Encrypted),
+        Err(lopdf::Error::Decryption(_) | lopdf::Error::InvalidPassword) => {
+            Err(PageIndexError::Encrypted)
+        }
+        Err(e) if is_password_required(&e) => Err(PageIndexError::Encrypted),
         Err(e) => Err(build_err(e)),
     }
+}
+
+/// lopdf reports "encrypted, password needed" as `Unimplemented` with a hint.
+fn is_password_required(e: &lopdf::Error) -> bool {
+    matches!(e, lopdf::Error::Unimplemented(m) if m.contains("requires a password"))
 }
 
 /// Extract the bookmark tree. `Ok(None)` when the PDF has no usable outline.
