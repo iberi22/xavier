@@ -118,7 +118,7 @@ fn ok_with(value: impl Serialize) -> Value {
     Value::Object(obj)
 }
 
-fn from_error(e: &PageIndexError) -> Value {
+pub(crate) fn from_error(e: &PageIndexError) -> Value {
     let hint = match e {
         PageIndexError::NotFound(_) => "Check the name with pageindex_browse_documents",
         PageIndexError::InvalidRange(_) => {

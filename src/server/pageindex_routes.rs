@@ -17,8 +17,8 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use crate::pageindex_glue::tools::{
-    ERROR_KIND_STORE, TOOL_BROWSE, TOOL_GET_DOCUMENT, TOOL_GET_PAGES, TOOL_GET_STRUCTURE,
-    TOOL_INDEX, TOOL_SEARCH,
+    from_error, ERROR_KIND_STORE, TOOL_BROWSE, TOOL_GET_DOCUMENT, TOOL_GET_PAGES,
+    TOOL_GET_STRUCTURE, TOOL_INDEX, TOOL_SEARCH,
 };
 use crate::pageindex_glue::{call, PageIndexState, ToolContext};
 use crate::security::auth::{Claims, Permission};
@@ -295,11 +295,7 @@ async fn delete_document(
     .await;
     match joined {
         Ok(Ok(())) => respond(json!({"ok": true, "deleted": name})),
-        Ok(Err(e)) => {
-            let msg = e.to_string();
-            let hint = "Check the name with GET /v1/pageindex/documents";
-            respond(json!({"ok": false, "error": msg, "hint": hint}))
-        }
+        Ok(Err(e)) => respond(from_error(&e)),
         Err(e) => respond(json!({"ok": false, "error": format!("task failed: {e}"),
             "hint": "retry; report if it persists"})),
     }
@@ -371,6 +367,24 @@ mod tests {
             chrono::Duration::hours(1),
         )));
         let (st, v) = send(a, "GET", "/documents", None).await;
+        assert_eq!(st, StatusCode::INTERNAL_SERVER_ERROR, "{v}");
+        assert_eq!(v["kind"], "store");
+    }
+
+    #[tokio::test]
+    async fn test_pageindex_routes_delete_store_failure_is_500() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = Arc::new(PageIndexState::new(PageIndexSettings {
+            db_path: dir.path().to_path_buf(),
+            ..Default::default()
+        }));
+        let a = router(state).layer(Extension(Claims::new(
+            "u".into(),
+            "u@x.dev".into(),
+            UserRole::User,
+            chrono::Duration::hours(1),
+        )));
+        let (st, v) = send(a, "DELETE", "/documents/guide", None).await;
         assert_eq!(st, StatusCode::INTERNAL_SERVER_ERROR, "{v}");
         assert_eq!(v["kind"], "store");
     }
