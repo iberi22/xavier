@@ -98,6 +98,8 @@ impl SecretStore for FallbackSecretStore {
 }
 
 #[cfg(test)]
+// LocalSecretStore is deprecated for production use; these tests are exactly its intended use.
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::secrets::local::LocalSecretStore;
