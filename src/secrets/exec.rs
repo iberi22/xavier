@@ -308,14 +308,13 @@ mod tests {
     /// Synthetic value. No real credential is ever used by these tests.
     const CANARY: &str = "canary-4f2b91c7-exec-only";
 
-    /// Per-test fixture: an isolated vault (never the real keyring, never the
-    /// real `~/.xavier`), a lending engine wired to the shared metrics audit
-    /// connection, and a tempdir owning every child-side artifact.
+    /// Isolated vault + metrics DB per fixture so parallel tests never share leases.
     struct Fixture {
         key: String,
         engine: Arc<KeyLendingEngine>,
         vault: HardwareVault,
         dir: tempfile::TempDir,
+        project_id: String,
     }
 
     impl Fixture {
@@ -337,14 +336,20 @@ mod tests {
         if let Some(value) = value {
             vault.store_secret(&key, value).expect("store canary");
         }
-        let audit = Box::new(QmdAuditLogger::new());
+        let project_id = format!("test_exec_secrets_{}", uuid::Uuid::new_v4());
+        ConnectionManager::global()
+            .connect_with_path(&project_id, dir.path().join("metrics.db"))
+            .expect("connect isolated metrics db");
+        let audit = Box::new(QmdAuditLogger::for_project(&project_id));
         audit.init_schema_async().await.expect("audit schema");
-        let engine = Arc::new(KeyLendingEngine::new(audit, None));
+        let engine =
+            Arc::new(KeyLendingEngine::new(audit, None).with_leases_project(project_id.clone()));
         Fixture {
             key,
             engine,
             vault,
             dir,
+            project_id,
         }
     }
 
@@ -355,21 +360,21 @@ mod tests {
         SecretExecSpec::new(key, CANARY_VAR, command, args, ttl_secs, key)
     }
 
-    /// `(LEND, REVOKE)` audit row counts for one agent, read through the same
-    /// metrics connection `QmdAuditLogger` writes to.
-    async fn audit_counts(agent_id: &str) -> (i64, i64) {
-        let agent = agent_id.to_string();
-        let lends = audit_rows(&agent, "LEND").await;
-        let revokes = audit_rows(&agent, "REVOKE").await;
+    /// `(LEND, REVOKE)` audit row counts for one agent, read through the
+    /// fixture's own isolated metrics connection.
+    async fn audit_counts(project_id: &str, agent_id: &str) -> (i64, i64) {
+        let lends = audit_rows(project_id, agent_id, "LEND").await;
+        let revokes = audit_rows(project_id, agent_id, "REVOKE").await;
         (lends, revokes)
     }
 
     /// Number of audit rows for one agent and one event type.
-    async fn audit_rows(agent_id: &str, event: &str) -> i64 {
+    async fn audit_rows(project_id: &str, agent_id: &str, event: &str) -> i64 {
+        let project_id = project_id.to_string();
         let agent = agent_id.to_string();
         let kind = event.to_string();
         ConnectionManager::global()
-            .with_conn("metrics", move |conn| {
+            .with_conn(&project_id, move |conn| {
                 let count = conn.query_row(
                     "SELECT COUNT(*) FROM secret_audit_logs
                      WHERE agent_id = ?1 AND event_type = ?2",
@@ -384,15 +389,15 @@ mod tests {
 
     /// The audit logger writes through spawned tasks, so poll briefly for the
     /// LEND/REVOKE pair and return what was actually observed.
-    async fn wait_for_audit_pair(agent_id: &str) -> (i64, i64) {
+    async fn wait_for_audit_pair(project_id: &str, agent_id: &str) -> (i64, i64) {
         for _ in 0..100 {
-            let counts = audit_counts(agent_id).await;
+            let counts = audit_counts(project_id, agent_id).await;
             if counts == (1, 1) {
                 return counts;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        audit_counts(agent_id).await
+        audit_counts(project_id, agent_id).await
     }
 
     #[tokio::test]
@@ -444,7 +449,7 @@ mod tests {
         assert!(!outcome.timed_out);
         assert!(!outcome.killed);
         assert!(f.engine.list_leases().await.is_empty());
-        assert_eq!(wait_for_audit_pair(&f.key).await, (1, 1));
+        assert_eq!(wait_for_audit_pair(&f.project_id, &f.key).await, (1, 1));
     }
 
     #[tokio::test]
@@ -459,7 +464,7 @@ mod tests {
         assert!(!outcome.timed_out);
         assert!(!outcome.killed);
         assert!(f.engine.list_leases().await.is_empty());
-        assert_eq!(wait_for_audit_pair(&f.key).await, (1, 1));
+        assert_eq!(wait_for_audit_pair(&f.project_id, &f.key).await, (1, 1));
     }
 
     #[tokio::test]
@@ -476,7 +481,7 @@ mod tests {
         assert!(!outcome.success);
         assert!(elapsed < Duration::from_secs(5));
         assert!(f.engine.list_leases().await.is_empty());
-        assert_eq!(wait_for_audit_pair(&f.key).await, (1, 1));
+        assert_eq!(wait_for_audit_pair(&f.project_id, &f.key).await, (1, 1));
     }
 
     #[tokio::test]
@@ -491,7 +496,7 @@ mod tests {
         assert!(matches!(result, Err(ExecSecretError::Vault(_))));
         assert!(!marker.exists());
         assert!(f.engine.list_leases().await.is_empty());
-        assert_eq!(audit_counts(&f.key).await, (0, 0));
+        assert_eq!(audit_counts(&f.project_id, &f.key).await, (0, 0));
     }
 
     #[tokio::test]
@@ -507,8 +512,8 @@ mod tests {
         assert!(matches!(result, Err(ExecSecretError::Io(_))));
         assert!(!marker.exists());
         assert!(f.engine.list_leases().await.is_empty());
-        assert_eq!(wait_for_audit_pair(&f.key).await, (1, 1));
+        assert_eq!(wait_for_audit_pair(&f.project_id, &f.key).await, (1, 1));
         tokio::time::sleep(Duration::from_millis(250)).await;
-        assert_eq!(audit_counts(&f.key).await, (1, 1));
+        assert_eq!(audit_counts(&f.project_id, &f.key).await, (1, 1));
     }
 }
