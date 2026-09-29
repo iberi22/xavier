@@ -286,18 +286,23 @@ pub(crate) fn with_test_vault(vault: crate::secrets::vault::HardwareVault) -> Te
 }
 
 /// Resolves the token from the hardware vault if present and non-empty.
+///
+/// Test builds never fall back to the production vault: without an active
+/// `with_test_vault` guard this returns `None` instead of touching the real
+/// OS keyring or `~/.xavier/secrets`.
+#[cfg(test)]
 fn get_vault_token() -> Option<String> {
-    #[cfg(test)]
-    {
-        if let Ok(guard) = TEST_VAULT.read() {
-            if let Some(ref vault) = *guard {
-                return vault
-                    .get_secret(XAVIER_TOKEN_VAULT_ENTRY)
-                    .ok()
-                    .filter(|t| !t.trim().is_empty());
-            }
-        }
-    }
+    let guard = TEST_VAULT.read().ok()?;
+    let vault = guard.as_ref()?;
+    vault
+        .get_secret(XAVIER_TOKEN_VAULT_ENTRY)
+        .ok()
+        .filter(|t| !t.trim().is_empty())
+}
+
+/// Resolves the token from the hardware vault if present and non-empty.
+#[cfg(not(test))]
+fn get_vault_token() -> Option<String> {
     crate::secrets::vault::HardwareVault::new(PRODUCTION_VAULT_SERVICE)
         .get_secret(XAVIER_TOKEN_VAULT_ENTRY)
         .ok()
