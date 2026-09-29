@@ -553,8 +553,9 @@ impl KeyLendingEngine {
     /// Points lease persistence at an already-connected project id instead of
     /// the default `"metrics"` database. Test-only: lets restart tests reopen
     /// a second engine over the same tempdir-scoped database without ever
-    /// touching the real `metrics.db`.
-    fn with_leases_project(mut self, project_id: impl Into<String>) -> Self {
+    /// touching the real `metrics.db`. `pub(crate)` so other test modules
+    /// (e.g. `secrets::exec`) can isolate their fixtures the same way.
+    pub(crate) fn with_leases_project(mut self, project_id: impl Into<String>) -> Self {
         self.leases_project_id = project_id.into();
         self
     }
