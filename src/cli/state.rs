@@ -99,3 +99,13 @@ pub struct Cli {
     #[command(subcommand)]
     pub cmd: Option<Command>,
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_cli_debug_assert() {
+        use clap::CommandFactory;
+
+        crate::cli::state::Cli::command().debug_assert();
+    }
+}
