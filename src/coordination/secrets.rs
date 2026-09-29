@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{OnceCell, RwLock};
 use uuid::Uuid;
 
 pub struct LeakDetector {
@@ -115,6 +115,10 @@ pub struct KeyLendingEngine {
     pub leak_detector: Arc<LeakDetector>,
     event_bus: Option<crate::coordination::events::XavierEventBus>,
     anti_exfil: Option<RwLock<AntiExfilDetector>>,
+    /// Metrics-database project id `secret_leases` rows are persisted under.
+    leases_project_id: String,
+    /// Guards the one-time restore of persisted leases into `leases`.
+    restored: OnceCell<()>,
 }
 
 impl KeyLendingEngine {
@@ -129,6 +133,8 @@ impl KeyLendingEngine {
             leak_detector: Arc::new(LeakDetector::new()),
             event_bus,
             anti_exfil: None,
+            leases_project_id: "metrics".to_string(),
+            restored: OnceCell::new(),
         }
     }
 
@@ -138,6 +144,61 @@ impl KeyLendingEngine {
     pub fn with_anti_exfil(mut self, detector: AntiExfilDetector) -> Self {
         self.anti_exfil = Some(RwLock::new(detector));
         self
+    }
+
+    /// Repopulates `leases` from persisted, non-revoked rows on first use.
+    /// Unexpired rows are restored as-is; rows that lapsed while the process
+    /// was down are audited as revoked (`reason: "restored-expired"`).
+    async fn restore_leases(&self) {
+        let rows = match crate::secrets::audit::active_leases(&self.leases_project_id).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!("Failed to restore secret leases from store: {}", e);
+                return;
+            }
+        };
+
+        let now = Utc::now();
+        let mut lapsed = Vec::new();
+        {
+            let mut leases = self.leases.write().await;
+            for row in rows {
+                if row.expires_at > now {
+                    leases.insert(
+                        row.token.clone(),
+                        SecretLease {
+                            token: row.token,
+                            secret_name: row.secret_name,
+                            secret_value: None,
+                            agent_id: row.agent_id,
+                            expires_at: row.expires_at,
+                            created_at: row.created_at,
+                        },
+                    );
+                } else {
+                    lapsed.push(row);
+                }
+            }
+        }
+
+        for row in lapsed {
+            self.audit_logger
+                .log_revoke(&row.agent_id, &row.token, "restored-expired");
+            if let Err(e) =
+                crate::secrets::audit::mark_lease_revoked(&self.leases_project_id, &row.token).await
+            {
+                tracing::warn!(
+                    "Failed to mark restored-expired lease {} revoked: {}",
+                    row.token,
+                    e
+                );
+            }
+        }
+    }
+
+    /// Runs `restore_leases` at most once per engine instance.
+    async fn ensure_restored(&self) {
+        self.restored.get_or_init(|| self.restore_leases()).await;
     }
 
     /// Lend a secret to an agent for a specific duration (TTL)
@@ -178,6 +239,8 @@ impl KeyLendingEngine {
         agent_id: &str,
         ttl_secs: u64,
     ) -> Result<SecretLease> {
+        self.ensure_restored().await;
+
         let token = Uuid::new_v4().to_string();
         let now = Utc::now();
         let expires_at = now + Duration::seconds(ttl_secs as i64);
@@ -191,14 +254,28 @@ impl KeyLendingEngine {
             created_at: now,
         };
 
-        let mut leases = self.leases.write().await;
-        leases.insert(token.clone(), lease.clone());
+        {
+            let mut leases = self.leases.write().await;
+            leases.insert(token.clone(), lease.clone());
+        }
 
         if let Some(val) = value {
             self.leak_detector.register_key(val, agent_id).await;
         }
 
         self.audit_logger.log_lend(agent_id, name, &token, ttl_secs);
+        if let Err(e) = crate::secrets::audit::insert_lease(
+            &self.leases_project_id,
+            &token,
+            name,
+            agent_id,
+            now,
+            expires_at,
+        )
+        .await
+        {
+            tracing::warn!("Failed to persist secret lease {}: {}", token, e);
+        }
         tracing::info!(
             "Lent secret '{}' to agent '{}'. Lease token: {}",
             name,
@@ -239,9 +316,20 @@ impl KeyLendingEngine {
 
     /// Revoke a lease immediately
     pub async fn revoke(&self, token: &str, reason: &str) -> Result<()> {
-        let mut leases = self.leases.write().await;
-        if let Some(lease) = leases.remove(token) {
+        self.ensure_restored().await;
+
+        let removed = {
+            let mut leases = self.leases.write().await;
+            leases.remove(token)
+        };
+
+        if let Some(lease) = removed {
             self.audit_logger.log_revoke(&lease.agent_id, token, reason);
+            if let Err(e) =
+                crate::secrets::audit::mark_lease_revoked(&self.leases_project_id, token).await
+            {
+                tracing::warn!("Failed to persist lease revoke for {}: {}", token, e);
+            }
             tracing::info!("Revoked secret lease: {} (Reason: {})", token, reason);
 
             if let Some(bus) = &self.event_bus {
@@ -259,15 +347,34 @@ impl KeyLendingEngine {
 
     /// Renew all leases for a specific agent
     pub async fn renew_for_agent(&self, agent_id: &str, ttl_secs: u64) -> usize {
-        let mut leases = self.leases.write().await;
-        let mut count = 0;
-        for lease in leases.values_mut() {
-            if lease.agent_id == agent_id {
-                let now = Utc::now();
-                lease.expires_at = now + Duration::seconds(ttl_secs as i64);
-                count += 1;
+        self.ensure_restored().await;
+
+        let renewed: Vec<(String, DateTime<Utc>)> = {
+            let mut leases = self.leases.write().await;
+            let new_expiry = Utc::now() + Duration::seconds(ttl_secs as i64);
+            leases
+                .values_mut()
+                .filter(|lease| lease.agent_id == agent_id)
+                .map(|lease| {
+                    lease.expires_at = new_expiry;
+                    (lease.token.clone(), new_expiry)
+                })
+                .collect()
+        };
+
+        for (token, expires_at) in &renewed {
+            if let Err(e) = crate::secrets::audit::update_lease_expiry(
+                &self.leases_project_id,
+                token,
+                *expires_at,
+            )
+            .await
+            {
+                tracing::warn!("Failed to persist lease renewal for {}: {}", token, e);
             }
         }
+
+        let count = renewed.len();
         if count > 0 {
             tracing::info!(
                 "Renewed {} leases for agent '{}' (New TTL: {}s)",
@@ -281,27 +388,39 @@ impl KeyLendingEngine {
 
     /// Revoke all leases for a specific agent
     pub async fn revoke_for_agent(&self, agent_id: &str, reason: &str) -> usize {
-        let mut leases = self.leases.write().await;
-        let mut tokens_to_remove = Vec::new();
-        for (token, lease) in leases.iter() {
-            if lease.agent_id == agent_id {
-                tokens_to_remove.push(token.clone());
-            }
-        }
+        self.ensure_restored().await;
 
-        let count = tokens_to_remove.len();
-        for token in tokens_to_remove {
-            leases.remove(&token);
-            self.audit_logger.log_revoke(agent_id, &token, reason);
+        let removed: Vec<SecretLease> = {
+            let mut leases = self.leases.write().await;
+            let tokens_to_remove: Vec<String> = leases
+                .iter()
+                .filter(|(_, lease)| lease.agent_id == agent_id)
+                .map(|(token, _)| token.clone())
+                .collect();
+            tokens_to_remove
+                .into_iter()
+                .filter_map(|token| leases.remove(&token))
+                .collect()
+        };
+
+        for lease in &removed {
+            self.audit_logger.log_revoke(agent_id, &lease.token, reason);
+            if let Err(e) =
+                crate::secrets::audit::mark_lease_revoked(&self.leases_project_id, &lease.token)
+                    .await
+            {
+                tracing::warn!("Failed to persist lease revoke for {}: {}", lease.token, e);
+            }
 
             if let Some(bus) = &self.event_bus {
                 let _ = bus.publish(crate::coordination::events::XavierEvent::LeaseRevoked {
                     agent_id: agent_id.to_string(),
-                    token: token.clone(),
+                    token: lease.token.clone(),
                 });
             }
         }
 
+        let count = removed.len();
         if count > 0 {
             tracing::info!(
                 "Revoked {} leases for agent '{}' (Reason: {})",
@@ -315,16 +434,34 @@ impl KeyLendingEngine {
 
     /// Get lease details by token
     pub async fn get_lease(&self, token: &str) -> Option<SecretLease> {
+        self.ensure_restored().await;
         let leases = self.leases.read().await;
         leases.get(token).cloned()
     }
 
     /// Renew a lease for a specific TTL
     pub async fn renew(&self, token: &str, ttl_secs: u64) -> Result<()> {
-        let mut leases = self.leases.write().await;
-        if let Some(lease) = leases.get_mut(token) {
-            let now = Utc::now();
-            lease.expires_at = now + Duration::seconds(ttl_secs as i64);
+        self.ensure_restored().await;
+
+        let new_expiry = {
+            let mut leases = self.leases.write().await;
+            leases.get_mut(token).map(|lease| {
+                let now = Utc::now();
+                lease.expires_at = now + Duration::seconds(ttl_secs as i64);
+                lease.expires_at
+            })
+        };
+
+        if let Some(expires_at) = new_expiry {
+            if let Err(e) = crate::secrets::audit::update_lease_expiry(
+                &self.leases_project_id,
+                token,
+                expires_at,
+            )
+            .await
+            {
+                tracing::warn!("Failed to persist lease renewal for {}: {}", token, e);
+            }
             tracing::info!("Renewed secret lease: {} (New TTL: {}s)", token, ttl_secs);
             Ok(())
         } else {
@@ -334,15 +471,32 @@ impl KeyLendingEngine {
 
     /// Add backoff time to a lease
     pub async fn backoff(&self, token: &str, seconds: u64) -> Result<()> {
-        let mut leases = self.leases.write().await;
-        if let Some(lease) = leases.get_mut(token) {
-            let now = Utc::now();
-            let base = if lease.is_expired() {
-                now
-            } else {
+        self.ensure_restored().await;
+
+        let new_expiry = {
+            let mut leases = self.leases.write().await;
+            leases.get_mut(token).map(|lease| {
+                let now = Utc::now();
+                let base = if lease.is_expired() {
+                    now
+                } else {
+                    lease.expires_at
+                };
+                lease.expires_at = base + Duration::seconds(seconds as i64);
                 lease.expires_at
-            };
-            lease.expires_at = base + Duration::seconds(seconds as i64);
+            })
+        };
+
+        if let Some(expires_at) = new_expiry {
+            if let Err(e) = crate::secrets::audit::update_lease_expiry(
+                &self.leases_project_id,
+                token,
+                expires_at,
+            )
+            .await
+            {
+                tracing::warn!("Failed to persist lease backoff for {}: {}", token, e);
+            }
             tracing::info!("Applied backoff to secret lease: {} (+{}s)", token, seconds);
             Ok(())
         } else {
@@ -352,6 +506,7 @@ impl KeyLendingEngine {
 
     /// List all active leases
     pub async fn list_leases(&self) -> Vec<SecretLease> {
+        self.ensure_restored().await;
         let leases = self.leases.read().await;
         leases.values().cloned().collect()
     }
@@ -364,22 +519,44 @@ impl KeyLendingEngine {
 
     /// Cleanup expired leases
     pub async fn cleanup_expired(&self) -> usize {
-        let mut leases = self.leases.write().await;
-        let mut tokens_to_remove = Vec::new();
-        for (token, lease) in leases.iter() {
-            if lease.is_expired() {
-                tokens_to_remove.push(token.clone());
-            }
-        }
+        self.ensure_restored().await;
 
-        let count = tokens_to_remove.len();
-        for token in tokens_to_remove {
-            if let Some(lease) = leases.remove(&token) {
-                self.audit_logger
-                    .log_revoke(&lease.agent_id, &token, "TTL Expired");
+        let removed: Vec<SecretLease> = {
+            let mut leases = self.leases.write().await;
+            let tokens_to_remove: Vec<String> = leases
+                .iter()
+                .filter(|(_, lease)| lease.is_expired())
+                .map(|(token, _)| token.clone())
+                .collect();
+            tokens_to_remove
+                .into_iter()
+                .filter_map(|token| leases.remove(&token))
+                .collect()
+        };
+
+        for lease in &removed {
+            self.audit_logger
+                .log_revoke(&lease.agent_id, &lease.token, "TTL Expired");
+            if let Err(e) =
+                crate::secrets::audit::mark_lease_revoked(&self.leases_project_id, &lease.token)
+                    .await
+            {
+                tracing::warn!("Failed to persist lease cleanup for {}: {}", lease.token, e);
             }
         }
-        count
+        removed.len()
+    }
+}
+
+#[cfg(test)]
+impl KeyLendingEngine {
+    /// Points lease persistence at an already-connected project id instead of
+    /// the default `"metrics"` database. Test-only: lets restart tests reopen
+    /// a second engine over the same tempdir-scoped database without ever
+    /// touching the real `metrics.db`.
+    fn with_leases_project(mut self, project_id: impl Into<String>) -> Self {
+        self.leases_project_id = project_id.into();
+        self
     }
 }
 
@@ -429,7 +606,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_key_lending_engine_leak_registration() {
-        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None);
+        let (project_id, _dir) = isolated_leases_project("leak-registration");
+        let engine =
+            KeyLendingEngine::new(Box::new(MockAuditLogger), None).with_leases_project(project_id);
         let secret = "secret-value";
         let agent_id = "agent-1";
 
@@ -461,7 +640,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_lend_returns_value_by_default() {
-        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None);
+        let (project_id, _dir) = isolated_leases_project("lend-default-value");
+        let engine =
+            KeyLendingEngine::new(Box::new(MockAuditLogger), None).with_leases_project(project_id);
         let secret = "secret-value";
         let lease = engine
             .lend("test-secret", Some(secret), "agent-1", 3600)
@@ -477,10 +658,11 @@ mod tests {
         use crate::ports::inbound::AgentLifecyclePort;
 
         let event_bus = XavierEventBus::new(10);
-        let engine = Arc::new(KeyLendingEngine::new(
-            Box::new(MockAuditLogger),
-            Some(event_bus.clone()),
-        ));
+        let (project_id, _dir) = isolated_leases_project("auto-revocation");
+        let engine = Arc::new(
+            KeyLendingEngine::new(Box::new(MockAuditLogger), Some(event_bus.clone()))
+                .with_leases_project(project_id),
+        );
         let registry =
             SimpleAgentRegistry::new_with_engines(Some(engine.clone()), Some(event_bus.clone()));
         let agent_id = "test-agent-lifecycle";
@@ -532,7 +714,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_lend_rate_limited_by_anti_exfil() {
+        let (project_id, _dir) = isolated_leases_project("rate-limited");
         let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id)
             .with_anti_exfil(crate::secrets::lending::AntiExfilDetector::new(10));
 
         for _ in 0..10 {
@@ -554,7 +738,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limit_is_per_agent() {
+        let (project_id, _dir) = isolated_leases_project("rate-limit-per-agent");
         let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id)
             .with_anti_exfil(crate::secrets::lending::AntiExfilDetector::new(10));
 
         for _ in 0..10 {
@@ -574,7 +760,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_rejected_lend_creates_no_lease() {
+        let (project_id, _dir) = isolated_leases_project("rejected-lend");
         let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id)
             .with_anti_exfil(crate::secrets::lending::AntiExfilDetector::new(0));
 
         let err = engine
@@ -594,7 +782,9 @@ mod tests {
         // rejection happened after the vault read, this call would instead
         // fail with a vault/secret-not-found error from HardwareVault --
         // touching the real keyring/fallback store in the process.
+        let (project_id, _dir) = isolated_leases_project("lend-from-vault-rejected");
         let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id)
             .with_anti_exfil(crate::secrets::lending::AntiExfilDetector::new(0));
 
         let err = engine
@@ -606,5 +796,178 @@ mod tests {
             Some(crate::secrets::SecretError::ApprovalDenied(_))
         ));
         assert!(engine.list_leases().await.is_empty());
+    }
+
+    /// Records every `log_revoke` call so restore tests can assert the
+    /// `reason` passed for a lease that lapsed while the process was down,
+    /// without polling a real audit table.
+    #[derive(Default)]
+    struct RecordingAuditLogger {
+        revokes: std::sync::Mutex<Vec<(String, String, String)>>,
+    }
+
+    impl AuditLogger for Arc<RecordingAuditLogger> {
+        fn log_lend(
+            &self,
+            _agent_id: &str,
+            _secret_name: &str,
+            _lease_token: &str,
+            _ttl_secs: u64,
+        ) {
+        }
+        fn log_revoke(&self, agent_id: &str, lease_token: &str, reason: &str) {
+            self.revokes.lock().unwrap().push((
+                agent_id.to_string(),
+                lease_token.to_string(),
+                reason.to_string(),
+            ));
+        }
+        fn log_proxy_use(&self, _agent_id: &str, _lease_token: &str, _endpoint: &str) {}
+    }
+
+    /// Connects a fresh, tempdir-scoped project id so lease-persistence
+    /// tests never share the real `metrics.db` used by production and other
+    /// test modules. The returned `TempDir` must outlive the engine(s) using
+    /// the connection.
+    fn isolated_leases_project(name: &str) -> (String, tempfile::TempDir) {
+        let project_id = format!("test_secrets_{}_{}", name, Uuid::new_v4());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("metrics.db");
+        crate::codebase::connection_manager::ConnectionManager::global()
+            .connect_with_path(&project_id, db_path)
+            .expect("connect isolated metrics db");
+        (project_id, dir)
+    }
+
+    #[tokio::test]
+    async fn test_lease_persisted_on_lend() {
+        let (project_id, _dir) = isolated_leases_project("persist");
+        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id.clone());
+
+        let lease = engine
+            .lend("db-password", Some("s3cr3t"), "agent-persist", 3600)
+            .await
+            .unwrap();
+
+        let rows = crate::secrets::audit::active_leases(&project_id)
+            .await
+            .expect("active leases");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].token, lease.token);
+        assert_eq!(rows[0].secret_name, "db-password");
+        assert_eq!(rows[0].agent_id, "agent-persist");
+    }
+
+    #[tokio::test]
+    async fn test_lease_marked_revoked_in_store() {
+        let (project_id, _dir) = isolated_leases_project("revoke");
+        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id.clone());
+
+        let lease = engine
+            .lend("api-key", Some("s3cr3t"), "agent-revoke", 3600)
+            .await
+            .unwrap();
+        engine.revoke(&lease.token, "manual revoke").await.unwrap();
+
+        let rows = crate::secrets::audit::active_leases(&project_id)
+            .await
+            .expect("active leases");
+        assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_restore_repopulates_unexpired_leases() {
+        let (project_id, _dir) = isolated_leases_project("restore-active");
+        let engine_a = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id.clone());
+        let lease = engine_a
+            .lend("still-valid", Some("s3cr3t"), "agent-restore", 3600)
+            .await
+            .unwrap();
+        drop(engine_a);
+
+        // A fresh engine over the same tempdir-scoped database -- the
+        // restart scenario: nothing in this engine's memory yet.
+        let engine_b = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id.clone());
+        let restored = engine_b.list_leases().await;
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].token, lease.token);
+        assert_eq!(restored[0].agent_id, "agent-restore");
+        assert_eq!(restored[0].secret_value, None);
+    }
+
+    #[tokio::test]
+    async fn test_restore_drops_expired_leases_and_audits_them() {
+        let (project_id, _dir) = isolated_leases_project("restore-expired");
+        // Seed a lease whose TTL lapsed while "the process was down" --
+        // written directly to the store, bypassing any engine's clock.
+        let past = Utc::now() - Duration::seconds(120);
+        crate::secrets::audit::insert_lease(
+            &project_id,
+            "lapsed-token",
+            "lapsed-secret",
+            "agent-lapsed",
+            past - Duration::seconds(60),
+            past,
+        )
+        .await
+        .expect("seed lapsed lease");
+
+        let logger = Arc::new(RecordingAuditLogger::default());
+        let engine = KeyLendingEngine::new(Box::new(logger.clone()), None)
+            .with_leases_project(project_id.clone());
+
+        let restored = engine.list_leases().await;
+        assert!(restored.is_empty());
+
+        let revoked = {
+            let revokes = logger.revokes.lock().unwrap();
+            revokes.iter().any(|(agent, token, reason)| {
+                agent == "agent-lapsed" && token == "lapsed-token" && reason == "restored-expired"
+            })
+        };
+        assert!(revoked);
+
+        let rows = crate::secrets::audit::active_leases(&project_id)
+            .await
+            .expect("active leases");
+        assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_restart_scenario_lists_unexpired_and_drops_expired() {
+        let (project_id, _dir) = isolated_leases_project("restart");
+        let engine_a = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id.clone());
+        let kept = engine_a
+            .lend("kept-secret", Some("s3cr3t"), "agent-kept", 3600)
+            .await
+            .unwrap();
+        let past = Utc::now() - Duration::seconds(60);
+        crate::secrets::audit::insert_lease(
+            &project_id,
+            "dropped-token",
+            "dropped-secret",
+            "agent-dropped",
+            past - Duration::seconds(60),
+            past,
+        )
+        .await
+        .expect("seed lapsed lease");
+        drop(engine_a);
+
+        let engine_b = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_leases_project(project_id.clone());
+        let restored = engine_b.list_leases().await;
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].token, kept.token);
+
+        let rows = crate::secrets::audit::active_leases(&project_id)
+            .await
+            .expect("active leases");
+        assert!(rows.iter().all(|r| r.token != "dropped-token"));
     }
 }
