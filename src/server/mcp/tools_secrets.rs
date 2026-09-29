@@ -208,6 +208,87 @@ fn string_args(arguments: &Value, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Maximum returned output size for secret_exec (64 KiB).
+pub const MAX_SECRET_EXEC_OUTPUT_BYTES: usize = 64 * 1024;
+const _: () = assert!(MAX_SECRET_EXEC_OUTPUT_BYTES == 65536);
+
+/// Truncation marker appended when child output exceeds [`MAX_SECRET_EXEC_OUTPUT_BYTES`].
+pub const TRUNCATION_MARKER: &str = "\n[TRUNCATED]";
+
+/// Temporary stdout capture file with restrictive `0600` permissions, removed on drop.
+pub(crate) struct TempStdoutGuard {
+    path: std::path::PathBuf,
+}
+
+impl TempStdoutGuard {
+    /// Create a new temporary stdout file with 0600 permissions.
+    pub(crate) fn new() -> std::io::Result<Self> {
+        let temp_dir = std::env::temp_dir();
+        let filename = format!("xavier_exec_stdout_{}.tmp", uuid::Uuid::new_v4());
+        let path = temp_dir.join(filename);
+
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let file = opts.open(&path)?;
+        drop(file);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        }
+
+        Ok(Self { path })
+    }
+
+    /// Path to the temporary file.
+    pub(crate) fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Read the captured output and delete the file immediately.
+    pub(crate) fn read_and_delete(&mut self) -> String {
+        let content = std::fs::read(&self.path)
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .unwrap_or_default();
+        let _ = std::fs::remove_file(&self.path);
+        content
+    }
+}
+
+impl Drop for TempStdoutGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Redact occurrences of `secret_val` and truncate to [`MAX_SECRET_EXEC_OUTPUT_BYTES`].
+pub(crate) fn redact_and_truncate(mut text: String, secret_val: Option<&str>) -> (String, bool) {
+    if let Some(secret) = secret_val {
+        if !secret.is_empty() {
+            text = text.replace(secret, "[REDACTED]");
+        }
+    }
+
+    if text.len() > MAX_SECRET_EXEC_OUTPUT_BYTES {
+        let max_len = MAX_SECRET_EXEC_OUTPUT_BYTES.saturating_sub(TRUNCATION_MARKER.len());
+        let mut cut = max_len;
+        while cut > 0 && !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        let mut truncated_text = text[..cut].to_string();
+        truncated_text.push_str(TRUNCATION_MARKER);
+        (truncated_text, true)
+    } else {
+        (text, false)
+    }
+}
+
 /// Dispatch a secrets tool call.
 pub async fn handle_secrets_tool(
     ctx: &SecretToolContext,
@@ -249,14 +330,17 @@ pub async fn handle_secrets_tool(
             let ttl_seconds = optional_u64(&arguments, "ttl_seconds", 3600);
             let agent_id = optional_str(&arguments, "agent_id", "mcp_secret_exec");
 
+            let mut stdout_guard = TempStdoutGuard::new()?;
             let spec =
-                SecretExecSpec::new(secret_name, env_var, command, args, ttl_seconds, agent_id);
+                SecretExecSpec::new(secret_name, env_var, command, args, ttl_seconds, agent_id)
+                    .with_stdout_path(stdout_guard.path());
 
             let result = run_with_secret(&spec, Arc::clone(&ctx.engine), &ctx.vault).await;
 
             let outcome = match result {
                 Ok(outcome) => outcome,
                 Err(err) => {
+                    drop(stdout_guard);
                     let is_timeout = matches!(err, ExecSecretError::Timeout(_));
                     let payload = json!({
                         "error": err.to_string(),
@@ -270,8 +354,15 @@ pub async fn handle_secrets_tool(
                 }
             };
 
+            let raw_output = stdout_guard.read_and_delete();
+            let secret_val = ctx.vault.resolve_secret(secret_name).ok();
+            let (stdout_text, truncated) = redact_and_truncate(raw_output, secret_val.as_deref());
+
             let payload = json!({
                 "exit_code": outcome.exit_code,
+                "stdout": stdout_text,
+                "output": stdout_text,
+                "truncated": truncated,
                 "lease_token": Value::Null,
                 "duration_ms": outcome.duration_ms,
                 "success": outcome.success,
@@ -365,6 +456,214 @@ pub mod tests {
         assert_eq!(structured["exit_code"], 0);
         assert_eq!(structured["success"], true);
         assert_eq!(structured["revoked"], true);
+    }
+
+    #[test]
+    fn test_temp_stdout_file_permissions_0600() {
+        let guard = TempStdoutGuard::new().expect("create temp stdout guard");
+        assert!(guard.path().exists(), "temp file must exist after creation");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let meta = std::fs::metadata(guard.path()).expect("metadata");
+            assert_eq!(
+                meta.permissions().mode() & 0o777,
+                0o600,
+                "temporary stdout file must be created with 0600 permissions"
+            );
+        }
+
+        let path = guard.path().to_path_buf();
+        drop(guard);
+        assert!(
+            !path.exists(),
+            "temporary stdout file must be removed on drop"
+        );
+    }
+
+    #[test]
+    fn test_redact_and_truncate_caps_at_64kib_with_marker() {
+        let canary = "SECRET_CANARY_VALUE_12345";
+        let prefix = "A".repeat(70_000);
+        let text = format!("{prefix}_{canary}_suffix");
+
+        let (redacted, truncated) = redact_and_truncate(text, Some(canary));
+        assert!(truncated, "text longer than 64 KiB must be truncated");
+        assert!(
+            !redacted.contains(canary),
+            "canary must not appear in output"
+        );
+        assert!(
+            redacted.len() <= MAX_SECRET_EXEC_OUTPUT_BYTES,
+            "redacted len {} must be <= {}",
+            redacted.len(),
+            MAX_SECRET_EXEC_OUTPUT_BYTES
+        );
+        assert!(
+            redacted.ends_with(TRUNCATION_MARKER),
+            "redacted output must end with explicit truncation marker"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_secret_exec_redacts_secret_in_stdout() {
+        let f = Fixture::new();
+        let args = json!({
+            "secret_name": f.secret_name,
+            "command": "sh",
+            "args": ["-c", "echo hello_${XAVIER_SECRET}_world"]
+        });
+
+        let res = handle_secrets_tool(&f.ctx, "secret_exec", args)
+            .await
+            .expect("exec succeeds");
+        f.assert_canary_absent(&res);
+
+        let structured = &res["structuredContent"];
+        assert_eq!(structured["exit_code"], 0);
+        assert_eq!(structured["success"], true);
+        assert_eq!(structured["revoked"], true);
+
+        let stdout = structured["stdout"].as_str().expect("stdout present");
+        assert!(
+            stdout.contains("hello_[REDACTED]_world"),
+            "expected stdout to contain redacted secret, got: {stdout}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_secret_exec_temp_file_removed_on_success() {
+        let f = Fixture::new();
+        let args = json!({
+            "secret_name": f.secret_name,
+            "command": "sh",
+            "args": ["-c", "readlink /proc/self/fd/1; echo secret_$XAVIER_SECRET"]
+        });
+
+        let res = handle_secrets_tool(&f.ctx, "secret_exec", args)
+            .await
+            .expect("exec succeeds");
+        f.assert_canary_absent(&res);
+
+        let stdout = res["structuredContent"]["stdout"]
+            .as_str()
+            .expect("stdout string");
+        let first_line = stdout
+            .lines()
+            .next()
+            .expect("first line has temp file path");
+        assert!(
+            first_line.contains("xavier_exec_stdout_"),
+            "expected temp file path, got: {first_line}"
+        );
+        let temp_path = std::path::Path::new(first_line);
+        assert!(
+            !temp_path.exists(),
+            "temporary output file must be removed after successful execution"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_secret_exec_temp_file_removed_on_timeout() {
+        let f = Fixture::new();
+        let recorded_path_file = f.temp_dir.path().join("recorded_stdout_path.txt");
+        let script = format!(
+            "exec 9>&1; readlink /proc/self/fd/9 > '{}'; sleep 5",
+            recorded_path_file.display()
+        );
+        let args = json!({
+            "secret_name": f.secret_name,
+            "command": "sh",
+            "args": ["-c", script],
+            "ttl_seconds": 1
+        });
+
+        let res = handle_secrets_tool(&f.ctx, "secret_exec", args)
+            .await
+            .expect("exec returns response");
+        f.assert_canary_absent(&res);
+
+        let structured = &res["structuredContent"];
+        assert_eq!(structured["timed_out"], true);
+
+        let recorded_path_str = std::fs::read_to_string(&recorded_path_file)
+            .expect("child wrote stdout path before timeout");
+        let temp_path = std::path::Path::new(recorded_path_str.trim());
+        assert!(
+            recorded_path_str.contains("xavier_exec_stdout_"),
+            "expected temp file path, got: {recorded_path_str}"
+        );
+        assert!(
+            !temp_path.exists(),
+            "temporary output file must be removed on timeout"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_secret_exec_temp_file_removed_on_error() {
+        let f = Fixture::new();
+        let args = json!({
+            "secret_name": f.secret_name,
+            "command": "sh",
+            "args": ["-c", "readlink /proc/self/fd/1; exit 42"]
+        });
+
+        let res = handle_secrets_tool(&f.ctx, "secret_exec", args)
+            .await
+            .expect("exec returns response");
+        f.assert_canary_absent(&res);
+
+        let structured = &res["structuredContent"];
+        assert_eq!(structured["exit_code"], 42);
+        assert_eq!(structured["success"], false);
+
+        let stdout = structured["stdout"].as_str().expect("stdout string");
+        let first_line = stdout
+            .lines()
+            .next()
+            .expect("first line has temp file path");
+        assert!(
+            first_line.contains("xavier_exec_stdout_"),
+            "expected temp file path, got: {first_line}"
+        );
+        let temp_path = std::path::Path::new(first_line);
+        assert!(
+            !temp_path.exists(),
+            "temporary output file must be removed after error exit"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_secret_exec_output_truncated_at_64kib() {
+        let f = Fixture::new();
+        let args = json!({
+            "secret_name": f.secret_name,
+            "command": "sh",
+            "args": ["-c", "head -c 70000 /dev/zero | tr '\\0' 'A'"]
+        });
+
+        let res = handle_secrets_tool(&f.ctx, "secret_exec", args)
+            .await
+            .expect("exec succeeds");
+        f.assert_canary_absent(&res);
+
+        let structured = &res["structuredContent"];
+        assert_eq!(structured["exit_code"], 0);
+        assert_eq!(structured["truncated"], true);
+
+        let stdout = structured["stdout"].as_str().expect("stdout string");
+        assert!(
+            stdout.len() <= MAX_SECRET_EXEC_OUTPUT_BYTES,
+            "stdout len {} must be <= {}",
+            stdout.len(),
+            MAX_SECRET_EXEC_OUTPUT_BYTES
+        );
+        assert!(
+            stdout.ends_with(TRUNCATION_MARKER),
+            "stdout must end with explicit truncation marker, got end: {:?}",
+            &stdout[stdout.len().saturating_sub(50)..]
+        );
     }
 
     #[tokio::test]
