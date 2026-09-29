@@ -90,6 +90,27 @@ jobs:
           NO_STRIP: 'true'
         run: pnpm exec tauri build --bundles appimage,deb
 
+      - name: Repack AppImage without bundled libwayland
+        # linuxdeploy bundles Ubuntu's libwayland-*; on hosts with a newer Mesa
+        # they make WebKit abort ("Could not create default EGL display:
+        # EGL_BAD_PARAMETER"). The host's libwayland (a GTK3 dependency) is used.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          ARCH: x86_64
+        run: |
+          B=panel-ui/src-tauri/target/release/bundle
+          [ -d "$B" ] || B=target/release/bundle
+          IMG="$(ls "$B"/appimage/*.AppImage)"
+          curl -fsSL --retry 3 -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          rm -rf squashfs-root
+          "$IMG" --appimage-extract >/dev/null
+          rm -f squashfs-root/usr/lib/libwayland-*.so*
+          if ls squashfs-root/usr/lib | grep -q '^libwayland-'; then exit 1; fi
+          ./appimagetool --no-appstream squashfs-root "$IMG"
+          rm -rf squashfs-root appimagetool
+
       - name: Collect artifacts
         run: |
           mkdir -p dist-desktop

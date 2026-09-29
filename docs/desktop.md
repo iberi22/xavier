@@ -12,7 +12,27 @@ Requires a glibc 2.35+ distro (built on Ubuntu 22.04) with GTK3 and WebKitGTK 4.
 
 ### NixOS
 
-AppImages are not FHS binaries. Either run them with `appimage-run Xavier_*.AppImage`, or enable `programs.appimage = { enable = true; binfmt = true; };` so double-click and `./Xavier_*.AppImage` work directly. If the window is blank, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+Recommended: build natively against the system WebKitGTK and install a launcher (icon, `.desktop` entry, wrapper):
+
+```bash
+scripts/desktop/install-nixos.sh          # add --no-build to only reinstall
+```
+
+The script builds inside `nix-shell shell.nix` (`tauri build --no-bundle`), then installs:
+
+| What | Where |
+|---|---|
+| Launcher (wrapper) | `~/.local/bin/xavier-desktop` (an existing file is backed up as `.bak-<stamp>`) |
+| Real binary | `~/.local/libexec/xavier-desktop/xavier-desktop` |
+| Desktop entry | `~/.local/share/applications/xavier.desktop` (`StartupWMClass=xavier-desktop`) |
+| Icons | `~/.local/share/icons/hicolor/<size>/apps/xavier.png` |
+| Nix GC roots | `~/.local/share/xavier-desktop/gcroots/` |
+
+The wrapper is generated at install time with store paths resolved from `<nixpkgs>` (nothing hardcoded in the repo). It sets `LD_LIBRARY_PATH` (ayatana appindicator, `/run/opengl-driver/lib`), `XDG_DATA_DIRS` (GTK/gsettings schemas, icons), `GIO_MODULE_DIR` and `GDK_PIXBUF_MODULE_FILE`, so a double-click needs no `nix-shell`. Re-run the script after a `nixos-rebuild`/channel bump or an app update.
+
+AppImages are not FHS binaries. To use the AppImage instead, run `appimage-run Xavier_*.AppImage`, or enable `programs.appimage = { enable = true; binfmt = true; };`.
+
+Troubleshooting: the app logs `Main window created` and `Webview page Finished` at INFO to `~/.local/share/com.swalsystems.xavier/logs/Xavier.log`. The AppImage strips the bundled `libwayland-*` (they made WebKit abort with `EGL_BAD_PARAMETER` on hosts with a newer Mesa); if the window is still blank, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
 
 ## How it finds a server (safety contract)
 
@@ -57,4 +77,4 @@ mkdir -p panel-ui/src-tauri/binaries && cp target/release/xavier "panel-ui/src-t
 pnpm install && cd panel-ui && pnpm exec tauri build --bundles appimage,deb
 ```
 
-On NixOS, `nix-shell shell.nix` supports `cargo check`/`clippy` of the shell, but AppImage bundling downloads FHS tooling, so use the CI artifact.
+On NixOS use `scripts/desktop/install-nixos.sh` (above); AppImage bundling downloads FHS tooling, so use the CI artifact for the AppImage. CI repacks the AppImage without `libwayland-*` after `tauri build`.
