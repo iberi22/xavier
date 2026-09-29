@@ -23,6 +23,10 @@ static WAL_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Manages connection pools by project_id with LRU eviction and PRAGMA optimizations.
 pub struct ConnectionManager {
     pools: RwLock<std::collections::HashMap<String, ProjectPool>>,
+    /// Real db path used the first time a `project_id` was connected, so an
+    /// evicted pool is resurrected against the file it actually owns instead
+    /// of a guess (see [`ConnectionManager::get_or_reconnect_pool`]).
+    known_paths: RwLock<std::collections::HashMap<String, PathBuf>>,
     active: Arc<tokio::sync::RwLock<Option<String>>>,
     idle_timeout_secs: u64,
 }
@@ -98,6 +102,20 @@ fn initialize_wal_mode(conn: &Connection, db_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
+/// True when `project_id` matches one of the explicit id→path branches in
+/// [`ConnectionManager::connect`] (the literal ids `memory`, `vec_store`,
+/// `metrics`, `security`, or the `conv_*`/`test_*` prefixes) rather than the
+/// catch-all `./.xavier/codebase.db` guess. `get_or_reconnect_pool` uses this
+/// to decide whether an id that was never registered via `connect()` /
+/// `connect_with_path()` may still be lazily connected, or must be rejected
+/// (the catch-all previously let an unrelated id like a hashed
+/// `vec_store_<sha>` silently bind to the wrong database file, #2736).
+fn is_explicitly_mapped(project_id: &str) -> bool {
+    matches!(project_id, "memory" | "vec_store" | "metrics" | "security")
+        || project_id.starts_with("conv_")
+        || project_id.starts_with("test_")
+}
+
 fn is_sqlite_lock_error(err: &rusqlite::Error) -> bool {
     matches!(
         err,
@@ -117,6 +135,7 @@ impl ConnectionManager {
     pub fn new() -> Self {
         Self {
             pools: RwLock::new(std::collections::HashMap::new()),
+            known_paths: RwLock::new(std::collections::HashMap::new()),
             active: Arc::new(tokio::sync::RwLock::new(None)),
             idle_timeout_secs: 300, // 5 minutes
         }
@@ -178,6 +197,10 @@ impl ConnectionManager {
 
     /// Explicitly connect to a database file with a given project_id.
     pub fn connect_with_path(&self, project_id: &str, db_path: PathBuf) -> Result<()> {
+        self.known_paths
+            .write()
+            .insert(project_id.to_string(), db_path.clone());
+
         if !self.pools.read().contains_key(project_id) {
             if let Some(parent) = db_path.parent() {
                 if !parent.exists() {
@@ -281,8 +304,31 @@ impl ConnectionManager {
             }
         }
 
-        // Pool was evicted or not yet connected; attempt on-demand resurrection.
-        self.connect(project_id, ".")?;
+        // Pool was evicted or not yet connected. If we've already resolved a
+        // real path for this id (via a prior `connect()`/`connect_with_path()`
+        // call), resurrect it against that exact path, never a guess:
+        // reconnecting via `connect(project_id, ".")` used to silently bind
+        // the pool to the wrong file for ids whose path isn't derivable from
+        // `project_id` alone (e.g. a hashed `vec_store_<sha>` id read by a
+        // health check before `VecSqliteMemoryStore::new` ever registers it).
+        // Once bound, `connect_with_path` became a no-op for that id, so the
+        // real store silently kept using the wrong pool (#2736).
+        //
+        // Ids that `connect()` maps through an explicit branch (literal ids,
+        // or the `conv_*`/`test_*` prefixes) have a derivable path even on
+        // their very first use, so those may still connect lazily here. Only
+        // ids that would fall through to the catch-all guess are rejected.
+        let known_path = self.known_paths.read().get(project_id).cloned();
+        match known_path {
+            Some(db_path) => self.connect_with_path(project_id, db_path)?,
+            None if is_explicitly_mapped(project_id) => self.connect(project_id, ".")?,
+            None => {
+                return Err(anyhow::anyhow!(
+                    "connection pool for '{}' was never established; call connect() or connect_with_path() before use",
+                    project_id
+                ))
+            }
+        }
 
         let mut pools = self.pools.write();
         let entry = pools.get_mut(project_id).ok_or_else(|| {
@@ -537,5 +583,53 @@ mod tests {
 
         assert!(res.is_ok());
         assert!(cm.pools.read().contains_key("conv_test_resurrect"));
+    }
+
+    /// Regression for #2736: an id that would fall through to the catch-all
+    /// `./.xavier/codebase.db` guess (e.g. a hashed `vec_store_<sha>` id) must
+    /// never be silently resurrected against a guessed path. It has to be
+    /// registered via `connect()`/`connect_with_path()` first.
+    #[tokio::test]
+    async fn test_get_or_reconnect_pool_rejects_unregistered_catchall_id() {
+        let cm = ConnectionManager::new();
+
+        let err = cm
+            .get_or_reconnect_pool("vec_store_deadbeefcafe")
+            .expect_err("a hashed vec_store id must never be guessed via the catch-all path");
+        assert!(
+            err.to_string().contains("was never established"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Regression for the #2736 REPAIR: ids `connect()` maps through an
+    /// explicit branch (here, the `conv_*` prefix used by
+    /// `ConversationsDb::new_test()`'s `conv_test_default`) must keep
+    /// connecting lazily on first use, without a prior `connect()` /
+    /// `connect_with_path()` call.
+    ///
+    /// `get_or_reconnect_pool`'s lazy branch resurrects against
+    /// `project_root = "."` (same as before #2736), so this writes
+    /// `.xavier/tests/<id>.db` under the crate root like other `conv_test_*`
+    /// ids already do at runtime; it is cleaned up on the way out.
+    #[tokio::test]
+    async fn test_get_or_reconnect_pool_lazily_connects_conv_prefixed_id() {
+        let cm = ConnectionManager::new();
+        let project_id = "conv_test_lazy_default_regression";
+        let db_path = PathBuf::from(".")
+            .join(".xavier")
+            .join("tests")
+            .join(format!("{project_id}.db"));
+
+        let pool = cm
+            .get_or_reconnect_pool(project_id)
+            .expect("a conv_*-prefixed id must connect lazily without prior registration");
+        assert!(pool.get().is_ok());
+
+        drop(pool);
+        cm.shutdown();
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", db_path.display(), suffix));
+        }
     }
 }
