@@ -55,13 +55,20 @@ impl SecurityInitializer {
 /// `SecurityInitializer::initialize`. Factored out so it is directly testable
 /// without the real keyring or the real `~/.xavier`.
 fn tighten_storage_dir_permissions(dir: &Path) -> Result<()> {
-    crate::security::encryption_keys::ensure_private_dir(dir)?;
+    if let Err(e) = crate::security::encryption_keys::ensure_private_dir(dir) {
+        tracing::warn!("could not tighten secrets storage directory permissions: {e}");
+        return Ok(());
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(dir)?.permissions().mode() & 0o777;
-        if mode != 0o700 {
-            tracing::warn!("secrets storage directory has insecure permissions: {mode:o}");
+        match std::fs::metadata(dir) {
+            Ok(meta) if meta.permissions().mode() & 0o777 != 0o700 => tracing::warn!(
+                "secrets storage directory has insecure permissions: {:o}",
+                meta.permissions().mode() & 0o777
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!("could not verify secrets storage directory permissions: {e}"),
         }
     }
     Ok(())

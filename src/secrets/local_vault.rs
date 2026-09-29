@@ -156,4 +156,11 @@ mod tests {
             assert_eq!(dir_meta.permissions().mode() & 0o777, 0o700);
         }
     }
+
+    #[test]
+    fn test_storage_dir_returns_the_vault_directory() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let vault = LocalSecretsVault::new(tmp.path(), [7u8; 32]);
+        assert_eq!(vault.storage_dir(), tmp.path());
+    }
 }
