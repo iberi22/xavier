@@ -175,7 +175,17 @@ PY
       code-graph/*)     echo "code-graph --lib|test -p code-graph --lib" ;;
       crates/xavier-core-logic/*) echo "xavier-core-logic|test -p xavier-core-logic --lib" ;;
       crates/xavier-wasm/*)       echo "xavier-wasm|test -p xavier-wasm --lib" ;;
-      crates/*)         echo "crate $(echo "$1" | cut -d/ -f2)|test -p $(echo "$1" | cut -d/ -f2) --lib" ;;
+      crates/*/tests/*.rs)
+        local crate base; crate="$(echo "$1" | cut -d/ -f2)"; base="$(basename "$1" .rs)"
+        echo "crate $crate --test $base|test -p $crate --all-features --test $base" ;;
+      crates/*)
+        local crate; crate="$(echo "$1" | cut -d/ -f2)"
+        # Crates with cargo features run with all of them so gated tests execute.
+        if [ -f "$ROOT/crates/$crate/Cargo.toml" ] && grep -q '^\[features\]' "$ROOT/crates/$crate/Cargo.toml"; then
+          echo "crate $crate (all features)|test -p $crate --all-features --lib"
+        else
+          echo "crate $crate|test -p $crate --lib"
+        fi ;;
       tests/e2e/*|tests/*.rs)
         local base; base="$(basename "$1" .rs)"
         echo "--test $base|test --test $base" ;;
