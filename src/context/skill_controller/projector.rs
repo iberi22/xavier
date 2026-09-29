@@ -258,12 +258,12 @@ fn atomic_symlink_swap(destination: &Path, source: &Path) -> io::Result<()> {
 /// apply. Backed by a plain `create_new` marker file under the journal's state directory (never
 /// inside the target root itself, so it never shows up in a projection scan); released on drop.
 #[derive(Debug)]
-struct RootLock {
+pub(crate) struct RootLock {
     path: PathBuf,
 }
 
 impl RootLock {
-    fn acquire(lock_dir: &Path, root: &Path) -> Result<Self, ProjectorError> {
+    pub(crate) fn acquire(lock_dir: &Path, root: &Path) -> Result<Self, ProjectorError> {
         use sha2::{Digest, Sha256};
         fs::create_dir_all(lock_dir).map_err(|source| ProjectorError::Io {
             path: lock_dir.to_path_buf(),
