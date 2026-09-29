@@ -21,4 +21,5 @@ pub(crate) mod utils;
 pub mod websocket;
 
 pub use commands::Command;
+pub use config::validate_xavier_data_dir_env;
 pub use state::Cli;

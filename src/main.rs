@@ -21,8 +21,6 @@
 // Xavier - Cognitive Memory System
 // Public open-core release
 
-mod cli;
-mod settings;
 extern crate xavier as xavier_lib;
 
 // Re-export observability module for CLI access
@@ -41,11 +39,11 @@ pub use xavier_lib::system;
 pub use xavier_lib::telecom;
 pub use xavier_lib::workspace;
 
-use crate::settings::XavierSettings;
 use anyhow::Result;
 use clap::Parser;
-use cli::config::validate_xavier_data_dir_env;
-use cli::Cli;
+use xavier_lib::cli::validate_xavier_data_dir_env;
+use xavier_lib::cli::Cli;
+use xavier_lib::settings::{self, XavierSettings};
 
 fn main() -> Result<()> {
     std::thread::Builder::new()
@@ -66,7 +64,7 @@ fn main() -> Result<()> {
 async fn async_main() -> Result<()> {
     let loaded_settings = XavierSettings::load()?;
     if let Some(ref settings) = loaded_settings {
-        if let Err(problems) = crate::settings::validation::validate_local_config(settings) {
+        if let Err(problems) = settings::validation::validate_local_config(settings) {
             eprintln!("FATAL: Invalid Xavier configuration:");
             for p in &problems {
                 eprintln!("  * {p}");
