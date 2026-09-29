@@ -21,16 +21,22 @@ if [ -n "$STAGED_RS" ]; then
         exit 1
     }
 
-    echo "🦀 [Pre-Commit] Verificando clippy (-D warnings)..."
-    CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/xavier-precommit-target}" cargo clippy -p xavier -p code-graph --all-targets -- -D warnings || {
-        echo "❌ [Pre-Commit] Fallo en cargo clippy. Corrige las advertencias/errores antes de commitear."
-        exit 1
-    }
+    # clippy compiles the whole workspace (minutes, GBs): it runs in CI and in the agent loop.
+    # Remote agents (e.g. Jules) cannot build this workspace, so the hook stays light by default.
+    if [ "${XAVIER_HOOK_FULL:-0}" = "1" ]; then
+        echo "🦀 [Pre-Commit] Verificando clippy (-D warnings)..."
+        CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/xavier-precommit-target}" cargo clippy -p xavier -p code-graph --all-targets -- -D warnings || {
+            echo "❌ [Pre-Commit] Fallo en cargo clippy. Corrige las advertencias/errores antes de commitear."
+            exit 1
+        }
+    else
+        echo "ℹ️  [Pre-Commit] clippy lo corre CI (XAVIER_HOOK_FULL=1 para correrlo aquí)."
+    fi
 fi
 
 # 3. Revisa si hay cambios en panel-ui staged
 STAGED_UI=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^panel-ui/' || true)
-if [ -n "$STAGED_UI" ]; then
+if [ -n "$STAGED_UI" ] && [ "${XAVIER_HOOK_FULL:-0}" = "1" ]; then
     echo "⚛️  [Pre-Commit] Verificando build de panel-ui..."
     if command -v pnpm >/dev/null 2>&1; then
         (cd panel-ui && pnpm run build) || {
