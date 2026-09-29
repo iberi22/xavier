@@ -120,9 +120,9 @@ fn test_pdf_outline_bookmarks_to_tree() {
 
     let tree = outline_to_tree("d", &outline, 6);
     tree.validate(6).unwrap();
-    assert_eq!((tree.roots[0].start_page, tree.roots[0].end_page), (1, 3));
+    assert_eq!((tree.roots[0].start_page, tree.roots[0].end_page), (1, 4));
     assert_eq!((tree.roots[1].start_page, tree.roots[1].end_page), (4, 6));
-    assert_eq!(tree.roots[0].children[0].end_page, 3);
+    assert_eq!(tree.roots[0].children[0].end_page, 4);
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn test_pdf_outline_keeps_same_page_bookmarks() {
     let titles: Vec<_> = tree.roots.iter().map(|n| n.title.as_str()).collect();
     assert_eq!(titles, ["A", "B", "C"]);
     assert_eq!((tree.roots[0].start_page, tree.roots[0].end_page), (2, 2));
-    assert_eq!((tree.roots[1].start_page, tree.roots[1].end_page), (2, 3));
+    assert_eq!((tree.roots[1].start_page, tree.roots[1].end_page), (2, 4));
     assert_eq!((tree.roots[2].start_page, tree.roots[2].end_page), (4, 5));
     assert_eq!(tree.roots[0].children.len(), 2);
 }

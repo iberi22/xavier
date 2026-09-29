@@ -66,7 +66,11 @@ pub fn extract_pages(bytes: &[u8]) -> Result<Vec<String>, PageIndexError> {
 /// Convert bookmarks into a validated-shape tree over `page_count` pages.
 ///
 /// Entries outside `1..=page_count` or before the previous sibling's start
-/// are dropped. Bookmarks on the same page are kept and share that page.
+/// are dropped. A bookmark only gives the page where a section starts, not
+/// the position on it, so the previous section's tail may sit on that same
+/// page: each section therefore ends on the next sibling's start page (they
+/// always share the boundary page). One extra page is cheap to retrieve; a
+/// lost tail is a retrieval miss.
 pub fn outline_to_tree(doc_id: &str, nodes: &[OutlineNode], page_count: u32) -> DocumentTree {
     fn build(nodes: &[OutlineNode], lo: u32, hi: u32) -> Vec<TreeNode> {
         let mut kept: Vec<&OutlineNode> = Vec::new();
@@ -80,10 +84,7 @@ pub fn outline_to_tree(doc_id: &str, nodes: &[OutlineNode], page_count: u32) -> 
         (0..kept.len())
             .map(|i| {
                 let n = kept[i];
-                // A next bookmark on the same page shares it instead of shrinking the range.
-                let end = kept
-                    .get(i + 1)
-                    .map_or(hi, |next| (next.page - 1).max(n.page));
+                let end = kept.get(i + 1).map_or(hi, |next| next.page);
                 TreeNode {
                     node_id: String::new(),
                     title: n.title.clone(),
