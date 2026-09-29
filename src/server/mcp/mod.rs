@@ -9,6 +9,7 @@ pub mod telecom_tools;
 pub mod tools_context;
 pub mod tools_core;
 pub mod tools_memory;
+pub mod tools_secrets;
 pub mod transport;
 pub mod types;
 
