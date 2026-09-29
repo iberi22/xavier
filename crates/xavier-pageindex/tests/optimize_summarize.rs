@@ -147,6 +147,9 @@ impl Summarizer for Fake {
         }
         Ok(format!("sum {title}"))
     }
+    fn complete(&self, prompt: &str) -> Result<String, PageIndexError> {
+        Ok(prompt.to_string())
+    }
 }
 
 fn nested() -> DocumentTree {

@@ -166,7 +166,7 @@ fn llm_strategy(
         body.push('\n');
     }
     // A failing LLM must never fail the ingest.
-    let reply = sm.summarize("table of contents", &body).ok()?;
+    let reply = sm.complete(&body).ok()?;
     let flat = verified_entries(&parse_toc_reply(&reply), texts);
     if flat.len() < MIN_LLM_ENTRIES {
         return None;

@@ -70,6 +70,13 @@ impl Summarizer for LlmSummarizer {
             .map(|s| s.trim().to_string())
             .map_err(|e| PageIndexError::Build(format!("summary failed: {e}")))
     }
+
+    fn complete(&self, prompt: &str) -> Result<String, PageIndexError> {
+        self.handle
+            .block_on(self.llm.complete(prompt))
+            .map(|s| s.trim().to_string())
+            .map_err(|e| PageIndexError::Build(format!("completion failed: {e}")))
+    }
 }
 
 #[cfg(test)]
@@ -128,5 +135,20 @@ mod tests {
         assert_eq!(out, "a summary");
         let p = fake.prompts.lock().unwrap()[0].clone();
         assert!(p.contains("Intro") && p.contains("body text") && p.contains("40 words"));
+    }
+
+    #[test]
+    fn test_summarizer_complete_sends_prompt_unwrapped() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let fake = Arc::new(FakeLlm {
+            prompts: Mutex::new(Vec::new()),
+        });
+        let s = LlmSummarizer::new(fake.clone(), rt.handle().clone(), 40);
+        let out = std::thread::spawn(move || s.complete("TASK: raw prompt"))
+            .join()
+            .unwrap()
+            .unwrap();
+        assert_eq!(out, "a summary");
+        assert_eq!(fake.prompts.lock().unwrap()[0], "TASK: raw prompt");
     }
 }

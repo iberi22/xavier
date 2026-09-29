@@ -159,7 +159,10 @@ mod with_pdf {
         fn model(&self) -> &str {
             "fake"
         }
-        fn summarize(&self, _: &str, text: &str) -> Result<String, PageIndexError> {
+        fn summarize(&self, _: &str, _: &str) -> Result<String, PageIndexError> {
+            Ok("This section describes the document.".into())
+        }
+        fn complete(&self, text: &str) -> Result<String, PageIndexError> {
             self.0.lock().unwrap().push(text.to_string());
             self.1
                 .clone()
@@ -241,6 +244,31 @@ mod with_pdf {
         let sent = llm.0.lock().unwrap();
         assert!(sent[0].contains("=== PAGE 2 ===") && sent[0].contains("Beta Methods"));
         b.tree.validate(3).unwrap();
+    }
+
+    /// Prose from `summarize`, a real ToC only from `complete`.
+    struct Split;
+
+    impl Summarizer for Split {
+        fn model(&self) -> &str {
+            "split"
+        }
+        fn summarize(&self, _: &str, _: &str) -> Result<String, PageIndexError> {
+            Ok("This document covers alpha, beta and gamma topics.".into())
+        }
+        fn complete(&self, prompt: &str) -> Result<String, PageIndexError> {
+            assert!(prompt.starts_with("TASK: list the table of contents"));
+            Ok("1|1|Alpha Basics\n1|2|Beta Methods\n1|3|Gamma Results".into())
+        }
+    }
+
+    #[test]
+    fn test_pdf_cascade_llm_toc_uses_raw_complete_not_summarize() {
+        let bytes = make_pdf(&plain_pages(), &[]);
+        let b = build_pdf_tree("d", &bytes, Some(&Split)).unwrap();
+        assert_eq!(b.source, TocSource::Llm);
+        assert_eq!(b.builder(), "pdf-llm-toc");
+        assert_eq!(b.tree.roots.len(), 3);
     }
 
     #[test]

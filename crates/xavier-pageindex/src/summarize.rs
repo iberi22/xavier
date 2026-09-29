@@ -20,6 +20,9 @@ pub trait Summarizer: Send + Sync {
     fn model(&self) -> &str;
     /// Summarize `text` (page text for leaves, child summaries for parents).
     fn summarize(&self, title: &str, text: &str) -> Result<String, PageIndexError>;
+    /// Send `prompt` to the model verbatim, with no summary framing. Used for
+    /// structured requests (e.g. the PDF LLM table of contents).
+    fn complete(&self, prompt: &str) -> Result<String, PageIndexError>;
 }
 
 /// In-memory summary cache keyed by sha256(title + text + model).
