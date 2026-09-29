@@ -10,6 +10,9 @@ use std::sync::Arc;
 use xavier::collections::indexer::{ingest_document, ChunkConfig};
 use xavier::collections::schema::DocCollection;
 use xavier::collections::store::CollectionStore;
+use xavier::pageindex_glue::{PageIndexSettings, PageIndexState};
+use xavier::retrieval::gating::{AdaptiveGating, GatingConfig};
+use xavier::retrieval::pageindex_arm::PageIndexArm;
 use xavier_pageindex::eval::{
     format_report, navigate, parse_gold_jsonl, title_summary_text, ColumnStats, GoldQuery, NavDoc,
     Span,
@@ -46,6 +49,11 @@ fn gold() -> Vec<GoldQuery> {
 
 fn build_index() -> PageIndex<SqliteStore> {
     let pi = PageIndex::new(SqliteStore::open_in_memory().unwrap());
+    ingest_fixtures(&pi);
+    pi
+}
+
+fn ingest_fixtures(pi: &PageIndex<SqliteStore>) {
     let opts = IngestOptions {
         lines_per_page: LINES_PER_PAGE,
         ..Default::default()
@@ -59,7 +67,6 @@ fn build_index() -> PageIndex<SqliteStore> {
         };
         pi.ingest(WS, name, src, opts.clone()).unwrap();
     }
-    pi
 }
 
 /// Words kept as a deterministic extractive stand-in for an LLM summary.
@@ -199,10 +206,59 @@ async fn docbot_column(
     stats
 }
 
-// PAGEINDEX.13 EXTENSION POINT: return the hybrid column (gating with the
-// tree arm on) here once issue 13 merges; `None` prints a pending row.
-fn hybrid_column(_pi: &PageIndex<SqliteStore>, _qs: &[GoldQuery]) -> Option<ColumnStats> {
-    None
+/// Hybrid column: the gating pipeline with only the PAGEINDEX.13 tree-node
+/// arm contributing (memory layers are empty on the fixtures), so it measures
+/// node-level BM25 fused through the production RRF path.
+async fn hybrid_column(qs: &[GoldQuery]) -> ColumnStats {
+    let settings = PageIndexSettings {
+        arm_enabled: true,
+        ..Default::default()
+    };
+    let state = Arc::new(PageIndexState::with_store(
+        settings,
+        SqliteStore::open_in_memory().unwrap(),
+    ));
+    let pi = state.index().unwrap();
+    ingest_fixtures(&pi);
+    let mut ranges: std::collections::HashMap<(String, String), (u32, u32)> = Default::default();
+    for (doc, _) in DOCS {
+        let view = pi.get_structure(WS, doc, StructureOpts::default()).unwrap();
+        fn walk(
+            doc: &str,
+            n: &StructureNode,
+            out: &mut std::collections::HashMap<(String, String), (u32, u32)>,
+        ) {
+            out.insert(
+                (doc.to_string(), n.node_id.clone()),
+                (n.start_page, n.end_page),
+            );
+            n.children.iter().for_each(|c| walk(doc, c, out));
+        }
+        view.nodes.iter().for_each(|n| walk(doc, n, &mut ranges));
+    }
+    let arm = Arc::new(PageIndexArm::new(state, WS));
+    let gating = AdaptiveGating::new(GatingConfig {
+        relevance_threshold: 0.0,
+        grounding_enabled: false,
+        ..Default::default()
+    })
+    .with_pageindex_arm(Some(arm));
+    let mut col = ColumnStats::new("hybrid (gating + tree arm)");
+    for q in qs {
+        let ranked: Vec<Span> = gating
+            .retrieve(&[], &[], &[], &q.query, None)
+            .await
+            .iter()
+            .take(3)
+            .filter_map(|r| {
+                let (doc, node) = r.path.strip_prefix("pageindex/")?.split_once('#')?;
+                let (lo, hi) = ranges.get(&(doc.to_string(), node.to_string()))?;
+                Some(Span::new(doc, *lo, *hi))
+            })
+            .collect();
+        col.add(&ranked, &q.gold_span());
+    }
+    col
 }
 
 #[test]
@@ -262,13 +318,8 @@ async fn test_eval_report_compares_docbot_tree_hybrid() {
         tree_column("tree-lexical (titles)", &plain, &qs),
         tree_column("tree-lexical (titles+lead)", &lead, &qs),
     ];
-    let hybrid = hybrid_column(&pi, &qs);
-    let pending = hybrid.is_none();
-    cols.extend(hybrid);
+    cols.push(hybrid_column(&qs).await);
     println!("queries: {}\n{}", qs.len(), format_report(&cols));
-    if pending {
-        println!("hybrid: pending PAGEINDEX.13 (extension point in hybrid_column)");
-    }
     for c in &cols {
         for v in [c.hit1.value(), c.hit3.value(), c.mrr.value()] {
             assert!((0.0..=1.0).contains(&v), "{}: metric out of range", c.name);
@@ -288,18 +339,21 @@ async fn test_eval_report_compares_docbot_tree_hybrid() {
         cols[3].hit3.value() >= TREE_FLOOR_TREE,
         "tree navigator regressed"
     );
+    assert!(cols[4].hit3.value() >= HYBRID_FLOOR, "hybrid arm regressed");
 }
 
 // Measured 0.917 and 0.222 on the 36 fixture queries (spec sec. 10).
 const TREE_FLOOR_DOCBOT: f64 = 0.8;
 const TREE_FLOOR_TREE: f64 = 0.15;
+// Measured 0.778 for the hybrid arm (spec sec. 10).
+const HYBRID_FLOOR: f64 = 0.7;
 
-#[test]
-#[ignore = "waits for PAGEINDEX.13: enable and assert once the hybrid column exists"]
-fn test_eval_hybrid_column_after_issue_13() {
-    let pi = build_index();
-    let col = hybrid_column(&pi, &gold()).expect("hybrid column wired by PAGEINDEX.13");
-    assert!(col.hit3.value() >= 0.0);
+#[tokio::test]
+async fn test_eval_hybrid_column_after_issue_13() {
+    let col = hybrid_column(&gold()).await;
+    println!("{}", format_report(std::slice::from_ref(&col)));
+    assert!(col.hit3.value() > 0.0, "hybrid arm found nothing");
+    assert!(col.hit1.value() <= col.hit3.value());
 }
 
 /// Real-LLM navigator. Never runs in CI:

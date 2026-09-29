@@ -121,11 +121,20 @@ Xavier consumes it in two ways:
 - Gate: `scripts/verify-pipeline.sh` runs the three ledger entries
   (`feat-pageindex-tree-core`, `feat-pageindex-pdf`, `feat-pageindex-hybrid`).
 - Review date: 2026-11-30, or when F3 closes, whichever is first.
-- F3 eval, first measurement (2026-09-29, PAGEINDEX.14; hybrid column pending PAGEINDEX.13):
+- F3 eval, first measurement (2026-09-29, PAGEINDEX.14; hybrid column filled by PAGEINDEX.13 below):
   on 36 fixture questions the LLM-free lexical tree navigator scores hit@3 0.139 (titles) / 0.222
   (titles + lead text) against 0.917 / 0.806 for DocBot BM25 (512 / 64-token chunks). This is a
   lower bound, not an LLM agent, so it neither confirms nor triggers the invalidation criteria
   above; the decision must be re-reviewed with the hybrid column and the real-LLM run.
   Details: spec `FEATURE-pageindex-tree-retrieval.md`, "Eval results".
+- F3 eval, hybrid column (2026-09-29, PAGEINDEX.13, measured, LLM-free, 36 questions): gating with the
+  tree-node arm (BM25 over node title + summary + own text, no top-down navigation, no vector leg) scores
+  hit@1 0.722, hit@3 0.778, MRR 0.750, pages@1 1.67, pages@3 4.14. That is worse than DocBot BM25 512-token
+  chunks on hit@3 (0.917) and MRR (0.815), equal on hit@1 (0.722) while reading about 3x fewer pages at
+  top-1 and top-3, and slightly below 64-token chunks on hit@3 (0.806). The arm does not beat chunk BM25 on
+  recall, so the "beat or complement" criterion is not met on these fixtures; its value is precise sections
+  with breadcrumb and page range at low read cost. The arm ships OFF by default
+  (`XAVIER_PAGEINDEX_ARM_ENABLED`). Still open: fusion with DocBot chunks, a node-summary vector leg, and
+  the real-LLM run.
 - Note: a flaky CI job, "Rust Integration (Observability Contract)" (#2701), is
   pre-existing on main and unrelated to this initiative.

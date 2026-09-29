@@ -264,7 +264,7 @@ number of distinct pages in the top-k spans (cost proxy).
 | DocBot BM25, 64-token chunks | 0.611 | 0.806 | 0.708 | 1.31 | 3.11 |
 | Tree navigator, lexical on titles | 0.083 | 0.139 | 0.102 | 0.94 | 3.56 |
 | Tree navigator, lexical on titles + lead text | 0.222 | 0.222 | 0.222 | 1.39 | 3.19 |
-| Hybrid (gating + tree arm) | pending PAGEINDEX.13 | | | | |
+| Hybrid (gating + tree-node arm) | 0.722 | 0.778 | 0.750 | 1.67 | 4.14 |
 
 Reading: on these small fixtures the lexical tree navigator is far below BM25 chunk search on hit rate.
 It is the LLM-free lower bound: it only sees node titles (and a 40-word lead as a stand-in for a summary),
@@ -273,8 +273,22 @@ advantage is worthless at these hit rates. These numbers do NOT measure an LLM a
 which is the intended consumer. Chunks are mapped to pages by matching chunk lines against page lines.
 The DocBot chunker only carries pages for PDFs, so this mapping is the eval's own.
 
-Extension point: `hybrid_column` in `tests/pageindex_eval.rs` (marked `PAGEINDEX.13 EXTENSION POINT`)
-and the `#[ignore]`d `test_eval_hybrid_column_after_issue_13`. Issue 13 fills it in and re-records the table.
+Hybrid column (PAGEINDEX.13, measured with the same command): `AdaptiveGating` with the memory layers empty
+and only the tree-node arm on, `relevance_threshold` 0. The arm scores every tree node directly with BM25 over
+title + summary (none in the fixtures) + the node's own page text, and returns the node with breadcrumb, page
+range and node id; there is no top-down navigation and no vector leg (the store holds no node embeddings).
+Test: `test_eval_hybrid_column_after_issue_13`.
+
+Hybrid vs BM25 alone, plainly: on hit@3 the arm (0.778) is WORSE than DocBot 512-token chunks (0.917) and
+slightly worse than 64-token chunks (0.806). On hit@1 it ties the 512-token chunks (0.722) and beats the 64-token
+ones (0.611); MRR 0.750 sits between them (0.815 / 0.708). Its cost is 1.67 pages at top-1 and 4.14 at top-3
+versus 5.00 / 13.42 for the 512-token chunks, so per page read it is the best column, but it does not beat chunk
+BM25 on recall at k=3. Likely reasons, not verified by ablation: (1) nodes are coarse, so a node's BM25 length
+normalisation dilutes a short answer sentence inside a long section, whereas 64-token chunks isolate it;
+(2) the top 3 nodes often overlap or are neighbours in one section, so the k=3 list spends slots on the same
+region; (3) the fixture questions are paraphrases and a lexical leg alone cannot bridge them. Fusing the arm
+with DocBot chunks and adding a node-summary vector leg are the untested next steps. On 36 questions over 3
+small documents, differences of one or two questions (0.028 each) are noise.
 
 Optional modes (never in CI, both `#[ignore]`d):
 - `test_eval_llm_navigator_optional` gives the outline to the LLM of `LlmAdapter::from_env()`
