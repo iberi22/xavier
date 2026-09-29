@@ -80,6 +80,11 @@ impl LocalSecretsVault {
         Ok(())
     }
 
+    /// Directory holding the encrypted secret files.
+    pub fn storage_dir(&self) -> &Path {
+        &self.storage_dir
+    }
+
     /// List all stored secret names
     pub fn list(&self) -> Result<Vec<String>> {
         let mut secrets = Vec::new();

@@ -30,12 +30,7 @@ impl SecurityInitializer {
         // 3. Initialize Local Secrets Vault, then use the instance to tighten
         // and verify the storage directory permissions instead of dropping it.
         let vault = LocalSecretsVault::init_default(&master_mgr)?;
-        vault.list()?;
-        let storage_dir = dirs::home_dir()
-            .ok_or_else(|| anyhow!("Could not find home directory"))?
-            .join(".xavier")
-            .join("secrets");
-        tighten_storage_dir_permissions(&storage_dir)?;
+        tighten_storage_dir_permissions(vault.storage_dir())?;
         println!("✅ Local Secrets Vault ready");
 
         // 4. Trigger auth database creation/encryption
