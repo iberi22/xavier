@@ -107,13 +107,14 @@ impl SecretLease {
     }
 }
 
-use crate::secrets::lending::AuditLogger;
+use crate::secrets::lending::{AntiExfilDetector, AuditLogger};
 
 pub struct KeyLendingEngine {
     leases: Arc<RwLock<HashMap<String, SecretLease>>>,
     audit_logger: Box<dyn AuditLogger + Send + Sync>,
     pub leak_detector: Arc<LeakDetector>,
     event_bus: Option<crate::coordination::events::XavierEventBus>,
+    anti_exfil: Option<RwLock<AntiExfilDetector>>,
 }
 
 impl KeyLendingEngine {
@@ -127,7 +128,16 @@ impl KeyLendingEngine {
             audit_logger,
             leak_detector: Arc::new(LeakDetector::new()),
             event_bus,
+            anti_exfil: None,
         }
+    }
+
+    /// Attaches an anti-exfiltration rate limiter to this engine's `lend` path.
+    /// Lends that exceed the detector's per-agent budget are rejected with
+    /// `SecretError::ApprovalDenied` before any lease is created.
+    pub fn with_anti_exfil(mut self, detector: AntiExfilDetector) -> Self {
+        self.anti_exfil = Some(RwLock::new(detector));
+        self
     }
 
     /// Lend a secret to an agent for a specific duration (TTL)
@@ -138,6 +148,14 @@ impl KeyLendingEngine {
         agent_id: &str,
         ttl_secs: u64,
     ) -> Result<SecretLease> {
+        if let Some(detector) = &self.anti_exfil {
+            let mut detector = detector.write().await;
+            if let Err(err) = detector.check_and_record(agent_id) {
+                self.audit_logger.log_deny(agent_id, name, &err.to_string());
+                return Err(err.into());
+            }
+        }
+
         let token = Uuid::new_v4().to_string();
         let now = Utc::now();
         let expires_at = now + Duration::seconds(ttl_secs as i64);
@@ -479,5 +497,63 @@ mod tests {
 
         // Verify revocation
         assert!(engine.get_lease(&lease.token).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_lend_rate_limited_by_anti_exfil() {
+        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_anti_exfil(crate::secrets::lending::AntiExfilDetector::new(10));
+
+        for _ in 0..10 {
+            engine
+                .lend("test-secret", Some("val"), "agent-1", 3600)
+                .await
+                .unwrap();
+        }
+
+        let err = engine
+            .lend("test-secret", Some("val"), "agent-1", 3600)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<crate::secrets::SecretError>(),
+            Some(crate::secrets::SecretError::ApprovalDenied(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_is_per_agent() {
+        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_anti_exfil(crate::secrets::lending::AntiExfilDetector::new(10));
+
+        for _ in 0..10 {
+            engine
+                .lend("test-secret", Some("val"), "agent-1", 3600)
+                .await
+                .unwrap();
+        }
+
+        // agent-2 has its own budget and is unaffected by agent-1's usage.
+        let lease = engine
+            .lend("test-secret", Some("val"), "agent-2", 3600)
+            .await
+            .unwrap();
+        assert_eq!(lease.agent_id, "agent-2");
+    }
+
+    #[tokio::test]
+    async fn test_rejected_lend_creates_no_lease() {
+        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_anti_exfil(crate::secrets::lending::AntiExfilDetector::new(0));
+
+        let err = engine
+            .lend("test-secret", Some("val"), "agent-1", 3600)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<crate::secrets::SecretError>(),
+            Some(crate::secrets::SecretError::ApprovalDenied(_))
+        ));
+        assert!(engine.list_leases().await.is_empty());
     }
 }
