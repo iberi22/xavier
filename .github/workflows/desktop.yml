@@ -70,8 +70,11 @@ jobs:
       - name: Fetch libpdfium (optional PDF layout support)
         continue-on-error: true
         run: |
+          PDFIUM_TAG="chromium/8076"
+          PDFIUM_SHA256="d9d67bc40af03aef4fe28a60b19b1086f28ace019c8c9caf19cb7fe3d14ceca3"
           curl -fsSL --retry 3 -o pdfium.tgz \
-            https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz
+            "https://github.com/bblanchon/pdfium-binaries/releases/download/${PDFIUM_TAG}/pdfium-linux-x64.tgz"
+          echo "${PDFIUM_SHA256}  pdfium.tgz" | sha256sum -c -
           mkdir pdfium && tar -xzf pdfium.tgz -C pdfium
           cp pdfium/lib/libpdfium.so panel-ui/src-tauri/resources/libpdfium.so
 
