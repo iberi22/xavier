@@ -114,6 +114,9 @@ Xavier consumes it in two ways:
   and the PageIndex-OSS-Benchmark subset; or pdfium provisioning proving
   unworkable on the supported platforms (then keep only `pdf-outline`).
 
+- **Follow-up:** the hybrid arm ships BM25-only; the node-summary vector leg is planned in
+  `.gitcore/waves/wave-pageindex/issue-15-followup-vector-leg.md`.
+
 ## Verificacion posterior
 
 - Metric: page-range hit-rate@k and MRR, tree vs DocBot vs hybrid (F3 eval,

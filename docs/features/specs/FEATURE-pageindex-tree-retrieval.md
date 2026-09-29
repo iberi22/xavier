@@ -87,8 +87,9 @@ range inside parent; `1 <= start <= end <= page_count`; `node_id` unique, preord
 `$XAVIER_PAGEINDEX_DB` (default `<XAVIER data dir>/pageindex.sqlite3`). Rationale:
 keeps the crate standalone (no `xavier` dep), leaves Xavier migrations
 (`src/storage/migrations.rs`) untouched, and rusqlite (`bundled`) is already in the
-workspace. Node summaries are additionally embedded into the Xavier store by the
-hybrid arm (F3) — that is the only place the two stores meet.
+workspace. The hybrid arm (F3) reads this store to build its per-workspace BM25 node corpus.
+Persisting node summaries into the Xavier memory store (vector leg) is a planned
+follow-up (issue 15), not part of this wave.
 Tables: `pi_documents`, `pi_nodes(doc_id,node_id,parent_id,ord,title,start_page,end_page,summary,token_estimate)`,
 `pi_pages(doc_id,page_no,text)`; `FOREIGN KEY ... ON DELETE CASCADE`,
 `UNIQUE(workspace,name)`. Runtime `*.sqlite3` is never committed (AGENTS.md sec. 10).
@@ -234,6 +235,15 @@ reads NO env; all env is read once in `src/pageindex_glue/mod.rs` (`PageIndexSet
 - cascade: `test_pdf_cascade_prefers_bookmarks`, `test_pdf_cascade_falls_back_to_layout`, `test_pdf_cascade_falls_back_to_llm_toc_when_no_layout`, `test_pdf_cascade_final_fallback_fixed_windows`, `test_pdf_ingest_default_features_returns_feature_disabled_error`
 
 **F3 (`feat-pageindex-hybrid`)**
+
+Scope of this wave: the BM25 node leg of the hybrid arm (BM25 over node title + summary + own page text,
+cached per workspace, one weighted RRF source in gating, OFF by default via `XAVIER_PAGEINDEX_ARM_ENABLED`,
+fail-open). There is no vector leg. The vector leg (persist node summaries through the memory embedding API
+with doc/node/page tags, query only pageindex records, fuse with the BM25 leg before gating RRF, stale-node
+replacement, fail-open) is an explicit follow-up: `.gitcore/waves/wave-pageindex/issue-15-followup-vector-leg.md`
+(status planned). BM25 shipped first because the E2E evaluation shows search-first navigation reaches 60/62
+at 1.7 pages per question, i.e. lexical search already carries most of the value. The `test_arm_*` names below
+exercise the BM25 node corpus (`embed_document` there indexes node records for BM25, not vectors).
 - arm: `test_arm_embeds_node_summaries_with_doc_and_node_tags`, `test_arm_reingest_replaces_stale_embeddings`, `test_arm_results_carry_doc_node_page_range`, `test_arm_workspace_scoped`, `test_gating_arm_disabled_by_default_no_behavior_change`, `test_gating_rrf_fuses_arm_with_layers`, `test_gating_arm_failure_is_fail_open`
 - eval: `test_eval_page_range_hit_metric`, `test_eval_hit_at_k_and_mrr`, `test_eval_loads_benchmark_jsonl`, `test_eval_fixture_set_has_gold_ranges`, `test_eval_tree_navigator_lexical_baseline_deterministic`, `test_eval_report_compares_docbot_tree_hybrid`
 

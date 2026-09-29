@@ -1280,7 +1280,9 @@ PDF trees SHALL be built by a cascade: embedded bookmarks (`pdf-outline`, pure R
 
 ### Description
 
-Node summaries SHALL be embedded into the Xavier store with document/node tags; a retrieval arm SHALL return candidate nodes with their page ranges and be fused by RRF in the gating layer. The arm is disabled by default, fail-open, workspace-scoped, and leaves existing retrieval behaviour byte-identical when disabled.
+A retrieval arm SHALL return candidate tree nodes with their page ranges and be fused by RRF in the gating layer. This wave delivers the BM25 node leg: BM25 over node title + summary + the node's own page text, cached per workspace and fused as one weighted RRF source. The arm is disabled by default (`XAVIER_PAGEINDEX_ARM_ENABLED`), fail-open, workspace-scoped, and leaves existing retrieval behaviour byte-identical when disabled.
+
+**Scope note.** The vector leg (node summaries persisted through the memory embedding API with doc/node/page tags, queried only over pageindex records and fused with the BM25 leg before gating RRF) is NOT part of this wave. It is an explicit planned follow-up: `.gitcore/waves/wave-pageindex/issue-15-followup-vector-leg.md`. BM25 shipped first because the spec's evaluation shows search-first navigation already cut pages read per question from 11.6 to 1.7 at 60/62 correct, so a lexical leg captures most of the practical value at no embedding cost.
 
 ### Acceptance criteria
 

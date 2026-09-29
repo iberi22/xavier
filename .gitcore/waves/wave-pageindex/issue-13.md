@@ -10,6 +10,8 @@
 
 - `AdaptiveGating` fuses layers with `reciprocal_rank_fusion(rrf_k)`; config in `GatingConfig`.
 
+> **Scope reconciliation (CodeRabbit #2735).** What shipped is the BM25 node leg only: BM25 over node title + summary + own page text, cached per workspace, one weighted RRF source, OFF by default, fail-open, no vector leg. The BM25 + vector design below is the original target; the vector leg moved to `issue-15-followup-vector-leg.md` (planned). BM25 went first because the spec's evaluation shows search-first navigation at 1.7 pages/question (60/62 correct).
+
 ## Desired State (DELTA)
 
 `retrieval/pageindex_arm.rs`: (a) `embed_document(doc)` writes each node summary (fallback: title + first 300 chars) into the Xavier store via the existing memory API with tags `pageindex`, `doc:<name>`, `node:<id>` and metadata `{start_page,end_page}`, replacing stale nodes on re-ingest; (b) `search(query, ws, k) -> Vec<ScoredResult>` = BM25+vector candidates restricted to `pageindex` tag, each carrying doc/node/page range. `gating.rs`: minimal hook adding the arm's ranked list to the RRF input ONLY when `XAVIER_PAGEINDEX_ARM_ENABLED=true`, weight `XAVIER_PAGEINDEX_ARM_WEIGHT`; errors are logged and ignored (fail-open); disabled path byte-identical. `retrieval/mod.rs` +1 line.

@@ -29,6 +29,7 @@ Shipped beyond the plan:
 | 12 | PDF cascade pipeline + ingest wiring | F2 | 09,10,11 | G7 |
 | 13 | Hybrid retrieval arm + gating hook | F3 | 06,11 | G8 |
 | 14 | Eval harness + comparison | F3 | 05 (13 for hybrid column) | G8 |
+| 15 | Follow-up: node-summary vector leg (planned, not in this wave) | F3 | 13 | - |
 
 Parallelism (disjoint file islands): after 01 -> {02,03,04} together; 09 and 10 can start right after 01 (they only fill their own stub files) and run alongside F1 issues 02-08; 11 needs 06; {13,14} together after 11. Only issues 01 and 06 touch root `Cargo.toml`; only 08 touches `src/server/mcp/{mod,server}.rs` (other wave V6 owns them: rebase on main after V6 merges); nobody touches `tools_core.rs` or `src/context/**`.
 
