@@ -215,7 +215,7 @@ PY
         # --test targets match on the bare fn name: a full `a::b::fn`
         # path never substrings-matches the flat integration test name.
         case "$inv" in
-          "--test "*) filter_arg="$fnname" ;;
+          *"--test "*) filter_arg="$fnname" ;;
           *) filter_arg="$testname" ;;
         esac
         # shellcheck disable=SC2086: intentional word-splitting of cargo args
