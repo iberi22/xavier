@@ -1310,6 +1310,7 @@ pub enum GovernanceCommand {
         /// Proposal ID
         proposal_id: String,
         /// Vote in favor
+        #[arg(long)]
         approve: bool,
     },
     /// Show council members

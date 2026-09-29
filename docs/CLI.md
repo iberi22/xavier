@@ -624,7 +624,7 @@ Flags:
 |---|---|
 | `-p, --project <project>` | Project filter. |
 | `-s, --status <status>` | Status filter. |
-| `--search <query>` | Search filter. |
+| `-q, --search <query>` | Search filter. |
 
 ```bash
 xavier tasks list --project xavier --status open
