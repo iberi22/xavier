@@ -48,6 +48,7 @@ exclude = [
 members = [
     "code-graph",
     "crates/xavier-core-logic",
+    "crates/xavier-pageindex",
     "crates/xavier-wasm",
     "code-graph/parsers/parser-rust",
     "code-graph/parsers/parser-ts",
