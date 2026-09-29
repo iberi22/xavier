@@ -269,6 +269,12 @@ Xavier exposes standard MCP tools for integration with Cursor, Claude Desktop, a
 
 ---
 
+## 📄 PageIndex: tree-based document retrieval
+
+Index a long document (PDF, markdown, text, legal) as a table-of-contents tree and let the calling agent navigate it with `pageindex_*` MCP tools (`browse_documents`, `get_document`, `get_document_structure`, `get_page_content`, `search`, `index_document`) or `/v1/pageindex/*`. No chunking, no embeddings, no LLM inside Xavier; answers carry node ids and page ranges. On the public PageIndex-OSS-Benchmark (62 questions, 34 PDFs) an agent reached 60/62 reading 1.7 pages per question. It complements BM25/vector search rather than replacing it. See [docs/features/pageindex.md](docs/features/pageindex.md).
+
+---
+
 ## 🧠 Agent Skill: Cognitive Memory & CodeGraph
 
 For autonomous coding assistants and agents (**Antigravity**, **Hermes**, **Jules**, **OpenClaw**, **Cursor**), Xavier ships with a ready-to-use canonical skill: [`skills/xavier-cognitive-memory/SKILL.md`](skills/xavier-cognitive-memory/SKILL.md).
@@ -404,6 +410,12 @@ Xavier guarantees compilation on Rust **1.91** or higher.
 - **Current Pin**: Defined via `rust-version = "1.91"` in `Cargo.toml`.
 - **Bump Policy**: MSRV bumps follow a `stable-minus-2` policy (never exceeding `stable - 2` releases at the time of bump) when required by upstream dependency updates. Any MSRV bump is explicitly announced in a patch release.
 - **Scope**: Applies to standard crate library and binary builds. Development tooling, UI runtimes, or optional feature sidecars may require newer toolchain versions.
+
+---
+
+## 🙏 Acknowledgements
+
+- [PageIndex](https://github.com/VectifyAI/PageIndex) by Vectify AI (MIT, © 2025 Vectify AI) inspired Xavier's tree-based document retrieval (idea and tool design; reimplemented from scratch in Rust, no upstream code included), and its [OSS benchmark](https://github.com/VectifyAI/PageIndex-OSS-Benchmark) was used to evaluate it. Details in [docs/features/pageindex.md](docs/features/pageindex.md).
 
 ---
 
