@@ -140,6 +140,12 @@ impl<S: Store> PageIndex<S> {
             "pi_{}",
             &hex(&Sha256::digest(format!("{ws}\0{name}\0{content_hash}")))[..16]
         );
+        // Same name and content already stored: skip the build and any LLM calls.
+        if let Some(existing) = self.store.find_by_name(ws, name)? {
+            if existing.content_hash == content_hash && existing.status == DocStatus::Completed {
+                return Ok(existing);
+            }
+        }
         let (source_kind, page_unit, builder, mut tree, mut pages) = match src {
             #[cfg(feature = "markdown")]
             Source::Markdown(t) => {

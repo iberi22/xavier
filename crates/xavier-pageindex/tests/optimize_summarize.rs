@@ -263,4 +263,80 @@ mod facade {
         pi.ingest("ws", "b.md", Source::Markdown(MD), off).unwrap();
         assert_eq!(f.calls.load(Ordering::SeqCst), before);
     }
+
+    struct CountingStore {
+        inner: SqliteStore,
+        puts: Arc<AtomicUsize>,
+    }
+
+    impl xavier_pageindex::store::Store for CountingStore {
+        fn put_document(
+            &self,
+            d: &xavier_pageindex::Document,
+            t: &DocumentTree,
+            p: &[Page],
+        ) -> Result<xavier_pageindex::store::PutOutcome, PageIndexError> {
+            self.puts.fetch_add(1, Ordering::SeqCst);
+            self.inner.put_document(d, t, p)
+        }
+        fn get_document(
+            &self,
+            w: &str,
+            d: &str,
+        ) -> Result<Option<xavier_pageindex::Document>, PageIndexError> {
+            self.inner.get_document(w, d)
+        }
+        fn find_by_name(
+            &self,
+            w: &str,
+            n: &str,
+        ) -> Result<Option<xavier_pageindex::Document>, PageIndexError> {
+            self.inner.find_by_name(w, n)
+        }
+        fn get_tree(&self, w: &str, d: &str) -> Result<Option<DocumentTree>, PageIndexError> {
+            self.inner.get_tree(w, d)
+        }
+        fn get_pages(&self, w: &str, d: &str, s: u32, e: u32) -> Result<Vec<Page>, PageIndexError> {
+            self.inner.get_pages(w, d, s, e)
+        }
+        fn list_documents(
+            &self,
+            w: &str,
+        ) -> Result<Vec<xavier_pageindex::Document>, PageIndexError> {
+            self.inner.list_documents(w)
+        }
+        fn search_by_title(
+            &self,
+            w: &str,
+            q: &str,
+        ) -> Result<Vec<xavier_pageindex::Document>, PageIndexError> {
+            self.inner.search_by_title(w, q)
+        }
+        fn delete_document(&self, w: &str, d: &str) -> Result<bool, PageIndexError> {
+            self.inner.delete_document(w, d)
+        }
+    }
+
+    #[test]
+    fn test_reingest_identical_content_skips_build() {
+        let f = Arc::new(Fake::new(None));
+        let puts = Arc::new(AtomicUsize::new(0));
+        let store = CountingStore {
+            inner: SqliteStore::open_in_memory().unwrap(),
+            puts: puts.clone(),
+        };
+        let pi = PageIndex::new(store).with_summarizer(f.clone());
+        let opts = IngestOptions {
+            summarize: true,
+            ..Default::default()
+        };
+        let first = pi
+            .ingest("ws", "a.md", Source::Markdown(MD), opts.clone())
+            .unwrap();
+        let calls = f.calls.load(Ordering::SeqCst);
+        let second = pi.ingest("ws", "a.md", Source::Markdown(MD), opts).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(f.calls.load(Ordering::SeqCst), calls);
+        assert_eq!(puts.load(Ordering::SeqCst), 1);
+    }
 }
