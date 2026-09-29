@@ -109,7 +109,45 @@ pub struct StructureNode {
     /// Children left out by `max_depth` or the char budget.
     #[serde(skip_serializing_if = "is_zero")]
     pub hidden_children: usize,
+    /// Titles of the first hidden descendants, so the caller sees what is inside.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub descendant_titles_sample: Vec<String>,
+    /// Page span above the per-call page limit: drill down or search instead.
+    #[serde(skip_serializing_if = "is_false")]
+    pub too_large_for_one_call: bool,
     pub children: Vec<StructureNode>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// Most descendant titles listed per node, and their length.
+const TITLE_SAMPLE_LEN: usize = 4;
+const TITLE_SAMPLE_CHARS: usize = 60;
+
+fn short_title(t: &str) -> String {
+    cut_chars(t, TITLE_SAMPLE_CHARS).to_string()
+}
+
+fn sample_tree(nodes: &[TreeNode], out: &mut Vec<String>) {
+    for n in nodes {
+        if out.len() >= TITLE_SAMPLE_LEN {
+            return;
+        }
+        out.push(short_title(&n.title));
+        sample_tree(&n.children, out);
+    }
+}
+
+fn sample_structure(nodes: &[StructureNode], out: &mut Vec<String>) {
+    for n in nodes {
+        if out.len() >= TITLE_SAMPLE_LEN {
+            return;
+        }
+        out.push(short_title(&n.title));
+        sample_structure(&n.children, out);
+    }
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -317,8 +355,12 @@ pub(crate) fn cap_pages(
 
 /// Project a node without text, `depth` levels deep (`None` = unlimited).
 fn project(n: &TreeNode, depth: Option<u32>) -> StructureNode {
+    let mut sample = Vec::new();
     let (children, hidden) = match depth {
-        Some(0) => (Vec::new(), n.children.len()),
+        Some(0) => {
+            sample_tree(&n.children, &mut sample);
+            (Vec::new(), n.children.len())
+        }
         _ => (
             n.children
                 .iter()
@@ -335,6 +377,8 @@ fn project(n: &TreeNode, depth: Option<u32>) -> StructureNode {
         summary: n.summary.clone(),
         token_estimate: n.token_estimate,
         hidden_children: hidden,
+        descendant_titles_sample: sample,
+        too_large_for_one_call: (n.end_page - n.start_page) as usize + 1 > MAX_PAGES_PER_CALL,
         children,
     }
 }
@@ -374,9 +418,12 @@ fn prune_to_budget(roots: Vec<StructureNode>, budget: usize) -> (Vec<StructureNo
             .into_iter()
             .filter(|n| keep.contains(&n.node_id))
             .map(|mut n| {
-                let before = n.children.len();
-                n.children = filter(std::mem::take(&mut n.children), keep);
-                n.hidden_children += before - n.children.len();
+                let before = std::mem::take(&mut n.children);
+                let (kept, dropped): (Vec<_>, Vec<_>) =
+                    before.into_iter().partition(|c| keep.contains(&c.node_id));
+                sample_structure(&dropped, &mut n.descendant_titles_sample);
+                n.hidden_children += dropped.len();
+                n.children = filter(kept, keep);
                 n
             })
             .collect()
@@ -420,6 +467,12 @@ pub(crate) fn structure_view(
     } else if nodes.iter().any(has_hidden) {
         next_steps.push("Some children are hidden; pass node_id to expand a subtree".into());
     }
+    if nodes.iter().any(has_too_large) {
+        next_steps.push(format!(
+            "Nodes with too_large_for_one_call span over {MAX_PAGES_PER_CALL} pages: pass their \
+             node_id to see their children, or use search() to locate the exact pages"
+        ));
+    }
     next_steps.push(
         "Pick the relevant sections, then call get_page_content() with their page ranges \
          (or node_id) — never the whole document"
@@ -435,6 +488,10 @@ pub(crate) fn structure_view(
         omitted_nodes,
         next_steps,
     })
+}
+
+fn has_too_large(n: &StructureNode) -> bool {
+    n.too_large_for_one_call || n.children.iter().any(has_too_large)
 }
 
 fn has_hidden(n: &StructureNode) -> bool {

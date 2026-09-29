@@ -313,3 +313,39 @@ fn test_search_unknown_doc_suggests_names() {
         other => panic!("expected NotFound, got {other:?}"),
     }
 }
+
+#[test]
+fn test_structure_hints_sample_hidden_titles_and_flag_large_nodes() {
+    let pi = index();
+    let mut md = String::from("# Big\n\n## Alpha part\n\n");
+    for i in 0..60 {
+        md.push_str(&format!("line {i}\n"));
+    }
+    md.push_str("\n## Beta part\n\nmore\n");
+    pi.ingest(WS, "big.md", Source::Markdown(&md), opts(2))
+        .unwrap();
+    let v = pi
+        .get_structure(
+            WS,
+            "big.md",
+            StructureOpts {
+                max_depth: Some(1),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let root = &v.nodes[0];
+    assert_eq!(root.hidden_children, 2);
+    assert_eq!(
+        root.descendant_titles_sample,
+        ["Alpha part", "Beta part"],
+        "{root:?}"
+    );
+    assert!(root.too_large_for_one_call);
+    assert!(v
+        .next_steps
+        .iter()
+        .any(|s| s.contains("too_large_for_one_call")));
+    let json = serde_json::to_value(&v).unwrap();
+    assert!(json["nodes"][0].get("too_large_for_one_call").is_some());
+}
