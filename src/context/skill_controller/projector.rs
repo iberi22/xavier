@@ -192,7 +192,10 @@ fn apply_entry(
 
 /// Unlink one controller-owned destination the manifest no longer selects. `plan.removals` only
 /// ever names entries the planner proved resolve into an authorized source root (never an
-/// unmanaged file or directory), so this never targets a file Xavier did not create.
+/// unmanaged file or directory) at plan time, but that proof can go stale between plan and apply
+/// (a concurrent write, a bug in a future planner change). As defense in depth, the mutation itself
+/// re-observes the destination and refuses to delete anything that is not a symlink: an unowned
+/// regular file or directory that appears in its place is left untouched and the call fails closed.
 fn remove_entry(
     removal: &PlanRemoval,
     journal: &Journal,
@@ -206,8 +209,22 @@ fn remove_entry(
         JournalAction::Remove,
         None,
         dry_run,
-        |target_path| match fs::remove_file(target_path) {
-            Ok(()) => Ok(()),
+        |target_path| match fs::symlink_metadata(target_path) {
+            Ok(meta) if meta.file_type().is_symlink() => match fs::remove_file(target_path) {
+                Ok(()) => Ok(()),
+                Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(source) => Err(StateError::Io {
+                    path: target_path.to_path_buf(),
+                    source,
+                }),
+            },
+            Ok(_) => Err(StateError::Io {
+                path: target_path.to_path_buf(),
+                source: io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "refusing to remove a destination that is not a Xavier-owned symlink",
+                ),
+            }),
             Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(source) => Err(StateError::Io {
                 path: target_path.to_path_buf(),
@@ -531,6 +548,88 @@ mod tests {
         assert!(
             fs::symlink_metadata(target.join("demo1")).is_err(),
             "a package that fails the secret scan must not be published"
+        );
+    }
+
+    #[test]
+    fn test_apply_plan_removes_a_link_the_manifest_no_longer_selects() {
+        const MANIFEST_DEMO2_ONLY: &str = concat!(
+            "version = 1\n[sources]\ncanonical = \"$STORE\"\n",
+            "[[targets]]\nid = \"t1\"\ntools = [\"codex\"]\nroot = \"$ROOT\"\nmode = \"symlink\"\n",
+            "[[placements]]\nsource = \"canonical\"\npath = \"demo2\"\nname = \"demo2\"\ntargets = [\"t1\"]\n",
+        );
+        let (tmp, source, target, manifest, roots) = fixture();
+        let policy = policy_for(&source, &target);
+        let journal = journal_for(tmp.path());
+
+        let plan = planner::build_plan(&manifest, &policy, &roots).expect("plan");
+        apply_plan(
+            &plan, &manifest, &policy, &roots, &journal, "tx-seed", false,
+        )
+        .expect("seed apply");
+        assert!(fs::symlink_metadata(target.join("demo1")).is_ok());
+
+        let manifest2 = Manifest::from_toml(MANIFEST_DEMO2_ONLY).expect("manifest without demo1");
+        let plan2 = planner::build_plan(&manifest2, &policy, &roots).expect("plan2");
+        assert_eq!(plan2.removals.len(), 1);
+        assert_eq!(plan2.removals[0].name, "demo1");
+
+        let report = apply_plan(
+            &plan2,
+            &manifest2,
+            &policy,
+            &roots,
+            &journal,
+            "tx-remove",
+            false,
+        )
+        .expect("remove apply");
+        assert_eq!(
+            report.removed,
+            vec![("demo1".to_string(), "t1".to_string())]
+        );
+        assert!(
+            fs::symlink_metadata(target.join("demo1")).is_err(),
+            "the stale link must be gone"
+        );
+        assert!(
+            fs::symlink_metadata(target.join("demo2")).is_ok(),
+            "an unrelated, still-selected link must survive"
+        );
+    }
+
+    #[test]
+    fn test_remove_entry_is_idempotent_and_refuses_unmanaged_regular_file_collision() {
+        let (tmp, source, target, _manifest, _roots) = fixture();
+        let journal = journal_for(tmp.path());
+
+        let link_path = target.join("demo1-link");
+        symlink(source.join("demo1"), &link_path).expect("seed symlink");
+        let removal = PlanRemoval {
+            name: "demo1-link".to_string(),
+            target: "t1".to_string(),
+            root: target.display().to_string(),
+            link: "unused".to_string(),
+        };
+        remove_entry(&removal, &journal, "tx-rm-1", false).expect("first removal");
+        assert!(fs::symlink_metadata(&link_path).is_err());
+        remove_entry(&removal, &journal, "tx-rm-2", false)
+            .expect("second removal of an already-gone link is a no-op");
+
+        member(&target, "rogue", "not a symlink\n");
+        let rogue_removal = PlanRemoval {
+            name: "rogue".to_string(),
+            target: "t1".to_string(),
+            root: target.display().to_string(),
+            link: "unused".to_string(),
+        };
+        let err = remove_entry(&rogue_removal, &journal, "tx-rogue", false)
+            .expect_err("a regular file must never be removed as if it were an owned symlink");
+        assert!(matches!(err, ProjectorError::State(_)));
+        assert_eq!(
+            fs::read_to_string(target.join("rogue")).expect("read"),
+            "not a symlink\n",
+            "the unmanaged file must survive untouched"
         );
     }
 
