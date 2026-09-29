@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.0.1"
+version = "0.2.16"
 description = "Xavier — Cognitive Memory System for AI Agents"
 authors = ["SWAL Systems <dev@swal.dev>"]
 license = "AGPL-3.0"
@@ -20,11 +20,11 @@ tauri-build = { version = "2.5.4", features = [] }
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
 tauri = { version = "2.11.1", features = ["tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 sysinfo = "0.38"
 uuid = { version = "1.20.0", features = ["v4"] }
-xavier = { path = "../../", features = ["tauri"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"

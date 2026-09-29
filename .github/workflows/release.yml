@@ -129,11 +129,17 @@ jobs:
           path: dist/*
           retention-days: 7
 
+  build-desktop:
+    name: Desktop (AppImage + deb)
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/desktop.yml
+
   publish-release:
     name: Publish GitHub Release
-    needs: build-binaries
+    needs: [build-binaries, build-desktop]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    # Tagged releases require both CLI binaries and desktop build to succeed; manual dispatch only requires CLI binaries.
+    if: ${{ !cancelled() && needs.build-binaries.result == 'success' && (github.event_name == 'workflow_dispatch' || (startsWith(github.ref, 'refs/tags/v') && needs.build-desktop.result == 'success')) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
