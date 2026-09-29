@@ -2,7 +2,9 @@
 
 use lopdf::content::{Content, Operation};
 use lopdf::{dictionary, Document, Object, ObjectId, Stream, StringFormat};
-use xavier_pageindex::pdf::outline::{extract_outline, extract_pages, outline_to_tree};
+use xavier_pageindex::pdf::outline::{
+    extract_outline, extract_pages, outline_to_tree, OutlineNode,
+};
 use xavier_pageindex::PageIndexError;
 
 fn title(s: &str) -> Object {
@@ -190,4 +192,29 @@ fn test_pdf_malformed_never_panics() {
         assert!(extract_outline(junk).is_err());
         assert!(extract_pages(junk).is_err());
     }
+}
+
+#[test]
+fn test_pdf_outline_keeps_same_page_bookmarks() {
+    let node = |title: &str, page: u32, children| OutlineNode {
+        title: title.into(),
+        page,
+        children,
+    };
+    let outline = vec![
+        node("A", 2, vec![node("A1", 2, vec![]), node("A2", 2, vec![])]),
+        node("B", 2, vec![]),
+        node("C", 4, vec![]),
+        // Before the previous sibling's start: dropped.
+        node("Back", 3, vec![]),
+        node("Out", 99, vec![]),
+    ];
+    let tree = outline_to_tree("d", &outline, 5);
+    tree.validate(5).unwrap();
+    let titles: Vec<_> = tree.roots.iter().map(|n| n.title.as_str()).collect();
+    assert_eq!(titles, ["A", "B", "C"]);
+    assert_eq!((tree.roots[0].start_page, tree.roots[0].end_page), (2, 2));
+    assert_eq!((tree.roots[1].start_page, tree.roots[1].end_page), (2, 3));
+    assert_eq!((tree.roots[2].start_page, tree.roots[2].end_page), (4, 5));
+    assert_eq!(tree.roots[0].children.len(), 2);
 }

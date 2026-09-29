@@ -88,13 +88,17 @@ impl DocumentTree {
     }
 
     /// Check ordering, containment, page bounds and preorder ids.
+    ///
+    /// Consecutive siblings satisfy `prev.end <= next.start`: they may share
+    /// one boundary page but never overlap deeper.
     pub fn validate(&self, page_count: u32) -> Result<(), PageIndexError> {
         fn walk(
             nodes: &[TreeNode],
             bounds: (u32, u32),
             counter: &mut usize,
         ) -> Result<(), PageIndexError> {
-            let mut prev_end = bounds.0.saturating_sub(1);
+            // Siblings may share exactly one boundary page.
+            let mut prev: Option<(u32, u32)> = None;
             for n in nodes {
                 let bad =
                     |m: &str| PageIndexError::InvalidRange(format!("node {}: {m}", n.node_id));
@@ -108,10 +112,10 @@ impl DocumentTree {
                 if n.start_page < bounds.0 || n.end_page > bounds.1 {
                     return Err(bad("range outside parent range or page_count"));
                 }
-                if n.start_page <= prev_end {
+                if prev.is_some_and(|(ps, pe)| n.start_page < ps || n.start_page < pe) {
                     return Err(bad("overlaps or precedes previous sibling"));
                 }
-                prev_end = n.end_page;
+                prev = Some((n.start_page, n.end_page));
                 walk(&n.children, (n.start_page, n.end_page), counter)?;
             }
             Ok(())
@@ -180,11 +184,30 @@ mod tests {
 
     #[test]
     fn test_tree_validate_rejects_overlapping_siblings() {
-        let t = tree(vec![node("A", 1, 3, vec![]), node("B", 3, 5, vec![])]);
+        let t = tree(vec![node("A", 1, 3, vec![]), node("B", 2, 5, vec![])]);
         assert!(matches!(
             t.validate(5),
             Err(PageIndexError::InvalidRange(_))
         ));
+    }
+
+    #[test]
+    fn test_tree_validate_allows_shared_boundary_page() {
+        let t = tree(vec![
+            node("A", 1, 3, vec![]),
+            node("B", 3, 3, vec![]),
+            node("C", 3, 5, vec![]),
+        ]);
+        assert!(t.validate(5).is_ok());
+    }
+
+    #[test]
+    fn test_tree_validate_rejects_deep_sibling_overlap() {
+        let t = tree(vec![node("A", 1, 4, vec![]), node("B", 3, 5, vec![])]);
+        assert!(t.validate(5).is_err());
+        // Starting before the previous sibling's start is also rejected.
+        let t = tree(vec![node("A", 3, 3, vec![]), node("B", 2, 5, vec![])]);
+        assert!(t.validate(5).is_err());
     }
 
     #[test]

@@ -65,14 +65,14 @@ pub fn extract_pages(bytes: &[u8]) -> Result<Vec<String>, PageIndexError> {
 
 /// Convert bookmarks into a validated-shape tree over `page_count` pages.
 ///
-/// Entries outside `1..=page_count` or not strictly after the previous
-/// sibling's start are dropped (the tree model forbids sibling overlap).
+/// Entries outside `1..=page_count` or before the previous sibling's start
+/// are dropped. Bookmarks on the same page are kept and share that page.
 pub fn outline_to_tree(doc_id: &str, nodes: &[OutlineNode], page_count: u32) -> DocumentTree {
     fn build(nodes: &[OutlineNode], lo: u32, hi: u32) -> Vec<TreeNode> {
         let mut kept: Vec<&OutlineNode> = Vec::new();
-        let mut last = lo.saturating_sub(1);
+        let mut last = lo;
         for n in nodes {
-            if n.page >= lo && n.page <= hi && n.page > last {
+            if n.page >= lo && n.page <= hi && n.page >= last {
                 last = n.page;
                 kept.push(n);
             }
@@ -80,7 +80,10 @@ pub fn outline_to_tree(doc_id: &str, nodes: &[OutlineNode], page_count: u32) -> 
         (0..kept.len())
             .map(|i| {
                 let n = kept[i];
-                let end = kept.get(i + 1).map_or(hi, |next| next.page - 1);
+                // A next bookmark on the same page shares it instead of shrinking the range.
+                let end = kept
+                    .get(i + 1)
+                    .map_or(hi, |next| (next.page - 1).max(n.page));
                 TreeNode {
                     node_id: String::new(),
                     title: n.title.clone(),

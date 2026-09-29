@@ -77,10 +77,10 @@ fn test_legal_articles_nest_under_chapters() {
         .title
         .starts_with("PARÁGRAFO"));
     assert_eq!(built.builder, "legal");
-    // Page ranges nest and never overlap.
+    // Page ranges nest; siblings may share boundary pages.
     built.tree.validate(built.pages.len() as u32).unwrap();
     let a1 = &chapter.children[0];
-    assert!(a1.start_page > chapter.start_page && a1.end_page <= chapter.end_page);
+    assert!(a1.start_page >= chapter.start_page && a1.end_page <= chapter.end_page);
 }
 
 #[test]
@@ -96,4 +96,21 @@ fn test_legal_ocr_spaced_headings_and_no_headings_fallback() {
     assert_eq!(built.tree.roots[0].children[0].title, "ARTICLE 2");
     let flat = legal::build("d", "just some prose\nwithout structure\n", 60).unwrap();
     assert_eq!(flat.builder, "plain-windows");
+}
+
+#[test]
+fn test_plain_and_legal_headings_share_virtual_pages() {
+    let plain_text = "1. One\nbody\n2. Two\nbody\n3. Three\nbody\n";
+    let built = plain::build("d", plain_text, 60).unwrap();
+    assert_eq!(built.pages.len(), 1);
+    assert_eq!(built.tree.roots.len(), 3);
+    assert!(built.tree.roots.iter().all(|n| n.start_page == 1));
+    built.tree.validate(1).unwrap();
+
+    let legal_text = "ARTICLE 1\nx\nARTICLE 2\ny\nARTICLE 3\nz\n";
+    let built = legal::build("d", legal_text, 60).unwrap();
+    assert_eq!(built.pages.len(), 1);
+    assert_eq!(built.tree.roots.len(), 3);
+    assert!(built.tree.roots.iter().all(|n| n.end_page == 1));
+    built.tree.validate(1).unwrap();
 }

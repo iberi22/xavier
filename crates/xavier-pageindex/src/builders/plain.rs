@@ -1,14 +1,18 @@
 //! Plain-text builder (numbered headings, fixed windows).
 //!
-//! Every detected heading starts a new virtual page, so node page ranges are
-//! disjoint by construction. Without headings the text is cut into fixed
-//! line windows with one flat node per window.
+//! Text is cut into fixed-size virtual pages (line and char budgets) that
+//! headings share; a node spans the pages from its first to its last line, so
+//! consecutive siblings may share one boundary page. Without headings the
+//! text is cut into fixed line windows with one flat node per window.
 
 use crate::error::PageIndexError;
 use crate::model::{DocumentTree, Page, TreeNode};
 
 /// Default virtual page size in lines.
 pub const DEFAULT_LINES_PER_PAGE: usize = 60;
+
+/// Char budget after which a virtual page is closed (besides the line cap).
+pub const PAGE_CHAR_BUDGET: usize = 3000;
 
 const MAX_HEADING_CHARS: usize = 100;
 const MAX_CAPS_CHARS: usize = 60;
@@ -80,8 +84,41 @@ pub(crate) fn build_from_headings(
 struct Flat {
     level: u8,
     title: String,
-    start: u32,
-    end: u32,
+    /// First line (0-based) of the section.
+    line: usize,
+    /// Exclusive end line of the section, including nested sections.
+    end_line: usize,
+}
+
+/// Split lines into virtual pages: a page closes at `lpp` lines or once it
+/// holds `PAGE_CHAR_BUDGET` chars. Returns the pages and the 1-based page of
+/// every line.
+fn paginate(doc_id: &str, lines: &[&str], lpp: usize) -> (Vec<Page>, Vec<u32>) {
+    let mut pages: Vec<Page> = Vec::new();
+    let mut line_page = Vec::with_capacity(lines.len());
+    let mut chunk: Vec<&str> = Vec::new();
+    let mut chars = 0;
+    let flush = |chunk: &mut Vec<&str>, pages: &mut Vec<Page>| {
+        pages.push(Page {
+            doc_id: doc_id.to_string(),
+            page_no: pages.len() as u32 + 1,
+            text: chunk.join("\n"),
+        });
+        chunk.clear();
+    };
+    for line in lines {
+        line_page.push(pages.len() as u32 + 1);
+        chunk.push(line);
+        chars += line.chars().count() + 1;
+        if chunk.len() >= lpp || chars >= PAGE_CHAR_BUDGET {
+            flush(&mut chunk, &mut pages);
+            chars = 0;
+        }
+    }
+    if !chunk.is_empty() {
+        flush(&mut chunk, &mut pages);
+    }
+    (pages, line_page)
 }
 
 fn assemble(
@@ -90,89 +127,71 @@ fn assemble(
     headings: &[Heading],
     lpp: usize,
 ) -> (Vec<Page>, Vec<TreeNode>) {
-    let mut pages: Vec<Page> = Vec::new();
-    let push_segment = |seg: &[&str], pages: &mut Vec<Page>| -> u32 {
-        let first = pages.len() as u32 + 1;
-        for chunk in seg.chunks(lpp) {
-            pages.push(Page {
-                doc_id: doc_id.to_string(),
-                page_no: pages.len() as u32 + 1,
-                text: chunk.join("\n"),
-            });
-        }
-        first
-    };
+    let (pages, line_page) = paginate(doc_id, lines, lpp);
 
-    let lead = &lines[..headings[0].line];
-    let lead_has_text = lead.iter().any(|l| !l.trim().is_empty());
-    let preamble_start = lead_has_text.then(|| push_segment(lead, &mut pages));
-
-    let mut flat: Vec<Flat> = Vec::with_capacity(headings.len());
-    for (i, h) in headings.iter().enumerate() {
-        let end_line = headings.get(i + 1).map_or(lines.len(), |n| n.line);
-        let start = push_segment(&lines[h.line..end_line], &mut pages);
-        flat.push(Flat {
+    let mut flat: Vec<Flat> = headings
+        .iter()
+        .map(|h| Flat {
             level: h.level,
             title: h.title.clone(),
-            start,
-            end: 0,
-        });
-    }
-    let total = pages.len() as u32;
+            line: h.line,
+            end_line: lines.len(),
+        })
+        .collect();
     for i in 0..flat.len() {
         let level = flat[i].level;
-        flat[i].end = flat[i + 1..]
-            .iter()
-            .find(|n| n.level <= level)
-            .map_or(total, |n| n.start - 1);
+        if let Some(next) = flat[i + 1..].iter().find(|n| n.level <= level) {
+            flat[i].end_line = next.line;
+        }
     }
 
+    let ctx = Ctx {
+        lines,
+        line_page: &line_page,
+    };
     let mut roots = Vec::new();
-    if let Some(start) = preamble_start {
-        roots.push(make_node(
-            "Preamble".into(),
-            start,
-            flat[0].start - 1,
-            &pages,
-            Vec::new(),
-        ));
+    let first = flat[0].line;
+    if lines[..first].iter().any(|l| !l.trim().is_empty()) {
+        roots.push(ctx.node("Preamble".into(), 0, first, Vec::new()));
     }
     let mut i = 0;
-    roots.extend(nest(&flat, &mut i, 0, &pages));
+    roots.extend(nest(&flat, &mut i, 0, &ctx));
     (pages, roots)
 }
 
-fn nest(flat: &[Flat], i: &mut usize, parent_level: u8, pages: &[Page]) -> Vec<TreeNode> {
+struct Ctx<'a> {
+    lines: &'a [&'a str],
+    line_page: &'a [u32],
+}
+
+impl Ctx<'_> {
+    /// Node over lines `start..end`; sections may share boundary pages.
+    fn node(&self, title: String, start: usize, end: usize, children: Vec<TreeNode>) -> TreeNode {
+        let words: usize = self.lines[start..end]
+            .iter()
+            .map(|l| l.split_whitespace().count())
+            .sum();
+        TreeNode {
+            node_id: String::new(),
+            title,
+            start_page: self.line_page[start],
+            end_page: self.line_page[end - 1],
+            summary: None,
+            token_estimate: (words as f64 * 1.3).ceil() as u32,
+            children,
+        }
+    }
+}
+
+fn nest(flat: &[Flat], i: &mut usize, parent_level: u8, ctx: &Ctx) -> Vec<TreeNode> {
     let mut out = Vec::new();
     while *i < flat.len() && flat[*i].level > parent_level {
         let f = &flat[*i];
         *i += 1;
-        let children = nest(flat, i, f.level, pages);
-        out.push(make_node(f.title.clone(), f.start, f.end, pages, children));
+        let children = nest(flat, i, f.level, ctx);
+        out.push(ctx.node(f.title.clone(), f.line, f.end_line, children));
     }
     out
-}
-
-fn make_node(
-    title: String,
-    start: u32,
-    end: u32,
-    pages: &[Page],
-    children: Vec<TreeNode>,
-) -> TreeNode {
-    let words: usize = pages[(start - 1) as usize..end as usize]
-        .iter()
-        .map(|p| p.text.split_whitespace().count())
-        .sum();
-    TreeNode {
-        node_id: String::new(),
-        title,
-        start_page: start,
-        end_page: end,
-        summary: None,
-        token_estimate: (words as f64 * 1.3).ceil() as u32,
-        children,
-    }
 }
 
 fn fixed_windows(doc_id: &str, lines: &[&str], lpp: usize) -> BuiltText {
@@ -187,7 +206,16 @@ fn fixed_windows(doc_id: &str, lines: &[&str], lpp: usize) -> BuiltText {
         });
         let first = i * lpp + 1;
         let title = format!("Lines {}-{}", first, first + chunk.len() - 1);
-        roots.push(make_node(title, page_no, page_no, &pages, Vec::new()));
+        let words: usize = chunk.iter().map(|l| l.split_whitespace().count()).sum();
+        roots.push(TreeNode {
+            node_id: String::new(),
+            title,
+            start_page: page_no,
+            end_page: page_no,
+            summary: None,
+            token_estimate: (words as f64 * 1.3).ceil() as u32,
+            children: Vec::new(),
+        });
     }
     let mut tree = DocumentTree {
         doc_id: doc_id.to_string(),
