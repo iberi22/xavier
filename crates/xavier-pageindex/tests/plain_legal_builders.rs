@@ -114,3 +114,14 @@ fn test_plain_and_legal_headings_share_virtual_pages() {
     assert!(built.tree.roots.iter().all(|n| n.end_page == 1));
     built.tree.validate(1).unwrap();
 }
+
+#[test]
+fn test_legal_keyword_prefixes_are_not_headings() {
+    let text = "Title to the goods passes on delivery.\nArticles 3 and 4 apply.\n\
+                Clauses 5-7 are void.\nChaptered sections follow.\n";
+    let built = legal::build("d", text, 60).unwrap();
+    assert_eq!(built.builder, "plain-windows");
+    let ok = "Title II\nArt.3 x\nCLÁUSULA PRIMERA: OBJETO\nPARÁGRAFO ÚNICO\n";
+    let built = legal::build("d", ok, 60).unwrap();
+    assert_eq!(built.builder, "legal");
+}
