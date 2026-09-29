@@ -16305,6 +16305,7 @@ dependencies = [
  "web-sys",
  "x25519-dalek",
  "xavier-core-logic",
+ "xavier-pageindex",
  "xxhash-rust",
  "zerocopy 0.8.57",
  "zip 8.6.0",

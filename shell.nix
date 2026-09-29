@@ -79,6 +79,9 @@ pkgs.mkShell {
     libpng.dev
     udev.dev
     libusb1
+
+    # Optional: libpdfium (>= API 6996) for the `pageindex-pdfium` feature
+    pdfium-binaries
   ];
 
   shellHook = ''
@@ -90,6 +93,7 @@ pkgs.mkShell {
     #   options = [ "size=16G" "mode=755" "noswap" ];
     # };
 
+    export XAVIER_PAGEINDEX_PDFIUM_LIB="''${XAVIER_PAGEINDEX_PDFIUM_LIB:-${pkgs.pdfium-binaries}/lib}"
     export LIBCLANG_PATH="${pkgs.llvmPackages.libclang}/lib"
     export PKG_CONFIG_PATH="${pkgs.gtk3.dev}/lib/pkgconfig:${pkgs.pango.dev}/lib/pkgconfig:${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.gdk-pixbuf.dev}/lib/pkgconfig:${pkgs.libsoup_3.dev}/lib/pkgconfig:${pkgs.webkitgtk_4_1.dev}/lib/pkgconfig:${pkgs.libayatana-appindicator.dev}/lib/pkgconfig:${pkgs.libnotify.dev}/lib/pkgconfig:${pkgs.librsvg.dev}/lib/pkgconfig:${pkgs.atk.dev}/lib/pkgconfig:${pkgs.harfbuzz.dev}/lib/pkgconfig:${pkgs.freetype.dev}/lib/pkgconfig:${pkgs.fontconfig.dev}/lib/pkgconfig:${pkgs.xorg.libxcb.dev}/lib/pkgconfig:${pkgs.xorg.libX11.dev}/lib/pkgconfig:${pkgs.glib.dev}/lib/pkgconfig:${pkgs.libpng.dev}/lib/pkgconfig:${pkgs.openssl.dev}/lib/pkgconfig:${pkgs.sqlite.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
     export C_INCLUDE_PATH="${pkgs.glib.dev}/include:${pkgs.gtk3.dev}/include:${pkgs.pango.dev}/include:${pkgs.cairo.dev}/include:${pkgs.gdk-pixbuf.dev}/include:$C_INCLUDE_PATH"

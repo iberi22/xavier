@@ -60,7 +60,7 @@ members = [
 ]
 
 [features]
-default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage", "panel-ui"]
+default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email", "self-manage", "panel-ui", "pageindex"]
 panel-ui = []
 notification-in-app = []
 notification-webhook = []
@@ -69,7 +69,12 @@ data-commons = ["post-quantum"]
 post-quantum = ["oqs"]
 cli-interactive = ["ratatui", "crossterm"]
 # All features that are safe to run on host CI (no GUI/Winit issues)
-ci-safe = ["self-manage"]
+ci-safe = ["self-manage", "pageindex"]
+# Tree retrieval (standalone crate); pure Rust, no native libs.
+pageindex = ["dep:xavier-pageindex"]
+pageindex-pdf = ["pageindex", "xavier-pageindex/pdf-outline"]
+# Binds libpdfium at runtime (see XAVIER_PAGEINDEX_PDFIUM_LIB); never in default/ci-safe.
+pageindex-pdfium = ["pageindex-pdf", "xavier-pageindex/pdf-layout"]
 self-manage = []
 gpu-search = ["dep:candle-core", "dep:candle-nn"]
 gpu-search-cuda = ["gpu-search", "candle-core/cuda", "candle-nn/cuda"]
@@ -247,6 +252,7 @@ path = "tests/telecom_simulation_test.rs"
 
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
+xavier-pageindex = { path = "crates/xavier-pageindex", default-features = false, features = ["sqlite", "markdown"], optional = true }
 code-graph = { path = "./code-graph" }
 maloca-core = { path = "vendor/maloca-core" }
 anyhow = "1.0.102"
