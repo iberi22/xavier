@@ -301,6 +301,126 @@ mod with_pdf {
         b.tree.validate(12).unwrap();
     }
 
+    const NAMES: [&str; 12] = [
+        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india",
+        "juliet", "kilo", "lima",
+    ];
+
+    /// Pages whose first line is unique but that carry a repeated running footer.
+    fn distinct_pages(n: usize) -> Vec<Vec<Line>> {
+        (0..n)
+            .map(|i| {
+                let mut p = vec![
+                    body(&format!(
+                        "Warranty terms for {} family",
+                        NAMES[i % NAMES.len()]
+                    )),
+                    body("ACME Corp Confidential Footer Line"),
+                ];
+                p.extend(filler());
+                p
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_pdf_fixed_windows_are_titled_by_first_meaningful_line() {
+        let bytes = make_pdf(&distinct_pages(12), &[]);
+        let b = build_pdf_tree("d", &bytes, None).unwrap();
+        assert_eq!(b.source, TocSource::FixedWindows);
+        let t: Vec<&str> = b.tree.roots.iter().map(|n| n.title.as_str()).collect();
+        assert_eq!(
+            t,
+            [
+                "Warranty terms for alpha family",
+                "Warranty terms for foxtrot family",
+                "Warranty terms for kilo family"
+            ]
+        );
+        // Page ranges are unchanged.
+        assert_eq!(b.tree.roots[1].start_page, 6);
+        assert_eq!(b.tree.roots[1].end_page, 10);
+        // Windows without any usable line keep the generic label.
+        let blank = make_pdf(&filler_pages(12), &[]);
+        let b = build_pdf_tree("d", &blank, None).unwrap();
+        assert_eq!(b.tree.roots[0].title, "Pages 1-5");
+    }
+
+    #[test]
+    fn test_pdf_split_windows_are_titled_by_first_meaningful_line() {
+        let bytes = make_pdf(&distinct_pages(30), &[("A", 1), ("B", 25)]);
+        let b = build_pdf_tree("d", &bytes, None).unwrap();
+        let a = &b.tree.roots[0];
+        assert_eq!(a.children[0].title, "Warranty terms for alpha family");
+        assert_eq!(a.children[1].title, "Warranty terms for foxtrot family");
+        assert!(a.children.iter().all(|c| !c.title.contains("(pages")));
+        assert_eq!(a.children[1].start_page, 6);
+        assert_eq!(a.children[1].end_page, 10);
+    }
+
+    /// Bookmarked PDF whose words are separate text objects on one baseline.
+    fn word_by_word_pdf() -> Vec<u8> {
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+        let f1 = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+        });
+        let res = doc.add_object(dictionary! { "Font" => dictionary! { "F1" => f1 } });
+        let mut ids = Vec::new();
+        for _ in 0..2 {
+            let mut ops = Vec::new();
+            for (i, w) in "Our comprehensive solutions extend more broadly"
+                .split(' ')
+                .enumerate()
+            {
+                ops.push(Operation::new("BT", vec![]));
+                ops.push(Operation::new("Tf", vec!["F1".into(), 11.into()]));
+                ops.push(Operation::new(
+                    "Td",
+                    vec![(50 + i as i64 * 80).into(), 700.into()],
+                ));
+                ops.push(Operation::new("Tj", vec![Object::string_literal(w)]));
+                ops.push(Operation::new("ET", vec![]));
+            }
+            let cid = doc.add_object(Stream::new(
+                dictionary! {},
+                Content { operations: ops }.encode().unwrap(),
+            ));
+            ids.push(doc.add_object(dictionary! {
+                "Type" => "Page", "Parent" => pages_id, "Contents" => cid,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Resources" => res,
+            }));
+        }
+        let kids: Vec<Object> = ids.iter().map(|&i| i.into()).collect();
+        doc.objects.insert(
+            pages_id,
+            dictionary! { "Type" => "Pages", "Kids" => kids, "Count" => 2 }.into(),
+        );
+        let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", catalog);
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        buf
+    }
+
+    /// Needs libpdfium; page text is rebuilt into lines from glyph positions.
+    #[cfg(feature = "pdf-layout")]
+    #[test]
+    #[ignore = "requires libpdfium"]
+    fn test_pdf_page_text_joins_words_on_one_baseline_into_lines() {
+        let b = build_pdf_tree("d", &word_by_word_pdf(), None).unwrap();
+        assert_eq!(b.pages.len(), 2);
+        for p in &b.pages {
+            assert!(
+                p.text
+                    .contains("Our comprehensive solutions extend more broadly"),
+                "{:?}",
+                p.text
+            );
+        }
+    }
+
     fn filler_pages(n: usize) -> Vec<Vec<Line>> {
         (0..n).map(|_| filler()).collect()
     }

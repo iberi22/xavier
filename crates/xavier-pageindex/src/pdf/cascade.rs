@@ -4,6 +4,8 @@
 //! Every strategy that cannot produce a usable tree falls through to the next
 //! one; only unreadable input (malformed, encrypted) is an error.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::error::PageIndexError;
 use crate::model::{DocumentTree, Page, TreeNode};
 use crate::pdf::outline::{self, OutlineNode};
@@ -114,7 +116,10 @@ pub fn build_pdf_tree(
     }
 
     if !has_usable(&candidates, page_count) {
-        candidates.push((fixed_windows(doc_id, page_count), TocSource::FixedWindows));
+        candidates.push((
+            fixed_windows(doc_id, page_count, &texts),
+            TocSource::FixedWindows,
+        ));
     }
     let best = candidates
         .iter()
@@ -125,7 +130,7 @@ pub fn build_pdf_tree(
                 .unwrap_or(0)
         });
     let (mut tree, source) = candidates.swap_remove(best);
-    split_oversized_leaves(&mut tree.roots);
+    split_oversized_leaves(&mut tree.roots, &texts);
     tree.assign_node_ids();
     fill_token_estimates(&mut tree.roots, &texts);
     let pages = texts
@@ -325,18 +330,21 @@ fn nest(flat: &[(u32, String, u32)]) -> Vec<OutlineNode> {
 }
 
 /// One flat node per window of `FIXED_WINDOW_PAGES` pages.
-fn fixed_windows(doc_id: &str, page_count: u32) -> DocumentTree {
+fn fixed_windows(doc_id: &str, page_count: u32, texts: &[String]) -> DocumentTree {
+    let furniture = furniture_lines(texts);
     let mut roots = Vec::new();
     let mut start = 1;
     while start <= page_count {
         let end = (start + FIXED_WINDOW_PAGES - 1).min(page_count);
         roots.push(TreeNode {
             node_id: String::new(),
-            title: if start == end {
-                format!("Page {start}")
-            } else {
-                format!("Pages {start}-{end}")
-            },
+            title: window_title(texts, &furniture, start, end).unwrap_or_else(|| {
+                if start == end {
+                    format!("Page {start}")
+                } else {
+                    format!("Pages {start}-{end}")
+                }
+            }),
             start_page: start,
             end_page: end,
             summary: None,
@@ -368,19 +376,99 @@ fn has_usable(candidates: &[(DocumentTree, TocSource)], page_count: u32) -> bool
         .any(|(t, _)| !is_degenerate(t, page_count))
 }
 
+/// Longest window title taken from page text, in chars.
+const MAX_WINDOW_TITLE_CHARS: usize = 60;
+/// A line repeated on this many pages is furniture, never a window title.
+const MIN_FURNITURE_LINE_PAGES: usize = 3;
+
+fn line_key(line: &str) -> String {
+    line.split_whitespace()
+        .map(|w| {
+            w.chars()
+                .map(|c| if c.is_ascii_digit() { '#' } else { c })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// Normalised lines printed on several pages (running headers and footers).
+fn furniture_lines(texts: &[String]) -> HashSet<String> {
+    let mut pages_per_line: HashMap<String, usize> = HashMap::new();
+    for t in texts {
+        let uniq: HashSet<String> = t.lines().map(line_key).collect();
+        for k in uniq {
+            *pages_per_line.entry(k).or_default() += 1;
+        }
+    }
+    let quarter = texts.len().div_ceil(4);
+    pages_per_line
+        .into_iter()
+        .filter(|(_, n)| *n >= MIN_FURNITURE_LINE_PAGES.max(quarter))
+        .map(|(k, _)| k)
+        .collect()
+}
+
+/// First meaningful line of the window's pages, truncated; `None` when the
+/// window has no usable line (blank, numbers only, running headers).
+fn window_title(
+    texts: &[String],
+    furniture: &HashSet<String>,
+    start: u32,
+    end: u32,
+) -> Option<String> {
+    let meaningful = |l: &str| {
+        let l = l.trim();
+        l.chars().filter(|c| c.is_alphabetic()).count() >= 3 && !furniture.contains(&line_key(l))
+    };
+    let lines: Vec<&str> = (start..=end)
+        .filter_map(|p| texts.get(p as usize - 1))
+        .flat_map(|t| t.lines())
+        .filter(|l| meaningful(l))
+        .collect();
+    // A line that starts like a title beats a mid-sentence fragment.
+    let pick = lines
+        .iter()
+        .find(|l| l.trim().chars().next().is_some_and(char::is_uppercase))
+        .or(lines.first())?;
+    let words: Vec<&str> = pick.split_whitespace().collect();
+    let mut out = String::new();
+    for w in words.iter() {
+        if out.chars().count() + w.chars().count() + 1 > MAX_WINDOW_TITLE_CHARS {
+            if out.is_empty() {
+                out.extend(w.chars().take(MAX_WINDOW_TITLE_CHARS));
+            }
+            out.push('\u{2026}');
+            break;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(w);
+    }
+    Some(out)
+}
+
 /// Give every leaf spanning more than `MAX_PAGES_PER_NODE` pages consecutive
 /// non-overlapping page-window children, so no leaf forces a long read.
-fn split_oversized_leaves(nodes: &mut [TreeNode]) {
+fn split_oversized_leaves(nodes: &mut [TreeNode], texts: &[String]) {
+    let furniture = furniture_lines(texts);
+    split_leaves(nodes, texts, &furniture);
+}
+
+fn split_leaves(nodes: &mut [TreeNode], texts: &[String], furniture: &HashSet<String>) {
     for n in nodes {
         if !n.children.is_empty() {
-            split_oversized_leaves(&mut n.children);
+            split_leaves(&mut n.children, texts, furniture);
         } else if n.end_page - n.start_page + 1 > MAX_PAGES_PER_NODE {
             let mut start = n.start_page;
             while start <= n.end_page {
                 let end = (start + SPLIT_WINDOW_PAGES - 1).min(n.end_page);
                 n.children.push(TreeNode {
                     node_id: String::new(),
-                    title: format!("{} (pages {start}-{end})", n.title),
+                    title: window_title(texts, furniture, start, end)
+                        .unwrap_or_else(|| format!("{} (pages {start}-{end})", n.title)),
                     start_page: start,
                     end_page: end,
                     summary: None,
