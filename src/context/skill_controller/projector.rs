@@ -20,7 +20,11 @@ use super::state::{Journal, JournalAction, StateError};
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io;
+#[cfg(unix)]
 use std::os::unix::fs::symlink;
+// Package destinations are directories, so a directory link is the Windows equivalent.
+#[cfg(windows)]
+use std::os::windows::fs::symlink_dir as symlink;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use uuid::Uuid;
