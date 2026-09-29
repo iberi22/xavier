@@ -112,6 +112,8 @@ Latest release: **[v0.0.1](https://github.com/iberi22/xavier/releases/latest)** 
 
 Each artifact has a `.sha256` sidecar.
 
+**Linux desktop app:** download `Xavier_<version>_amd64.AppImage` from the release, `chmod +x`, double-click (or a `.deb`). See [docs/desktop.md](docs/desktop.md).
+
 ```bash
 # Linux example
 curl -L https://github.com/iberi22/xavier/releases/latest/download/xavier-v0.0.1-x86_64-unknown-linux-gnu.tar.gz -o xavier.tar.gz
