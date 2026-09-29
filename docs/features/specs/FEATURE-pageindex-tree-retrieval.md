@@ -249,6 +249,42 @@ optional `PAGEINDEX_OSS_BENCHMARK_DIR` JSONL (never downloaded in CI).
 - F3: arm off by default with byte-identical existing gating tests; on, it returns nodes with page ranges; eval report prints hit@1/hit@3/MRR for DocBot, tree, hybrid and the numbers are recorded in this spec; decision review per ADR-036 invalidation criteria.
 - Ledger: promotion only by green `scripts/verify-pipeline.sh`, never by hand.
 
+### Eval results (PAGEINDEX.14, measured)
+
+Command: `cargo test -p xavier --features ci-safe --test pageindex_eval -- --nocapture`.
+Data: 3 committed fixtures in `tests/fixtures/pageindex/` (`manual.md` 13 pages, `contract.txt` 11 pages,
+`handbook.txt` 11 pages; 8 lines per virtual page) and 36 questions in `gold.jsonl`, each with a gold page
+range and an `evidence` phrase that a test checks lies inside that range. No LLM, no network.
+A hit means a returned span overlaps the gold range in the same document. `pages@k` is the average
+number of distinct pages in the top-k spans (cost proxy).
+
+| Column | hit@1 | hit@3 | MRR | pages@1 | pages@3 |
+|--------|-------|-------|-----|---------|---------|
+| DocBot BM25, 512-token chunks | 0.722 | 0.917 | 0.815 | 5.00 | 13.42 |
+| DocBot BM25, 64-token chunks | 0.611 | 0.806 | 0.708 | 1.31 | 3.11 |
+| Tree navigator, lexical on titles | 0.083 | 0.139 | 0.102 | 0.94 | 3.56 |
+| Tree navigator, lexical on titles + lead text | 0.222 | 0.222 | 0.222 | 1.39 | 3.19 |
+| Hybrid (gating + tree arm) | pending PAGEINDEX.13 | | | | |
+
+Reading: on these small fixtures the lexical tree navigator is far below BM25 chunk search on hit rate.
+It is the LLM-free lower bound: it only sees node titles (and a 40-word lead as a stand-in for a summary),
+and the questions are paraphrased, so title overlap is rare. It reads few pages per query, but that cost
+advantage is worthless at these hit rates. These numbers do NOT measure an LLM agent walking the tree,
+which is the intended consumer. Chunks are mapped to pages by matching chunk lines against page lines.
+The DocBot chunker only carries pages for PDFs, so this mapping is the eval's own.
+
+Extension point: `hybrid_column` in `tests/pageindex_eval.rs` (marked `PAGEINDEX.13 EXTENSION POINT`)
+and the `#[ignore]`d `test_eval_hybrid_column_after_issue_13`. Issue 13 fills it in and re-records the table.
+
+Optional modes (never in CI, both `#[ignore]`d):
+- `test_eval_llm_navigator_optional` gives the outline to the LLM of `LlmAdapter::from_env()`
+  (`DOCBOT_LLM_*`) and scores its chosen node: `cargo test -p xavier --features ci-safe --test pageindex_eval -- --ignored --nocapture llm`.
+- `PAGEINDEX_OSS_BENCHMARK_DIR` (read by the test only, not by the crate or `.env.example`) points to a local
+  checkout of VectifyAI/PageIndex-OSS-Benchmark converted to `<dir>/questions.jsonl` (fields `doc`, `query`|`question`,
+  `start_page`|`start`, `end_page`|`end`) with `.md`/`.txt` sources in `<dir>/documents/`. The real repo ships
+  `questions.json` and PDFs; its exact schema was not verified, so this loader expects the converted form and the
+  PDF documents need the `pageindex-pdf` feature. Unset means skipped; nothing is downloaded.
+
 ## 11. Risks & notes
 
 - pdfium provisioning (NixOS/CI) is the main external risk; contained by feature flags and runtime binding.

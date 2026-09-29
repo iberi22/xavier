@@ -1,0 +1,83 @@
+SOFTWARE DEVELOPMENT SERVICES AGREEMENT
+
+This Agreement is entered into between Northwind Labs Ltd. (the Client) and Brightside Studio LLC (the Provider).
+
+CHAPTER I - DEFINITIONS AND SCOPE
+
+Article 1. Definitions
+In this Agreement Deliverables means the software, documentation and materials that the Provider
+creates for the Client. Confidential Information means any non-public technical or business
+information disclosed by one party to the other.
+
+Article 2. Scope of services
+The Provider shall design, develop and test a mobile inventory application as described in Schedule A.
+Any work outside Schedule A requires a written change order signed by both parties.
+
+Article 3. Term
+This Agreement starts on the Effective Date and continues for twelve months unless terminated earlier
+under Chapter IV. It renews automatically for successive six month periods unless either party gives
+sixty days written notice of non-renewal.
+
+CHAPTER II - FEES AND PAYMENT
+
+Article 4. Fees
+The Client shall pay the Provider a fixed fee of one hundred and twenty thousand dollars, divided
+into four equal milestone payments as listed in Schedule B.
+
+Article 5. Invoices and payment terms
+The Provider shall invoice each milestone upon its acceptance. The Client shall pay every invoice
+within thirty days of receipt. Undisputed amounts paid late accrue interest at one and a half
+percent per month.
+
+Article 6. Expenses and taxes
+Travel expenses require prior written approval. All fees are exclusive of value added tax,
+which the Client shall pay in addition where applicable.
+
+CHAPTER III - INTELLECTUAL PROPERTY AND CONFIDENTIALITY
+
+Article 7. Ownership of deliverables
+Upon full payment, all rights in the Deliverables transfer to the Client. The Provider keeps
+ownership of its pre-existing tools and libraries and grants the Client a perpetual licence to use
+them as part of the Deliverables.
+
+Article 8. Confidentiality
+Each party shall keep the other party's Confidential Information secret and use it only to perform
+this Agreement. This duty survives for five years after termination.
+The duty does not apply to information that is public through no fault of the receiving party.
+
+Article 9. Data protection
+The Provider shall process personal data only on the Client's documented instructions and shall
+notify the Client of any data breach within seventy-two hours of becoming aware of it.
+
+CHAPTER IV - TERMINATION AND LIABILITY
+
+Article 10. Termination for cause
+Either party may terminate this Agreement by written notice if the other party commits a material
+breach and fails to remedy it within fifteen days after receiving notice of the breach.
+
+Article 11. Termination for convenience
+The Client may terminate for convenience with thirty days notice, paying for all work completed
+up to the termination date.
+
+Article 12. Limitation of liability
+The total liability of the Provider under this Agreement shall not exceed the fees paid in the
+twelve months before the claim. Neither party is liable for indirect or consequential losses,
+such as lost profits.
+
+Article 13. Warranty
+The Provider warrants that the Deliverables will conform to Schedule A for ninety days after
+acceptance and will repair any defect reported during that period at no charge.
+
+CHAPTER V - GENERAL PROVISIONS
+
+Article 14. Governing law and disputes
+This Agreement is governed by the laws of the State of Delaware. The parties shall first try to
+resolve any dispute by mediation, and failing that, by binding arbitration in Wilmington.
+
+Article 15. Force majeure
+Neither party is liable for delay caused by events beyond its reasonable control, such as natural
+disasters, war, strikes or failures of public utilities, provided it notifies the other party promptly.
+
+Article 16. Assignment and notices
+Neither party may assign this Agreement without the prior written consent of the other.
+Notices must be sent in writing to the addresses stated on the signature page.

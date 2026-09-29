@@ -121,5 +121,11 @@ Xavier consumes it in two ways:
 - Gate: `scripts/verify-pipeline.sh` runs the three ledger entries
   (`feat-pageindex-tree-core`, `feat-pageindex-pdf`, `feat-pageindex-hybrid`).
 - Review date: 2026-11-30, or when F3 closes, whichever is first.
+- F3 eval, first measurement (2026-09-29, PAGEINDEX.14; hybrid column pending PAGEINDEX.13):
+  on 36 fixture questions the LLM-free lexical tree navigator scores hit@3 0.139 (titles) / 0.222
+  (titles + lead text) against 0.917 / 0.806 for DocBot BM25 (512 / 64-token chunks). This is a
+  lower bound, not an LLM agent, so it neither confirms nor triggers the invalidation criteria
+  above; the decision must be re-reviewed with the hybrid column and the real-LLM run.
+  Details: spec `FEATURE-pageindex-tree-retrieval.md`, "Eval results".
 - Note: a flaky CI job, "Rust Integration (Observability Contract)" (#2701), is
   pre-existing on main and unrelated to this initiative.
