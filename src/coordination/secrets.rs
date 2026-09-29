@@ -148,6 +148,16 @@ impl KeyLendingEngine {
         agent_id: &str,
         ttl_secs: u64,
     ) -> Result<SecretLease> {
+        self.check_anti_exfil(agent_id, name).await?;
+        self.lend_unchecked(name, value, agent_id, ttl_secs).await
+    }
+
+    /// Runs the anti-exfiltration rate-limit check for `agent_id` and records
+    /// the attempt. Every entry point that may resolve a secret value (from a
+    /// caller-supplied value or from the hardware vault) must call this
+    /// *before* resolving anything, so a rate-limited agent never causes a
+    /// real vault read.
+    async fn check_anti_exfil(&self, agent_id: &str, name: &str) -> Result<()> {
         if let Some(detector) = &self.anti_exfil {
             let mut detector = detector.write().await;
             if let Err(err) = detector.check_and_record(agent_id) {
@@ -155,7 +165,19 @@ impl KeyLendingEngine {
                 return Err(err.into());
             }
         }
+        Ok(())
+    }
 
+    /// Creates the lease and records it. Callers must have already run
+    /// `check_anti_exfil` for `agent_id`; this does not check again so a
+    /// single lend attempt is only ever counted once against the budget.
+    async fn lend_unchecked(
+        &self,
+        name: &str,
+        value: Option<&str>,
+        agent_id: &str,
+        ttl_secs: u64,
+    ) -> Result<SecretLease> {
         let token = Uuid::new_v4().to_string();
         let now = Utc::now();
         let expires_at = now + Duration::seconds(ttl_secs as i64);
@@ -186,7 +208,12 @@ impl KeyLendingEngine {
         Ok(lease)
     }
 
-    /// Lend a secret from the hardware vault by name
+    /// Lend a secret from the hardware vault by name.
+    ///
+    /// The anti-exfil check runs before the vault is touched: a rate-limited
+    /// agent is rejected without ever causing a `HardwareVault::get_secret`
+    /// call, so repeated denied attempts cannot pull secret material into
+    /// process memory.
     pub async fn lend_from_vault(
         &self,
         name: &str,
@@ -194,10 +221,14 @@ impl KeyLendingEngine {
         ttl_secs: u64,
         redact: bool,
     ) -> Result<SecretLease> {
+        self.check_anti_exfil(agent_id, name).await?;
+
         let vault = crate::secrets::vault::HardwareVault::new("xavier");
         let value = vault.get_secret(name)?;
 
-        let mut lease = self.lend(name, Some(&value), agent_id, ttl_secs).await?;
+        let mut lease = self
+            .lend_unchecked(name, Some(&value), agent_id, ttl_secs)
+            .await?;
 
         if redact {
             lease.secret_value = None;
@@ -548,6 +579,26 @@ mod tests {
 
         let err = engine
             .lend("test-secret", Some("val"), "agent-1", 3600)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<crate::secrets::SecretError>(),
+            Some(crate::secrets::SecretError::ApprovalDenied(_))
+        ));
+        assert!(engine.list_leases().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_lend_from_vault_rejected_before_vault_read() {
+        // Budget of 0 means the very first attempt is rejected. If the
+        // rejection happened after the vault read, this call would instead
+        // fail with a vault/secret-not-found error from HardwareVault --
+        // touching the real keyring/fallback store in the process.
+        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None)
+            .with_anti_exfil(crate::secrets::lending::AntiExfilDetector::new(0));
+
+        let err = engine
+            .lend_from_vault("does-not-exist", "agent-1", 3600, true)
             .await
             .unwrap_err();
         assert!(matches!(
