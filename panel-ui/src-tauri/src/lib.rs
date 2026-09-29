@@ -438,12 +438,25 @@ pub fn run() {
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(900.0, 600.0)
                 .initialization_script(&init)
+                .on_page_load(|window, payload| {
+                    log::info!(
+                        "Webview page {:?}: {} ({})",
+                        payload.event(),
+                        payload.url(),
+                        window.label()
+                    );
+                })
                 .build()?;
+            log::info!("Main window created");
 
             // Closing the window quits (and stops only our own sidecar).
             // Tray is best-effort: GNOME etc. may have no indicator host.
-            if let Err(e) = build_tray(app) {
-                log::warn!("System tray unavailable: {e}");
+            // The indicator library is dlopen'd and panics when missing, so
+            // treat a panic like an error: the window must still open.
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build_tray(app))) {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => log::warn!("System tray unavailable: {e}"),
+                Err(_) => log::warn!("System tray unavailable: indicator library missing"),
             }
 
             let app_handle = app.handle().clone();
