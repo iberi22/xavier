@@ -63,6 +63,27 @@ fn test_optimize_merges_tiny_leaf_into_prev_sibling() {
 }
 
 #[test]
+fn test_optimize_does_not_merge_tiny_leaf_into_parent_with_children() {
+    let mut t = tree(vec![
+        node(
+            "prev",
+            1,
+            3,
+            400,
+            vec![node("c1", 1, 2, 200, vec![]), node("c2", 2, 3, 200, vec![])],
+        ),
+        node("tiny", 3, 4, 10, vec![]),
+    ]);
+    merge_tiny(&mut t, 250, 6000);
+    t.validate(4).unwrap();
+    assert_eq!(t.roots.len(), 2);
+    let mut cov = vec![false; 4];
+    covered(&t.roots, &mut cov);
+    assert!(cov.iter().all(|c| *c), "page 4 must stay covered by a leaf");
+    assert_eq!(t.roots[1].end_page, 4);
+}
+
+#[test]
 fn test_optimize_splits_node_over_token_limit_on_page_boundaries() {
     let mut t = tree(vec![node("Big", 1, 6, 6000, vec![])]);
     split_huge(&mut t, &pages(6), 2000);

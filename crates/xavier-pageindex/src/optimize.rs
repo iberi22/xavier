@@ -29,7 +29,8 @@ pub fn optimize(tree: &mut DocumentTree, pages: &[Page], opts: OptimizeOpts) {
     tree.assign_node_ids();
 }
 
-/// Fold each tiny leaf into its previous sibling, unless the result would
+/// Fold each tiny leaf into its previous sibling when that sibling is also a
+/// leaf (a parent's range must keep matching its children), unless the result would
 /// exceed `max_tokens`. A leading tiny leaf stays (nothing precedes it).
 pub fn merge_tiny(tree: &mut DocumentTree, min_tokens: u32, max_tokens: u32) {
     fn walk(nodes: &mut Vec<TreeNode>, min: u32, max: u32) {
@@ -41,7 +42,9 @@ pub fn merge_tiny(tree: &mut DocumentTree, min_tokens: u32, max_tokens: u32) {
             let tiny = n.children.is_empty() && n.token_estimate < min;
             match out.last_mut() {
                 Some(prev)
-                    if tiny && prev.token_estimate.saturating_add(n.token_estimate) <= max =>
+                    if tiny
+                        && prev.children.is_empty()
+                        && prev.token_estimate.saturating_add(n.token_estimate) <= max =>
                 {
                     prev.end_page = prev.end_page.max(n.end_page);
                     prev.token_estimate += n.token_estimate;
