@@ -8,6 +8,7 @@ use crate::secrets::local_vault::LocalSecretsVault;
 use crate::security::encryption_keys::MasterKeyManager;
 use crate::security::rsa_keys::RsaKeypairManager;
 use anyhow::Result;
+use std::path::Path;
 
 /// Handles the initial security setup of the system.
 pub struct SecurityInitializer;
@@ -26,8 +27,10 @@ impl SecurityInitializer {
         rsa_mgr.ensure_keypair()?;
         println!("✅ RSA Keypair secured");
 
-        // 3. Initialize Local Secrets Vault
-        let _vault = LocalSecretsVault::init_default(&master_mgr)?;
+        // 3. Initialize Local Secrets Vault, then use the instance to tighten
+        // and verify the storage directory permissions instead of dropping it.
+        let vault = LocalSecretsVault::init_default(&master_mgr)?;
+        tighten_storage_dir_permissions(vault.storage_dir())?;
         println!("✅ Local Secrets Vault ready");
 
         // 4. Trigger auth database creation/encryption
@@ -43,5 +46,53 @@ impl SecurityInitializer {
 
         println!("Xavier security system initialization complete.");
         Ok(())
+    }
+}
+
+/// Force the secrets storage directory to mode `0700` and verify it held.
+/// A verification mismatch logs a warning instead of failing: `LocalSecretsVault::
+/// init_default` already guarantees `0700`, so this must never abort
+/// `SecurityInitializer::initialize`. Factored out so it is directly testable
+/// without the real keyring or the real `~/.xavier`.
+fn tighten_storage_dir_permissions(dir: &Path) -> Result<()> {
+    if let Err(e) = crate::security::encryption_keys::ensure_private_dir(dir) {
+        tracing::warn!("could not tighten secrets storage directory permissions: {e}");
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        match std::fs::metadata(dir) {
+            Ok(meta) if meta.permissions().mode() & 0o777 != 0o700 => tracing::warn!(
+                "secrets storage directory has insecure permissions: {:o}",
+                meta.permissions().mode() & 0o777
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!("could not verify secrets storage directory permissions: {e}"),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    #[cfg(unix)]
+    fn test_tighten_storage_dir_permissions_forces_0700() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempdir().unwrap();
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let result = tighten_storage_dir_permissions(tmp.path());
+        assert!(
+            result.is_ok(),
+            "a verification mismatch must warn, not abort initialize()"
+        );
+
+        let mode = std::fs::metadata(tmp.path()).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "secrets storage directory must be 0700");
     }
 }

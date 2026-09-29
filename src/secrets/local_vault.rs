@@ -80,6 +80,11 @@ impl LocalSecretsVault {
         Ok(())
     }
 
+    /// Directory holding the encrypted secret files.
+    pub fn storage_dir(&self) -> &Path {
+        &self.storage_dir
+    }
+
     /// List all stored secret names
     pub fn list(&self) -> Result<Vec<String>> {
         let mut secrets = Vec::new();
@@ -150,5 +155,12 @@ mod tests {
             let dir_meta = fs::metadata(tmp.path()).unwrap();
             assert_eq!(dir_meta.permissions().mode() & 0o777, 0o700);
         }
+    }
+
+    #[test]
+    fn test_storage_dir_returns_the_vault_directory() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let vault = LocalSecretsVault::new(tmp.path(), [7u8; 32]);
+        assert_eq!(vault.storage_dir(), tmp.path());
     }
 }
