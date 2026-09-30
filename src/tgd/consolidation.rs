@@ -3,7 +3,7 @@
 //! Manages background execution of memory consolidation and TGD rule generation
 //! on a cron-like schedule.
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -12,6 +12,8 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+
+pub use crate::domain::cycle_breaks::w30_08::NightlyTgd;
 
 use crate::consolidation::ConsolidationTask;
 use crate::tgd::TgdEngine;
@@ -26,12 +28,7 @@ pub struct ProgressReport {
     pub status: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SchedulerState {
-    pub last_run_at: Option<DateTime<Utc>>,
-    pub last_duration_ms: u64,
-    pub items_processed: usize,
-}
+pub use crate::domain::cycle_breaks::w30_08::SchedulerState;
 
 pub struct TgdConsolidationScheduler {
     workspace: WorkspaceContext,
@@ -299,4 +296,10 @@ pub async fn run_nightly_tgd() -> anyhow::Result<()> {
         stats.memories_refined
     );
     Ok(())
+}
+
+impl NightlyTgd for crate::memory::manager::MemoryManager {
+    async fn run_nightly_tgd(&self) -> anyhow::Result<()> {
+        run_nightly_tgd().await
+    }
 }

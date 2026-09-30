@@ -11,6 +11,7 @@ use anyhow::Result;
 use chrono::Utc;
 use tracing::info;
 
+use crate::domain::cycle_breaks::w30_08::NightlyTgd;
 use crate::memory::qmd_memory::MemoryDocument;
 
 use super::core::MemoryManager;
@@ -77,7 +78,7 @@ impl MemoryManager {
 
         // Phase 4: Run TGD nightly
         info!("🌙 Phase 4: Triggering TGD nightly...");
-        if let Err(e) = crate::tgd::consolidation::run_nightly_tgd().await {
+        if let Err(e) = self.run_nightly_tgd().await {
             info!("⚠️ TGD nightly encountered an issue: {}", e);
             // Don't fail the whole consolidation — TGD is optional
         }
@@ -122,7 +123,7 @@ impl MemoryManager {
                         let created_at = self
                             .created_times
                             .lock()
-                            .expect("manager: created_times lock poisoned")
+                            .map_err(|_| anyhow::anyhow!("manager: created_times lock poisoned"))?
                             .get(doc_id)
                             .copied()
                             .or_else(|| {
@@ -192,14 +193,14 @@ impl MemoryManager {
                 let existing_time = self
                     .created_times
                     .lock()
-                    .expect("manager: created_times lock poisoned")
+                    .map_err(|_| anyhow::anyhow!("manager: created_times lock poisoned"))?
                     .get(existing_id)
                     .copied()
                     .unwrap_or_else(Utc::now);
                 let doc_time = self
                     .created_times
                     .lock()
-                    .expect("manager: created_times lock poisoned")
+                    .map_err(|_| anyhow::anyhow!("manager: created_times lock poisoned"))?
                     .get(doc_id)
                     .copied()
                     .unwrap_or_else(Utc::now);

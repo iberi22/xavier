@@ -405,7 +405,7 @@ impl MemoryQueryEngine {
         }
 
         let final_total_chars = context_str.chars().count();
-        let estimated_tokens = crate::context::estimate_tokens(&context_str);
+        let estimated_tokens = crate::domain::cycle_breaks::w30_08::estimate_tokens(&context_str);
 
         Ok(MemoryContext {
             total_chars: final_total_chars,
