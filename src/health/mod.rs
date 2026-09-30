@@ -1139,7 +1139,7 @@ pub fn push_embedding_alert_if_unhealthy(embedding: &EmbeddingHealth) -> bool {
         || embedding.error_rate_pct > 10.0
         || (!embedding.provider.is_empty() && embedding.latency_ms > 5000.0);
     if unhealthy {
-        crate::server::alerts::SYSTEM_ALERTS.push_alert(
+        crate::domain::cycle_breaks::w30_04::SYSTEM_ALERTS.push_alert(
             "WARN",
             &format!(
                 "Embedding provider '{}' is unhealthy (connected={}, error_rate={:.1}%, latency={:.0}ms)",

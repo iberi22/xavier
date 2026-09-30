@@ -1,52 +1,11 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, RwLock};
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
-struct SuppressionRecord {
-    last_seen: Instant,
-    count: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum OperationalMode {
-    LocalHealthy,
-    LocalDegraded,
-    CloudFallback,
-    Disabled,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct SystemAlert {
-    pub id: String,
-    pub level: String,
-    pub message: String,
-    pub component: String,
-    pub created_at: DateTime<Utc>,
-}
-
-pub struct SystemAlertStore {
-    alerts: RwLock<Vec<SystemAlert>>,
-    last_email_sent: RwLock<std::collections::HashMap<String, DateTime<Utc>>>,
-    suppression_map: Mutex<HashMap<(String, String), SuppressionRecord>>,
-    total_suppressed_count: AtomicU64,
-}
+use crate::domain::cycle_breaks::w30_04::SuppressionRecord;
+pub use crate::domain::cycle_breaks::w30_04::{OperationalMode, SystemAlert, SystemAlertStore};
 
 impl SystemAlertStore {
-    /// New.
-    pub fn new() -> Self {
-        Self {
-            alerts: RwLock::new(Vec::new()),
-            last_email_sent: RwLock::new(std::collections::HashMap::new()),
-            suppression_map: Mutex::new(HashMap::new()),
-            total_suppressed_count: AtomicU64::new(0),
-        }
-    }
-
     /// Push alert.
     pub fn push_alert(&self, level: &str, message: &str, component: &str) {
         let key = (component.to_string(), message.to_string());
@@ -234,9 +193,7 @@ impl Default for SystemAlertStore {
     }
 }
 
-// Global instance
-pub static SYSTEM_ALERTS: std::sync::LazyLock<SystemAlertStore> =
-    std::sync::LazyLock::new(SystemAlertStore::new);
+pub use crate::domain::cycle_breaks::w30_04::SYSTEM_ALERTS;
 
 #[cfg(test)]
 mod tests {
