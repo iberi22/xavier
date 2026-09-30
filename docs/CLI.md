@@ -370,7 +370,7 @@ Dump the portable code graph to `<root>/.xavier/codegraph.json`.
 
 `PATH` is optional and positional. Resolution is explicit path → this process's working directory → the daemon default (`.`), so a bare `xavier code dump` always targets where you are standing, not the daemon's startup workspace. The CLI makes the path absolute before sending it, and the daemon canonicalizes it again against its own cwd; both steps are reported back in the response as `requested_path` (what you typed) and `resolved_path` (what was actually used), on success and on failure alike. The response also carries `path`, the dump file written.
 
-Dumping a target outside the daemon workspace is allowed on purpose — it is logged as a warning rather than blocked.
+Dumping a target outside the daemon workspace is blocked — targets must reside within the workspace root.
 
 ```bash
 xavier code dump
