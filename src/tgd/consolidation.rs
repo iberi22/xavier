@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-pub use crate::domain::cycle_breaks::w30_08::NightlyTgd;
+pub use crate::domain::cycle_breaks::w30_08::{NightlyTgd, SchedulerState};
 
 use crate::consolidation::ConsolidationTask;
 use crate::tgd::TgdEngine;
@@ -27,8 +27,6 @@ pub struct ProgressReport {
     pub errors: usize,
     pub status: String,
 }
-
-pub use crate::domain::cycle_breaks::w30_08::SchedulerState;
 
 pub struct TgdConsolidationScheduler {
     workspace: WorkspaceContext,

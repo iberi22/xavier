@@ -123,7 +123,7 @@ impl MemoryManager {
                         let created_at = self
                             .created_times
                             .lock()
-                            .map_err(|_| anyhow::anyhow!("manager: created_times lock poisoned"))?
+                            .expect("manager: created_times lock poisoned")
                             .get(doc_id)
                             .copied()
                             .or_else(|| {
@@ -193,14 +193,14 @@ impl MemoryManager {
                 let existing_time = self
                     .created_times
                     .lock()
-                    .map_err(|_| anyhow::anyhow!("manager: created_times lock poisoned"))?
+                    .expect("manager: created_times lock poisoned")
                     .get(existing_id)
                     .copied()
                     .unwrap_or_else(Utc::now);
                 let doc_time = self
                     .created_times
                     .lock()
-                    .map_err(|_| anyhow::anyhow!("manager: created_times lock poisoned"))?
+                    .expect("manager: created_times lock poisoned")
                     .get(doc_id)
                     .copied()
                     .unwrap_or_else(Utc::now);

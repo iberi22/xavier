@@ -102,7 +102,7 @@ impl FileIndexer {
         let index_path = self.config.root_path.join(".xavier").join("index.json");
 
         // Create .xavier directory
-        fs::create_dir_all(index_path.parent().context("index path has no parent")?).await?;
+        fs::create_dir_all(index_path.parent().expect("test assertion")).await?;
 
         // Write index file
         let json = serde_json::to_string_pretty(result)?;

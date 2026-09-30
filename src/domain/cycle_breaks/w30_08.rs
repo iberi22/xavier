@@ -62,10 +62,66 @@ pub struct SchedulerState {
 mod tests {
     use super::estimate_tokens;
 
+    /// Expected token counts for 0..=17 ASCII chars, one entry per char count.
+    ///
+    /// This is an independent table of literal expectations, not a re-derivation of the
+    /// implementation formula, so a one-sided edit of the heuristic below fails the test.
+    const EXPECTED_BY_CHAR_COUNT: [usize; 18] =
+        [0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5];
+
     #[test]
-    fn token_estimate_matches_context() {
-        for text in ["", "a", "abcd", "abcde", "こんにちは", "🦀🦀🦀🦀🦀"] {
-            assert_eq!(estimate_tokens(text), crate::context::estimate_tokens(text));
+    fn test_estimate_tokens_empty() {
+        assert_eq!(estimate_tokens(""), 0);
+    }
+
+    #[test]
+    fn test_estimate_tokens_short() {
+        assert_eq!(estimate_tokens("a"), 1);
+        assert_eq!(estimate_tokens("ab"), 1);
+        assert_eq!(estimate_tokens("abc"), 1);
+        assert_eq!(estimate_tokens("abcd"), 1);
+    }
+
+    #[test]
+    fn test_estimate_tokens_round_up() {
+        assert_eq!(estimate_tokens("abcde"), 2);
+        assert_eq!(estimate_tokens("abcdefgh"), 2);
+        assert_eq!(estimate_tokens("abcdefghi"), 3);
+    }
+
+    #[test]
+    fn test_estimate_tokens_unicode() {
+        // Multi-byte Unicode characters (each is 1 character, but multiple bytes).
+        // "こんにちは" is 5 characters (15 bytes in UTF-8).
+        // 5 chars / 4 = 1.25 -> rounded up to 2 tokens.
+        assert_eq!(estimate_tokens("こんにちは"), 2);
+
+        // "🦀" is 1 character (4 bytes).
+        assert_eq!(estimate_tokens("🦀"), 1);
+
+        // "🦀🦀🦀🦀🦀" is 5 characters.
+        assert_eq!(estimate_tokens("🦀🦀🦀🦀🦀"), 2);
+    }
+
+    #[test]
+    fn test_estimate_tokens_every_char_boundary() {
+        for (char_count, expected) in EXPECTED_BY_CHAR_COUNT.iter().enumerate() {
+            let text = "a".repeat(char_count);
+            assert_eq!(
+                estimate_tokens(&text),
+                *expected,
+                "unexpected token count for {char_count} char(s)"
+            );
         }
+    }
+
+    #[test]
+    fn test_estimate_tokens_counts_scalars_not_bytes() {
+        // 4 multi-byte chars (16 UTF-8 bytes) must cost 1 token, not 4.
+        assert_eq!("🦀🦀🦀🦀".len(), 16);
+        assert_eq!(estimate_tokens("🦀🦀🦀🦀"), 1);
+        // 5 multi-byte chars (20 UTF-8 bytes) round up to 2 tokens, not 5.
+        assert_eq!("🦀🦀🦀🦀🦀".len(), 20);
+        assert_eq!(estimate_tokens("🦀🦀🦀🦀🦀"), 2);
     }
 }
