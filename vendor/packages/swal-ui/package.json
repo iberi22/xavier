@@ -25,7 +25,7 @@
   },
   "devDependencies": {
     "@sveltejs/package": "^2.3.0",
-    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@types/d3": "7.4.3",
     "svelte": "^5.57.1",
     "tailwindcss": "^4.3.3",
