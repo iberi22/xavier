@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::agents::runtime::ConversationMessage;
+use crate::domain::cycle_breaks::w30_06::ConversationMessage;
 
 pub const MAX_CHECKPOINT_BYTES: usize = 2048;
 const MAX_RECENT_MESSAGES: usize = 4;

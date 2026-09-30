@@ -5,21 +5,24 @@ use tracing::info;
 
 use super::core::MemoryManager;
 use super::types::{ManagementResult, MemoryManagementAction};
+use crate::domain::cycle_breaks::w30_06::SemanticCompactor;
 
 impl MemoryManager {
     /// Compress large memories semantically using an LLM to generate a dense summary.
-    pub async fn compact_semantically(&self) -> Result<ManagementResult> {
-        use crate::agents::provider::ModelProviderClient;
-
+    ///
+    /// The LLM is reached through the [`SemanticCompactor`] port declared in
+    /// `crate::domain::cycle_breaks::w30_06`, so this module no longer imports the
+    /// provider adapter (ADR-033 Wave 0). The caller owns the adapter and with it the
+    /// compaction-model selection; a compactor that returns `None` falls back to
+    /// plain truncation, exactly as a failed LLM call always has.
+    pub async fn compact_semantically(
+        &self,
+        compactor: &dyn SemanticCompactor,
+    ) -> Result<ManagementResult> {
         let docs = self.memory.all_documents().await;
         let threshold = self.config.compression_threshold_bytes;
         let mut actions = Vec::new();
         let mut bytes_freed: u64 = 0;
-
-        // Initialize the LLM client once, prioritizing compaction_model if set
-        let settings = crate::settings::XavierSettings::current();
-        let compaction_model = settings.models.compaction_model.clone();
-        let llm_client = ModelProviderClient::from_model_override(compaction_model);
 
         for doc in docs {
             let size = doc.content.len();
@@ -48,9 +51,9 @@ impl MemoryManager {
                     doc.content
                 );
 
-                let compacted_content = match llm_client.generate_response(&prompt, &[]).await {
-                    Ok(res) if !res.text.trim().is_empty() => res.text.trim().to_string(),
-                    _ => {
+                let compacted_content = match compactor.compact_document(&prompt).await {
+                    Some(compacted) => compacted,
+                    None => {
                         // Fallback to basic truncation if LLM fails
                         format!(
                             "{}...[truncated from {} chars]",

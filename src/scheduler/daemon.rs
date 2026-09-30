@@ -80,7 +80,17 @@ impl MemoryDaemon {
             loop {
                 sleep(Duration::from_secs(12 * 3600)).await;
                 info!("MemoryDaemon: Running scheduled compact_semantically()");
-                if let Err(e) = manager_compact.compact_semantically().await {
+                // Composition root: build the LLM adapter for this run and hand it to
+                // the memory manager through the `SemanticCompactor` port, so the
+                // manager never imports the provider module (ADR-033 Wave 0).
+                let compaction_model = crate::settings::XavierSettings::current()
+                    .models
+                    .compaction_model
+                    .clone();
+                let compactor = crate::agents::provider::ModelProviderClient::from_model_override(
+                    compaction_model,
+                );
+                if let Err(e) = manager_compact.compact_semantically(&compactor).await {
                     error!("MemoryDaemon: Scheduled compaction failed: {}", e);
                 }
             }

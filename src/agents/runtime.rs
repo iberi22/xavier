@@ -32,22 +32,12 @@ pub struct Session {
     pub messages: Vec<ConversationMessage>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationMessage {
-    pub id: String,
-    pub role: MessageRole,
-    pub content: String,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MessageRole {
-    User,
-    Assistant,
-    System,
-}
-
 pub use crate::domain::cycle_breaks::w30_14::{AgentResponse, SystemTimings};
+
+// Moved to the domain so `crate::memory` can read a transcript without importing
+// `crate::agents` (ADR-033 Wave 0); re-exported here so every existing caller of
+// `crate::agents::runtime::{ConversationMessage, MessageRole}` keeps compiling.
+pub use crate::domain::cycle_breaks::w30_06::{ConversationMessage, MessageRole};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRunTrace {
