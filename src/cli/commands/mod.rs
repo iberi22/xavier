@@ -79,8 +79,10 @@ impl Cli {
                 http: _,
                 host,
             } => {
+                // The bind address is read from XAVIER_HOST (cli::config); the
+                // previous XAVIER_HTTP_HOST had no reader, so --host was a no-op.
                 if let Some(ref h) = host {
-                    std::env::set_var("XAVIER_HTTP_HOST", h);
+                    std::env::set_var("XAVIER_HOST", h);
                 }
                 let port = port.unwrap_or_else(resolve_http_port);
                 start_http_server(port, *mcp_port, *no_ui).await
