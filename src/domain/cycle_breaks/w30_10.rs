@@ -38,11 +38,10 @@ pub fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
 
 /// Search tokens.
 pub fn search_tokens(query: &str) -> Vec<String> {
-    static TOKEN_RE: OnceLock<Option<Regex>> = OnceLock::new();
-    let Some(re) = TOKEN_RE.get_or_init(|| Regex::new(r"[A-Za-z0-9][A-Za-z0-9._:/#-]{1,}").ok())
-    else {
-        return Vec::new();
-    };
+    static TOKEN_RE: OnceLock<Regex> = OnceLock::new();
+    let re = TOKEN_RE.get_or_init(|| {
+        Regex::new(r"[A-Za-z0-9][A-Za-z0-9._:/#-]{1,}").expect("valid search token regex")
+    });
 
     let mut seen = HashSet::new();
     re.find_iter(query)
@@ -369,4 +368,60 @@ fn extract_keywords(messages: &[Message]) -> Vec<String> {
     sorted_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
     sorted_counts.into_iter().take(8).map(|(w, _)| w).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_fts_query, code_tokens, search_tokens, split_camel_case};
+
+    #[test]
+    fn fts_query_expands_code_and_escapes_punctuation() {
+        assert_eq!(
+            build_fts_query("getUser src/main.rs"),
+            Some("getUser* OR src/main.rs* OR get* OR user* OR src* OR main* OR rs*".to_string())
+        );
+        assert_eq!(
+            build_fts_query("issue:#42"),
+            Some("issue42* OR issue* OR 42*".to_string())
+        );
+    }
+
+    #[test]
+    fn fts_query_ignores_empty_and_single_character_input() {
+        assert_eq!(build_fts_query(""), None);
+        assert_eq!(build_fts_query("a ! ?"), None);
+    }
+
+    #[test]
+    fn search_tokens_preserve_spelling_and_deduplicate() {
+        assert_eq!(
+            search_tokens("Hello hello HELLO world"),
+            vec!["Hello", "world"]
+        );
+        assert_eq!(
+            search_tokens("`src/main.rs` a #42"),
+            vec!["src/main.rs", "42"]
+        );
+    }
+
+    #[test]
+    fn code_tokens_split_identifiers_and_deduplicate() {
+        assert_eq!(
+            code_tokens("getUser user_name src/main.rs"),
+            vec!["get", "user", "name", "src", "main", "rs"]
+        );
+        assert_eq!(code_tokens("a !"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn camel_case_splits_lower_to_upper_boundaries() {
+        assert_eq!(split_camel_case("getUserName"), vec!["get", "user", "name"]);
+        assert_eq!(split_camel_case("HTTPServer"), vec!["httpserver"]);
+    }
+
+    #[test]
+    fn camel_case_splits_punctuation_and_preserves_digits() {
+        assert_eq!(split_camel_case("user_id-42"), vec!["user", "id", "42"]);
+        assert_eq!(split_camel_case(""), Vec::<String>::new());
+    }
 }
