@@ -19,17 +19,7 @@ use crate::memory::schema::ContextZone;
 use crate::retrieval::config;
 use crate::search::rrf::{reciprocal_rank_fusion, reciprocal_rank_fusion_weighted, ScoredResult};
 
-/// Layer weights for multi-layer retrieval fusion.
-/// These control how much each memory layer contributes to final results.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct LayerWeights {
-    /// Weight for working memory layer (default 0.3)
-    pub working: f32,
-    /// Weight for episodic memory layer (default 0.3)
-    pub episodic: f32,
-    /// Weight for semantic memory layer (default 0.4)
-    pub semantic: f32,
-}
+pub use crate::domain::cycle_breaks::w30_09::{LayerWeights, LayeredSearchResult};
 
 impl Default for LayerWeights {
     fn default() -> Self {
@@ -198,17 +188,6 @@ pub struct LayerSearchResult {
     pub layer: &'static str,
     pub results: Vec<ScoredResult>,
     pub scores: Vec<f32>,
-}
-
-/// Result from a multi-layer search (for context pack export)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LayeredSearchResult {
-    pub topic: String,
-    pub timestamp: String,
-    pub level_0_working: Vec<ScoredResult>,
-    pub level_1_entity_graph: Vec<ScoredResult>,
-    pub level_2_semantic: Vec<ScoredResult>,
-    pub level_3_episodic: Vec<ScoredResult>,
 }
 
 /// Adaptive zone booster that adjusts zone multipliers dynamically

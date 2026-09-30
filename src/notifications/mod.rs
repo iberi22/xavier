@@ -8,8 +8,10 @@ pub mod dispatcher;
 
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::domain::cycle_breaks::w30_04::SYSTEM_ALERTS;
+use crate::domain::cycle_breaks::w30_09::SyncNotifier;
 use crate::memory::sqlite_store::TABLE_NOTIFICATIONS;
 use anyhow::Result;
+use async_trait::async_trait;
 use axum::response::sse::Event;
 use chrono::{DateTime, Utc};
 use futures_util::stream::Stream;
@@ -534,6 +536,23 @@ impl Default for NotificationManager {
     }
 }
 
+/// Memory island seen by the modules that depend on the domain contract
+/// instead of on this module (ADR-033 Wave 0, issue W30-09).
+///
+/// Every call goes through the same global [`NOTIFICATIONS`] manager the rest of
+/// the crate uses, so nothing changes for a peer sync that reports on the island.
+pub use crate::domain::cycle_breaks::w30_09::MemoryIsland;
+
+#[async_trait]
+impl SyncNotifier for MemoryIsland {
+    async fn notify_memory(&self, title: &str, body: &str, severity: &str) -> Result<()> {
+        NOTIFICATIONS
+            .notify(IslandId::Memory, title, body, severity)
+            .await
+            .map(|_| ())
+    }
+}
+
 pub static NOTIFICATIONS: std::sync::LazyLock<NotificationManager> =
     std::sync::LazyLock::new(NotificationManager::new);
 
@@ -648,6 +667,33 @@ pub fn emit_island_event_sync(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_sync_notifier_delivers_through_global_manager() {
+        let notifier = MemoryIsland;
+        let mut rx = NOTIFICATIONS.subscribe();
+        let title = format!("Memory Sync Completed {}", uuid::Uuid::new_v4());
+        notifier
+            .notify_memory(&title, "Synced with peer", "info")
+            .await
+            .unwrap();
+        let received = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match rx.recv().await {
+                    Ok(notification) if notification.title == title => break notification,
+                    Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        panic!("global notification channel closed before sync delivery");
+                    }
+                }
+            }
+        })
+        .await
+        .expect("sync notification must reach global subscribers");
+        assert_eq!(received.island_id.as_str(), "memory");
+        assert_eq!(received.body, "Synced with peer");
+        assert_eq!(received.severity, "info");
+    }
 
     #[tokio::test]
     async fn test_notification_broadcast() {
