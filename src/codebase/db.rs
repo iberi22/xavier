@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::codebase::validate_project_id;
+use crate::domain::cycle_breaks::w30_10::{build_fts_query, serialize_embedding};
 use anyhow::{Context, Result};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -331,8 +332,7 @@ impl CodebaseDb {
     /// Insert an embedding vector.
     pub async fn insert_embedding(&self, id: &str, embedding: &[f32]) -> Result<()> {
         let id = id.to_string();
-        let embedding_blob =
-            crate::memory::sqlite_vec_store::vector::serialize_embedding(embedding);
+        let embedding_blob = serialize_embedding(embedding);
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
                 conn.execute(
@@ -399,9 +399,7 @@ impl CodebaseDb {
                 embeddings
                     .into_iter()
                     .map(|e| {
-                        let blob = crate::memory::sqlite_vec_store::vector::serialize_embedding(
-                            &e.embedding,
-                        );
+                        let blob = serialize_embedding(&e.embedding);
                         (e.id, blob)
                     })
                     .collect::<Vec<_>>()
@@ -412,8 +410,7 @@ impl CodebaseDb {
             embeddings
                 .into_iter()
                 .map(|e| {
-                    let blob =
-                        crate::memory::sqlite_vec_store::vector::serialize_embedding(&e.embedding);
+                    let blob = serialize_embedding(&e.embedding);
                     (e.id, blob)
                 })
                 .collect::<Vec<_>>()
@@ -491,7 +488,7 @@ impl CodebaseDb {
     /// parser fail and would surface as HTTP 500. A query with no usable
     /// tokens yields an empty result instead of an error.
     pub async fn search_code(&self, query: &str, limit: usize) -> Result<Vec<CodeSearchResult>> {
-        let Some(safe_query) = crate::memory::sqlite_vec_store::fts::build_fts_query(query) else {
+        let Some(safe_query) = build_fts_query(query) else {
             return Ok(Vec::new());
         };
         let query = safe_query;
@@ -524,8 +521,7 @@ impl CodebaseDb {
         embedding: &[f32],
         limit: usize,
     ) -> Result<Vec<SemanticSearchResult>> {
-        let embedding_blob =
-            crate::memory::sqlite_vec_store::vector::serialize_embedding(embedding);
+        let embedding_blob = serialize_embedding(embedding);
         let ebook = embedding_blob.clone();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             // Fallback for vector_distance_cos if not registered (e.g. standard rusqlite without extensions)

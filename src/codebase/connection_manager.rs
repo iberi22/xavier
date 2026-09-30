@@ -2,6 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::domain::cycle_breaks::w30_10::ConnectionTuning;
 use anyhow::{Context, Result};
 use parking_lot::RwLock;
 use r2d2::Pool;
@@ -50,7 +51,7 @@ impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer
     /// connection's readers (previously a `wal_checkpoint(TRUNCATE)` could stall
     /// every acquire for up to `busy_timeout`).
     fn on_acquire(&self, conn: &mut Connection) -> std::result::Result<(), rusqlite::Error> {
-        crate::storage::apply_acquire_pragmas(conn).map_err(|e| {
+        conn.apply_acquire_pragmas().map_err(|e| {
             eprintln!("PragmaCustomizer: PRAGMA error: {}", e);
             e
         })
@@ -62,13 +63,13 @@ impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer
 /// Applies the full (heavy) PRAGMA layer and switches the file to WAL mode,
 /// retrying briefly when another process holds a conflicting lock. Does not
 /// checkpoint the WAL: that is maintenance work, not connection setup (see
-/// `crate::storage::pragma`).
+/// [`ConnectionTuning`]).
 fn initialize_wal_mode(conn: &Connection, db_path: &PathBuf) -> Result<()> {
     let _guard = WAL_INIT_LOCK
         .lock()
         .map_err(|_| anyhow::anyhow!("SQLite WAL initialization lock was poisoned"))?;
 
-    crate::storage::apply_pragmas(conn)
+    conn.apply_pragmas()
         .with_context(|| format!("failed to configure SQLite pragmas at {:?}", db_path))?;
 
     for attempt in 1..=WAL_INIT_ATTEMPTS {
@@ -96,8 +97,7 @@ fn initialize_wal_mode(conn: &Connection, db_path: &PathBuf) -> Result<()> {
     // once per pool construction and only when the WAL exceeded the threshold
     // (a `wal_checkpoint(TRUNCATE)` waits for every reader of the file, so running
     // it per acquire could stall every checkout behind a long-running read).
-    let _ =
-        crate::storage::maybe_wal_checkpoint(conn, crate::storage::WAL_CHECKPOINT_THRESHOLD_BYTES);
+    let _ = conn.maybe_wal_checkpoint();
 
     Ok(())
 }
@@ -219,7 +219,7 @@ impl ConnectionManager {
             // Heavy PRAGMAs are applied once per connection, when the pool opens
             // it; `PragmaCustomizer` only re-applies the cheap layer on acquire.
             let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
-                crate::storage::apply_connection_pragmas(conn)
+                conn.apply_connection_pragmas()
                     .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
             });
             let pool = Pool::builder()

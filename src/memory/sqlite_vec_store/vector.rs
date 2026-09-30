@@ -27,10 +27,7 @@ pub fn register_sqlite_vec_extension() -> Result<()> {
     Ok(())
 }
 
-/// Serialize embedding.
-pub fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
-    embedding.iter().flat_map(|v| v.to_le_bytes()).collect()
-}
+pub use crate::domain::cycle_breaks::w30_10::serialize_embedding;
 
 /// Serialize embedding qjl.
 pub fn serialize_embedding_qjl(embedding: &[f32]) -> Vec<u8> {
