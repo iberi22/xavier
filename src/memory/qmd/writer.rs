@@ -5,6 +5,7 @@
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
+use crate::domain::cycle_breaks::w30_09::{SessionEvent, SessionEventType};
 use crate::memory::qmd_memory::reader::generate_embedding;
 use crate::memory::qmd_memory::types::MemoryDocument;
 use crate::memory::qmd_memory::utils::*;
@@ -12,7 +13,6 @@ use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::sanitizer::{validate_memory_content, ContentCheck};
 use crate::memory::schema::TypedMemoryPayload;
 use crate::memory::store::MemoryRecord;
-use crate::session::types::{SessionEvent, SessionEventType};
 use anyhow::Result;
 
 // ── Write-time integrity ────────────────────────────────────────────

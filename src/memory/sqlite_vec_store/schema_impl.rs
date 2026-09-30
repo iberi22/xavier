@@ -2,7 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use crate::ports::outbound::schema_init::SchemaInitializer;
+use crate::domain::cycle_breaks::w30_09::SchemaInitializer;
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

@@ -2,30 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-
-/// Incoming session event from OpenClaw webhook
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionEventType {
-    SessionStart,
-    SessionEnd,
-    Message,
-    ToolCall,
-    ToolResult,
-    Error,
-}
-
-/// Raw session event payload from OpenClaw
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionEvent {
-    pub session_id: String,
-    pub event_type: SessionEventType,
-    pub timestamp: DateTime<Utc>,
-    pub content: Option<String>,
-    pub metadata: Option<serde_json::Value>,
-}
+pub use crate::domain::cycle_breaks::w30_09::{SessionEvent, SessionEventType};
 
 impl SessionEvent {
     /// Content preview.

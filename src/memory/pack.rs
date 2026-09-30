@@ -2,7 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use crate::retrieval::gating::LayeredSearchResult;
+use crate::domain::cycle_breaks::w30_09::LayeredSearchResult;
 use std::fmt::Write;
 
 /// Generates a Context Pack (.xcp) in XML format from layered search results.
