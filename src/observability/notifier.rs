@@ -9,7 +9,6 @@
 //! - **tracing!** → logs to stderr + file (always on)
 //! - **(Future)** Webhook, email, Discord
 
-use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 use tokio::sync::broadcast;
 
@@ -64,24 +63,9 @@ pub fn publish(notif: &Notification) -> usize {
     event_bus().send(notif.clone()).unwrap_or(0)
 }
 
-/// Notification severity (maps to emoji + level).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum NotificationLevel {
-    Success,
-    Info,
-    Warning,
-    Error,
-    Critical,
-}
-
-/// A notification to be sent.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Notification {
-    pub level: NotificationLevel,
-    pub title: String,
-    pub message: String,
-    pub metadata: Option<serde_json::Value>,
-}
+pub use crate::domain::cycle_breaks::w30_08::{
+    Notification, NotificationLevel, SelfHealNotification,
+};
 
 impl Notification {
     /// Format as a Telegram-friendly message.
@@ -332,6 +316,12 @@ impl Notifier {
         self.emit_tauri(&notif);
         publish(&notif);
         notif
+    }
+}
+
+impl SelfHealNotification for Notification {
+    fn notify_self_heal(description: &str, success: bool) -> Self {
+        Notifier::new().notify_self_heal(description, success)
     }
 }
 

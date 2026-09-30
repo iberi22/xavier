@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{debug, info, warn};
 
+use crate::domain::cycle_breaks::w30_08::{Notification, SelfHealNotification};
 use crate::memory::qmd_memory::QmdMemory;
-use crate::observability::Notifier;
 
 /// Configuración del indexer
 #[derive(Debug, Clone)]
@@ -236,8 +236,7 @@ impl FileIndexer {
         );
 
         // Notify via configured channels
-        let notifier = Notifier::new();
-        notifier.notify_self_heal(
+        Notification::notify_self_heal(
             &format!(
                 "Indexing complete: {} files, {} chunks from {:?}",
                 result.total_files, result.total_chunks, self.config.root_path
