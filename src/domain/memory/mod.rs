@@ -6,12 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Re-export the canonical MemoryQueryFilters from memory::schema for now,
-/// as the schema is the authoritative definition.
 pub mod belief;
 
-pub use crate::memory::schema::MemoryQueryFilters;
-pub use crate::memory::store::MemoryRecord;
+pub use crate::domain::cycle_breaks::w30_01::{MemoryQueryFilters, MemoryRecord};
 pub use belief::{BeliefEdge, BeliefNode};
 
 pub mod graph;
