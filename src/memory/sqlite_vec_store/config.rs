@@ -17,11 +17,7 @@ pub const DEFAULT_QJL_THRESHOLD: usize = 30_000;
 pub const QJL_MAGIC: &[u8; 4] = b"QJL2";
 pub static SQLITE_VEC_EXTENSION_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
-#[derive(Debug, Clone, Default)]
-pub struct VecSqliteStoreConfig {
-    pub path: PathBuf,
-    pub embedding_dimensions: usize,
-}
+pub use crate::domain::cycle_breaks::w30_12::VecSqliteStoreConfig;
 
 impl VecSqliteStoreConfig {
     /// From env.
@@ -59,6 +55,25 @@ impl VecSqliteStoreConfig {
             self.path.display(),
             self.embedding_dimensions
         )
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::domain::cycle_breaks::w30_12::VecStoreBackend
+    for crate::domain::cycle_breaks::w30_12::DefaultVecStoreBackend
+{
+    type Store = super::VecSqliteMemoryStore;
+
+    async fn open(path: PathBuf) -> Result<Self::Store> {
+        Self::Store::new(VecSqliteStoreConfig {
+            path,
+            embedding_dimensions: 0,
+        })
+        .await
+    }
+
+    fn project_id_for_path(path: &std::path::Path) -> String {
+        super::project_id_for_path(path)
     }
 }
 
