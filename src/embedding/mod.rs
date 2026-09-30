@@ -4,6 +4,7 @@
 //! providing the public API surface for module consumers.
 use std::sync::Arc;
 
+use crate::domain::cycle_breaks::w30_04::SYSTEM_ALERTS;
 use async_trait::async_trait;
 use thiserror::Error;
 use tracing::info;
@@ -397,7 +398,7 @@ impl EmbedderConfig {
                     0 => {
                         let msg = "no embedding backend could be initialized; using no-op embedder";
                         tracing::warn!("{}", msg);
-                        crate::server::alerts::SYSTEM_ALERTS.push_alert("ERROR", msg, "embedding");
+                        SYSTEM_ALERTS.push_alert("ERROR", msg, "embedding");
                         Ok(Arc::new(NoopEmbedder))
                     }
                     1 => Ok(embedders.remove(0)),
@@ -463,7 +464,7 @@ impl EmbedderConfig {
                 Self::local_only(api_flavor)
             } else {
                 tracing::warn!("Ollama no responde en http://localhost:11434/v1/models");
-                crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                SYSTEM_ALERTS.push_alert(
                     "WARN",
                     "Ollama no responde en http://localhost:11434/v1/models",
                     "embedding",
@@ -785,7 +786,7 @@ impl Embedder for CircuitBreakerEmbedder {
                         cooldown_secs = self.cooldown.as_secs(),
                         "circuit breaker TRIPPED — embedder entering cooldown"
                     );
-                    crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                    SYSTEM_ALERTS.push_alert(
                         "WARN",
                         &format!(
                             "Embedder circuit breaker tripped after {} consecutive failures; cooldown {}s",

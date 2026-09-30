@@ -7,6 +7,7 @@ pub mod db;
 pub mod dispatcher;
 
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::domain::cycle_breaks::w30_04::SYSTEM_ALERTS;
 use crate::memory::sqlite_store::TABLE_NOTIFICATIONS;
 use anyhow::Result;
 use axum::response::sse::Event;
@@ -211,7 +212,7 @@ impl NotificationProvider for EmailProvider {
             .unwrap_or(300);
 
         let key = notification.title.clone();
-        if !crate::server::alerts::SYSTEM_ALERTS
+        if !SYSTEM_ALERTS
             .should_notify_email_async(&key, dedup_window)
             .await
         {
@@ -227,7 +228,7 @@ impl NotificationProvider for EmailProvider {
             "Sending email notification to configured address: {}",
             notification.title
         );
-        crate::server::alerts::SYSTEM_ALERTS.record_email_sent(&key);
+        SYSTEM_ALERTS.record_email_sent(&key);
         let mut emails = SENT_EMAILS.lock().await;
         emails.push(notification.clone());
         Ok(())
