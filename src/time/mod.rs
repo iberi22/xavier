@@ -3,11 +3,14 @@
 //! Stores TimeMetric records to SQLite at path: metrics/time/{YYYY-MM-DD}/{metric_type}/{agent_id}
 
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use chrono::Utc;
 use rusqlite::params;
 
 use crate::adapters::inbound::http::dto::TimeMetricDto;
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::domain::cycle_breaks::w30_02::TimeMetricSink;
+use crate::domain::memory::TimeMetric;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 
 /// Table name for time metrics
@@ -143,6 +146,20 @@ impl TimeMetricsStore {
                 .context("failed to init time metrics schema")?;
                 Ok(())
             })
+            .await
+    }
+}
+
+/// Inbound HTTP adapter talks to this store only through `TimeMetricSink` (ADR-033
+/// Wave 0), which keeps the adapter free of any `crate::time` import.
+#[async_trait]
+impl TimeMetricSink for TimeMetricsStore {
+    async fn persist_time_metric(
+        &self,
+        metric: &TimeMetric,
+        workspace_id: &str,
+    ) -> Result<(), String> {
+        self.save_time_metric(&metric.clone().into(), workspace_id)
             .await
     }
 }

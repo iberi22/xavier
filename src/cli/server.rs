@@ -343,12 +343,14 @@ pub async fn start_http_server(
 
     use xavier::adapters::inbound::http::routes::{init_health_port, init_time_store};
     use xavier::adapters::inbound::http::time_metrics_adapter::TimeMetricsAdapter;
+    use xavier::domain::cycle_breaks::w30_02::TimeMetricSink;
     let health_adapter = Arc::new(HttpHealthAdapter::new(
         resolve_base_url_for_port(port),
         http_client.clone(),
     ));
-    let time_adapter =
-        Arc::new(TimeMetricsAdapter::new(Arc::clone(&time_store))) as Arc<dyn TimeMetricsPort>;
+    let time_adapter = Arc::new(TimeMetricsAdapter::new(
+        Arc::clone(&time_store) as Arc<dyn TimeMetricSink>
+    )) as Arc<dyn TimeMetricsPort>;
     init_time_store(time_adapter);
     init_health_port(health_adapter.clone());
 

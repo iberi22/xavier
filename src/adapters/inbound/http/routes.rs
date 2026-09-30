@@ -13,16 +13,18 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::adapters::inbound::http::dto::TimeMetricDto;
+use crate::adapters::inbound::http::middleware::rate_limit::rate_limit_middleware;
+use crate::adapters::inbound::http::middleware::rbac::require_permission;
 use crate::adapters::outbound::http_health_adapter::HttpHealthAdapter;
 use crate::agents::unregister_agent_handler;
 use crate::coordination::SimpleAgentRegistry;
+use crate::domain::cycle_breaks::w30_02::get_last_sync_result;
 use crate::ports::inbound::{AgentLifecyclePort, TimeMetricsPort};
 use crate::security::auth::Permission;
 use crate::security::SecurityService;
 use crate::session::event_mapper::PanelThreadEntry;
 use crate::session::types::SessionEvent;
 use crate::settings::XavierSettings;
-use crate::tasks::session_sync_task::get_last_sync_result;
 use crate::verification::auto_verifier::AutoVerifier;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -168,9 +170,9 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             "/v1/maintenance/reindex-embeddings",
             post(maintenance_reindex_handler)
                 .get(maintenance_reindex_status_handler)
-                .layer(axum::middleware::from_fn(
-                    crate::middleware::require_permission(|r| r.can_edit_config()),
-                )),
+                .layer(axum::middleware::from_fn(require_permission(|r| {
+                    r.can_edit_config()
+                }))),
         )
         // ── Training Datasets API ─────────────────────────────────────────
         .route(
@@ -268,9 +270,7 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
     ));
 
     // Global rate limiting middleware (token_bucket per IP: 100 capacity, 60 req/min refill rate).
-    let router = router.layer(axum::middleware::from_fn(
-        crate::middleware::token_bucket::rate_limit_middleware,
-    ));
+    let router = router.layer(axum::middleware::from_fn(rate_limit_middleware));
 
     router.with_state(agent_registry)
 }
