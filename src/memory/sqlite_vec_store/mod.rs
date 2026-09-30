@@ -45,7 +45,8 @@ pub struct VecSqliteMemoryStore {
     pub(crate) project_id: String,
     pub(crate) config: VecSqliteStoreConfig,
     pub(crate) conn_provider: Arc<dyn ConnectionProvider>,
-    pub(crate) event_tx: Option<broadcast::Sender<crate::server::events::RealtimeEvent>>,
+    pub(crate) event_tx:
+        Option<broadcast::Sender<crate::domain::cycle_breaks::w30_07::RealtimeEvent>>,
     pub(crate) dedup_config:
         std::sync::Arc<tokio::sync::RwLock<crate::settings::types::DedupSettings>>,
 }
@@ -69,12 +70,17 @@ impl VecSqliteMemoryStore {
     }
 
     /// Set event tx.
-    pub fn set_event_tx(&mut self, tx: broadcast::Sender<crate::server::events::RealtimeEvent>) {
+    pub fn set_event_tx(
+        &mut self,
+        tx: broadcast::Sender<crate::domain::cycle_breaks::w30_07::RealtimeEvent>,
+    ) {
         self.event_tx = Some(tx);
     }
 
     /// Get a reference to the event broadcast sender if available
-    pub fn event_tx_ref(&self) -> Option<&broadcast::Sender<crate::server::events::RealtimeEvent>> {
+    pub fn event_tx_ref(
+        &self,
+    ) -> Option<&broadcast::Sender<crate::domain::cycle_breaks::w30_07::RealtimeEvent>> {
         self.event_tx.as_ref()
     }
 
