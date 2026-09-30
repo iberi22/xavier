@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use super::derive::DerivedNodeKeys;
 use super::vault::{OpenedVault, SealedVault, VaultError};
 use super::{CheckCodes, SeedPhrase};
+use crate::domain::cycle_breaks::w30_05::SwalVaultKeySource;
 
 /// Encrypted Share-3 representation for cloud backup to Cloudflare Worker KV.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -195,6 +196,21 @@ impl NodeStore {
     }
 }
 
+/// The mesh asks the vault for keys through this contract (wave 30).
+impl SwalVaultKeySource for NodeStore {
+    fn unlock_derived_keys(
+        &self,
+        pin: &str,
+        device_key: Option<&[u8; 32]>,
+    ) -> Result<Option<DerivedNodeKeys>, String> {
+        if !self.vault_exists() {
+            return Ok(None);
+        }
+        let (_opened, keys, _codes) = self.unlock(pin, device_key).map_err(|e| e.to_string())?;
+        Ok(Some(keys))
+    }
+}
+
 /// Decrypt an `EncryptedCloudShare` using `user_passphrase` into a `ShamirShare`.
 pub fn decrypt_cloud_share_3(
     encrypted: &EncryptedCloudShare,
@@ -367,5 +383,20 @@ mod tests {
         encrypted.share_index = 1;
         let dec_res = decrypt_cloud_share_3(&encrypted, passphrase);
         assert!(dec_res.is_err());
+    }
+
+    #[test]
+    fn swal_vault_key_source_reports_absent_and_unlocks_present_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = NodeStore::new(NodeStorePaths::from_data_dir(dir.path()));
+        assert!(store.unlock_derived_keys("112233", None).unwrap().is_none());
+
+        let bundle = NodeBootstrap::create(None, "112233", None).unwrap();
+        store.save_vault(&bundle.vault).unwrap();
+
+        let keys = store.unlock_derived_keys("112233", None).unwrap().unwrap();
+        assert_eq!(keys.node_id, bundle.keys.node_id);
+        assert_eq!(keys.ed25519_secret, bundle.keys.ed25519_secret);
+        assert!(store.unlock_derived_keys("999999", None).is_err());
     }
 }

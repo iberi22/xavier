@@ -5,22 +5,11 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use sha2::Sha256;
 
-use crate::mesh::node::NodeId;
+pub use crate::domain::cycle_breaks::w30_05::{DerivedNodeKeys, NodeId};
 
 /// Domain separation labels (LOGIN_IDENTITY_DESIGN §3.2).
 pub const DOMAIN_NODE_ED25519: &[u8] = b"swal-node-ed25519-v1";
 pub const DOMAIN_ML_DSA: &[u8] = b"swal-ml-dsa-65-seed-v1";
-
-/// Keys derived from BIP39 seed bytes (64-byte BIP39 seed).
-#[derive(Clone)]
-pub struct DerivedNodeKeys {
-    pub node_id: NodeId,
-    pub ed25519_public: [u8; 32],
-    /// Signing key bytes — sensitive.
-    pub ed25519_secret: [u8; 32],
-    /// 32-byte commitment / seed for ML-DSA-65 keygen in edge-mesh (not a full PQ keypair).
-    pub ml_dsa_commitment: [u8; 32],
-}
 
 impl std::fmt::Debug for DerivedNodeKeys {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
