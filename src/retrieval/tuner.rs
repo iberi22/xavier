@@ -15,6 +15,7 @@ use super::config::{
     DEFAULT_EPISODIC_WEIGHT, DEFAULT_RRF_K, DEFAULT_SEMANTIC_WEIGHT, DEFAULT_WORKING_WEIGHT,
 };
 use super::eval::{EvalDataset, RetrievalMetrics};
+use crate::domain::cycle_breaks::w30_04::SYSTEM_ALERTS;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -108,7 +109,7 @@ pub fn detect_recall_drift(baseline: &RetrievalMetrics, current: &RetrievalMetri
     // signal: the store is process-global, so it surfaces in /health and the
     // notification system when the server is running. In CLI-only contexts the
     // call is a harmless no-op on an unused store.
-    crate::server::alerts::SYSTEM_ALERTS.push_alert(level, &message, "retrieval");
+    SYSTEM_ALERTS.push_alert(level, &message, "retrieval");
     // Always log so drift is visible even without the alert store wired.
     if level == "ERROR" {
         tracing::error!(component = "retrieval", "{message}");
