@@ -2,6 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::domain::memory::TimeMetric;
 use crate::domain::pattern::{PatternCategory, PatternVerification};
 use crate::domain::security::ThreatLevel;
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,48 @@ pub struct TimeMetricDto {
     pub tokens_used: Option<u64>,
     pub task_category: Option<String>,
     pub metadata: serde_json::Value,
+}
+
+// The conversions live here, next to the DTO they produce, so the domain type
+// does not have to import the HTTP adapter to declare them.
+impl From<TimeMetric> for TimeMetricDto {
+    fn from(m: TimeMetric) -> Self {
+        Self {
+            metric_type: m.metric_type,
+            agent_id: m.agent_id,
+            task_id: m.task_id,
+            started_at: m.started_at,
+            completed_at: m.completed_at,
+            duration_ms: m.duration_ms,
+            status: m.status,
+            error_message: m.error_message,
+            provider: m.provider,
+            model: m.model,
+            tokens_used: m.tokens_used,
+            task_category: m.task_category,
+            metadata: m.metadata,
+        }
+    }
+}
+
+impl From<TimeMetricDto> for TimeMetric {
+    fn from(dto: TimeMetricDto) -> Self {
+        Self {
+            metric_type: dto.metric_type,
+            agent_id: dto.agent_id,
+            task_id: dto.task_id,
+            started_at: dto.started_at,
+            completed_at: dto.completed_at,
+            duration_ms: dto.duration_ms,
+            status: dto.status,
+            error_message: dto.error_message,
+            provider: dto.provider,
+            model: dto.model,
+            tokens_used: dto.tokens_used,
+            task_category: dto.task_category,
+            metadata: dto.metadata,
+        }
+    }
 }
 
 // ─── Pattern Protocol ─────────────────────────────────────────────────────────
