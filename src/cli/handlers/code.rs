@@ -300,6 +300,21 @@ pub async fn code_index_handler(
         .unwrap_or("src");
     info!("Code index request: path={}", base_path);
 
+    // #2580: the index target is a filesystem read just like a dump target,
+    // and `perform_dump` below writes to disk. Confine it the same way, so a
+    // caller cannot index `clientes/` into the shared code graph.
+    let (base_path, _resolved) = match resolve_contained_target(&state, Some(base_path)) {
+        Ok(target) => target,
+        Err(rejection) => {
+            return Json(serde_json::json!({
+                "status": "error",
+                "error": rejection.message,
+                "path": rejection.requested_path,
+            }));
+        }
+    };
+    let base_path = base_path.as_str();
+
     let sidecar = ensure_sidecar_for_workspace(&state.workspace_dir);
 
     let code_graph = state.code_graph.read().await;
@@ -3354,6 +3369,90 @@ mod tests {
         let outside = w2908_target(tmp.path(), "outside");
         let state = xav01_test_state(workspace).await;
         (tmp, inside, outside, state)
+    }
+
+    /// #2580: `/code/index` reads the caller's path and then writes a dump, so
+    /// it must confine the target exactly like `/code/dump` does. This covers
+    /// the handler half; the role gate on the route is covered by the router
+    /// wiring and by `dump_as_a_non_admin_role_is_forbidden`.
+    #[tokio::test]
+    async fn index_rejects_a_target_outside_the_workspace() {
+        let (_tmp, inside, outside, state) = issue_2580_state().await;
+
+        let (status, body) = xav01_status_body(code_index_handler(
+            State(state),
+            Some(axum::Json(serde_json::json!({
+                "path": outside.to_string_lossy(),
+            }))),
+        ))
+        .await;
+
+        assert_eq!(status, 200, "the handler reports its own error in JSON");
+        assert_eq!(
+            body["status"], "error",
+            "an outside target must be refused, got {body}"
+        );
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("outside workspace root"),
+            "the reason must name the containment rule, got {body}"
+        );
+        assert!(
+            !inside.exists() || inside.read_dir().is_ok(),
+            "the refusal must not depend on the inside path being absent"
+        );
+    }
+
+    #[tokio::test]
+    async fn index_rejects_parent_dir_traversal() {
+        let (_tmp, _inside, _outside, state) = issue_2580_state().await;
+
+        let (status, body) = xav01_status_body(code_index_handler(
+            State(state),
+            Some(axum::Json(serde_json::json!({"path": "../outside"}))),
+        ))
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(
+            body["status"], "error",
+            "traversal must be refused, got {body}"
+        );
+        assert!(
+            body["error"].as_str().unwrap_or_default().contains(".."),
+            "the reason must name the traversal rule, got {body}"
+        );
+    }
+
+    /// A symlink inside the workspace that points out of it. The target exists,
+    /// so `canonicalize` succeeds and the comparison must catch the escape.
+    #[tokio::test]
+    async fn index_rejects_a_symlink_escaping_the_workspace() {
+        let (_tmp, _inside, outside, state) = issue_2580_state().await;
+        let workspace = state.workspace_dir.clone();
+        std::fs::create_dir_all(&workspace).unwrap();
+        // Point at a file inside the sibling repo that is outside the workspace.
+        let target_file = outside.join("client-code.rs");
+        std::fs::write(&target_file, b"// NDA client code\n").unwrap();
+        let link = workspace.join("escape-link.rs");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&target_file, &link).unwrap();
+
+        let (status, body) = xav01_status_body(code_index_handler(
+            State(state),
+            Some(axum::Json(serde_json::json!({
+                "path": link.to_string_lossy(),
+            }))),
+        ))
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(
+            body["status"], "error",
+            "a symlink out of the workspace must be refused, got {body}"
+        );
     }
 
     #[tokio::test]
