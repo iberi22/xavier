@@ -22,6 +22,7 @@ use crate::agents::provider::types::{
     ModelProviderStatus, ProviderMode, ProviderTarget, LLM_TIMEOUT,
 };
 use crate::agents::system1::RetrievedDocument;
+use crate::domain::cycle_breaks::w30_06::SemanticCompactor;
 
 /// Client for interacting with various model providers.
 #[derive(Clone)]
@@ -314,6 +315,20 @@ impl ModelProviderClient {
             let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
             Ok(LlmResponse { text, quota: None })
+        }
+    }
+}
+
+#[async_trait]
+impl SemanticCompactor for ModelProviderClient {
+    /// Memory compaction talks to this client only through `SemanticCompactor`
+    /// (ADR-033 Wave 0), which keeps `crate::memory` free of any `crate::agents`
+    /// import. A provider error or a blank answer both surface as `None`, so the
+    /// caller keeps its truncation fallback.
+    async fn compact_document(&self, prompt: &str) -> Option<String> {
+        match self.generate_response(prompt, &[]).await {
+            Ok(res) if !res.text.trim().is_empty() => Some(res.text.trim().to_string()),
+            _ => None,
         }
     }
 }

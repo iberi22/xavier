@@ -9,7 +9,7 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::RwLock as AsyncRwLock;
 use tracing::info;
 
-use crate::agents::belief_evaluator::BeliefEvaluator;
+use crate::domain::cycle_breaks::w30_06::BeliefEvaluator;
 use crate::domain::memory::belief::{BeliefEdge, BeliefNode};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
