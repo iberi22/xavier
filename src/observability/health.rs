@@ -11,9 +11,11 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::domain::cycle_breaks::w30_04::{
+    MeshMaturityReport, OperationalMode, PeerInfo, PeerRegistry, SYSTEM_ALERTS,
+};
 use crate::embedding::Embedder;
 use crate::health::repair::{should_retry_peer, PeerRetryDecision};
-use crate::mesh::PeerRegistry;
 use crate::notifications::{IslandId, NOTIFICATIONS};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -110,7 +112,7 @@ pub struct MeshHealth {
     pub peers: Vec<PeerHealth>,
     pub status: HealthLevel,
     #[serde(default)]
-    pub maturity: crate::mesh::MeshMaturityReport,
+    pub maturity: MeshMaturityReport,
 }
 
 /// HOST resource thresholds, shared by `check_system` and
@@ -147,7 +149,7 @@ pub struct HealthStatus {
     /// disk) and `subsystem:<name>` for Xavier components.
     #[serde(default)]
     pub degraded_reasons: Vec<String>,
-    pub mode: crate::server::alerts::OperationalMode,
+    pub mode: OperationalMode,
     pub system: SystemHealth,
     pub database: DbHealth,
     pub embedding: EmbeddingHealth,
@@ -226,7 +228,7 @@ impl Default for HealthStatus {
             status: HealthLevel::Healthy,
             version: env!("CARGO_PKG_VERSION").to_string(),
             degraded_reasons: Vec::new(),
-            mode: crate::server::alerts::OperationalMode::LocalHealthy,
+            mode: OperationalMode::LocalHealthy,
             system: SystemHealth {
                 cpu_usage: 0.0,
                 ram_usage_percent: 0.0,
@@ -269,7 +271,7 @@ impl Default for HealthStatus {
                 active_peers: 0,
                 peers: vec![],
                 status: HealthLevel::Healthy,
-                maturity: crate::mesh::MeshMaturityReport::default(),
+                maturity: MeshMaturityReport::default(),
             },
             tgd_consolidation: None,
         }
@@ -393,7 +395,7 @@ impl HealthMonitor {
             status = HealthLevel::Degraded;
         }
 
-        let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();
+        let mode = SYSTEM_ALERTS.get_mode();
 
         let mut new_status = HealthStatus {
             timestamp: Utc::now(),
@@ -804,7 +806,7 @@ impl HealthMonitor {
                     let mut fail_count = self.llm_failure_count.write().await;
                     *fail_count += 1;
                     if *fail_count >= 3 {
-                        crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                        SYSTEM_ALERTS.push_alert(
                             "ERROR",
                             "Ollama local no responde — modo degradado",
                             "llm",
@@ -860,7 +862,7 @@ impl HealthMonitor {
         let loaded_registry = PeerRegistry::load().ok();
         let reg_opt = self.peer_registry.read().await;
 
-        let peers: Vec<&crate::mesh::PeerInfo> = if let Some(ref registry) = loaded_registry {
+        let peers: Vec<&PeerInfo> = if let Some(ref registry) = loaded_registry {
             registry.list_peers()
         } else if let Some(ref registry) = *reg_opt {
             registry.list_peers()
@@ -892,7 +894,7 @@ impl HealthMonitor {
             active_peers,
             peers: peer_healths,
             status,
-            maturity: crate::mesh::MeshMaturityReport::default(),
+            maturity: MeshMaturityReport::default(),
         }
     }
 
@@ -916,7 +918,7 @@ pub static HEALTH: std::sync::LazyLock<Arc<HealthMonitor>> =
 /// `last_seen_at` puede ser `None` (peer emparejado pero aun sin handshake verificado): en ese
 /// caso se usa `added_at` como referencia. Nunca se usa `0` como sustituto, que producia un lag
 /// absurdo (~1.79e9 s) y marcaba el mesh como `degraded` de forma permanente.
-fn peer_lag_secs(peer: &crate::mesh::PeerInfo, now: i64) -> u64 {
+fn peer_lag_secs(peer: &PeerInfo, now: i64) -> u64 {
     let reference = peer.last_seen_at.unwrap_or(peer.added_at);
     if reference > 0 {
         (now - reference).max(0) as u64
