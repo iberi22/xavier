@@ -29,12 +29,7 @@ use std::fmt;
 // NodeId — The human-shareable identifier for a Xavier node
 // ---------------------------------------------------------------------------
 
-/// A unique identifier for a Xavier Mesh node.
-///
-/// Derived from the Ed25519 public key — stable across reboots, network
-/// changes, and IP address changes.
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct NodeId(pub String);
+pub use crate::domain::cycle_breaks::w30_04::NodeId;
 
 impl NodeId {
     /// Parse a NodeID from a string. Validates the `xv1-` prefix and length.

@@ -4,22 +4,13 @@
 //! using an in-memory sliding window.
 
 use crate::mesh::NodeId;
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const WINDOW_SIZE: usize = 100;
 
-/// Metrics for a single peer node.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PeerMetrics {
-    pub uptime_secs: u64,
-    pub message_count: u64,
-    pub latencies_ms: VecDeque<u64>,
-    pub agreement_outcomes: VecDeque<bool>,
-    pub last_seen: u64,
-}
+pub use crate::domain::cycle_breaks::w30_04::PeerMetrics;
 
 impl PeerMetrics {
     /// New.
@@ -76,12 +67,7 @@ impl PeerMetrics {
     }
 }
 
-/// Collector for mesh-wide peer telemetry.
-#[derive(Debug)]
-pub struct MeshTelemetryCollector {
-    peer_metrics: Arc<Mutex<HashMap<NodeId, PeerMetrics>>>,
-    started_at: Instant,
-}
+pub use crate::domain::cycle_breaks::w30_04::MeshTelemetryCollector;
 
 impl MeshTelemetryCollector {
     /// New.

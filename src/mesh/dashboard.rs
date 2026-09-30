@@ -1,6 +1,6 @@
-use crate::health::mesh_telemetry::MeshTelemetryCollector;
+use crate::domain::cycle_breaks::w30_04::MeshTelemetryCollector;
 use crate::mesh::maturity::MeshMaturityReport;
-use crate::mesh::peer::{PeerInfo, PeerRegistry};
+use crate::mesh::peer::PeerRegistry;
 use serde::{Deserialize, Serialize};
 
 /// Structured representation of a peer's health for the dashboard.
@@ -92,6 +92,7 @@ pub fn aggregate_dashboard(
 mod tests {
     use super::*;
     use crate::mesh::node::NodeId;
+    use crate::mesh::peer::PeerInfo;
     use std::collections::HashMap;
 
     #[test]

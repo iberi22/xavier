@@ -5,38 +5,10 @@
 
 use crate::mesh::node::NodeId;
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Information about a trusted peer node.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PeerInfo {
-    pub node_id: NodeId,
-    pub alias: Option<String>,
-    pub endpoint_url: String,
-    pub public_key_hex: String,
-    pub added_at: i64,
-    pub last_seen_at: Option<i64>,
-    pub sync_enabled: bool,
-    #[serde(default)]
-    pub is_cloud: bool,
-    /// Iroh endpoint address for QUIC-based P2P sync (Phase 2 mesh).
-    ///
-    /// Holds the remote endpoint's `EndpointId` string (an Ed25519 `PublicKey`
-    /// encoding) used by [`crate::mesh::iroh_transport::IrohTransport`] to dial
-    /// the peer. `None`/absent for peers that only speak HTTP mesh — existing
-    /// `mesh_peers.json` files deserialize unchanged thanks to
-    /// `#[serde(default)]`.
-    #[serde(default)]
-    pub iroh_addr: Option<String>,
-    #[serde(default)]
-    pub shared_workspace_ids: Vec<String>,
-    #[serde(default)]
-    pub shared_workspace_tokens: HashMap<String, String>,
-    #[serde(default)]
-    pub capabilities: Vec<String>,
-}
+pub use crate::domain::cycle_breaks::w30_04::PeerInfo;
 
 impl Default for PeerInfo {
     fn default() -> Self {
@@ -75,12 +47,7 @@ impl PeerInfo {
     }
 }
 
-/// A persistent, file-backed registry of trusted peers.
-#[derive(Clone, Debug)]
-pub struct PeerRegistry {
-    peers: HashMap<NodeId, PeerInfo>,
-    storage_path: PathBuf,
-}
+pub use crate::domain::cycle_breaks::w30_04::PeerRegistry;
 
 impl PeerRegistry {
     /// Reload the registry from its storage path.
