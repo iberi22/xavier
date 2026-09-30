@@ -15,7 +15,7 @@ This document details administration, deployment, configuration and troubleshoot
 
 ## 1. Bring Up and Verify Ollama (Local Models)
 
-Xavier's default local engine depends on **Ollama** running in the background. When Ollama is down, Xavier's `/health` endpoint will report the LLM as `unhealthy`.
+Xavier's default local engine depends on **Ollama** running in the background. When Ollama is down, Xavier's `/health` endpoint reports `llm.reachable: false` with a non-healthy `llm.status`, and lists `subsystem:llm` in `degraded_reasons` (plus `subsystem:embedding` when embeddings are served by Ollama). `xavier health` prints those reasons and exits non-zero only when the node is `unhealthy`.
 
 ### 1.1 Start and Verify the Ollama Process
 
@@ -170,7 +170,7 @@ pkill -f openclaw-gateway
 
 ## 4. Service Recovery Runbook (systemd)
 
-If Xavier stops responding on the central API HTTP port (default `3000` or `XAVIER_MCP_PORT`), follow this structured runbook to return the system to a healthy state.
+If Xavier stops responding on the central API HTTP port (default `8006`, `XAVIER_PORT`; the standalone MCP listener uses `XAVIER_MCP_PORT`), follow this structured runbook to return the system to a healthy state.
 
 ### Step 1: Check systemd Service Status
 ```bash
@@ -185,8 +185,8 @@ journalctl -u xavier -n 100 --no-pager
 If `systemctl` reports the service as active but there is no API response, the port is likely blocked by an orphan process or hung thread.
 
 ```bash
-# 1. Check what process is listening on port 3000
-lsof -i :3000
+# 1. Check what process is listening on port 8006
+lsof -i :8006
 
 # 2. Find Xavier Process ID (PID)
 pgrep -af xavier
@@ -202,7 +202,7 @@ sudo systemctl stop xavier 2>/dev/null || true
 sudo kill -9 $(pgrep -f xavier) 2>/dev/null || true
 
 # Free TCP socket if still in TIME_WAIT or busy
-sudo kill -9 $(lsof -t -i :3000) 2>/dev/null || true
+sudo kill -9 $(lsof -t -i :8006) 2>/dev/null || true
 ```
 
 ### Step 4: Bring Up and Verify
@@ -244,7 +244,7 @@ xavier doctor --verbose
 
 ### ▢ 2. Verify Code Index Status (CodeGraph)
 ```bash
-xavier code status
+xavier code stats
 ```
 *Validation:* Confirm that the number of indexed files matches the main working branch and that the CodeGraph database file (`data/code_graph.db`) is not corrupt or empty (`total_symbols > 0`).
 
@@ -266,13 +266,13 @@ xavier memory consolidate
 ### ▢ 4. Verify Port and HTTP Endpoint Availability
 ```bash
 # Validate general health endpoint
-curl -s http://localhost:3000/health | jq .
+curl -s http://localhost:8006/health | jq .
 
 # Validate readiness endpoint
-curl -s http://localhost:3000/readiness | jq .
+curl -s http://localhost:8006/readiness | jq .
 
 # Validate Mesh dashboard (peer-to-peer communication and latencies)
-curl -s -H "Authorization: Bearer <YOUR_TOKEN>" http://localhost:3000/v1/mesh/health | jq .
+curl -s -H "Authorization: Bearer <YOUR_TOKEN>" http://localhost:8006/v1/mesh/health | jq .
 ```
 
 ### ▢ 5. Inspect RAM Usage of Ollama and Xavier

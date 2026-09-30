@@ -6,18 +6,18 @@
     "version": "1.0.0",
     "created": "2026-03-05",
     "last_verified": "2026-09-18",
-    "total_features": 73,
-    "features_complete": 57,
-    "features_beta": 3,
+    "total_features": 92,
+    "features_complete": 72,
+    "features_beta": 14,
     "features_draft": 0,
-    "features_planned": 0,
+    "features_planned": 6,
     "features_designed": 0,
-    "features_stable": 70,
-    "overall_progress_pct": 98.3,
+    "features_stable": 72,
+    "overall_progress_pct": 92.0,
     "complete": 6,
-    "percent": 98.3,
-    "updated": "2026-09-13",
-    "verification_note": "WAVE-8 2026-09-13 verified: all 4 features (challenge-curation, human-introspection, privacy-pipeline, enterprise-compute-zdr) green and integrated, 57 stable 100%.",
+    "percent": 92.0,
+    "updated": "2026-09-30",
+    "verification_note": "WAVE-29 (2026-09-27) added 10 observability-honesty features as beta, merged on main d914b41c with green CI; promotion to stable only via a green verify-pipeline run. Counters recomputed from the merged set after rebase onto 0.2.17.",
     "features_implemented": 0
   },
   "features": {
@@ -2945,6 +2945,266 @@
         "REQ-083",
         "REQ-084"
       ]
+    },
+    "feat-cli-health-stats-parity": {
+      "id": "feat-cli-health-stats-parity",
+      "name": "xavier health/stats match the server and MCP",
+      "category": "cli",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "GET /health (observability::HealthStatus) carries version + degraded_reasons; xavier health renders them and exits non-zero when unhealthy; stats read one workspace like MCP xavier_stats, unmeasured counters are unknown.",
+      "passes": true,
+      "verified_by": "CI green on PR #2574 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2560,
+      "pr": 2574,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.07 (observability honesty). Spec: .gitcore/waves/wave-29/issue-07.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "src/observability/health.rs, src/cli/handlers/system.rs, src/cli/handlers/memory.rs, src/cli/commands/http.rs",
+      "tests": [
+        "health_report_shows_version_and_reasons_from_real_payload",
+        "healthy_status_reports_no_degraded_reasons",
+        "health_report_falls_back_to_cli_version_when_server_omits_it",
+        "stats_payload_matches_mcp_field_contract",
+        "stats_reports_semantic_layer_state"
+      ],
+      "req_ids": [
+        "REQ-072"
+      ],
+      "user_stories": []
+    },
+    "feat-codegraph-dump-path": {
+      "id": "feat-codegraph-dump-path",
+      "name": "code dump honours its path argument and cwd; hubs skip trivial symbols",
+      "category": "code-graph",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "Target precedence explicit arg -> caller cwd -> daemon default; responses carry requested_path/resolved_path; hubs exclude trivial constructors and dedupe by name; index freshness reported. Hardening of arbitrary paths tracked in #2580.",
+      "passes": true,
+      "verified_by": "CI green on PR #2576 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2561,
+      "pr": 2576,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.08 (observability honesty). Spec: .gitcore/waves/wave-29/issue-08.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "src/cli/handlers/code.rs, src/cli/code_dump.rs, src/cli/commands/code.rs, code-graph/src/query/mod.rs",
+      "tests": [
+        "dump_respects_explicit_path_argument",
+        "dump_respects_cwd_when_no_argument",
+        "dump_present_matches_actual_file",
+        "hubs_exclude_generic_constructors",
+        "test_hubs_exclude_trivial_symbols_and_dedupe_by_name"
+      ],
+      "req_ids": [
+        "REQ-073"
+      ],
+      "user_stories": []
+    },
+    "feat-doctor-bounded": {
+      "id": "feat-doctor-bounded",
+      "name": "xavier doctor is bounded and always prints its report",
+      "category": "cli",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "Every doctor probe runs under a timeout; the report is always printed (1.45 s measured vs indefinite hang); exit code reflects overall status.",
+      "passes": true,
+      "verified_by": "CI green on PR #2571 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2558,
+      "pr": 2571,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.05 (observability honesty). Spec: .gitcore/waves/wave-29/issue-05.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "src/cli/handlers/doctor.rs, src/cli/handlers/system_scan.rs",
+      "tests": [
+        "doctor_completes_when_a_probe_hangs",
+        "doctor_prints_output_even_with_timed_out_checks",
+        "doctor_exit_code_reflects_overall_status"
+      ],
+      "req_ids": [
+        "REQ-070"
+      ],
+      "user_stories": []
+    },
+    "feat-e2e-observability-contract": {
+      "id": "feat-e2e-observability-contract",
+      "name": "E2E gate: MCP health agrees with GET /health",
+      "category": "testing",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "Hermetic xavier http (state/data/cwd in a tempdir) asserting self-consistent embedding health, healthy <=> no degraded_reasons, measured coverage, version and stats surface; CI job 'Rust Integration (Observability Contract)'.",
+      "passes": true,
+      "verified_by": "CI green on PR #2578 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2563,
+      "pr": 2578,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.10 (observability honesty). Spec: .gitcore/waves/wave-29/issue-10.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "tests/observability_contract.rs, .github/workflows/ci.yml",
+      "tests": [
+        "test_observability_embedding_consistency",
+        "test_observability_degraded_status_logic",
+        "test_observability_embedding_coverage_anomaly",
+        "test_observability_version_match",
+        "test_observability_mcp_stats_surface"
+      ],
+      "req_ids": [
+        "REQ-075"
+      ],
+      "user_stories": []
+    },
+    "feat-guardian-truth": {
+      "id": "feat-guardian-truth",
+      "name": "Guardian env_status/log_scan report the real state",
+      "category": "self-management",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "env_status queries systemctl --user; log_scan reads newest-first, resets stale cursors with a reason, never skips lines dropped on overflow, groups identical lines with count/first_seen/last_seen.",
+      "passes": true,
+      "verified_by": "CI green on PR #2575 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2556,
+      "pr": 2575,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.03 (observability honesty). Spec: .gitcore/waves/wave-29/issue-03.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "src/self_manage/mod.rs",
+      "tests": [
+        "log_scan_prefers_newest_file_when_cursor_is_stale",
+        "log_scan_keeps_cursor_after_single_rotation",
+        "log_scan_reports_time_range_of_returned_entries",
+        "log_scan_groups_repeated_identical_lines",
+        "check_service_status_distinguishes_missing_unit_from_inactive"
+      ],
+      "req_ids": [
+        "REQ-068"
+      ],
+      "user_stories": []
+    },
+    "feat-health-truth": {
+      "id": "feat-health-truth",
+      "name": "Health report does not fabricate a healthy state",
+      "category": "observability",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "Unmeasured embedding coverage reports percent 0 / status unknown (was 100% healthy on zero records); HealthResponse.degraded_reasons tags host:<check> vs subsystem:<check>, empty iff healthy.",
+      "passes": true,
+      "verified_by": "CI green on PR #2568 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2554,
+      "pr": 2568,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.01 (observability honesty). Spec: .gitcore/waves/wave-29/issue-01.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "src/health/mod.rs, src/adapters/inbound/http/routes.rs",
+      "tests": [
+        "embedding_coverage_default_is_not_healthy_when_empty",
+        "embedding_coverage_unmeasured_store_is_unknown",
+        "degraded_reasons_distinguishes_host_pressure_from_subsystem_failure",
+        "degraded_reasons_empty_when_status_healthy"
+      ],
+      "req_ids": [
+        "REQ-066"
+      ],
+      "user_stories": []
+    },
+    "feat-improve-bounded": {
+      "id": "feat-improve-bounded",
+      "name": "xavier improve is bounded per stage and persists partial progress",
+      "category": "auto-improvement",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "Per-stage and overall deadlines (XAVIER_IMPROVE_STAGE_TIMEOUT_SECS / XAVIER_IMPROVE_TOTAL_TIMEOUT_SECS, capped 24h); overrun -> Truncated with partial history; Failed only when partial progress cannot be persisted. Exit codes 0 completed / 124 truncated / 1 failed.",
+      "passes": true,
+      "verified_by": "CI green on PR #2579 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2559,
+      "pr": 2579,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.06 (observability honesty). Spec: .gitcore/waves/wave-29/issue-06.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "src/auto_improvement/cycle.rs, src/auto_improvement/mod.rs, src/cli/commands/improve.rs",
+      "tests": [
+        "improve_cycle_respects_overall_deadline",
+        "improve_persists_progress_when_stage_times_out",
+        "improve_exit_code_distinguishes_truncated_from_failed",
+        "test_last_accepted_config_skips_truncated_entries",
+        "test_partial_progress_roundtrips_through_json",
+        "test_absurd_budget_is_capped_instead_of_overflowing"
+      ],
+      "req_ids": [
+        "REQ-071"
+      ],
+      "user_stories": []
+    },
+    "feat-mcp-health-honesty": {
+      "id": "feat-mcp-health-honesty",
+      "name": "MCP sys_health/health_check report measured values only",
+      "category": "observability",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "Unmeasured benchmarks use a -1.0 sentinel; SQLite integrity is tri-state (db_integrity null when not measured, no fabricated Critical gap); memoryStoreOk = store answers + no measured integrity failure; codegraph_gods skips generic constructors.",
+      "passes": true,
+      "verified_by": "CI green on PR #2577 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2555,
+      "pr": 2577,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.02 (observability honesty). Spec: .gitcore/waves/wave-29/issue-02.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "src/server/mcp/tools_core.rs, src/health/mod.rs",
+      "tests": [
+        "health_check_embedding_ok_true_when_fallback_embedder_works",
+        "health_check_memory_store_ok_reflects_store_and_integrity",
+        "sys_health_does_not_report_hardcoded_zero_benchmarks",
+        "codegraph_gods_excludes_generic_constructors"
+      ],
+      "req_ids": [
+        "REQ-067"
+      ],
+      "user_stories": []
+    },
+    "feat-memory-write-integrity": {
+      "id": "feat-memory-write-integrity",
+      "name": "Memory writes reject corrupt content and are idempotent per path",
+      "category": "memory",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "Lowercase Latin glued to CJK in Latin-dominant text is rejected; acronym+CJK is flagged and stored verbatim; a write is an idempotent retry only if path, content and non-volatile metadata match, checked under the same write guard.",
+      "passes": true,
+      "verified_by": "CI green on PR #2573 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2562,
+      "pr": 2573,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.09 (observability honesty). Spec: .gitcore/waves/wave-29/issue-09.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "src/memory/sanitizer.rs, src/memory/qmd/writer.rs",
+      "tests": [
+        "create_rejects_mixed_script_corruption",
+        "create_accepts_multilingual_valid_content",
+        "suspect_content_is_stored_and_flagged",
+        "create_is_idempotent_per_path",
+        "same_path_different_content_still_appends",
+        "same_content_different_metadata_still_appends",
+        "returned_id_resolves_on_lookup",
+        "legacy_records_without_integrity_marker_still_load"
+      ],
+      "req_ids": [
+        "REQ-074"
+      ],
+      "user_stories": []
+    },
+    "feat-skill-dispatch-confidence": {
+      "id": "feat-skill-dispatch-confidence",
+      "name": "Skill dispatch confidence floor and ingest validation",
+      "category": "context",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "MIN_DISPATCH_CONFIDENCE=0.40 floor (below -> _none); registry rejects non-skill entries with a counted reject; system_instructions wrapped in an UNTRUSTED boundary with truncation markers.",
+      "passes": true,
+      "verified_by": "CI green on PR #2567 and on main d914b41c (Xavier CI/CD, all jobs) 2026-09-27; pending verify-pipeline promotion",
+      "github_issue": 2557,
+      "pr": 2567,
+      "last_tested": "2026-09-27",
+      "notes": "WAVE-29.04 (observability honesty). Spec: .gitcore/waves/wave-29/issue-04.md. No status hand-promotion: green verify-pipeline run promotes.",
+      "implemented_in": "src/context/skill_dispatcher.rs, src/context/skill_registry.rs",
+      "tests": [
+        "dispatch_returns_no_match_below_confidence_threshold",
+        "dispatch_never_reports_full_confidence_for_weak_match",
+        "registry_rejects_non_skill_entries",
+        "registry_rejects_empty_description",
+        "test_confidence_calibration_range"
+      ],
+      "req_ids": [
+        "REQ-069"
+      ],
+      "user_stories": []
     }
   },
   "verification_commands": {

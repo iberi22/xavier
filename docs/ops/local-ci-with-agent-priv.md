@@ -32,7 +32,7 @@ bash ~/.hermes/skills/devops/agent-privilege-notify/scripts/agent-priv.sh reques
   --timeout 180
 
 # 3. Run CI against this repo
-bash ~/.hermes/skills/swal-ci-container/scripts/swal-ci.sh run ~/proyectosSWAL/xavier
+bash ~/.hermes/skills/swal-ci-container/scripts/swal-ci.sh run ~/proyectosSWAL/apps/xavier
 ```
 
 Host-native fallback (no container) can still run:
