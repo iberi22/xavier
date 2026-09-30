@@ -33,51 +33,9 @@ const FALLBACK_SALT_V2: &[u8] = b"xavier-fallback-salt-v2";
 /// Salt of the legacy derivation (host name only), kept byte-exact for reads.
 const FALLBACK_SALT_V1: &[u8] = b"xavier-fallback-salt-v1";
 
-/// Create `dir` (recursively) with `0700` from the first syscall so the umask
-/// never widens the window; pre-existing directories are tightened after.
-pub(crate) fn ensure_private_dir(dir: &Path) -> std::io::Result<()> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(dir)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
-    }
-    Ok(())
-}
+pub(crate) use crate::domain::cycle_breaks::w30_15::{ensure_private_dir, write_private_file};
 
-/// Write the encrypted master key creating the file with `0600` atomically
-/// (no create-then-chmod window), then re-assert `0600` for pre-existing files.
-pub(crate) fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let mut opts = fs::OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
-    }
-    let mut file = opts.open(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    drop(file);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-    }
-    Ok(())
-}
-
-/// Master Key Manager handles the core encryption key for the system.
-pub struct MasterKeyManager {
-    master_key: [u8; MASTER_KEY_LEN],
-}
+pub use crate::domain::cycle_breaks::w30_15::MasterKeyManager;
 
 impl MasterKeyManager {
     /// Load or initialize the master key
