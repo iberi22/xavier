@@ -137,6 +137,6 @@ mod tests {
             .evaluate_confidence("unregistered-source", "")
             .await;
 
-        assert!(confidence >= 0.5 && confidence < 0.6);
+        assert!((0.5..0.6).contains(&confidence));
     }
 }
