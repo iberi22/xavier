@@ -12,15 +12,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tokio::{fs, sync::RwLock};
 
 use crate::checkpoint::Checkpoint;
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::hierarchy::{MemoryHierarchyNode, MemoryTree};
 use crate::memory::qmd_memory::MemoryDocument;
-use crate::memory::schema::{resolve_metadata, MemoryLevel, MemoryQueryFilters, RelationKind};
-use crate::utils::crypto::hex_encode;
+use crate::memory::schema::{resolve_metadata, MemoryLevel, MemoryQueryFilters};
 
 // ---------------------------------------------------------------------------
 // Backend enum
@@ -74,57 +72,7 @@ impl MemoryBackend {
 // Core data types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryRevision {
-    pub revision: u64,
-    pub recorded_at: DateTime<Utc>,
-    pub path: String,
-    pub content: String,
-    pub metadata: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryRecord {
-    pub id: String,
-    pub workspace_id: String,
-    pub path: String,
-    pub content: String,
-    pub metadata: serde_json::Value,
-    pub embedding: Vec<f32>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub revision: u64,
-    pub primary: bool,
-    pub parent_id: Option<String>,
-    #[serde(default)]
-    pub cluster_id: Option<String>,
-    #[serde(default)]
-    pub level: MemoryLevel,
-    #[serde(default)]
-    pub relation: Option<RelationKind>,
-    #[serde(default)]
-    pub clearance: crate::security::clearance::ClearanceLevel,
-    #[serde(default)]
-    pub revisions: Vec<MemoryRevision>,
-    #[serde(default)]
-    pub encrypted_dek: Option<Vec<u8>>,
-    #[serde(default)]
-    pub content_iv: Option<Vec<u8>>,
-    #[serde(default)]
-    pub metadata_iv: Option<Vec<u8>>,
-    #[serde(default)]
-    pub score: f32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deleted_at: Option<DateTime<Utc>>,
-    #[serde(default = "default_embedding_status")]
-    pub embedding_status: String,
-    #[serde(default)]
-    pub embedding_attempts: u32,
-}
-
-fn default_embedding_status() -> String {
-    "pending".to_string()
-}
+pub use crate::domain::cycle_breaks::w30_12::{stable_key, MemoryRecord, MemoryRevision};
 
 impl Default for MemoryRecord {
     fn default() -> Self {
@@ -485,7 +433,7 @@ impl MemoryRecord {
 // ---------------------------------------------------------------------------
 
 #[async_trait]
-pub trait MemoryStore: Send + Sync {
+pub trait MemoryStore: crate::domain::cycle_breaks::w30_12::MemoryConsumerStore {
     fn backend(&self) -> MemoryBackend;
     fn as_any(&self) -> &dyn StdAny;
     async fn health(&self) -> Result<String>;
@@ -1306,13 +1254,60 @@ pub(crate) fn filters_require_post_decrypt_match(filters: &MemoryQueryFilters) -
         || filters.clearances.is_some()
 }
 
-/// Stable key.
-pub fn stable_key(kind: &str, parts: &[&str]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(kind.as_bytes());
-    for part in parts {
-        digest.update([0u8]);
-        digest.update(part.as_bytes());
+#[async_trait]
+impl<T: MemoryStore> crate::domain::cycle_breaks::w30_12::MemoryConsumerStore for T {
+    fn into_consumer_store(
+        self: Arc<Self>,
+    ) -> Arc<dyn crate::domain::cycle_breaks::w30_12::MemoryConsumerStore>
+    where
+        Self: 'static,
+    {
+        self
     }
-    hex_encode(&digest.finalize())
+
+    async fn put_record(&self, record: MemoryRecord) -> Result<()> {
+        self.put(record).await
+    }
+
+    async fn update_record(&self, record: MemoryRecord) -> Result<()> {
+        self.update(record).await
+    }
+
+    async fn list_records(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
+        self.list(workspace_id).await
+    }
+
+    async fn save_checkpoint_record(
+        &self,
+        workspace_id: &str,
+        checkpoint: Checkpoint,
+    ) -> Result<()> {
+        self.save_checkpoint(workspace_id, checkpoint).await
+    }
+
+    async fn load_checkpoint_record(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        name: &str,
+    ) -> Result<Option<Checkpoint>> {
+        self.load_checkpoint(workspace_id, task_id, name).await
+    }
+
+    async fn list_checkpoint_records(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+    ) -> Result<Vec<Checkpoint>> {
+        self.list_checkpoints(workspace_id, task_id).await
+    }
+
+    async fn delete_checkpoint_record(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        name: &str,
+    ) -> Result<()> {
+        self.delete_checkpoint(workspace_id, task_id, name).await
+    }
 }

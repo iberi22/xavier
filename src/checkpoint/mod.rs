@@ -9,35 +9,18 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::memory::store::MemoryStore;
+use crate::domain::cycle_breaks::w30_12::MemoryConsumerStore;
 
 pub use session::{SessionCheckpoint, SessionCheckpointInput, MAX_SESSION_CHECKPOINT_BYTES};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Checkpoint {
-    pub task_id: String,
-    pub name: String,
-    pub data: serde_json::Value,
-}
-
-impl Checkpoint {
-    /// New.
-    pub fn new(task_id: String, name: String, data: serde_json::Value) -> Self {
-        Self {
-            task_id,
-            name,
-            data,
-        }
-    }
-}
+pub use crate::domain::cycle_breaks::w30_12::Checkpoint;
 
 pub struct CheckpointManager {
     checkpoints: RwLock<HashMap<String, Checkpoint>>,
     workspace_id: Option<String>,
-    store: Option<Arc<dyn MemoryStore>>,
+    store: Option<Arc<dyn MemoryConsumerStore>>,
 }
 
 impl Default for CheckpointManager {
@@ -57,11 +40,14 @@ impl CheckpointManager {
     }
 
     /// With store.
-    pub fn with_store(workspace_id: impl Into<String>, store: Arc<dyn MemoryStore>) -> Self {
+    pub fn with_store<S: MemoryConsumerStore + ?Sized + 'static>(
+        workspace_id: impl Into<String>,
+        store: Arc<S>,
+    ) -> Self {
         Self {
             checkpoints: RwLock::new(HashMap::new()),
             workspace_id: Some(workspace_id.into()),
-            store: Some(store),
+            store: Some(store.into_consumer_store()),
         }
     }
 
@@ -76,7 +62,9 @@ impl CheckpointManager {
             checkpoint.clone(),
         );
         if let (Some(workspace_id), Some(store)) = (&self.workspace_id, &self.store) {
-            store.save_checkpoint(workspace_id, checkpoint).await?;
+            store
+                .save_checkpoint_record(workspace_id, checkpoint)
+                .await?;
         }
         Ok(())
     }
@@ -94,7 +82,9 @@ impl CheckpointManager {
         }
 
         if let (Some(workspace_id), Some(store)) = (&self.workspace_id, &self.store) {
-            let checkpoint = store.load_checkpoint(workspace_id, &task_id, &name).await?;
+            let checkpoint = store
+                .load_checkpoint_record(workspace_id, &task_id, &name)
+                .await?;
             if let Some(checkpoint) = checkpoint.clone() {
                 self.checkpoints
                     .write()
@@ -110,7 +100,9 @@ impl CheckpointManager {
     /// List.
     pub async fn list(&self, task_id: String) -> Result<Vec<Checkpoint>> {
         if let (Some(workspace_id), Some(store)) = (&self.workspace_id, &self.store) {
-            let checkpoints = store.list_checkpoints(workspace_id, &task_id).await?;
+            let checkpoints = store
+                .list_checkpoint_records(workspace_id, &task_id)
+                .await?;
             let mut cache = self.checkpoints.write().await;
             for checkpoint in &checkpoints {
                 cache.insert(
@@ -139,7 +131,7 @@ impl CheckpointManager {
             .remove(&Self::key(&task_id, &name));
         if let (Some(workspace_id), Some(store)) = (&self.workspace_id, &self.store) {
             store
-                .delete_checkpoint(workspace_id, &task_id, &name)
+                .delete_checkpoint_record(workspace_id, &task_id, &name)
                 .await?;
         }
         Ok(())

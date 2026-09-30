@@ -9,7 +9,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use super::filters;
-use crate::memory::store::{stable_key, MemoryRecord, MemoryStore};
+use crate::domain::cycle_breaks::w30_12::{stable_key, MemoryConsumerStore, MemoryRecord};
 use crate::observability::token_accounting::TRACKER;
 use crate::utils::crypto::hex_encode;
 
@@ -63,7 +63,7 @@ pub fn condense_output(stdout: &str, stderr: &str) -> String {
 
 /// Indexes a failed command trace into Xavier memory.
 pub async fn index_command_failure(
-    store: &dyn MemoryStore,
+    store: &dyn MemoryConsumerStore,
     workspace_id: &str,
     cmd_line: &str,
     exit_code: i32,
@@ -96,7 +96,7 @@ pub async fn index_command_failure(
         ..Default::default()
     };
 
-    store.put(record.clone()).await?;
+    store.put_record(record.clone()).await?;
     Ok(record)
 }
 
@@ -105,7 +105,7 @@ pub async fn index_command_failure(
 pub async fn execute_proxy_command(
     cmd_line: &str,
     workspace_id: Option<&str>,
-    store: Option<&dyn MemoryStore>,
+    store: Option<&dyn MemoryConsumerStore>,
 ) -> Result<ProxyCommandResult> {
     #[cfg(target_os = "windows")]
     let output = tokio::process::Command::new("cmd")

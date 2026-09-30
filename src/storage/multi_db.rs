@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+use crate::domain::cycle_breaks::w30_12::{DefaultVecStoreBackend, VecStore, VecStoreBackend};
 use crate::settings::XavierSettings;
 use crate::workspace::{WorkspaceDb, WorkspaceDbKind};
 
@@ -22,7 +22,7 @@ pub struct MultiDbManager {
     /// so [`MultiDbManager::get_store`] hands out clones of the already
     /// initialised store instead of repeating that work on every call. Entries
     /// are invalidated by [`MultiDbManager::delete_database`].
-    stores: Arc<RwLock<HashMap<String, VecSqliteMemoryStore>>>,
+    stores: Arc<RwLock<HashMap<String, VecStore>>>,
 }
 
 impl std::fmt::Debug for MultiDbManager {
@@ -91,11 +91,7 @@ impl MultiDbManager {
         }
 
         // Initialize SQLite memory store to ensure schemas are loaded
-        let store_config = VecSqliteStoreConfig {
-            path: db_path.clone(),
-            embedding_dimensions: 0, // falls back to defaults or environment
-        };
-        let store = VecSqliteMemoryStore::new(store_config).await?;
+        let store = DefaultVecStoreBackend::open(db_path.clone()).await?;
 
         // Store workspace database metadata.
         {
@@ -140,7 +136,7 @@ impl MultiDbManager {
 
         if let Some(workspace_db) = removed {
             let path = Path::new(&workspace_db.db_path);
-            let project_id = crate::memory::sqlite_vec_store::project_id_for_path(path);
+            let project_id = DefaultVecStoreBackend::project_id_for_path(path);
             crate::codebase::connection_manager::ConnectionManager::global()
                 .disconnect(&project_id);
 
@@ -169,7 +165,7 @@ impl MultiDbManager {
     /// runs the migration set once, later calls return a cheap clone of that
     /// same initialised store. [`MultiDbManager::delete_database`] invalidates
     /// the entry.
-    pub async fn get_store(&self, db_id: &str) -> Result<VecSqliteMemoryStore> {
+    pub async fn get_store(&self, db_id: &str) -> Result<VecStore> {
         if let Some(cached) = self.stores.read().await.get(db_id).cloned() {
             return Ok(cached);
         }
@@ -179,11 +175,7 @@ impl MultiDbManager {
             .await
             .ok_or_else(|| anyhow!("Database not found: {}", db_id))?;
 
-        let store_config = VecSqliteStoreConfig {
-            path: PathBuf::from(&workspace_db.db_path),
-            embedding_dimensions: 0,
-        };
-        let store = VecSqliteMemoryStore::new(store_config).await?;
+        let store = DefaultVecStoreBackend::open(PathBuf::from(&workspace_db.db_path)).await?;
 
         // Another task may have opened the same database while we were awaiting;
         // keep whichever entry landed first so every caller shares one store.
