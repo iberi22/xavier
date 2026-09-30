@@ -538,6 +538,35 @@ fn build_query(prompt: &str, level: ContextLevel, hook: HookKind) -> String {
     }
 }
 
+impl crate::agents::runtime::AgentRuntime {
+    pub fn new(
+        memory: Arc<QmdMemory>,
+        belief_graph: Option<SharedBeliefGraph>,
+        config: crate::agents::runtime::RuntimeConfig,
+    ) -> anyhow::Result<Self> {
+        let orchestrator =
+            Orchestrator::new().with_memory(Arc::clone(&memory), belief_graph.clone());
+        Self::new_with(memory, belief_graph, config, Arc::new(orchestrator))
+    }
+
+    pub fn with_orchestrator(self, orchestrator: Orchestrator) -> Self {
+        self.with_orchestrator_port(Arc::new(orchestrator))
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::domain::cycle_breaks::w30_03::ContextOrchestratorPort for Orchestrator {
+    async fn session_start(&self, session_id: &str, prompt: &str) -> usize {
+        let plan = self.session_start(session_id, prompt, &[]).await;
+        self.execute(&plan, &[], session_id).await.len()
+    }
+
+    async fn precompact(&self, session_id: &str, prompt: &str) -> usize {
+        let plan = self.precompact(session_id, prompt, &[]).await;
+        self.execute(&plan, &[], session_id).await.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};

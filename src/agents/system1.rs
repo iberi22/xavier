@@ -46,15 +46,7 @@ impl RetrievalResult {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RetrievedDocument {
-    pub id: String,
-    pub path: String,
-    pub content: String,
-    pub relevance_score: f32,
-    pub token_count: usize,
-    pub metadata: serde_json::Value,
-}
+pub use crate::domain::cycle_breaks::w30_03::RetrievedDocument;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SearchType {

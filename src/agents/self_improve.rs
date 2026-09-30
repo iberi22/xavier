@@ -48,7 +48,7 @@ impl Default for SelfImproveConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            analyze_interval_seconds: 300, // 5 minutes
+            analyze_interval_seconds: 300,   // 5 minutes
             min_improvement_threshold: 0.01, // 1%
             max_improvements_per_cycle: 3,
         }
@@ -60,7 +60,7 @@ pub struct SelfImproveAgent {
     config: SelfImproveConfig,
     metrics: Arc<RwLock<AgentMetrics>>,
     improvements: Arc<RwLock<Vec<Improvement>>>,
-    tgd: Option<crate::tgd::TgdEngine>,
+    tgd: Option<Box<dyn crate::domain::cycle_breaks::w30_03::TgdRuntimePort>>,
 }
 
 impl SelfImproveAgent {
@@ -81,8 +81,11 @@ impl SelfImproveAgent {
     }
 
     /// With tgd.
-    pub fn with_tgd(mut self, tgd: crate::tgd::TgdEngine) -> Self {
-        self.tgd = Some(tgd);
+    pub fn with_tgd<T: crate::domain::cycle_breaks::w30_03::TgdRuntimePort + 'static>(
+        mut self,
+        tgd: T,
+    ) -> Self {
+        self.tgd = Some(Box::new(tgd));
         self
     }
 
@@ -100,7 +103,8 @@ impl SelfImproveAgent {
         // Update average latency
         let total = metrics.total_requests as f64;
         let current_avg = metrics.average_latency_ms as f64;
-        metrics.average_latency_ms = ((current_avg * (total - 1.0)) + latency_ms as f64 / total) as u64;
+        metrics.average_latency_ms =
+            ((current_avg * (total - 1.0)) + latency_ms as f64 / total) as u64;
 
         // Update success rate
         metrics.success_rate = metrics.successful_requests as f64 / total;
@@ -108,7 +112,7 @@ impl SelfImproveAgent {
 
     /// Analyze performance and generate improvements
     pub async fn analyze_performance(&self) -> Vec<Improvement> {
-        if let Some(ref tgd) = self.tgd {
+        if self.tgd.is_some() {
             tracing::info!("Triggering TGD analysis for self-improvement cycle...");
             // TGD analysis would normally happen on-the-fly during runtime failures,
             // but here we can integrate it as a background improvement task if history is available.

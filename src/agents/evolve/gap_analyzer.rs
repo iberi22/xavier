@@ -1,7 +1,7 @@
 //! Gap Analyzer - Identifies performance gaps from real usage data
 
 use crate::data_commons::telemetry_db::TelemetryDb;
-use crate::observability::service_log::{LogLevel, ServiceLogStore};
+use crate::domain::cycle_breaks::w30_03::GapLogPort;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -19,14 +19,13 @@ pub struct GapReport {
 }
 
 pub struct GapAnalyzer {
-    log_store: ServiceLogStore,
+    log_store: Box<dyn GapLogPort>,
     telemetry_db: Option<TelemetryDb>,
 }
 
 impl GapAnalyzer {
     /// New.
-    pub async fn new() -> Result<Self> {
-        let log_store = ServiceLogStore::new().await?;
+    pub fn new_with(log_store: Box<dyn GapLogPort>) -> Result<Self> {
         let telemetry_db_path = std::env::var("XAVIER_TELEMETRY_DB_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("telemetry.sqlite3"));
@@ -45,24 +44,23 @@ impl GapAnalyzer {
 
     /// Analyze gaps.
     pub async fn analyze_gaps(&self) -> Result<GapReport> {
-        let stats = self.log_store.get_stats().await?;
+        let (total_entries, errors_today) = self.log_store.entry_counts().await?;
 
         // Query recent errors to identify critical modules
         let mut critical_modules = Vec::new();
-        let patterns = self.log_store.detect_patterns(60, 3).await?;
-        for pattern in patterns {
-            if pattern.level == LogLevel::Error && !critical_modules.contains(&pattern.module) {
-                critical_modules.push(pattern.module);
+        let modules = self.log_store.error_modules(60, 3).await?;
+        for module in modules {
+            if !critical_modules.contains(&module) {
+                critical_modules.push(module);
             }
         }
 
         // Real latency analysis from logs
-        let recent_logs = self.log_store.search_logs("latency_ms", 1000).await?;
+        let recent_logs = self.log_store.latency_metadata(1000).await?;
         let latencies: Vec<u64> = recent_logs
             .iter()
             .filter_map(|l| {
-                l.metadata
-                    .as_ref()
+                l.as_ref()
                     .and_then(|m| m.get("latency_ms"))
                     .and_then(|v| v.as_u64())
             })
@@ -78,8 +76,8 @@ impl GapAnalyzer {
             (0, 0)
         };
 
-        let error_rate = if stats.total_entries > 0 {
-            stats.errors_today as f64 / stats.total_entries as f64
+        let error_rate = if total_entries > 0 {
+            errors_today as f64 / total_entries as f64
         } else {
             0.0
         };
@@ -89,14 +87,12 @@ impl GapAnalyzer {
             // Identify which endpoints are slow
             for log in recent_logs {
                 if let Some(latency) = log
-                    .metadata
                     .as_ref()
                     .and_then(|m| m.get("latency_ms"))
                     .and_then(|v| v.as_u64())
                 {
                     if latency > 1000 {
                         if let Some(path) = log
-                            .metadata
                             .as_ref()
                             .and_then(|m| m.get("path"))
                             .and_then(|v| v.as_str())

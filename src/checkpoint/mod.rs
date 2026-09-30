@@ -137,3 +137,43 @@ impl CheckpointManager {
         Ok(())
     }
 }
+
+#[async_trait::async_trait]
+impl crate::domain::cycle_breaks::w30_03::CheckpointPort for Arc<CheckpointManager> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    async fn save(&self, checkpoint: Checkpoint) -> Result<()> {
+        self.as_ref().save(checkpoint).await
+    }
+
+    async fn load(&self, task_id: String, name: String) -> Result<Option<Checkpoint>> {
+        self.as_ref().load(task_id, name).await
+    }
+
+    async fn list(&self, task_id: String) -> Result<Vec<Checkpoint>> {
+        self.as_ref().list(task_id).await
+    }
+}
+
+impl crate::agents::runtime::AgentRuntime {
+    /// With checkpoint manager.
+    pub fn with_checkpoint_manager(mut self, manager: Arc<CheckpointManager>) -> Self {
+        self.checkpoint_manager = Some(Box::new(manager));
+        self
+    }
+
+    /// Checkpoint manager.
+    pub fn checkpoint_manager(&self) -> Option<&Arc<CheckpointManager>> {
+        self.checkpoint_manager.as_ref()?.as_any().downcast_ref()
+    }
+}
+
+impl crate::agents::runtime::RuntimeBuilder {
+    /// With checkpoint manager.
+    pub fn with_checkpoint_manager(mut self, manager: Arc<CheckpointManager>) -> Self {
+        self.checkpoint_manager = Some(Box::new(manager));
+        self
+    }
+}
