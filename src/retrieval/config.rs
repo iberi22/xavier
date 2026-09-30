@@ -1,4 +1,12 @@
 //! Shared retrieval tuning defaults.
+//!
+//! The fusion defaults live in `crate::domain::cycle_breaks::w30_11` so that
+//! `search`, `context` and `retrieval` share one contract instead of each
+//! module carrying its own copy of the same number.
+
+pub use crate::domain::cycle_breaks::w30_11::{
+    DEFAULT_KEYWORD_WEIGHT, DEFAULT_RRF_K, DEFAULT_VECTOR_WEIGHT,
+};
 
 pub const DEFAULT_WORKING_WEIGHT: f32 = 0.3;
 pub const DEFAULT_EPISODIC_WEIGHT: f32 = 0.3;
@@ -6,7 +14,6 @@ pub const DEFAULT_SEMANTIC_WEIGHT: f32 = 0.4;
 pub const DEFAULT_RELEVANCE_THRESHOLD: f32 = 0.5;
 pub const DEFAULT_RECENCY_WEIGHT: f32 = 0.3;
 pub const DEFAULT_HALF_LIFE_HOURS: f32 = 168.0;
-pub const DEFAULT_RRF_K: u32 = 60;
 
 /// Configured rrf k.
 pub fn configured_rrf_k() -> u32 {
@@ -35,8 +42,6 @@ pub fn configured_vector_weight() -> f32 {
 pub const DEFAULT_MAX_RESULTS: usize = 20;
 pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 pub const DEFAULT_RERANK_LIMIT: usize = 50;
-pub const DEFAULT_KEYWORD_WEIGHT: f32 = 0.5;
-pub const DEFAULT_VECTOR_WEIGHT: f32 = 0.5;
 
 pub const WEIGHT_SUM_TOLERANCE: f32 = 0.001;
 pub const MIN_RELEVANCE_THRESHOLD: f32 = 0.0;
