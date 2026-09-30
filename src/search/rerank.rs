@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use super::rrf::ScoredResult;
-use crate::memory::schema::MemoryQueryFilters;
+use crate::domain::cycle_breaks::w30_11::MemoryQueryFilters;
 use crate::search::hooks::SearchHook;
 
 #[async_trait]
