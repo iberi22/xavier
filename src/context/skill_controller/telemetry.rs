@@ -151,7 +151,7 @@ impl UsageEvent {
     /// absolute path or a credential can never be stored or logged.
     fn validate(&self) -> Result<(), TelemetryError> {
         check_opaque("event_id", &self.event_id)?;
-        check_opaque("workspace_id", &self.workspace_id)?;
+        check_workspace_id(&self.workspace_id)?;
         check_opaque("task_id", &self.task_id)?;
         check_opaque("tool", &self.tool)?;
         check_opaque("skill_name", &self.skill_name)?;
@@ -161,6 +161,41 @@ impl UsageEvent {
         }
         Ok(())
     }
+}
+
+/// Accept the workspace identifiers Xavier actually uses.
+///
+/// `check_opaque` forbids `/` on purpose, to keep absolute paths out. But the
+/// namespace is `swal/{app_id}/{instance_id}` (`mesh::namespace::swal_namespace`)
+/// and the memory namespace is `app/{app}/instance/{instance}`, so a compound
+/// workspace id is the normal case, not an attack: refusing it would drop every
+/// real event on a namespaced node. The rule here is therefore "opaque segments
+/// joined by single `/`", which still rejects a leading `/` (absolute path), a
+/// `..` traversal, empty segments and any other text.
+///
+/// The `..` check is explicit because `.` is a legal byte in `check_opaque`, so
+/// a segment can be `.` or `..` and only the traversal reading is unsafe.
+fn check_workspace_id(value: &str) -> Result<(), TelemetryError> {
+    if !(1..=MAX_FIELD_LEN).contains(&value.len()) {
+        return Err(TelemetryError::FieldLength {
+            field: "workspace_id",
+            max: MAX_FIELD_LEN,
+        });
+    }
+    let traversal = value.starts_with('/')
+        || value.contains("//")
+        || value
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "..");
+    if traversal {
+        return Err(TelemetryError::NotOpaque {
+            field: "workspace_id",
+        });
+    }
+    for segment in value.split('/') {
+        check_opaque("workspace_id", segment)?;
+    }
+    Ok(())
 }
 
 /// Accept only `[A-Za-z0-9_.:-]` identifiers of at most [`MAX_FIELD_LEN`] bytes.
@@ -519,11 +554,46 @@ mod tests {
         assert_eq!(forever.count().expect("count must succeed"), 2);
     }
 
+    /// A mutation that makes one field untrusted, with the reason it is rejected.
+    type RejectionCase = (&'static str, fn(&mut UsageEvent));
+
+    /// `workspace_id` is the one field that legitimately contains `/`:
+    /// `swal/{app_id}/{instance_id}` is what `mesh::namespace::swal_namespace`
+    /// builds. Rejecting it would silently drop every event on a namespaced
+    /// node, so the separator is allowed while traversal and absolute paths
+    /// stay rejected.
+    #[test]
+    fn workspace_id_accepts_namespaces_but_not_paths() {
+        for good in [
+            "default",
+            "swal/xavier/instance",
+            "app/xavier/instance/node-a1b2",
+            "wt-1",
+        ] {
+            assert!(
+                check_workspace_id(good).is_ok(),
+                "{good:?} is a real workspace id and must be accepted"
+            );
+        }
+        for bad in [
+            "/srv/agent-worktrees/wt-1",
+            "swal//xavier",
+            "swal/xavier/",
+            "../escape",
+            "swal/../etc",
+        ] {
+            assert!(
+                check_workspace_id(bad).is_err(),
+                "{bad:?} is a path or traversal and must be rejected"
+            );
+        }
+    }
+
     #[test]
     fn untrusted_task_text_and_absolute_paths_are_rejected() {
         let conn = migrated();
         let writer = writer(&conn);
-        let cases: [(&str, fn(&mut UsageEvent)); 4] = [
+        let cases: [RejectionCase; 4] = [
             ("task_id carries task text", |event: &mut UsageEvent| {
                 event.task_id = "fix the login bug in auth".to_string()
             }),
