@@ -9,9 +9,7 @@
 use std::sync::OnceLock;
 
 use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
-use crate::domain::cycle_breaks::w30_15::{
-    ensure_private_dir, write_private_file, MasterKeyManager,
-};
+use crate::keystore::{ensure_private_dir, write_private_file, MasterKeyManager};
 use crate::secrets::{SecretError, SecretResult};
 use keyring::Entry;
 
