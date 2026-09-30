@@ -23,6 +23,26 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 use tracing::{info, warn};
 
+impl crate::domain::cycle_breaks::w30_10::ConnectionTuning for Connection {
+    type Error = rusqlite::Error;
+
+    fn apply_connection_pragmas(&self) -> rusqlite::Result<()> {
+        apply_connection_pragmas(self)
+    }
+
+    fn apply_acquire_pragmas(&self) -> rusqlite::Result<()> {
+        apply_acquire_pragmas(self)
+    }
+
+    fn apply_pragmas(&self) -> rusqlite::Result<()> {
+        apply_pragmas(self)
+    }
+
+    fn maybe_wal_checkpoint(&self) -> rusqlite::Result<bool> {
+        maybe_wal_checkpoint(self, WAL_CHECKPOINT_THRESHOLD_BYTES)
+    }
+}
+
 /// A single database migration.
 ///
 /// `up` is raw SQL (executed via [`rusqlite::Connection::execute_batch`]),

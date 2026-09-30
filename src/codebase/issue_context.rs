@@ -11,7 +11,7 @@
 //! never the whole file.
 
 use crate::codebase::snapshot::{PreciseChange, SnapshotManager};
-use crate::memory::store::MemoryRecord;
+use crate::domain::cycle_breaks::w30_12::MemoryRecord;
 use anyhow::{Context, Result};
 use code_graph::db::CodeGraphDB;
 use serde::{Deserialize, Serialize};
