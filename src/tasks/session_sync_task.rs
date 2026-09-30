@@ -8,8 +8,7 @@
 //!
 //! Also provides on-demand sync check via POST /xavier/sync/check
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::LazyLock;
-use std::sync::{Arc, RwLock as StdRwLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::{watch, RwLock as TokioRwLock};
@@ -21,10 +20,12 @@ use crate::memory::schema::{MemoryKind, MemoryQueryFilters};
 use crate::memory::store::MemoryStore;
 use crate::settings::XavierSettings;
 
-/// Last sync check result stored in memory (static)
-/// Unified last sync check result (single lock — no data race).
-pub(crate) static LAST_CHECK_RESULT: LazyLock<StdRwLock<SyncCheckResult>> =
-    LazyLock::new(|| StdRwLock::new(SyncCheckResult::default()));
+// The sync-check result and its single-lock cache moved to the domain in ADR-033
+// Wave 0 (WAVE-30.02) so the inbound HTTP adapter stops importing this module.
+// Re-exported here: every existing caller keeps the path it had.
+pub(crate) use crate::domain::cycle_breaks::w30_02::LAST_CHECK_RESULT;
+pub use crate::domain::cycle_breaks::w30_02::{get_last_sync_result, SyncCheckResult};
+
 static SYNC_CRON_STARTED: AtomicBool = AtomicBool::new(false);
 static LAST_WARN_HASH: AtomicU64 = AtomicU64::new(0);
 
@@ -83,32 +84,6 @@ impl SessionSyncShutdown {
                     );
                 }
             }
-        }
-    }
-}
-
-/// Sync check result
-#[derive(Debug, Clone)]
-pub struct SyncCheckResult {
-    pub status: String,
-    pub lag_ms: u64,
-    pub save_ok_rate: f64,
-    pub match_score: f64,
-    pub active_agents: u64,
-    pub timestamp_ms: u64,
-    pub alerts: Vec<String>,
-}
-
-impl Default for SyncCheckResult {
-    fn default() -> Self {
-        Self {
-            status: "unknown".to_string(),
-            lag_ms: 0,
-            save_ok_rate: 1.0,
-            match_score: 1.0,
-            active_agents: 0,
-            timestamp_ms: 0,
-            alerts: Vec::new(),
         }
     }
 }
@@ -493,14 +468,6 @@ impl Default for SessionSyncTask {
     }
 }
 
-/// Get last sync check result (for REST endpoint) — consistent snapshot via unified lock.
-pub fn get_last_sync_result() -> SyncCheckResult {
-    LAST_CHECK_RESULT
-        .read()
-        .map(|r| r.clone())
-        .unwrap_or_default()
-}
-
 /// Calculate dynamic indexing lag by comparing original event timestamps
 /// with actual SQLite commit times (updated_at) for recent session records.
 /// Returns the average lag in milliseconds.
@@ -570,4 +537,36 @@ fn parse_timestamp_ms(value: &serde_json::Value) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(timestamp)
         .ok()
         .map(|dt| dt.timestamp_millis())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The re-exports at the old paths must be the *same* item, not a copy: a value
+    /// written through this module has to be visible through the domain accessor,
+    /// otherwise the move would silently fork the cache into two cells.
+    #[test]
+    fn re_exports_are_the_same_cell_as_the_domain_accessor() {
+        let written = SyncCheckResult {
+            status: "w30_02".to_string(),
+            lag_ms: 7,
+            save_ok_rate: 0.5,
+            match_score: 0.25,
+            active_agents: 3,
+            timestamp_ms: 11,
+            alerts: vec![],
+        };
+        *LAST_CHECK_RESULT.write().expect("test write lock") = written;
+
+        let read = crate::domain::cycle_breaks::w30_02::get_last_sync_result();
+        assert_eq!(read.status, "w30_02");
+        assert_eq!(read.lag_ms, 7);
+        assert_eq!(read.save_ok_rate, 0.5);
+        assert_eq!(read.match_score, 0.25);
+        assert_eq!(read.active_agents, 3);
+        assert_eq!(read.timestamp_ms, 11);
+
+        *LAST_CHECK_RESULT.write().expect("test write lock") = SyncCheckResult::default();
+    }
 }
