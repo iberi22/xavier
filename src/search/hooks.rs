@@ -4,7 +4,7 @@
 //! such as query expansion, result reranking, or logging.
 
 use super::rrf::ScoredResult;
-use crate::memory::schema::MemoryQueryFilters;
+use crate::domain::cycle_breaks::w30_11::MemoryQueryFilters;
 use async_trait::async_trait;
 use std::sync::Arc;
 

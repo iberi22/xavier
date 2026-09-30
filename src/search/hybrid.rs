@@ -4,10 +4,11 @@
 //! responsibilities within the Xavier cognitive memory system.
 use crate::{
     embedding,
-    memory::{
-        qmd_memory::{MemoryDocument, QmdMemory},
-        schema::MemoryQueryFilters,
-    },
+    memory::qmd_memory::{MemoryDocument, QmdMemory},
+};
+
+use crate::domain::cycle_breaks::w30_11::{
+    MemoryQueryFilters, DEFAULT_KEYWORD_WEIGHT, DEFAULT_RRF_K, DEFAULT_VECTOR_WEIGHT,
 };
 
 use super::hooks::HookRegistry;
@@ -68,8 +69,14 @@ impl Default for HybridSearcher {
         }
 
         Self {
-            keyword_weight: crate::retrieval::config::configured_keyword_weight(),
-            vector_weight: crate::retrieval::config::configured_vector_weight(),
+            keyword_weight: crate::settings::XavierSettings::current()
+                .retrieval
+                .keyword_weight
+                .unwrap_or(DEFAULT_KEYWORD_WEIGHT),
+            vector_weight: crate::settings::XavierSettings::current()
+                .retrieval
+                .vector_weight
+                .unwrap_or(DEFAULT_VECTOR_WEIGHT),
             rrf_k: configured_rrf_k(),
             hooks,
             embedder: None,
@@ -79,7 +86,10 @@ impl Default for HybridSearcher {
 
 /// Configured rrf k.
 pub fn configured_rrf_k() -> u32 {
-    crate::retrieval::config::configured_rrf_k()
+    crate::settings::XavierSettings::current()
+        .retrieval
+        .rrf_k
+        .unwrap_or(DEFAULT_RRF_K)
 }
 
 impl HybridSearcher {
@@ -253,6 +263,15 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
+    /// Build a searcher while the crate-wide `settings::tests::TempEnv` guard is
+    /// held, so the environment read of `Default` is serialised against every
+    /// other test that mutates `XAVIER_*`. The guard wraps a `MutexGuard` and is
+    /// therefore not `Send`, so it is released before the first `.await`.
+    fn searcher_with_locked_env() -> HybridSearcher {
+        let _env = crate::settings::tests::TempEnv::new();
+        HybridSearcher::new()
+    }
+
     #[tokio::test]
     async fn test_hybrid_search_basic() {
         let memory = QmdMemory::new(Arc::new(RwLock::new(Vec::new())));
@@ -273,7 +292,7 @@ mod tests {
             .await
             .expect("test assertion");
 
-        let searcher = HybridSearcher::new();
+        let searcher = searcher_with_locked_env();
         let results = searcher
             .search(&memory, "quick", 10, None)
             .await
@@ -313,7 +332,7 @@ mod tests {
             .await
             .expect("test assertion");
 
-        let mut searcher = HybridSearcher::new();
+        let mut searcher = searcher_with_locked_env();
         searcher.hooks.add_hook(Arc::new(QueryExpander));
 
         // "fast" should be expanded to "quick" and match doc1
@@ -327,10 +346,18 @@ mod tests {
 
     #[test]
     fn test_configured_rrf_k_from_env() {
+        let _env = crate::settings::tests::TempEnv::new();
         std::env::set_var("XAVIER_RRF_K", "100");
         assert_eq!(configured_rrf_k(), 100);
+        assert_eq!(crate::retrieval::config::configured_rrf_k(), 100);
+        assert_eq!(HybridSearcher::new().rrf_k, 100);
         std::env::remove_var("XAVIER_RRF_K");
-        assert_eq!(configured_rrf_k(), 60);
+        assert_eq!(configured_rrf_k(), DEFAULT_RRF_K);
+        assert_eq!(HybridSearcher::new().rrf_k, DEFAULT_RRF_K);
+        assert_eq!(
+            crate::retrieval::config::configured_rrf_k(),
+            crate::retrieval::config::DEFAULT_RRF_K
+        );
     }
 
     #[tokio::test]
@@ -345,7 +372,7 @@ mod tests {
             .await
             .expect("test assertion");
 
-        let searcher = HybridSearcher::new();
+        let searcher = searcher_with_locked_env();
 
         // First search - should populate cache
         let results1 = searcher
