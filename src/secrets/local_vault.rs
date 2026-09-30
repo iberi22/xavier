@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
-use crate::security::encryption_keys::{ensure_private_dir, write_private_file, MasterKeyManager};
+use crate::keystore::{ensure_private_dir, write_private_file, MasterKeyManager};
 
 /// Local secrets vault using filesystem storage and AES-256-GCM encryption.
 pub struct LocalSecretsVault {

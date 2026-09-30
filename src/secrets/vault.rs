@@ -9,8 +9,8 @@
 use std::sync::OnceLock;
 
 use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
+use crate::keystore::{ensure_private_dir, write_private_file, MasterKeyManager};
 use crate::secrets::{SecretError, SecretResult};
-use crate::security::encryption_keys::{ensure_private_dir, write_private_file, MasterKeyManager};
 use keyring::Entry;
 
 /// Global fallback vault storage, lazily initialized
