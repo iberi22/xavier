@@ -3,6 +3,9 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use crate::domain::agent::{AgentEntry, AgentMetadata};
+// Named at its domain path, not through `agents::runtime`, so the port depends
+// on the domain only and never back on the runtime that implements it.
+use crate::domain::cycle_breaks::w30_14::AgentResponse;
 use async_trait::async_trait;
 
 /// Port for agent lifecycle management.
@@ -34,6 +37,6 @@ pub trait AgentLifecyclePort: Send + Sync {
         &self,
         agent_id: &str,
         task_id: &str,
-        result: &Result<crate::agents::runtime::AgentResponse, String>,
+        result: &Result<AgentResponse, String>,
     );
 }
