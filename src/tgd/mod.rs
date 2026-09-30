@@ -273,6 +273,36 @@ impl TgdEngine {
     }
 }
 
+#[async_trait::async_trait]
+impl crate::domain::cycle_breaks::w30_03::TgdRuntimePort for TgdEngine {
+    fn confidence_threshold(&self) -> f32 {
+        self.config().confidence_threshold
+    }
+
+    async fn generate_rules(
+        &self,
+        history: &[ConversationMessage],
+        context: &[RetrievedDocument],
+    ) -> Result<String> {
+        self.generate_rules(history, context).await
+    }
+}
+
+impl crate::agents::runtime::AgentRuntime {
+    pub fn with_tgd_engine(self, engine: TgdEngine) -> Self {
+        self.with_tgd_port(Box::new(engine))
+    }
+
+    pub fn with_provider_config(
+        self,
+        provider_config: crate::agents::provider::ModelProviderConfig,
+    ) -> Self {
+        let provider = ModelProviderClient::new(provider_config.clone());
+        self.with_reasoning_provider(provider.clone())
+            .with_tgd_engine(TgdEngine::new(provider))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

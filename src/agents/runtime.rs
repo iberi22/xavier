@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use crate::context::orchestrator::Orchestrator;
+use crate::domain::cycle_breaks::w30_03::{
+    CheckpointPort, ContextOrchestratorPort, TgdRuntimePort,
+};
 
 use crate::utils::crypto::sha256_hex;
 
@@ -16,7 +18,7 @@ use crate::agents::router::{RouteCategory, Router};
 use crate::agents::system1::{RetrieverConfig, System1Retriever};
 use crate::agents::system2::{ReasonerConfig, System2Reasoner};
 use crate::agents::system3::{ActorConfig, System3Actor};
-use crate::checkpoint::{Checkpoint, CheckpointManager};
+use crate::domain::cycle_breaks::w30_12::Checkpoint;
 use crate::memory::belief_graph::SharedBeliefGraph;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::MemoryQueryFilters;
@@ -169,24 +171,23 @@ pub struct AgentRuntime {
     system1: System1Retriever,
     system2: System2Reasoner,
     config: RuntimeConfig,
-    checkpoint_manager: Option<Arc<CheckpointManager>>,
+    pub(crate) checkpoint_manager: Option<Box<dyn CheckpointPort>>,
     scheduler: Option<Arc<tokio::sync::Mutex<JobScheduler>>>,
-    orchestrator: Option<Orchestrator>,
+    orchestrator: Option<Arc<dyn ContextOrchestratorPort>>,
     rate_manager: Option<Arc<RateLimitManager>>,
-    tgd_engine: Option<crate::tgd::TgdEngine>,
+    tgd_engine: Option<Box<dyn TgdRuntimePort>>,
     event_bus: Option<Arc<crate::coordination::events::XavierEventBus>>,
 }
 
 impl AgentRuntime {
     /// New.
-    pub fn new(
+    pub fn new_with(
         memory: Arc<QmdMemory>,
         belief_graph: Option<SharedBeliefGraph>,
         config: RuntimeConfig,
+        orchestrator: Arc<dyn ContextOrchestratorPort>,
     ) -> Result<Self> {
         let semantic_cache = Arc::new(SemanticCache::new(0.95)?);
-        let orchestrator =
-            Orchestrator::new().with_memory(Arc::clone(&memory), belief_graph.clone());
         Ok(Self {
             system1: System1Retriever::new(
                 Arc::clone(&memory),
@@ -207,9 +208,24 @@ impl AgentRuntime {
         })
     }
 
-    /// With checkpoint manager.
-    pub fn with_checkpoint_manager(mut self, manager: Arc<CheckpointManager>) -> Self {
-        self.checkpoint_manager = Some(manager);
+    pub fn with_orchestrator_port(
+        mut self,
+        orchestrator: Arc<dyn ContextOrchestratorPort>,
+    ) -> Self {
+        self.orchestrator = Some(orchestrator);
+        self
+    }
+
+    pub fn with_tgd_port(mut self, engine: Box<dyn TgdRuntimePort>) -> Self {
+        self.tgd_engine = Some(engine);
+        self
+    }
+
+    pub(crate) fn with_reasoning_provider(
+        mut self,
+        provider: crate::agents::provider::ModelProviderClient,
+    ) -> Self {
+        self.system2 = System2Reasoner::with_provider(ReasonerConfig::default(), provider);
         self
     }
 
@@ -219,21 +235,9 @@ impl AgentRuntime {
         self
     }
 
-    /// With orchestrator.
-    pub fn with_orchestrator(mut self, orchestrator: Orchestrator) -> Self {
-        self.orchestrator = Some(orchestrator);
-        self
-    }
-
     /// With rate manager.
     pub fn with_rate_manager(mut self, manager: Arc<RateLimitManager>) -> Self {
         self.rate_manager = Some(manager);
-        self
-    }
-
-    /// With tgd engine.
-    pub fn with_tgd_engine(mut self, engine: crate::tgd::TgdEngine) -> Self {
-        self.tgd_engine = Some(engine);
         self
     }
 
@@ -241,11 +245,6 @@ impl AgentRuntime {
     pub fn with_event_bus(mut self, bus: Arc<crate::coordination::events::XavierEventBus>) -> Self {
         self.event_bus = Some(bus);
         self
-    }
-
-    /// Checkpoint manager.
-    pub fn checkpoint_manager(&self) -> Option<&Arc<CheckpointManager>> {
-        self.checkpoint_manager.as_ref()
     }
 
     /// Scheduler.
@@ -265,17 +264,6 @@ impl AgentRuntime {
     /// Config.
     pub fn config(&self) -> &RuntimeConfig {
         &self.config
-    }
-
-    /// With provider config.
-    pub fn with_provider_config(
-        mut self,
-        provider_config: crate::agents::provider::ModelProviderConfig,
-    ) -> Self {
-        let provider = crate::agents::provider::ModelProviderClient::new(provider_config.clone());
-        self.system2 = System2Reasoner::with_provider(ReasonerConfig::default(), provider.clone());
-        self.tgd_engine = Some(crate::tgd::TgdEngine::new(provider));
-        self
     }
 
     /// Ejecuta el ciclo completo: System 1 → System 2 → System 3
@@ -375,13 +363,12 @@ impl AgentRuntime {
         let query_fingerprint = query_fingerprint(query);
 
         // Fire session_start hook into context orchestrator
-        let mut retrieved_docs = Vec::new();
+        let mut retrieved_docs_count = 0;
         if let Some(ref orch) = self.orchestrator {
-            let plan = orch.session_start(&session_id, query, &[]).await;
-            retrieved_docs = orch.execute(&plan, &[], &session_id).await;
+            retrieved_docs_count = orch.session_start(&session_id, query).await;
             debug!(
                 session_id = %session_id,
-                docs_count = retrieved_docs.len(),
+                docs_count = retrieved_docs_count,
                 "context_orchestrator: session_start"
             );
         }
@@ -616,7 +603,7 @@ impl AgentRuntime {
             let paging_threshold = self
                 .tgd_engine
                 .as_ref()
-                .map(|tgd| tgd.config().confidence_threshold)
+                .map(|tgd| tgd.confidence_threshold())
                 .unwrap_or(0.7);
             if reasoning_result.confidence >= paging_threshold || retries >= self.config.max_retries
             {
@@ -630,12 +617,10 @@ impl AgentRuntime {
 
             // Fire precompact hook before expanding context
             if let Some(ref orch) = self.orchestrator {
-                let plan = orch.precompact(&session_id, &current_query, &[]).await;
-                let new_docs = orch.execute(&plan, &[], &session_id).await;
-                retrieved_docs.extend(new_docs);
+                retrieved_docs_count += orch.precompact(&session_id, &current_query).await;
                 debug!(
                     session_id = %session_id,
-                    new_docs_count = retrieved_docs.len(),
+                    new_docs_count = retrieved_docs_count,
                     "context_orchestrator: precompact"
                 );
             }
@@ -648,7 +633,7 @@ impl AgentRuntime {
         let tgd_threshold = self
             .tgd_engine
             .as_ref()
-            .map(|tgd| tgd.config().confidence_threshold)
+            .map(|tgd| tgd.confidence_threshold())
             .unwrap_or(0.7);
         if reasoning_result.confidence < tgd_threshold {
             if let Some(ref tgd) = self.tgd_engine {
@@ -987,7 +972,7 @@ pub struct RuntimeBuilder {
     config: RuntimeConfig,
     memory: Option<Arc<QmdMemory>>,
     belief_graph: Option<SharedBeliefGraph>,
-    checkpoint_manager: Option<Arc<CheckpointManager>>,
+    pub(crate) checkpoint_manager: Option<Box<dyn CheckpointPort>>,
     scheduler: Option<JobScheduler>,
     rate_manager: Option<Arc<RateLimitManager>>,
     event_bus: Option<Arc<crate::coordination::events::XavierEventBus>>,
@@ -1025,12 +1010,6 @@ impl RuntimeBuilder {
         self
     }
 
-    /// With checkpoint manager.
-    pub fn with_checkpoint_manager(mut self, manager: Arc<CheckpointManager>) -> Self {
-        self.checkpoint_manager = Some(manager);
-        self
-    }
-
     /// With scheduler.
     pub fn with_scheduler(mut self, scheduler: JobScheduler) -> Self {
         self.scheduler = Some(scheduler);
@@ -1056,7 +1035,9 @@ impl RuntimeBuilder {
             .ok_or_else(|| anyhow::anyhow!("RuntimeBuilder requires a memory backend"))?;
         let runtime = AgentRuntime::new(memory, self.belief_graph, self.config)?;
         let runtime = if let Some(manager) = self.checkpoint_manager {
-            runtime.with_checkpoint_manager(manager)
+            let mut runtime = runtime;
+            runtime.checkpoint_manager = Some(manager);
+            runtime
         } else {
             runtime
         };
@@ -1089,6 +1070,8 @@ mod tests {
     use super::*;
     use crate::agents::router::RouteCategory;
 
+    static ENV_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[test]
     fn test_runtime_config() {
         let config = RuntimeConfig::default();
@@ -1118,8 +1101,9 @@ mod tests {
         assert!(decision.should_skip_reasoning);
     }
 
-    #[test]
-    fn test_runtime_builder() {
+    #[tokio::test]
+    async fn test_runtime_builder() {
+        let _guard = ENV_GUARD.lock().await;
         let docs = Arc::new(tokio::sync::RwLock::new(vec![]));
         let memory = Arc::new(QmdMemory::new_with_workspace(docs, "test".to_string()));
 
@@ -1127,6 +1111,45 @@ mod tests {
 
         let runtime = builder.build().unwrap();
         assert_eq!(runtime.config.timeout_seconds, 10);
+        let orchestrator = runtime.orchestrator.as_ref().expect("default orchestrator");
+        assert_eq!(
+            orchestrator.session_start("builder-session", "hello").await,
+            0
+        );
+
+        let provider = crate::agents::provider::ModelProviderClient::new(
+            crate::agents::provider::ModelProviderConfig::disabled(),
+        );
+        let engine = crate::tgd::TgdEngine::with_config(
+            Arc::new(provider),
+            crate::tgd::TgdConfig {
+                confidence_threshold: 0.93,
+                ..Default::default()
+            },
+        );
+        let runtime = runtime.with_tgd_engine(engine);
+        assert_eq!(
+            runtime.tgd_engine.as_ref().unwrap().confidence_threshold(),
+            0.93
+        );
+        let runtime =
+            runtime.with_provider_config(crate::agents::provider::ModelProviderConfig::disabled());
+        assert_eq!(
+            runtime.tgd_engine.as_ref().unwrap().confidence_threshold(),
+            0.7
+        );
+
+        let manager = Arc::new(crate::checkpoint::CheckpointManager::new());
+        let runtime = runtime.with_checkpoint_manager(Arc::clone(&manager));
+        assert!(Arc::ptr_eq(runtime.checkpoint_manager().unwrap(), &manager));
+        runtime
+            .save_checkpoint("task", "saved", serde_json::json!({"value": 1}))
+            .await
+            .unwrap();
+        assert_eq!(
+            runtime.load_checkpoint("task", "saved").await.unwrap(),
+            Some(serde_json::json!({"value": 1}))
+        );
     }
 
     #[test]
@@ -1162,6 +1185,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_events_propagate_custom_agent_id() {
+        let _guard = ENV_GUARD.lock().await;
         use crate::coordination::events::{XavierEvent, XavierEventBus};
 
         let event_bus = Arc::new(XavierEventBus::new(16));
@@ -1204,6 +1228,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_events_fallback_default_agent_id() {
+        let _guard = ENV_GUARD.lock().await;
         use crate::coordination::events::{XavierEvent, XavierEventBus};
 
         let event_bus = Arc::new(XavierEventBus::new(16));
