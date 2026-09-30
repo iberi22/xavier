@@ -503,6 +503,40 @@ impl ServiceLogStore {
     }
 }
 
+impl crate::agents::evolve::gap_analyzer::GapAnalyzer {
+    /// Create an analyzer with the default persistent log store.
+    pub async fn new() -> Result<Self> {
+        Self::new_with(Box::new(ServiceLogStore::new().await?))
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::domain::cycle_breaks::w30_03::GapLogPort for ServiceLogStore {
+    async fn entry_counts(&self) -> Result<(u64, u64)> {
+        let stats = self.get_stats().await?;
+        Ok((stats.total_entries, stats.errors_today))
+    }
+
+    async fn error_modules(&self, minutes: u32, threshold: u32) -> Result<Vec<String>> {
+        Ok(self
+            .detect_patterns(minutes, threshold)
+            .await?
+            .into_iter()
+            .filter(|pattern| pattern.level == LogLevel::Error)
+            .map(|pattern| pattern.module)
+            .collect())
+    }
+
+    async fn latency_metadata(&self, limit: u32) -> Result<Vec<Option<serde_json::Value>>> {
+        Ok(self
+            .search_logs("latency_ms", limit)
+            .await?
+            .into_iter()
+            .map(|entry| entry.metadata)
+            .collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
