@@ -742,7 +742,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         &self,
         workspace_id: &str,
         since: &str,
-    ) -> Result<Vec<crate::server::events::RealtimeEvent>> {
+    ) -> Result<Vec<crate::domain::cycle_breaks::w30_07::RealtimeEvent>> {
         self.perform_list_timeline_events(workspace_id, since).await
     }
 

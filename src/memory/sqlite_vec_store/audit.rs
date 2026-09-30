@@ -2,8 +2,8 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::domain::cycle_breaks::w30_07::RealtimeEvent;
 use crate::memory::store::MemoryRecord;
-use crate::server::events::RealtimeEvent;
 use anyhow::Result;
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};

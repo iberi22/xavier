@@ -489,7 +489,7 @@ impl MemoryStore for FallbackMemoryStore {
         &self,
         workspace_id: &str,
         since: &str,
-    ) -> Result<Vec<crate::server::events::RealtimeEvent>> {
+    ) -> Result<Vec<crate::domain::cycle_breaks::w30_07::RealtimeEvent>> {
         let mut last_err = None;
         for store in &self.stores {
             match store.list_timeline_events(workspace_id, since).await {

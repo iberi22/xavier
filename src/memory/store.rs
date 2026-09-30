@@ -588,7 +588,7 @@ pub trait MemoryStore: Send + Sync {
         &self,
         workspace_id: &str,
         since: &str,
-    ) -> Result<Vec<crate::server::events::RealtimeEvent>> {
+    ) -> Result<Vec<crate::domain::cycle_breaks::w30_07::RealtimeEvent>> {
         let _ = (workspace_id, since);
         anyhow::bail!(
             "timeline events are not supported by the {} backend",
