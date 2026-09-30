@@ -171,7 +171,7 @@ impl AgentLifecyclePort for SimpleAgentRegistry {
         &self,
         agent_id: &str,
         task_id: &str,
-        result: &Result<crate::agents::runtime::AgentResponse, String>,
+        result: &Result<crate::domain::cycle_breaks::w30_14::AgentResponse, String>,
     ) {
         match result {
             Ok(_) => {
