@@ -17,7 +17,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::server::events::RealtimeEvent;
+use crate::domain::cycle_breaks::w30_07::RealtimeEvent;
 use crate::workspace::WorkspaceContext;
 
 /// Event shape returned by `/maloca/timeline`.
