@@ -3,15 +3,15 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::agents::registry::AgentRegistry;
+use crate::domain::cycle_breaks::w30_12::MemoryConsumerStore;
 use crate::embedding::Embedder;
-use crate::memory::schema::ClearanceLevel;
-use crate::memory::store::MemoryStore;
 use crate::settings::XavierSettings;
+use xavier_core_logic::ClearanceLevel;
 
 /// Local embeddings pipeline for authorized memories.
 pub struct LocalEmbeddingPipeline {
     embedder: Arc<dyn Embedder>,
-    store: Arc<dyn MemoryStore>,
+    store: Arc<dyn MemoryConsumerStore>,
     max_clearance: ClearanceLevel,
     consent_given: bool,
     registry: Option<AgentRegistry>,
@@ -19,9 +19,9 @@ pub struct LocalEmbeddingPipeline {
 
 impl LocalEmbeddingPipeline {
     /// New.
-    pub fn new(
+    pub fn new<S: MemoryConsumerStore + ?Sized + 'static>(
         embedder: Arc<dyn Embedder>,
-        store: Arc<dyn MemoryStore>,
+        store: Arc<S>,
         max_clearance: ClearanceLevel,
     ) -> Self {
         let consent_given = XavierSettings::current().data_commons.consent_given;
@@ -29,16 +29,16 @@ impl LocalEmbeddingPipeline {
     }
 
     /// With consent.
-    pub fn with_consent(
+    pub fn with_consent<S: MemoryConsumerStore + ?Sized + 'static>(
         embedder: Arc<dyn Embedder>,
-        store: Arc<dyn MemoryStore>,
+        store: Arc<S>,
         max_clearance: ClearanceLevel,
         consent_given: bool,
     ) -> Self {
         let registry = AgentRegistry::resolve_and_load().ok();
         Self {
             embedder,
-            store,
+            store: store.into_consumer_store(),
             max_clearance,
             consent_given,
             registry,
@@ -57,7 +57,10 @@ impl LocalEmbeddingPipeline {
     }
 
     /// From env.
-    pub fn from_env(embedder: Arc<dyn Embedder>, store: Arc<dyn MemoryStore>) -> Self {
+    pub fn from_env<S: MemoryConsumerStore + ?Sized + 'static>(
+        embedder: Arc<dyn Embedder>,
+        store: Arc<S>,
+    ) -> Self {
         // Default to Secret for local embeddings, can be more restrictive
         let max_clearance = ClearanceLevel::Secret;
 
@@ -73,7 +76,7 @@ impl LocalEmbeddingPipeline {
 
         debug!(workspace_id = %workspace_id, "Starting local embedding pipeline");
 
-        let records = self.store.list(workspace_id).await?;
+        let records = self.store.list_records(workspace_id).await?;
         let mut processed_count = 0;
 
         for record in records {
@@ -90,7 +93,7 @@ impl LocalEmbeddingPipeline {
                 Ok(vector) => {
                     let mut updated_record = record.clone();
                     updated_record.embedding = vector;
-                    self.store.update(updated_record).await?;
+                    self.store.update_record(updated_record).await?;
                     processed_count += 1;
                 }
                 Err(e) => {
