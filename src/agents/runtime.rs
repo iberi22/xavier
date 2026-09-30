@@ -47,15 +47,7 @@ pub enum MessageRole {
     System,
 }
 
-/// Response final del agente
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentResponse {
-    pub session_id: String,
-    pub query: String,
-    pub response: String,
-    pub confidence: f32,
-    pub system_timings: SystemTimings,
-}
+pub use crate::domain::cycle_breaks::w30_14::{AgentResponse, SystemTimings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRunTrace {
@@ -82,14 +74,6 @@ pub enum System3Mode {
     Auto,
     Disabled,
     Required,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SystemTimings {
-    pub system1_ms: u64,
-    pub system2_ms: u64,
-    pub system3_ms: u64,
-    pub total_ms: u64,
 }
 
 /// Configuración del Runtime
