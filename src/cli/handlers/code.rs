@@ -1,9 +1,10 @@
 //! Code handlers for scanning, searching, and analyzing codebases.
 
 use axum::extract::{Query, State};
+use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -451,43 +452,112 @@ fn resolve_target_path(requested: Option<&str>) -> (String, String) {
     resolve_target_path_from(requested, &base)
 }
 
-/// Log a dump/load target that lies outside the daemon workspace.
+/// Canonical containment root for the filesystem-touching `/code/*` endpoints.
 ///
-/// Unlike [`code_scan_handler`], these two endpoints are deliberately NOT
-/// workspace-contained: `xavier code dump <repo>` exists precisely to dump
-/// codebases other than the daemon's own workspace (WAVE-29.08), and the
-/// route is behind `auth_middleware`. The target is therefore surfaced in
-/// the log and echoed back to the caller, not blocked.
-fn log_out_of_workspace_target(state: &CliState, resolved: &str) {
-    let workspace_root = std::path::absolute(&state.workspace_dir)
+/// `/code/dump` and `/code/load` read and write files, so they are confined to
+/// the daemon workspace — the same root `/code/scan` already enforces. Both
+/// sides are canonicalized so a `workspace/link -> /etc` escape cannot hide
+/// behind a `starts_with` on a non-canonical root.
+fn containment_root(state: &CliState) -> PathBuf {
+    std::path::absolute(&state.workspace_dir)
         .map(|p| p.canonicalize().unwrap_or(p))
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let target = PathBuf::from(resolved);
-    let target = target.canonicalize().unwrap_or(target);
-    if !target.starts_with(&workspace_root) {
-        warn!(
-            "code dump/load target {} is outside the daemon workspace {}",
-            target.display(),
-            workspace_root.display()
-        );
+        .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// Role gate for the dump/load routes, layered in `src/cli/server.rs`.
+///
+/// `can_edit_config` is the same Admin-only permission the other admin routes
+/// use, so a non-Admin session (lease token, ephemeral session, persistent
+/// `xav_` token) gets 403 instead of unrestricted filesystem access.
+pub fn code_dump_load_permission_check(role: &xavier::security::auth::UserRole) -> bool {
+    use xavier::security::auth::Permission;
+    role.can_edit_config()
+}
+
+/// A dump/load target refused by [`resolve_contained_target`].
+struct TargetRejection {
+    requested_path: String,
+    message: String,
+}
+
+/// Resolve a dump/load target and require it to stay inside [`containment_root`].
+///
+/// Two independent checks, because either alone is bypassable:
+///   * `..` is rejected on the raw input, so traversal is refused even when the
+///     path does not exist and therefore cannot be canonicalized;
+///   * the resolved path is compared canonicalized against the canonical root,
+///     so absolute paths elsewhere and symlinks pointing out of the workspace
+///     are refused too.
+///
+/// `Err` echoes the requested path so the caller can answer 400 with the same
+/// detail the success path reports.
+fn resolve_contained_target(
+    state: &CliState,
+    requested: Option<&str>,
+) -> Result<(String, String), TargetRejection> {
+    let raw = requested.unwrap_or(".");
+    let reject = |message: &str| TargetRejection {
+        requested_path: raw.to_string(),
+        message: message.to_string(),
+    };
+
+    if Path::new(raw)
+        .components()
+        .any(|component| component == Component::ParentDir)
+    {
+        warn!("Code dump/load rejected: `..` is not allowed in `{}`", raw);
+        return Err(reject("path must not contain '..'"));
     }
+
+    let (requested_path, resolved_path) = resolve_target_path(Some(raw));
+    let root = containment_root(state);
+    let target = PathBuf::from(&resolved_path);
+    let canonical = target.canonicalize().unwrap_or_else(|_| target.clone());
+    if !canonical.starts_with(&root) {
+        warn!(
+            "Code dump/load rejected: {} is outside workspace root {}",
+            target.display(),
+            root.display()
+        );
+        return Err(reject("path outside workspace root not allowed"));
+    }
+
+    Ok((requested_path, resolved_path))
+}
+
+/// Refusal response for a blocked dump/load target.
+///
+/// 400, not a 200 carrying `status: "error"`: a caller that only inspects the
+/// transport status must never read a blocked path as a completed dump.
+fn target_rejection_response(rejection: TargetRejection) -> axum::response::Response {
+    (
+        axum::http::StatusCode::BAD_REQUEST,
+        axum::Json(serde_json::json!({
+            "status": "error",
+            "message": rejection.message,
+            "requested_path": rejection.requested_path,
+        })),
+    )
+        .into_response()
 }
 
 /// Code dump handler.
 pub async fn code_dump_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
-) -> impl axum::response::IntoResponse {
+) -> axum::response::Response {
     let (requested_path, resolved_path) =
-        resolve_target_path(payload.get("path").and_then(|v| v.as_str()));
+        match resolve_contained_target(&state, payload.get("path").and_then(|v| v.as_str())) {
+            Ok(target) => target,
+            Err(rejection) => return target_rejection_response(rejection),
+        };
     info!(
         "Code dump request: requested={} resolved={}",
         requested_path, resolved_path
     );
-    log_out_of_workspace_target(&state, &resolved_path);
 
     let code_graph = state.code_graph.read().await;
-    match perform_dump(&code_graph, &resolved_path).await {
+    let response = match perform_dump(&code_graph, &resolved_path).await {
         Ok(dump_path) => axum::Json(serde_json::json!({
             "status": "ok",
             "message": format!("Code graph dumped to {}", dump_path.display()),
@@ -501,23 +571,26 @@ pub async fn code_dump_handler(
             "requested_path": requested_path,
             "resolved_path": resolved_path,
         })),
-    }
+    };
+    response.into_response()
 }
 
 /// Code load handler.
 pub async fn code_load_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
-) -> impl axum::response::IntoResponse {
+) -> axum::response::Response {
     let (requested_path, resolved_path) =
-        resolve_target_path(payload.get("path").and_then(|v| v.as_str()));
+        match resolve_contained_target(&state, payload.get("path").and_then(|v| v.as_str())) {
+            Ok(target) => target,
+            Err(rejection) => return target_rejection_response(rejection),
+        };
     info!(
         "Code load request: requested={} resolved={}",
         requested_path, resolved_path
     );
-    log_out_of_workspace_target(&state, &resolved_path);
 
-    match perform_load(&resolved_path).await {
+    let response = match perform_load(&resolved_path).await {
         Ok(new_state) => {
             let mut code_graph = state.code_graph.write().await;
             *code_graph = new_state;
@@ -534,7 +607,8 @@ pub async fn code_load_handler(
             "requested_path": requested_path,
             "resolved_path": resolved_path,
         })),
-    }
+    };
+    response.into_response()
 }
 
 /// Code scan handler.
@@ -3129,6 +3203,9 @@ mod tests {
     // argument wins, absent argument means the cwd, and the reported
     // path is the file actually written.
     //
+    // Since #2580 the target must ALSO live inside the daemon workspace, so
+    // every fixture below is nested under it rather than beside it.
+    //
     // No test here touches the process cwd or the real repo: the "no
     // argument" case injects the base dir into `resolve_target_path_from`
     // instead, because `set_current_dir` is process-global and would race
@@ -3144,8 +3221,8 @@ mod tests {
     #[tokio::test]
     async fn dump_respects_explicit_path_argument() {
         let tmp = tempfile::tempdir().unwrap();
-        let target = w2908_target(tmp.path(), "w2908-explicit");
         let daemon_ws = w2908_target(tmp.path(), "w2908-daemon-ws");
+        let target = w2908_target(&daemon_ws, "w2908-explicit");
         let state = xav01_test_state(daemon_ws.clone()).await;
 
         let body = xav01_body(code_dump_handler(
@@ -3164,20 +3241,28 @@ mod tests {
             target.canonicalize().unwrap().to_string_lossy().as_ref()
         );
         assert!(expected.exists(), "dump must land under the requested path");
-        assert!(
-            !body["path"]
-                .as_str()
-                .unwrap()
-                .starts_with(daemon_ws.to_str().unwrap()),
+        assert_ne!(
+            body["path"].as_str().unwrap(),
+            daemon_ws_dump(&daemon_ws).as_str(),
             "dump must not fall back to the daemon project root"
         );
+    }
+
+    /// The dump location the daemon workspace itself resolves to, used as the
+    /// negative reference: a dump that honoured its argument cannot land here.
+    fn daemon_ws_dump(daemon_ws: &std::path::Path) -> String {
+        crate::cli::code_dump::codegraph_dump_path_for_target(
+            daemon_ws.canonicalize().unwrap().to_str().unwrap(),
+        )
+        .to_string_lossy()
+        .into_owned()
     }
 
     #[tokio::test]
     async fn dump_respects_cwd_when_no_argument() {
         let tmp = tempfile::tempdir().unwrap();
-        let target = w2908_target(tmp.path(), "w2908-cwd");
         let daemon_ws = w2908_target(tmp.path(), "w2908-daemon-ws2");
+        let target = w2908_target(&daemon_ws, "w2908-cwd");
         let state = xav01_test_state(daemon_ws.clone()).await;
         let base = target.canonicalize().unwrap();
 
@@ -3205,11 +3290,9 @@ mod tests {
         assert_eq!(body["path"], expected.to_string_lossy().as_ref());
         assert_eq!(body["resolved_path"], base.to_string_lossy().as_ref());
         assert!(expected.exists());
-        assert!(
-            !body["path"]
-                .as_str()
-                .unwrap()
-                .starts_with(daemon_ws.to_str().unwrap()),
+        assert_ne!(
+            body["path"].as_str().unwrap(),
+            daemon_ws_dump(&daemon_ws).as_str(),
             "no argument must mean the cwd, not the daemon project root"
         );
     }
@@ -3239,6 +3322,267 @@ mod tests {
         assert!(
             crate::cli::code_dump::perform_load(&reported).await.is_ok(),
             "loader must resolve the dump the writer just wrote"
+        );
+    }
+
+    // ── #2580: dump/load are role-gated and workspace-contained ─────────
+    // Both endpoints read and write the filesystem. `auth_middleware`
+    // proves who is calling but not what they may touch, and an
+    // unconstrained target meant arbitrary read/write.
+
+    /// Like [`xav01_body`], but keeps the status code: the refusal is a 400,
+    /// which a body-only helper would hide behind `status: "error"`.
+    async fn xav01_status_body<R>(
+        fut: impl std::future::Future<Output = R>,
+    ) -> (u16, serde_json::Value)
+    where
+        R: axum::response::IntoResponse,
+    {
+        let response = fut.await.into_response();
+        let status = response.status().as_u16();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    /// A workspace with an in-root repo and a sibling repo outside of it.
+    async fn issue_2580_state() -> (tempfile::TempDir, PathBuf, PathBuf, CliState) {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = w2908_target(tmp.path(), "2580-ws");
+        let inside = w2908_target(&workspace, "inside");
+        let outside = w2908_target(tmp.path(), "outside");
+        let state = xav01_test_state(workspace).await;
+        (tmp, inside, outside, state)
+    }
+
+    #[tokio::test]
+    async fn dump_accepts_a_target_inside_the_workspace() {
+        let (_tmp, inside, _outside, state) = issue_2580_state().await;
+
+        let (status, body) = xav01_status_body(code_dump_handler(
+            State(state),
+            axum::Json(serde_json::json!({ "path": inside.to_string_lossy() })),
+        ))
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["status"], "ok");
+        assert!(crate::cli::code_dump::codegraph_dump_path_for_target(
+            inside.canonicalize().unwrap().to_str().unwrap()
+        )
+        .exists());
+    }
+
+    #[tokio::test]
+    async fn load_accepts_a_dump_inside_the_workspace() {
+        let (_tmp, inside, _outside, state) = issue_2580_state().await;
+
+        // Seed a real dump inside the workspace, then load it back.
+        xav01_body(code_dump_handler(
+            State(state.clone()),
+            axum::Json(serde_json::json!({ "path": inside.to_string_lossy() })),
+        ))
+        .await;
+
+        let (status, body) = xav01_status_body(code_load_handler(
+            State(state),
+            axum::Json(serde_json::json!({ "path": inside.to_string_lossy() })),
+        ))
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn dump_rejects_a_target_outside_the_workspace() {
+        let (_tmp, _inside, outside, state) = issue_2580_state().await;
+
+        let (status, body) = xav01_status_body(code_dump_handler(
+            State(state),
+            axum::Json(serde_json::json!({ "path": outside.to_string_lossy() })),
+        ))
+        .await;
+
+        assert_eq!(status, 400, "an out-of-root target must not reach the fs");
+        assert_eq!(body["status"], "error");
+        assert!(body["message"]
+            .as_str()
+            .unwrap()
+            .contains("outside workspace root"));
+        assert!(
+            !outside.join(".xavier").exists(),
+            "a refused dump must not create anything"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_rejects_a_target_outside_the_workspace() {
+        let (_tmp, _inside, outside, state) = issue_2580_state().await;
+
+        let (status, body) = xav01_status_body(code_load_handler(
+            State(state),
+            axum::Json(serde_json::json!({ "path": outside.to_string_lossy() })),
+        ))
+        .await;
+
+        assert_eq!(status, 400);
+        assert!(body["message"]
+            .as_str()
+            .unwrap()
+            .contains("outside workspace root"));
+    }
+
+    #[tokio::test]
+    async fn dump_rejects_parent_dir_traversal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = w2908_target(tmp.path(), "2580-ws-traversal");
+        let escape = w2908_target(tmp.path(), "2580-escape");
+        let state = xav01_test_state(workspace.clone()).await;
+
+        // Absolute traversal that would land on a real, populated repo.
+        let traversal = format!("{}/../2580-escape", workspace.to_string_lossy());
+        let (status, body) = xav01_status_body(code_dump_handler(
+            State(state),
+            axum::Json(serde_json::json!({ "path": traversal })),
+        ))
+        .await;
+
+        assert_eq!(status, 400);
+        assert!(body["message"].as_str().unwrap().contains(".."));
+        assert!(
+            escape.exists(),
+            "fixture must exist so the bug would be live"
+        );
+    }
+
+    /// The `/code/dump` route exactly as `src/cli/server.rs` composes it.
+    ///
+    /// Built here because `server.rs` has no test module and the authorization
+    /// decision is only observable through the layered route: `auth_middleware`
+    /// proves who is calling, and this layer decides what they may touch. The
+    /// containment tests above cover the handler; this covers the wiring.
+    fn issue_2580_router(state: CliState) -> axum::Router {
+        use axum::middleware;
+        use axum::routing::post;
+        use xavier::middleware::require_permission;
+
+        axum::Router::new()
+            .route(
+                "/code/dump",
+                post(code_dump_handler).layer(middleware::from_fn(require_permission(
+                    code_dump_load_permission_check,
+                ))),
+            )
+            .with_state(state)
+    }
+
+    /// POST `/code/dump` as `role`, or with no claims at all when `None`.
+    ///
+    /// Returns only the status: 200 means the request reached the handler and
+    /// containment passed, 403 means the gate stopped it before any filesystem
+    /// access.
+    async fn issue_2580_dump_status(
+        state: CliState,
+        target: &str,
+        role: Option<xavier::security::auth::UserRole>,
+    ) -> u16 {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri("/code/dump")
+            .header("content-type", "application/json");
+        if let Some(role) = role {
+            let claims = xavier::security::auth::Claims::new(
+                "tester".to_string(),
+                "tester@example.com".to_string(),
+                role,
+                chrono::TimeDelta::seconds(60),
+            );
+            builder = builder.extension(claims);
+        }
+        let body = serde_json::json!({ "path": target }).to_string();
+        let request = builder.body(Body::from(body)).unwrap();
+
+        issue_2580_router(state)
+            .oneshot(request)
+            .await
+            .unwrap()
+            .status()
+            .as_u16()
+    }
+
+    #[tokio::test]
+    async fn dump_without_authentication_is_forbidden() {
+        let (_tmp, inside, _outside, state) = issue_2580_state().await;
+
+        let status = issue_2580_dump_status(state, &inside.to_string_lossy(), None).await;
+
+        assert_eq!(status, 403, "no claims must stop the dump before the fs");
+        assert!(
+            !crate::cli::code_dump::codegraph_dump_path_for_target(
+                inside.canonicalize().unwrap().to_str().unwrap()
+            )
+            .exists(),
+            "a forbidden dump must not have written anything"
+        );
+    }
+
+    #[tokio::test]
+    async fn dump_as_a_non_admin_role_is_forbidden() {
+        use xavier::security::auth::UserRole;
+
+        let (_tmp, inside, _outside, state) = issue_2580_state().await;
+
+        for role in [UserRole::Readonly, UserRole::User] {
+            let status =
+                issue_2580_dump_status(state.clone(), &inside.to_string_lossy(), Some(role)).await;
+            assert_eq!(status, 403, "{role:?} must not reach the dump route");
+        }
+    }
+
+    #[tokio::test]
+    async fn dump_as_admin_is_allowed_inside_the_workspace() {
+        use xavier::security::auth::UserRole;
+
+        let (_tmp, inside, _outside, state) = issue_2580_state().await;
+
+        let status =
+            issue_2580_dump_status(state, &inside.to_string_lossy(), Some(UserRole::Admin)).await;
+
+        assert_eq!(status, 200, "an Admin inside the workspace must be served");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dump_rejects_a_symlink_escaping_the_workspace() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = w2908_target(tmp.path(), "2580-ws-symlink");
+        let outside = w2908_target(tmp.path(), "2580-outside-symlink");
+        let link = workspace.join("escape");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        let state = xav01_test_state(workspace).await;
+
+        // The link itself is lexically inside the workspace; only a canonical
+        // comparison can tell that it points out of it.
+        let (status, body) = xav01_status_body(code_dump_handler(
+            State(state),
+            axum::Json(serde_json::json!({ "path": link.to_string_lossy() })),
+        ))
+        .await;
+
+        assert_eq!(status, 400);
+        assert!(body["message"]
+            .as_str()
+            .unwrap()
+            .contains("outside workspace root"));
+        assert!(
+            !outside.join(".xavier").exists(),
+            "a refused dump must not create anything behind the symlink"
         );
     }
 

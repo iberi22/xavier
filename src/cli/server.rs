@@ -1025,8 +1025,22 @@ pub async fn start_http_server(
         .route("/code/memories", post(code_memories_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
-        .route("/code/dump", post(code_dump_handler))
-        .route("/code/load", post(code_load_handler))
+        // #2580: dump/load read and write the filesystem. `auth_middleware`
+        // only proves *who* is calling; the role gate keeps a non-Admin
+        // session (lease, ephemeral, `xav_` token) out of them, and the
+        // handlers confine the target to the daemon workspace.
+        .route(
+            "/code/dump",
+            post(code_dump_handler).layer(middleware::from_fn(require_permission(
+                crate::cli::handlers::code::code_dump_load_permission_check,
+            ))),
+        )
+        .route(
+            "/code/load",
+            post(code_load_handler).layer(middleware::from_fn(require_permission(
+                crate::cli::handlers::code::code_dump_load_permission_check,
+            ))),
+        )
         .route("/code/sync", post(code_sync_handler))
         .route("/code/dependencies", post(code_dependencies_handler))
         .route(
