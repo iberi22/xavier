@@ -29,6 +29,7 @@ use std::time::{Duration, SystemTime};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::domain::cycle_breaks::w30_09::{MemoryIsland, SyncNotifier};
 use crate::memory::store::MemoryStore;
 
 // ---------------------------------------------------------------------------
@@ -285,9 +286,8 @@ impl PeerMemorySync {
             .await
             .insert(peer_url.to_string(), Utc::now());
 
-        let _ = crate::notifications::NOTIFICATIONS
-            .notify(
-                crate::notifications::IslandId::Memory,
+        let _ = MemoryIsland
+            .notify_memory(
                 "Memory Sync Completed",
                 &format!(
                     "Synced with {}: sent {} chunks, received {} chunks ({}ms)",

@@ -6,7 +6,7 @@
 use anyhow::{anyhow, bail, Result};
 use std::path::{Component, Path};
 
-use crate::ports::inbound::MemoryQueryPort;
+use crate::domain::cycle_breaks::w30_09::MemoryQueryPort;
 use crate::security::groups::LAB_SEGMENTS;
 
 /// Segment space manager wrapping a `MemoryQueryPort` implementation.

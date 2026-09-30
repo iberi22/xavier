@@ -2,9 +2,9 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::domain::cycle_breaks::w30_09::NavigationPolicy;
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::belief_graph::BeliefGraph;
-use crate::retrieval::policy::NavigationPolicy;
 use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
