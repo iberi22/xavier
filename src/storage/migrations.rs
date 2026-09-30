@@ -16,10 +16,13 @@
 //!   panel UI, and other utility tables.
 //! - **v5** — session token table recreation (with `id` PK) and recovery/auth
 //!   tables (`users`, `backup_codes`).
+//! - **v6** — skill usage telemetry events (`skill_usage_events`).
 //!
 //! Legacy databases that predate this system (tables present, no
-//! `schema_migrations`) are detected and backfilled to v5 by the runner without
-//! re-running any DDL.
+//! `schema_migrations`) are detected and backfilled to the latest version by
+//! the runner without re-running any DDL. Because that backfill records v6
+//! without executing it, [`ensure_skill_usage_events_schema`] replays the v6 DDL
+//! idempotently for the telemetry writer.
 
 use anyhow::Result;
 use rusqlite::Connection;
@@ -27,10 +30,10 @@ use rusqlite::Connection;
 use crate::storage::{table_has_column, LegacyMigration, Migration, MigrationRunner};
 
 // ---------------------------------------------------------------------------
-// Struct-based baseline migrations (v1–v5).
+// Struct-based baseline migrations (v1–v6).
 // ---------------------------------------------------------------------------
 
-/// All baseline migrations v1–v5, in version order.
+/// All baseline migrations v1–v6, in version order.
 ///
 /// Use with [`MigrationRunner::new`] (or `MigrationRunner::run` directly on a
 /// fresh connection).
@@ -41,6 +44,7 @@ pub fn baseline_migrations() -> Vec<Migration> {
         Migration::new(3, "vector_and_fts", V3_UP),
         Migration::new(4, "graph_timeline_utils", V4_UP),
         Migration::new(5, "sessions_and_recovery", V5_UP),
+        Migration::new(6, "skill_usage_events", V6_UP),
     ]
 }
 
@@ -369,6 +373,46 @@ CREATE TABLE IF NOT EXISTS backup_codes (
 );
 CREATE INDEX IF NOT EXISTS idx_backup_codes_user ON backup_codes(user_id);
 "#;
+
+// ===========================================================================
+// v6 — Skill usage telemetry events (skill controller, decision D12).
+//
+// Rows carry opaque identifiers only: no task text, absolute path, memory body
+// or credential is stored. Retention is applied by the writer
+// (`context::skill_controller::telemetry`), never by the schema.
+// ===========================================================================
+const V6_UP: &str = r#"
+CREATE TABLE IF NOT EXISTS skill_usage_events (
+    event_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    skill_name TEXT NOT NULL,
+    package_hash TEXT,
+    stage TEXT NOT NULL
+        CHECK (stage IN ('selected', 'delivered', 'invoked', 'completed')),
+    outcome TEXT NOT NULL DEFAULT 'ok',
+    latency_ms INTEGER,
+    token_estimate INTEGER,
+    observed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_skill_usage_events_retention
+    ON skill_usage_events (observed_at);
+CREATE INDEX IF NOT EXISTS idx_skill_usage_events_workspace_time
+    ON skill_usage_events (workspace_id, observed_at);
+CREATE INDEX IF NOT EXISTS idx_skill_usage_events_skill_stage
+    ON skill_usage_events (skill_name, stage);
+"#;
+
+/// Idempotently create the skill usage telemetry table (the v6 DDL).
+///
+/// The DDL belongs to the migration; this helper only replays it for databases
+/// whose `schema_migrations` backfill recorded v6 without executing it (legacy
+/// databases detected by [`MigrationRunner`]). Every statement is
+/// `IF NOT EXISTS`, so calling it on a migrated database is a no-op.
+pub fn ensure_skill_usage_events_schema(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(V6_UP)
+}
 
 // ===========================================================================
 // v7 — Embedding model metadata tracking.
@@ -802,7 +846,7 @@ mod tests {
     fn fresh_db_migrates_to_latest_version() {
         let conn = mem_conn();
         run(&conn).expect("baseline migration failed");
-        assert_version(&conn, 5);
+        assert_version(&conn, 6);
         // The latest migration should have created the recovery tables.
         let users: i64 = conn
             .query_row(
@@ -829,8 +873,8 @@ mod tests {
             .query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
         assert_eq!(
-            recorded, 5,
-            "exactly 5 migration rows after idempotent re-run"
+            recorded, 6,
+            "exactly 6 migration rows after idempotent re-run"
         );
     }
 
@@ -891,7 +935,11 @@ mod tests {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5], "applied in ascending order");
+        assert_eq!(
+            versions,
+            vec![1, 2, 3, 4, 5, 6],
+            "applied in ascending order"
+        );
     }
 
     #[test]
@@ -917,7 +965,7 @@ mod tests {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        assert_eq!(rows.len(), 5);
+        assert_eq!(rows.len(), 6);
         for (v, name) in &rows {
             assert_eq!(
                 name, "legacy-backfill",
@@ -925,7 +973,7 @@ mod tests {
                 v
             );
         }
-        assert_version(&conn, 5);
+        assert_version(&conn, 6);
 
         // Re-running must be a no-op (now that the bookkeeping table exists,
         // the DB is no longer "legacy").
@@ -934,7 +982,7 @@ mod tests {
             .query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
         assert_eq!(
-            recorded, 5,
+            recorded, 6,
             "no duplicate rows after re-run on backfilled db"
         );
     }
@@ -951,7 +999,7 @@ mod tests {
                 version INTEGER PRIMARY KEY,
                 applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
-            INSERT INTO schema_migrations (version) VALUES (1),(2),(3),(4),(5);",
+            INSERT INTO schema_migrations (version) VALUES (1),(2),(3),(4),(5),(6);",
         )
         .expect("seed old schema_migrations");
 
@@ -968,7 +1016,7 @@ mod tests {
             has_name, 1,
             "name column must exist after ensure_migration_table"
         );
-        assert_version(&conn, 5);
+        assert_version(&conn, 6);
     }
 
     #[test]
@@ -1033,8 +1081,9 @@ mod tests {
             (3, "vector_and_fts"),
             (4, "graph_timeline_utils"),
             (5, "sessions_and_recovery"),
+            (6, "skill_usage_events"),
         ];
-        assert_eq!(rows.len(), expected.len(), "5 rows recorded");
+        assert_eq!(rows.len(), expected.len(), "6 rows recorded");
         for ((v, name, ts), (ev, ename)) in rows.iter().zip(expected.iter()) {
             assert_eq!(v, ev, "version mismatch");
             assert_eq!(name, ename, "name mismatch for v{}", v);
@@ -1088,5 +1137,107 @@ mod tests {
             )
             .unwrap();
         assert_eq!(panel, 1, "panel_graphs created by V4 replay");
+    }
+
+    /// v6 round-trip: the telemetry table exists, carries the opaque-id columns
+    /// and rejects a stage outside the documented vocabulary.
+    #[test]
+    fn v6_skill_usage_events_round_trip() {
+        let conn = mem_conn();
+        run(&conn).expect("baseline migration failed");
+        assert_version(&conn, 6);
+
+        let columns: String = conn
+            .query_row(
+                "SELECT group_concat(name, ',') FROM pragma_table_info('skill_usage_events')",
+                [],
+                |r| r.get(0),
+            )
+            .expect("skill_usage_events must exist after v6");
+        for column in [
+            "event_id",
+            "workspace_id",
+            "task_id",
+            "tool",
+            "skill_name",
+            "package_hash",
+            "stage",
+            "outcome",
+            "latency_ms",
+            "token_estimate",
+            "observed_at",
+        ] {
+            assert!(
+                columns.contains(column),
+                "v6 must declare column '{}' (found: {})",
+                column,
+                columns
+            );
+        }
+
+        conn.execute(
+            "INSERT INTO skill_usage_events (
+                 event_id, workspace_id, task_id, tool, skill_name,
+                 stage, outcome, observed_at
+             ) VALUES ('evt-1', 'ws-1', 'task-1', 'claude-code', 'xavier-memory',
+                       'selected', 'ok', '2026-01-01T00:00:00.000Z')",
+            [],
+        )
+        .expect("opaque event row must insert");
+        let stage: String = conn
+            .query_row(
+                "SELECT stage FROM skill_usage_events WHERE event_id = 'evt-1'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("event row must round-trip");
+        assert_eq!(stage, "selected", "stage must round-trip verbatim");
+
+        let rejected = conn.execute(
+            "INSERT INTO skill_usage_events (
+                 event_id, workspace_id, task_id, tool, skill_name, stage, observed_at
+             ) VALUES ('evt-2', 'ws-1', 'task-1', 'claude-code', 'xavier-memory',
+                       'exfiltrated', '2026-01-01T00:00:00.000Z')",
+            [],
+        );
+        assert!(
+            rejected.is_err(),
+            "the stage CHECK must reject a stage outside selected/delivered/invoked/completed"
+        );
+    }
+
+    /// A legacy database is backfilled to v6 without executing the v6 DDL, so
+    /// the telemetry writer repairs it through the shared helper. The repair is
+    /// idempotent and never adds a bookkeeping row.
+    #[test]
+    fn ensure_skill_usage_events_schema_repairs_legacy_backfill() {
+        let conn = mem_conn();
+        conn.execute_batch(V1_UP).expect("seed legacy tables");
+        run(&conn).expect("legacy backfill");
+        assert_version(&conn, 6);
+        assert!(
+            !table_exists(&conn, "skill_usage_events").unwrap(),
+            "legacy backfill records v6 without running its DDL"
+        );
+
+        ensure_skill_usage_events_schema(&conn).expect("repair legacy telemetry schema");
+        assert!(
+            table_exists(&conn, "skill_usage_events").unwrap(),
+            "repair must create the telemetry table"
+        );
+        ensure_skill_usage_events_schema(&conn).expect("second repair must be a no-op");
+
+        let tables: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='skill_usage_events'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tables, 1, "exactly one telemetry table after two repairs");
+        let recorded: i64 = conn
+            .query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(recorded, 6, "the repair must not add a migration row");
     }
 }

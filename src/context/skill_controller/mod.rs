@@ -6,3 +6,4 @@ pub mod policy;
 pub mod projector;
 pub mod rollback;
 pub mod state;
+pub mod telemetry;
