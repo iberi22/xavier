@@ -5,6 +5,7 @@
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::future::Future;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -26,7 +27,29 @@ pub struct ProgressReport {
     pub eta_secs: u64,
     pub errors: usize,
     pub status: String,
+    /// Why the cycle ended in `failed`/`stalled`; empty otherwise.
+    ///
+    /// Without it `/health` shows a non-`completed` status with nothing to
+    /// explain it, and an operator cannot tell a slow cycle from a dead one.
+    #[serde(default)]
+    pub reason: String,
 }
+
+/// Wall-clock gap enforced between two consolidation cycles.
+///
+/// The cron expression alone is not a rate limit. `Schedule::upcoming` is
+/// rebuilt from the current instant on every iteration, so a schedule that
+/// lands on the current second re-enters immediately and the task becomes a
+/// busy loop: one core pinned, no progress, `/health` frozen on `running`.
+/// This floor is what makes the loop rate-limited whatever the schedule says.
+pub const MIN_CYCLE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Upper bound for a single consolidation cycle.
+///
+/// A cycle that overruns it is dropped rather than awaited forever, and the
+/// shared progress report is flipped to `stalled` so the stall is visible
+/// instead of silent.
+pub const CYCLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 pub struct TgdConsolidationScheduler {
     workspace: WorkspaceContext,
@@ -79,38 +102,32 @@ impl TgdConsolidationScheduler {
                 }
             };
 
-            while let Some(next) = schedule.upcoming(Utc).next() {
-                let now = Utc::now();
-                if next > now {
-                    let sleep_duration = next
-                        .signed_duration_since(now)
-                        .to_std()
-                        .unwrap_or(Duration::from_secs(0));
-                    info!("📅 Next TGD consolidation scheduled for: {}", next);
-
-                    tokio::select! {
-                        _ = tokio::time::sleep(sleep_duration) => {},
-                        _ = scheduler.cancellation_token.cancelled() => {
-                            info!("🛑 TGD consolidation scheduler cancelled");
-                            return;
-                        }
-                    }
-                }
-
-                if scheduler.cancellation_token.is_cancelled() {
-                    break;
-                }
-
-                info!("⚙️ Starting scheduled TGD consolidation...");
-                if let Err(e) = scheduler.run_once().await {
-                    error!("❌ Scheduled consolidation failed: {}", e);
-                }
-            }
+            run_cycle_loop(
+                schedule,
+                scheduler.cancellation_token.clone(),
+                Arc::clone(&scheduler.progress),
+                CYCLE_TIMEOUT,
+                MIN_CYCLE_INTERVAL,
+                || scheduler.run_once(),
+            )
+            .await;
+            info!("🛑 TGD consolidation scheduler stopped");
         });
     }
 
     /// Run once.
     pub async fn run_once(&self) -> anyhow::Result<()> {
+        match self.run_cycle().await {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                mark_unfinished(&self.progress, "failed", &error.to_string()).await;
+                Err(error)
+            }
+        }
+    }
+
+    /// One consolidation pass. Bound by the caller via [`CYCLE_TIMEOUT`].
+    async fn run_cycle(&self) -> anyhow::Result<()> {
         let start = std::time::Instant::now();
         {
             let mut p = self.progress.write().await;
@@ -159,9 +176,7 @@ impl TgdConsolidationScheduler {
 
         {
             let mut p = self.progress.write().await;
-            p.status = "completed".to_string();
-            p.processed = final_stats.selected;
-            p.errors = final_stats.errors;
+            publish_completed(&mut p, final_stats.selected, final_stats.errors);
         }
 
         info!(
@@ -218,6 +233,113 @@ impl TgdConsolidationScheduler {
         let state = serde_json::from_str(&data)?;
         Ok(state)
     }
+}
+
+/// The scheduler loop, with the cycle and both bounds injected.
+///
+/// `cycle` is a future *factory*, not a future: a cycle that timed out is
+/// dropped mid-flight, and the next cycle has to start from scratch. The two
+/// bounds are parameters so a test can shrink them without waiting real
+/// minutes; production passes [`CYCLE_TIMEOUT`] and [`MIN_CYCLE_INTERVAL`]:
+///
+///   * `cycle_timeout` cancels a cycle that stopped advancing, so a hang is
+///     reported instead of awaited forever;
+///   * `min_interval` separates two cycles, so a schedule that lands on the
+///     current instant cannot turn this into a spin loop.
+async fn run_cycle_loop<F, Fut>(
+    schedule: cron::Schedule,
+    cancellation_token: CancellationToken,
+    progress: Arc<RwLock<ProgressReport>>,
+    cycle_timeout: Duration,
+    min_interval: Duration,
+    cycle: F,
+) where
+    F: Fn() -> Fut,
+    Fut: Future<Output = anyhow::Result<()>>,
+{
+    while let Some(next) = schedule.upcoming(Utc).next() {
+        let now = Utc::now();
+        if next > now {
+            let sleep_duration = next
+                .signed_duration_since(now)
+                .to_std()
+                .unwrap_or(Duration::from_secs(0));
+            info!("📅 Next TGD consolidation scheduled for: {}", next);
+
+            tokio::select! {
+                _ = tokio::time::sleep(sleep_duration) => {},
+                _ = cancellation_token.cancelled() => {
+                    info!("🛑 TGD consolidation scheduler cancelled");
+                    return;
+                }
+            }
+        }
+
+        if cancellation_token.is_cancelled() {
+            return;
+        }
+
+        info!("⚙️ Starting scheduled TGD consolidation...");
+        match tokio::time::timeout(cycle_timeout, cycle()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                error!("❌ Scheduled consolidation failed: {}", error);
+                mark_unfinished(&progress, "failed", &error.to_string()).await;
+            }
+            Err(_elapsed) => {
+                error!(
+                    "⏱️ Scheduled consolidation exceeded {}s and was cancelled",
+                    cycle_timeout.as_secs()
+                );
+                mark_unfinished(
+                    &progress,
+                    "stalled",
+                    &format!("cycle exceeded {}", cycle_timeout.as_secs()),
+                )
+                .await;
+            }
+        }
+
+        // Floor between two cycles: a schedule that lands on the current instant
+        // would otherwise re-enter immediately and turn this into a spin loop.
+        tokio::select! {
+            _ = tokio::time::sleep(min_interval) => {},
+            _ = cancellation_token.cancelled() => {
+                info!("🛑 TGD consolidation scheduler cancelled");
+                return;
+            }
+        }
+    }
+}
+
+/// Flag a cycle that did not finish on the shared progress report.
+///
+/// `progress` is the same `Arc` handed to `HEALTH.set_tgd_progress`, so this is
+/// what `/health` reports: a cycle that overran [`CYCLE_TIMEOUT`] reads as
+/// `stalled` and one that returned an error as `failed`, instead of both
+/// leaving `/health` frozen on `running` with no explanation. `processed` is
+/// left as-is so a non-completed cycle stays visibly incomplete.
+async fn mark_unfinished(progress: &Arc<RwLock<ProgressReport>>, status: &str, reason: &str) {
+    let mut p = progress.write().await;
+    p.status = status.to_string();
+    p.reason = reason.to_string();
+    p.eta_secs = 0;
+}
+
+/// Publish the end state of a finished cycle.
+///
+/// `consolidate` publishes a *running estimate* whose last increment stops
+/// short of `total`, so copying only `processed` left every finished cycle
+/// reading as permanently behind on `/health`. Both counters come from the
+/// same final stat here, and the invariant is `processed == total` whenever
+/// the status is `completed` — the state a caller can act on.
+fn publish_completed(progress: &mut ProgressReport, selected: usize, errors: usize) {
+    progress.status = "completed".to_string();
+    progress.total = selected;
+    progress.processed = selected;
+    progress.errors = errors;
+    progress.eta_secs = 0;
+    progress.reason.clear();
 }
 
 /// Run a standalone nightly TGD consolidation: updates .xavier/tgd.md
@@ -299,5 +421,207 @@ pub async fn run_nightly_tgd() -> anyhow::Result<()> {
 impl NightlyTgd for crate::memory::manager::MemoryManager {
     async fn run_nightly_tgd(&self) -> anyhow::Result<()> {
         run_nightly_tgd().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    // ── #2732: a cycle that stops advancing must not spin the loop ────
+    // `run_once` used to be awaited inline with no timeout and no gap, so a
+    // cycle that stopped advancing held the task forever, `/health` stayed
+    // frozen on `running`, and a schedule landing on the current instant
+    // re-entered immediately: one core pinned at ~380k read syscalls/s.
+    //
+    // These tests drive a real clock rather than a paused one: `tokio`'s
+    // `pause`/`advance` live behind the `test-util` feature, which this crate
+    // does not enable and enabling it is a workspace-wide manifest change
+    // outside this change's file scope. The bounds are therefore injected at
+    // milliseconds instead of minutes, and every wait below polls for the
+    // state it needs with a generous budget rather than sleeping a fixed
+    // amount — so a loaded CI box makes the test slower, never wrong.
+
+    /// Bound on one cycle under test.
+    const TEST_CYCLE_TIMEOUT: Duration = Duration::from_millis(30);
+
+    /// Minimum gap between two cycles under test.
+    const TEST_MIN_INTERVAL: Duration = Duration::from_millis(30);
+
+    /// Budget for a state the loop must reach within a couple of cron ticks.
+    ///
+    /// The schedule ticks once per second, so two cycles need at most ~2.1s.
+    const TEST_BUDGET: Duration = Duration::from_secs(20);
+
+    /// The worst case a cron expression can express: a tick every second.
+    fn every_second() -> cron::Schedule {
+        cron::Schedule::from_str("* * * * * *").expect("valid cron expression")
+    }
+
+    /// Poll `ready` until it holds or [`TEST_BUDGET`] expires.
+    async fn wait_until(mut ready: impl FnMut() -> bool) -> bool {
+        tokio::time::timeout(TEST_BUDGET, async {
+            while !ready() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .is_ok()
+    }
+
+    #[tokio::test]
+    async fn a_cycle_that_never_advances_is_bounded_and_rate_limited() {
+        let calls = Arc::new(Mutex::new(Vec::<Instant>::new()));
+        let progress = Arc::new(RwLock::new(ProgressReport::default()));
+        let cancellation_token = CancellationToken::new();
+
+        let handle = tokio::spawn({
+            let calls = Arc::clone(&calls);
+            let cancellation_token = cancellation_token.clone();
+            let progress = Arc::clone(&progress);
+            async move {
+                run_cycle_loop(
+                    every_second(),
+                    cancellation_token,
+                    progress,
+                    TEST_CYCLE_TIMEOUT,
+                    TEST_MIN_INTERVAL,
+                    || {
+                        let calls = Arc::clone(&calls);
+                        async move {
+                            calls.lock().unwrap().push(Instant::now());
+                            // A cycle that never finishes: no progress, ever.
+                            std::future::pending::<()>().await;
+                            Ok(())
+                        }
+                    },
+                )
+                .await;
+            }
+        });
+
+        let came_back = wait_until(|| calls.lock().unwrap().len() >= 3).await;
+        cancellation_token.cancel();
+        let _ = handle.await;
+
+        let starts = calls.lock().unwrap().clone();
+        assert!(
+            came_back && starts.len() >= 3,
+            "a bounded cycle must let the loop come back around; saw {} cycles, \
+             which is the unbounded `run_once().await` behaviour this closes",
+            starts.len()
+        );
+        for pair in starts.windows(2) {
+            let gap = pair[1].duration_since(pair[0]);
+            assert!(
+                gap >= TEST_MIN_INTERVAL,
+                "cycles re-entered {gap:?} apart; the loop must wait at least \
+                 {TEST_MIN_INTERVAL:?} between them or it is a spin loop"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stalled_cycle_is_reported_on_the_health_progress() {
+        let progress = Arc::new(RwLock::new(ProgressReport {
+            status: "running".to_string(),
+            total: 7,
+            processed: 2,
+            ..Default::default()
+        }));
+        let cancellation_token = CancellationToken::new();
+
+        let handle = tokio::spawn({
+            let cancellation_token = cancellation_token.clone();
+            let progress = Arc::clone(&progress);
+            async move {
+                run_cycle_loop(
+                    every_second(),
+                    cancellation_token,
+                    progress,
+                    TEST_CYCLE_TIMEOUT,
+                    TEST_MIN_INTERVAL,
+                    || async {
+                        std::future::pending::<()>().await;
+                        Ok(())
+                    },
+                )
+                .await;
+            }
+        });
+
+        let flagged = wait_until(|| progress.try_read().is_ok_and(|p| p.status == "stalled")).await;
+        let report = progress.read().await.clone();
+        cancellation_token.cancel();
+        let _ = handle.await;
+
+        // `progress` is the same `Arc` that `src/cli/server.rs` hands to
+        // `HEALTH.set_tgd_progress`, so this is what `/health` reports.
+        assert!(
+            flagged,
+            "an overrun cycle must be flagged, not left `running`"
+        );
+        assert_eq!(report.status, "stalled");
+        assert_eq!(
+            report.reason,
+            format!("cycle exceeded {}", TEST_CYCLE_TIMEOUT.as_secs()),
+            "a stall must say which bound killed it"
+        );
+        assert_eq!(report.eta_secs, 0);
+        assert!(
+            report.processed < report.total,
+            "a stalled cycle stays visibly incomplete instead of claiming to be done"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_finished_cycle_reports_processed_equal_to_total() {
+        // Mid-flight state as `consolidate` leaves it: `processed` is always
+        // short of `total`, which used to survive into the completed report.
+        let progress = Arc::new(RwLock::new(ProgressReport {
+            status: "running".to_string(),
+            total: 12,
+            processed: 9,
+            eta_secs: 900,
+            errors: 0,
+            reason: "stale earlier failure".to_string(),
+        }));
+
+        let mut guard = progress.write().await;
+        publish_completed(&mut guard, 12, 2);
+        drop(guard);
+
+        let report = progress.read().await;
+        assert_eq!(report.status, "completed");
+        assert_eq!(report.processed, report.total);
+        assert_eq!(report.processed, 12);
+        assert_eq!(report.eta_secs, 0);
+        assert_eq!(report.errors, 2);
+        assert_eq!(report.reason, "", "a clean cycle clears the old reason");
+    }
+
+    #[tokio::test]
+    async fn a_failing_cycle_reports_why_instead_of_staying_running() {
+        let progress = Arc::new(RwLock::new(ProgressReport {
+            status: "running".to_string(),
+            total: 5,
+            processed: 1,
+            eta_secs: 300,
+            errors: 0,
+            reason: String::new(),
+        }));
+
+        mark_unfinished(&progress, "failed", "embedding unreachable").await;
+
+        let report = progress.read().await;
+        assert_eq!(report.status, "failed");
+        assert_eq!(report.reason, "embedding unreachable");
+        assert_eq!(report.eta_secs, 0);
+        assert!(
+            report.processed < report.total,
+            "a failed cycle stays visibly incomplete instead of claiming to be done"
+        );
     }
 }
