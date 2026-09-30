@@ -34,20 +34,7 @@ pub struct Thread {
     pub source: Option<String>,
 }
 
-/// A single message within a conversation thread.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub id: String,
-    pub thread_id: String,
-    pub role: String,
-    pub content: String,
-    pub tool_calls: Option<String>,
-    pub openui_lang: Option<String>,
-    pub xui_json: Option<String>,
-    pub metadata: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub tokens: Option<i64>,
-}
+pub use crate::domain::cycle_breaks::w30_10::Message;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThreadSummary {
@@ -416,7 +403,8 @@ impl ConversationsDb {
         // After successfully inserting the message, let's load all messages of this thread,
         // generate the extractive summary, and save it to the thread's `last_preview`!
         if let Ok(messages) = self.get_thread_messages(thread_id).await {
-            let summary = crate::memory::episodic::summarize_session_extractive(&messages);
+            let summary =
+                crate::domain::cycle_breaks::w30_10::summarize_session_extractive(&messages);
             let _ = self.update_last_preview(thread_id, &summary).await;
         }
 

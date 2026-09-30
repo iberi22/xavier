@@ -11,7 +11,7 @@
 //! never the whole file.
 
 use crate::codebase::snapshot::{PreciseChange, SnapshotManager};
-use crate::memory::store::MemoryRecord;
+use crate::domain::cycle_breaks::w30_12::MemoryRecord;
 use anyhow::{Context, Result};
 use code_graph::db::CodeGraphDB;
 use serde::{Deserialize, Serialize};
@@ -231,8 +231,10 @@ pub fn parse_issue_entities(title: &str, body: &str) -> Vec<ExtractedEntity> {
     let full_text = format!("{}\n{}", title, body);
 
     // Extract file paths (2+ segments with extension)
-    let file_re =
-        regex::Regex::new(r"(?:^|\s|`)([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,10})(?:`|\s|$)").unwrap();
+    let Ok(file_re) = regex::Regex::new(r"(?:^|\s|`)([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,10})(?:`|\s|$)")
+    else {
+        return Vec::new();
+    };
     for mat in file_re.find_iter(&full_text) {
         let path = mat.as_str().trim_matches('`').trim();
         // Filter out common false positives
@@ -246,8 +248,11 @@ pub fn parse_issue_entities(title: &str, body: &str) -> Vec<ExtractedEntity> {
     }
 
     // Extract backtick-quoted symbols
-    let symbol_re =
-        regex::Regex::new(r"`([a-zA-Z_][a-zA-Z0-9_:]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)?)`").unwrap();
+    let Ok(symbol_re) =
+        regex::Regex::new(r"`([a-zA-Z_][a-zA-Z0-9_:]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)?)`")
+    else {
+        return Vec::new();
+    };
     for mat in symbol_re.captures_iter(&full_text) {
         if let Some(sym) = mat.get(1) {
             let sym_str = sym.as_str();
@@ -263,7 +268,9 @@ pub fn parse_issue_entities(title: &str, body: &str) -> Vec<ExtractedEntity> {
     }
 
     // Extract feature references
-    let feat_re = regex::Regex::new(r"(feat-[a-zA-Z0-9_-]+|FEAT-[A-Z0-9_-]+)").unwrap();
+    let Ok(feat_re) = regex::Regex::new(r"(feat-[a-zA-Z0-9_-]+|FEAT-[A-Z0-9_-]+)") else {
+        return Vec::new();
+    };
     for mat in feat_re.find_iter(&full_text) {
         entities.push(ExtractedEntity {
             kind: "feature".to_string(),
@@ -736,6 +743,8 @@ pub async fn pack_issue(issue_id: &str, repo: &str) -> Result<IssueContextPack> 
 mod tests {
     use super::*;
 
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[test]
     fn test_detect_issue_type() {
         assert_eq!(
@@ -857,6 +866,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_issue_context_package_oversized_diff_budget() {
+        let _env_guard = ENV_LOCK.lock().await;
         use code_graph::indexer::Indexer;
         use std::sync::Arc;
         use tempfile::tempdir;
@@ -893,9 +903,9 @@ mod tests {
         // stale or hung sidecar on the runner would make this test order-
         // and machine-dependent (a hung plugin used to stall the whole CI
         // job until runner shutdown). Clearing PATH before constructing the
-        // indexer forces the deterministic Native parser path. The CI gate
-        // runs `--test-threads=1`, so no other test runs concurrently; the
-        // guard restores PATH on drop (panic-safe).
+        // indexer forces the deterministic Native parser path. The shared
+        // async guard serializes this module's environment-sensitive tests;
+        // ClearPathGuard restores PATH on drop (panic-safe).
         struct ClearPathGuard {
             prev: Option<String>,
         }
@@ -989,6 +999,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pack_issue_and_save_pack() {
+        let _env_guard = ENV_LOCK.lock().await;
         let pack = pack_issue("123", "xavier")
             .await
             .expect("pack_issue should succeed");
