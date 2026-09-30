@@ -31,3 +31,17 @@ To prevent environment variable leaks and flaky test behavior across unit and in
 
 3. **`EnvGuard` Restoration Pattern:**
    Use `EnvGuard` or explicit lock guards to capture baseline environment variable values upon entry and automatically restore them upon `Drop`.
+
+## Integration job: Observability Contract
+
+`.github/workflows/ci.yml` runs a dedicated job, **Rust Integration (Observability Contract)**, scoped to one target (not every integration binary):
+
+```bash
+cargo test --package xavier --features ci-safe --test observability_contract -- --test-threads=1
+```
+
+`tests/observability_contract.rs` boots a real `xavier http` and asserts that `GET /health`, MCP `health_check` and the stats surface agree (WAVE-29.10, #2563). The spawned server must stay hermetic: `XAVIER_HOME`, `XAVIER_STATE_DIR`, `XAVIER_DATA_DIR` and the working directory all point inside a tempdir, so the test never reads or writes the developer's `~/.xavier` (including the encrypted `auth.db`). Every field read asserts presence and type, so a missing field fails loudly.
+
+## Verifying across parallel worktrees
+
+Worktrees that share one `CARGO_TARGET_DIR` all produce the same `target/debug/deps/xavier-<hash>` test binary. If cargo decides nothing changed, the binary you run may come from another worktree. Before a verification run, `touch src/lib.rs`, check that the build log says `Compiling xavier ... (<this worktree>)`, and confirm the new test names appear in the test output. The pre-commit hook lints with **default features** (no `ci-safe`), so run clippy both ways.

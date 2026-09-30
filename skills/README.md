@@ -46,7 +46,7 @@ rm -f ~/.config/opencode/skills/$NAME && ln -sfn "$REPO/skills/$NAME" ~/.config/
 | `maloca-hub` | Hub SWAL: 6 módulos, 7 principios, capas, endpoints canónicos |
 | `maloca-backlog-ops` | Backlog unificado, features.json v2, waves, gaps #2/#4 |
 | `maloca-xavier-integration` | Módulo Maloca de Xavier: rutas, WS feed, tests, health |
-| `maloca-atlas-tasks` | Atlas Core ↔ Xavier ↔ Maloca, event bus, swal-node |
+| `maloca-atlas-tasks` | Atlas Core ↔ Xavier ↔ Maloca, event bus, xavier-task-worker (ex swal-node) |
 | `maloca-security` | Bind 0.0.0.0, token Admin plano, guard del túnel, JWT readonly |
 | `maloca-cloudflare` | Zonas, Pages, túnel efímero, mitigación KV creep |
 

@@ -33,8 +33,12 @@ The `AutoImprovementEngine` uses live query logs and pre-defined test suites to 
 Execute an optimization run to measure benchmark recall gaps and tune parameters:
 
 ```bash
-# Trigger an auto-improvement experiment loop
-xavier improve run --benchmark "rag_recall_test"
+# Trigger an auto-improvement experiment loop (flags: --autonomous, --json, --ci).
+# Each stage is bounded by XAVIER_IMPROVE_STAGE_TIMEOUT_SECS (default 120) and the
+# whole cycle by XAVIER_IMPROVE_TOTAL_TIMEOUT_SECS (default 300); an overrun ends the
+# cycle as "truncated" with partial progress saved. Exit codes: 0 completed,
+# 124 truncated, 1 failed (partial progress could not be persisted).
+xavier improve run
 ```
 
 Retrieve historical experiment status:
