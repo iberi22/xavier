@@ -22,56 +22,14 @@ use anyhow::{Context, Result};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::fmt;
 
-// ---------------------------------------------------------------------------
-// NodeId — The human-shareable identifier for a Xavier node
-// ---------------------------------------------------------------------------
+use crate::domain::cycle_breaks::w30_05::{
+    DerivedNodeKeys, NodeIdentityFactory, NodeIdentityView, SwalVaultKeySource,
+};
 
-pub use crate::domain::cycle_breaks::w30_04::NodeId;
-
-impl NodeId {
-    /// Parse a NodeID from a string. Validates the `xv1-` prefix and length.
-    pub fn parse(s: &str) -> Result<Self> {
-        let s = s.trim();
-        if !s.starts_with("xv1-") {
-            anyhow::bail!("Invalid NodeID: must start with 'xv1-'. Got: {}", s);
-        }
-        if s.len() < 10 {
-            anyhow::bail!("Invalid NodeID: too short ({})", s.len());
-        }
-        Ok(NodeId(s.to_string()))
-    }
-
-    /// Returns the raw string representation.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// Derive a NodeID from an Ed25519 public key bytes.
-    pub fn from_public_key_bytes(pk_bytes: &[u8]) -> Self {
-        let mut hasher = Sha256::new();
-        hasher.update(pk_bytes);
-        let hash = hasher.finalize();
-
-        // Take first 15 bytes → encode as base32 (no padding) → prefix with "xv1-"
-        let encoded = base32_encode(&hash[..15]);
-        NodeId(format!("xv1-{}", encoded.to_lowercase()))
-    }
-}
-
-impl fmt::Display for NodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl fmt::Debug for NodeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "NodeId({})", self.0)
-    }
-}
+/// The human-shareable identifier for a Xavier node (domain type, wave 30).
+pub use crate::domain::cycle_breaks::w30_05::NodeId;
 
 // ---------------------------------------------------------------------------
 // NodeIdentity — The full keypair + derived NodeID
@@ -128,7 +86,7 @@ impl NodeIdentity {
     }
 
     /// Build mesh identity from SWAL vault-derived keys (login F0 → F1 bridge).
-    pub fn from_derived(keys: &crate::node_identity::DerivedNodeKeys) -> Self {
+    pub fn from_derived(keys: &DerivedNodeKeys) -> Self {
         Self {
             node_id: keys.node_id.clone(),
             public_key: keys.ed25519_public.to_vec(),
@@ -155,16 +113,17 @@ impl NodeIdentity {
         })
     }
 
-    /// Prefer SWAL vault under `XAVIER_DATA_DIR/node/` when PIN unlocks it.
-    pub fn load_preferring_swal_vault(pin: &str, device_key: Option<&[u8; 32]>) -> Result<Self> {
-        let store = crate::node_identity::NodeStore::default_from_env();
-        if store.paths.vault.exists() {
-            let (_opened, keys, _codes) = store
-                .unlock(pin, device_key)
-                .map_err(|e| anyhow::anyhow!("swal vault unlock failed: {e}"))?;
-            return Ok(Self::from_derived(&keys));
+    /// Prefer the injected [`SwalVaultKeySource`] vault; else load/create the keypair.
+    pub fn load_preferring_swal_vault<V: SwalVaultKeySource>(
+        pin: &str,
+        device_key: Option<&[u8; 32]>,
+        vault: &V,
+    ) -> Result<Self> {
+        match vault.unlock_derived_keys(pin, device_key) {
+            Ok(Some(keys)) => Ok(Self::from_derived(&keys)),
+            Ok(None) => Self::load_or_create(),
+            Err(e) => Err(anyhow::anyhow!("swal vault unlock failed: {e}")),
         }
-        Self::load_or_create()
     }
 
     /// Hex ML-DSA commitment for hybrid / edge-mesh bridge (if present).
@@ -301,33 +260,23 @@ struct StoredIdentity {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Domain capabilities (wave 30 / issue WAVE-30.05)
 // ---------------------------------------------------------------------------
 
-/// Encode bytes as lowercase base32 without padding (Crockford-like).
-fn base32_encode(input: &[u8]) -> String {
-    const ALPHABET: &[u8] = b"0123456789abcdefghjkmnpqrstvwxyz";
-    let mut output = String::new();
-
-    let mut buffer: u64 = 0;
-    let mut bits_in_buffer: u32 = 0;
-
-    for &byte in input {
-        buffer = (buffer << 8) | (byte as u64);
-        bits_in_buffer += 8;
-        while bits_in_buffer >= 5 {
-            bits_in_buffer -= 5;
-            let idx = ((buffer >> bits_in_buffer) & 0x1F) as usize;
-            output.push(ALPHABET[idx] as char);
-        }
+impl NodeIdentityView for NodeIdentity {
+    fn private_key_bytes(&self) -> &[u8] {
+        &self.private_key
     }
 
-    if bits_in_buffer > 0 {
-        let idx = ((buffer << (5 - bits_in_buffer)) & 0x1F) as usize;
-        output.push(ALPHABET[idx] as char);
+    fn ml_dsa_commitment_hex(&self) -> Option<String> {
+        NodeIdentity::ml_dsa_commitment_hex(self)
     }
+}
 
-    output
+impl NodeIdentityFactory for NodeIdentity {
+    fn from_derived_keys(keys: &DerivedNodeKeys) -> Self {
+        NodeIdentity::from_derived(keys)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -378,5 +327,60 @@ mod tests {
         let a = NodeIdentity::generate();
         let b = NodeIdentity::generate();
         assert_ne!(a.node_id, b.node_id, "Each identity must be unique");
+    }
+
+    struct StubVault {
+        outcome: Result<Option<DerivedNodeKeys>, String>,
+    }
+
+    impl SwalVaultKeySource for StubVault {
+        fn unlock_derived_keys(
+            &self,
+            _pin: &str,
+            _device_key: Option<&[u8; 32]>,
+        ) -> Result<Option<DerivedNodeKeys>, String> {
+            match &self.outcome {
+                Ok(Some(keys)) => Ok(Some(DerivedNodeKeys {
+                    node_id: keys.node_id.clone(),
+                    ed25519_public: keys.ed25519_public,
+                    ed25519_secret: keys.ed25519_secret,
+                    ml_dsa_commitment: keys.ml_dsa_commitment,
+                })),
+                Ok(None) => Ok(None),
+                Err(e) => Err(e.clone()),
+            }
+        }
+    }
+
+    fn stub_keys() -> DerivedNodeKeys {
+        let mut secret = [0u8; 32];
+        secret[0] = 7;
+        DerivedNodeKeys {
+            node_id: NodeId::parse("xv1-stubvault00").unwrap(),
+            ed25519_public: [1u8; 32],
+            ed25519_secret: secret,
+            ml_dsa_commitment: [2u8; 32],
+        }
+    }
+
+    #[test]
+    fn load_preferring_swal_vault_uses_injected_vault_keys() {
+        let keys = stub_keys();
+        let vault = StubVault {
+            outcome: Ok(Some(keys.clone())),
+        };
+        let loaded = NodeIdentity::load_preferring_swal_vault("1234", None, &vault).unwrap();
+        assert_eq!(loaded.node_id, keys.node_id);
+        assert_eq!(loaded.private_key, keys.ed25519_secret.to_vec());
+        assert_eq!(loaded.ml_dsa_commitment, Some(keys.ml_dsa_commitment));
+    }
+
+    #[test]
+    fn load_preferring_swal_vault_propagates_unlock_failure() {
+        let vault = StubVault {
+            outcome: Err("bad pin".to_string()),
+        };
+        let err = NodeIdentity::load_preferring_swal_vault("0000", None, &vault).unwrap_err();
+        assert_eq!(err.to_string(), "swal vault unlock failed: bad pin");
     }
 }

@@ -17,7 +17,7 @@ use crate::data_commons::types::{
 };
 
 #[cfg(feature = "dao-evm")]
-use crate::mesh::governance::onchain::OnchainDaoClient;
+use crate::domain::cycle_breaks::w30_05::{IntoOnchainDaoGateway, OnchainDaoGateway};
 
 /// Result of quadratic voting tallying
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -476,7 +476,7 @@ impl BicameralDao for MockBicameralDao {
 /// Gated behind the `dao-evm` feature flag to avoid pulling in heavier dependencies unless requested.
 #[cfg(feature = "dao-evm")]
 pub struct OnChainBicameralDao {
-    config: crate::mesh::governance::EvmDaoConfig,
+    chain: Box<dyn OnchainDaoGateway>,
     // Under the hood, it also keeps a local mock cache so it can act as hybrid/persisted
     mock: MockBicameralDao,
 }
@@ -484,9 +484,9 @@ pub struct OnChainBicameralDao {
 #[cfg(feature = "dao-evm")]
 impl OnChainBicameralDao {
     /// New.
-    pub fn new(config: crate::mesh::governance::EvmDaoConfig, state_path: Option<PathBuf>) -> Self {
+    pub fn new<G: IntoOnchainDaoGateway>(chain: G, state_path: Option<PathBuf>) -> Self {
         Self {
-            config,
+            chain: chain.into_onchain_dao_gateway(),
             mock: MockBicameralDao::new(state_path),
         }
     }
@@ -509,8 +509,7 @@ impl BicameralDao for OnChainBicameralDao {
             .await?;
 
         // Submit to EVM chain via alloy
-        let client = OnchainDaoClient::new(self.config.clone());
-        client
+        self.chain
             .propose(&prop.id, title, description)
             .await
             .map_err(|e| format!("Failed on-chain propose: {:?}", e))?;
@@ -534,8 +533,7 @@ impl BicameralDao for OnChainBicameralDao {
         // We defaults to 100 voting power (since a mock voter balance can be treated as 100 XP)
         let voting_power = 100;
 
-        let client = OnchainDaoClient::new(self.config.clone());
-        client
+        self.chain
             .vote(proposal_id, approve, voting_power, false)
             .await
             .map_err(|e| format!("Failed on-chain user vote: {:?}", e))?;
@@ -554,8 +552,7 @@ impl BicameralDao for OnChainBicameralDao {
             .cast_council_vote(proposal_id, member_id, approve)
             .await?;
 
-        let client = OnchainDaoClient::new(self.config.clone());
-        client
+        self.chain
             .vote(proposal_id, approve, 1, true)
             .await
             .map_err(|e| format!("Failed on-chain council vote: {:?}", e))?;
@@ -567,8 +564,7 @@ impl BicameralDao for OnChainBicameralDao {
     async fn council_veto(&mut self, proposal_id: &str, reason: String) -> Result<(), String> {
         self.mock.council_veto(proposal_id, reason.clone()).await?;
 
-        let client = OnchainDaoClient::new(self.config.clone());
-        client
+        self.chain
             .veto(proposal_id, &reason)
             .await
             .map_err(|e| format!("Failed on-chain veto: {:?}", e))?;
@@ -580,8 +576,7 @@ impl BicameralDao for OnChainBicameralDao {
     async fn community_appeal(&mut self, proposal_id: &str) -> Result<(), String> {
         self.mock.community_appeal(proposal_id).await?;
 
-        let client = OnchainDaoClient::new(self.config.clone());
-        client
+        self.chain
             .overrule(proposal_id)
             .await
             .map_err(|e| format!("Failed on-chain overrule: {:?}", e))?;
@@ -596,9 +591,8 @@ impl BicameralDao for OnChainBicameralDao {
     async fn tally_votes(&mut self, proposal_id: &str) -> Result<BicameralResult, String> {
         let mut local_res = self.mock.tally_votes(proposal_id).await?;
 
-        let client = OnchainDaoClient::new(self.config.clone());
         if let Ok((approved, user_yes, user_no, council_yes, council_no, vetoed, executed)) =
-            client.get_proposal_status(proposal_id).await
+            self.chain.get_proposal_status(proposal_id).await
         {
             local_res.passed = approved;
             local_res.user_votes_for = user_yes;
@@ -620,8 +614,7 @@ impl BicameralDao for OnChainBicameralDao {
     ) -> Result<(), String> {
         self.mock.execute_proposal(proposal_id, params).await?;
 
-        let client = OnchainDaoClient::new(self.config.clone());
-        client
+        self.chain
             .execute(proposal_id)
             .await
             .map_err(|e| format!("Failed on-chain execution: {:?}", e))?;

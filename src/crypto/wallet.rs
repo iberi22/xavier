@@ -2,7 +2,8 @@
 //!
 //! Provides encrypted key storage at rest using AES-256-GCM with master key derived
 //! via Argon2id. Manages key generation, import, export, TTL, key rotation, and
-//! integration with `crate::mesh::node::NodeIdentity` and `crate::node_identity::DerivedNodeKeys`.
+//! integration with mesh identities via the capabilities in
+//! `crate::domain::cycle_breaks::w30_05` (wave 30).
 
 use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
@@ -16,8 +17,9 @@ use crate::crypto::encryption::{decrypt_data, encrypt_data, NonceBytes};
 use crate::crypto::keys::{KeySalt, KEK};
 use crate::crypto::SALT_SIZE;
 use crate::crypto::{hex_decode, hex_encode};
-use crate::mesh::node::{NodeId, NodeIdentity};
-use crate::node_identity::DerivedNodeKeys;
+use crate::domain::cycle_breaks::w30_05::{
+    DerivedNodeKeys, NodeId, NodeIdentityFactory, NodeIdentityView,
+};
 
 /// Wallet error types.
 #[derive(Debug, thiserror::Error)]
@@ -299,11 +301,11 @@ impl Ed25519Wallet {
         self.import_secret_bytes(alias, &secret_bytes, ttl)
     }
 
-    /// Import an existing `NodeIdentity` into the wallet.
-    pub fn import_node_identity(
+    /// Import an existing mesh node identity into the wallet.
+    pub fn import_node_identity<V: NodeIdentityView>(
         &mut self,
         alias: &str,
-        identity: &NodeIdentity,
+        identity: &V,
         ttl: Option<Duration>,
     ) -> WalletResult<NodeId> {
         let priv_bytes = identity.private_key_bytes();
@@ -378,8 +380,8 @@ impl Ed25519Wallet {
         ))
     }
 
-    /// Export entry as a `NodeIdentity` object.
-    pub fn export_node_identity(&self, alias: &str) -> WalletResult<NodeIdentity> {
+    /// Export entry as a mesh node identity built through [`NodeIdentityFactory`].
+    pub fn export_node_identity<T: NodeIdentityFactory>(&self, alias: &str) -> WalletResult<T> {
         let entry = self.get_entry(alias)?;
         let derived = DerivedNodeKeys {
             node_id: NodeId::parse(&entry.metadata.node_id)
@@ -388,7 +390,7 @@ impl Ed25519Wallet {
             ed25519_secret: entry.ed25519_secret,
             ml_dsa_commitment: entry.ml_dsa_commitment.unwrap_or([0u8; 32]),
         };
-        Ok(NodeIdentity::from_derived(&derived))
+        Ok(T::from_derived_keys(&derived))
     }
 
     /// Get `NodeId` for alias.
@@ -444,7 +446,7 @@ impl Ed25519Wallet {
         self.get_node_id(alias)
     }
 
-    pub fn export_active_node_identity(&self) -> WalletResult<NodeIdentity> {
+    pub fn export_active_node_identity<T: NodeIdentityFactory>(&self) -> WalletResult<T> {
         let alias = self.active_alias.as_ref().ok_or(WalletError::NoActiveKey)?;
         self.export_node_identity(alias)
     }
@@ -736,6 +738,7 @@ impl Ed25519Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mesh::node::NodeIdentity;
     use tempfile::NamedTempFile;
 
     const MASTER_PASS: &str = "SuperSecretMasterPassphrase123!";
@@ -899,7 +902,7 @@ mod tests {
 
         assert_eq!(imported_node_id, original_identity.node_id);
 
-        let exported_identity = wallet.export_node_identity("mesh-node").unwrap();
+        let exported_identity: NodeIdentity = wallet.export_node_identity("mesh-node").unwrap();
         assert_eq!(exported_identity.node_id, original_identity.node_id);
         assert_eq!(exported_identity.public_key, original_identity.public_key);
         assert_eq!(
@@ -919,7 +922,7 @@ mod tests {
             .unwrap();
         assert_eq!(imported_node_id, derived_keys.node_id);
 
-        let exported_identity = wallet.export_node_identity("derived-alias").unwrap();
+        let exported_identity: NodeIdentity = wallet.export_node_identity("derived-alias").unwrap();
         assert_eq!(
             exported_identity.ml_dsa_commitment_hex(),
             Some(hex_encode(derived_keys.ml_dsa_commitment))
@@ -1141,7 +1144,7 @@ mod tests {
             .unwrap();
 
         let (_pub_hex, sec_hex) = src_wallet.export_keypair_hex("original").unwrap();
-        let identity = src_wallet.export_node_identity("original").unwrap();
+        let identity: NodeIdentity = src_wallet.export_node_identity("original").unwrap();
 
         let mut dst_wallet = Ed25519Wallet::new(MASTER_PASS).unwrap();
         let imported_id_hex = dst_wallet

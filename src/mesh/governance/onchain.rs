@@ -34,6 +34,12 @@ sol!(
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "dao-evm")]
+use async_trait::async_trait;
+
+#[cfg(feature = "dao-evm")]
+use crate::domain::cycle_breaks::w30_05::{IntoOnchainDaoGateway, OnchainDaoGateway};
+
 /// Configuration for on-chain EVM integration.
 /// Feature-gated behind `cfg(feature = "dao-evm")` or under test.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +56,56 @@ pub struct EvmDaoConfig {
 #[derive(Debug, Clone)]
 pub struct OnchainDaoClient {
     pub config: EvmDaoConfig,
+}
+
+/// Governance reaches this client through the domain capability (wave 30).
+#[cfg(feature = "dao-evm")]
+#[async_trait]
+impl OnchainDaoGateway for OnchainDaoClient {
+    async fn propose(
+        &self,
+        proposal_id: &str,
+        title: &str,
+        description: &str,
+    ) -> anyhow::Result<()> {
+        OnchainDaoClient::propose(self, proposal_id, title, description).await
+    }
+
+    async fn vote(
+        &self,
+        proposal_id: &str,
+        approve: bool,
+        voting_power: u64,
+        is_council: bool,
+    ) -> anyhow::Result<()> {
+        OnchainDaoClient::vote(self, proposal_id, approve, voting_power, is_council).await
+    }
+
+    async fn veto(&self, proposal_id: &str, reason: &str) -> anyhow::Result<()> {
+        OnchainDaoClient::veto(self, proposal_id, reason).await
+    }
+
+    async fn overrule(&self, proposal_id: &str) -> anyhow::Result<()> {
+        OnchainDaoClient::overrule(self, proposal_id).await
+    }
+
+    async fn execute(&self, proposal_id: &str) -> anyhow::Result<()> {
+        OnchainDaoClient::execute(self, proposal_id).await
+    }
+
+    async fn get_proposal_status(
+        &self,
+        proposal_id: &str,
+    ) -> anyhow::Result<(bool, u64, u64, u64, u64, bool, bool)> {
+        OnchainDaoClient::get_proposal_status(self, proposal_id).await
+    }
+}
+
+#[cfg(feature = "dao-evm")]
+impl IntoOnchainDaoGateway for EvmDaoConfig {
+    fn into_onchain_dao_gateway(self) -> Box<dyn OnchainDaoGateway> {
+        Box::new(OnchainDaoClient::new(self))
+    }
 }
 
 impl OnchainDaoClient {
