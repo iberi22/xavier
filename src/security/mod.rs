@@ -11,6 +11,7 @@ pub mod auth_store;
 pub mod clearance;
 pub mod clearance_audit;
 pub mod detections;
+pub mod egress;
 pub mod encryption_keys;
 pub mod groups;
 pub mod initializer;
