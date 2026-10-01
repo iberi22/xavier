@@ -111,7 +111,7 @@ fn resolve_requested_repo(project_id: Option<&str>, root: Option<&str>) -> Optio
     if !abs.is_dir() {
         return None;
     }
-    let repo_root = xavier::codebase::repo_identity::find_repo_root(&abs);
+    let repo_root = xavier::codebase::repo_identity::find_repo_root(&abs)?;
     let canonical = repo_root.canonicalize().unwrap_or(repo_root);
     let derived = xavier::codebase::repo_identity::derive_project_id(&canonical);
     let supplied = project_id.filter(|s| !s.trim().is_empty());
@@ -141,9 +141,9 @@ fn resolve_requested_repo(project_id: Option<&str>, root: Option<&str>) -> Optio
 /// Used ONLY to decide whether the legacy global graph belongs to the
 /// requested repo (same-repo migration fallback). It never authorizes
 /// serving one repo's graph for a different repo.
-fn workspace_repo_root(workspace_dir: &std::path::Path) -> PathBuf {
-    let root = xavier::codebase::repo_identity::find_repo_root(workspace_dir);
-    root.canonicalize().unwrap_or(root)
+fn workspace_repo_root(workspace_dir: &std::path::Path) -> Option<PathBuf> {
+    let root = xavier::codebase::repo_identity::find_repo_root(workspace_dir)?;
+    Some(root.canonicalize().unwrap_or(root))
 }
 
 /// True when the requested repo IS the daemon's workspace repo, in which
@@ -151,7 +151,7 @@ fn workspace_repo_root(workspace_dir: &std::path::Path) -> PathBuf {
 /// pre-XAV-01 index and may serve as a same-repo fallback while no
 /// per-repo `<root>/.xavier/code_graph.db` exists yet.
 fn is_workspace_repo(workspace_dir: &std::path::Path, requested: &ResolvedRepo) -> bool {
-    workspace_repo_root(workspace_dir) == requested.root
+    workspace_repo_root(workspace_dir).as_ref() == Some(&requested.root)
 }
 
 /// An on-disk index older than this is reported as stale.

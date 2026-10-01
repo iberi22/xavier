@@ -68,19 +68,41 @@ pub fn derive_project_id(root: &Path) -> String {
 }
 
 /// Walk up from `start` looking for a `.git` entry (dir or worktree file).
-/// Falls back to the absolute `start` path when no git root is found.
-pub fn find_repo_root(start: &Path) -> PathBuf {
-    let mut current = std::path::absolute(start).unwrap_or_else(|_| start.to_path_buf());
-    loop {
-        if current.join(".git").exists() {
-            return current;
-        }
-        match current.parent() {
-            Some(parent) => current = parent.to_path_buf(),
-            None => break,
+///
+/// Walking up is correct for an existing directory: `apps/xavier/src` belongs
+/// to the `xavier` checkout, exactly as git resolves it.
+///
+/// XAV-01's defect was the *non-existent* path. `repo-missing-xav01` did not
+/// exist, so nothing said where its root was, and the old code kept walking
+/// and returned whatever checkout was above the tempdir — on this machine
+/// `~/.hermes`, a real git repo. The caller then reported a missing repo under
+/// someone else's identity, which is the cross-repo leak XAV-01 forbids.
+///
+/// A path that does not exist now anchors at itself. That is a distinct
+/// identity, so it degrades for itself instead of answering with another
+/// repo's graph.
+pub fn find_repo_root(start: &Path) -> Option<PathBuf> {
+    let absolute = std::path::absolute(start).unwrap_or_else(|_| start.to_path_buf());
+
+    // A real directory may legitimately sit inside a checkout (`apps/xavier/src`
+    // resolves to the `xavier` root), so walking up is correct for it.
+    if absolute.is_dir() {
+        let mut current = absolute.clone();
+        loop {
+            if current.join(".git").exists() {
+                return Some(current);
+            }
+            match current.parent() {
+                Some(parent) => current = parent.to_path_buf(),
+                None => break,
+            }
         }
     }
-    std::path::absolute(start).unwrap_or_else(|_| start.to_path_buf())
+
+    // A path that does not exist cannot be a checkout, and its ancestors are
+    // not evidence about it: borrowing one is how a missing repo inherited a
+    // real repo's identity. Anchor at the path itself instead.
+    Some(absolute)
 }
 
 /// Current git `HEAD` for `root`, or `None` outside a git checkout / on error.
@@ -115,8 +137,14 @@ pub fn read_indexed_commit(root: &Path) -> String {
 }
 
 /// Derive the [`RepoIdentity`] for the caller's cwd (or any path inside a repo).
+///
+/// When `cwd` is not inside a checkout, the identity is anchored at `cwd`
+/// itself and marked `unknown`: it is still a distinct identity, never a
+/// borrowed one, so an unindexed directory reports itself as degraded instead
+/// of reporting another repo's graph.
 pub fn derive_repo_identity(cwd: &Path) -> RepoIdentity {
-    let root = find_repo_root(cwd);
+    let root = find_repo_root(cwd)
+        .unwrap_or_else(|| std::path::absolute(cwd).unwrap_or_else(|_| cwd.to_path_buf()));
     let canonical = root.canonicalize().unwrap_or(root);
     RepoIdentity {
         project_id: derive_project_id(&canonical),
@@ -297,6 +325,63 @@ mod tests {
             id_b.root,
             id_b.indexed_commit,
             stats_b.total_symbols,
+        );
+    }
+
+    /// XAV-01: a path that does not exist must not borrow an ancestor
+    /// checkout's identity. `repo-missing-xav01` is the exact shape the
+    /// handler tests use; before the fix it resolved to `~/.hermes`, a real
+    /// repository, because the walk never stopped.
+    #[test]
+    fn a_missing_path_does_not_inherit_an_ancestor_identity() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("repo-missing-xav01");
+        assert!(!missing.exists(), "precondition: the path must not exist");
+
+        let resolved = find_repo_root(&missing)
+            .expect("a missing path still anchors at itself, it is not None");
+        assert!(
+            resolved.ends_with("repo-missing-xav01"),
+            "must anchor at the missing path, got {}",
+            resolved.display()
+        );
+
+        let id = derive_repo_identity(&missing);
+        assert!(
+            id.root.contains("repo-missing-xav01"),
+            "the identity must name the missing path, got {}",
+            id.root
+        );
+        assert_eq!(
+            id.indexed_commit, UNKNOWN_COMMIT,
+            "an unidentified repo must never report a real commit"
+        );
+    }
+
+    /// Two missing directories under the same tempdir stay distinct, so one
+    /// missing repo can never read as another.
+    #[test]
+    fn two_missing_paths_get_distinct_identities() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = derive_repo_identity(&tmp.path().join("missing-alpha"));
+        let b = derive_repo_identity(&tmp.path().join("missing-beta"));
+        assert_ne!(a.root, b.root);
+        assert_ne!(a.project_id, b.project_id);
+    }
+
+    /// The positive case still works: a real checkout resolves to itself.
+    #[test]
+    fn a_real_checkout_still_resolves_to_its_own_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let nested = repo.join("src").join("deep");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::create_dir_all(&nested).unwrap();
+
+        assert_eq!(
+            find_repo_root(&nested),
+            Some(repo.canonicalize().unwrap_or(repo)),
+            "a nested path inside a checkout must resolve to the checkout root"
         );
     }
 }
