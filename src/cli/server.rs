@@ -731,8 +731,19 @@ pub async fn start_http_server(
                 // 3. Hermes
                 let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
                     .with_embedder(ingestion_embedder.clone());
-                if let Err(e) = hermes_importer.import_all(ingestion_store.as_ref()).await {
-                    tracing::debug!("Hermes ingestion note: {}", e);
+                // `sync`, not `import_all`: the periodic pass skips files whose
+                // size and mtime are unchanged. `import_all` is the explicit
+                // re-index path used by the /index handlers, which report a
+                // count and so must read everything.
+                match hermes_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::debug!(
+                        read = stats.read,
+                        skipped = stats.skipped,
+                        records = stats.records,
+                        store_reads = stats.store_reads,
+                        "Hermes ingestion pass"
+                    ),
+                    Err(e) => tracing::debug!("Hermes ingestion note: {}", e),
                 }
 
                 // 4. Codex — with_embedder is an associated fn (not a builder method)

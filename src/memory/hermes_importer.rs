@@ -5,6 +5,7 @@
 use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::json;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
@@ -13,9 +14,41 @@ use crate::memory::schema::MemoryLevel;
 use crate::memory::store::{stable_key, MemoryRecord, MemoryStore};
 use std::sync::Arc;
 
+/// Size and mtime of a file as last ingested.
+///
+/// The importer skips a file whose fingerprint is unchanged, so a scan of an
+/// idle corpus costs one `stat` per file and no store access at all. This is
+/// what keeps the background ingestion loop off the store: deciding whether to
+/// re-read a file must not require reading it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileFingerprint {
+    /// Whole seconds of the modification time. Second resolution is
+    /// deliberate: nanoseconds would miss a rewrite that lands in the same
+    /// tick, and a false miss is recovered by `force`.
+    pub mtime_secs: i64,
+    pub len: u64,
+}
+
+/// What one ingestion pass did.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct IngestStats {
+    /// Files whose fingerprint was unchanged and were therefore skipped.
+    pub skipped: usize,
+    /// Files that were read.
+    pub read: usize,
+    /// Records returned to the caller.
+    pub records: usize,
+    /// `store.get()` calls issued. Non-zero only for re-read files.
+    pub store_reads: usize,
+    /// Whether this pass skipped any file as unchanged.
+    pub had_skips: bool,
+}
+
 pub struct HermesImporter {
     sessions_dir: PathBuf,
     embedder: Option<Arc<dyn Embedder>>,
+    /// Fingerprint of each file as last ingested, keyed by path.
+    seen: std::sync::Mutex<HashMap<PathBuf, FileFingerprint>>,
 }
 
 impl HermesImporter {
@@ -24,6 +57,7 @@ impl HermesImporter {
         Self {
             sessions_dir,
             embedder: None,
+            seen: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -31,6 +65,7 @@ impl HermesImporter {
         Self {
             sessions_dir: path.as_ref().to_path_buf(),
             embedder: None,
+            seen: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -52,12 +87,45 @@ impl HermesImporter {
         PathBuf::from(".hermes/sessions")
     }
 
-    /// Import all session SQLite files found in sessions_dir into MemoryStore.
+    /// Import every session file, always reading every one.
+    ///
+    /// This is what the `/index` handlers call: they report `indexed_count` to
+    /// the caller, so skipping an unchanged file would under-report. Use
+    /// [`Self::sync`] for the periodic background pass.
     pub async fn import_all(&self, store: &dyn MemoryStore) -> Result<Vec<MemoryRecord>> {
+        self.import_all_with(store, true)
+            .await
+            .map(|(records, _)| records)
+    }
+
+    /// Periodic pass: skips files whose size and mtime are unchanged.
+    ///
+    /// This is what the background ingestion loop calls. Deciding whether a file
+    /// changed costs one `stat`; the previous code instead opened every file
+    /// and asked the store about every message inside it, so an idle corpus was
+    /// as expensive to rescan as a full re-import.
+    pub async fn sync(&self, store: &dyn MemoryStore) -> Result<IngestStats> {
+        self.import_all_with(store, false)
+            .await
+            .map(|(_records, stats)| stats)
+    }
+
+    /// Import, optionally ignoring the fingerprint cache.
+    ///
+    /// `force` exists because a fingerprint can be wrong: `rsync -t`, `tar`
+    /// extraction and `mv` all preserve an old mtime, and a file rewritten
+    /// that way would otherwise be skipped forever. Nothing here reconciles
+    /// that automatically.
+    pub async fn import_all_with(
+        &self,
+        store: &dyn MemoryStore,
+        force: bool,
+    ) -> Result<(Vec<MemoryRecord>, IngestStats)> {
         info!(
-            "🔍 HermesImporter scanning directory: {:?}",
-            self.sessions_dir
+            "🔍 HermesImporter scanning directory: {:?} (force={})",
+            self.sessions_dir, force
         );
+        let mut stats = IngestStats::default();
         let mut imported_records = Vec::new();
 
         if !self.sessions_dir.exists() {
@@ -65,7 +133,8 @@ impl HermesImporter {
                 "Hermes sessions dir {:?} does not exist. Skipping.",
                 self.sessions_dir
             );
-            return Ok(imported_records);
+            stats.records = 0;
+            return Ok((imported_records, stats));
         }
 
         let mut read_dir = tokio::fs::read_dir(&self.sessions_dir).await?;
@@ -73,39 +142,90 @@ impl HermesImporter {
             let path = entry.path();
             if path.is_file() {
                 let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                if ext == "json" {
-                    match self.import_json_file(&path, store).await {
-                        Ok(mut records) => imported_records.append(&mut records),
-                        Err(e) => warn!("Failed to import Hermes session json {:?}: {}", path, e),
-                    }
-                } else if ext == "db"
+                let is_db = ext == "db"
                     || ext == "sqlite"
                     || ext == "sqlite3"
                     || path
                         .file_name()
                         .and_then(|s| s.to_str())
                         .unwrap_or("")
-                        .contains("session")
-                {
-                    match self.import_db_file(&path, store).await {
-                        Ok(mut records) => imported_records.append(&mut records),
-                        Err(e) => warn!("Failed to import Hermes session db {:?}: {}", path, e),
+                        .contains("session");
+                if ext != "json" && !is_db {
+                    continue;
+                }
+
+                // One stat, then decide. Skipping here is the whole point: the
+                // old path opened the file and asked the store about every
+                // message inside it, which is what made an idle corpus as
+                // expensive as a full re-import.
+                let fingerprint = match file_fingerprint(&path).await {
+                    Ok(f) => f,
+                    Err(e) => {
+                        warn!("Failed to stat Hermes session file {:?}: {}", path, e);
+                        continue;
                     }
+                };
+                if !force && self.is_unchanged(&path, fingerprint) {
+                    stats.skipped += 1;
+                    continue;
+                }
+                self.remember(&path, fingerprint);
+
+                let outcome = if ext == "json" {
+                    self.import_json_file(&path, store, &mut stats).await
+                } else {
+                    self.import_db_file(&path, store, &mut stats).await
+                };
+                match outcome {
+                    Ok(mut records) => {
+                        stats.read += 1;
+                        imported_records.append(&mut records);
+                    }
+                    Err(e) => warn!("Failed to import Hermes session file {:?}: {}", path, e),
                 }
             }
         }
 
+        stats.records = imported_records.len();
+        stats.had_skips = stats.skipped > 0;
         info!(
-            "✅ HermesImporter imported {} records",
-            imported_records.len()
+            "✅ HermesImporter: {} read, {} skipped, {} records",
+            stats.read, stats.skipped, stats.records
         );
-        Ok(imported_records)
+        Ok((imported_records, stats))
+    }
+
+    /// Re-read every file regardless of its fingerprint, and return the stats.
+    ///
+    /// The reconciliation escape hatch: `rsync -t`, `tar` and `mv` all
+    /// preserve an old mtime, so a file rewritten that way would otherwise be
+    /// skipped by [`Self::sync`] forever. Nothing reconciles that
+    /// automatically.
+    pub async fn force_reindex(&self, store: &dyn MemoryStore) -> Result<IngestStats> {
+        self.import_all_with(store, true)
+            .await
+            .map(|(_records, stats)| stats)
+    }
+
+    fn is_unchanged(&self, path: &Path, fingerprint: FileFingerprint) -> bool {
+        self.seen
+            .lock()
+            .ok()
+            .and_then(|seen| seen.get(path).copied())
+            == Some(fingerprint)
+    }
+
+    fn remember(&self, path: &Path, fingerprint: FileFingerprint) {
+        if let Ok(mut seen) = self.seen.lock() {
+            seen.insert(path.to_path_buf(), fingerprint);
+        }
     }
 
     async fn import_db_file(
         &self,
         db_path: &Path,
         store: &dyn MemoryStore,
+        stats: &mut IngestStats,
     ) -> Result<Vec<MemoryRecord>> {
         let db_path_buf = db_path.to_path_buf();
         let session_id = db_path
@@ -189,6 +309,7 @@ impl HermesImporter {
             // Incremental skip (stability): identical content already stored
             // reuses the existing record without re-embedding. Fail-open:
             // on store error fall through to the normal embed+put path.
+            stats.store_reads += 1;
             if let Ok(Some(existing)) = store.get(&workspace_id, &record_id).await {
                 if existing.content == content {
                     final_records.push(existing);
@@ -243,6 +364,7 @@ impl HermesImporter {
         &self,
         json_path: &Path,
         store: &dyn MemoryStore,
+        stats: &mut IngestStats,
     ) -> Result<Vec<MemoryRecord>> {
         let content = tokio::fs::read_to_string(json_path).await?;
         let val: serde_json::Value = serde_json::from_str(&content)?;
@@ -282,6 +404,7 @@ impl HermesImporter {
 
                 // Incremental skip (stability): identical content already
                 // stored reuses the existing record without re-embedding.
+                stats.store_reads += 1;
                 if let Ok(Some(existing)) = store.get(&workspace_id, &record_id).await {
                     if existing.content == msg_content {
                         final_records.push(existing);
@@ -335,6 +458,20 @@ impl HermesImporter {
 
         Ok(final_records)
     }
+}
+
+async fn file_fingerprint(path: &Path) -> Result<FileFingerprint> {
+    let meta = tokio::fs::metadata(path).await?;
+    let mtime_secs = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    Ok(FileFingerprint {
+        mtime_secs,
+        len: meta.len(),
+    })
 }
 
 #[cfg(test)]
@@ -539,6 +676,128 @@ mod tests {
             .await?
             .expect("record must exist");
         assert_eq!(stored.content, "Hello Hermes EDITED");
+
+        Ok(())
+    }
+
+    /// Writes `n` json session files shaped like a Hermes transcript.
+    fn write_json_sessions(dir: &Path, n: usize) -> Result<()> {
+        for i in 0..n {
+            let body = serde_json::json!({
+                "session_id": format!("s{i}"),
+                "request": { "body": { "model": "m", "messages": [
+                    { "role": "user", "content": format!("msg a {i}") },
+                    { "role": "assistant", "content": format!("msg b {i}") },
+                ]}}
+            });
+            std::fs::write(
+                dir.join(format!("s{i}.json")),
+                serde_json::to_string(&body)?,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Regression for the busy-loop: a second pass over an unchanged corpus
+    /// must not touch the store at all.
+    ///
+    /// Before the fix this issued one `get()` per message per file, so a
+    /// 40-file corpus cost 80 reads on every 600 s cycle -- measured on the live
+    /// node at 402 000 reads/s with 1706 files. `get()` is what reads pages from
+    /// `vec-store.sqlite3`, so it, not re-embedding, was the dominant cost.
+    #[tokio::test]
+    async fn unchanged_corpus_is_not_queried_again() -> Result<()> {
+        let dir = tempdir()?;
+        write_json_sessions(dir.path(), 40)?;
+
+        let store = InMemoryMemoryStore::new();
+        let importer = HermesImporter::with_dir(dir.path());
+
+        let first = importer.sync(&store).await?;
+        assert_eq!(first.records, 80, "first pass ingests every message");
+        assert_eq!(first.skipped, 0);
+        assert_eq!(first.store_reads, 80);
+
+        let second = importer.sync(&store).await?;
+        assert_eq!(second.skipped, 40, "every unchanged file is skipped");
+        assert_eq!(
+            second.store_reads, 0,
+            "an unchanged corpus must not query the store at all; got {} get() calls",
+            second.store_reads
+        );
+
+        Ok(())
+    }
+
+    /// A file whose content changed must be re-read, even at the same message
+    /// count.
+    #[tokio::test]
+    async fn changed_file_is_reread() -> Result<()> {
+        let dir = tempdir()?;
+        write_json_sessions(dir.path(), 2)?;
+
+        let store = InMemoryMemoryStore::new();
+        let importer = HermesImporter::with_dir(dir.path());
+        importer.sync(&store).await?;
+
+        let body = serde_json::json!({
+            "session_id": "s0",
+            "request": { "body": { "model": "m", "messages": [
+                { "role": "user", "content": "brand new content that is longer" },
+            ]}}
+        });
+        std::fs::write(dir.path().join("s0.json"), serde_json::to_string(&body)?)?;
+
+        let stats = importer.sync(&store).await?;
+        assert_eq!(stats.read, 1, "only the changed file is re-read");
+        assert_eq!(stats.skipped, 1, "the untouched file is skipped");
+        assert!(stats.store_reads > 0, "the changed file is queried");
+
+        Ok(())
+    }
+
+    /// `import_all` is the explicit path: it always reads, so a caller asking
+    /// "how much did you index" gets the whole corpus even on a warm cache.
+    #[tokio::test]
+    async fn import_all_always_reads_everything() -> Result<()> {
+        let dir = tempdir()?;
+        write_json_sessions(dir.path(), 4)?;
+
+        let store = InMemoryMemoryStore::new();
+        let importer = HermesImporter::with_dir(dir.path());
+
+        let first = importer.import_all(&store).await?;
+        assert_eq!(first.len(), 8);
+
+        let second = importer.import_all(&store).await?;
+        assert_eq!(
+            second.len(),
+            8,
+            "an explicit re-index must still report every record"
+        );
+
+        Ok(())
+    }
+
+    /// The reconciliation safety net: `force_reindex` re-reads regardless of
+    /// the fingerprint, which is what an operator runs after an `rsync -t` or
+    /// a restore that preserved stale mtimes.
+    #[tokio::test]
+    async fn force_reindex_rereads_even_when_unchanged() -> Result<()> {
+        let dir = tempdir()?;
+        write_json_sessions(dir.path(), 3)?;
+
+        let store = InMemoryMemoryStore::new();
+        let importer = HermesImporter::with_dir(dir.path());
+        importer.sync(&store).await?;
+
+        let stats = importer.force_reindex(&store).await?;
+        assert_eq!(stats.skipped, 0, "force skips nothing");
+        assert_eq!(stats.read, 3, "force re-reads every file");
+        assert!(
+            stats.store_reads > 0,
+            "force must actually query the store, otherwise the counter proves nothing"
+        );
 
         Ok(())
     }
