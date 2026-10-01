@@ -135,6 +135,20 @@ fn host_resource_level(value: f32, degraded_pct: f32, unhealthy_pct: f32) -> Hea
     }
 }
 
+/// Decides whether a TGD consolidation progress report degrades the node.
+///
+/// A stalled or failed cycle degrades the node so operators are alerted to
+/// dead or overrunning cycles. Completed cycles and uninitialized/empty states
+/// (prior to first run) stay Healthy.
+fn tgd_consolidation_level(
+    progress: Option<&crate::tgd::consolidation::ProgressReport>,
+) -> HealthLevel {
+    match progress {
+        Some(p) if p.status == "stalled" || p.status == "failed" => HealthLevel::Degraded,
+        _ => HealthLevel::Healthy,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthStatus {
     pub timestamp: DateTime<Utc>,
@@ -209,6 +223,10 @@ impl HealthStatus {
             if *level != HealthLevel::Healthy {
                 reasons.push(format!("subsystem:{name}"));
             }
+        }
+
+        if tgd_consolidation_level(self.tgd_consolidation.as_ref()) != HealthLevel::Healthy {
+            reasons.push("subsystem:tgd_consolidation".to_string());
         }
 
         // The overall status cannot degrade unless a component does, but if the
@@ -391,6 +409,7 @@ impl HealthMonitor {
             || llm.status == HealthLevel::Unhealthy
             || llm.status == HealthLevel::Degraded
             || mesh.status == HealthLevel::Degraded
+            || tgd_consolidation_level(tgd_consolidation.as_ref()) != HealthLevel::Healthy
         {
             status = HealthLevel::Degraded;
         }
@@ -1095,5 +1114,81 @@ mod tests {
             fts_detail.is_some(),
             "expected fts_detail to contain error detail"
         );
+    }
+
+    #[test]
+    fn test_tgd_consolidation_stalled_degrades_health_status() {
+        let mut status = HealthStatus::default();
+        status.tgd_consolidation = Some(crate::tgd::consolidation::ProgressReport {
+            status: "stalled".to_string(),
+            reason: "cycle exceeded 1800".to_string(),
+            ..Default::default()
+        });
+        status.status = tgd_consolidation_level(status.tgd_consolidation.as_ref());
+        assert_eq!(status.status, HealthLevel::Degraded);
+
+        let reasons = status.compute_degraded_reasons();
+        assert!(
+            reasons.contains(&"subsystem:tgd_consolidation".to_string()),
+            "degraded reasons must contain subsystem:tgd_consolidation, got: {reasons:?}"
+        );
+    }
+
+    #[test]
+    fn test_tgd_consolidation_failed_degrades_health_status() {
+        let mut status = HealthStatus::default();
+        status.tgd_consolidation = Some(crate::tgd::consolidation::ProgressReport {
+            status: "failed".to_string(),
+            reason: "database lock timeout".to_string(),
+            ..Default::default()
+        });
+        status.status = tgd_consolidation_level(status.tgd_consolidation.as_ref());
+        assert_eq!(status.status, HealthLevel::Degraded);
+
+        let reasons = status.compute_degraded_reasons();
+        assert!(
+            reasons.contains(&"subsystem:tgd_consolidation".to_string()),
+            "degraded reasons must contain subsystem:tgd_consolidation, got: {reasons:?}"
+        );
+    }
+
+    #[test]
+    fn test_tgd_consolidation_completed_stays_healthy() {
+        let mut status = HealthStatus::default();
+        status.tgd_consolidation = Some(crate::tgd::consolidation::ProgressReport {
+            status: "completed".to_string(),
+            reason: String::new(),
+            processed: 10,
+            total: 10,
+            ..Default::default()
+        });
+        status.status = tgd_consolidation_level(status.tgd_consolidation.as_ref());
+        assert_eq!(status.status, HealthLevel::Healthy);
+
+        let reasons = status.compute_degraded_reasons();
+        assert!(
+            reasons.is_empty(),
+            "completed consolidation must have empty degraded reasons, got: {reasons:?}"
+        );
+    }
+
+    #[test]
+    fn test_tgd_consolidation_empty_default_stays_healthy() {
+        let mut status = HealthStatus::default();
+        status.tgd_consolidation = Some(crate::tgd::consolidation::ProgressReport::default());
+        status.status = tgd_consolidation_level(status.tgd_consolidation.as_ref());
+        assert_eq!(status.status, HealthLevel::Healthy);
+
+        let reasons = status.compute_degraded_reasons();
+        assert!(
+            reasons.is_empty(),
+            "empty default consolidation must have empty degraded reasons, got: {reasons:?}"
+        );
+
+        // Also test None
+        status.tgd_consolidation = None;
+        status.status = tgd_consolidation_level(status.tgd_consolidation.as_ref());
+        assert_eq!(status.status, HealthLevel::Healthy);
+        assert!(status.compute_degraded_reasons().is_empty());
     }
 }
