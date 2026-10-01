@@ -430,6 +430,19 @@ async fn handle_mem_search(
         .search_filtered_with_mode(query, fetch_limit, filter_ref)
         .await?;
 
+    // Phase 1 access instrumentation: an MCP read is a user-facing read, so it
+    // counts as evidence of utility exactly like the HTTP search does. Note
+    // this records the *candidate* set, before pagination — the agent looked
+    // at the ranking either way. Recording here rather than in
+    // `MemoryStore::get` keeps internal reads (consolidation, GC, backup,
+    // ingestion) out of the signal.
+    crate::memory::access::record_user_access(
+        &workspace.workspace.memory_manager,
+        &workspace.workspace.memory,
+        &results,
+    )
+    .await;
+
     let results = if depth > 0 {
         workspace
             .workspace

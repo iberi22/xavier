@@ -121,8 +121,25 @@ impl DecayManager {
 }
 
 /// Helper function to retrieve the last accessed time of a MemoryRecord.
-/// Falls back to updated_at or created_at if last_accessed_at is not present in metadata.
+///
+/// Resolution order:
+/// 1. The durable access signal (`memory_access`, via
+///    `crate::memory::access`) — the authoritative source once instrumentation
+///    is running.
+/// 2. `metadata["last_accessed_at"]` — legacy fallback for records written
+///    before instrumentation existed.
+/// 3. `updated_at` — last resort.
+///
+/// Step 1 matters because on the production database step 2 never matches: the
+/// only metadata key across all 16,771 rows is `{"encrypted": ...}`. Without
+/// this rewiring the decay/prune age is silently always `updated_at`.
 pub fn get_last_accessed(record: &MemoryRecord) -> DateTime<Utc> {
+    if let Some(observed) = crate::memory::access::RECORDER.stats(&record.workspace_id, &record.id)
+    {
+        if let Some(last) = observed.last_accessed_at {
+            return last;
+        }
+    }
     if let Some(last_accessed_val) = record
         .metadata
         .get("last_accessed_at")

@@ -2,6 +2,7 @@
 //!
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
+pub mod access;
 pub mod agent_indexer;
 pub mod agent_scanner;
 pub mod antigravity_importer;
