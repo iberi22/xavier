@@ -14,6 +14,7 @@ use crate::codebase::connection_manager::ConnectionManager;
 use crate::coordination::KeyLendingEngine;
 use crate::secrets::audit::QmdAuditLogger;
 use crate::secrets::vault::HardwareVault;
+use xavier::security::auth::{Claims, UserRole};
 
 const CANARY: &str = "canary-51c7ae30-exec-handler";
 const CANARY_VAR: &str = "XAVIER_EXEC_HANDLER_CANARY";
@@ -282,4 +283,106 @@ async fn test_exec_route_rejects_missing_required_fields() {
         "error must name the missing field; got: {error}"
     );
     assert!(f.engine.list_leases().await.is_empty());
+}
+
+/// Issue a request against the router the daemon actually merges, with an
+/// optional role in the request extensions.
+///
+/// Built from `secrets_routes()` — the same function `server.rs` merges — so
+/// deleting the gate, or the merge itself, fails here rather than shipping
+/// (#2793/#2800: a test that copies the route table tests nothing).
+async fn gated_status(
+    fx: &Fixture,
+    method: &str,
+    uri: &str,
+    body: serde_json::Value,
+    role: Option<UserRole>,
+) -> StatusCode {
+    let app = crate::cli::handlers::secrets::secrets_routes()
+        .layer(Extension(Arc::clone(&fx.vault)))
+        .with_state(test_state(Arc::clone(&fx.engine)).await);
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("content-type", "application/json");
+    if let Some(role) = role {
+        builder = builder.extension(Claims::new(
+            "tester".to_string(),
+            "tester@example.com".to_string(),
+            role,
+            chrono::TimeDelta::seconds(60),
+        ));
+    }
+    let request = builder.body(Body::from(body.to_string())).expect("request");
+    app.oneshot(request).await.expect("oneshot").status()
+}
+
+#[tokio::test]
+async fn no_non_admin_principal_reaches_any_secrets_route() {
+    let fx = setup().await;
+    // Canary on disk: a forbidden exec must not even spawn the child.
+    let marker = fx._dir.path().join("t1-spawned");
+    let exec = serde_json::json!({
+        "secret_name": fx.secret_name,
+        "agent_id": "t1",
+        "env_var": CANARY_VAR,
+        "command": "touch",
+        "args": [marker.to_string_lossy()],
+    });
+    let lend = serde_json::json!({
+        "secret_name": fx.secret_name, "agent_id": "t1", "ttl_seconds": 30
+    });
+    let empty = serde_json::json!({});
+    let routes = [
+        ("POST", "/secrets/exec", exec),
+        ("POST", "/secrets/lend", lend),
+        ("GET", "/secrets/leases", empty.clone()),
+        (
+            "POST",
+            "/secrets/revoke",
+            serde_json::json!({ "token": "x" }),
+        ),
+        ("GET", "/secrets/history", empty.clone()),
+        ("POST", "/secrets/revoke/x", empty.clone()),
+        ("GET", "/secrets/status/x", empty),
+    ];
+
+    for role in [None, Some(UserRole::Readonly), Some(UserRole::User)] {
+        for (method, uri, body) in &routes {
+            let status = gated_status(&fx, method, uri, body.clone(), role).await;
+            assert_eq!(
+                status,
+                StatusCode::FORBIDDEN,
+                "{role:?} reached {method} {uri}"
+            );
+        }
+    }
+
+    assert!(
+        !marker.exists(),
+        "a forbidden exec must never spawn the child process"
+    );
+    assert!(
+        fx.engine.list_leases().await.is_empty(),
+        "a forbidden lend must not create a lease"
+    );
+}
+
+#[tokio::test]
+async fn admin_still_runs_exec_through_the_gated_router() {
+    let fx = setup().await;
+    let marker = fx._dir.path().join("t1-admin-spawned");
+    let exec = serde_json::json!({
+        "secret_name": fx.secret_name,
+        "agent_id": "t1-admin",
+        "env_var": CANARY_VAR,
+        "command": "touch",
+        "args": [marker.to_string_lossy()],
+    });
+    let status = gated_status(&fx, "POST", "/secrets/exec", exec, Some(UserRole::Admin)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        marker.exists(),
+        "positive control: the gate must not block the owner"
+    );
 }

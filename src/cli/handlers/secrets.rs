@@ -311,3 +311,42 @@ pub async fn status_handler(
         ),
     }
 }
+
+/// Admin only. Lending a node secret to a process is an owner decision, so the
+/// only principal that passes is the one `auth_middleware` gives the root token.
+pub fn secrets_permission_check(role: &xavier::security::auth::UserRole) -> bool {
+    use xavier::security::auth::Permission;
+    role.can_manage_secrets()
+}
+
+/// The seven `/secrets/*` routes, gated as a unit.
+///
+/// Built here and merged by `src/cli/server.rs` so the tests run the wiring the
+/// daemon serves instead of a copy of it — the gap that let `/code/index` ship
+/// without a gate (#2793, #2800).
+///
+/// The gate is a `route_layer` over the whole sub-router rather than a
+/// per-route layer, so a route added here is gated by construction: forgetting
+/// the check is not expressible. `dead_code` is denied so the server cannot
+/// stop merging this without failing the build.
+#[deny(dead_code)]
+pub(crate) fn secrets_routes() -> axum::Router<CliState> {
+    use axum::middleware;
+    use axum::routing::{get, post};
+    use xavier::middleware::require_permission;
+
+    axum::Router::new()
+        .route("/secrets/lend", post(lend_handler))
+        .route("/secrets/exec", post(exec_handler))
+        .route("/secrets/leases", get(leases_handler))
+        .route("/secrets/revoke", post(revoke_handler))
+        .route("/secrets/history", get(history_handler))
+        .route(
+            "/secrets/revoke/{token}",
+            post(crate::cli::proxy::revoke_lease_by_path),
+        )
+        .route("/secrets/status/{token}", get(status_handler))
+        .route_layer(middleware::from_fn(require_permission(
+            secrets_permission_check,
+        )))
+}

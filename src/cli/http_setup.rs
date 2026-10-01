@@ -21,6 +21,62 @@ use std::time::{Duration, Instant};
 use tracing::warn;
 use xavier::coordination::secrets::SecretLease;
 
+/// What a persistent `xav_` token must hold to reach a route.
+///
+/// The previous policy was a match with a `_ => true` arm, so every route
+/// added after it inherited "allowed". An enum of requirements cannot be
+/// extended by accident: a new route falls to `Read` or `Write` by method,
+/// and the routes that must stay unreachable by scopes are named.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RequiredScope {
+    Read,
+    Write,
+    /// No scope unlocks these — not even `all`. Root token only.
+    RootOnly,
+}
+
+/// Second, independent layer behind the route-level role gate: prefixes a
+/// scoped token can never reach, whatever its scopes say.
+const ROOT_ONLY_PREFIXES: &[&str] = &[
+    "/secrets/",
+    "/security/tokens",
+    "/v1/security/",
+    "/v1/proxy/request",
+];
+
+/// POST routes that only read, so they need `read` and not `write`.
+const READ_ONLY_POST_PREFIXES: &[&str] = &["/memory/search", "/v1/memories/search"];
+
+pub(crate) fn required_scope(method: &Method, path: &str) -> RequiredScope {
+    if ROOT_ONLY_PREFIXES.iter().any(|p| path.starts_with(p)) {
+        return RequiredScope::RootOnly;
+    }
+    if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
+        || READ_ONLY_POST_PREFIXES.iter().any(|p| path.starts_with(p))
+    {
+        RequiredScope::Read
+    } else {
+        RequiredScope::Write
+    }
+}
+
+pub(crate) fn token_satisfies(scopes: &[String], required: &RequiredScope) -> bool {
+    let has = |scope: &str| scopes.iter().any(|s| s == scope);
+    match required {
+        RequiredScope::RootOnly => false,
+        RequiredScope::Read => has("read") || has("all"),
+        RequiredScope::Write => has("write") || has("all"),
+    }
+}
+
+/// A lease token is a capability for the proxy, not a general session.
+///
+/// It is handed to a subprocess for one outbound call; it must not become a
+/// node-wide session, so it is refused everywhere except the proxy.
+pub(crate) fn lease_may_access(path: &str) -> bool {
+    path.starts_with("/v1/proxy/")
+}
+
 /// Auth gate for Maloca's mutating endpoints (`/maloca/*`, `/v1/maloca/*`).
 ///
 /// Maloca is intentionally public for reads — GET/HEAD requests pass straight
@@ -116,6 +172,16 @@ pub async fn auth_middleware(
     // 2. Check Lease Token (F3 - Proxy Authentication)
     if let Some(lease) = state.secrets_engine.get_lease(provided_token_str).await {
         if !lease.is_expired() {
+            let path = req.uri().path();
+            if !lease_may_access(path) {
+                return json_response(
+                    StatusCode::FORBIDDEN,
+                    serde_json::json!({
+                        "status": "error",
+                        "message": "Lease tokens are only valid for /v1/proxy"
+                    }),
+                );
+            }
             let mut req = req;
             req.extensions_mut().insert(SessionInfo {
                 is_ephemeral: true,
@@ -157,43 +223,14 @@ pub async fn auth_middleware(
     if provided_token_str.starts_with("xav_") {
         let store = xavier::security::tokens::TokenStore::new();
         if let Ok(Some(token_meta)) = store.validate_token(provided_token_str).await {
-            // Scope validation
-            let has_scope = match path {
-                p if p.starts_with("/memory/search") || p.starts_with("/v1/memories/search") => {
-                    token_meta.scopes.contains(&"read".to_string())
-                        || token_meta.scopes.contains(&"all".to_string())
-                }
-                p if p.starts_with("/memory/add") || p.starts_with("/v1/memories") => {
-                    token_meta.scopes.contains(&"write".to_string())
-                        || token_meta.scopes.contains(&"all".to_string())
-                }
-                _ => true, // Default allow for other endpoints for now, or refine as needed
-            };
-
-            if !has_scope {
+            // Scope validation. Deny by default: the requirement is derived
+            // from the method and the path, not from a list of allowed
+            // paths, so a route nobody classified comes out closed.
+            let required = required_scope(req.method(), path);
+            if !token_satisfies(&token_meta.scopes, &required) {
                 return json_response(
                     StatusCode::FORBIDDEN,
                     serde_json::json!({"status":"error","message":"Insufficient scopes"}),
-                );
-            }
-
-            // Integrate RBAC authorization check for persistent tokens
-            let permission = match path {
-                p if p.contains("/add") || p.contains("/update") || p.contains("/delete") => {
-                    xavier::enterprise::rbac::Permission::Write
-                }
-                _ => xavier::enterprise::rbac::Permission::Read,
-            };
-
-            // Scaffolding for RBAC authorize call
-            if let Err(e) = xavier::enterprise::rbac::authorize(
-                uuid::Uuid::nil(), // Placeholder for real user_id from token_meta
-                permission,
-                path.to_string(),
-            ) {
-                return json_response(
-                    StatusCode::FORBIDDEN,
-                    serde_json::json!({"status":"error","message": e.to_string()}),
                 );
             }
 
@@ -488,5 +525,102 @@ mod auth_limit_tests {
             t0,
             Duration::from_secs(60)
         ));
+    }
+}
+
+#[cfg(test)]
+mod scope_policy_tests {
+    use super::{lease_may_access, required_scope, token_satisfies, RequiredScope};
+    use axum::http::Method;
+
+    fn scopes(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn ningun_scope_abre_las_rutas_de_secretos() {
+        // `all` used to be the universal key: the old policy granted it to
+        // anything that was not a memory route, which included /secrets/*.
+        for scope_list in [
+            vec!["all"],
+            vec!["read", "write", "all"],
+            vec!["read", "write", "admin", "secrets", "proxy"],
+        ] {
+            for path in [
+                "/secrets/exec",
+                "/secrets/lend",
+                "/secrets/leases",
+                "/secrets/revoke",
+                "/secrets/history",
+                "/security/tokens/abc/rotate",
+                "/v1/security/approve",
+                "/v1/proxy/request",
+            ] {
+                let required = required_scope(&Method::POST, path);
+                assert_eq!(
+                    required,
+                    RequiredScope::RootOnly,
+                    "{path} must be root-only"
+                );
+                assert!(
+                    !token_satisfies(&scopes(&scope_list), &required),
+                    "{scope_list:?} must not unlock {path}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn una_ruta_nueva_cae_en_lectura_o_escritura_nunca_abierta() {
+        // The regression: a route nobody classified used to inherit
+        // `_ => true`. An unknown POST must now demand `write`.
+        assert_eq!(
+            required_scope(&Method::POST, "/some/route/added/later"),
+            RequiredScope::Write
+        );
+        assert_eq!(
+            required_scope(&Method::GET, "/some/route/added/later"),
+            RequiredScope::Read
+        );
+        // A path that merely looks similar is not covered by the secret list.
+        assert_eq!(
+            required_scope(&Method::POST, "/secretsomething/else"),
+            RequiredScope::Write
+        );
+    }
+
+    #[test]
+    fn memoria_conserva_sus_permisos() {
+        let read = scopes(&["read"]);
+        let write = scopes(&["write"]);
+        let all = scopes(&["all"]);
+        for path in ["/memory/search", "/v1/memories/search"] {
+            // POST search only reads.
+            let required = required_scope(&Method::POST, path);
+            assert_eq!(required, RequiredScope::Read);
+            assert!(token_satisfies(&read, &required));
+            assert!(token_satisfies(&all, &required));
+        }
+        let required = required_scope(&Method::POST, "/memory/add");
+        assert_eq!(required, RequiredScope::Write);
+        assert!(token_satisfies(&write, &required));
+        assert!(token_satisfies(&all, &required));
+        assert!(!token_satisfies(&read, &required));
+    }
+
+    #[test]
+    fn un_lease_solo_sirve_para_el_proxy() {
+        assert!(lease_may_access("/v1/proxy/chat/completions"));
+        assert!(lease_may_access("/v1/proxy/request"));
+        for path in [
+            "/secrets/exec",
+            "/secrets/lend",
+            "/memory/search",
+            "/health",
+            "/v1/security/approve",
+            "/security/tokens",
+        ] {
+            assert!(!lease_may_access(path), "a lease must not reach {path}");
+        }
     }
 }

@@ -1220,16 +1220,7 @@ pub async fn start_http_server(
         )
         .route("/panel/api/widgets", get(list_widgets).post(save_widget))
         .route("/panel/api/graph", get(get_graph).post(save_graph))
-        .route("/secrets/lend", post(lend_handler))
-        .route("/secrets/exec", post(exec_handler))
-        .route("/secrets/leases", get(leases_handler))
-        .route("/secrets/revoke", post(revoke_handler))
-        .route("/secrets/history", get(history_handler))
-        .route(
-            "/secrets/revoke/{token}",
-            post(crate::cli::proxy::revoke_lease_by_path),
-        )
-        .route("/secrets/status/{token}", get(status_handler))
+        .merge(crate::cli::handlers::secrets::secrets_routes())
         .route(
             "/v1/proxy/chat/completions",
             post(crate::cli::proxy::chat_proxy),

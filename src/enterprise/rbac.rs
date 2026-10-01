@@ -98,12 +98,17 @@ pub enum RbacError {
     UserNotFound(Uuid),
 }
 
-/// Authorization check
-pub fn authorize(user_id: Uuid, action: Permission, _resource: String) -> Result<(), RbacError> {
-    // Scaffolding: In a real implementation, this would look up the user's role
-    // for the relevant workspace/resource. For now, we assume success for scaffolding.
-    tracing::debug!(?user_id, ?action, "Authorizing action on resource");
-    Ok(())
+/// Authorization check.
+///
+/// Not wired to a role store. It used to return `Ok(())` for every request,
+/// which read like a policy while approving everything; its only caller had
+/// passed `Uuid::nil()` as the user, so it could not have denied anyone.
+///
+/// It now fails closed, so no future caller can mistake it for an enforced
+/// check. Route authorization lives in [`crate::middleware::require_permission`].
+pub fn authorize(user_id: Uuid, action: Permission, resource: String) -> Result<(), RbacError> {
+    tracing::debug!(?user_id, ?action, %resource, "RBAC authorize is not enforced");
+    Err(RbacError::PermissionDenied(action))
 }
 
 /// User entity with role
