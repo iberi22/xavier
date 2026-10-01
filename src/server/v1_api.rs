@@ -1210,6 +1210,18 @@ pub async fn v1_memories_search(
     );
     let degraded = search_result.degraded;
 
+    // Phase 1 access instrumentation: this is a user-facing read, so every
+    // document actually returned counts as evidence of utility. Recording it
+    // here (and not in `MemoryStore::get`) is deliberate: internal reads from
+    // consolidation, GC, backup and ingestion must NOT count, or the signal
+    // would be biased towards whatever the system itself happens to touch.
+    crate::memory::access::record_user_access(
+        &workspace.workspace.memory_manager,
+        &workspace.workspace.memory,
+        &search_result.documents,
+    )
+    .await;
+
     // F2.2: techo de lectura derivado de la identidad (F1). Sin extensión se
     // asume el default del sistema (`Internal`), nunca un nivel elevado.
     let requester_level = requester
@@ -4126,5 +4138,149 @@ mod tests {
         let cyto_json: serde_json::Value = serde_json::from_slice(&body).expect("parse cyto json");
         assert!(cyto_json.get("elements").is_some());
         assert!(cyto_json["elements"].get("nodes").is_some());
+    }
+
+    /// Phase 1 access instrumentation, end-to-end through the HTTP handler.
+    ///
+    /// The unit tests in `memory::access` pin the recorder; this one pins the
+    /// *wiring*. It is the test that goes red if someone removes the recording
+    /// call from `v1_memories_search`, or moves it into `MemoryStore::get`
+    /// (which would make the internal-read guard fail instead).
+    #[tokio::test]
+    #[serial]
+    async fn test_http_search_records_user_access_and_internal_reads_do_not() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        for key in [
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBED_PROVIDER",
+        ] {
+            std::env::remove_var(key);
+        }
+
+        crate::memory::access::RECORDER.reset();
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace.clone());
+        let workspace_id = workspace.workspace_id.clone();
+
+        let add = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": "zebra crossing instrumentation canary",
+                    "path": "features/access-instrumentation",
+                    "kind": "stability_report",
+                })
+                .to_string(),
+            ))
+            .expect("request");
+        let add_response = app.clone().oneshot(add).await.expect("add");
+        assert_eq!(add_response.status(), 200, "seed memory");
+
+        // A user-facing HTTP search must register an access.
+        let search = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/search")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "zebra crossing instrumentation",
+                    "limit": 5,
+                    "mode": "ids",
+                })
+                .to_string(),
+            ))
+            .expect("request");
+        let search_response = app.clone().oneshot(search).await.expect("search");
+        assert_eq!(search_response.status(), 200, "search");
+
+        let workspace_state = workspace.workspace.clone();
+        let ids: Vec<String> = workspace_state
+            .memory
+            .all_documents()
+            .await
+            .into_iter()
+            .filter_map(|doc| doc.id)
+            .collect();
+        assert!(!ids.is_empty(), "seeded memory must have an id");
+
+        let recorded: Vec<String> = ids
+            .iter()
+            .filter(|id| crate::memory::access::RECORDER.access_count(&workspace_id, id) > 0)
+            .cloned()
+            .collect();
+        assert!(
+            !recorded.is_empty(),
+            "ADVERSARY: an HTTP search must record at least one access. \
+             Recorded none for {workspace_id}."
+        );
+
+        // Internal reads over the same workspace must NOT add anything.
+        //
+        // This workspace uses the in-memory backend, so its internal reads
+        // never cross the SQLite `store.get()` path that the mutation test
+        // targets. Run the same internal-read sequence against a real vec store
+        // so the guard is actually exercised end-to-end.
+        let dir = tempfile::tempdir().expect("tempdir");
+        // The `MemoryStore` trait must be in scope for `put`/`get`/`list`.
+        use crate::memory::store::MemoryStore as _;
+        let vec_store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::new(
+            crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+                path: dir.path().join("mutation-guard.sqlite3"),
+                embedding_dimensions: 128,
+            },
+        )
+        .await
+        .expect("vec store");
+        vec_store
+            .ensure_access_instrumentation()
+            .await
+            .expect("instrumentation");
+
+        for id in &ids {
+            vec_store
+                .put(crate::memory::store::MemoryRecord {
+                    id: id.clone(),
+                    workspace_id: workspace_id.clone(),
+                    path: format!("notes/{}", id),
+                    content: "seeded by the access-instrumentation guard test".to_string(),
+                    embedding: vec![0.1; 4],
+                    embedding_status: "completed".to_string(),
+                    ..Default::default()
+                })
+                .await
+                .expect("put");
+        }
+
+        let before: u64 = ids
+            .iter()
+            .map(|id| crate::memory::access::RECORDER.access_count(&workspace_id, id))
+            .sum();
+
+        let _ = vec_store.get(&workspace_id, &ids[0]).await;
+        let _ = vec_store.list(&workspace_id).await;
+        workspace_state
+            .memory_manager
+            .garbage_collect()
+            .await
+            .expect("gc");
+
+        let after: u64 = ids
+            .iter()
+            .map(|id| crate::memory::access::RECORDER.access_count(&workspace_id, id))
+            .sum();
+        assert_eq!(
+            before, after,
+            "MUTATION GUARD: internal reads (store.get / list / GC) must not \
+             change the access count"
+        );
+
+        crate::memory::access::RECORDER.reset();
     }
 }

@@ -856,6 +856,56 @@ impl MemoryStore for VecSqliteMemoryStore {
             })
             .await
     }
+
+    async fn ensure_access_instrumentation(&self) -> Result<()> {
+        let project_id = self.project_id.clone();
+        self.conn_provider
+            .with_conn(&project_id, move |conn| {
+                VecSqliteMemoryStore::ensure_access_instrumentation_conn(conn, chrono::Utc::now())
+            })
+            .await
+    }
+
+    async fn record_accesses(
+        &self,
+        workspace_id: &str,
+        entries: &[(String, u64)],
+    ) -> Result<usize> {
+        let project_id = self.project_id.clone();
+        let workspace_id = workspace_id.to_string();
+        let entries = entries.to_vec();
+        self.conn_provider
+            .with_conn(&project_id, move |conn| {
+                VecSqliteMemoryStore::record_accesses_conn(conn, &workspace_id, &entries)
+            })
+            .await
+    }
+
+    async fn load_access_stats(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<(String, crate::memory::access::AccessStats)>> {
+        let project_id = self.project_id.clone();
+        let workspace_id = workspace_id.to_string();
+        self.conn_provider
+            .with_conn(&project_id, move |conn| {
+                VecSqliteMemoryStore::load_access_stats_conn(conn, &workspace_id)
+            })
+            .await
+    }
+
+    async fn read_maintenance_meta(
+        &self,
+        key: &str,
+    ) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
+        let project_id = self.project_id.clone();
+        let key = key.to_string();
+        self.conn_provider
+            .with_conn(&project_id, move |conn| {
+                VecSqliteMemoryStore::read_maintenance_meta_conn(conn, &key)
+            })
+            .await
+    }
 }
 
 impl VecSqliteMemoryStore {

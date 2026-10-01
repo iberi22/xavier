@@ -14,7 +14,9 @@ use tokio::sync::broadcast;
 use crate::memory::connection_provider::{ConnectionProvider, GlobalConnectionProvider};
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::sqlite_store::TABLE_MEMORIES;
-use crate::memory::store::{stable_key, HybridSearchMode, HybridSearchResult, MemoryRecord};
+use crate::memory::store::{
+    stable_key, HybridSearchMode, HybridSearchResult, MemoryRecord, MemoryStore as _,
+};
 
 pub mod at_rest;
 pub mod audit;
@@ -23,6 +25,7 @@ pub mod config;
 pub mod db;
 pub mod fts;
 pub mod graph;
+pub mod memory_access_impl;
 pub mod schema_impl;
 pub mod search;
 pub mod store_impl;
@@ -117,6 +120,11 @@ impl VecSqliteMemoryStore {
 
         // Initialize schema
         store.init_schema_async().await?;
+
+        // Phase 1 access instrumentation: create `memory_access` /
+        // `maintenance_meta` and seed `observation_started_at`. Idempotent —
+        // the clock is INSERT OR IGNORE, so restarts never reset it.
+        store.ensure_access_instrumentation().await?;
 
         Ok(store)
     }

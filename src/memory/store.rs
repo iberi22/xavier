@@ -16,6 +16,7 @@ use tokio::{fs, sync::RwLock};
 
 use crate::checkpoint::Checkpoint;
 use crate::domain::memory::belief::BeliefEdge;
+use crate::memory::access::AccessStats;
 use crate::memory::hierarchy::{MemoryHierarchyNode, MemoryTree};
 use crate::memory::qmd_memory::MemoryDocument;
 use crate::memory::schema::{resolve_metadata, MemoryLevel, MemoryQueryFilters};
@@ -627,6 +628,61 @@ pub trait MemoryStore: crate::domain::cycle_breaks::w30_12::MemoryConsumerStore 
     async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
         let _ = memory_id;
         Ok(Vec::new())
+    }
+
+    // -----------------------------------------------------------------------
+    // Access instrumentation (Phase 1 of utility-prune groundwork)
+    //
+    // These exist so `TgdUtilityPruner` and `DecayManager` can answer "was this
+    // ever needed?" from evidence instead of from the empty `metadata` blob.
+    // Default implementations are inert: a backend that does not persist
+    // accesses simply reports no observations, which keeps "never accessed"
+    // and "never observable" distinguishable instead of silently equal.
+    // -----------------------------------------------------------------------
+
+    /// Create the access tables and seed the observation clock.
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
+    async fn ensure_access_instrumentation(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Persist buffered accesses as one upsert batch.
+    ///
+    /// `entries` is `(memory_id, delta)`: a batch, not one row per read.
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
+    async fn record_accesses(
+        &self,
+        _workspace_id: &str,
+        _entries: &[(String, u64)],
+    ) -> Result<usize> {
+        Ok(0)
+    }
+
+    /// Load every persisted access statistic for a workspace.
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
+    async fn load_access_stats(&self, _workspace_id: &str) -> Result<Vec<(String, AccessStats)>> {
+        Ok(Vec::new())
+    }
+
+    /// Read one key from `maintenance_meta`.
+    #[allow(
+        clippy::unused_async,
+        reason = "MemoryStore trait requirement for async backends"
+    )]
+    async fn read_maintenance_meta(
+        &self,
+        _key: &str,
+    ) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
+        Ok(None)
     }
 }
 
