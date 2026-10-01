@@ -1020,37 +1020,14 @@ pub async fn start_http_server(
         .route("/memory/graph/relations", get(memory_graph_relations))
         .route("/memory/graph/view", get(memory_graph_view))
         .route("/code/find", post(code_find_handler))
-        .route(
-            // #2580: `code_index_handler` reads any directory the caller names
-            // and then calls `perform_dump`, which writes to disk. It needs the
-            // same Admin gate as dump/load; without it a `User` session (lease,
-            // ephemeral, `xav_` token) could index `clientes/` into the shared
-            // code graph.
-            "/code/index",
-            post(code_index_handler).layer(middleware::from_fn(require_permission(
-                crate::cli::handlers::code::code_dump_load_permission_check,
-            ))),
-        )
+        // #2580: index, dump and load read and write the filesystem, so each
+        // sits behind the Admin role gate. The routes and their gate live in
+        // `code_fs_routes` so the router tests cover this very wiring (#2793).
+        .merge(crate::cli::handlers::code::code_fs_routes())
         .route("/code/search", post(code_search_handler))
         .route("/code/memories", post(code_memories_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
-        // #2580: dump/load read and write the filesystem. `auth_middleware`
-        // only proves *who* is calling; the role gate keeps a non-Admin
-        // session (lease, ephemeral, `xav_` token) out of them, and the
-        // handlers confine the target to the daemon workspace.
-        .route(
-            "/code/dump",
-            post(code_dump_handler).layer(middleware::from_fn(require_permission(
-                crate::cli::handlers::code::code_dump_load_permission_check,
-            ))),
-        )
-        .route(
-            "/code/load",
-            post(code_load_handler).layer(middleware::from_fn(require_permission(
-                crate::cli::handlers::code::code_dump_load_permission_check,
-            ))),
-        )
         .route("/code/sync", post(code_sync_handler))
         .route("/code/dependencies", post(code_dependencies_handler))
         .route(

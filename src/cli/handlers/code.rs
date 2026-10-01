@@ -489,6 +489,45 @@ pub fn code_dump_load_permission_check(role: &xavier::security::auth::UserRole) 
     role.can_edit_config()
 }
 
+/// The filesystem-touching `/code/*` routes, each behind the Admin role gate.
+///
+/// #2580: `auth_middleware` only proves *who* is calling. `/code/index` reads
+/// any directory the caller names and then calls `perform_dump`, which writes
+/// to disk; `/code/dump` and `/code/load` read and write it directly. Without
+/// the gate a `User` session (lease, ephemeral, `xav_` token) could index
+/// `clientes/` into the shared code graph. The handlers also confine the
+/// target to the daemon workspace.
+///
+/// Built here and merged by `src/cli/server.rs` so the router tests run the
+/// wiring the daemon serves instead of a copy of it (#2793). `dead_code` is
+/// denied so the server cannot stop merging it without failing the build.
+#[deny(dead_code)]
+pub(crate) fn code_fs_routes() -> axum::Router<CliState> {
+    use axum::middleware;
+    use axum::routing::post;
+    use xavier::middleware::require_permission;
+
+    axum::Router::new()
+        .route(
+            "/code/index",
+            post(code_index_handler).layer(middleware::from_fn(require_permission(
+                code_dump_load_permission_check,
+            ))),
+        )
+        .route(
+            "/code/dump",
+            post(code_dump_handler).layer(middleware::from_fn(require_permission(
+                code_dump_load_permission_check,
+            ))),
+        )
+        .route(
+            "/code/load",
+            post(code_load_handler).layer(middleware::from_fn(require_permission(
+                code_dump_load_permission_check,
+            ))),
+        )
+}
+
 /// A dump/load target refused by [`resolve_contained_target`].
 struct TargetRejection {
     requested_path: String,
@@ -3373,11 +3412,11 @@ mod tests {
 
     /// #2580: `/code/index` reads the caller's path and then writes a dump, so
     /// it must confine the target exactly like `/code/dump` does. This covers
-    /// the handler half; the role gate on the route is covered by the router
-    /// wiring and by `dump_as_a_non_admin_role_is_forbidden`.
+    /// the handler half; the role gate on the route is covered through the
+    /// router by `index_as_a_non_admin_role_is_forbidden`.
     #[tokio::test]
     async fn index_rejects_a_target_outside_the_workspace() {
-        let (_tmp, inside, outside, state) = issue_2580_state().await;
+        let (_tmp, _inside, outside, state) = issue_2580_state().await;
 
         let (status, body) = xav01_status_body(code_index_handler(
             State(state),
@@ -3400,8 +3439,8 @@ mod tests {
             "the reason must name the containment rule, got {body}"
         );
         assert!(
-            !inside.exists() || inside.read_dir().is_ok(),
-            "the refusal must not depend on the inside path being absent"
+            !outside.join(".xavier").exists(),
+            "a refused index must not create anything"
         );
     }
 
@@ -3420,14 +3459,20 @@ mod tests {
             body["status"], "error",
             "traversal must be refused, got {body}"
         );
+        // The rule's own wording, not just `..`: an error that merely echoes
+        // the requested path would satisfy a looser match.
         assert!(
-            body["error"].as_str().unwrap_or_default().contains(".."),
-            "the reason must name the traversal rule, got {body}"
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("must not contain '..'"),
+            "the refusal must come from the traversal rule, got {body}"
         );
     }
 
     /// A symlink inside the workspace that points out of it. The target exists,
     /// so `canonicalize` succeeds and the comparison must catch the escape.
+    #[cfg(unix)]
     #[tokio::test]
     async fn index_rejects_a_symlink_escaping_the_workspace() {
         let (_tmp, _inside, outside, state) = issue_2580_state().await;
@@ -3452,6 +3497,15 @@ mod tests {
         assert_eq!(
             body["status"], "error",
             "a symlink out of the workspace must be refused, got {body}"
+        );
+        // `status: "error"` is also what a failed index reports, so the reason
+        // has to be the containment rule and not whatever the indexer said.
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("outside workspace root"),
+            "the refusal must come from the containment rule, got {body}"
         );
     }
 
@@ -3556,44 +3610,28 @@ mod tests {
         );
     }
 
-    /// The `/code/dump` route exactly as `src/cli/server.rs` composes it.
+    /// POST `route` on [`code_fs_routes`] as `role`, or with no claims at all
+    /// when `None`.
     ///
-    /// Built here because `server.rs` has no test module and the authorization
-    /// decision is only observable through the layered route: `auth_middleware`
-    /// proves who is calling, and this layer decides what they may touch. The
-    /// containment tests above cover the handler; this covers the wiring.
-    fn issue_2580_router(state: CliState) -> axum::Router {
-        use axum::middleware;
-        use axum::routing::post;
-        use xavier::middleware::require_permission;
-
-        axum::Router::new()
-            .route(
-                "/code/dump",
-                post(code_dump_handler).layer(middleware::from_fn(require_permission(
-                    code_dump_load_permission_check,
-                ))),
-            )
-            .with_state(state)
-    }
-
-    /// POST `/code/dump` as `role`, or with no claims at all when `None`.
-    ///
-    /// Returns only the status: 200 means the request reached the handler and
-    /// containment passed, 403 means the gate stopped it before any filesystem
-    /// access.
-    async fn issue_2580_dump_status(
+    /// The router is the one `src/cli/server.rs` merges, not a copy of it, so
+    /// dropping a `.layer(...)` there turns these tests red (#2793). The
+    /// authorization decision is only observable through the layered route:
+    /// `auth_middleware` proves who is calling and leaves the `Claims` in the
+    /// request extensions, which is where they are put here, and the layer
+    /// decides what they may touch.
+    async fn issue_2580_post(
         state: CliState,
+        route: &str,
         target: &str,
         role: Option<xavier::security::auth::UserRole>,
-    ) -> u16 {
+    ) -> (u16, serde_json::Value) {
         use axum::body::Body;
         use axum::http::Request;
         use tower::ServiceExt;
 
         let mut builder = Request::builder()
             .method("POST")
-            .uri("/code/dump")
+            .uri(route)
             .header("content-type", "application/json");
         if let Some(role) = role {
             let claims = xavier::security::auth::Claims::new(
@@ -3607,12 +3645,27 @@ mod tests {
         let body = serde_json::json!({ "path": target }).to_string();
         let request = builder.body(Body::from(body)).unwrap();
 
-        issue_2580_router(state)
+        let response = code_fs_routes()
+            .with_state(state)
             .oneshot(request)
             .await
-            .unwrap()
-            .status()
-            .as_u16()
+            .unwrap();
+        let status = response.status().as_u16();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or_default())
+    }
+
+    /// [`issue_2580_post`] on `/code/dump`, keeping only the status: 200 means
+    /// the request reached the handler and containment passed, 403 means the
+    /// gate stopped it before any filesystem access.
+    async fn issue_2580_dump_status(
+        state: CliState,
+        target: &str,
+        role: Option<xavier::security::auth::UserRole>,
+    ) -> u16 {
+        issue_2580_post(state, "/code/dump", target, role).await.0
     }
 
     #[tokio::test]
@@ -3654,6 +3707,107 @@ mod tests {
             issue_2580_dump_status(state, &inside.to_string_lossy(), Some(UserRole::Admin)).await;
 
         assert_eq!(status, 200, "an Admin inside the workspace must be served");
+    }
+
+    /// #2793: the `index_rejects_*` tests call `code_index_handler` directly, so
+    /// they never run the role gate. These go through the route.
+    #[tokio::test]
+    async fn index_as_a_non_admin_role_is_forbidden() {
+        use xavier::security::auth::UserRole;
+
+        let (_tmp, inside, _outside, state) = issue_2580_state().await;
+
+        for role in [UserRole::Readonly, UserRole::User] {
+            let (status, body) = issue_2580_post(
+                state.clone(),
+                "/code/index",
+                &inside.to_string_lossy(),
+                Some(role),
+            )
+            .await;
+            assert_eq!(status, 403, "{role:?} must not reach the index route");
+            assert_eq!(
+                body["message"], "Forbidden: Insufficient permissions",
+                "{role:?} must be stopped by the role gate, got {body}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn index_without_authentication_is_forbidden() {
+        let (_tmp, inside, _outside, state) = issue_2580_state().await;
+
+        let (status, body) =
+            issue_2580_post(state, "/code/index", &inside.to_string_lossy(), None).await;
+
+        assert_eq!(status, 403, "no claims must stop the index before the fs");
+        assert_eq!(
+            body["message"], "Forbidden: Missing authentication claims",
+            "got {body}"
+        );
+    }
+
+    /// The positive control: an Admin passes the gate, so the 403s above come
+    /// from the role and not from a route that refuses everyone. The handler's
+    /// own containment is what answers here, which proves it was reached.
+    #[tokio::test]
+    async fn index_as_admin_reaches_the_handler() {
+        use xavier::security::auth::UserRole;
+
+        let (_tmp, _inside, outside, state) = issue_2580_state().await;
+
+        let (status, body) = issue_2580_post(
+            state,
+            "/code/index",
+            &outside.to_string_lossy(),
+            Some(UserRole::Admin),
+        )
+        .await;
+
+        assert_eq!(status, 200, "an Admin must get past the gate, got {body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("outside workspace root"),
+            "the handler itself must answer, got {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_as_a_non_admin_role_is_forbidden() {
+        use xavier::security::auth::UserRole;
+
+        let (_tmp, inside, _outside, state) = issue_2580_state().await;
+
+        for role in [UserRole::Readonly, UserRole::User] {
+            let (status, body) = issue_2580_post(
+                state.clone(),
+                "/code/load",
+                &inside.to_string_lossy(),
+                Some(role),
+            )
+            .await;
+            assert_eq!(status, 403, "{role:?} must not reach the load route");
+            assert_eq!(
+                body["message"], "Forbidden: Insufficient permissions",
+                "{role:?} must be stopped by the role gate, got {body}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn load_without_authentication_is_forbidden() {
+        let (_tmp, inside, _outside, state) = issue_2580_state().await;
+
+        let (status, body) =
+            issue_2580_post(state, "/code/load", &inside.to_string_lossy(), None).await;
+
+        assert_eq!(status, 403, "no claims must stop the load before the fs");
+        assert_eq!(
+            body["message"], "Forbidden: Missing authentication claims",
+            "got {body}"
+        );
     }
 
     #[cfg(unix)]
