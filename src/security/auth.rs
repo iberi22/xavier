@@ -189,6 +189,12 @@ pub trait Permission {
     fn can_view_config(&self) -> bool;
     fn can_edit_config(&self) -> bool;
     fn can_manage_users(&self) -> bool;
+    /// Lend, execute with, or inspect node secrets.
+    ///
+    /// Admin only, and deliberately not reachable by any scope: handing a
+    /// secret to a process is an owner decision, not something a token
+    /// scope can buy.
+    fn can_manage_secrets(&self) -> bool;
 }
 
 impl Permission for UserRole {
@@ -217,6 +223,9 @@ impl Permission for UserRole {
         matches!(self, UserRole::Admin)
     }
     fn can_manage_users(&self) -> bool {
+        matches!(self, UserRole::Admin)
+    }
+    fn can_manage_secrets(&self) -> bool {
         matches!(self, UserRole::Admin)
     }
 }
