@@ -54,20 +54,18 @@ pub fn is_forbidden_egress_ip(ip: IpAddr) -> bool {
 
 /// Redirect policy installed on every pinned client.
 ///
-/// A 3xx would carry the secret headers to a host the policy never saw, so
-/// redirects are refused rather than followed. Exposed as a named function so
-/// the behaviour is assertable: `reqwest::Client` has no getter for it, and a
-/// test that builds its own client proves nothing about this one.
+/// Exposed as a named function so the behaviour is assertable:
+/// [`reqwest::Client`] has no getter for its redirect policy, and a test that
+/// builds its own client proves nothing about this one.
 #[must_use]
 pub fn redirect_policy() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::none()
 }
 
-/// Builds a client pinned to `url`'s host, with redirects disabled.
+/// Builds a client pinned to `url`'s host, with redirects refused.
 ///
-/// Redirects are off because a 3xx would carry secret headers to a host the
-/// policy never saw. DNS is resolved once here and the connection is pinned to
-/// that answer, so a second, different answer cannot move the request.
+/// DNS is resolved once here and the connection is pinned to that answer, so a
+/// second, different answer cannot move the request.
 pub async fn pinned_client(url: &Url) -> Result<reqwest::Client, String> {
     let port = url.port_or_known_default().ok_or("URL has no known port")?;
     let builder = reqwest::Client::builder().redirect(redirect_policy());
