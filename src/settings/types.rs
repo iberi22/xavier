@@ -619,9 +619,15 @@ pub struct NotificationSettings {
 }
 
 impl XavierSettings {
-    /// Default host.
+    /// Default host for the HTTP daemon.
+    ///
+    /// Loopback on purpose: a node exposes its authenticated API — including the
+    /// secret routes — and `0.0.0.0` publishes that API to every interface the
+    /// machine has. Reaching the node from another host is done by an explicit
+    /// `XAVIER_HOST` (or a reverse proxy that terminates on loopback), not by the
+    /// default. A node that really must listen wide has to say so.
     pub fn default_host() -> String {
-        "0.0.0.0".into()
+        "127.0.0.1".into()
     }
     /// Default port.
     pub fn default_port() -> u16 {

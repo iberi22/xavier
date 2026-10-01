@@ -230,7 +230,7 @@ pub mod tests {
     fn test_default_settings() {
         let settings = XavierSettings::default();
         assert_eq!(settings.server.port, 8006);
-        assert_eq!(settings.server.host, "0.0.0.0");
+        assert_eq!(settings.server.host, "127.0.0.1");
         assert_eq!(settings.workspace.default_workspace_id, "default");
         assert_eq!(settings.memory.backend, "vec");
         assert_eq!(settings.models.provider, "local");
@@ -312,7 +312,7 @@ pub mod tests {
         let settings = XavierSettings::default();
         settings.apply_to_env();
 
-        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "0.0.0.0");
+        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
         assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "8006");
         assert_eq!(
             std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(),
@@ -342,7 +342,7 @@ pub mod tests {
         assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "9999");
         assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "100");
         // Missing vars should be set
-        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "0.0.0.0");
+        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
     }
 
     #[test]
@@ -369,8 +369,8 @@ pub mod tests {
         // Temporarily point config to a nonexistent path so defaults are used
         std::env::set_var("XAVIER_CONFIG_PATH", "/tmp/nonexistent-xavier-config.json");
         let settings = XavierSettings::current();
-        // Without a real config file, host falls to default (0.0.0.0)
-        assert_eq!(settings.server.host, "0.0.0.0");
+        // Without a real config file, host falls to the loopback default
+        assert_eq!(settings.server.host, "127.0.0.1");
         assert_eq!(settings.server.port, 8006);
         assert!(settings.auth_token.is_none());
     }
@@ -501,6 +501,23 @@ pub mod tests {
 
         // Clean up
         let _ = std::fs::remove_file(&test_config_path);
+    }
+
+    #[test]
+    fn test_default_host_is_loopback_not_wildcard() {
+        // Regression: the daemon used to default to 0.0.0.0, which published the
+        // whole authenticated API — secret routes included — to every interface.
+        // A node that must listen wider sets XAVIER_HOST or server.host explicitly.
+        let host = XavierSettings::default().server.host;
+        assert_eq!(
+            host, "127.0.0.1",
+            "the default bind must stay on loopback; widening it has to be an explicit choice"
+        );
+        assert_ne!(
+            XavierSettings::default_host(),
+            "0.0.0.0",
+            "default_host is what a config without a `server.host` inherits"
+        );
     }
 
     #[tokio::test]

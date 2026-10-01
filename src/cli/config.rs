@@ -132,12 +132,13 @@ pub fn resolve_http_token() -> Result<String> {
 }
 
 /// Resolve http bind host.
+///
+/// An explicit `XAVIER_HOST` always wins. Without it the node binds loopback:
+/// `settings.server.host` already defaults to `127.0.0.1`, and a node that must
+/// listen on a wider interface says so in its config instead of inheriting it.
 pub fn resolve_http_bind_host() -> String {
-    // If we are in headless mode or the user hasn't specified a host,
-    // we default to 127.0.0.1 for security.
     std::env::var("XAVIER_HOST").unwrap_or_else(|_| {
         let settings = XavierSettings::current();
-        // Check for specific headless marker or default to 127.0.0.1
         if std::env::var("XAVIER_HEADLESS").is_ok() {
             "127.0.0.1".to_string()
         } else {
