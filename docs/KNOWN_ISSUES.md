@@ -107,3 +107,14 @@ In WAVE 7.03, automated WAL maintenance was integrated directly into Xavier's da
 - `XAVIER_CODE_GRAPH_DB_PATH`, `XAVIER_MEMORY_*_PATH` in compose but not in README — add to ENV_VARS table.
 
 See also: `docs/reference/ENV_VARS.md`, `README.md` Known Issues.
+
+## Clavis vault now lives in a separate namespace
+
+The Clavis provider-key vault (`/v1/clavis/*`, `xavier keys`) is isolated from
+the node's global secret vault: it has its own storage directory
+(`~/.xavier/vaults/xavier-clavis/`) and its own derived encryption key, and the
+HTTP endpoints only accept names starting with `api_key_`. Nothing is migrated
+automatically. Entries created earlier under the global namespace are no longer
+visible to Clavis; re-add them with `xavier keys generate --name <name>` or
+`PUT /v1/clavis/keys/api_key_<name>`, then remove the old global entry if it is
+no longer needed.
