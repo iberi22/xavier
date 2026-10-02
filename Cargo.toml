@@ -250,6 +250,10 @@ path = "tests/clearance_audit_sqlite.rs"
 name = "telecom_simulation_test"
 path = "tests/telecom_simulation_test.rs"
 
+[[test]]
+name = "access_flush_drain"
+path = "tests/access_flush_drain.rs"
+
 [dependencies]
 xavier-core-logic = { path = "crates/xavier-core-logic" }
 xavier-pageindex = { path = "crates/xavier-pageindex", default-features = false, features = ["sqlite", "markdown"], optional = true }
