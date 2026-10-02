@@ -313,6 +313,7 @@ impl Cli {
             Command::Nodes { cmd } => nodes::handle_nodes_command(cmd.clone()).await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,
+            Command::Keys { cmd } => secrets::handle_keys_command(cmd.clone()).await,
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
             Command::Tasks { cmd } => tasks::handle_tasks_command(cmd.clone()).await,
             Command::Billing => crate::cli::handlers::billing::handle_billing_command().await,

@@ -999,6 +999,25 @@ pub async fn start_http_server(
         )
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
+        // ── Clavis Key Vault API ─────────────────────────────────────────
+        // Mounted here as well as in `routes::create_router()`: the live
+        // `xavier http` server builds its router in this module, so routing
+        // the endpoints only in `routes.rs` left them 404 in production while
+        // the handler tests (which call `create_router()`) stayed green.
+        .route(
+            "/v1/clavis/keys/{key_name}",
+            get(xavier::adapters::inbound::http::handlers::clavis::get_clavis_key_handler)
+                .put(xavier::adapters::inbound::http::handlers::clavis::put_clavis_key_handler)
+                .layer(middleware::from_fn(require_permission(|r| {
+                    r.can_manage_secrets()
+                }))),
+        )
+        .route(
+            "/v1/clavis/proxy",
+            post(xavier::adapters::inbound::http::handlers::clavis::clavis_proxy_handler).layer(
+                middleware::from_fn(require_permission(|r| r.can_manage_secrets())),
+            ),
+        )
         .route(
             "/v1/workspaces/db",
             post(create_workspace_db_handler).get(list_workspace_dbs_handler),

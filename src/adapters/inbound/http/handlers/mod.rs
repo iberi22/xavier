@@ -3,6 +3,7 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 pub mod agent;
+pub mod clavis;
 pub mod ivn;
 pub mod marketplace;
 pub mod memory;
@@ -12,6 +13,7 @@ pub mod sync;
 pub mod training;
 
 pub use agent::*;
+pub use clavis::*;
 pub use ivn::*;
 pub use marketplace::*;
 pub use memory::*;
