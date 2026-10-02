@@ -1,0 +1,3 @@
+{"prompt":"What port does the Xavier daemon use?","response":"8006"}
+{"prompt":"Which DB engine stores memories?","response":"SQLite"}
+{"prompt":"Name the CLI binary.","response":"xavier"}
