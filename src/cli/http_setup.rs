@@ -42,6 +42,10 @@ const ROOT_ONLY_PREFIXES: &[&str] = &[
     "/security/tokens",
     "/v1/security/",
     "/v1/proxy/request",
+    // Clavis reads and writes the node's whole secret vault (JWT_PRIVATE_KEY,
+    // DB_MASTER_KEY, node_secret_*). It used to stop at the role gate alone,
+    // so a scoped `xav_` token holding `all` walked past the scope layer.
+    "/v1/clavis",
 ];
 
 /// POST routes that only read, so they need `read` and not `write`.
@@ -621,6 +625,61 @@ mod scope_policy_tests {
             "/security/tokens",
         ] {
             assert!(!lease_may_access(path), "a lease must not reach {path}");
+        }
+    }
+
+    /// D2: `/v1/clavis` reads and writes the node's whole secret vault
+    /// (JWT_PRIVATE_KEY, DB_MASTER_KEY, node_secret_*), yet it was absent
+    /// from `ROOT_ONLY_PREFIXES`. A scoped `xav_` token carrying `all` — the
+    /// scope the old `_ => true` arm granted everywhere — therefore cleared
+    /// the scope layer and only the role gate stood in front of the vault,
+    /// where `/secrets/*` has to agree on three layers.
+    #[test]
+    fn clavis_es_root_only_para_todos_los_scopes() {
+        for scope_list in [
+            vec!["all"],
+            vec!["read", "write", "all"],
+            vec!["read", "write", "admin", "secrets", "proxy"],
+        ] {
+            for path in ["/v1/clavis/keys/api_key_openai", "/v1/clavis/proxy"] {
+                let required = required_scope(&Method::GET, path);
+                assert_eq!(
+                    required,
+                    RequiredScope::RootOnly,
+                    "{path} must be root-only"
+                );
+                // POST is the verb the proxy route and the PUT on keys use.
+                assert_eq!(required_scope(&Method::POST, path), RequiredScope::RootOnly);
+                assert_eq!(required_scope(&Method::PUT, path), RequiredScope::RootOnly);
+                assert!(
+                    !token_satisfies(&scopes(&scope_list), &required),
+                    "{scope_list:?} must not unlock {path}"
+                );
+            }
+        }
+    }
+
+    /// `ROOT_ONLY_PREFIXES` is matched with `starts_with`, and this entry
+    /// carries no trailing `/` on purpose: it also covers the bare
+    /// `/v1/clavis`, so a route mounted at the root of the Clavis namespace is
+    /// root-only without anyone remembering to list it. The cost is that
+    /// `/v1/clavisomething` is denied too — no such route exists, and denying
+    /// it is the direction that fails safe. Pinned so that switching to
+    /// `"/v1/clavis/"` to narrow the match cannot happen by accident: it would
+    /// re-open `/v1/clavis` itself.
+    #[test]
+    fn el_prefijo_clavis_cubre_todo_el_namespace_incluso_el_bare() {
+        for path in [
+            "/v1/clavis",
+            "/v1/clavis/proxy",
+            "/v1/clavis/keys/api_key_openai",
+            "/v1/clavis/keys/JWT_PRIVATE_KEY",
+        ] {
+            assert_eq!(
+                required_scope(&Method::POST, path),
+                RequiredScope::RootOnly,
+                "{path} is inside the Clavis namespace and must stay root-only"
+            );
         }
     }
 }

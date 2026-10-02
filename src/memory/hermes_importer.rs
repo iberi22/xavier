@@ -169,8 +169,16 @@ impl HermesImporter {
                     stats.skipped += 1;
                     continue;
                 }
-                self.remember(&path, fingerprint);
 
+                // NOTE: `remember` deliberately runs AFTER a successful import.
+                // Marking the file as seen before reading it meant a single
+                // failure — an unreadable file, or one `store.put` erroring
+                // halfway through the message loop — left the file permanently
+                // marked as ingested. Hermes `request_dump_*.json` files never
+                // change, so their fingerprint never moved and the skipped
+                // remainder was never retried: the rest of the transcript was
+                // lost silently, until someone cleared `seen` by hand or the
+                // process restarted.
                 let outcome = if ext == "json" {
                     self.import_json_file(&path, store, &mut stats).await
                 } else {
@@ -178,10 +186,16 @@ impl HermesImporter {
                 };
                 match outcome {
                     Ok(mut records) => {
+                        // Every record in the file is stored, so it is now safe
+                        // to skip it while its fingerprint holds.
+                        self.remember(&path, fingerprint);
                         stats.read += 1;
                         imported_records.append(&mut records);
                     }
-                    Err(e) => warn!("Failed to import Hermes session file {:?}: {}", path, e),
+                    Err(e) => warn!(
+                        "Failed to import Hermes session file {:?}: {} — NOT marked as seen, it will be retried",
+                        path, e
+                    ),
                 }
             }
         }

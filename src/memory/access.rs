@@ -47,8 +47,8 @@
 //! no deletion and exposes no route that could.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -115,8 +115,15 @@ pub struct AccessRecorder {
     totals: Mutex<HashMap<AccessKey, AccessStats>>,
     hydrated: Mutex<HashSet<String>>,
     last_flush: Mutex<Instant>,
+    /// Consecutive flush failures. Drives the backoff in `should_flush`.
+    flush_failures: AtomicU32,
+    /// Instant of the last flush *attempt*, successful or not.
+    last_attempt: Mutex<Instant>,
     hydrated_at_least_once: AtomicBool,
 }
+
+/// Backoff ceiling after repeated flush failures: 2^7 * interval.
+const MAX_FLUSH_BACKOFF_SHIFT: u32 = 7;
 
 /// Process-wide recorder. One per process, keyed by `(workspace_id, memory_id)`.
 pub static RECORDER: LazyLock<AccessRecorder> = LazyLock::new(|| AccessRecorder {
@@ -124,6 +131,8 @@ pub static RECORDER: LazyLock<AccessRecorder> = LazyLock::new(|| AccessRecorder 
     totals: Mutex::new(HashMap::new()),
     hydrated: Mutex::new(HashSet::new()),
     last_flush: Mutex::new(Instant::now()),
+    flush_failures: AtomicU32::new(0),
+    last_attempt: Mutex::new(Instant::now()),
     hydrated_at_least_once: AtomicBool::new(false),
 });
 
@@ -134,6 +143,8 @@ impl Default for AccessRecorder {
             totals: Mutex::new(HashMap::new()),
             hydrated: Mutex::new(HashSet::new()),
             last_flush: Mutex::new(Instant::now()),
+            flush_failures: AtomicU32::new(0),
+            last_attempt: Mutex::new(Instant::now()),
             hydrated_at_least_once: AtomicBool::new(false),
         }
     }
@@ -218,16 +229,56 @@ impl AccessRecorder {
     }
 
     /// Whether the buffer is due for a flush.
+    ///
+    /// Two gates. The batch gate is traffic-driven and unaffected by failures —
+    /// a full buffer must still be attempted, otherwise a dead store would grow
+    /// the buffer without bound. The time gate is multiplied by an exponential
+    /// backoff derived from `flush_failures`, so a persistently failing store
+    /// stops turning every single read into another write attempt (the D5
+    /// symptom: `mark_flushed` was never reached on the failure path, so the
+    /// interval never advanced and the next read retried immediately).
     pub fn should_flush(&self) -> bool {
-        if self.pending_count() >= DEFAULT_FLUSH_BATCH {
+        let pending = self.pending_count();
+        if pending == 0 {
+            return false;
+        }
+        if pending >= DEFAULT_FLUSH_BATCH {
             return true;
         }
-        self.last_flush
+        self.last_attempt
             .lock()
-            .expect("access: last_flush lock poisoned")
+            .expect("access: last_attempt lock poisoned")
             .elapsed()
-            >= DEFAULT_FLUSH_INTERVAL
-            && self.pending_count() > 0
+            >= self.backoff()
+    }
+
+    /// Current backoff window: `DEFAULT_FLUSH_INTERVAL` doubled per consecutive
+    /// failure, capped at 128x (so ~64 min at the default interval).
+    pub fn backoff(&self) -> Duration {
+        let failures = self.flush_failures.load(Ordering::Acquire);
+        if failures == 0 {
+            return DEFAULT_FLUSH_INTERVAL;
+        }
+        let shift = failures.min(MAX_FLUSH_BACKOFF_SHIFT);
+        DEFAULT_FLUSH_INTERVAL * 2u32.saturating_pow(shift)
+    }
+
+    /// Consecutive flush failures so far (0 right after a success).
+    pub fn flush_failures(&self) -> u32 {
+        self.flush_failures.load(Ordering::Acquire)
+    }
+
+    /// A flush succeeded: reset the backoff and move the interval clock.
+    pub fn register_flush_success(&self) {
+        self.flush_failures.store(0, Ordering::Release);
+        self.mark_flushed();
+    }
+
+    /// A flush failed: move the attempt clock so the next read waits out the
+    /// backoff instead of retrying immediately.
+    pub fn register_flush_failure(&self) {
+        self.flush_failures.fetch_add(1, Ordering::AcqRel);
+        self.mark_attempt();
     }
 
     /// Take every pending access, grouped by workspace.
@@ -264,11 +315,41 @@ impl AccessRecorder {
             .collect()
     }
 
+    /// Read-only copy of the buffer, grouped by workspace.
+    ///
+    /// Diagnostic/test helper: it never drains, so a test can assert *which*
+    /// accesses survived a failed flush without perturbing the state it asserts
+    /// on.
+    pub fn pending_snapshot(&self) -> HashMap<String, Vec<(String, u64)>> {
+        let pending = self.pending.lock().expect("access: pending lock poisoned");
+        let mut grouped: HashMap<String, Vec<(String, u64)>> = HashMap::new();
+        for ((workspace_id, memory_id), delta) in pending.iter() {
+            grouped
+                .entry(workspace_id.clone())
+                .or_default()
+                .push((memory_id.clone(), *delta));
+        }
+        grouped
+    }
+
     fn mark_flushed(&self) {
+        let now = Instant::now();
         *self
             .last_flush
             .lock()
-            .expect("access: last_flush lock poisoned") = Instant::now();
+            .expect("access: last_flush lock poisoned") = now;
+        *self
+            .last_attempt
+            .lock()
+            .expect("access: last_attempt lock poisoned") = now;
+    }
+
+    /// Move the attempt clock without touching the failure counter.
+    fn mark_attempt(&self) {
+        *self
+            .last_attempt
+            .lock()
+            .expect("access: last_attempt lock poisoned") = Instant::now();
     }
 
     /// Test/diagnostic helper: whether this recorder has ever been hydrated.
@@ -290,6 +371,8 @@ impl AccessRecorder {
             .lock()
             .expect("access: hydrated lock poisoned")
             .clear();
+        self.flush_failures.store(0, Ordering::Release);
+        self.mark_flushed();
     }
 }
 
@@ -367,13 +450,19 @@ pub async fn ensure_hydrated(memory: &QmdMemory) {
 }
 
 /// Flush the buffer in the background when it is due.
+///
+/// This is the *only* read-path caller of [`flush_pending`]. It also guarantees
+/// the periodic worker exists (see [`ensure_flush_worker`]): a buffer that can
+/// only be drained by a read loses everything when the process is stopped by a
+/// signal instead of by a user request.
 pub async fn maybe_flush(memory: &QmdMemory) {
-    if !RECORDER.should_flush() {
-        return;
-    }
     let Some(store) = memory.store().await else {
         return;
     };
+    ensure_flush_worker(Arc::clone(&store));
+    if !RECORDER.should_flush() {
+        return;
+    }
     tokio::spawn(async move {
         if let Err(error) = flush_pending(&*store).await {
             tracing::warn!(%error, "access: failed to flush access buffer");
@@ -381,28 +470,213 @@ pub async fn maybe_flush(memory: &QmdMemory) {
     });
 }
 
+/// Timer that drains the buffer even when nothing reads.
+///
+/// `maybe_flush` is only reachable from a read handler, so between two reads the
+/// buffer can only age. A SIGTERM from `systemctl restart` is not a read, and
+/// before this worker existed the buffered accesses were lost with the process —
+/// which for a utility prune means "never accessed" for records that were read
+/// hours earlier. The worker makes the loss window bounded by
+/// [`DEFAULT_FLUSH_INTERVAL`] instead of unbounded by traffic.
+///
+/// Idempotent and process-wide: the first caller spawns it, later ones are no-ops
+/// even when they pass a different store, because [`RECORDER`] is process-global
+/// and flushing it through two stores concurrently would be the race this module
+/// must not have.
+pub fn ensure_flush_worker(store: Arc<dyn MemoryStore>) {
+    static WORKER: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    WORKER.get_or_init(|| {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(DEFAULT_FLUSH_INTERVAL);
+            // The first tick fires immediately; skip it so the worker does not
+            // race the `maybe_flush` call that spawned it.
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                if RECORDER.pending_count() == 0 {
+                    continue;
+                }
+                match flush_pending(&*store).await {
+                    Ok(written) if written > 0 => {
+                        tracing::debug!(written, "access: periodic flush drained buffer");
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, "access: periodic access flush failed");
+                    }
+                }
+            }
+        });
+    });
+}
+
+/// Flush everything buffered, right now, and report how many accesses landed.
+///
+/// This is the shutdown hook (D4). Call it from the graceful-shutdown path —
+/// *before* the store is dropped — so a `systemctl restart` persists the
+/// accesses of the last [`DEFAULT_FLUSH_INTERVAL`] instead of discarding them.
+///
+/// Bounded by `timeout` because a shutdown must not hang on a wedged database:
+/// on timeout the buffer is left intact and the periodic worker (or the next
+/// process) is the fallback, which is strictly better than blocking the exit.
+pub async fn flush_on_shutdown(store: &dyn MemoryStore, timeout: Duration) -> usize {
+    match tokio::time::timeout(timeout, flush_pending(store)).await {
+        Ok(Ok(written)) => written,
+        Ok(Err(error)) => {
+            tracing::warn!(%error, "access: shutdown flush failed; buffer kept for retry");
+            0
+        }
+        Err(_) => {
+            tracing::warn!(
+                timeout_secs = timeout.as_secs(),
+                "access: shutdown flush timed out; buffer kept for retry"
+            );
+            0
+        }
+    }
+}
+
+/// How long the shutdown hook waits for the final flush.
+pub const SHUTDOWN_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Flush the buffer when the process is asked to stop (D4).
+///
+/// Tokio delivers SIGTERM/SIGINT to *every* registered stream, so installing
+/// this listener alongside the HTTP server's graceful shutdown neither steals the
+/// signal nor requires touching the server: the server still stops accepting
+/// connections, and this task drains the access buffer on its own.
+///
+/// Registered once per process, like [`ensure_flush_worker`].
+pub fn spawn_shutdown_flush(store: Arc<dyn MemoryStore>) {
+    static SHUTDOWN_HOOK: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    SHUTDOWN_HOOK.get_or_init(|| {
+        tokio::spawn(async move {
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{signal, SignalKind};
+                let mut sigterm = match signal(SignalKind::terminate()) {
+                    Ok(stream) => stream,
+                    Err(error) => {
+                        tracing::warn!(%error, "access: SIGTERM listener unavailable");
+                        return;
+                    }
+                };
+                let mut sigint = match signal(SignalKind::interrupt()) {
+                    Ok(stream) => stream,
+                    Err(error) => {
+                        tracing::warn!(%error, "access: SIGINT listener unavailable");
+                        return;
+                    }
+                };
+                let reason = tokio::select! {
+                    _ = sigterm.recv() => "SIGTERM",
+                    _ = sigint.recv() => "SIGINT",
+                };
+                drain_for_shutdown(&store, reason).await;
+            }
+            #[cfg(not(unix))]
+            {
+                if let Ok(mut rx) = tokio::signal::ctrl_c().await {
+                    if rx.recv().await.is_some() {
+                        drain_for_shutdown(&store, "Ctrl+C").await;
+                    }
+                }
+            }
+        });
+    });
+}
+
+async fn drain_for_shutdown(store: &Arc<dyn MemoryStore>, reason: &str) {
+    let pending = RECORDER.pending_count();
+    if pending == 0 {
+        tracing::debug!(reason, "access: shutdown flush skipped, buffer empty");
+        return;
+    }
+    let written = flush_on_shutdown(&**store, SHUTDOWN_FLUSH_TIMEOUT).await;
+    tracing::info!(
+        reason,
+        pending,
+        written, "access: shutdown flush complete (D4)"
+    );
+}
+
+/// Guard that puts drained-but-unwritten accesses back into the buffer.
+///
+/// Two failure modes have to restore the same set, and getting them wrong is the
+/// whole of D5:
+///
+/// - an error mid-loop, and
+/// - the future being **cancelled** while a write is in flight (which is what
+///   `flush_on_shutdown`'s timeout does, and what any task abort does).
+///
+/// Workspaces are removed from `drained` only *after* their write succeeds, so
+/// whatever is left at `Drop` time is exactly what was never committed — the
+/// already-written workspaces are gone from the map and cannot be resurrected.
+struct Unwritten {
+    drained: HashMap<String, Vec<(String, u64)>>,
+}
+
+impl Drop for Unwritten {
+    fn drop(&mut self) {
+        if self.drained.is_empty() {
+            return;
+        }
+        RECORDER.restore_pending(AccessRecorder::flatten(&self.drained));
+    }
+}
+
 /// Flush every buffered access into `store`.
 ///
 /// One `record_accesses` call per workspace, i.e. one multi-row upsert per
-/// workspace rather than one statement per read. Pending accesses are returned
-/// to the buffer if the write fails, so a failed flush never loses evidence.
+/// workspace rather than one statement per read.
+///
+/// ## Only what was not written is restored (D5)
+///
+/// Workspaces are written in turn. When workspace *N* fails, the accesses of
+/// the workspaces already committed must **not** go back into the buffer: the
+/// next flush would add them to `access_count` a second time — a silent
+/// inflation of the one metric a future utility prune would delete on. So the
+/// restore is scoped to the failing workspace and everything after it, which is
+/// what [`Unwritten`] holds.
+///
+/// Concurrency: [`drain_pending`] empties the buffer under its lock, so two
+/// concurrent flushes hold disjoint access sets and never write the same delta
+/// twice. A restore may land while a concurrent flush is draining, in which case
+/// those accesses simply join the next batch and are still written exactly once.
 pub async fn flush_pending(store: &dyn MemoryStore) -> Result<usize> {
-    let drained = RECORDER.drain_pending();
-    if drained.is_empty() {
+    let mut unwritten = Unwritten {
+        drained: RECORDER.drain_pending(),
+    };
+    if unwritten.drained.is_empty() {
         return Ok(0);
     }
 
+    // Own the iteration order: the `Unwritten` guard has to see each workspace
+    // removed once it is committed, and iterating a map while mutating it is a
+    // borrow error. The drain order is already arbitrary, so nothing is lost.
+    let workspaces: Vec<String> = unwritten.drained.keys().cloned().collect();
     let mut written = 0;
-    for (workspace_id, entries) in &drained {
-        if let Err(error) = store.record_accesses(workspace_id, entries).await {
-            // A failed flush must not destroy evidence: put every drained
-            // access back so the next flush retries it.
-            RECORDER.restore_pending(AccessRecorder::flatten(&drained));
-            return Err(error);
+    for workspace_id in workspaces {
+        let result = store
+            .record_accesses(&workspace_id, &unwritten.drained[&workspace_id])
+            .await;
+        match result {
+            Ok(_) => {
+                written += unwritten
+                    .drained
+                    .remove(&workspace_id)
+                    .map(|entries| entries.len())
+                    .unwrap_or(0);
+            }
+            Err(error) => {
+                // `unwritten` still holds this workspace and every later one;
+                // the Drop impl puts exactly those back.
+                RECORDER.register_flush_failure();
+                return Err(error);
+            }
         }
-        written += entries.len();
     }
-    RECORDER.mark_flushed();
+    RECORDER.register_flush_success();
     Ok(written)
 }
 
