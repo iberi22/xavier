@@ -1,10 +1,15 @@
-//! Lock-free sliding window rate limiter (Issue #1443)
+//! Fixed-window rate limiter (Issue #1443)
 //!
-//! Uses atomic counters for concurrent access without Mutex.
+//! One counter per key, each a single mutex, so check-and-record is atomic.
 //! Supports per-IP and per-token rate limiting with burst handling.
+//!
+//! The name says "sliding" and it is not: the window is anchored to the first request of
+//! each window and then rolls. It therefore admits up to 2x the limit across a roll
+//! (2N requests inside 2x epsilon). See [`LimiterResult::Denied`] and the module's own
+//! tests for the boundary that distinguishes this from a true sliding window.
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -40,55 +45,65 @@ pub enum LimiterResult {
     Denied { retry_after_secs: u64 },
 }
 
-/// A single sliding window counter for one key.
+/// A single fixed-window counter for one key.
+///
+/// Deciding and recording happen under one lock. With two separate atomics the check
+/// (`count >= limit`) and the effect (`count += 1`) are not one atomic step, so N
+/// concurrent callers can all read the same count and all be admitted past the limit:
+/// measured on the old code, 11 of 10 permitted callers got in on a fresh key. A
+/// mutex per key is tens of nanoseconds uncontended, and the map that holds them is
+/// already behind an RwLock, so the "lock-free" version bought nothing here.
 struct WindowCounter {
-    /// Current window start (epoch seconds)
-    window_start: AtomicI64,
-    /// Request count in current window
-    count: AtomicU64,
-    /// Peak count (for burst detection)
-    peak: AtomicU64,
+    state: Mutex<WindowState>,
+}
+
+#[derive(Debug, Default)]
+struct WindowState {
+    /// Start of the current window (epoch seconds); 0 means "no window yet".
+    window_start: i64,
+    /// Requests seen in the current window, admitted or not.
+    count: u64,
 }
 
 impl WindowCounter {
     fn new() -> Self {
         Self {
-            window_start: AtomicI64::new(0),
-            count: AtomicU64::new(0),
-            peak: AtomicU64::new(0),
+            state: Mutex::new(WindowState::default()),
         }
     }
 
-    /// Check and increment. Returns (allowed, burst_used, retry_after).
+    /// Check and increment, reading the wall clock.
     fn check_and_increment(&self, config: &LimiterConfig) -> LimiterResult {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
+        self.check_and_increment_at(config, now)
+    }
 
-        let window_start = self.window_start.load(Ordering::Relaxed);
-        let elapsed = now - window_start;
-
-        // New window?
-        if elapsed >= config.window_secs as i64 || window_start == 0 {
-            // Reset window
-            self.window_start.store(now, Ordering::Relaxed);
-            self.count.store(1, Ordering::Relaxed);
-            self.peak.store(1, Ordering::Relaxed);
-            return LimiterResult::Allowed;
-        }
-
-        // Current window
-        let current_count = self.count.fetch_add(1, Ordering::Relaxed) + 1;
+    /// Check and increment at an explicit epoch second.
+    ///
+    /// The window rolls from the first request of each window, so `now` is a parameter and
+    /// not an inline `SystemTime::now()`: that is what lets the tests exercise THIS code at
+    /// the boundary instead of a hand-written copy of it, which is how a mutation slips
+    /// through green.
+    fn check_and_increment_at(&self, config: &LimiterConfig, now: i64) -> LimiterResult {
         let limit = config.max_requests as u64;
         let burst_limit = limit + config.burst_limit as u64;
 
-        // Update peak
-        let current_peak = self.peak.load(Ordering::Relaxed);
-        if current_count > current_peak {
-            self.peak.store(current_count, Ordering::Relaxed);
+        let mut state = self.state.lock();
+        let elapsed = now - state.window_start;
+        if state.window_start == 0 || elapsed >= config.window_secs as i64 {
+            state.window_start = now;
+            // First request of a new window is admitted by definition, even when the limit
+            // is 0: `test_limiter_config_validation` pins that behaviour.
+            state.count = 1;
+            return LimiterResult::Allowed;
         }
 
+        // Counted before deciding, so `count` stays "requests seen in this window".
+        state.count += 1;
+        let current_count = state.count;
         if current_count <= limit {
             LimiterResult::Allowed
         } else if current_count <= burst_limit {
@@ -104,7 +119,7 @@ impl WindowCounter {
 
     /// Get current count
     fn current_count(&self) -> u64 {
-        self.count.load(Ordering::Relaxed)
+        self.state.lock().count
     }
 }
 
@@ -663,5 +678,116 @@ mod tests {
             LimiterResult::Denied { .. }
         ));
         assert_eq!(limiter2.check("key_clone"), LimiterResult::Allowed);
+    }
+
+    /// T5: the decision and the increment must be ONE step.
+    ///
+    /// Before the fix, check-then-act on two separate atomics let concurrent callers all
+    /// read the same count on a fresh key: measured 11 admitted against a limit of 10,
+    /// in 1 of 50 rounds. If this test ever goes red again the limiter is letting
+    /// concurrent callers past the limit, which is the whole brute-force exposure.
+    #[test]
+    fn t5_concurrent_callers_are_never_admitted_past_the_limit() {
+        use std::sync::Barrier;
+
+        const THREADS: usize = 64;
+        const LIMIT: u32 = 10;
+        const ROUNDS: usize = 50;
+
+        for round in 0..ROUNDS {
+            // window_secs huge: the window cannot roll during the test, so the only way
+            // to admit more than LIMIT is a torn check-and-record.
+            let limiter = Arc::new(SlidingWindowLimiter::new(LimiterConfig {
+                window_secs: 3600,
+                max_requests: LIMIT,
+                burst_limit: 0,
+            }));
+            let barrier = Arc::new(Barrier::new(THREADS));
+            // Fresh key per round: the first-request path is where the reset raced.
+            let key = format!("k{round}");
+            let handles: Vec<_> = (0..THREADS)
+                .map(|_| {
+                    let limiter = Arc::clone(&limiter);
+                    let barrier = Arc::clone(&barrier);
+                    let key = key.clone();
+                    thread::spawn(move || {
+                        barrier.wait();
+                        !matches!(limiter.check(&key), LimiterResult::Denied { .. })
+                    })
+                })
+                .collect();
+            let admitted = handles
+                .into_iter()
+                .map(|h| h.join().unwrap())
+                .filter(|admitted| *admitted)
+                .count();
+            assert_eq!(admitted, LIMIT as usize, "round {round}");
+        }
+    }
+
+    /// T5: this limiter is a FIXED window anchored to the FIRST REQUEST, not to the clock.
+    ///
+    /// N=2, W=60 s, and `t0` deliberately lands mid-cell of a 60 s clock grid
+    /// (`t0 = 60*1000 + 55`, cell 1000 = [60000, 60060)). That makes the two possible
+    /// implementations disagree:
+    ///
+    ///   - at `t0 + 5` the clock grid has already rolled into cell 1001, but only 5 s have
+    ///     elapsed since the window opened, so this limiter must still say Denied;
+    ///   - at `t0 + W` the anchored window rolls, so it must say Allowed.
+    ///
+    /// A clock-aligned window gets both of those backwards. The test is the guard against
+    /// reading "SlidingWindowLimiter" and believing a property the code does not have, and
+    /// against a later refactor quietly re-anchoring the window to the clock.
+    ///
+    /// It drives the real `WindowCounter` through `check_and_increment_at`, not a copy of the
+    /// arithmetic. A first version used a hand-written helper and went green against exactly
+    /// that clock-alignment mutation, which is the failure mode this test exists to prevent.
+    #[test]
+    fn t5_la_ventana_rueda_desde_el_primer_request_no_desde_el_reloj() {
+        let config = LimiterConfig {
+            window_secs: 60,
+            max_requests: 2,
+            burst_limit: 0,
+        };
+        let counter = WindowCounter::new();
+        let t0 = 60_055i64;
+
+        // Window opens mid-cell: the limit holds inside the same window.
+        assert_eq!(
+            counter.check_and_increment_at(&config, t0),
+            LimiterResult::Allowed
+        );
+        assert_eq!(
+            counter.check_and_increment_at(&config, t0 + 1),
+            LimiterResult::Allowed
+        );
+        assert!(matches!(
+            counter.check_and_increment_at(&config, t0 + 2),
+            LimiterResult::Denied { .. }
+        ));
+
+        // t0 + 5 crosses the CLOCK grid boundary (60060) but only 5 s of the window elapsed:
+        // a clock-anchored window would reset here, this one must not.
+        assert!(
+            matches!(
+                counter.check_and_increment_at(&config, t0 + 5),
+                LimiterResult::Denied { .. }
+            ),
+            "the window reset at the clock grid boundary, but it is anchored to the first request"
+        );
+
+        // t0 + W: the anchored window rolls and a full budget reopens.
+        assert_eq!(
+            counter.check_and_increment_at(&config, t0 + 60),
+            LimiterResult::Allowed
+        );
+        assert_eq!(
+            counter.check_and_increment_at(&config, t0 + 61),
+            LimiterResult::Allowed
+        );
+        assert!(matches!(
+            counter.check_and_increment_at(&config, t0 + 62),
+            LimiterResult::Denied { .. }
+        ));
     }
 }
