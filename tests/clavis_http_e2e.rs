@@ -57,11 +57,11 @@ fn setup_isolated_env() -> tempfile::TempDir {
 #[serial_test::serial]
 async fn test_put_then_get_round_trip() {
     let _tmp = setup_isolated_env();
-    let secret_key = "openai_api_key";
+    let secret_key = "api_key_openai";
     let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
     let secret_value = "sk-proj-e2e-test-secret-value-98765";
 
-    // 1. PUT /v1/clavis/keys/openai_api_key -> HTTP 201 CREATED
+    // 1. PUT /v1/clavis/keys/api_key_openai -> HTTP 201 CREATED
     let put_req = build_clavis_request(
         Method::PUT,
         &format!("/v1/clavis/keys/{}", secret_key),
@@ -87,7 +87,7 @@ async fn test_put_then_get_round_trip() {
     // Raw value must NOT be echoed in the put response
     assert!(!String::from_utf8_lossy(&put_body).contains(secret_value));
 
-    // 2. GET /v1/clavis/keys/openai_api_key -> HTTP 200 OK
+    // 2. GET /v1/clavis/keys/api_key_openai -> HTTP 200 OK
     let get_req = build_clavis_request(
         Method::GET,
         &format!("/v1/clavis/keys/{}", secret_key),
@@ -115,7 +115,7 @@ async fn test_get_nonexistent_key_returns_404() {
 
     let req = build_clavis_request(
         Method::GET,
-        "/v1/clavis/keys/nonexistent_key_abc",
+        "/v1/clavis/keys/api_key_nonexistent_abc",
         None,
         Some(UserRole::Admin),
     );
@@ -147,7 +147,8 @@ async fn test_unauthenticated_and_unauthorized_access_rejected() {
     let _tmp = setup_isolated_env();
 
     // 1. Missing claims/token -> HTTP 403 (or 401) FORBIDDEN
-    let anon_req = build_clavis_request(Method::GET, "/v1/clavis/keys/protected_key", None, None);
+    let anon_req =
+        build_clavis_request(Method::GET, "/v1/clavis/keys/api_key_protected", None, None);
 
     let anon_resp = create_router()
         .oneshot(anon_req)
@@ -164,7 +165,7 @@ async fn test_unauthenticated_and_unauthorized_access_rejected() {
     // 2. UserRole::User (non-admin) -> HTTP 403 FORBIDDEN
     let user_req = build_clavis_request(
         Method::GET,
-        "/v1/clavis/keys/protected_key",
+        "/v1/clavis/keys/api_key_protected",
         None,
         Some(UserRole::User),
     );
@@ -188,7 +189,7 @@ async fn test_put_empty_value_returns_400() {
 
     let req = build_clavis_request(
         Method::PUT,
-        "/v1/clavis/keys/empty_val_key",
+        "/v1/clavis/keys/api_key_empty_val",
         Some(r#"{"value":""}"#),
         Some(UserRole::Admin),
     );
@@ -217,7 +218,7 @@ async fn test_put_empty_value_returns_400() {
 #[serial_test::serial]
 async fn test_log_safety_and_vault_isolation() {
     let tmp = setup_isolated_env();
-    let secret_key = "log_safety_key";
+    let secret_key = "api_key_log_safety";
     let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
     let raw_secret = "sk-live-super-secret-token-abcdef123456";
 
@@ -248,7 +249,11 @@ async fn test_log_safety_and_vault_isolation() {
     );
 
     // 2. Vault file on disk check in isolated directory
-    let secrets_dir = tmp.path().join(".xavier").join("secrets");
+    let secrets_dir = tmp
+        .path()
+        .join(".xavier")
+        .join("vaults")
+        .join("xavier-clavis");
     if secrets_dir.exists() {
         let enc_file = secrets_dir.join(format!("{}.enc", secret_key));
         if enc_file.exists() {
