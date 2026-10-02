@@ -57,7 +57,8 @@ fn test_e2e_keygen_persists_and_exports_exact_value() {
         body.len()
     );
     assert!(
-        body.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+        body.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
         "key body must be lowercase hex"
     );
 }
@@ -95,8 +96,7 @@ fn test_e2e_keygen_rotation_increments_count_and_replaces_value() {
     let first = generate_key(&vault, name, KeyScope::Live, 86400, now).expect("first generation");
     assert_eq!(first.metadata.rotation_count, 0);
 
-    let second =
-        generate_key(&vault, name, KeyScope::Live, 86400, now).expect("second generation");
+    let second = generate_key(&vault, name, KeyScope::Live, 86400, now).expect("second generation");
     assert_eq!(second.metadata.rotation_count, 1);
     assert_ne!(first.value, second.value, "rotated key value must change");
 
@@ -146,7 +146,8 @@ fn test_e2e_keygen_format_output_never_contains_secret_value() {
 
 #[test]
 fn test_e2e_keygen_fingerprint_stability_and_format() {
-    let sample_value = "xavier_live_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let sample_value =
+        "xavier_live_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     let fp1 = fingerprint(sample_value);
     let fp2 = fingerprint(sample_value);
 
