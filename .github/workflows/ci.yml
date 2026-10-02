@@ -268,7 +268,7 @@ jobs:
       # aborting silently.
       - name: Upload panel-ui e2e artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: panel-ui-e2e-results
           path: panel-ui/test-results/
