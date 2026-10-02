@@ -1,4 +1,4 @@
-import { LayoutDashboard, Globe, ListTodo, ShieldAlert, Cpu, Landmark, MessageSquare } from "lucide-react";
+import { LayoutDashboard, Globe, ListTodo, Landmark, MessageSquare, Brain } from "lucide-react";
 import React from "react";
 
 export type MalocaTabId =
@@ -48,5 +48,11 @@ export const TABS: TabConfig[] = [
     label: "Global Backlog",
     icon: ListTodo,
     description: "Unified cross-node task queue & work-item scheduling.",
+  },
+  {
+    id: "introspection",
+    label: "Introspection",
+    icon: Brain,
+    description: "Guided human reflection sessions on detected challenges.",
   },
 ];
