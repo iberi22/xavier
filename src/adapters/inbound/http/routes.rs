@@ -196,6 +196,24 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
             post(crate::adapters::inbound::http::handlers::training::create_bundle_handler),
         )
         .route("/v1/training/export", post(training_export_handler))
+        // ── Clavis Key Vault API ─────────────────────────────────────────
+        // Provider keys are secrets, so every route requires
+        // `can_manage_secrets()` (admin only) via the same middleware as
+        // `/v1/maintenance/*`.
+        .route(
+            "/v1/clavis/keys/{key_name}",
+            get(crate::adapters::inbound::http::handlers::clavis::get_clavis_key_handler)
+                .put(crate::adapters::inbound::http::handlers::clavis::put_clavis_key_handler)
+                .layer(axum::middleware::from_fn(require_permission(|r| {
+                    r.can_manage_secrets()
+                }))),
+        )
+        .route(
+            "/v1/clavis/proxy",
+            post(crate::adapters::inbound::http::handlers::clavis::clavis_proxy_handler).layer(
+                axum::middleware::from_fn(require_permission(|r| r.can_manage_secrets())),
+            ),
+        )
         // ── Content Redaction API ─────────────────────────────────────────
         .route("/v1/memories/redact", post(memories_redact_handler))
         // ── Mini-Experts API ──────────────────────────────────────────────

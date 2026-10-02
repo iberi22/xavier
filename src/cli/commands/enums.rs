@@ -222,6 +222,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: VaultCommand,
     },
+    /// Generate and manage Xavier API keys stored in the vault
+    Keys {
+        #[command(subcommand)]
+        cmd: KeysCommand,
+    },
     /// Manage provider usage and rate limits
     Usage {
         #[command(subcommand)]
@@ -1040,6 +1045,52 @@ pub enum UsersCommand {
         /// TOTP code or backup code. Prompted interactively (hidden) if omitted.
         #[arg(long)]
         code: Option<String>,
+    },
+}
+
+/// API key management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum KeysCommand {
+    /// Generate a new API key and store it in the hardware vault.
+    ///
+    /// The value is never printed: only the name, the sha256 fingerprint, the
+    /// expiry and the rotation count are shown. Retrieve the plaintext with
+    /// `xavier keys export --name <NAME>` or use `xavier secrets exec`.
+    Generate {
+        /// Logical name for the key (1-64 chars of [A-Za-z0-9_-])
+        #[arg(long)]
+        name: String,
+        /// Key lifetime in seconds (0 = use XAVIER_DEFAULT_KEY_TTL_SECS)
+        #[arg(long)]
+        ttl_secs: Option<u64>,
+        /// Issue a test-scope key (`xavier_test_...`) instead of live
+        #[arg(long, default_value_t = false)]
+        test: bool,
+    },
+    /// Print the plaintext of an existing key to stdout.
+    ///
+    /// Refuses to run when stdout is not a TTY unless --yes is passed, and
+    /// masks the value from the log stream.
+    Export {
+        /// Name of the key to export
+        #[arg(long)]
+        name: String,
+        /// Skip the interactive confirmation (required for non-TTY stdout)
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+    /// Show the metadata (fingerprint, expiry, rotations) of an issued key,
+    /// without revealing any value
+    List {
+        /// Name of the key to inspect
+        #[arg(long)]
+        name: String,
+    },
+    /// Revoke a key and its metadata from the vault
+    Revoke {
+        /// Name of the key to revoke
+        #[arg(long)]
+        name: String,
     },
 }
 

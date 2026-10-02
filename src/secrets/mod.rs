@@ -80,6 +80,7 @@ pub mod exec;
 mod exec_http_tests;
 pub mod fallback_store;
 pub mod import_env;
+pub mod keygen;
 pub mod lending;
 pub mod local;
 pub mod local_vault;

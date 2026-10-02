@@ -6,11 +6,13 @@
 use std::io::IsTerminal;
 use std::path::Path;
 
-use crate::cli::commands::enums::{SecretsCommand, VaultCommand, CLI_HTTP_CLIENT};
+use crate::cli::commands::enums::{KeysCommand, SecretsCommand, VaultCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{resolve_base_url, xavier_token};
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
+use xavier::clavis;
 use xavier::secrets::import_env::{parse_env_reader, read_value_from_reader, SecretValue};
+use xavier::secrets::keygen::{self, KeyScope};
 use xavier::secrets::vault::HardwareVault;
 
 pub(crate) trait VaultOps {
@@ -76,9 +78,143 @@ pub(crate) fn vault_get_with_vault<V: VaultOps, W: std::io::Write>(
     Ok(())
 }
 
+/// Vault service name used for both `xavier vault` and `xavier keys`.
+const VAULT_SERVICE: &str = "xavier";
+
+/// Resolve the TTL: explicit flag wins, otherwise the env-configured default.
+fn resolve_ttl(ttl_secs: Option<u64>) -> Result<u64> {
+    match ttl_secs {
+        Some(0) | None => keygen::default_ttl_secs().map_err(|e| anyhow::anyhow!("{e}")),
+        Some(n) => Ok(n),
+    }
+}
+
+/// `xavier keys generate`: mint a key, store it in the vault and print only
+/// the redacted line. The plaintext never reaches `writer`.
+pub(crate) fn keys_generate_with_vault<V: keygen::KeyVault, W: std::io::Write>(
+    vault: &V,
+    name: &str,
+    scope: KeyScope,
+    ttl_secs: u64,
+    writer: &mut W,
+) -> Result<()> {
+    let key = keygen::generate_key(vault, name, scope, ttl_secs, chrono::Utc::now())
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    writeln!(writer, "{}", keygen::format_generate_output(&key))?;
+    writeln!(
+        writer,
+        "The value was NOT printed. Retrieve it once with: xavier keys export --name {name}"
+    )?;
+    Ok(())
+}
+
+/// `xavier keys export`: the only path that writes a plaintext key. It fails
+/// closed when stdout is not a TTY and no `--yes` was given, and it always
+/// registers the value in the global log masker first.
+pub(crate) fn keys_export_with_vault<V: keygen::KeyVault, W: std::io::Write>(
+    vault: &V,
+    name: &str,
+    confirm: Option<bool>,
+    is_tty: bool,
+    writer: &mut W,
+) -> Result<()> {
+    let value = keygen::export_key(vault, name).map_err(|e| anyhow::anyhow!("{e}"))?;
+    clavis::register_secret(&value);
+
+    match confirm {
+        Some(true) => {}
+        Some(false) => anyhow::bail!("export cancelled; the key was not printed"),
+        None => {
+            if !is_tty {
+                anyhow::bail!(
+                    "refusing to print the key '{name}' to a non-interactive stdout; \
+                     re-run with --yes if this is intended"
+                );
+            }
+            let ok = dialoguer::Confirm::new()
+                .with_prompt(format!(
+                    "Print the plaintext of API key '{name}' to stdout?"
+                ))
+                .default(false)
+                .interact()
+                .context("failed to read confirmation")?;
+            if !ok {
+                anyhow::bail!("export cancelled; the key was not printed");
+            }
+        }
+    }
+
+    writeln!(writer, "{value}")?;
+    Ok(())
+}
+
+/// `xavier keys list`: metadata only, never a value.
+pub(crate) fn keys_list_with_vault<V: keygen::KeyVault, W: std::io::Write>(
+    vault: &V,
+    name: &str,
+    writer: &mut W,
+) -> Result<()> {
+    let meta = keygen::load_metadata(vault, name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "no API key named '{name}' in the vault (generate one with 'xavier keys generate')"
+        )
+    })?;
+    let expiry = meta
+        .expires_at
+        .map(|t| t.to_rfc3339())
+        .unwrap_or_else(|| "never".to_string());
+    writeln!(
+        writer,
+        "{}: env={} backend=hardware-vault fingerprint={} ttl_secs={} expires_at={} rotation={} value=<hidden>",
+        meta.name,
+        meta.scope,
+        meta.fingerprint,
+        meta.ttl_secs,
+        expiry,
+        meta.rotation_count,
+    )?;
+    Ok(())
+}
+
+/// `xavier keys revoke`: drop the key and its metadata from the vault.
+pub(crate) fn keys_revoke_with_vault<V: keygen::KeyVault, W: std::io::Write>(
+    vault: &V,
+    name: &str,
+    writer: &mut W,
+) -> Result<()> {
+    keygen::revoke_key(vault, name).map_err(|e| anyhow::anyhow!("{e}"))?;
+    writeln!(writer, "API key '{name}' revoked from the hardware vault.")?;
+    Ok(())
+}
+
+/// Dispatch a [`KeysCommand`] to the appropriate handler.
+pub async fn handle_keys_command(cmd: KeysCommand) -> Result<()> {
+    let vault = HardwareVault::new(VAULT_SERVICE);
+    let mut stdout = std::io::stdout();
+    match cmd {
+        KeysCommand::Generate {
+            name,
+            ttl_secs,
+            test,
+        } => {
+            let scope = if test { KeyScope::Test } else { KeyScope::Live };
+            keys_generate_with_vault(&vault, &name, scope, resolve_ttl(ttl_secs)?, &mut stdout)
+        }
+        KeysCommand::Export { name, yes } => keys_export_with_vault(
+            &vault,
+            &name,
+            if yes { Some(true) } else { None },
+            std::io::stdout().is_terminal(),
+            &mut stdout,
+        ),
+        KeysCommand::List { name } => keys_list_with_vault(&vault, &name, &mut stdout),
+        KeysCommand::Revoke { name } => keys_revoke_with_vault(&vault, &name, &mut stdout),
+    }
+}
+
 /// Dispatch a [`VaultCommand`] to the appropriate handler.
 pub async fn handle_vault_command(cmd: VaultCommand) -> Result<()> {
-    let vault = HardwareVault::new("xavier");
+    let vault = HardwareVault::new(VAULT_SERVICE);
     match cmd {
         VaultCommand::Set { key } => {
             let is_tty = std::io::stdin().is_terminal();
@@ -668,5 +804,205 @@ mod tests {
             parse_err.is_err(),
             "passing two positionals to 'vault set' must be rejected"
         );
+    }
+
+    // ── `xavier keys` ─────────────────────────────────────────────────────
+
+    #[derive(Default)]
+    struct MemKeyVault {
+        items: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    }
+
+    impl keygen::KeyVault for MemKeyVault {
+        fn store(&self, key: &str, value: &str) -> xavier::secrets::SecretResult<()> {
+            self.items
+                .lock()
+                .unwrap()
+                .insert(key.to_string(), value.to_string());
+            Ok(())
+        }
+        fn read(&self, key: &str) -> xavier::secrets::SecretResult<String> {
+            self.items
+                .lock()
+                .unwrap()
+                .get(key)
+                .cloned()
+                .ok_or_else(|| xavier::secrets::SecretError::NotFound(key.to_string()))
+        }
+        fn remove(&self, key: &str) -> xavier::secrets::SecretResult<()> {
+            self.items
+                .lock()
+                .unwrap()
+                .remove(key)
+                .map(|_| ())
+                .ok_or_else(|| xavier::secrets::SecretError::NotFound(key.to_string()))
+        }
+    }
+
+    #[test]
+    fn keys_gen_cli_output_never_leaks_the_value() {
+        let vault = MemKeyVault::default();
+        let mut out = Vec::new();
+
+        keys_generate_with_vault(&vault, "swal-vault", KeyScope::Live, 3600, &mut out)
+            .expect("generate");
+
+        let rendered = String::from_utf8(out).expect("valid utf-8");
+        let stored = keygen::export_key(&vault, "swal-vault").expect("export back");
+
+        assert!(
+            !rendered.contains(&stored),
+            "generate output must NOT contain the key; got: {rendered}"
+        );
+        assert!(rendered.contains("swal-vault"), "got: {rendered}");
+        assert!(rendered.contains("fingerprint=sha256:"), "got: {rendered}");
+        assert!(rendered.contains("value=<hidden>"), "got: {rendered}");
+        assert!(
+            rendered.contains("xavier keys export --name swal-vault"),
+            "output must point at the export path; got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn keys_gen_cli_test_flag_issues_test_scoped_key() {
+        let vault = MemKeyVault::default();
+        let mut out = Vec::new();
+
+        keys_generate_with_vault(&vault, "android-dev", KeyScope::Test, 60, &mut out)
+            .expect("generate");
+
+        let rendered = String::from_utf8(out).expect("valid utf-8");
+        let stored = keygen::export_key(&vault, "android-dev").expect("export back");
+        assert!(stored.starts_with("xavier_test_"), "got: {stored}");
+        assert!(rendered.contains("env=test"), "got: {rendered}");
+    }
+
+    #[test]
+    fn keys_gen_cli_export_requires_explicit_confirmation() {
+        let vault = MemKeyVault::default();
+        let mut out = Vec::new();
+        keys_generate_with_vault(&vault, "guarded", KeyScope::Live, 60, &mut out).expect("gen");
+        let stored = keygen::export_key(&vault, "guarded").expect("export back");
+
+        // Non-TTY without --yes: must fail closed and print nothing.
+        let mut refused = Vec::new();
+        let err = keys_export_with_vault(&vault, "guarded", None, false, &mut refused)
+            .expect_err("non-tty export must be refused");
+        assert!(
+            err.to_string().contains("--yes"),
+            "error must mention --yes; got: {err}"
+        );
+        assert!(
+            !String::from_utf8(refused).expect("utf-8").contains(&stored),
+            "refused export must write nothing"
+        );
+
+        // Explicit negative confirmation: also fails closed.
+        let mut declined = Vec::new();
+        assert!(
+            keys_export_with_vault(&vault, "guarded", Some(false), true, &mut declined).is_err()
+        );
+        assert!(declined.is_empty(), "declined export must write nothing");
+
+        // Explicit affirmative: this is the one path that prints the value.
+        let mut allowed = Vec::new();
+        keys_export_with_vault(&vault, "guarded", Some(true), true, &mut allowed).expect("export");
+        assert_eq!(String::from_utf8(allowed).expect("utf-8").trim(), stored);
+    }
+
+    #[test]
+    fn keys_gen_cli_list_and_revoke_round_trip() {
+        let vault = MemKeyVault::default();
+        let mut out = Vec::new();
+        keys_generate_with_vault(&vault, "rot", KeyScope::Live, 60, &mut out).expect("gen");
+        keys_generate_with_vault(&vault, "rot", KeyScope::Live, 60, &mut out).expect("rotate");
+
+        let mut list = Vec::new();
+        keys_list_with_vault(&vault, "rot", &mut list).expect("list");
+        let rendered = String::from_utf8(list).expect("utf-8");
+        assert!(rendered.contains("rotation=1"), "got: {rendered}");
+        assert!(rendered.contains("value=<hidden>"), "got: {rendered}");
+
+        let stored = keygen::export_key(&vault, "rot").expect("export");
+        assert!(
+            !rendered.contains(&stored),
+            "list leaked the key: {rendered}"
+        );
+
+        let mut revoked = Vec::new();
+        keys_revoke_with_vault(&vault, "rot", &mut revoked).expect("revoke");
+        assert!(String::from_utf8(revoked)
+            .expect("utf-8")
+            .contains("revoked"));
+        assert!(keygen::export_key(&vault, "rot").is_err());
+        assert!(keys_list_with_vault(&vault, "rot", &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn keys_gen_cli_rejects_traversal_name() {
+        let vault = MemKeyVault::default();
+        let mut out = Vec::new();
+        assert!(
+            keys_generate_with_vault(&vault, "../escape", KeyScope::Live, 60, &mut out).is_err()
+        );
+        assert!(out.is_empty(), "nothing may be written on failure");
+    }
+
+    fn parse_keys(args: &[&str]) -> KeysCommand {
+        use crate::cli::state::Cli;
+        use clap::Parser;
+        match Cli::try_parse_from(args).expect("keys parses").cmd {
+            Some(crate::cli::commands::enums::Command::Keys { cmd }) => cmd,
+            _ => panic!("expected the keys subcommand"),
+        }
+    }
+
+    #[test]
+    fn keys_gen_cli_parses_generate_flags() {
+        match parse_keys(&[
+            "xavier",
+            "keys",
+            "generate",
+            "--name",
+            "n",
+            "--ttl-secs",
+            "120",
+            "--test",
+        ]) {
+            KeysCommand::Generate {
+                name,
+                ttl_secs,
+                test,
+            } => {
+                assert_eq!(name, "n");
+                assert_eq!(ttl_secs, Some(120));
+                assert!(test);
+            }
+            other => panic!("expected generate, got {other:?}"),
+        }
+
+        match parse_keys(&["xavier", "keys", "generate", "--name", "n"]) {
+            KeysCommand::Generate { ttl_secs, test, .. } => {
+                assert_eq!(ttl_secs, None);
+                assert!(!test);
+            }
+            other => panic!("expected generate, got {other:?}"),
+        }
+
+        // `--name` is required: a positional name must not be accepted.
+        assert!(std::panic::catch_unwind(|| {
+            parse_keys(&["xavier", "keys", "generate", "positional"])
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn keys_gen_cli_resolve_ttl_precedence() {
+        // Explicit flag wins.
+        assert_eq!(resolve_ttl(Some(45)).expect("ttl"), 45);
+        // Absent flag falls back to the env default (90 days).
+        assert_eq!(resolve_ttl(None).expect("ttl"), keygen::DEFAULT_TTL_SECS);
+        // An explicit 0 means "use the default", not "never expires".
+        assert_eq!(resolve_ttl(Some(0)).expect("ttl"), keygen::DEFAULT_TTL_SECS);
     }
 }
