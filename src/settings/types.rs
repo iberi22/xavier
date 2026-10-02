@@ -342,6 +342,7 @@ pub struct RetrievalSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct NavigationPolicyConfig {
     pub working_weight: f32,
     pub episodic_weight: f32,

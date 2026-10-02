@@ -40,25 +40,48 @@ fn ensure_watcher_started() {
 
 #[cfg(not(test))]
 async fn watch_config_changes() -> Result<()> {
-    let path = serialization::resolve_config_path();
-    watch_config_changes_impl(path).await
+    let config_path = serialization::resolve_config_path();
+    // Runtime state is written by this very process (HORMER, /v1/settings, the
+    // CLI). Watching it too keeps the same behaviour the in-place config write
+    // used to provide: after a save, GLOBAL_SETTINGS converges on what was
+    // saved. Reload never writes, so this cannot loop.
+    let state_path = serialization::resolve_runtime_state_path(&config_path);
+    watch_config_changes_impl(vec![config_path, state_path]).await
 }
 
-async fn watch_config_changes_impl(path: std::path::PathBuf) -> Result<()> {
+async fn watch_config_changes_impl(paths: Vec<std::path::PathBuf>) -> Result<()> {
     use notify::{RecursiveMode, Watcher};
+    use std::collections::HashSet;
     use std::time::Duration;
 
-    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    if !parent.exists() {
-        tracing::debug!("config dir absent, watcher skipped: {:?}", parent);
+    // Group the watched files by parent directory: notify reports per directory,
+    // and several config/state files can live in the same one.
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    let mut watched_names: HashSet<String> = HashSet::new();
+    for path in &paths {
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        if !dirs.contains(&parent) {
+            dirs.push(parent);
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            watched_names.insert(name.to_string());
+        }
+    }
+
+    if watched_names.is_empty() {
+        tracing::debug!("no config paths resolved, watcher skipped");
         return Ok(());
     }
 
-    let config_file_name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("xavier.config.json")
-        .to_string();
+    let existing: Vec<_> = dirs.iter().filter(|d| d.exists()).cloned().collect();
+    if existing.is_empty() {
+        tracing::debug!("config dirs absent, watcher skipped: {:?}", dirs);
+        return Ok(());
+    }
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -69,12 +92,14 @@ async fn watch_config_changes_impl(path: std::path::PathBuf) -> Result<()> {
         notify::Config::default(),
     )?;
 
-    // Watch parent directory to handle atomic saves correctly
-    watcher.watch(parent, RecursiveMode::NonRecursive)?;
+    // Watch parent directories to handle atomic saves correctly
+    for dir in &existing {
+        watcher.watch(dir, RecursiveMode::NonRecursive)?;
+    }
     tracing::info!(
-        "Xavier Settings Watcher: Monitoring directory {:?} for changes to {}",
-        parent,
-        config_file_name
+        "Xavier Settings Watcher: Monitoring {:?} for changes to {:?}",
+        existing,
+        watched_names
     );
 
     // Keep watcher alive in this task's scope
@@ -89,13 +114,16 @@ async fn watch_config_changes_impl(path: std::path::PathBuf) -> Result<()> {
                 );
 
                 if is_write_event {
-                    let matches_path = event
-                        .paths
-                        .iter()
-                        .any(|p| p.file_name().and_then(|n| n.to_str()) == Some(&config_file_name));
+                    let matches_path = event.paths.iter().any(|p| {
+                        p.file_name()
+                            .and_then(|n| n.to_str())
+                            .is_some_and(|n| watched_names.contains(n))
+                    });
 
                     if matches_path {
-                        tracing::info!("xavier.config.json changed. Reloading settings...");
+                        tracing::info!(
+                            "Xavier config/runtime state changed. Reloading settings..."
+                        );
                         tokio::time::sleep(Duration::from_millis(150)).await;
                         if let Err(e) = XavierSettings::reload() {
                             tracing::error!("Failed to reload settings: {:?}", e);
@@ -122,6 +150,12 @@ impl XavierSettings {
     /// Resolve data dir.
     pub fn resolve_data_dir() -> PathBuf {
         serialization::resolve_data_dir()
+    }
+
+    /// Resolve runtime state path (where `save()` writes). Never the versioned
+    /// config file — see `serialization` for the defaults/state split (#2801).
+    pub fn resolve_runtime_state_path() -> PathBuf {
+        serialization::resolve_runtime_state_path(&serialization::resolve_config_path())
     }
 
     /// Load.
@@ -245,29 +279,53 @@ pub mod tests {
         assert_eq!(settings.enterprise.db_path, "data/enterprise.db");
     }
 
+    /// Read the versioned defaults file if the repo has one.
+    ///
+    /// #2805: this test used to `set_var("XAVIER_CONFIG_PATH",
+    /// "config/xavier.config.json")` and then assert exact values out of it,
+    /// which made it an assertion about a file a live daemon rewrites. The
+    /// versioned file is now read-only defaults, but the invariant worth
+    /// keeping is the *contract* (local-first defaults are parseable and
+    /// complete), not the exact string a PR might have changed. Values that
+    /// encode a live policy (learned weights, license acceptance, tokens) are
+    /// deliberately absent here — they are runtime state, and a daemon writes
+    /// them outside the git tree.
+    fn read_versioned_defaults() -> Option<XavierSettings> {
+        let path = PathBuf::from("config/xavier.config.json");
+        let raw = std::fs::read_to_string(&path).ok()?;
+        Some(
+            serde_json::from_str::<XavierSettings>(&raw).unwrap_or_else(|e| {
+                panic!(
+                    "versioned defaults at {} must parse as XavierSettings: {}",
+                    path.display(),
+                    e
+                )
+            }),
+        )
+    }
+
     #[test]
     fn test_load_config_json() {
         let _env = TempEnv::new();
 
-        // Ensure we load from the actual config/xavier.config.json
-        std::env::set_var("XAVIER_CONFIG_PATH", "config/xavier.config.json");
+        // Read-only defaults: the versioned file is a plain parse, with no env
+        // var pointing at it and no daemon able to mutate it underneath us.
+        let Some(s) = read_versioned_defaults() else {
+            // The suite must not depend on the repo layout; when the file is
+            // absent the compiled-in defaults are the contract.
+            let s = XavierSettings::default();
+            assert_eq!(s.workspace.embedding_provider_mode, "local");
+            return;
+        };
 
-        let settings = XavierSettings::load().expect("Should parse config/xavier.config.json");
-        assert!(
-            settings.is_some(),
-            "config/xavier.config.json should exist in the environment"
-        );
-
-        let s = settings.unwrap();
-        // Check local-first defaults from Step 1
+        // Local-first defaults from Step 1: embedding model, provider mode and
+        // the embedder endpoint stay pinned to the local stack.
         assert_eq!(s.workspace.embedding_provider_mode, "local");
         assert!(
             s.models.embedding_model == "embeddinggemma"
                 || s.models.embedding_model == "nomic-embed-text"
                 || s.models.embedding_model == "nomic-embed-text:latest"
         );
-        assert_eq!(s.models.router_fast_model, "");
-        assert_eq!(s.models.router_quality_model, "");
         assert_eq!(
             s.embedding.endpoint,
             "http://localhost:11434/api/embeddings"
@@ -296,6 +354,187 @@ pub mod tests {
             "local_llm_url must be a valid http(s) URL, got '{}'",
             s.models.local_llm_url
         );
+    }
+
+    /// #2805: loading must succeed with *any* content in the config file, and
+    /// the values a daemon owns must not leak in from it.
+    #[test]
+    fn test_load_config_json_is_independent_of_config_content() {
+        let _env = TempEnv::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("xavier.config.json");
+        let state_path = dir.path().join("xavier.runtime.json");
+
+        // A config whose router models are set: the old assertion
+        // `router_fast_model == ""` turns red on exactly this content.
+        let hostile = serde_json::json!({
+            "models": {
+                "router_fast_model": "some/other-model",
+                "router_quality_model": "some/other-quality-model"
+            },
+            "retrieval": { "learned_policy": { "working_weight": 0.91, "update_count": 4242 } }
+        });
+        std::fs::write(&config_path, hostile.to_string()).expect("write config");
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        std::env::set_var("XAVIER_RUNTIME_STATE_PATH", &state_path);
+
+        let loaded = XavierSettings::load().expect("load").expect("settings");
+
+        // #2805: the test must survive ANY content in the config. The old
+        // assertion `router_fast_model == ""` was an assertion about a file a
+        // live daemon could rewrite, and it turned red on exactly this
+        // content. Loading must now succeed and honour what is there.
+        assert_eq!(loaded.models.router_fast_model, "some/other-model");
+        assert_eq!(
+            loaded.models.router_quality_model,
+            "some/other-quality-model"
+        );
+        // Partial nested objects are tolerated: absent fields fall back to the
+        // compiled-in defaults instead of failing the parse.
+        assert_eq!(loaded.retrieval.learned_policy.working_weight, 0.91);
+        assert_eq!(loaded.retrieval.learned_policy.semantic_weight, 0.4);
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+        std::env::remove_var("XAVIER_RUNTIME_STATE_PATH");
+    }
+
+    /// #2801: `save()` must land in the runtime state path and leave the
+    /// versioned config byte-for-byte untouched.
+    #[tokio::test]
+    async fn test_save_writes_runtime_state_and_leaves_config_alone() {
+        let _env = TempEnv::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("xavier.config.json");
+        let state_path = dir.path().join("xavier.runtime.json");
+
+        let config_body = serde_json::to_string_pretty(&XavierSettings::default()).unwrap();
+        std::fs::write(&config_path, &config_body).expect("write config");
+
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        std::env::set_var("XAVIER_RUNTIME_STATE_PATH", &state_path);
+
+        let mut settings = XavierSettings::load().expect("load").expect("settings");
+        settings.retrieval.learned_policy.working_weight = 0.29999998_f32;
+        settings.retrieval.learned_policy.update_count = 7;
+        settings.save().await.expect("save");
+
+        assert!(
+            state_path.exists(),
+            "runtime state must be written to the state path"
+        );
+        let state_raw = std::fs::read_to_string(&state_path).expect("read state");
+        let state_json: serde_json::Value = serde_json::from_str(&state_raw).expect("parse state");
+        assert_eq!(state_json["retrieval"]["learned_policy"]["update_count"], 7);
+        assert_eq!(
+            state_json["retrieval"]["learned_policy"]["working_weight"],
+            0.29999998
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(&config_path).expect("read config"),
+            config_body,
+            "the versioned config must not be rewritten by save()"
+        );
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+        std::env::remove_var("XAVIER_RUNTIME_STATE_PATH");
+    }
+
+    /// #2801: state written by `save()` is read back by `load()` as an overlay
+    /// on top of the defaults, without the defaults file changing.
+    #[tokio::test]
+    async fn test_runtime_state_overlays_defaults_on_next_load() {
+        let _env = TempEnv::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("xavier.config.json");
+        let state_path = dir.path().join("xavier.runtime.json");
+
+        let mut base = XavierSettings::default();
+        base.server.port = 8006;
+        base.retrieval.learned_policy.update_count = 0;
+        let config_body = serde_json::to_string_pretty(&base).unwrap();
+        std::fs::write(&config_path, &config_body).expect("write config");
+
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        std::env::set_var("XAVIER_RUNTIME_STATE_PATH", &state_path);
+
+        // Clean machine: no state file yet, the defaults stand on their own.
+        let fresh = XavierSettings::load().expect("load").expect("settings");
+        assert_eq!(fresh.server.port, 8006);
+        assert_eq!(fresh.retrieval.learned_policy.update_count, 0);
+
+        let mut saved = fresh.clone();
+        saved.server.port = 9999;
+        saved.retrieval.learned_policy.update_count = 12;
+        saved.save().await.expect("save");
+
+        let reloaded = XavierSettings::load().expect("load").expect("settings");
+        assert_eq!(reloaded.server.port, 9999, "state must win on reload");
+        assert_eq!(reloaded.retrieval.learned_policy.update_count, 12);
+        // Untouched keys keep the defaults, they are not zeroed by the overlay.
+        assert_eq!(reloaded.workspace.default_workspace_id, "default");
+        assert_eq!(
+            std::fs::read_to_string(&config_path).expect("read config"),
+            config_body,
+            "overlay must not rewrite the versioned config"
+        );
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+        std::env::remove_var("XAVIER_RUNTIME_STATE_PATH");
+    }
+
+    /// A corrupt state file degrades to the defaults instead of bricking boot.
+    #[test]
+    fn test_corrupt_runtime_state_falls_back_to_defaults() {
+        let _env = TempEnv::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("xavier.config.json");
+        let state_path = dir.path().join("xavier.runtime.json");
+
+        let base = XavierSettings::default();
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&base).expect("serialize"),
+        )
+        .expect("write config");
+        std::fs::write(&state_path, "{ not json").expect("write state");
+
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        std::env::set_var("XAVIER_RUNTIME_STATE_PATH", &state_path);
+
+        let loaded = XavierSettings::load().expect("load").expect("settings");
+        assert_eq!(loaded.server.port, base.server.port);
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+        std::env::remove_var("XAVIER_RUNTIME_STATE_PATH");
+    }
+
+    /// The state path is never the config path, and it is configurable.
+    #[test]
+    fn test_runtime_state_path_is_outside_the_config_file() {
+        let _env = TempEnv::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("xavier.config.json");
+        std::fs::write(&config_path, "{}").expect("write config");
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+
+        // No explicit pin, no XAVIER_DATA_DIR: the XDG state home.
+        let state = XavierSettings::resolve_runtime_state_path();
+        assert_ne!(state, config_path, "state must not be the config file");
+        assert!(
+            !state.starts_with("config"),
+            "state must not live in the git tree, got {}",
+            state.display()
+        );
+
+        std::env::set_var("XAVIER_RUNTIME_STATE_PATH", dir.path().join("pinned.json"));
+        assert_eq!(
+            XavierSettings::resolve_runtime_state_path(),
+            dir.path().join("pinned.json")
+        );
+
+        std::env::remove_var("XAVIER_RUNTIME_STATE_PATH");
+        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[test]
@@ -523,7 +762,7 @@ pub mod tests {
     #[tokio::test]
     async fn test_watcher_skipped_when_dir_absent() {
         let nonexistent_path = std::path::PathBuf::from("/nonexistent/path/xavier.config.json");
-        let result = super::watch_config_changes_impl(nonexistent_path).await;
+        let result = super::watch_config_changes_impl(vec![nonexistent_path]).await;
         assert!(
             result.is_ok(),
             "Watcher should gracefully succeed and return Ok when parent dir is absent"
@@ -531,19 +770,27 @@ pub mod tests {
     }
 
     #[tokio::test]
-    async fn test_watcher_starts_when_dir_present() {
-        let temp_dir = std::env::temp_dir();
-        let test_path = temp_dir.join("xavier_watcher_test.json");
+    async fn test_watcher_skipped_when_no_paths() {
+        let result = super::watch_config_changes_impl(Vec::new()).await;
+        assert!(
+            result.is_ok(),
+            "Watcher should succeed when there is nothing to watch"
+        );
+    }
 
-        // Create the dummy config file so that the parent and file exist
-        std::fs::write(&test_path, "{}").unwrap();
+    #[tokio::test]
+    async fn test_watcher_starts_when_dir_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("xavier.config.json");
+        let state_path = dir.path().join("xavier.runtime.json");
+
+        // Create the dummy files so that the parent and files exist
+        std::fs::write(&config_path, "{}").unwrap();
+        std::fs::write(&state_path, "{}").unwrap();
 
         // Since the watcher loops forever awaiting RX, let's run it with a short timeout
-        let run_watcher = super::watch_config_changes_impl(test_path.clone());
+        let run_watcher = super::watch_config_changes_impl(vec![config_path, state_path]);
         let result = tokio::time::timeout(std::time::Duration::from_millis(100), run_watcher).await;
-
-        // Clean up
-        let _ = std::fs::remove_file(&test_path);
 
         // It should time out (since it waits for changes in a loop), which proves it started up properly and didn't fail immediately
         assert!(

@@ -332,17 +332,26 @@ mod tests {
     async fn test_settings_update_logic() {
         let dir = tempdir().unwrap();
         let config_path = dir.path().join("xavier.config.json");
+        let state_path = dir.path().join("xavier.runtime.json");
         std::env::set_var("XAVIER_CONFIG_PATH", config_path.to_str().unwrap());
+        std::env::set_var("XAVIER_RUNTIME_STATE_PATH", state_path.to_str().unwrap());
 
         let mut settings = XavierSettings::default();
         settings.models.provider = "local".to_string();
         settings.models.local_llm_model = "qwen3-coder".to_string();
         settings.save().await.unwrap();
 
-        let saved_content = fs::read_to_string(&config_path).unwrap();
+        // #2801: the write lands in the runtime state file; the config file
+        // (read-only defaults) is never created or rewritten.
+        let saved_content = fs::read_to_string(&state_path).unwrap();
         assert!(saved_content.contains("\"provider\": \"local\""));
         assert!(saved_content.contains("\"local_llm_model\": \"qwen3-coder\""));
+        assert!(
+            !config_path.exists(),
+            "save() must not create the versioned config file"
+        );
 
         std::env::remove_var("XAVIER_CONFIG_PATH");
+        std::env::remove_var("XAVIER_RUNTIME_STATE_PATH");
     }
 }
