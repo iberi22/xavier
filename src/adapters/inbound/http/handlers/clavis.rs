@@ -103,7 +103,8 @@ pub struct ClavisProxyRequest {
 // ---------------------------------------------------------------------------
 
 /// Fallback reader that checks `clavis_vault()` ("xavier-clavis"),
-/// `api_key_{key_name}` variant, and legacy "xavier" service namespace with migration.
+/// `api_key_{key_name}` variant, and legacy "xavier" service namespace with migration
+/// strictly restricted to `api_key_*` prefixed entries to prevent exposing general secrets.
 fn get_secret_with_legacy_fallback(key_name: &str) -> Result<String, SecretError> {
     let vault = clavis_vault();
 
@@ -125,33 +126,34 @@ fn get_secret_with_legacy_fallback(key_name: &str) -> Result<String, SecretError
         }
     }
 
-    // 2. Fallback check against legacy "xavier" service namespace
+    // 2. Fallback check against legacy "xavier" service namespace.
+    // SECURITY GATE: ONLY query entries that carry the `api_key_` prefix in the legacy vault.
+    // NEVER query raw general secret names (e.g., XAVIER_OPENROUTER_API_KEY) in the legacy vault.
     let legacy_vault = HardwareVault::new("xavier");
-    let (found_key, value) = if let Ok(val) = legacy_vault.get_secret(key_name) {
-        (key_name.to_string(), val)
-    } else if let Some(ref alt) = alt_key {
-        if let Ok(val) = legacy_vault.get_secret(alt) {
-            (alt.clone(), val)
-        } else {
-            return Err(SecretError::NotFound(key_name.to_string()));
-        }
+    let legacy_key = if key_name.starts_with("api_key_") {
+        key_name.to_string()
     } else {
-        return Err(SecretError::NotFound(key_name.to_string()));
+        format!("api_key_{key_name}")
+    };
+
+    let value = match legacy_vault.get_secret(&legacy_key) {
+        Ok(val) => val,
+        Err(_) => return Err(SecretError::NotFound(key_name.to_string())),
     };
 
     // Migrate found secret to active clavis_vault
-    if let Err(e) = vault.store_secret(&found_key, &value) {
+    if let Err(e) = vault.store_secret(&legacy_key, &value) {
         tracing::warn!(
-            key = %found_key,
+            key = %legacy_key,
             error = %crate::clavis::mask_log_message(&e.to_string()),
             "failed to migrate key from legacy vault"
         );
     } else {
         tracing::info!(
-            key = %found_key,
+            key = %legacy_key,
             "migrated key from legacy 'xavier' vault to 'xavier-clavis' vault"
         );
-        let meta_key = format!("{found_key}_meta");
+        let meta_key = format!("{legacy_key}_meta");
         if let Ok(meta_val) = legacy_vault.get_secret(&meta_key) {
             let _ = vault.store_secret(&meta_key, &meta_val);
         }
