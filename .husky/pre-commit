@@ -12,7 +12,14 @@
 #   - Secrets are scanned on the staged content, not the whole tree.
 set -uo pipefail
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$ROOT" ] || [ ! -d "$ROOT/.git" ] && [ ! -f "$ROOT/.git" ]; then
+    # Refusing here matters: run from outside a repo and `git diff --cached` yields
+    # nothing, which would report "clean" without having scanned a single byte.
+    printf '❌ [SWAL] %s: no se ejecuta dentro de un repositorio git (cwd=%s)\n' \
+        "$(basename "$0")" "$PWD" >&2
+    exit 1
+fi
 cd "$ROOT" || exit 1
 
 FAILED=0

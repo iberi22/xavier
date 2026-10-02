@@ -6,7 +6,12 @@
 # of commits about to be pushed, not just the staged diff.
 set -uo pipefail
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$ROOT" ] || [ ! -d "$ROOT/.git" ] && [ ! -f "$ROOT/.git" ]; then
+    printf '❌ [SWAL] %s: no se ejecuta dentro de un repositorio git (cwd=%s)\n' \
+        "$(basename "$0")" "$PWD" >&2
+    exit 1
+fi
 cd "$ROOT" || exit 1
 
 FAILED=0
@@ -17,7 +22,19 @@ skip() { printf '⏭  %s\n' "$*"; }
 note "🛡️  [SWAL] pre-push · $(basename "$ROOT")"
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo '')"
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+
+# A bare remote-tracking ref is not an upstream: @{u} needs branch.<n>.merge, and
+# without it every push looks like "no upstream" and silently skips the whole scan.
+if [ -z "$UPSTREAM" ]; then
+    for cand in origin/"$BRANCH" origin/main origin/master; do
+        if git rev-parse --verify -q "$cand" >/dev/null 2>&1; then
+            UPSTREAM="$cand"
+            note "   (sin upstream configurado; usando $UPSTREAM)"
+            break
+        fi
+    done
+fi
 note "   rama $BRANCH${UPSTREAM:+ → $UPSTREAM}"
 
 # ── 1. Secrets across the commits being pushed ────────────────────────────────
@@ -39,7 +56,7 @@ if [ -n "$GLEAKS" ] && [ -x "$GLEAKS" ]; then
         note "⚠️  sin upstream: no se escanea el historial (evita bloquear por fixtures antiguos)"
         RANGE=0
     fi
-    if [ "${RANGE:-0}" -gt 0 ]; then
+    if [ "${RANGE:-0}" -gt 0 ] 2>/dev/null; then
         REPORT="$(mktemp -t swal-gitleaks-push.XXXXXX.json)"
         "$GLEAKS" detect --redact --no-banner --log-opts="$UPSTREAM..HEAD" \
             --report-format json --report-path "$REPORT" >/dev/null 2>&1
