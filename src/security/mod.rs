@@ -25,7 +25,6 @@ pub mod route_policy;
 pub mod rsa_keys;
 pub mod scanner;
 pub mod sessions;
-pub mod sliding_limiter;
 pub mod threat_store;
 pub mod tokens;
 pub mod url_validator;
@@ -44,7 +43,6 @@ pub use scanner::{
     is_threat, scan_text, DetectionLayer, ScanResult, SecurityScanner, ThreatLevel,
     TriggeredDetection, SCANNER,
 };
-pub use sliding_limiter::{LockFreeSlidingLimiter, SlidingLimiterConfig};
 
 use std::collections::HashMap;
 use std::sync::RwLock;
