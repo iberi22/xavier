@@ -6,8 +6,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::fs;
 use tracing::{debug, info, warn};
 
@@ -31,9 +32,35 @@ pub struct CodexSession {
     pub messages: Vec<CodexMessage>,
 }
 
+/// Size and mtime of a session file as last ingested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileFingerprint {
+    mtime_secs: i64,
+    len: u64,
+}
+
+/// What one `sync` pass did.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodexSyncStats {
+    /// Session files found on disk.
+    pub candidates: usize,
+    /// Files read and parsed this pass.
+    pub read: usize,
+    /// Files skipped because their fingerprint was unchanged.
+    pub skipped: usize,
+    /// Files that failed to read, parse or store; retried next pass.
+    pub errors: usize,
+    /// Records returned by the imports of this pass.
+    pub records: usize,
+}
+
 pub struct CodexImporter {
-    sessions_dir: PathBuf,
+    /// Explicit override; `None` re-resolves from the environment each pass.
+    sessions_dir: Option<PathBuf>,
     embedder: Option<Arc<dyn Embedder>>,
+    /// Fingerprint of each file as last ingested successfully. Process-local:
+    /// a restart costs one full pass, never a missed import.
+    seen: Mutex<HashMap<PathBuf, FileFingerprint>>,
 }
 
 impl Default for CodexImporter {
@@ -44,33 +71,41 @@ impl Default for CodexImporter {
 
 impl CodexImporter {
     pub fn new() -> Self {
-        let sessions_dir = Self::resolve_sessions_dir();
         Self {
-            sessions_dir,
+            sessions_dir: None,
             embedder: None,
+            seen: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn with_embedder(embedder: Arc<dyn Embedder>) -> Self {
-        let sessions_dir = Self::resolve_sessions_dir();
         Self {
-            sessions_dir,
+            sessions_dir: None,
             embedder: Some(embedder),
+            seen: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn with_dir<P: AsRef<Path>>(path: P) -> Self {
         Self {
-            sessions_dir: path.as_ref().to_path_buf(),
+            sessions_dir: Some(path.as_ref().to_path_buf()),
             embedder: None,
+            seen: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn with_dir_and_embedder<P: AsRef<Path>>(path: P, embedder: Arc<dyn Embedder>) -> Self {
         Self {
-            sessions_dir: path.as_ref().to_path_buf(),
+            sessions_dir: Some(path.as_ref().to_path_buf()),
             embedder: Some(embedder),
+            seen: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn current_dir(&self) -> PathBuf {
+        self.sessions_dir
+            .clone()
+            .unwrap_or_else(Self::resolve_sessions_dir)
     }
 
     fn resolve_sessions_dir() -> PathBuf {
@@ -94,19 +129,17 @@ impl CodexImporter {
         PathBuf::from(".codex/sessions")
     }
 
-    /// Scan `sessions_dir` and parse all `.json` and `.jsonl` session files recursively.
-    pub async fn scan_sessions(&self) -> Result<Vec<CodexSession>> {
-        let mut sessions = Vec::new();
+    /// List every candidate session file under the sessions dir (recursive).
+    async fn list_session_files(&self) -> Vec<PathBuf> {
+        let sessions_dir = self.current_dir();
+        let mut files = Vec::new();
 
-        if !fs::try_exists(&self.sessions_dir).await.unwrap_or(false) {
-            debug!(
-                "Codex sessions directory {:?} does not exist",
-                self.sessions_dir
-            );
-            return Ok(sessions);
+        if !fs::try_exists(&sessions_dir).await.unwrap_or(false) {
+            debug!("Codex sessions directory {:?} does not exist", sessions_dir);
+            return files;
         }
 
-        let mut dirs_to_visit = vec![self.sessions_dir.clone()];
+        let mut dirs_to_visit = vec![sessions_dir];
         while let Some(current_dir) = dirs_to_visit.pop() {
             let mut entries = match fs::read_dir(&current_dir).await {
                 Ok(e) => e,
@@ -131,23 +164,96 @@ impl CodexImporter {
                 if ext != "json" && ext != "jsonl" && !file_name.starts_with("rollout-") {
                     continue;
                 }
+                files.push(path);
+            }
+        }
+        files
+    }
 
-                let file_stem = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
+    async fn parse_file(path: &Path) -> Option<CodexSession> {
+        let file_stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let content = fs::read_to_string(path).await.ok()?;
+        Self::parse_session_content(&file_stem, &content).ok()
+    }
 
-                if let Ok(content) = fs::read_to_string(&path).await {
-                    if let Ok(session) = Self::parse_session_content(&file_stem, &content) {
-                        sessions.push(session);
-                    }
-                }
+    /// Scan `sessions_dir` and parse all `.json` and `.jsonl` session files recursively.
+    ///
+    /// Full scan: never consults the cursor. Use [`Self::sync`] for the
+    /// periodic pass.
+    pub async fn scan_sessions(&self) -> Result<Vec<CodexSession>> {
+        let mut sessions = Vec::new();
+        for path in self.list_session_files().await {
+            if let Some(session) = Self::parse_file(&path).await {
+                sessions.push(session);
             }
         }
 
         info!("✅ Discovered {} Codex sessions", sessions.len());
         Ok(sessions)
+    }
+
+    /// Periodic pass: a file whose size and mtime are unchanged since it was
+    /// last imported successfully is skipped with a single `stat`, instead of
+    /// being re-read (135 files / ~158 MB every cycle on the live node). A file
+    /// is remembered only AFTER its import succeeded, so a failure is retried.
+    pub async fn sync(&self, store: &dyn MemoryStore) -> Result<CodexSyncStats> {
+        let files = self.list_session_files().await;
+        let mut stats = CodexSyncStats {
+            candidates: files.len(),
+            ..Default::default()
+        };
+
+        for path in files {
+            let fingerprint = match file_fingerprint(&path).await {
+                Ok(f) => f,
+                Err(e) => {
+                    warn!("Failed to stat Codex session file {:?}: {}", path, e);
+                    stats.errors += 1;
+                    continue;
+                }
+            };
+            let unchanged = self
+                .seen
+                .lock()
+                .map(|m| m.get(&path) == Some(&fingerprint))
+                .unwrap_or(false);
+            if unchanged {
+                stats.skipped += 1;
+                continue;
+            }
+
+            let Some(session) = Self::parse_file(&path).await else {
+                warn!("Failed to read Codex session file {:?}; will retry", path);
+                stats.errors += 1;
+                continue;
+            };
+            stats.read += 1;
+            match self.import_session(&session, store).await {
+                Ok(recs) => {
+                    stats.records += recs.len();
+                    if let Ok(mut m) = self.seen.lock() {
+                        m.insert(path, fingerprint);
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to import Codex session {}: {}; will retry",
+                        session.session_id, e
+                    );
+                    stats.errors += 1;
+                }
+            }
+        }
+
+        info!(
+            "✅ CodexImporter sync: {} candidates, {} read, {} skipped, {} errors",
+            stats.candidates, stats.read, stats.skipped, stats.errors
+        );
+        Ok(stats)
     }
 
     fn parse_session_content(file_stem: &str, content: &str) -> Result<CodexSession> {
@@ -308,6 +414,20 @@ impl CodexImporter {
     }
 }
 
+async fn file_fingerprint(path: &Path) -> std::io::Result<FileFingerprint> {
+    let meta = fs::metadata(path).await?;
+    let mtime_secs = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    Ok(FileFingerprint {
+        mtime_secs,
+        len: meta.len(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,6 +537,61 @@ mod tests {
             "second identical import must not call encode again"
         );
 
+        Ok(())
+    }
+
+    /// D8: the periodic pass must not re-read or re-encode unchanged files, and
+    /// must pick up a rewritten one.
+    #[tokio::test]
+    async fn sync_skips_unchanged_and_rereads_changed() -> Result<()> {
+        let dir = tempdir()?;
+        let file = dir.path().join("sess_001.json");
+        let write = |text: &str| {
+            serde_json::to_string(&json!({
+                "session_id": "codex-123",
+                "messages": [{ "role": "user", "content": text }]
+            }))
+        };
+        fs::write(&file, write("one")?).await?;
+
+        let store = InMemoryMemoryStore::new();
+        let embedder = Arc::new(CountingEmbedder {
+            calls: AtomicUsize::new(0),
+        });
+        let importer = CodexImporter::with_dir_and_embedder(dir.path(), embedder.clone());
+
+        let first = importer.sync(&store).await?;
+        assert_eq!((first.read, first.skipped), (1, 0));
+        let second = importer.sync(&store).await?;
+        assert_eq!((second.read, second.skipped), (0, 1));
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 1);
+
+        // Different length => different fingerprint, whatever the mtime tick.
+        fs::write(&file, write("one plus more text")?).await?;
+        let third = importer.sync(&store).await?;
+        assert_eq!((third.read, third.skipped), (1, 0));
+        assert_eq!(embedder.calls.load(Ordering::SeqCst), 2);
+        Ok(())
+    }
+
+    /// D13: a directory that does not exist at construction time is picked up
+    /// once it appears.
+    #[tokio::test]
+    async fn sync_resolves_the_dir_each_pass() -> Result<()> {
+        let dir = tempdir()?;
+        let late = dir.path().join("late");
+        std::env::set_var("CODEX_SESSIONS_DIR", &late);
+        let importer = CodexImporter::new();
+        let store = InMemoryMemoryStore::new();
+        assert_eq!(importer.sync(&store).await?.candidates, 0);
+        std::fs::create_dir_all(&late)?;
+        std::fs::write(
+            late.join("s.json"),
+            r#"{"session_id":"x","messages":[{"role":"user","content":"hi"}]}"#,
+        )?;
+        let stats = importer.sync(&store).await?;
+        std::env::remove_var("CODEX_SESSIONS_DIR");
+        assert_eq!((stats.candidates, stats.read), (1, 1));
         Ok(())
     }
 }

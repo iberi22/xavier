@@ -65,7 +65,8 @@ pub struct AntigravitySyncStats {
 }
 
 pub struct AntigravityImporter {
-    brain_dir: PathBuf,
+    /// Explicit override; `None` re-resolves from the environment each pass.
+    brain_dir: Option<PathBuf>,
     embedder: Option<Arc<dyn Embedder>>,
     /// Fingerprint of each transcript as last ingested, keyed by path.
     ///
@@ -82,9 +83,8 @@ impl Default for AntigravityImporter {
 
 impl AntigravityImporter {
     pub fn new() -> Self {
-        let brain_dir = Self::resolve_brain_dir();
         Self {
-            brain_dir,
+            brain_dir: None,
             embedder: None,
             seen: Mutex::new(HashMap::new()),
         }
@@ -97,7 +97,7 @@ impl AntigravityImporter {
 
     pub fn with_dir<P: AsRef<Path>>(path: P) -> Self {
         Self {
-            brain_dir: path.as_ref().to_path_buf(),
+            brain_dir: Some(path.as_ref().to_path_buf()),
             embedder: None,
             seen: Mutex::new(HashMap::new()),
         }
@@ -105,10 +105,16 @@ impl AntigravityImporter {
 
     pub fn with_dir_and_embedder<P: AsRef<Path>>(path: P, embedder: Arc<dyn Embedder>) -> Self {
         Self {
-            brain_dir: path.as_ref().to_path_buf(),
+            brain_dir: Some(path.as_ref().to_path_buf()),
             embedder: Some(embedder),
             seen: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn current_dir(&self) -> PathBuf {
+        self.brain_dir
+            .clone()
+            .unwrap_or_else(Self::resolve_brain_dir)
     }
 
     fn resolve_brain_dir() -> PathBuf {
@@ -130,8 +136,9 @@ impl AntigravityImporter {
     /// Scan `brain_dir` for session directories containing transcript.jsonl.
     pub async fn scan_sessions(&self) -> Result<Vec<AntigravitySession>> {
         let mut sessions = Vec::new();
+        let brain_dir = self.current_dir();
 
-        for (session_id, tpath) in locate_transcripts(&self.brain_dir).await? {
+        for (session_id, tpath) in locate_transcripts(&brain_dir).await? {
             match self.parse_transcript(&session_id, &tpath).await {
                 Ok(session) => {
                     if !session.turns.is_empty() {
@@ -147,7 +154,7 @@ impl AntigravityImporter {
         info!(
             "🔍 AntigravityImporter found {} valid sessions in {:?}",
             sessions.len(),
-            self.brain_dir
+            brain_dir
         );
         Ok(sessions)
     }
@@ -280,8 +287,12 @@ impl AntigravityImporter {
         // Incremental skip (stability S1.06): identical content already
         // stored reuses the existing record without re-embedding. Fail-open
         // on store errors.
-        if let Ok(Some(existing)) = store.get(&workspace_id, &record.id).await {
-            stats.store_reads += 1;
+        let lookup = store.get(&workspace_id, &record.id).await;
+        // Count the round-trip whatever it returned: a miss (`None`) or an
+        // error cost a store read too, and this counter is the production
+        // proof that the cursor works.
+        stats.store_reads += 1;
+        if let Ok(Some(existing)) = lookup {
             if existing.content == record.content {
                 records.push(existing);
                 return Ok(records);
@@ -343,7 +354,7 @@ impl AntigravityImporter {
 
         // Locate first, parse second: parsing is exactly the cost the
         // fingerprint is meant to avoid.
-        let transcripts = locate_transcripts(&self.brain_dir).await?;
+        let transcripts = locate_transcripts(&self.current_dir()).await?;
         stats.candidates = transcripts.len();
 
         // Snapshot under the lock, do the I/O unlocked, fold results back at
