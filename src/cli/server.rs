@@ -714,6 +714,12 @@ pub async fn start_http_server(
             .with_embedder(ingestion_embedder.clone());
         let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
             .with_embedder(ingestion_embedder.clone());
+        // Codex is built once too (D8): it carries a per-file fingerprint cursor,
+        // so rebuilding it every cycle would re-read every session file again.
+        // `with_embedder` is an associated fn, not a builder method.
+        let codex_importer = xavier::memory::codex_importer::CodexImporter::with_embedder(
+            ingestion_embedder.clone(),
+        );
         tokio::spawn(async move {
             // Initial grace period to allow server start
             tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
@@ -783,15 +789,18 @@ pub async fn start_http_server(
                     }
                 }
 
-                // 4. Codex — with_embedder is an associated fn (not a builder method)
-                let codex_importer = xavier::memory::codex_importer::CodexImporter::with_embedder(
-                    ingestion_embedder.clone(),
-                );
-                if let Ok(sessions) = codex_importer.scan_sessions().await {
-                    for s in &sessions {
-                        let _ = codex_importer
-                            .import_session(s, ingestion_store.as_ref())
-                            .await;
+                match codex_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::info!(
+                        source = "codex",
+                        candidates = stats.candidates,
+                        read = stats.read,
+                        skipped = stats.skipped,
+                        errors = stats.errors,
+                        records = stats.records,
+                        "session ingestion cursor pass"
+                    ),
+                    Err(e) => {
+                        tracing::warn!(source = "codex", error = %e, "ingestion pass failed")
                     }
                 }
 
@@ -2186,12 +2195,27 @@ pub async fn start_http_server(
 ///
 /// Reads `XAVIER_INGESTION_INTERVAL_SECS` so operators can tune it without a
 /// rebuild (default 600). `0` disables the loop (emergency brake for
-/// embedding storms); unparsable values fall back to the default.
+/// embedding storms); surrounding whitespace and a trailing `s` are tolerated; unparsable values
+/// fall back to the default.
 pub fn ingestion_interval_secs() -> u64 {
     std::env::var("XAVIER_INGESTION_INTERVAL_SECS")
         .ok()
-        .and_then(|v| v.parse::<u64>().ok())
+        .and_then(|v| parse_interval_secs(&v))
         .unwrap_or(600)
+}
+
+/// Parses an interval in seconds, tolerating surrounding whitespace and a
+/// trailing `s` unit (`"0 "`, `"0s"`, `" 300s "`). A near-miss of `0` must
+/// still read as `0`: falling back to the default would silently re-enable the
+/// loop an operator just tried to brake.
+fn parse_interval_secs(raw: &str) -> Option<u64> {
+    let t = raw.trim();
+    let t = t
+        .strip_suffix('s')
+        .or_else(|| t.strip_suffix('S'))
+        .unwrap_or(t)
+        .trim();
+    t.parse::<u64>().ok()
 }
 
 /// Attempts to mark an ingestion cycle as in-flight.
@@ -2223,6 +2247,21 @@ mod ingestion_interval_tests {
         assert_eq!(ingestion_interval_secs(), 1800);
         std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", "0");
         assert_eq!(ingestion_interval_secs(), 0);
+        std::env::remove_var("XAVIER_INGESTION_INTERVAL_SECS");
+    }
+
+    #[test]
+    fn zero_with_whitespace_or_unit_still_disables() {
+        for raw in ["0 ", " 0", "0s", "0 s", "0S", "\t0s\n"] {
+            std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", raw);
+            assert_eq!(
+                ingestion_interval_secs(),
+                0,
+                "{raw:?} must disable the loop"
+            );
+        }
+        std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", " 300s ");
+        assert_eq!(ingestion_interval_secs(), 300);
         std::env::remove_var("XAVIER_INGESTION_INTERVAL_SECS");
     }
 
@@ -2298,6 +2337,7 @@ mod ingestion_wiring_tests {
             ("Antigravity", "AntigravityImporter::new()"),
             ("OpenCode", "OpenCodeImporter::new()"),
             ("Hermes", "HermesImporter::new()"),
+            ("Codex", "CodexImporter::with_embedder("),
         ] {
             let at = src
                 .find(ctor)
@@ -2309,6 +2349,26 @@ mod ingestion_wiring_tests {
                 name,
                 at,
                 loop_at
+            );
+        }
+    }
+
+    /// No importer constructor may appear inside the cycle body (D8: the Codex
+    /// importer used to be rebuilt every cycle; `find` above only sees the
+    /// first match, so this checks the loop body itself).
+    #[test]
+    fn no_importer_is_constructed_inside_the_cycle_body() {
+        let src = server_source();
+        let loop_at = cycle_loop_offset(src);
+        let body_end = loop_at
+            + src[loop_at..]
+                .find("end_cycle(&in_flight);")
+                .expect("cycle body end not found");
+        let body = &src[loop_at..body_end];
+        for needle in ["Importer::new(", "Importer::with_"] {
+            assert!(
+                !body.contains(needle),
+                "an importer is constructed inside the cycle loop ({needle}): its cursor is lost every cycle"
             );
         }
     }
@@ -2327,7 +2387,12 @@ mod ingestion_wiring_tests {
 
         let body = &src[loop_at..spawn_end];
 
-        for importer in ["ag_importer", "oc_importer", "hermes_importer"] {
+        for importer in [
+            "ag_importer",
+            "oc_importer",
+            "hermes_importer",
+            "codex_importer",
+        ] {
             assert!(
                 body.contains(&format!("{}.sync(", importer)),
                 "{} is not driven by sync() in the cycle loop",

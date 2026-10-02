@@ -45,7 +45,10 @@ pub struct IngestStats {
 }
 
 pub struct HermesImporter {
-    sessions_dir: PathBuf,
+    /// Explicit directory override. `None` means "resolve from the environment
+    /// on every pass", so a directory that appears after daemon start (or an
+    /// env var fixed later) is picked up without a restart.
+    sessions_dir: Option<PathBuf>,
     embedder: Option<Arc<dyn Embedder>>,
     /// Fingerprint of each file as last ingested, keyed by path.
     seen: std::sync::Mutex<HashMap<PathBuf, FileFingerprint>>,
@@ -53,9 +56,8 @@ pub struct HermesImporter {
 
 impl HermesImporter {
     pub fn new() -> Self {
-        let sessions_dir = Self::resolve_sessions_dir();
         Self {
-            sessions_dir,
+            sessions_dir: None,
             embedder: None,
             seen: std::sync::Mutex::new(HashMap::new()),
         }
@@ -63,7 +65,7 @@ impl HermesImporter {
 
     pub fn with_dir<P: AsRef<Path>>(path: P) -> Self {
         Self {
-            sessions_dir: path.as_ref().to_path_buf(),
+            sessions_dir: Some(path.as_ref().to_path_buf()),
             embedder: None,
             seen: std::sync::Mutex::new(HashMap::new()),
         }
@@ -72,6 +74,14 @@ impl HermesImporter {
     pub fn with_embedder(mut self, embedder: Arc<dyn Embedder>) -> Self {
         self.embedder = Some(embedder);
         self
+    }
+
+    /// Directory scanned by this pass: the explicit override, else resolved
+    /// afresh from the environment.
+    fn current_dir(&self) -> PathBuf {
+        self.sessions_dir
+            .clone()
+            .unwrap_or_else(Self::resolve_sessions_dir)
     }
 
     fn resolve_sessions_dir() -> PathBuf {
@@ -121,23 +131,24 @@ impl HermesImporter {
         store: &dyn MemoryStore,
         force: bool,
     ) -> Result<(Vec<MemoryRecord>, IngestStats)> {
+        let sessions_dir = self.current_dir();
         info!(
             "🔍 HermesImporter scanning directory: {:?} (force={})",
-            self.sessions_dir, force
+            sessions_dir, force
         );
         let mut stats = IngestStats::default();
         let mut imported_records = Vec::new();
 
-        if !self.sessions_dir.exists() {
+        if !sessions_dir.exists() {
             info!(
                 "Hermes sessions dir {:?} does not exist. Skipping.",
-                self.sessions_dir
+                sessions_dir
             );
             stats.records = 0;
             return Ok((imported_records, stats));
         }
 
-        let mut read_dir = tokio::fs::read_dir(&self.sessions_dir).await?;
+        let mut read_dir = tokio::fs::read_dir(&sessions_dir).await?;
         while let Ok(Some(entry)) = read_dir.next_entry().await {
             let path = entry.path();
             if path.is_file() {
