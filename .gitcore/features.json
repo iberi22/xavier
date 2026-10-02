@@ -5,19 +5,19 @@
     "project": "Xavier",
     "version": "1.0.0",
     "created": "2026-03-05",
-    "last_verified": "2026-09-18",
-    "total_features": 92,
-    "features_complete": 72,
+    "last_verified": "2026-10-02",
+    "total_features": 96,
+    "features_complete": 76,
     "features_beta": 14,
     "features_draft": 0,
     "features_planned": 6,
     "features_designed": 0,
-    "features_stable": 72,
-    "overall_progress_pct": 92.0,
+    "features_stable": 76,
+    "overall_progress_pct": 92.3,
     "complete": 6,
-    "percent": 92.0,
-    "updated": "2026-09-30",
-    "verification_note": "WAVE-29 (2026-09-27) added 10 observability-honesty features as beta, merged on main d914b41c with green CI; promotion to stable only via a green verify-pipeline run. Counters recomputed from the merged set after rebase onto 0.2.17.",
+    "percent": 92.3,
+    "updated": "2026-10-02",
+    "verification_note": "WAVE-31 (2026-10-02) registered 4 E2E test and vault namespace features as stable (WAVE-31.01 feat-e2e-clavis-http, WAVE-31.02 feat-e2e-keygen, WAVE-31.03 feat-e2e-smoke-ci, WAVE-31.04 fix-clavis-vault-namespace). All 19 tests passing green, PRs #2812, #2813, #2814, #2818 merged.",
     "features_implemented": 0
   },
   "features": {
@@ -3205,6 +3205,138 @@
         "REQ-069"
       ],
       "user_stories": []
+    },
+    "feat-e2e-clavis-http": {
+      "id": "feat-e2e-clavis-http",
+      "name": "Clavis HTTP E2E Integration Tests",
+      "category": "security",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "End-to-end integration tests for Clavis HTTP endpoints (/v1/clavis/keys/:name and /v1/clavis/proxy) validating PUT/GET round trip, 404 on missing keys, authentication gating, empty payload validation, and secret masking in logs.",
+      "steps": [
+        "HTTP PUT and GET secret roundtrip against HardwareVault",
+        "404 status on nonexistent key lookup",
+        "Bearer token authentication and authorization gating",
+        "Bad request (400) on empty payload",
+        "Log masking and vault isolation verification"
+      ],
+      "passes": true,
+      "verified_by": "PR #2813 merged commit 7d9c23611, cargo test --test clavis_http_e2e --features ci-safe (5 passed)",
+      "github_issue": 2808,
+      "pr": 2813,
+      "last_tested": "2026-10-02",
+      "notes": "WAVE-31.01. End-to-end HTTP tests against axum router for Clavis vault endpoints. Tests isolated and cleaned up to prevent host keyring leakage.",
+      "implemented_in": "tests/clavis_http_e2e.rs",
+      "tests": [
+        "test_put_then_get_round_trip",
+        "test_get_nonexistent_key_returns_404",
+        "test_unauthenticated_and_unauthorized_access_rejected",
+        "test_put_empty_value_returns_400",
+        "test_log_safety_and_vault_isolation"
+      ],
+      "req_ids": [
+        "REQ-035"
+      ],
+      "user_stories": []
+    },
+    "feat-e2e-keygen": {
+      "id": "feat-e2e-keygen",
+      "name": "CLI Keygen E2E Integration Tests against HardwareVault",
+      "category": "security",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "End-to-end integration tests for xavier keys generate, export, rotate, and revoke commands validating persistence, formatting, key rotation count, metadata lifecycle, and input validation against isolated HardwareVault.",
+      "steps": [
+        "Generate and export key persistence roundtrip",
+        "Missing key export error handling",
+        "Key rotation replaces value and increments rotation count",
+        "Output formatting never leaks plaintext secret values",
+        "Key fingerprint stability and formatting",
+        "Revocation deletes key and metadata",
+        "Name validation rejects path traversal and invalid characters",
+        "Scope prefixing and hex token validation"
+      ],
+      "passes": true,
+      "verified_by": "PR #2812 merged commit bff10224d, cargo test --test keygen_e2e --features ci-safe (8 passed)",
+      "github_issue": 2809,
+      "pr": 2812,
+      "last_tested": "2026-10-02",
+      "notes": "WAVE-31.02. End-to-end CLI keygen tests against isolated HardwareVault with random service nonce and HOME tempdir.",
+      "implemented_in": "tests/keygen_e2e.rs",
+      "tests": [
+        "test_e2e_keygen_persists_and_exports_exact_value",
+        "test_e2e_keygen_export_missing_key_returns_err",
+        "test_e2e_keygen_rotation_increments_count_and_replaces_value",
+        "test_e2e_keygen_format_output_never_contains_secret_value",
+        "test_e2e_keygen_fingerprint_stability_and_format",
+        "test_e2e_keygen_revoke_deletes_value_and_metadata",
+        "test_e2e_keygen_validate_name_rejects_traversal_and_invalid_chars",
+        "test_e2e_keygen_scope_prefixes_and_64_hex_chars"
+      ],
+      "req_ids": [
+        "REQ-035"
+      ],
+      "user_stories": []
+    },
+    "feat-e2e-smoke-ci": {
+      "id": "feat-e2e-smoke-ci",
+      "name": "Clavis Vault Smoke E2E Tests & CI Pipeline Wiring",
+      "category": "testing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "End-to-end smoke test validating full lifecycle API key generate, HTTP read, and revoke to 404, wired directly into GitHub Actions CI integration workflow.",
+      "steps": [
+        "Hermetic tempdir isolation via HOME and XAVIER_DATA_DIR",
+        "Full cycle API key generate -> HTTP read -> revoke -> 404",
+        "Clavis HTTP API vault contract verification",
+        "CI workflow integration in .github/workflows/ci.yml"
+      ],
+      "passes": true,
+      "verified_by": "PR #2814 merged commit 6ce1808c, cargo test --test clavis_vault_smoke_e2e --features ci-safe (2 passed)",
+      "github_issue": 2810,
+      "pr": 2814,
+      "last_tested": "2026-10-02",
+      "notes": "WAVE-31.03. E2E smoke tests and integration into .github/workflows/ci.yml rust-integration job.",
+      "implemented_in": "tests/clavis_vault_smoke_e2e.rs, .github/workflows/ci.yml",
+      "tests": [
+        "test_full_cycle_api_key_generate_http_read_revoke_404",
+        "test_clavis_http_api_vault_contract"
+      ],
+      "req_ids": [
+        "REQ-035"
+      ],
+      "user_stories": []
+    },
+    "fix-clavis-vault-namespace": {
+      "id": "fix-clavis-vault-namespace",
+      "name": "Clavis Vault Namespace Unification and Security Gating",
+      "category": "security",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Unification of vault service namespace between CLI and HTTP daemon to xavier-clavis, with strict security gating on legacy fallback (api_key_ prefix only) to prevent leaking general credentials from xavier namespace, and hermetic integration test coverage.",
+      "steps": [
+        "Unify CLI keys vault service to xavier-clavis",
+        "Implement secure legacy fallback migration for api_key_ prefixed secrets in HTTP handler",
+        "Reject access to non-api_key secrets in legacy namespace with 404",
+        "Hermetic integration tests for namespace unification and security filtering"
+      ],
+      "passes": true,
+      "verified_by": "PR #2818 merged commit d2e34fe7, cargo test --test clavis_namespace_e2e --features ci-safe (4 passed)",
+      "github_issue": 2811,
+      "pr": 2818,
+      "last_tested": "2026-10-02",
+      "notes": "WAVE-31.04. Unifies vault service to xavier-clavis, restricts legacy fallback to api_key_* keys, preventing exfiltration of general secrets. Duplicate PR #2815 closed.",
+      "implemented_in": "src/adapters/inbound/http/handlers/clavis.rs, src/cli/commands/secrets.rs, tests/clavis_namespace_e2e.rs",
+      "tests": [
+        "test_cli_keys_generate_and_http_read_contract",
+        "test_legacy_xavier_namespace_fallback_migration",
+        "test_security_gate_general_secrets_unreachable_via_clavis_handler",
+        "test_rejection_of_non_api_key_legacy_secret"
+      ],
+      "req_ids": [
+        "REQ-035"
+      ],
+      "user_stories": []
     }
   },
   "verification_commands": {
@@ -3224,6 +3356,7 @@
     "wave-8-2026-09-12": "4 planned features added: feat-challenge-curation-pipeline, feat-human-introspection-mode, feat-privacy-pipeline, feat-enterprise-compute-zdr. Implementation started, endpoints and UI pending.",
     "wave-8-2026-09-13": "Wave 8 complete: all 4 features (feat-challenge-curation-pipeline, feat-human-introspection-mode, feat-privacy-pipeline, feat-enterprise-compute-zdr) implemented and verified with green cargo tests and UI wiring. Stable: 57/57 (100%).",
     "wave-10-2026-09-21": "Wave 10 (skill-injection close): 6 planned skill features promoted planned->stable on executed evidence only — verify-pipeline full green 238/238 (zero-match routing, no false-green), targeted wave tests green (registry 12, semantic Recall@3 0.950/MRR 0.950, loader, fusion 7 incl. seeded-thread E2E, MCP roundtrip), live E2E on 0.2.5 (skills 658, dispatch @0.9, MCP parity, regenerate 200). 90 ledger filters corrected to verified test names (7 renames by code reading, 18 triaged mappings, 2 doc tests written, traversal test already existed). Dead-test resurrection: nodes::registry 3, cloud_sync 13 (fn-local mod tests never discovered). Dead files revived: session/auto_save declared, integration_test moved to tests/session_integration (agent_registry_tests removed, API gone). Feature-combo fixes: telegram ctrlc_handler dep, mesh iroh_transport Ok(?). Stable: 70/73, beta 3, progress 98.3. Remaining honest gaps: fresh-doc search-index lag (diagnostics added, backfill added), clippy --features mesh,telegram (18 pre-existing lints), CodeGraph/MCP suite hangs (2, quarantined).",
-    "wave-11-2026-09-22": "Wave 11 (pendientes honestos): clippy mesh+telegram 18 lints fixed (teloxide MarkdownV2 already-escaped, from-field, RateLimiter pub, Default derive, next_back, struct-update, if-let, Ok(?) turboclean, telegram_bot_e2e tautologies) + 3 stale mesh test call sites updated to (identity, store) + telegram feature ctrlc_handler (dep fix). Hang apply_paths solved: NOT a hang, 2x30s plugin timeouts from bogus ~/.local/bin/codegraph sidecar (xavier binary renamed, never speaks protocol) -> protocol probe at registration with resolved-path cache (60s->3s) + fixture re-baseline 2480/13750->2498/13880 (old baseline already stale: 2483/13770 without change). Hang codegraph_route MCP solved by same probe (3.3s). code-graph full suite green first time (lib 150 + all integration targets). Search root causes fixed live: expansion-replace drowned exact matches (merge-with-priority fix, rank 0 proven), dual-subsystem write/search split bridged in add_handler (Extension optional), write->search immediate rank 0 proven twice. Pipeline final green 254/254 (253 + ledger self-test). Binary 0.2.5 6260f35 deployed 8006/8100, smoke green. No status changes this wave (70/98.3 hold)."
+    "wave-11-2026-09-22": "Wave 11 (pendientes honestos): clippy mesh+telegram 18 lints fixed (teloxide MarkdownV2 already-escaped, from-field, RateLimiter pub, Default derive, next_back, struct-update, if-let, Ok(?) turboclean, telegram_bot_e2e tautologies) + 3 stale mesh test call sites updated to (identity, store) + telegram feature ctrlc_handler (dep fix). Hang apply_paths solved: NOT a hang, 2x30s plugin timeouts from bogus ~/.local/bin/codegraph sidecar (xavier binary renamed, never speaks protocol) -> protocol probe at registration with resolved-path cache (60s->3s) + fixture re-baseline 2480/13750->2498/13880 (old baseline already stale: 2483/13770 without change). Hang codegraph_route MCP solved by same probe (3.3s). code-graph full suite green first time (lib 150 + all integration targets). Search root causes fixed live: expansion-replace drowned exact matches (merge-with-priority fix, rank 0 proven), dual-subsystem write/search split bridged in add_handler (Extension optional), write->search immediate rank 0 proven twice. Pipeline final green 254/254 (253 + ledger self-test). Binary 0.2.5 6260f35 deployed 8006/8100, smoke green. No status changes this wave (70/98.3 hold).",
+    "wave-31-2026-10-02": "Wave 31 (Clavis E2E testing, vault namespace unification & CI smoke): 4 features added/promoted to stable on executed evidence (WAVE-31.01 feat-e2e-clavis-http, WAVE-31.02 feat-e2e-keygen, WAVE-31.03 feat-e2e-smoke-ci, WAVE-31.04 fix-clavis-vault-namespace). All 19 tests passing green, PRs #2812, #2813, #2814, #2818 merged into main. Issues #2808, #2809, #2810, #2811 reconciled."
   }
 }
