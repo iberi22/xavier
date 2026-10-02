@@ -78,8 +78,11 @@ pub(crate) fn vault_get_with_vault<V: VaultOps, W: std::io::Write>(
     Ok(())
 }
 
-/// Vault service name used for both `xavier vault` and `xavier keys`.
+/// Vault service name used for general secrets (`xavier vault` and `xavier secrets`).
 const VAULT_SERVICE: &str = "xavier";
+
+/// Vault service name used for Clavis API keys (`xavier keys`).
+const CLAVIS_VAULT_SERVICE: &str = "xavier-clavis";
 
 /// Resolve the TTL: explicit flag wins, otherwise the env-configured default.
 fn resolve_ttl(ttl_secs: Option<u64>) -> Result<u64> {
@@ -189,7 +192,7 @@ pub(crate) fn keys_revoke_with_vault<V: keygen::KeyVault, W: std::io::Write>(
 
 /// Dispatch a [`KeysCommand`] to the appropriate handler.
 pub async fn handle_keys_command(cmd: KeysCommand) -> Result<()> {
-    let vault = HardwareVault::new(VAULT_SERVICE);
+    let vault = HardwareVault::new(CLAVIS_VAULT_SERVICE);
     let mut stdout = std::io::stdout();
     match cmd {
         KeysCommand::Generate {

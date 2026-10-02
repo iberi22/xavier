@@ -102,6 +102,64 @@ pub struct ClavisProxyRequest {
 // Handlers
 // ---------------------------------------------------------------------------
 
+/// Fallback reader that checks `clavis_vault()` ("xavier-clavis"),
+/// `api_key_{key_name}` variant, and legacy "xavier" service namespace with migration.
+fn get_secret_with_legacy_fallback(key_name: &str) -> Result<String, SecretError> {
+    let vault = clavis_vault();
+
+    // 1. Primary lookup in active clavis_vault
+    if let Ok(value) = vault.get_secret(key_name) {
+        return Ok(value);
+    }
+
+    // 1b. Try api_key_{key_name} prefix if not already present
+    let alt_key = if !key_name.starts_with("api_key_") {
+        Some(format!("api_key_{key_name}"))
+    } else {
+        None
+    };
+
+    if let Some(ref alt) = alt_key {
+        if let Ok(value) = vault.get_secret(alt) {
+            return Ok(value);
+        }
+    }
+
+    // 2. Fallback check against legacy "xavier" service namespace
+    let legacy_vault = HardwareVault::new("xavier");
+    let (found_key, value) = if let Ok(val) = legacy_vault.get_secret(key_name) {
+        (key_name.to_string(), val)
+    } else if let Some(ref alt) = alt_key {
+        if let Ok(val) = legacy_vault.get_secret(alt) {
+            (alt.clone(), val)
+        } else {
+            return Err(SecretError::NotFound(key_name.to_string()));
+        }
+    } else {
+        return Err(SecretError::NotFound(key_name.to_string()));
+    };
+
+    // Migrate found secret to active clavis_vault
+    if let Err(e) = vault.store_secret(&found_key, &value) {
+        tracing::warn!(
+            key = %found_key,
+            error = %crate::clavis::mask_log_message(&e.to_string()),
+            "failed to migrate key from legacy vault"
+        );
+    } else {
+        tracing::info!(
+            key = %found_key,
+            "migrated key from legacy 'xavier' vault to 'xavier-clavis' vault"
+        );
+        let meta_key = format!("{found_key}_meta");
+        if let Ok(meta_val) = legacy_vault.get_secret(&meta_key) {
+            let _ = vault.store_secret(&meta_key, &meta_val);
+        }
+    }
+
+    Ok(value)
+}
+
 /// `GET /v1/clavis/keys/{key_name}` — read a stored key value.
 ///
 /// - `200` `{"value": "..."}` on success
@@ -114,9 +172,8 @@ pub async fn get_clavis_key_handler(Path(key_name): Path<String>) -> impl IntoRe
         Err(message) => return error_response(StatusCode::BAD_REQUEST, message).into_response(),
     };
 
-    let vault = clavis_vault();
     let lookup = key_name.clone();
-    let result = tokio::task::spawn_blocking(move || vault.get_secret(&lookup)).await;
+    let result = tokio::task::spawn_blocking(move || get_secret_with_legacy_fallback(&lookup)).await;
 
     let value = match result {
         Ok(Ok(value)) => value,
