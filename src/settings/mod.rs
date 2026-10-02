@@ -291,7 +291,10 @@ pub mod tests {
     /// deliberately absent here — they are runtime state, and a daemon writes
     /// them outside the git tree.
     fn read_versioned_defaults() -> Option<XavierSettings> {
-        let path = PathBuf::from("config/xavier.config.json");
+        // The tracked template, not the runtime file (#2801): the latter is
+        // untracked and may be rewritten or absent.
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/xavier.config.example.json");
         let raw = std::fs::read_to_string(&path).ok()?;
         Some(
             serde_json::from_str::<XavierSettings>(&raw).unwrap_or_else(|e| {
@@ -393,6 +396,37 @@ pub mod tests {
         // compiled-in defaults instead of failing the parse.
         assert_eq!(loaded.retrieval.learned_policy.working_weight, 0.91);
         assert_eq!(loaded.retrieval.learned_policy.semantic_weight, 0.4);
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+        std::env::remove_var("XAVIER_RUNTIME_STATE_PATH");
+    }
+
+    /// D11: `save()` must not persist credentials.
+    #[tokio::test]
+    async fn test_save_does_not_persist_secrets() {
+        let _env = TempEnv::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("xavier.config.json");
+        let state_path = dir.path().join("xavier.runtime.json");
+        std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        std::env::set_var("XAVIER_RUNTIME_STATE_PATH", &state_path);
+
+        let mut settings = XavierSettings::default();
+        settings.security.token_secret = Some("tok-secret-value".into());
+        settings.embedding.api_key = Some("emb-key-value".into());
+        settings.pgheart.token = Some("pg-token-value".into());
+        settings.telegram.bot_token = Some("tg-token-value".into());
+        settings.save().await.expect("save");
+
+        let raw = std::fs::read_to_string(&state_path).expect("read state");
+        for needle in [
+            "tok-secret-value",
+            "emb-key-value",
+            "pg-token-value",
+            "tg-token-value",
+        ] {
+            assert!(!raw.contains(needle), "{needle} leaked into runtime state");
+        }
 
         std::env::remove_var("XAVIER_CONFIG_PATH");
         std::env::remove_var("XAVIER_RUNTIME_STATE_PATH");
