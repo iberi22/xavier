@@ -173,11 +173,96 @@ export interface BacklogResponse {
   items: BacklogItem[];
 }
 
+// --- Introspection Types (mirror src/server/maloca/introspection_routes.rs + src/humanchallenge/types.rs) ---
+
+export type ChallengeType =
+  | "contradiction"
+  | "decision"
+  | "execution"
+  | "assumption"
+  | "clarification";
+
+export type IntrospectionTechnique =
+  | "socratic_questioning"
+  | "five_whys"
+  | "pre_mortem"
+  | "steel_manning"
+  | "first_principles"
+  | "pattern_recognition";
+
+export type IntrospectionStatus = "active" | "completed" | "abandoned";
+export type TurnRole = "llm_guide" | "human";
+
+export interface IntrospectionTurn {
+  role: TurnRole;
+  content: string;
+  timestamp: string;
+}
+
+export interface IntrospectionSession {
+  id: string;
+  challenge_id: string;
+  technique: IntrospectionTechnique;
+  turns: IntrospectionTurn[];
+  depth_score: number;
+  insights: string[];
+  status: IntrospectionStatus;
+  started_at: string;
+  completed_at: string | null;
+}
+
+/** Candidate challenge as returned by GET /v1/maloca/introspection/available. */
+export interface HumanChallengeEvent {
+  id: string;
+  session_id: string;
+  challenge_type: ChallengeType;
+  description: string;
+  raw_content: string;
+  confidence_score: number;
+  status: string;
+  created_at: string;
+  answered_at?: string | null;
+  response?: string | null;
+  points_awarded?: number;
+  privacy_p4_local_only?: boolean;
+}
+
+export interface IntrospectionAvailableResponse {
+  techniques: string[];
+  challenges?: HumanChallengeEvent[];
+}
+
+export interface StartIntrospectionRequest {
+  challenge_id: string;
+  challenge_type: ChallengeType;
+  description: string;
+  technique?: IntrospectionTechnique | null;
+}
+
+export interface ProcessTurnRequest {
+  human_input: string;
+  challenge_description: string;
+}
+
+/** start/turn/complete/get all answer `{ session }`. */
+export interface IntrospectionSessionResponse {
+  session: IntrospectionSession;
+}
+
 // --- API Client Fetch Helpers ---
 
-async function fetchMaloca<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  // Using the `/api/v1/maloca/*` prefix we mounted in Rust
-  const url = getApiUrl(`/api/v1/maloca${endpoint}`);
+// The server mounts the legacy ops tree at `/maloca/*` and the v1 tree
+// (registry, backlog/unified, challenges, introspection, models) at `/v1/maloca/*`.
+// Nothing is served under `/api/v1/maloca` (src/cli/server.rs, src/maloca/mod.rs).
+export const MALOCA_OPS_PREFIX = "/maloca";
+export const MALOCA_V1_PREFIX = "/v1/maloca";
+
+async function fetchMaloca<T>(
+  endpoint: string,
+  options?: RequestInit,
+  prefix: string = MALOCA_OPS_PREFIX,
+): Promise<T> {
+  const url = getApiUrl(`${prefix}${endpoint}`);
   const activeWorkspace = typeof localStorage !== "undefined"
     ? localStorage.getItem("xavier_active_workspace") || "default"
     : "default";
@@ -203,13 +288,14 @@ async function fetchMaloca<T>(endpoint: string, options?: RequestInit): Promise<
 
   if (!response.ok) {
     let errorMsg = `HTTP Error ${response.status}`;
-    try {
-      const errorJson = await response.json();
-      errorMsg = errorJson.message || errorMsg;
-    } catch {
-      // Fallback to text if JSON parsing fails
-      const errorText = await response.text();
-      if (errorText) errorMsg = errorText;
+    const errorText = await response.text().catch(() => "");
+    if (errorText) {
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMsg = errorJson.message || errorJson.error || errorMsg;
+      } catch {
+        errorMsg = errorText;
+      }
     }
     throw new Error(errorMsg);
   }
@@ -266,4 +352,32 @@ export const malocaApi = {
   }),
 
   getRewards: () => fetchMaloca<RewardReceipt[]>("/rewards"),
+
+  // --- Introspection (v1 tree) ---
+  getIntrospectionAvailable: () =>
+    fetchMaloca<IntrospectionAvailableResponse>("/introspection/available", undefined, MALOCA_V1_PREFIX),
+  startIntrospection: (body: StartIntrospectionRequest) =>
+    fetchMaloca<IntrospectionSessionResponse>(
+      "/introspection/start",
+      { method: "POST", body: JSON.stringify(body) },
+      MALOCA_V1_PREFIX,
+    ),
+  introspectionTurn: (sessionId: string, body: ProcessTurnRequest) =>
+    fetchMaloca<IntrospectionSessionResponse>(
+      `/introspection/${encodeURIComponent(sessionId)}/turn`,
+      { method: "POST", body: JSON.stringify(body) },
+      MALOCA_V1_PREFIX,
+    ),
+  completeIntrospection: (sessionId: string) =>
+    fetchMaloca<IntrospectionSessionResponse>(
+      `/introspection/${encodeURIComponent(sessionId)}/complete`,
+      { method: "POST" },
+      MALOCA_V1_PREFIX,
+    ),
+  getIntrospection: (sessionId: string) =>
+    fetchMaloca<IntrospectionSessionResponse>(
+      `/introspection/${encodeURIComponent(sessionId)}`,
+      undefined,
+      MALOCA_V1_PREFIX,
+    ),
 };
