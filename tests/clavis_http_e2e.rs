@@ -5,6 +5,7 @@ use tower::util::ServiceExt;
 
 use xavier::adapters::inbound::http::routes::create_router;
 use xavier::clavis::mask_key;
+use xavier::secrets::vault::HardwareVault;
 use xavier::security::auth::{Claims, UserRole};
 
 /// Helper to construct a request to the Clavis routes with or without auth claims.
@@ -57,6 +58,7 @@ fn setup_isolated_env() -> tempfile::TempDir {
 async fn test_put_then_get_round_trip() {
     let _tmp = setup_isolated_env();
     let secret_key = "openai_api_key";
+    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
     let secret_value = "sk-proj-e2e-test-secret-value-98765";
 
     // 1. PUT /v1/clavis/keys/openai_api_key -> HTTP 201 CREATED
@@ -102,6 +104,8 @@ async fn test_put_then_get_round_trip() {
     let get_body = get_resp.into_body().collect().await.unwrap().to_bytes();
     let get_json: serde_json::Value = serde_json::from_slice(&get_body).expect("valid JSON");
     assert_eq!(get_json["value"], secret_value);
+
+    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
 }
 
 #[tokio::test]
@@ -214,6 +218,7 @@ async fn test_put_empty_value_returns_400() {
 async fn test_log_safety_and_vault_isolation() {
     let tmp = setup_isolated_env();
     let secret_key = "log_safety_key";
+    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
     let raw_secret = "sk-live-super-secret-token-abcdef123456";
 
     // Store via HTTP endpoint
@@ -273,4 +278,6 @@ async fn test_log_safety_and_vault_isolation() {
     let get_body = get_resp.into_body().collect().await.unwrap().to_bytes();
     let get_json: serde_json::Value = serde_json::from_slice(&get_body).expect("valid JSON");
     assert_eq!(get_json["value"], raw_secret);
+
+    let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
 }
