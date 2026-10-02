@@ -13,59 +13,81 @@ use crate::keystore::{ensure_private_dir, write_private_file, MasterKeyManager};
 use crate::secrets::{SecretError, SecretResult};
 use keyring::Entry;
 
-/// Global fallback vault storage, lazily initialized
+/// Fallback vault storage, lazily initialized per namespace.
 struct VaultBackend {
-    #[expect(dead_code, reason = "Identificador del servicio para keyring")]
-    service_name: String,
     storage_dir: std::path::PathBuf,
     vault_key: [u8; 32],
 }
 
+/// Backend shared by every service except the isolated ones (legacy layout:
+/// `~/.xavier/secrets`, key derived without the service name).
 static BACKEND: OnceLock<Option<VaultBackend>> = OnceLock::new();
+/// Isolated backend of the Clavis provider-key vault.
+static CLAVIS_BACKEND: OnceLock<Option<VaultBackend>> = OnceLock::new();
 
-fn init_backend(service_name: &str) -> &'static Option<VaultBackend> {
-    BACKEND.get_or_init(|| {
-        // Initialize master key (handles keyring + file fallback internally)
-        match MasterKeyManager::load_or_init() {
-            Ok(mkm) => {
-                let home = match dirs::home_dir() {
-                    Some(h) => h,
-                    None => {
-                        tracing::warn!("HardwareVault: no home dir, fallback vault unavailable");
-                        return None;
-                    }
-                };
-                let storage_dir = home.join(".xavier").join("secrets");
-                if let Err(e) = ensure_private_dir(&storage_dir) {
-                    tracing::warn!("HardwareVault: cannot create secrets dir: {e}");
+/// Services with their own storage directory and a service-bound derived key.
+/// Existing services keep the legacy layout so stored secrets stay readable.
+fn is_isolated_service(service_name: &str) -> bool {
+    service_name == crate::clavis::CLAVIS_VAULT_SERVICE
+}
+
+fn build_backend(isolated_service: Option<&str>) -> Option<VaultBackend> {
+    // Initialize master key (handles keyring + file fallback internally)
+    match MasterKeyManager::load_or_init() {
+        Ok(mkm) => {
+            let home = match dirs::home_dir() {
+                Some(h) => h,
+                None => {
+                    tracing::warn!("HardwareVault: no home dir, fallback vault unavailable");
                     return None;
                 }
-                #[cfg(unix)]
-                if let Some(parent) = storage_dir.parent() {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ =
-                        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+            };
+            let storage_dir = match isolated_service {
+                Some(service) => home.join(".xavier").join("vaults").join(service),
+                None => home.join(".xavier").join("secrets"),
+            };
+            if let Err(e) = ensure_private_dir(&storage_dir) {
+                tracing::warn!("HardwareVault: cannot create secrets dir: {e}");
+                return None;
+            }
+            #[cfg(unix)]
+            if let Some(parent) = storage_dir.parent() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+            }
+            // Derive a vault-specific key from the master key
+            use sha2::{Digest, Sha256};
+            let vault_key: [u8; 32] = {
+                let mut hasher = Sha256::new();
+                hasher.update(b"xavier-hardware-vault-fallback-v1");
+                if let Some(service) = isolated_service {
+                    // Namespace separator: an isolated vault key never equals
+                    // the global one, even over the same directory.
+                    hasher.update(b"|namespace|");
+                    hasher.update(service.as_bytes());
+                    hasher.update(b"|");
                 }
-                // Derive a vault-specific key from the master key
-                use sha2::{Digest, Sha256};
-                let vault_key: [u8; 32] = {
-                    let mut hasher = Sha256::new();
-                    hasher.update(b"xavier-hardware-vault-fallback-v1");
-                    hasher.update(mkm.vault_key().unwrap_or([0u8; 32]));
-                    hasher.finalize().into()
-                };
-                Some(VaultBackend {
-                    service_name: service_name.to_string(),
-                    storage_dir,
-                    vault_key,
-                })
-            }
-            Err(e) => {
-                tracing::warn!("HardwareVault: master key init failed: {e}");
-                None
-            }
+                hasher.update(mkm.vault_key().unwrap_or([0u8; 32]));
+                hasher.finalize().into()
+            };
+            Some(VaultBackend {
+                storage_dir,
+                vault_key,
+            })
         }
-    })
+        Err(e) => {
+            tracing::warn!("HardwareVault: master key init failed: {e}");
+            None
+        }
+    }
+}
+
+fn init_backend(service_name: &str) -> &'static Option<VaultBackend> {
+    if is_isolated_service(service_name) {
+        CLAVIS_BACKEND.get_or_init(|| build_backend(Some(service_name)))
+    } else {
+        BACKEND.get_or_init(|| build_backend(None))
+    }
 }
 
 pub struct HardwareVault {
@@ -128,7 +150,8 @@ impl HardwareVault {
         }
     }
 
-    /// Get secret.
+    /// Get secret. The local fallback only ever reads this vault's own
+    /// namespace directory; it never falls through to another service's store.
     pub fn get_secret(&self, key: &str) -> SecretResult<String> {
         // Try keyring first
         match self.try_keyring_get(key) {
@@ -215,14 +238,9 @@ impl HardwareVault {
     // --- fallback vault helpers ---
 
     fn backend(&self) -> SecretResult<&'static VaultBackend> {
-        init_backend(&self.service_name);
-        BACKEND
-            .get()
-            .ok_or_else(|| SecretError::ProviderError("Vault backend not initialized".to_string()))?
-            .as_ref()
-            .ok_or_else(|| {
-                SecretError::ProviderError("Fallback vault unavailable (no master key)".to_string())
-            })
+        init_backend(&self.service_name).as_ref().ok_or_else(|| {
+            SecretError::ProviderError("Fallback vault unavailable (no master key)".to_string())
+        })
     }
 
     fn storage_dir(&self) -> SecretResult<std::path::PathBuf> {
@@ -296,6 +314,14 @@ impl HardwareVault {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_clavis_service_is_isolated() {
+        assert!(is_isolated_service(crate::clavis::CLAVIS_VAULT_SERVICE));
+        for other in ["xavier", "xavier-auth2", "x"] {
+            assert!(!is_isolated_service(other), "{other}");
+        }
+    }
 
     #[test]
     #[ignore = "Requires interactive keyring access"]
