@@ -22,6 +22,16 @@ skip()  { printf '⏭  %s\n' "$*"; }
 
 note "🛡️  [SWAL] pre-commit · $(basename "$ROOT")"
 
+# ── 0. Anti-leak of strategy/economics/PII (repo-specific, must run first) ────
+# A generic secret scanner does not know that this repo's strategy docs are
+# sensitive. If the repo ships the checker, it is mandatory, not optional.
+if [ -f "scripts/check-strategy-leak.sh" ]; then
+    note "🕵️  [SWAL] check-strategy-leak"
+    bash scripts/check-strategy-leak.sh --staged || {
+        fail "check-strategy-leak: contenido sensible en staging"
+    }
+fi
+
 # ── 1. Staged files ────────────────────────────────────────────────────────────
 STAGED="$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)"
 if [ -z "$STAGED" ]; then
@@ -72,6 +82,13 @@ while IFS= read -r f; do
     [ -z "$f" ] && continue
     case "$f" in
         *.env.example|.env.example|.env.sample|*.example|*.sample) continue ;;
+    esac
+    # Runtime databases are small when fresh, so a size limit never catches them.
+    # Match the extension family explicitly, WAL and SHM included.
+    case "$f" in
+        *.db|*.sqlite|*.sqlite3|*-wal|*-shm|*.db-wal|*.db-shm|*.sqlite-wal|*.sqlite-shm)
+            fail "fichero de runtime de BD en staging: $f  (regla del repo: nunca commitear SQLite/WAL/SHM)"
+            ;;
     esac
     case "$f" in
         .env|.env.*|*.env|secrets/*|*.pem|*.key|id_rsa*)

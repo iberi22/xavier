@@ -33,17 +33,16 @@ if [ -n "$GLEAKS" ] && [ -x "$GLEAKS" ]; then
     if [ -n "$UPSTREAM" ]; then
         RANGE="$(git rev-list --count "$UPSTREAM..HEAD" 2>/dev/null || echo 0)"
     else
-        RANGE="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+        # No upstream: scanning the whole history would flag every historical
+        # fixture and make the push always fail, which teaches everyone to use
+        # --no-verify. Scan nothing and say so instead.
+        note "⚠️  sin upstream: no se escanea el historial (evita bloquear por fixtures antiguos)"
+        RANGE=0
     fi
     if [ "${RANGE:-0}" -gt 0 ]; then
         REPORT="$(mktemp -t swal-gitleaks-push.XXXXXX.json)"
-        if [ -n "$UPSTREAM" ]; then
-            "$GLEAKS" detect --redact --no-banner --log-opts="$UPSTREAM..HEAD" \
-                --report-format json --report-path "$REPORT" >/dev/null 2>&1
-        else
-            "$GLEAKS" detect --redact --no-banner \
-                --report-format json --report-path "$REPORT" >/dev/null 2>&1
-        fi
+        "$GLEAKS" detect --redact --no-banner --log-opts="$UPSTREAM..HEAD" \
+            --report-format json --report-path "$REPORT" >/dev/null 2>&1
         COUNT="$(grep -c '"RuleID"' "$REPORT" 2>/dev/null || echo 0)"
         if [ "${COUNT:-0}" -gt 0 ]; then
             fail "gitleaks: $COUNT secreto(s) en el historial que se va a subir"
@@ -67,6 +66,20 @@ fi
 # ── 2. Commit messages must not describe the attack surface ───────────────────
 # This is a SWAL-specific rule, not a generic one: the repo is public and a message
 # that explains how a vector was exploited hands that over to a reader.
+# git passes "<remote> <url>" as $1 $2; --force/--force-with-lease arrive on stdin.
+FORCE_PUSH=0
+if printf '%s\n' "$@" | grep -qE '^--force(-with-lease)?$|^--force-with-lease='; then
+    FORCE_PUSH=1
+fi
+[ "$FORCE_PUSH" = "1" ] || [ "$1" = "--force" ] || [ "$2" = "--force" ] && FORCE_PUSH=1
+
+if [ -n "$UPSTREAM" ]; then
+    MSG_RANGE="$UPSTREAM..HEAD"
+else
+    MSG_RANGE="${SWAL_PUSH_RANGE:-HEAD~20..HEAD}"
+    note "⚠️  sin upstream: revisando los últimos 20 commits ($MSG_RANGE)"
+fi
+
 while IFS= read -r msg; do
     [ -z "$msg" ] && continue
     LOW="$(printf '%s' "$msg" | tr 'A-Z' 'a-z')"
@@ -78,10 +91,10 @@ while IFS= read -r msg; do
             note "   Reescríbelo genérico: qué cambia el código, no qué se rompió antes."
             ;;
     esac
-done < <(git log --format='%s' "${UPSTREAM:-HEAD}"..HEAD 2>/dev/null || true)
+done < <(git log --format='%s' "$MSG_RANGE" 2>/dev/null || true)
 
 # ── 3. Nothing generated or private may be tracked ────────────────────────────
-BAD_TRACKED="$(git ls-files 2>/dev/null | grep -E '(^|/)\.env$|\.sqlite3?$|\.db$|master\.key$|^target/|node_modules/' | head -10 || true)"
+BAD_TRACKED="$(git ls-files 2>/dev/null | grep -E '(^|/)\.env$|\.sqlite3?$|\.db$|-wal$|-shm$|master\.key$|^target/|node_modules/' | head -10 || true)"
 if [ -n "$BAD_TRACKED" ]; then
     fail "ficheros de runtime o secretos trackeados:"
     printf '      %s\n' $BAD_TRACKED
