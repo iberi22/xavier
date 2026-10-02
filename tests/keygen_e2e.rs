@@ -18,8 +18,10 @@ use xavier::secrets::SecretError;
 
 fn setup_isolated_vault(service_name: &str) -> (HardwareVault, tempfile::TempDir) {
     let dir = tempdir().expect("failed to create temp directory for vault isolation");
+    std::env::set_var("HOME", dir.path());
     std::env::set_var("XAVIER_DATA_DIR", dir.path());
-    let vault = HardwareVault::new(service_name);
+    let nonce = rand::random::<u64>();
+    let vault = HardwareVault::new(&format!("{service_name}-{nonce:016x}"));
     (vault, dir)
 }
 
