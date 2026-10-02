@@ -774,3 +774,150 @@ async fn d7c_permanently_unreadable_row_never_stalls_or_grows_the_pass() -> Resu
 
     Ok(())
 }
+
+// ───────────────────── D7 follow-ups, D8 and importer D13 ─────────────────────
+
+/// **D7c, no skipped records**: a session that failed to read must still be a
+/// candidate on later passes even when newer sessions advance the cursor more
+/// than the replay window beyond it. The watermark is held at the earliest
+/// failure; successful sessions stay cheap because `seen` skips them.
+#[tokio::test]
+async fn d7c_failed_session_is_recovered_after_newer_sessions_advance_the_cursor() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let db_file = dir.path().join("opencode.db");
+
+    let old_at: i64 = 1_600_000_000_000;
+    let two_days: i64 = 2 * 24 * 3600 * 1000;
+    {
+        let conn = create_oc_db(&db_file)?;
+        insert_unreadable_session(&conn, "ses_broken", old_at)?;
+        insert_session(
+            &conn,
+            "ses_new",
+            "New",
+            old_at + two_days,
+            old_at + two_days,
+        )?;
+        insert_turn(
+            &conn,
+            "ses_new",
+            0,
+            "user",
+            "newer session",
+            old_at + two_days + 1,
+        )?;
+    }
+
+    let store = FailOnceStore::healthy();
+    let importer = OpenCodeImporter::with_path(&db_file).with_hot_window(0);
+    let first = sync_bounded(&importer, &store).await?;
+    assert_eq!((first.read_errors, first.store_writes), (1, 1));
+
+    // The row is repaired (transient failure); the session's timestamp is unchanged.
+    {
+        let conn = rusqlite::Connection::open(&db_file)?;
+        conn.execute(
+            "UPDATE message SET data = ?1 WHERE session_id = 'ses_broken'",
+            rusqlite::params![serde_json::json!({ "role": "user" }).to_string()],
+        )?;
+        conn.execute(
+            "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) \
+             VALUES ('bp', 'ses_broken_m0', 'ses_broken', ?1, ?1, ?2)",
+            rusqlite::params![
+                old_at,
+                serde_json::json!({ "type": "text", "text": "recovered body" }).to_string()
+            ],
+        )?;
+    }
+
+    let second = sync_bounded(&importer, &store).await?;
+    assert_eq!(second.read_errors, 0);
+    assert!(
+        opencode_rows(&store)
+            .iter()
+            .any(|r| r.content.contains("recovered body")),
+        "the previously unreadable session must be ingested once readable"
+    );
+    Ok(())
+}
+
+/// **D13**: an OpenCode database that appears after the importer was built is
+/// picked up, instead of the path being frozen at construction.
+#[tokio::test]
+async fn d13_opencode_db_created_after_construction_is_ingested() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let db_file = dir.path().join("late").join("opencode.db");
+    std::env::set_var("OPENCODE_DB_PATH", &db_file);
+    let importer = OpenCodeImporter::new().with_hot_window(0);
+    let store = FailOnceStore::healthy();
+
+    let before = sync_bounded(&importer, &store).await?;
+    assert_eq!(before.candidates, 0);
+
+    std::fs::create_dir_all(db_file.parent().unwrap())?;
+    {
+        let conn = create_oc_db(&db_file)?;
+        insert_session(
+            &conn,
+            "ses_late",
+            "Late",
+            1_600_000_000_000,
+            1_600_000_000_000,
+        )?;
+        insert_turn(&conn, "ses_late", 0, "user", "late body", 1_600_000_000_001)?;
+    }
+    let after = sync_bounded(&importer, &store).await;
+    std::env::remove_var("OPENCODE_DB_PATH");
+    assert_eq!(after?.store_writes, 1);
+    Ok(())
+}
+
+/// **D13**: same for the Hermes sessions directory.
+#[tokio::test]
+async fn d13_hermes_dir_created_after_construction_is_ingested() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let late = dir.path().join("late");
+    std::env::set_var("HERMES_SESSIONS_DIR", &late);
+    let importer = HermesImporter::new();
+    let store = FailOnceStore::healthy();
+
+    let before = hermes_sync_bounded(&importer, &store).await?;
+    assert_eq!(before.read, 0);
+
+    std::fs::create_dir_all(&late)?;
+    write_request_dump(&late, &[("user", "hello late")])?;
+    let after = hermes_sync_bounded(&importer, &store).await;
+    std::env::remove_var("HERMES_SESSIONS_DIR");
+    assert_eq!(after?.read, 1);
+    Ok(())
+}
+
+/// **D8**: the Codex periodic pass skips unchanged files, and a failed import is
+/// not remembered (so the file is retried).
+#[tokio::test]
+async fn d8_codex_sync_skips_unchanged_and_retries_failed_import() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(
+        dir.path().join("rollout-1.jsonl"),
+        "{\"role\":\"user\",\"content\":\"hello codex\"}\n",
+    )?;
+    let store = FailOnceStore::fail_put_number(1);
+    let importer = xavier::memory::codex_importer::CodexImporter::with_dir(dir.path());
+
+    let first = importer.sync(&store).await?;
+    assert_eq!((first.errors, first.skipped, first.records), (1, 0, 0));
+    let second = importer.sync(&store).await?;
+    assert_eq!(
+        (second.errors, second.skipped, second.records),
+        (0, 0, 1),
+        "the failed file is retried"
+    );
+    let third = importer.sync(&store).await?;
+    assert_eq!(
+        (third.read, third.skipped),
+        (0, 1),
+        "now unchanged => skipped"
+    );
+    assert_eq!(store.attempts(), 2, "no store write on the skipped pass");
+    Ok(())
+}
