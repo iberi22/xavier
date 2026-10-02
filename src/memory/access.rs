@@ -596,7 +596,8 @@ async fn drain_for_shutdown(store: &Arc<dyn MemoryStore>, reason: &str) {
     tracing::info!(
         reason,
         pending,
-        written, "access: shutdown flush complete (D4)"
+        written,
+        "access: shutdown flush complete (D4)"
     );
 }
 
