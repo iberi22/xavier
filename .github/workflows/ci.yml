@@ -161,7 +161,7 @@ jobs:
   # `rust-test` job above also stay on `--lib`). Widen the scope only once the
   # full suite is proven green, one target at a time.
   rust-integration:
-    name: Rust Integration (Observability Contract)
+    name: Rust Integration (Observability Contract & Vault)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -180,6 +180,13 @@ jobs:
         # 1 thread, same reason as `rust-test`: several suites mutate global ENV
         # and cannot be parallelised across processes (see the comment above).
         run: cargo test --package xavier --features ci-safe --test observability_contract -- --test-threads=1
+
+      - name: Run Clavis HTTP, Keygen & Vault E2E Tests
+        run: |
+          cargo test --package xavier --features ci-safe --test clavis_http_e2e -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test keygen_e2e -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test clavis_namespace_e2e -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test clavis_vault_smoke_e2e -- --test-threads=1
 
   # Job 4: Secret Scan
   secret-scan:
