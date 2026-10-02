@@ -701,6 +701,19 @@ pub async fn start_http_server(
             "Universal agent session ingestion loop spawned"
         );
         let in_flight = Arc::clone(&ingestion_in_flight);
+        // The importers are built ONCE, here, and not inside the cycle loop.
+        // Each one carries an in-memory cursor (fingerprint / watermark of what
+        // it already ingested) and `sync` consults it to skip work. A
+        // constructor inside the loop discards that state every cycle, which
+        // silently degrades every `sync` back into a full scan — the exact
+        // regression this wiring fixes. The structural tests in
+        // `ingestion_wiring_tests` guard the position of these constructors.
+        let ag_importer = xavier::memory::antigravity_importer::AntigravityImporter::new()
+            .with_embedder(ingestion_embedder.clone());
+        let oc_importer = xavier::memory::opencode_importer::OpenCodeImporter::new()
+            .with_embedder(ingestion_embedder.clone());
+        let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
+            .with_embedder(ingestion_embedder.clone());
         tokio::spawn(async move {
             // Initial grace period to allow server start
             tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
@@ -714,36 +727,60 @@ pub async fn start_http_server(
 
                 tracing::info!("🔄 Running universal agent session ingestion cycle...");
 
-                // 1. Antigravity
-                let ag_importer = xavier::memory::antigravity_importer::AntigravityImporter::new()
-                    .with_embedder(ingestion_embedder.clone());
-                if let Err(e) = ag_importer.import_all(ingestion_store.as_ref()).await {
-                    tracing::debug!("Antigravity ingestion note: {}", e);
-                }
-
-                // 2. OpenCode
-                let oc_importer = xavier::memory::opencode_importer::OpenCodeImporter::new()
-                    .with_embedder(ingestion_embedder.clone());
-                if let Err(e) = oc_importer.import_all(ingestion_store.as_ref()).await {
-                    tracing::debug!("OpenCode ingestion note: {}", e);
-                }
-
-                // 3. Hermes
-                let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
-                    .with_embedder(ingestion_embedder.clone());
-                // `sync`, not `import_all`: the periodic pass skips files whose
-                // size and mtime are unchanged. `import_all` is the explicit
-                // re-index path used by the /index handlers, which report a
-                // count and so must read everything.
-                match hermes_importer.sync(ingestion_store.as_ref()).await {
-                    Ok(stats) => tracing::debug!(
+                // All three importers use `sync`, not `import_all`: the periodic
+                // pass skips sources whose fingerprint is unchanged.
+                // `import_all` is the explicit re-index path used by the /index
+                // handlers, which report a count and so must read everything.
+                //
+                // Stats go to `info`, not `debug`: an idle node must be able to
+                // show `read=0 skipped=N` in the journal or /health to prove the
+                // cursor is working. At debug level the fix is unobservable in
+                // production, which is how the previous full-scan regression ran
+                // for days unnoticed.
+                match ag_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::info!(
+                        source = "antigravity",
+                        candidates = stats.candidates,
                         read = stats.read,
                         skipped = stats.skipped,
                         records = stats.records,
                         store_reads = stats.store_reads,
-                        "Hermes ingestion pass"
+                        "session ingestion cursor pass"
                     ),
-                    Err(e) => tracing::debug!("Hermes ingestion note: {}", e),
+                    Err(e) => {
+                        tracing::warn!(source = "antigravity", error = %e, "ingestion pass failed")
+                    }
+                }
+
+                match oc_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::info!(
+                        source = "opencode",
+                        candidates = stats.candidates,
+                        read = stats.read,
+                        skipped = stats.skipped,
+                        hot_deferred = stats.hot_deferred,
+                        message_rows = stats.message_rows,
+                        records = stats.records,
+                        store_reads = stats.store_reads,
+                        "session ingestion cursor pass"
+                    ),
+                    Err(e) => {
+                        tracing::warn!(source = "opencode", error = %e, "ingestion pass failed")
+                    }
+                }
+
+                match hermes_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::info!(
+                        source = "hermes",
+                        read = stats.read,
+                        skipped = stats.skipped,
+                        records = stats.records,
+                        store_reads = stats.store_reads,
+                        "session ingestion cursor pass"
+                    ),
+                    Err(e) => {
+                        tracing::warn!(source = "hermes", error = %e, "ingestion pass failed")
+                    }
                 }
 
                 // 4. Codex — with_embedder is an associated fn (not a builder method)
@@ -2229,5 +2266,134 @@ mod ingestion_guard_tests {
 
         // Flag is false, so try_begin_cycle succeeds
         assert!(try_begin_cycle(&flag));
+    }
+}
+
+#[cfg(test)]
+mod ingestion_wiring_tests {
+    //! Guards the production wiring of the periodic ingestion loop.
+    //!
+    //! The importers hold an in-memory cursor. The loop must therefore build
+    //! them ONCE, outside `loop {`. These are structural tests on this file's
+    //! own source because the wiring itself is a runtime shape inside a spawned
+    //! task that no unit test can observe; the cursor behaviour itself is
+    //! covered in the importer modules (`cursor_survives_across_cycles`).
+
+    fn server_source() -> &'static str {
+        include_str!("server.rs")
+    }
+
+    /// Byte offset of the ingestion cycle `loop {`.
+    fn cycle_loop_offset(src: &str) -> usize {
+        src.find("loop {\n                if !try_begin_cycle(&in_flight)")
+            .expect("ingestion cycle loop not found in server.rs")
+    }
+
+    #[test]
+    fn importers_are_built_before_the_cycle_loop() {
+        let src = server_source();
+        let loop_at = cycle_loop_offset(src);
+
+        for (name, ctor) in [
+            ("Antigravity", "AntigravityImporter::new()"),
+            ("OpenCode", "OpenCodeImporter::new()"),
+            ("Hermes", "HermesImporter::new()"),
+        ] {
+            let at = src
+                .find(ctor)
+                .unwrap_or_else(|| panic!("{} constructor not found in server.rs", name));
+            assert!(
+                at < loop_at,
+                "{} is constructed INSIDE the ingestion cycle loop (offset {} >= loop {}). \
+                 Its cursor is discarded every cycle and sync degrades to a full scan.",
+                name,
+                at,
+                loop_at
+            );
+        }
+    }
+
+    /// The periodic pass must use `sync` for every importer. `import_all` in
+    /// the cycle loop is a full scan: on the live node that was 1723 OpenCode
+    /// sessions and 40 593 messages re-read every 600 s at 78-94 % CPU.
+    #[test]
+    fn cycle_loop_uses_sync_and_never_import_all() {
+        let src = server_source();
+        let loop_at = cycle_loop_offset(src);
+        let spawn_end = loop_at
+            + src[loop_at..]
+                .find("end_cycle(&in_flight);")
+                .expect("cycle body end not found");
+
+        let body = &src[loop_at..spawn_end];
+
+        for importer in ["ag_importer", "oc_importer", "hermes_importer"] {
+            assert!(
+                body.contains(&format!("{}.sync(", importer)),
+                "{} is not driven by sync() in the cycle loop",
+                importer
+            );
+            assert!(
+                !body.contains(&format!("{}.import_all(", importer)),
+                "{} still calls import_all() in the cycle loop: that is a full scan",
+                importer
+            );
+        }
+    }
+
+    /// Cursor stats must reach `info`, not `debug`: at debug level an idle node
+    /// cannot demonstrate `read=0 skipped=N` in the journal or /health, so the
+    /// fix would be unobservable in production.
+    #[test]
+    fn cursor_stats_are_logged_at_info() {
+        let src = server_source();
+        let loop_at = cycle_loop_offset(src);
+        let body_end = loop_at
+            + src[loop_at..]
+                .find("end_cycle(&in_flight);")
+                .expect("cycle body end not found");
+        let body = &src[loop_at..body_end];
+
+        let info_logs = body.matches("tracing::info!").count();
+        assert!(
+            info_logs >= 3,
+            "expected one info! cursor log per source (antigravity, opencode, hermes), found {}",
+            info_logs
+        );
+        assert!(
+            !body.contains("tracing::debug!(\n                        read = stats.read"),
+            "cursor stats are still logged at debug level, where production cannot observe them"
+        );
+        for field in ["read = stats.read", "skipped = stats.skipped"] {
+            assert!(
+                body.contains(field),
+                "cursor log does not expose `{}`",
+                field
+            );
+        }
+    }
+
+    /// The in-flight guard must survive the wiring change: overlapping cycles
+    /// would fold two snapshots of the cursor into one lost update.
+    #[test]
+    fn in_flight_guard_still_wraps_the_cycle() {
+        let src = server_source();
+        let loop_at = cycle_loop_offset(src);
+        let body = &src[loop_at..];
+        let guard = body
+            .find("if !try_begin_cycle(&in_flight)")
+            .expect("guard missing");
+        let first_sync = body.find("ag_importer.sync(").expect("first sync missing");
+        let release = body
+            .find("end_cycle(&in_flight);")
+            .expect("release missing");
+
+        assert!(
+            guard < first_sync && first_sync < release,
+            "cycle guard must bracket the sync passes: guard={} sync={} release={}",
+            guard,
+            first_sync,
+            release
+        );
     }
 }
