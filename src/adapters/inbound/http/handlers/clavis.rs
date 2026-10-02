@@ -116,7 +116,53 @@ pub async fn get_clavis_key_handler(Path(key_name): Path<String>) -> impl IntoRe
 
     let vault = clavis_vault();
     let lookup = key_name.clone();
-    let result = tokio::task::spawn_blocking(move || vault.get_secret(&lookup)).await;
+    let result = tokio::task::spawn_blocking(move || {
+        // 1. Direct lookup in current Clavis vault
+        if let Ok(value) = vault.get_secret(&lookup) {
+            return Ok(value);
+        }
+
+        // Generate candidate names (e.g., toggle "api_key_" prefix)
+        let alt_key = if lookup.starts_with("api_key_") {
+            lookup.strip_prefix("api_key_").unwrap_or(&lookup).to_string()
+        } else {
+            format!("api_key_{lookup}")
+        };
+
+        // 2. Check alt_key in current Clavis vault
+        if let Ok(value) = vault.get_secret(&alt_key) {
+            let _ = vault.store_secret(&lookup, &value);
+            return Ok(value);
+        }
+
+        // 3. Fallback to legacy "xavier" vault
+        let legacy_vault = HardwareVault::new("xavier");
+        let legacy_key = if let Ok(v) = legacy_vault.get_secret(&lookup) {
+            Some((lookup.clone(), v))
+        } else if let Ok(v) = legacy_vault.get_secret(&alt_key) {
+            Some((alt_key.clone(), v))
+        } else {
+            None
+        };
+
+        if let Some((found_key, value)) = legacy_key {
+            // Migrate secret and potential metadata to Clavis vault
+            let _ = vault.store_secret(&lookup, &value);
+            if found_key != lookup {
+                let _ = vault.store_secret(&found_key, &value);
+            }
+            let meta_key = format!("{found_key}_meta");
+            if let Ok(meta_json) = legacy_vault.get_secret(&meta_key) {
+                let _ = vault.store_secret(&meta_key, &meta_json);
+                let _ = vault.store_secret(&format!("{lookup}_meta"), &meta_json);
+            }
+            tracing::info!(key = %lookup, "migrated key from legacy xavier vault to clavis vault");
+            return Ok(value);
+        }
+
+        Err(SecretError::NotFound(lookup))
+    })
+    .await;
 
     let value = match result {
         Ok(Ok(value)) => value,
