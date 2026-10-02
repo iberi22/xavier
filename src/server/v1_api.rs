@@ -1210,18 +1210,6 @@ pub async fn v1_memories_search(
     );
     let degraded = search_result.degraded;
 
-    // Phase 1 access instrumentation: this is a user-facing read, so every
-    // document actually returned counts as evidence of utility. Recording it
-    // here (and not in `MemoryStore::get`) is deliberate: internal reads from
-    // consolidation, GC, backup and ingestion must NOT count, or the signal
-    // would be biased towards whatever the system itself happens to touch.
-    crate::memory::access::record_user_access(
-        &workspace.workspace.memory_manager,
-        &workspace.workspace.memory,
-        &search_result.documents,
-    )
-    .await;
-
     // F2.2: techo de lectura derivado de la identidad (F1). Sin extensión se
     // asume el default del sistema (`Internal`), nunca un nivel elevado.
     let requester_level = requester
@@ -1238,6 +1226,19 @@ pub async fn v1_memories_search(
             )
         })
         .collect::<Vec<_>>();
+
+    // Phase 1 access instrumentation (D6): only documents the requester can
+    // actually see count as evidence of utility. Recording happens AFTER the
+    // primary-memory and clearance filters, so a memory the caller cannot read
+    // never gains utility and is never shielded from a prune by that probe.
+    // Recorded here (and not in `MemoryStore::get`) so internal reads from
+    // consolidation, GC, backup and ingestion do not bias the signal.
+    crate::memory::access::record_user_access(
+        &workspace.workspace.memory_manager,
+        &workspace.workspace.memory,
+        &documents,
+    )
+    .await;
 
     let mode = payload.mode.as_deref().unwrap_or("full");
 
@@ -4279,6 +4280,97 @@ mod tests {
             before, after,
             "MUTATION GUARD: internal reads (store.get / list / GC) must not \
              change the access count"
+        );
+
+        crate::memory::access::RECORDER.reset();
+    }
+
+    /// D6: a memory the requester cannot read must not gain utility from a
+    /// search that filtered it out, and a visible one is counted exactly once.
+    #[tokio::test]
+    #[serial]
+    async fn test_http_search_does_not_count_clearance_filtered_documents() {
+        let _temp_env = crate::settings::tests::TempEnv::new();
+        for key in [
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBED_PROVIDER",
+        ] {
+            std::env::remove_var(key);
+        }
+
+        crate::memory::access::RECORDER.reset();
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace.clone());
+        let workspace_id = workspace.workspace_id.clone();
+
+        for (text, path, clearance) in [
+            (
+                "quokka lighthouse visible canary",
+                "features/d6-visible",
+                "internal",
+            ),
+            (
+                "quokka lighthouse hidden canary",
+                "features/d6-hidden",
+                "secret",
+            ),
+        ] {
+            let add = Request::builder()
+                .method("POST")
+                .uri("/v1/memories")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "text": text,
+                        "path": path,
+                        "kind": "stability_report",
+                        "metadata": { "clearance": clearance },
+                    })
+                    .to_string(),
+                ))
+                .expect("request");
+            let response = app.clone().oneshot(add).await.expect("add");
+            assert_eq!(response.status(), 200, "seed {path}");
+        }
+
+        let search = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/search")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({ "query": "quokka lighthouse canary", "limit": 10, "mode": "ids" })
+                    .to_string(),
+            ))
+            .expect("request");
+        let response = app.clone().oneshot(search).await.expect("search");
+        assert_eq!(response.status(), 200, "search");
+
+        let docs = workspace.workspace.memory.all_documents().await;
+        let count_for = |needle: &str| -> u64 {
+            docs.iter()
+                .filter(|doc| doc.content.contains(needle))
+                .filter_map(|doc| doc.id.as_deref())
+                .map(|id| crate::memory::access::RECORDER.access_count(&workspace_id, id))
+                .sum()
+        };
+        assert!(
+            docs.iter().any(|doc| doc.content.contains("hidden canary")),
+            "the restricted memory must exist for this test to mean anything"
+        );
+        assert_eq!(
+            count_for("hidden canary"),
+            0,
+            "D6: filtered doc was counted"
+        );
+        assert_eq!(
+            count_for("visible canary"),
+            1,
+            "visible doc counts exactly once"
         );
 
         crate::memory::access::RECORDER.reset();
