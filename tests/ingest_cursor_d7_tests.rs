@@ -27,8 +27,8 @@
 //! Nothing touches the production corpus.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -180,7 +180,10 @@ impl MemoryStore for FailOnceStore {
             anyhow::bail!("scripted put failure on call {attempt}");
         }
         let key = (record.workspace_id.clone(), record.id.clone());
-        self.records.lock().expect("records lock").insert(key, record);
+        self.records
+            .lock()
+            .expect("records lock")
+            .insert(key, record);
         Ok(())
     }
 
@@ -318,17 +321,23 @@ async fn d7a_failed_import_leaves_hermes_file_unseen_and_it_is_retried() -> Resu
     // file as read, because it was only half ingested.
     let first = hermes_sync_bounded(&importer, &store).await?;
     assert_eq!(first.read, 0, "a file whose import failed is not 'read'");
-    assert_eq!(store.rows("agent:hermes").len(), 1, "the first message landed");
+    assert_eq!(
+        store.rows("agent:hermes").len(),
+        1,
+        "the first message landed"
+    );
 
     // Pass 2: the store is healthy again. The file must be re-read, not skipped.
     let second = hermes_sync_bounded(&importer, &store).await?;
     assert_eq!(
         second.skipped, 0,
         "a file whose import FAILED must not be marked as seen (skipped={}, read={})",
-        second.skipped,
-        second.read
+        second.skipped, second.read
     );
-    assert_eq!(second.read, 1, "the failed file is retried on the next pass");
+    assert_eq!(
+        second.read, 1,
+        "the failed file is retried on the next pass"
+    );
     assert_eq!(
         store.attempts(),
         3,
@@ -349,7 +358,10 @@ async fn d7a_failed_import_leaves_hermes_file_unseen_and_it_is_retried() -> Resu
 
     // And the cursor still works once the file really is fully ingested.
     let third = hermes_sync_bounded(&importer, &store).await?;
-    assert_eq!(third.skipped, 1, "a fully ingested file is skipped afterwards");
+    assert_eq!(
+        third.skipped, 1,
+        "a fully ingested file is skipped afterwards"
+    );
     assert_eq!(third.read, 0);
 
     Ok(())
@@ -493,8 +505,21 @@ async fn d7b_future_time_updated_cannot_poison_the_watermark() -> Result<()> {
     {
         let conn = create_oc_db(&db_file)?;
         let future_at = now_ms() + ten_days_ms;
-        insert_session(&conn, "ses_future", "Clock drift", future_at - 1000, future_at)?;
-        insert_turn(&conn, "ses_future", 0, "user", "future dated row", future_at)?;
+        insert_session(
+            &conn,
+            "ses_future",
+            "Clock drift",
+            future_at - 1000,
+            future_at,
+        )?;
+        insert_turn(
+            &conn,
+            "ses_future",
+            0,
+            "user",
+            "future dated row",
+            future_at,
+        )?;
     }
 
     let store = FailOnceStore::fail_next_puts(0);
@@ -519,8 +544,7 @@ async fn d7b_future_time_updated_cannot_poison_the_watermark() -> Result<()> {
         second.read, 1,
         "the real session must be deep-read; a future watermark put the query \
          floor 29 days ahead and starved the whole corpus (read={}, candidates={})",
-        second.read,
-        second.candidates
+        second.read, second.candidates
     );
     assert_eq!(
         second.skipped, 1,
@@ -686,7 +710,8 @@ async fn d7c_permanently_unreadable_row_never_stalls_or_grows_the_pass() -> Resu
                 "cycle {cycle}: the corrupt row is still reported, not swallowed"
             );
             assert_eq!(
-                stats.skipped, healthy.len(),
+                stats.skipped,
+                healthy.len(),
                 "cycle {cycle}: every healthy session must be skipped on the \
                  fingerprint; skipped={} of {} means the cursor was reset and the \
                  pass degenerated into a full rescan",
@@ -706,7 +731,8 @@ async fn d7c_permanently_unreadable_row_never_stalls_or_grows_the_pass() -> Resu
                 "cycle {cycle}: nothing changed, so nothing may be written"
             );
             assert_eq!(
-                stats.candidates, healthy.len() + 1,
+                stats.candidates,
+                healthy.len() + 1,
                 "cycle {cycle}: the candidate set is index rows only and stays flat"
             );
 

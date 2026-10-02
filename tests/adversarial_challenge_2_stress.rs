@@ -160,7 +160,10 @@ async fn test_adversarial_http_vault_boundary_conditions() {
         let temp_dir = tempdir().expect("tempdir");
         std::env::set_var("HOME", temp_dir.path());
         std::env::set_var("XAVIER_DATA_DIR", temp_dir.path());
-        (temp_dir, xavier::adapters::inbound::http::handlers::clavis::clavis_vault())
+        (
+            temp_dir,
+            xavier::adapters::inbound::http::handlers::clavis::clavis_vault(),
+        )
     };
 
     // 1. Missing auth token (unauthenticated GET) -> 403
@@ -261,7 +264,6 @@ fn test_adversarial_cross_vault_collision_same_key_name() {
         v2_export
     );
 }
-
 
 #[test]
 fn test_adversarial_concurrency_isolation_multi_vaults() {

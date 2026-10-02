@@ -78,9 +78,7 @@ impl MemoryDaemon {
                     crate::memory::access::ensure_flush_worker(Arc::clone(&store));
                     crate::memory::access::spawn_shutdown_flush(Arc::clone(&store));
                 } else {
-                    warn!(
-                        "MemoryDaemon: no memory store at spawn; access flush hooks not armed"
-                    );
+                    warn!("MemoryDaemon: no memory store at spawn; access flush hooks not armed");
                 }
             });
         }

@@ -89,7 +89,10 @@ impl ScriptedAccessStore {
 
     /// Fail the write with 0-based global attempt index `index`.
     fn fail_attempt(&self, index: usize) {
-        self.fail_attempt.lock().expect("fail_attempt lock").push(index);
+        self.fail_attempt
+            .lock()
+            .expect("fail_attempt lock")
+            .push(index);
     }
 
     /// Writes that actually reached the durable table.
@@ -267,19 +270,11 @@ impl MemoryStore for ScriptedAccessStore {
         Ok(())
     }
 
-    async fn is_session_token_valid(
-        &self,
-        _workspace_id: &str,
-        _token: &str,
-    ) -> Result<bool> {
+    async fn is_session_token_valid(&self, _workspace_id: &str, _token: &str) -> Result<bool> {
         Ok(true)
     }
 
-    async fn save_checkpoint(
-        &self,
-        _workspace_id: &str,
-        _checkpoint: Checkpoint,
-    ) -> Result<()> {
+    async fn save_checkpoint(&self, _workspace_id: &str, _checkpoint: Checkpoint) -> Result<()> {
         Ok(())
     }
 
@@ -314,9 +309,7 @@ impl MemoryStore for ScriptedAccessStore {
 /// recorder. Deterministic, no store involved.
 fn buffer(workspaces: &[&str], memory_id: &str, count: usize) {
     for ws in workspaces {
-        let ids: Vec<String> = (0..count)
-            .map(|i| format!("{memory_id}-{i}"))
-            .collect();
+        let ids: Vec<String> = (0..count).map(|i| format!("{memory_id}-{i}")).collect();
         RECORDER.record(ws, &ids, Utc::now());
     }
 }
@@ -339,7 +332,11 @@ async fn failed_flush_does_not_recount_workspaces_already_written() {
     let store = Arc::new(ScriptedAccessStore::new());
 
     buffer(&["ws-d5-a", "ws-d5-b", "ws-d5-c"], "doc", 3);
-    assert_eq!(RECORDER.pending_count(), 9, "three workspaces x three records");
+    assert_eq!(
+        RECORDER.pending_count(),
+        9,
+        "three workspaces x three records"
+    );
 
     // Fail the *second* write attempt. The drain order is a `HashMap` order we
     // do not control, so failing by attempt index — not by workspace name — is
@@ -742,7 +739,10 @@ async fn shutdown_flush_on_a_broken_store_is_bounded_and_honest() {
     buffer(&["ws-d4-broken"], "rec", 3);
 
     let written = flush_on_shutdown(&*store, Duration::from_secs(5)).await;
-    assert_eq!(written, 0, "a failed shutdown flush reports zero, not a lie");
+    assert_eq!(
+        written, 0,
+        "a failed shutdown flush reports zero, not a lie"
+    );
     assert_eq!(
         RECORDER.pending_count(),
         3,
@@ -814,11 +814,7 @@ async fn shutdown_flush_gives_up_after_its_timeout() {
         ) -> Result<()> {
             Ok(())
         }
-        async fn save_session_token(
-            &self,
-            _ws: &str,
-            _t: SessionTokenRecord,
-        ) -> Result<()> {
+        async fn save_session_token(&self, _ws: &str, _t: SessionTokenRecord) -> Result<()> {
             Ok(())
         }
         async fn is_session_token_valid(&self, _ws: &str, _t: &str) -> Result<bool> {
