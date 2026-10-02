@@ -1,0 +1,1 @@
+{"version":"1.0.0","usage_policy":"fixture","reproducibility_seed":42,"split_counts":{"train":3,"eval":1},"data_files":["train.jsonl","eval.jsonl"],"privacy_level":"P3","clearance":"INTERNAL","language":"en","segment":"fixture"}

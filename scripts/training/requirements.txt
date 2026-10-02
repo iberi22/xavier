@@ -1,0 +1,10 @@
+# Xavier mini-expert training (MX-05). Pinned to current stable (checked 2026-10-02).
+# torch is NOT pinned here: install the build matching your hardware first, see README.md.
+transformers==5.18.0
+peft==0.21.2
+trl==1.14.1
+datasets==5.0.1
+accelerate==1.15.0
+safetensors==0.8.0
+sentencepiece==0.2.2
+gguf==0.19.0
