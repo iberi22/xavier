@@ -143,12 +143,7 @@ async fn test_unauthenticated_and_unauthorized_access_rejected() {
     let _tmp = setup_isolated_env();
 
     // 1. Missing claims/token -> HTTP 403 (or 401) FORBIDDEN
-    let anon_req = build_clavis_request(
-        Method::GET,
-        "/v1/clavis/keys/protected_key",
-        None,
-        None,
-    );
+    let anon_req = build_clavis_request(Method::GET, "/v1/clavis/keys/protected_key", None, None);
 
     let anon_resp = create_router()
         .oneshot(anon_req)
@@ -156,7 +151,8 @@ async fn test_unauthenticated_and_unauthorized_access_rejected() {
         .expect("Request failed");
 
     assert!(
-        anon_resp.status() == StatusCode::FORBIDDEN || anon_resp.status() == StatusCode::UNAUTHORIZED,
+        anon_resp.status() == StatusCode::FORBIDDEN
+            || anon_resp.status() == StatusCode::UNAUTHORIZED,
         "Unauthenticated access must be rejected with 401 or 403, got {}",
         anon_resp.status()
     );
@@ -207,7 +203,10 @@ async fn test_put_empty_value_returns_400() {
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     let parsed: serde_json::Value = serde_json::from_slice(&body).expect("valid JSON");
     assert_eq!(parsed["status"], "error");
-    assert!(parsed["message"].as_str().unwrap().contains("value must not be empty"));
+    assert!(parsed["message"]
+        .as_str()
+        .unwrap()
+        .contains("value must not be empty"));
 }
 
 #[tokio::test]
