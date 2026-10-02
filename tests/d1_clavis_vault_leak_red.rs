@@ -1,5 +1,5 @@
 //! ===========================================================================
-//! D1 — NODE SECRET LEAK VIA `GET /v1/clavis/keys/{name}`  (RED ON PURPOSE)
+//! D1 — NODE SECRET LEAK VIA `GET /v1/clavis/keys/{name}`  (regression test, fixed)
 //! ===========================================================================
 //!
 //! ## What this test documents
@@ -32,7 +32,8 @@
 //! node JWT signing key in the body. Already demonstrated in production on this
 //! machine (~296 unrelated entries live in `~/.xavier/secrets`).
 //!
-//! ## THIS FILE IS EXPECTED TO FAIL (RED) AGAINST THE CURRENT CODE.
+//! ## STATUS: fixed. This file was written red against the pre-fix code and
+//! ## now guards the fix (name allowlist + isolated vault namespace).
 //!
 //! That is the point. It is a pinned reproduction of D1, not a passing test.
 //! It is written so that fixing the handler turns it GREEN **without editing a
@@ -202,7 +203,8 @@ fn hermetic_environment_is_proven_before_anything_is_seeded() {
     // The write must have landed in the temp dir, as an encrypted .enc file.
     let enc = expected
         .join(".xavier")
-        .join("secrets")
+        .join("vaults")
+        .join(CLAVIS_SERVICE)
         .join(format!("{probe_key}.enc"));
     assert!(
         enc.exists(),
@@ -360,4 +362,29 @@ async fn api_key_namespaced_secret_is_still_readable() {
         parsed["value"], NAMESPACED_VALUE,
         "200 response did not carry the stored Clavis key value"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Guard 3 — the Clavis vault is isolated from the global node vault
+// ---------------------------------------------------------------------------
+
+/// An `api_key_*` entry that exists only in the global vault must not be
+/// served by the Clavis endpoint, and must not be migrated or copied.
+#[tokio::test]
+#[serial_test::serial]
+async fn global_vault_api_key_entry_is_not_visible_to_clavis() {
+    hermetic_environment_is_proven_before_anything_is_seeded();
+    seed_and_verify();
+
+    let global = HardwareVault::new("xavier");
+    global
+        .store_secret("api_key_global_only", "D1_CANARY_GLOBAL_ONLY_ENTRY")
+        .expect("seed global vault entry");
+
+    let (status, body) = get_via_handler("api_key_global_only").await;
+    assert_eq!(status, 404, "global entry must be invisible, body: {body}");
+    assert!(!body.contains("D1_CANARY_GLOBAL_ONLY_ENTRY"));
+    assert!(handler_vault().get_secret("api_key_global_only").is_err());
+
+    let _ = global.delete_secret("api_key_global_only");
 }

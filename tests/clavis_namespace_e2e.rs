@@ -53,16 +53,11 @@ async fn test_cli_keys_generate_and_http_read_contract() {
     let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
     assert_eq!(json["value"], key.value);
 
-    // 4. Test HTTP handler reading plain name
+    // 4. Plain (un-prefixed) names are outside the Clavis namespace: rejected.
     let response_plain = get_clavis_key_handler(Path("e2e_cli_probe".to_string()))
         .await
         .into_response();
-    assert_eq!(response_plain.status(), StatusCode::OK);
-    let body_plain = axum::body::to_bytes(response_plain.into_body(), 64 * 1024)
-        .await
-        .expect("bytes");
-    let json_plain: serde_json::Value = serde_json::from_slice(&body_plain).expect("json");
-    assert_eq!(json_plain["value"], key.value);
+    assert_eq!(response_plain.status(), StatusCode::BAD_REQUEST);
 
     // Cleanup
     let _ = cli_vault.delete_secret("api_key_e2e_cli_probe");
@@ -72,7 +67,7 @@ async fn test_cli_keys_generate_and_http_read_contract() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn test_legacy_xavier_namespace_fallback_migration() {
+async fn test_legacy_global_vault_entries_are_not_served_or_migrated() {
     let _tmp = setup_isolated_env();
 
     let legacy_vault = HardwareVault::new("xavier");
@@ -97,24 +92,12 @@ async fn test_legacy_xavier_namespace_fallback_migration() {
         .expect("read legacy");
     assert_eq!(read_back, "xavier_live_legacy_secret_value_123");
 
-    // HTTP read triggers migration
+    // The isolated Clavis vault must not read (or migrate) the global vault.
     let response = get_clavis_key_handler(Path("api_key_legacy_probe".to_string()))
         .await
         .into_response();
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
-        .await
-        .expect("bytes");
-    let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
-    assert_eq!(json["value"], "xavier_live_legacy_secret_value_123");
-
-    // Verify migrated into clavis vault
-    assert_eq!(
-        clavis_vault
-            .get_secret("api_key_legacy_probe")
-            .expect("migrated"),
-        "xavier_live_legacy_secret_value_123"
-    );
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert!(clavis_vault.get_secret("api_key_legacy_probe").is_err());
 
     // Cleanup
     let _ = legacy_vault.delete_secret("api_key_legacy_probe");
@@ -147,10 +130,10 @@ async fn test_security_gate_general_secrets_unreachable_via_clavis_handler() {
         .await
         .into_response();
 
-    // MUST return 404 NOT FOUND to satisfy security gate
+    // MUST be rejected (400) before the vault is consulted
     assert_eq!(
         response.status(),
-        StatusCode::NOT_FOUND,
+        StatusCode::BAD_REQUEST,
         "General secret in 'xavier' namespace must NOT be accessible via /v1/clavis/keys/*"
     );
 
@@ -199,8 +182,8 @@ async fn test_rejection_of_non_api_key_legacy_secret() {
 
     assert_eq!(
         response.status(),
-        StatusCode::NOT_FOUND,
-        "Non-api_key secret must not fall back to legacy vault"
+        StatusCode::BAD_REQUEST,
+        "Non-api_key name must be rejected outright"
     );
 
     assert!(clavis_vault.get_secret("node_private_seed").is_err());

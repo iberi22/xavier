@@ -11,6 +11,48 @@ use uuid::Uuid;
 
 pub mod manager;
 
+/// Service name of the Clavis provider-key vault. It is an isolated namespace:
+/// the vault derives its own key and uses its own storage directory (see
+/// `secrets::vault`), so it never shares state with the node's global vault.
+pub const CLAVIS_VAULT_SERVICE: &str = "xavier-clavis";
+
+/// Every Clavis entry name must start with this prefix.
+pub const API_KEY_NAMESPACE_PREFIX: &str = "api_key_";
+
+/// Longest accepted entry name (also the longest accepted fallback filename).
+pub const MAX_KEY_NAME_LEN: usize = 128;
+
+/// Validate an entry name destined for (or read from) the Clavis vault.
+///
+/// Accepts only `api_key_*` names made of ASCII letters, digits, `_`, `-` and
+/// `.`. Anything else is rejected without consulting the vault, so the answer
+/// never depends on whether a secret exists.
+pub fn validate_namespaced_key_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err("key name must not be empty".to_string());
+    }
+    if name.len() > MAX_KEY_NAME_LEN {
+        return Err(format!(
+            "key name must be at most {MAX_KEY_NAME_LEN} characters"
+        ));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    {
+        return Err(
+            "key name may only contain ASCII letters, digits, '_', '-' and '.'".to_string(),
+        );
+    }
+    match name.strip_prefix(API_KEY_NAMESPACE_PREFIX) {
+        Some(rest) if !rest.is_empty() && !rest.starts_with('.') => Ok(name.to_string()),
+        _ => Err(format!(
+            "key name must start with '{API_KEY_NAMESPACE_PREFIX}'"
+        )),
+    }
+}
+
 /// Mask a key safely showing only the first 4 and last 4 characters.
 /// If the key is shorter than or equal to 8 characters, it handles masking gracefully.
 pub fn mask_key(key: &str) -> String {
@@ -335,6 +377,30 @@ pub fn start_auto_rotation_task(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn namespaced_key_name_allowlist() {
+        for ok in ["api_key_openai", " api_key_a-b.c ", "api_key_x_meta"] {
+            assert!(validate_namespaced_key_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            "openai",
+            "JWT_PRIVATE_KEY",
+            "api_key_",
+            "api_key_.hidden",
+            "API_KEY_x",
+            "api_key_a/b",
+            "api_key_../x",
+            "api_key_a b",
+        ] {
+            assert!(validate_namespaced_key_name(bad).is_err(), "{bad}");
+        }
+        assert!(
+            validate_namespaced_key_name(&format!("api_key_{}", "k".repeat(MAX_KEY_NAME_LEN)))
+                .is_err()
+        );
+    }
 
     #[test]
     fn test_mask_key_scenarios() {
