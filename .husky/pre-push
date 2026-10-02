@@ -1,5 +1,106 @@
-#!/usr/bin/env sh
-# SWAL Security & Anti-Leak Pre-Push Guard
-if command -v node >/dev/null 2>&1; then
-  node "scripts/swal-husky-guard.mjs" --push || exit 1
+#!/usr/bin/env bash
+# SWAL · pre-push guard
+#
+# The last gate before a commit leaves the machine. pre-commit protects the working
+# copy; this one protects the remote — it is the only hook that sees the full range
+# of commits about to be pushed, not just the staged diff.
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$ROOT" || exit 1
+
+FAILED=0
+note() { printf '%s\n' "$*"; }
+fail() { printf '❌ %s\n' "$*"; FAILED=1; }
+skip() { printf '⏭  %s\n' "$*"; }
+
+note "🛡️  [SWAL] pre-push · $(basename "$ROOT")"
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo '')"
+note "   rama $BRANCH${UPSTREAM:+ → $UPSTREAM}"
+
+# ── 1. Secrets across the commits being pushed ────────────────────────────────
+# pre-commit only sees staged content. A commit pushed from elsewhere, or one made
+# before the hook existed, never went through it — this does.
+GLEAKS="$(command -v gitleaks 2>/dev/null || true)"
+if [ -z "$GLEAKS" ]; then
+    GLEAKS="$(ls -1 /nix/store/*-gitleaks-*/bin/gitleaks 2>/dev/null | sort -V | tail -1 || true)"
 fi
+
+if [ -n "$GLEAKS" ] && [ -x "$GLEAKS" ]; then
+    RANGE=""
+    if [ -n "$UPSTREAM" ]; then
+        RANGE="$(git rev-list --count "$UPSTREAM..HEAD" 2>/dev/null || echo 0)"
+    else
+        RANGE="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+    fi
+    if [ "${RANGE:-0}" -gt 0 ]; then
+        REPORT="$(mktemp -t swal-gitleaks-push.XXXXXX.json)"
+        if [ -n "$UPSTREAM" ]; then
+            "$GLEAKS" detect --redact --no-banner --log-opts="$UPSTREAM..HEAD" \
+                --report-format json --report-path "$REPORT" >/dev/null 2>&1
+        else
+            "$GLEAKS" detect --redact --no-banner \
+                --report-format json --report-path "$REPORT" >/dev/null 2>&1
+        fi
+        COUNT="$(grep -c '"RuleID"' "$REPORT" 2>/dev/null || echo 0)"
+        if [ "${COUNT:-0}" -gt 0 ]; then
+            fail "gitleaks: $COUNT secreto(s) en el historial que se va a subir"
+            python3 - "$REPORT" <<'PY' 2>/dev/null || true
+import json,sys
+for f in json.load(open(sys.argv[1])):
+    print(f"      {f.get('File','?')}:{f.get('StartLine','?')}  [{f.get('RuleID','?')}]  commit {str(f.get('Commit','?'))[:9]}")
+PY
+            note "   Si son fixtures de test, añádelos al allowlist; si son reales, ROTA la credencial."
+        else
+            note "🔐  [SWAL] gitleaks · $RANGE commit(s) limpio(s)"
+        fi
+        rm -f "$REPORT" 2>/dev/null || true
+    else
+        note "🔐  [SWAL] nada nuevo que subir"
+    fi
+else
+    skip "🔐  gitleaks NO DISPONIBLE — escaneo del historial OMITIDO"
+fi
+
+# ── 2. Commit messages must not describe the attack surface ───────────────────
+# This is a SWAL-specific rule, not a generic one: the repo is public and a message
+# that explains how a vector was exploited hands that over to a reader.
+while IFS= read -r msg; do
+    [ -z "$msg" ] && continue
+    LOW="$(printf '%s' "$msg" | tr 'A-Z' 'a-z')"
+    case "$LOW" in
+        *"reachable from the lan"*|*"secret route"*|*"vector de ataque"*|*"attack vector"*|\
+        *"exploit"*|*"bypass de auth"*|*"auth bypass"*|*"credential leak"*|*"api key leak"*)
+            fail "el mensaje describe el vector de ataque; en un repo público eso regala el fallo:"
+            note "      $msg"
+            note "   Reescríbelo genérico: qué cambia el código, no qué se rompió antes."
+            ;;
+    esac
+done < <(git log --format='%s' "${UPSTREAM:-HEAD}"..HEAD 2>/dev/null || true)
+
+# ── 3. Nothing generated or private may be tracked ────────────────────────────
+BAD_TRACKED="$(git ls-files 2>/dev/null | grep -E '(^|/)\.env$|\.sqlite3?$|\.db$|master\.key$|^target/|node_modules/' | head -10 || true)"
+if [ -n "$BAD_TRACKED" ]; then
+    fail "ficheros de runtime o secretos trackeados:"
+    printf '      %s\n' $BAD_TRACKED
+fi
+
+# ── 4. The worktree should be clean enough to explain ─────────────────────────
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    skip "árbol con cambios sin commitear (no bloquea el push, pero no va incluido)"
+fi
+
+# ── 5. Force-push to a shared branch ──────────────────────────────────────────
+if printf '%s\n' "$*" | grep -qE '^\s*--force(\s|$)|^\s*-f(\s|$)' && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ]; then
+    skip "force-push a $BRANCH"
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+    note ""
+    note "❌ [SWAL] pre-push FALLÓ. Nada se ha subido."
+    exit 1
+fi
+note "✅ [SWAL] pre-push OK"
+exit 0
