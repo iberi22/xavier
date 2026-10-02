@@ -29,6 +29,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
+/// Tracked template the untracked runtime config is seeded from (#2801).
+const CONFIG_TEMPLATE_PATH: &str = "config/xavier.config.example.json";
 const RUNTIME_STATE_FILENAME: &str = "xavier.runtime.json";
 const RUNTIME_STATE_DIRNAME: &str = ".xavier-state";
 
@@ -110,6 +112,7 @@ fn parse_settings(path: &Path) -> Result<XavierSettings> {
 /// the failure is reported instead (D10).
 pub fn load() -> Result<Option<XavierSettings>> {
     let path = resolve_config_path();
+    seed_config_from_template(&path);
     let defaults = if path.exists() {
         Some(parse_settings(&path)?)
     } else {
@@ -148,6 +151,56 @@ pub fn load() -> Result<Option<XavierSettings>> {
     }
 }
 
+/// First run (#2801): `config/xavier.config.json` is untracked and gitignored,
+/// so a fresh checkout does not have it. Seed it from the tracked template.
+///
+/// Only the in-tree default path is seeded (an explicitly pinned or per-user
+/// config is the operator's own file), and only when it is absent: an existing
+/// file is never touched. Best effort: a read-only checkout just runs on the
+/// compiled-in defaults.
+fn seed_config_from_template(path: &Path) {
+    if path.exists() || path != Path::new(DEFAULT_CONFIG_PATH) {
+        return;
+    }
+    let template = Path::new(CONFIG_TEMPLATE_PATH);
+    if !template.exists() {
+        return;
+    }
+    if let Err(e) = std::fs::copy(template, path) {
+        tracing::debug!("could not seed {} from template: {e}", path.display());
+    }
+}
+
+/// True for JSON keys that hold a credential (D11). Matched by name so a field
+/// added later (or one nested in a list, like `mini_experts[].api_key`) is
+/// covered without touching this list.
+fn is_secret_key(key: &str) -> bool {
+    key == "api_key"
+        || key == "token"
+        || key == "password"
+        || key == "postgres_url"
+        || key == "supabase_key"
+        || key.ends_with("_api_key")
+        || key.ends_with("_token")
+        || key.ends_with("_secret")
+}
+
+/// Remove every credential from a settings document, recursively.
+///
+/// Secrets live in the vault / environment (`current()` reads them from there);
+/// the runtime state keeps no value and no reference, so rotating them in `.env`
+/// takes effect and a leaked state file leaks nothing.
+fn strip_secrets(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.retain(|k, _| !is_secret_key(k));
+            map.values_mut().for_each(strip_secrets);
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_secrets),
+        _ => {}
+    }
+}
+
 /// Surface a rejected runtime state.
 ///
 /// `load()` runs in `main.rs` *before* the tracing subscriber is installed, so a
@@ -172,12 +225,15 @@ fn load_runtime_state(config_path: &Path) -> Result<Option<Value>> {
     }
     let raw = std::fs::read_to_string(&state_path)
         .with_context(|| format!("failed to read runtime state at {}", state_path.display()))?;
-    let parsed: Value = serde_json::from_str(&raw).with_context(|| {
+    let mut parsed: Value = serde_json::from_str(&raw).with_context(|| {
         format!(
             "failed to parse runtime state file at {}",
             state_path.display()
         )
     })?;
+    // States written before D11 carry secret values that would pin them over
+    // the environment: ignore them.
+    strip_secrets(&mut parsed);
     Ok(Some(parsed))
 }
 
@@ -391,12 +447,19 @@ pub async fn save(settings: &XavierSettings) -> Result<()> {
         }
     }
 
-    let raw = serde_json::to_string_pretty(settings)
+    // D11: never persist credentials; they come from the vault / environment.
+    // Round-trip through text, not `to_value`: f32 fields would otherwise widen
+    // to f64 and persist as 0.29999998211860657 (float drift in the state).
+    let mut document: Value = serde_json::from_str(
+        &serde_json::to_string(settings).with_context(|| "failed to serialize settings to JSON")?,
+    )
+    .with_context(|| "failed to re-read serialized settings")?;
+    strip_secrets(&mut document);
+    let raw = serde_json::to_string_pretty(&document)
         .with_context(|| "failed to serialize settings to JSON")?;
 
-    // The state file can hold a token and a resolved token_secret, so it is
-    // created 0600 (a pre-existing file keeps its own mode, hence the
-    // permissions check below).
+    // Defence in depth: the state file is created 0600 (a pre-existing file
+    // keeps its own mode, hence the permissions check below).
     let mut options = fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -424,6 +487,22 @@ pub async fn save(settings: &XavierSettings) -> Result<()> {
     harden_state_file_permissions(&path)?;
 
     tracing::debug!("Xavier runtime state written to {}", path.display());
+    Ok(())
+}
+
+/// Force 0600 on an existing state file (it may predate the mode we now pass).
+#[cfg(unix)]
+fn harden_state_file_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("failed to stat runtime state at {}", path.display()))?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode != 0o600 {
+        let mut perms = metadata.permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(path, perms)
+            .with_context(|| format!("failed to restrict permissions on {}", path.display()))?;
+    }
     Ok(())
 }
 
@@ -492,6 +571,39 @@ mod tests {
     }
 
     #[test]
+    fn load_ignores_secrets_in_a_legacy_state_file() {
+        let _f = Fixture::new(
+            "legacy-secrets",
+            Some(r#"{"server":{"port":9999}}"#),
+            r#"{"server":{"port":7777},"security":{"token_secret":"s3cr3t"},
+                "embedding":{"api_key":"k"},"pgheart":{"token":"t"}}"#,
+        );
+        let loaded = load().expect("load").expect("settings");
+        assert_eq!(loaded.server.port, 7777, "non-secret state still applies");
+        assert!(loaded.security.token_secret.is_none());
+        assert!(loaded.embedding.api_key.is_none());
+        assert!(loaded.pgheart.token.is_none());
+    }
+
+    #[test]
+    fn strip_secrets_removes_nested_and_listed_credentials() {
+        let mut v = serde_json::json!({
+            "models": {"llm_api_key": "a", "provider": "local", "max_tokens": 5},
+            "workspace": {"mini_experts": [{"name": "x", "api_key": "k"}]},
+            "telegram": {"bot_token": "b"}
+        });
+        strip_secrets(&mut v);
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "models": {"provider": "local", "max_tokens": 5},
+                "workspace": {"mini_experts": [{"name": "x"}]},
+                "telegram": {}
+            })
+        );
+    }
+
+    #[test]
     fn load_survives_an_unparseable_state_file() {
         let _f = Fixture::new(
             "unparseable",
@@ -530,20 +642,4 @@ mod tests {
         let loaded = load().expect("load must not fail without defaults");
         assert!(loaded.is_none(), "nothing to load is not an error");
     }
-}
-
-/// Force 0600 on an existing state file (it may predate the mode we now pass).
-#[cfg(unix)]
-fn harden_state_file_permissions(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let metadata = std::fs::metadata(path)
-        .with_context(|| format!("failed to stat runtime state at {}", path.display()))?;
-    let mode = metadata.permissions().mode() & 0o777;
-    if mode != 0o600 {
-        let mut perms = metadata.permissions();
-        perms.set_mode(0o600);
-        std::fs::set_permissions(path, perms)
-            .with_context(|| format!("failed to restrict permissions on {}", path.display()))?;
-    }
-    Ok(())
 }
