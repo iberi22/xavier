@@ -13,6 +13,9 @@ mod persistence_tests {
         let _temp_env = crate::settings::tests::TempEnv::new();
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let config_path = temp_dir.path().join("test_hormer_config.json");
+        // #2801: HORMER persists to the runtime state file, never to the
+        // (versioned, read-only) config file.
+        let state_path = temp_dir.path().join("xavier.runtime.json");
         let default_settings = XavierSettings::default();
         std::fs::write(
             &config_path,
@@ -20,6 +23,7 @@ mod persistence_tests {
         )
         .unwrap();
         std::env::set_var("XAVIER_CONFIG_PATH", &config_path);
+        std::env::set_var("XAVIER_RUNTIME_STATE_PATH", &state_path);
 
         let initial_weights = LayerWeights::new(0.3, 0.3, 0.4);
         let policy = Arc::new(RwLock::new(NavigationPolicy::new(
@@ -54,7 +58,7 @@ mod persistence_tests {
             .update_from_interaction(initial_weights, &results, None)
             .await;
 
-        // Check if file exists and contains updated weights
+        // Check the state file exists and contains the updated weights
         let settings = XavierSettings::load()
             .unwrap()
             .expect("Settings should be loaded");
@@ -71,5 +75,15 @@ mod persistence_tests {
             settings.retrieval.learned_policy.working_weight != 0.3
                 || settings.retrieval.learned_policy.update_count > 0
         );
+
+        // The config file kept the defaults it was written with.
+        let config_after: crate::settings::XavierSettings =
+            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(
+            config_after.retrieval.learned_policy.update_count, 0,
+            "HORMER must not write the learned policy into the config file"
+        );
+
+        std::env::remove_var("XAVIER_RUNTIME_STATE_PATH");
     }
 }
