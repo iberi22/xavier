@@ -15,15 +15,15 @@ import InputArea from "./components/InputArea";
 import { MeshHubView } from "./components/Mesh/MeshHubView";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
+import { RecoveryModal } from "./components/RecoveryModal";
 import SystemAlertBanner from "./components/SystemAlertBanner";
+import { AgentResponderSelect } from "./components/Telecom/AgentResponderSelect";
 import DirectChatView from "./components/Telecom/DirectChatView";
 import GroupRoomView from "./components/Telecom/GroupRoomView";
-import { AgentResponderSelect } from "./components/Telecom/AgentResponderSelect";
 import TelecomHubView from "./components/Telecom/TelecomHubView";
-import WalletView from "./components/WalletView";
-import { RecoveryModal } from "./components/RecoveryModal";
 import TopStatusBar from "./components/TopStatusBar";
 import ErrorToast from "./components/ui/ErrorToast";
+import WalletView from "./components/WalletView";
 import { XavierLandingView } from "./components/XavierLandingView";
 import { initialBookmarks } from "./data";
 import { ThemeProvider } from "./lib/theme/theme-provider";
@@ -571,18 +571,26 @@ function AppContent() {
 	}
 
 	if (hash === "#/telecom" || hash.startsWith("#/telecom/hub")) {
-		return <TelecomHubView token={token || undefined} onClose={handleCloseMesh} />;
+		return (
+			<TelecomHubView token={token || undefined} onClose={handleCloseMesh} />
+		);
 	}
 
 	if (hash === "#/telecom/direct" || hash.startsWith("#/telecom/direct/")) {
 		return <DirectChatView onBack={handleCloseMesh} />;
 	}
 
-	if (hash === "#/telecom-group-room" || hash.startsWith("#/telecom-group-room/")) {
+	if (
+		hash === "#/telecom-group-room" ||
+		hash.startsWith("#/telecom-group-room/")
+	) {
 		return <GroupRoomView onClose={handleCloseMesh} />;
 	}
 
-	if (hash === "#/telecom/agent-responder" || hash.startsWith("#/telecom/agent-responder/")) {
+	if (
+		hash === "#/telecom/agent-responder" ||
+		hash.startsWith("#/telecom/agent-responder/")
+	) {
 		return (
 			<div className="p-8 max-w-xl mx-auto">
 				<AgentResponderSelect />
@@ -598,7 +606,10 @@ function AppContent() {
 		);
 	}
 
-	if (hash === "#/disaster-recovery" || hash.startsWith("#/disaster-recovery/")) {
+	if (
+		hash === "#/disaster-recovery" ||
+		hash.startsWith("#/disaster-recovery/")
+	) {
 		return (
 			<RecoveryModal
 				isOpen={true}
