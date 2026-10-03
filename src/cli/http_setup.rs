@@ -194,6 +194,20 @@ pub(crate) async fn handle_space_token(
     next.run(req).await
 }
 
+/// Maloca read paths that carry personal user content and therefore need a
+/// credential even though the rest of Maloca's GET surface is public.
+/// Aggregate, content-free reads (`challenges/stats`, `challenges/training-gate`)
+/// stay public. Matching is on whole path segments.
+const MALOCA_PROTECTED_READ_PREFIXES: &[&str] =
+    &["/v1/maloca/introspection", "/v1/maloca/challenges/list"];
+
+pub fn maloca_read_requires_auth(path: &str) -> bool {
+    MALOCA_PROTECTED_READ_PREFIXES.iter().any(|p| {
+        path.strip_prefix(p)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
+}
+
 /// Auth gate for Maloca's mutating endpoints (`/maloca/*`, `/v1/maloca/*`).
 ///
 /// Maloca is intentionally public for reads — GET/HEAD requests pass straight
@@ -204,12 +218,18 @@ pub(crate) async fn handle_space_token(
 /// or API token like everything else. OPTIONS also passes through unchanged
 /// here; CORS preflight is handled by the `CorsLayer` wrapping this
 /// middleware, which short-circuits OPTIONS before it ever reaches us.
+///
+/// Exception: reads that return personal introspection or challenge content
+/// (session turns, insights, votes, challenge text) are NOT public; see
+/// [`maloca_read_requires_auth`]. Those go through [`auth_middleware`] too.
 pub async fn maloca_mutation_auth_middleware(
     state: State<CliState>,
     req: Request<Body>,
     next: Next,
 ) -> Response {
-    if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
+    if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
+        && !(*req.method() != Method::OPTIONS && maloca_read_requires_auth(req.uri().path()))
+    {
         return next.run(req).await;
     }
     auth_middleware(state, req, next).await
@@ -1360,5 +1380,96 @@ mod space_token_tests {
             SpaceRole::Admin,
             &Method::POST
         ));
+    }
+
+    // ---- MALOCAPRIV: personal introspection/challenge reads need a credential ----
+
+    const PROTECTED_READS: &[&str] = &[
+        "/v1/maloca/introspection/pending-votes",
+        "/v1/maloca/introspection/available",
+        "/v1/maloca/introspection/some-session-id",
+        "/v1/maloca/challenges/list",
+    ];
+    const PUBLIC_READS: &[&str] = &[
+        "/v1/maloca/challenges/stats",
+        "/v1/maloca/challenges/training-gate",
+        "/v1/maloca/models/health",
+        "/v1/maloca/registry",
+    ];
+
+    async fn maloca_app() -> (Router, tempfile::TempDir) {
+        std::env::set_var("XAVIER_TOKEN", ROOT);
+        let (state, tmp) = test_state().await;
+        let app = xavier::server::maloca::v1_maloca_router(None, None)
+            .layer(from_fn_with_state(state, maloca_mutation_auth_middleware));
+        (app, tmp)
+    }
+
+    #[test]
+    fn maloca_read_classification_is_segment_exact() {
+        assert!(maloca_read_requires_auth("/v1/maloca/introspection"));
+        assert!(maloca_read_requires_auth("/v1/maloca/introspection/x"));
+        assert!(maloca_read_requires_auth("/v1/maloca/challenges/list"));
+        assert!(!maloca_read_requires_auth("/v1/maloca/introspectionx"));
+        assert!(!maloca_read_requires_auth("/v1/maloca/challenges/stats"));
+        assert!(!maloca_read_requires_auth("/v1/maloca/registry"));
+    }
+
+    #[tokio::test]
+    async fn maloca_personal_reads_require_auth_and_public_reads_do_not() {
+        let (app, _tmp) = maloca_app().await;
+        for path in PROTECTED_READS {
+            for m in ["GET", "HEAD"] {
+                assert_eq!(
+                    call(&app, m, path, "").await,
+                    StatusCode::UNAUTHORIZED,
+                    "{m} {path} must be 401 without a token"
+                );
+            }
+            assert_eq!(
+                call(&app, "GET", path, "wrong-token").await,
+                StatusCode::UNAUTHORIZED,
+                "{path} with a bad token"
+            );
+            let (st, _) = send(&app, "GET", path, ROOT, Hdr::XToken, None).await;
+            assert!(
+                st == StatusCode::OK || st == StatusCode::NOT_FOUND,
+                "{path} with root token gave {st}"
+            );
+            // 404 only for an unknown session id, never for the list-style reads.
+            if !path.ends_with("some-session-id") {
+                assert_eq!(st, StatusCode::OK, "{path} with root token");
+            }
+            assert_eq!(call(&app, "GET", path, ROOT).await, st);
+        }
+        for path in PUBLIC_READS {
+            assert_eq!(
+                call(&app, "GET", path, "").await,
+                StatusCode::OK,
+                "{path} must stay public"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn maloca_personal_reads_accept_readonly_jwt() {
+        let (app, _tmp) = maloca_app().await;
+        let secret = "maloca-priv-test-secret-0123456789";
+        std::env::set_var("XAVIER_JWT_SECRET", secret);
+        let user = xavier::security::auth::User::new(
+            "ro@example.invalid".into(),
+            "ro".into(),
+            xavier::security::auth::UserRole::Readonly,
+        );
+        let jwt = xavier::security::auth::generate_jwt(&user, secret.as_bytes()).unwrap();
+        let mut results = Vec::new();
+        for path in PROTECTED_READS {
+            results.push((path, call(&app, "GET", path, &jwt).await));
+        }
+        std::env::remove_var("XAVIER_JWT_SECRET");
+        for (path, st) in results {
+            assert_ne!(st, StatusCode::UNAUTHORIZED, "{path} with readonly JWT");
+            assert_ne!(st, StatusCode::FORBIDDEN, "{path} with readonly JWT");
+        }
     }
 }
