@@ -4,6 +4,7 @@
 //! providing the public API surface for module consumers.
 pub mod config;
 pub mod ops;
+pub mod protocol;
 pub mod registry;
 pub mod state;
 pub mod templates;
@@ -11,6 +12,7 @@ pub mod usage;
 
 pub use config::*;
 pub use ops::*;
+pub use protocol::*;
 pub use registry::*;
 pub use state::*;
 pub use templates::*;
