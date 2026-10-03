@@ -1244,18 +1244,23 @@ impl VecSqliteMemoryStore {
                 Ok(best_cand)
             }).await;
 
-            if let Ok(Some((mut existing_record, mut similarity))) = query_res {
+            if let Ok(Some((existing_record, mut similarity))) = query_res {
                 if !existing_record.embedding.is_empty() && !record.embedding.is_empty() {
                     similarity = cosine_similarity(&record.embedding, &existing_record.embedding);
                 }
-                if similarity >= dedup_settings.threshold {
+                // Candidates come out of the query already decrypted. A row that
+                // could not be decrypted (locked private key) carries the locked
+                // placeholder and must never be merged: it would overwrite the
+                // real content.
+                let dedup_readable = similarity >= dedup_settings.threshold
+                    && !super::at_rest::is_locked_placeholder(&existing_record);
+                if dedup_readable {
                     tracing::info!(
                         "Semantic dedup (similarity {} >= {}): Updating existing memory {} with new content",
                         similarity,
                         dedup_settings.threshold,
                         existing_record.id
                     );
-                    let _ = super::at_rest::decrypt_record_in_place(&mut existing_record);
 
                     if is_superset(&record.content, &existing_record.content) {
                         let existing_revisions = existing_record.revisions.clone();
@@ -1292,10 +1297,12 @@ impl VecSqliteMemoryStore {
 
         // Per-record envelope encryption at rest (always on when a node key
         // resolves; plaintext + warning otherwise, never a startup failure).
+        // Private rows (everything except explicitly public) use the
+        // default-space key (XDK2) once its keystore exists.
         // Legacy `encryption_at_rest_enabled` KEK path is retired for this
         // store: the node record key (XAVIER_RECORD_KEY / node/record.key)
         // replaces it. Reads still understand legacy KEK rows.
-        super::at_rest::encrypt_columns_for_write(&mut record)?;
+        super::at_rest::encrypt_for_write(&mut record)?;
 
         Ok(record)
     }
@@ -1359,6 +1366,22 @@ impl VecSqliteMemoryStore {
                 record.embedding_attempts,
             ],
         )?;
+
+        // Plaintext classification index (not secret). Best effort: stores whose
+        // schema predates the column keep working.
+        // Encrypted rows carry the level resolved before encryption; plaintext
+        // rows are classified from their own metadata.
+        let level = if record.encrypted_dek.is_some() {
+            record.clearance as i64
+        } else {
+            super::at_rest::clearance_level_for(&record.metadata, &record.path)
+        };
+        if let Err(e) = conn.execute(
+            "UPDATE memory_records SET clearance_level = ?1 WHERE id = ?2",
+            params![level, record.id],
+        ) {
+            tracing::debug!("clearance_level not recorded: {e}");
+        }
 
         graph::sync_memory_entities(conn, &record.workspace_id, record)?;
 

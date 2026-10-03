@@ -145,6 +145,78 @@ impl KeyHandle {
     }
 }
 
+/// Space id of the default workspace keystore (`spaces/default/keystore.json`).
+pub const DEFAULT_SPACE_ID: &str = "default";
+
+impl KeyHandle {
+    /// Seal `plain` as an `xr1:` record string under this key. AD binds the
+    /// space id, the record kind and the record id; fresh random nonce each call.
+    /// Used by callers that hold a handle but no [`KeyRing`] codec (default
+    /// store rows).
+    pub fn seal_record(
+        &self,
+        space_id: &str,
+        kind: &str,
+        record_id: &str,
+        plain: &str,
+    ) -> Result<String> {
+        let ad = record_ad(space_id, kind, record_id);
+        let (nonce, ct) = aead_seal(self.bytes(), plain.as_bytes(), &ad)?;
+        let mut raw = nonce.to_vec();
+        raw.extend_from_slice(&ct);
+        Ok(format!("{RECORD_PREFIX}{}", hex_encode(&raw)))
+    }
+
+    /// Inverse of [`KeyHandle::seal_record`]. Anything that is not a valid
+    /// `xr1:` record for this exact (space, kind, record id) is an error;
+    /// there is no plaintext fallback.
+    pub fn open_record(
+        &self,
+        space_id: &str,
+        kind: &str,
+        record_id: &str,
+        stored: &str,
+    ) -> Result<String> {
+        let body = stored
+            .strip_prefix(RECORD_PREFIX)
+            .ok_or_else(|| anyhow!("record is not encrypted (refusing plaintext)"))?;
+        let raw = hex_decode(body).ok_or_else(|| anyhow!("record is corrupt"))?;
+        if raw.len() < NONCE_LEN {
+            return Err(anyhow!("record is corrupt"));
+        }
+        let (nonce, ct) = raw.split_at(NONCE_LEN);
+        let ad = record_ad(space_id, kind, record_id);
+        let pt = aead_open(self.bytes(), nonce, ct, &ad)
+            .map_err(|_| anyhow!("record failed authentication"))?;
+        String::from_utf8(pt.as_bytes().to_vec()).map_err(|_| anyhow!("record is not valid UTF-8"))
+    }
+
+    /// Keyed digest (HMAC-SHA256 under a subkey derived from this key) used
+    /// for tamper-evident verification without storing plain hashes of
+    /// private data. Returns lowercase hex.
+    pub fn verify_mac(&self, label: &str, data: &[u8]) -> String {
+        let mut sk = Sha256::new();
+        sk.update(b"xavier-record-verify-v1");
+        sk.update(self.bytes());
+        let sub = sk.finalize();
+        let mut ipad = [0x36u8; 64];
+        let mut opad = [0x5cu8; 64];
+        for (i, b) in sub.iter().enumerate() {
+            ipad[i] ^= b;
+            opad[i] ^= b;
+        }
+        let mut inner = Sha256::new();
+        inner.update(ipad);
+        inner.update((label.len() as u32).to_be_bytes());
+        inner.update(label.as_bytes());
+        inner.update(data);
+        let mut outer = Sha256::new();
+        outer.update(opad);
+        outer.update(inner.finalize());
+        hex_encode(&outer.finalize())
+    }
+}
+
 impl fmt::Debug for KeyHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("KeyHandle(<redacted>)")
