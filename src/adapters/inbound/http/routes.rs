@@ -81,11 +81,10 @@ pub fn init_space_manager(manager: Arc<crate::espacio::SpaceManager>) {
     }
 }
 
-/// Get the global space manager, initializing with default path if needed
-pub fn get_space_manager() -> Arc<crate::espacio::SpaceManager> {
-    SPACE_MANAGER
-        .get_or_init(|| Arc::new(crate::espacio::SpaceManager::new("data/spaces")))
-        .clone()
+/// Get the global space manager, if the daemon opened one. There is no
+/// default: a relative `data/spaces` fallback would write under the CWD.
+pub fn get_space_manager() -> Option<Arc<crate::espacio::SpaceManager>> {
+    SPACE_MANAGER.get().cloned()
 }
 
 // ─── Router ─────────────────────────────────────────────────────────────────
@@ -1042,13 +1041,166 @@ where
         )
 }
 
+/// 503 returned by every espacio route when the node runs without a
+/// `SpaceManager` (`XAVIER_SPACES=off` or key init failed).
+fn espacio_disabled() -> axum::response::Response {
+    (
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({"status":"error","message":"espacio is disabled on this node"})),
+    )
+        .into_response()
+}
+
+/// Routes mounted in the PRODUCTION router under `/api/v1/espacio`.
+///
+/// `/admin/*` is root-only (see `ROOT_ONLY_PREFIXES`). `/spaces/{id}` serves
+/// only the space's own `xsp_` token: the handler itself requires the
+/// `SpaceAuth` the token middleware attaches (no other credential, scoped
+/// `xav_` tokens included, can address a space through it).
+pub fn espacio_production_routes<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    Router::new()
+        .route(
+            "/admin/spaces",
+            post(espacio_admin_create_handler).get(espacio_list_handler),
+        )
+        .route(
+            "/admin/spaces/{id}",
+            get(espacio_get_handler).delete(espacio_delete_handler),
+        )
+        .route(
+            "/spaces/{id}",
+            get(espacio_own_get_handler).delete(espacio_own_delete_handler),
+        )
+}
+
+/// True when the request carries a space token for exactly `id`.
+fn is_own_space(
+    auth: &Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    id: &str,
+) -> bool {
+    auth.as_ref().is_some_and(|a| a.0.space_id == id)
+}
+
+fn espacio_forbidden() -> axum::response::Response {
+    (
+        axum::http::StatusCode::FORBIDDEN,
+        Json(serde_json::json!({"status":"error","message":"Forbidden"})),
+    )
+        .into_response()
+}
+
+/// GET /api/v1/espacio/spaces/{id} for the space's own token.
+pub async fn espacio_own_get_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if !is_own_space(&auth, &id) {
+        return espacio_forbidden();
+    }
+    espacio_get_handler(extension, axum::extract::Path(id)).await
+}
+
+/// DELETE /api/v1/espacio/spaces/{id} for the space's own admin token.
+pub async fn espacio_own_delete_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if !is_own_space(&auth, &id) {
+        return espacio_forbidden();
+    }
+    espacio_delete_handler(extension, axum::extract::Path(id)).await
+}
+
+/// POST /api/v1/espacio/admin/spaces - root creates a space. The response
+/// carries the one-time owner `xsp_` token and the one-time recovery code;
+/// neither is stored in clear nor logged.
+pub async fn espacio_admin_create_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    Json(payload): Json<crate::espacio::CreateSpaceRequest>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    let id = payload.id.clone();
+    let owner = payload.owner_node.clone();
+    let created = manager
+        .create_with_keys(
+            payload.id,
+            payload.name,
+            payload.description,
+            payload.owner_node,
+            payload.is_public,
+            crate::espacio::KeyOptions::default(),
+        )
+        .await;
+    let (info, recovery) = match created {
+        Ok(v) => v,
+        Err(err) => return espacio_error_response(err),
+    };
+    let issued = manager
+        .stores()
+        .get(&id)
+        .and_then(|s| s.issue_token(&id, &owner, crate::espacio::SpaceRole::Admin, None));
+    let token = match issued {
+        Ok(t) => t,
+        Err(err) => {
+            let _ = manager.delete(&id).await;
+            return espacio_error_response(err);
+        }
+    };
+    let mut body = serde_json::to_value(&info).unwrap_or_default();
+    if let Some(obj) = body.as_object_mut() {
+        obj.insert("owner_token".into(), token.raw.into());
+        obj.insert(
+            "recovery_code".into(),
+            recovery
+                .map(|c| serde_json::Value::String(c.expose().to_string()))
+                .unwrap_or(serde_json::Value::Null),
+        );
+        obj.insert(
+            "note".into(),
+            "owner_token and recovery_code are shown once; store them now".into(),
+        );
+    }
+    (
+        StatusCode::CREATED,
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(body),
+    )
+        .into_response()
+}
+
+fn espacio_error_response(err: anyhow::Error) -> axum::response::Response {
+    use crate::espacio::SpaceError;
+    use axum::http::StatusCode;
+    let status = match err.downcast_ref::<SpaceError>() {
+        Some(SpaceError::AlreadyExists(_)) => StatusCode::CONFLICT,
+        Some(SpaceError::InvalidId(_)) => StatusCode::BAD_REQUEST,
+        Some(SpaceError::NotFound(_)) => StatusCode::NOT_FOUND,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (
+        status,
+        crate::adapters::inbound::http::handlers::error_json(err),
+    )
+        .into_response()
+}
+
 /// POST /api/v1/espacio/spaces - create a new space
 pub async fn espacio_create_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     Json(payload): Json<crate::espacio::CreateSpaceRequest>,
-) -> impl axum::response::IntoResponse {
+) -> axum::response::Response {
     use axum::http::StatusCode;
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
     match manager
         .create(
             payload.id,
@@ -1102,19 +1254,23 @@ pub async fn espacio_create_handler(
 /// GET /api/v1/espacio/spaces - list all spaces
 pub async fn espacio_list_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
-) -> impl axum::response::IntoResponse {
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+) -> axum::response::Response {
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
     let spaces = manager.list().await;
-    Json(spaces)
+    Json(spaces).into_response()
 }
 
 /// GET /api/v1/espacio/spaces/{id} - get space details by ID
 pub async fn espacio_get_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> impl axum::response::IntoResponse {
+) -> axum::response::Response {
     use axum::http::StatusCode;
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
     match manager.get(&id).await {
         Ok(info) => Json(serde_json::to_value(info).unwrap_or_default()).into_response(),
         Err(err) => {
@@ -1146,9 +1302,11 @@ pub async fn espacio_get_handler(
 pub async fn espacio_delete_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> impl axum::response::IntoResponse {
+) -> axum::response::Response {
     use axum::http::StatusCode;
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
     match manager.delete(&id).await {
         Ok(()) => Json(serde_json::json!({
             "status": "ok",
@@ -1185,14 +1343,17 @@ pub async fn espacio_delete_handler(
 pub async fn espacio_isolation_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     axum::extract::Path((id, other)): axum::extract::Path<(String, String)>,
-) -> impl axum::response::IntoResponse {
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+) -> axum::response::Response {
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
     let isolated = manager.are_isolated(&id, &other).await;
     Json(serde_json::json!({
         "space_a": id,
         "space_b": other,
         "isolated": isolated,
     }))
+    .into_response()
 }
 
 // ─── Content Redaction API ─────────────────────────────────────────────────

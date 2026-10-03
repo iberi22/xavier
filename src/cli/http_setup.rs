@@ -47,6 +47,10 @@ const ROOT_ONLY_PREFIXES: &[&str] = &[
     // DB_MASTER_KEY, node_secret_*). It used to stop at the role gate alone,
     // so a scoped `xav_` token holding `all` walked past the scope layer.
     "/v1/clavis",
+    // Espacio admin plane (create, list all, get or delete any space). Space
+    // tokens only pass the narrow own-space allowlist in
+    // `space_token_may_access`, which also refuses these paths.
+    "/api/v1/espacio/admin",
 ];
 
 /// POST routes that only read, so they need `read` and not `write`.
