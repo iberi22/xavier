@@ -85,9 +85,31 @@ impl HumanChallengeStore {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(INIT_SQL)?;
         conn.execute_batch(MIGRATION_SQL)?;
+        Self::migrate_columns(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// Additive column migrations for databases created by older versions.
+    fn migrate_columns(conn: &Connection) -> SqliteResult<()> {
+        let has_consent = {
+            let mut stmt = conn.prepare("PRAGMA table_info(introspection_sessions)")?;
+            let names = stmt.query_map([], |row| row.get::<_, String>(1))?;
+            let mut found = false;
+            for n in names {
+                if n? == "training_consent" {
+                    found = true;
+                }
+            }
+            found
+        };
+        if !has_consent {
+            conn.execute_batch(
+                "ALTER TABLE introspection_sessions ADD COLUMN training_consent INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        Ok(())
     }
 
     /// Initialize an in-memory store for testing
@@ -95,6 +117,7 @@ impl HumanChallengeStore {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(INIT_SQL)?;
         conn.execute_batch(MIGRATION_SQL)?;
+        Self::migrate_columns(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -317,6 +340,33 @@ impl HumanChallengeStore {
         Ok(results)
     }
 
+    /// All curation votes for a challenge id (eligible or not), oldest first.
+    pub fn get_votes_for_challenge(&self, challenge_id: &str) -> SqliteResult<Vec<CurationVote>> {
+        use crate::humanchallenge::types::CurationVerdict;
+
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at
+             FROM curation_votes WHERE challenge_id = ?1 ORDER BY voted_at ASC, id ASC",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![challenge_id], |row| {
+            let domain_tags_json: String = row.get(5)?;
+            let voted_ts: i64 = row.get(7)?;
+            Ok(CurationVote {
+                id: row.get(0)?,
+                challenge_id: row.get(1)?,
+                verdict: CurationVerdict::from_str(&row.get::<_, String>(2)?)
+                    .unwrap_or(CurationVerdict::Reject),
+                curated_content: row.get(3)?,
+                fact_verified: row.get::<_, i32>(4)? != 0,
+                domain_tags: serde_json::from_str(&domain_tags_json).unwrap_or_default(),
+                training_eligible: row.get::<_, i32>(6)? != 0,
+                voted_at: DateTime::from_timestamp(voted_ts, 0).unwrap_or_else(Utc::now),
+            })
+        })?;
+        rows.collect()
+    }
+
     /// Count accepted/refined training-eligible votes
     pub fn count_training_eligible(&self) -> SqliteResult<usize> {
         let conn = self.conn.lock().unwrap();
@@ -344,8 +394,8 @@ impl HumanChallengeStore {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO introspection_sessions
-             (id, challenge_id, technique, turns, depth_score, insights, status, started_at, completed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             (id, challenge_id, technique, turns, depth_score, insights, status, started_at, completed_at, training_consent)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 session.id,
                 session.challenge_id,
@@ -355,7 +405,8 @@ impl HumanChallengeStore {
                 insights_json,
                 session.status.as_str(),
                 started_ts,
-                completed_ts
+                completed_ts,
+                if session.training_consent { 1 } else { 0 }
             ],
         )?;
         Ok(())
@@ -373,7 +424,7 @@ impl HumanChallengeStore {
 
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, challenge_id, technique, turns, depth_score, insights, status, started_at, completed_at
+            "SELECT id, challenge_id, technique, turns, depth_score, insights, status, started_at, completed_at, training_consent
              FROM introspection_sessions WHERE id = ?1",
         )?;
 
@@ -402,6 +453,7 @@ impl HumanChallengeStore {
                 status: IntrospectionStatus::from_str(&row.get::<_, String>(6)?).unwrap(),
                 started_at: DateTime::from_timestamp(started_ts, 0).unwrap_or_else(Utc::now),
                 completed_at: completed_ts.and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                training_consent: row.get::<_, i32>(9)? != 0,
             }))
         } else {
             Ok(None)
