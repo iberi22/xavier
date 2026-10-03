@@ -1579,6 +1579,89 @@ pub mod memory {
             public_only: Option<bool>,
         },
 
+        /// Encrypt private rows of the default workspace under the default-space key.
+        ///
+        /// Private = everything EXCEPT records explicitly marked public
+        /// (metadata.clearance UNCLASSIFIED/PUBLIC). INTERNAL (the default) is
+        /// private; missing or garbled metadata is private (fail closed).
+        /// Default is --dry-run: counts only, no writes, no key creation.
+        /// --apply needs --backup-path (verified VACUUM INTO backup with
+        /// SHA-256, quick_check and row-count check; abort on any mismatch),
+        /// works in batches of 200 in IMMEDIATE transactions with a resumable
+        /// cursor, verifies every migrated row, rebuilds FTS, truncates the WAL
+        /// and runs VACUUM. A new keystore prints its recovery code ONCE.
+        ///
+        /// Known leaks that stay: embeddings (kept in clear locally so vector
+        /// search works; never exported to cloud sync/backup), entities and
+        /// relations already extracted into the graph tables, the revisions
+        /// and relation columns, paths and timestamps, and memory_chain
+        /// hashes (chain rows are not rewritten; graph extraction is not
+        /// re-run). Old backups and cloud copies still hold plaintext.
+        #[command(name = "encrypt-private")]
+        EncryptPrivate {
+            /// Count only (default unless --apply)
+            #[arg(long)]
+            dry_run: bool,
+            /// Actually encrypt
+            #[arg(long)]
+            apply: bool,
+            /// Backup file (or existing directory); required for --apply (not for --resume)
+            #[arg(long)]
+            backup_path: Option<PathBuf>,
+            /// Rows per transaction
+            #[arg(long, default_value_t = 200)]
+            batch: usize,
+            /// Stop after this many encrypted rows (resume later)
+            #[arg(long)]
+            max_rows: Option<u64>,
+            /// Sleep between batches (ms)
+            #[arg(long, default_value_t = 0)]
+            rate_limit_ms: u64,
+            /// Continue the unfinished job from its cursor
+            #[arg(long)]
+            resume: bool,
+            /// Refuse to run while another process holds the DB (default)
+            #[arg(long, conflicts_with = "online")]
+            offline: bool,
+            /// Run while the daemon is up (busy timeout + IMMEDIATE batches)
+            #[arg(long)]
+            online: bool,
+        },
+
+        /// Restore XDK2 rows of the default workspace to plaintext columns.
+        ///
+        /// By key (node unlock, or --recovery-code) or --from-backup <file>,
+        /// which copies the original columns byte-for-byte from a plaintext
+        /// backup (the path when the key is lost). Default is --dry-run.
+        /// --apply also requires --backup-path (a verified backup first).
+        #[command(name = "decrypt-private")]
+        DecryptPrivate {
+            /// Count only (default unless --apply)
+            #[arg(long)]
+            dry_run: bool,
+            /// Actually decrypt
+            #[arg(long)]
+            apply: bool,
+            /// Backup file (or existing directory); required for --apply (not for --resume)
+            #[arg(long)]
+            backup_path: Option<PathBuf>,
+            /// Restore from this plaintext backup instead of using the key
+            #[arg(long)]
+            from_backup: Option<PathBuf>,
+            /// Unlock with the recovery code instead of the node key
+            #[arg(long)]
+            recovery_code: Option<String>,
+            /// Rows per transaction
+            #[arg(long, default_value_t = 200)]
+            batch: usize,
+            /// Continue the unfinished job from its cursor
+            #[arg(long)]
+            resume: bool,
+            /// Run while the daemon is up (busy timeout + IMMEDIATE batches)
+            #[arg(long)]
+            online: bool,
+        },
+
         /// Prune low-utility or stale memories
         Prune {
             /// Filter memories by path prefix
