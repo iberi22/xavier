@@ -48,7 +48,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -295,6 +295,46 @@ impl AccessRecorder {
         grouped
     }
 
+    /// Take the pending accesses of the workspaces `keep` accepts; every other
+    /// workspace stays queued untouched.
+    fn drain_pending_where(
+        &self,
+        mut keep: impl FnMut(&str) -> bool,
+    ) -> HashMap<String, Vec<(String, u64)>> {
+        let mut pending = self.pending.lock().expect("access: pending lock poisoned");
+        let mut grouped: HashMap<String, Vec<(String, u64)>> = HashMap::new();
+        pending.retain(|(workspace_id, memory_id), delta| {
+            if keep(workspace_id) {
+                grouped
+                    .entry(workspace_id.clone())
+                    .or_default()
+                    .push((memory_id.clone(), *delta));
+                false
+            } else {
+                true
+            }
+        });
+        grouped
+    }
+
+    /// Distinct workspace ids that have an unflushed access.
+    fn pending_workspaces(&self) -> Vec<String> {
+        let pending = self.pending.lock().expect("access: pending lock poisoned");
+        let set: HashSet<&String> = pending
+            .keys()
+            .map(|(workspace_id, _)| workspace_id)
+            .collect();
+        set.into_iter().cloned().collect()
+    }
+
+    /// Drop the unflushed accesses of one workspace (its store is gone).
+    fn discard_workspace(&self, workspace_id: &str) {
+        self.pending
+            .lock()
+            .expect("access: pending lock poisoned")
+            .retain(|(ws, _), _| ws != workspace_id);
+    }
+
     /// Put drained accesses back (flush failed; they must not be lost).
     pub fn restore_pending(&self, drained: Vec<(String, String, u64)>) {
         let mut pending = self.pending.lock().expect("access: pending lock poisoned");
@@ -373,6 +413,48 @@ impl AccessRecorder {
             .clear();
         self.flush_failures.store(0, Ordering::Release);
         self.mark_flushed();
+        STORES
+            .lock()
+            .expect("access: store registry poisoned")
+            .clear();
+    }
+}
+
+/// Store that owns each workspace's access rows. The recorder is process-wide,
+/// so a flush must write a workspace's accesses ONLY into that workspace's own
+/// store (a space store never receives another workspace's rows). Weak: a
+/// registered store that was dropped (evicted/trashed space) is not kept alive.
+static STORES: LazyLock<Mutex<HashMap<String, Weak<dyn MemoryStore>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn register_store(workspace_id: &str, store: &Arc<dyn MemoryStore>) {
+    STORES
+        .lock()
+        .expect("access: store registry poisoned")
+        .insert(workspace_id.to_string(), Arc::downgrade(store));
+}
+
+/// Where a workspace's pending accesses go.
+enum FlushTarget {
+    /// Its registered, still-alive store.
+    Own(Arc<dyn MemoryStore>),
+    /// Never registered: the caller's store (legacy single-store path).
+    Caller,
+    /// Registered but the store is gone: nothing can receive them.
+    Gone,
+}
+
+fn flush_target(workspace_id: &str) -> FlushTarget {
+    match STORES
+        .lock()
+        .expect("access: store registry poisoned")
+        .get(workspace_id)
+    {
+        Some(weak) => match weak.upgrade() {
+            Some(store) => FlushTarget::Own(store),
+            None => FlushTarget::Gone,
+        },
+        None => FlushTarget::Caller,
     }
 }
 
@@ -419,6 +501,9 @@ pub async fn record_user_access_ids(
     // in-memory map, so doing it afterwards would silently overwrite the counts
     // this very call is recording.
     ensure_hydrated(memory).await;
+    if let Some(store) = memory.store().await {
+        register_store(workspace_id, &store);
+    }
 
     let recorded = RECORDER.record(workspace_id, ids, Utc::now());
     for id in ids {
@@ -485,6 +570,8 @@ pub async fn maybe_flush(memory: &QmdMemory) {
 /// must not have.
 pub fn ensure_flush_worker(store: Arc<dyn MemoryStore>) {
     static WORKER: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    // Weak: the first caller may be a space store that is later evicted.
+    let store = Arc::downgrade(&store);
     WORKER.get_or_init(|| {
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(DEFAULT_FLUSH_INTERVAL);
@@ -496,7 +583,8 @@ pub fn ensure_flush_worker(store: Arc<dyn MemoryStore>) {
                 if RECORDER.pending_count() == 0 {
                     continue;
                 }
-                match flush_pending(&*store).await {
+                let caller = store.upgrade();
+                match flush_inner(caller.as_deref()).await {
                     Ok(written) if written > 0 => {
                         tracing::debug!(written, "access: periodic flush drained buffer");
                     }
@@ -626,7 +714,8 @@ impl Drop for Unwritten {
     }
 }
 
-/// Flush every buffered access into `store`.
+/// Flush buffered accesses, each into its workspace's OWN store; `store` only
+/// receives workspaces that were never registered (see [`flush_inner`]).
 ///
 /// One `record_accesses` call per workspace, i.e. one multi-row upsert per
 /// workspace rather than one statement per read.
@@ -645,8 +734,28 @@ impl Drop for Unwritten {
 /// twice. A restore may land while a concurrent flush is draining, in which case
 /// those accesses simply join the next batch and are still written exactly once.
 pub async fn flush_pending(store: &dyn MemoryStore) -> Result<usize> {
+    flush_inner(Some(store)).await
+}
+
+/// Flush into each workspace's OWN store. Workspaces never registered use
+/// `caller` when given (otherwise they stay queued); workspaces whose store is
+/// gone are dropped.
+async fn flush_inner(caller: Option<&dyn MemoryStore>) -> Result<usize> {
+    let mut targets: HashMap<String, Option<Arc<dyn MemoryStore>>> = HashMap::new();
+    for workspace_id in RECORDER.pending_workspaces() {
+        match flush_target(&workspace_id) {
+            FlushTarget::Own(store) => {
+                targets.insert(workspace_id, Some(store));
+            }
+            FlushTarget::Caller if caller.is_some() => {
+                targets.insert(workspace_id, None);
+            }
+            FlushTarget::Caller => {}
+            FlushTarget::Gone => RECORDER.discard_workspace(&workspace_id),
+        }
+    }
     let mut unwritten = Unwritten {
-        drained: RECORDER.drain_pending(),
+        drained: RECORDER.drain_pending_where(|ws| targets.contains_key(ws)),
     };
     if unwritten.drained.is_empty() {
         return Ok(0);
@@ -658,9 +767,21 @@ pub async fn flush_pending(store: &dyn MemoryStore) -> Result<usize> {
     let workspaces: Vec<String> = unwritten.drained.keys().cloned().collect();
     let mut written = 0;
     for workspace_id in workspaces {
-        let result = store
-            .record_accesses(&workspace_id, &unwritten.drained[&workspace_id])
-            .await;
+        let result = match targets.get(&workspace_id) {
+            Some(Some(own)) => {
+                own.record_accesses(&workspace_id, &unwritten.drained[&workspace_id])
+                    .await
+            }
+            Some(None) => match caller {
+                Some(store) => {
+                    store
+                        .record_accesses(&workspace_id, &unwritten.drained[&workspace_id])
+                        .await
+                }
+                None => Ok(0),
+            },
+            None => Ok(0),
+        };
         match result {
             Ok(_) => {
                 written += unwritten
@@ -789,4 +910,87 @@ pub async fn prune_precondition(
         observation_started_at(store).await?,
         now,
     ))
+}
+
+#[cfg(test)]
+mod flush_scope_tests {
+    use super::*;
+    use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+    use serial_test::serial;
+    use tokio::sync::RwLock as AsyncRwLock;
+
+    async fn ws_store(
+        dir: &tempfile::TempDir,
+        tag: &str,
+        ws: &str,
+    ) -> (Arc<QmdMemory>, MemoryManager, Arc<dyn MemoryStore>) {
+        let store = VecSqliteMemoryStore::new(VecSqliteStoreConfig {
+            path: dir.path().join(format!("{tag}.sqlite3")),
+            embedding_dimensions: 128,
+        })
+        .await
+        .expect("store");
+        store.ensure_access_instrumentation().await.expect("instr");
+        let store: Arc<dyn MemoryStore> = Arc::new(store);
+        let memory = Arc::new(QmdMemory::new_with_workspace(
+            Arc::new(AsyncRwLock::new(Vec::new())),
+            ws,
+        ));
+        memory.set_store(Arc::clone(&store)).await;
+        let manager = MemoryManager::new(Arc::clone(&memory), None);
+        (memory, manager, store)
+    }
+
+    fn one(id: &str) -> MemoryDocument {
+        MemoryDocument {
+            id: Some(id.to_string()),
+            path: format!("notes/{id}"),
+            content: id.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn flush_never_writes_another_workspaces_entries_into_a_store() {
+        RECORDER.reset();
+        let dir = tempfile::tempdir().unwrap();
+        let (mem_a, man_a, store_a) = ws_store(&dir, "a", "ws-scope-a").await;
+        let (mem_b, man_b, store_b) = ws_store(&dir, "b", "ws-scope-b").await;
+        record_user_access(&man_a, &mem_a, &[one("only-a")]).await;
+        record_user_access(&man_b, &mem_b, &[one("only-b")]).await;
+
+        // Flushing through B's store must not put A's rows into B's database.
+        flush_pending(&*store_b).await.expect("flush");
+
+        let in_a = store_a.load_access_stats("ws-scope-a").await.unwrap();
+        let a_in_b = store_b.load_access_stats("ws-scope-a").await.unwrap();
+        let in_b = store_b.load_access_stats("ws-scope-b").await.unwrap();
+        let b_in_a = store_a.load_access_stats("ws-scope-b").await.unwrap();
+        assert_eq!(in_a.len(), 1, "A's entry lands in A's store");
+        assert_eq!(in_b.len(), 1, "B's entry lands in B's store");
+        assert!(a_in_b.is_empty(), "A's entry never written into B's store");
+        assert!(b_in_a.is_empty(), "B's entry never written into A's store");
+        RECORDER.reset();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn entries_of_a_dropped_store_are_not_flushed_elsewhere() {
+        RECORDER.reset();
+        let dir = tempfile::tempdir().unwrap();
+        let (mem_a, man_a, store_a) = ws_store(&dir, "gone", "ws-scope-gone").await;
+        let (_mem_b, _man_b, store_b) = ws_store(&dir, "kept", "ws-scope-kept").await;
+        record_user_access(&man_a, &mem_a, &[one("x")]).await;
+        drop((mem_a, man_a, store_a));
+
+        flush_pending(&*store_b).await.expect("flush");
+        assert!(store_b
+            .load_access_stats("ws-scope-gone")
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(RECORDER.pending_count(), 0, "orphaned entries are dropped");
+        RECORDER.reset();
+    }
 }
