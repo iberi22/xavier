@@ -1694,7 +1694,8 @@ pub enum MiniExpertCommand {
     Serve {
         #[arg(long)]
         name: Option<String>,
-        #[arg(long, default_value_t = 11434)]
-        port: u16,
+        /// Unsupported (rejected): Ollama's address comes from XAVIER_LOCAL_LLM_URL
+        #[arg(long)]
+        port: Option<u16>,
     },
 }

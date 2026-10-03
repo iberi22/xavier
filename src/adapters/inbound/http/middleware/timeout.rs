@@ -46,6 +46,7 @@ pub fn is_bulk_path(path: &str) -> bool {
         || path.contains("/sync")
         || path.contains("/vacuum")
         || path.contains("/prune")
+        || path.ends_with("/mini-experts/invoke")
 }
 
 /// Axum middleware that limits request processing time to `resolve_timeout_duration()`
@@ -113,6 +114,8 @@ mod tests {
         assert!(is_bulk_path("/xavier/opencode/index"));
         assert!(is_bulk_path("/code-graph/scan"));
         assert!(is_bulk_path("/memory/prune"));
+        assert!(is_bulk_path("/v1/agents/mini-experts/invoke"));
+        assert!(!is_bulk_path("/v1/agents/mini-experts"));
         assert!(!is_bulk_path("/health"));
         assert!(!is_bulk_path("/memory/search"));
     }
