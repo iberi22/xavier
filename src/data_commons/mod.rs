@@ -37,6 +37,7 @@ pub mod pricing;
 pub mod privacy;
 pub mod readiness;
 pub mod reputation;
+pub mod sources;
 pub mod telemetry_db;
 pub mod training;
 pub mod types;
