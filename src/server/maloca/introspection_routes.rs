@@ -60,6 +60,14 @@ pub struct ProcessTurnRequest {
     pub challenge_description: String,
 }
 
+/// Optional body of `POST /v1/maloca/introspection/{id}/complete`.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct CompleteIntrospectionRequest {
+    /// Explicit consent to use the insights for model training (default false).
+    #[serde(default)]
+    pub training_consent: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct IntrospectionListResponse {
     pub total: usize,
@@ -122,8 +130,27 @@ pub async fn process_turn_handler(
 pub async fn complete_introspection_handler(
     State(state): State<IntrospectionState>,
     Path(session_id): Path<String>,
+    body: axum::body::Bytes,
 ) -> impl IntoResponse {
-    match state.engine.complete_session(&session_id) {
+    // The body is optional: empty means defaults (no training consent).
+    let payload: CompleteIntrospectionRequest = if body.iter().all(|b| b.is_ascii_whitespace()) {
+        CompleteIntrospectionRequest::default()
+    } else {
+        match serde_json::from_slice(&body) {
+            Ok(p) => p,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": format!("invalid body: {e}") })),
+                )
+                    .into_response()
+            }
+        }
+    };
+    match state
+        .engine
+        .complete_session_with_consent(&session_id, payload.training_consent)
+    {
         Ok(session) => (
             StatusCode::OK,
             Json(serde_json::json!({ "session": session })),
@@ -408,5 +435,94 @@ mod tests {
 
         let not_found_resp = app.oneshot(get_nonexistent_req).await.unwrap();
         assert_eq!(not_found_resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    async fn call(
+        app: &Router,
+        method: &str,
+        uri: &str,
+        body: serde_json::Value,
+    ) -> serde_json::Value {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert!(resp.status().is_success(), "{uri} -> {}", resp.status());
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    /// start -> turn -> complete(consent) over HTTP against a file-backed store.
+    async fn run_flow(db: &std::path::Path, challenge: &str, consent: bool) -> String {
+        let store = Arc::new(HumanChallengeStore::new(db).unwrap());
+        let app = router(IntrospectionState::new(store));
+        let started = call(
+            &app,
+            "POST",
+            "/v1/maloca/introspection/start",
+            serde_json::json!({
+                "challenge_id": challenge,
+                "challenge_type": "decision",
+                "description": "Pick a storage engine",
+                "technique": "pre_mortem",
+            }),
+        )
+        .await;
+        let id = started["session"]["id"].as_str().unwrap().to_string();
+        call(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/{id}/turn"),
+            serde_json::json!({
+                "human_input": "We would lose data because the WAL checkpoint never runs under sustained load.",
+                "challenge_description": "Pick a storage engine",
+            }),
+        )
+        .await;
+        let done = call(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/{id}/complete"),
+            serde_json::json!({ "training_consent": consent }),
+        )
+        .await;
+        assert_eq!(done["session"]["status"], "completed");
+        assert_eq!(done["session"]["training_consent"], consent);
+        id
+    }
+
+    #[tokio::test]
+    async fn test_complete_with_consent_writes_eligible_votes_and_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("humanchallenge.db");
+        let id = run_flow(&db, "chal_consent_yes", true).await;
+
+        // Reopen the store from the same path: everything must have survived.
+        let reopened = HumanChallengeStore::new(&db).unwrap();
+        let votes = reopened
+            .get_votes_for_challenge("chal_consent_yes")
+            .unwrap();
+        assert_eq!(votes.len(), 1);
+        assert!(votes[0].training_eligible);
+        assert_eq!(reopened.count_training_eligible().unwrap(), 1);
+        let session = reopened.get_introspection_session(&id).unwrap().unwrap();
+        assert!(session.training_consent);
+        assert_eq!(session.insights.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_complete_without_consent_writes_non_eligible_votes() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("humanchallenge.db");
+        run_flow(&db, "chal_consent_no", false).await;
+
+        let reopened = HumanChallengeStore::new(&db).unwrap();
+        let votes = reopened.get_votes_for_challenge("chal_consent_no").unwrap();
+        assert_eq!(votes.len(), 1);
+        assert!(!votes[0].training_eligible);
+        assert_eq!(reopened.count_training_eligible().unwrap(), 0);
     }
 }
