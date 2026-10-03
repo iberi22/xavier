@@ -47,6 +47,10 @@ const ROOT_ONLY_PREFIXES: &[&str] = &[
     // DB_MASTER_KEY, node_secret_*). It used to stop at the role gate alone,
     // so a scoped `xav_` token holding `all` walked past the scope layer.
     "/v1/clavis",
+    // Espacio admin plane (create, list all, get or delete any space). Space
+    // tokens only pass the narrow own-space allowlist in
+    // `space_token_may_access`, which also refuses these paths.
+    "/api/v1/espacio/admin",
 ];
 
 /// POST routes that only read, so they need `read` and not `write`.
@@ -308,6 +312,10 @@ pub async fn auth_middleware(
     if is_match {
         // Root token bypasses RBAC for now as "Super Admin"
         let mut req = req;
+        // Marker only this branch inserts: root-only surfaces (espacio admin)
+        // require it rather than trusting a claimed role.
+        req.extensions_mut()
+            .insert(xavier::adapters::inbound::http::routes::RootCredential);
         req.extensions_mut().insert(SessionInfo {
             is_ephemeral: false,
             api_token: None,
@@ -364,6 +372,12 @@ pub async fn auth_middleware(
 
     // 3. Check Ephemeral Session (Zero-Trust Frontend)
     if state.session_manager.validate_session(provided_token_str) {
+        if required_scope(req.method(), req.uri().path()) == RequiredScope::RootOnly {
+            return json_response(
+                StatusCode::FORBIDDEN,
+                serde_json::json!({"status":"error","message":"Insufficient scopes"}),
+            );
+        }
         let mut req = req;
         req.extensions_mut().insert(SessionInfo {
             is_ephemeral: true,
@@ -419,6 +433,12 @@ pub async fn auth_middleware(
         if let Ok(claims) =
             xavier::security::auth::validate_jwt(provided_token_str, secret.as_bytes())
         {
+            if required_scope(req.method(), req.uri().path()) == RequiredScope::RootOnly {
+                return json_response(
+                    StatusCode::FORBIDDEN,
+                    serde_json::json!({"status":"error","message":"Insufficient scopes"}),
+                );
+            }
             let mut req = req;
             req.extensions_mut().insert(SessionInfo {
                 is_ephemeral: false,
