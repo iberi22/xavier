@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use super::channel::ChannelMessage;
 use super::invite::{SpaceInvite, SpaceRole};
-use super::keys::{KeyRing, NodeKek};
+use super::keys::{looks_encrypted, KeyRing, KeysError, NodeKek};
 use super::manager::SpaceError;
 use super::permissions::SpaceMembership;
 
@@ -53,22 +53,28 @@ pub fn validate_space_id(id: &str) -> Result<()> {
 }
 
 /// Seam for record-level encryption (WP-13j). Applied to message content.
+/// `record_id` identifies the row inside its space (message seq) and is bound
+/// into the authenticated data, so rows cannot be swapped.
 pub trait RecordCodec: Send + Sync + Debug {
     /// Plain text to the stored representation.
-    fn seal(&self, plain: &str) -> Result<String>;
+    fn seal(&self, plain: &str, record_id: &str) -> Result<String>;
     /// Stored representation back to plain text.
-    fn open(&self, stored: &str) -> Result<String>;
+    fn open(&self, stored: &str, record_id: &str) -> Result<String>;
 }
 
-/// Default codec: stores records unchanged.
+/// Default codec: stores records unchanged. It refuses to serve something
+/// that is encrypted (ciphertext is never content).
 #[derive(Debug, Default)]
 pub struct PlaintextCodec;
 
 impl RecordCodec for PlaintextCodec {
-    fn seal(&self, plain: &str) -> Result<String> {
+    fn seal(&self, plain: &str, _record_id: &str) -> Result<String> {
         Ok(plain.to_string())
     }
-    fn open(&self, stored: &str) -> Result<String> {
+    fn open(&self, stored: &str, _record_id: &str) -> Result<String> {
+        if looks_encrypted(stored) {
+            return Err(anyhow!("record is encrypted; no key available"));
+        }
         Ok(stored.to_string())
     }
 }
@@ -133,8 +139,10 @@ pub struct SpaceStore {
 }
 
 /// Ordered migration steps; index + 1 is the resulting `user_version`.
-/// Append only. WP-13l adds a `tokens` table as the next step.
-const MIGRATIONS: &[&str] = &["
+/// Append only. Step 2 adds `meta` (WP-13j encryption flag); WP-13l adds a
+/// `tokens` table as a later step.
+const MIGRATIONS: &[&str] = &[
+    "
     CREATE TABLE members (
         node_id   TEXT PRIMARY KEY,
         role      TEXT NOT NULL,
@@ -158,7 +166,16 @@ const MIGRATIONS: &[&str] = &["
         content    TEXT NOT NULL,
         created_at TEXT NOT NULL
     );
-"];
+",
+    "
+    CREATE TABLE meta (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+",
+];
+
+const META_ENCRYPTION: &str = "encryption";
 
 fn migrate(conn: &Connection) -> Result<()> {
     let current: usize = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
@@ -189,6 +206,34 @@ impl SpaceStore {
 
     fn lock(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    // ---- meta ----
+
+    /// Encryption flag persisted in the database (absent counts as false).
+    pub fn encryption_flag(&self) -> Result<bool> {
+        let v: Option<String> = self
+            .lock()
+            .query_row(
+                "SELECT value FROM meta WHERE key = ?1",
+                params![META_ENCRYPTION],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(v.as_deref() == Some("1"))
+    }
+
+    /// Record the encryption decision. Turning it on is sticky: it can never
+    /// be turned off again through this API.
+    pub fn mark_encryption(&self, enabled: bool) -> Result<()> {
+        let sql = if enabled {
+            "INSERT INTO meta (key, value) VALUES (?1, '1')
+             ON CONFLICT(key) DO UPDATE SET value = '1'"
+        } else {
+            "INSERT OR IGNORE INTO meta (key, value) VALUES (?1, '0')"
+        };
+        self.lock().execute(sql, params![META_ENCRYPTION])?;
+        Ok(())
     }
 
     // ---- members ----
@@ -399,7 +444,7 @@ impl SpaceStore {
             seq: seq as u64,
             space_id: space,
             author,
-            content: self.codec.open(&content)?,
+            content: self.codec.open(&content, &seq.to_string())?,
             created_at: parse_ts(&at)?,
         })
     }
@@ -412,12 +457,12 @@ impl SpaceStore {
         content: &str,
     ) -> Result<ChannelMessage> {
         let now = Utc::now();
-        let stored = self.codec.seal(content)?;
         let mut conn = self.lock();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let seq: i64 = tx.query_row("SELECT COALESCE(MAX(seq) + 1, 0) FROM messages", [], |r| {
             r.get(0)
         })?;
+        let stored = self.codec.seal(content, &seq.to_string())?;
         tx.execute(
             "INSERT INTO messages (seq, space_id, author, content, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -484,7 +529,7 @@ impl SpaceStore {
                         seq,
                         space_id,
                         m.author,
-                        self.codec.seal(&m.content)?,
+                        self.codec.seal(&m.content, &seq.to_string())?,
                         ts(&m.created_at)
                     ],
                 )?;
@@ -504,6 +549,9 @@ pub struct SpaceStores {
     /// Per-space keys (WP-13j). When set, each space gets its own keyed codec
     /// and locked spaces are refused.
     keys: Option<Arc<KeyRing>>,
+    /// True when a caller supplied its own codec (`with_codec`); the
+    /// plaintext-only guard below then does not apply.
+    custom_codec: bool,
     open: Mutex<HashMap<String, Arc<SpaceStore>>>,
 }
 
@@ -513,6 +561,7 @@ impl Default for SpaceStores {
             spaces_dir: None,
             codec: Arc::new(PlaintextCodec),
             keys: None,
+            custom_codec: false,
             open: Mutex::new(HashMap::new()),
         }
     }
@@ -538,6 +587,7 @@ impl SpaceStores {
             spaces_dir: Some(root.as_ref().join("spaces")),
             codec,
             keys: None,
+            custom_codec: true,
             open: Mutex::new(HashMap::new()),
         })
     }
@@ -597,12 +647,104 @@ impl SpaceStores {
         if let Some(s) = self.cache().get(space_id) {
             return Ok(s.clone());
         }
+        // Fail closed: anything that says "encrypted" wins over a missing
+        // keystore, and a plaintext-only registry refuses such a space.
+        if self.encryption_evidence(space_id)? {
+            match &self.keys {
+                Some(ring) => {
+                    ring.require_encryption(space_id);
+                    ring.check_unlocked(space_id)?;
+                }
+                None if !self.custom_codec => {
+                    return Err(KeysError::KeystoreMissing(space_id.to_string()).into());
+                }
+                None => {}
+            }
+        }
         let store = self.open_new(space_id)?;
         Ok(self
             .cache()
             .entry(space_id.to_string())
             .or_insert(store)
             .clone())
+    }
+
+    /// At boot: for a space without a keystore file, look for encryption
+    /// evidence now so that it reports as locked before any access.
+    pub(crate) fn prime_encryption(&self, space_id: &str) {
+        let (Some(ring), Some(dir)) = (&self.keys, &self.spaces_dir) else {
+            return;
+        };
+        if validate_space_id(space_id).is_err()
+            || dir.join(space_id).join(super::keys::KEYSTORE_FILE).exists()
+        {
+            return;
+        }
+        match self.encryption_evidence(space_id) {
+            Ok(false) => {}
+            // Unreadable evidence is treated like positive evidence.
+            Ok(true) | Err(_) => ring.require_encryption(space_id),
+        }
+    }
+
+    /// Whether `space.json` (`encryption.enabled`), the database `meta` row
+    /// or any stored `xr1:` row says the space is encrypted. Unreadable
+    /// evidence is an error (fail closed), absent evidence is `false`.
+    fn encryption_evidence(&self, space_id: &str) -> Result<bool> {
+        let Some(dir) = &self.spaces_dir else {
+            return Ok(false);
+        };
+        let sdir = dir.join(space_id);
+        match std::fs::read(sdir.join(DESCRIPTOR_FILE)) {
+            Ok(b) => {
+                let v: serde_json::Value = serde_json::from_slice(&b)
+                    .map_err(|e| anyhow!("{DESCRIPTOR_FILE} of {space_id} unreadable: {e}"))?;
+                if v["encryption"]["enabled"].as_bool() == Some(true) {
+                    return Ok(true);
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(anyhow!("{DESCRIPTOR_FILE} of {space_id} unreadable: {e}")),
+        }
+        let db = sdir.join(DB_FILE);
+        if !db.is_file() {
+            return Ok(false);
+        }
+        let conn = Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        let has_table = |name: &str| -> Result<bool> {
+            Ok(conn
+                .query_row(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    params![name],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some())
+        };
+        if has_table("meta")? {
+            let v: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM meta WHERE key = ?1",
+                    params![META_ENCRYPTION],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if v.as_deref() == Some("1") {
+                return Ok(true);
+            }
+        }
+        if has_table("messages")? {
+            let mut stmt =
+                conn.prepare("SELECT content FROM messages WHERE content LIKE 'xr1:%'")?;
+            let mut rows = stmt.query([])?;
+            while let Some(r) = rows.next()? {
+                if looks_encrypted(&r.get::<_, String>(0)?) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// Store for a space only if it already exists (never creates anything).
