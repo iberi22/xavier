@@ -983,6 +983,17 @@ impl KeyRing {
         }
     }
 
+    /// Data key a store must seal records with for `space_id`: `Ok(Some(k))`
+    /// for an encrypting, unlocked space, `Ok(None)` for a space that stores
+    /// plain records, `Err` when the space is locked or its keystore is
+    /// missing/unreadable. The handle is wiped when the last clone drops.
+    pub fn record_handle(&self, space_id: &str) -> Result<Option<KeyHandle>> {
+        match self.record_key(space_id)? {
+            RecordKey::Plain => Ok(None),
+            RecordKey::Key(h) => Ok(Some(h)),
+        }
+    }
+
     /// Record codec for one record kind of one space.
     pub fn codec(self: &Arc<Self>, space_id: &str, kind: &'static str) -> Arc<dyn RecordCodec> {
         Arc::new(KeyedCodec {

@@ -286,6 +286,11 @@ pub fn decrypt_record_in_place(record: &mut crate::memory::store::MemoryRecord) 
         Some(b) if b.is_empty() => return Ok(()),
         Some(b) => b.clone(),
     };
+    if is_space_row(&wrapped) {
+        // A per-space row opened outside its space store: never a key here.
+        mark_locked(record);
+        anyhow::bail!("at_rest: record {} belongs to a space store", record.id);
+    }
     if is_default_space_row(&wrapped) {
         return decrypt_default_space_in_place(record, None);
     }
@@ -315,6 +320,10 @@ pub fn decrypt_record_with_key(
         Some(b) if b.is_empty() => return Ok(()),
         Some(b) => b.clone(),
     };
+    if is_space_row(&wrapped) {
+        mark_locked(record);
+        anyhow::bail!("at_rest: record {} belongs to a space store", record.id);
+    }
     if is_default_space_row(&wrapped) {
         anyhow::bail!(
             "at_rest: record {} belongs to the default-space keystore, not the node record key",
@@ -375,6 +384,11 @@ pub fn decrypt_with_resolved_key(
         Some(b) if b.is_empty() => return Ok(()),
         Some(b) => b.clone(),
     };
+    if is_space_row(&wrapped) {
+        // A per-space row opened outside its space store: never a key here.
+        mark_locked(record);
+        anyhow::bail!("at_rest: record {} belongs to a space store", record.id);
+    }
     if is_default_space_row(&wrapped) {
         return decrypt_default_space_in_place(record, None);
     }
@@ -677,18 +691,38 @@ fn revisions_unsealed(col: Option<&str>) -> bool {
 /// Seal the JSON of a revisions array under the default-space key. Always
 /// seals (a user-supplied sentinel lookalike is sealed like anything else).
 pub fn seal_revisions_xdk2(dek: &KeyHandle, record_id: &str, plain_json: &str) -> Result<String> {
+    seal_revisions_for(dek, DEFAULT_SPACE_ID, record_id, plain_json)
+}
+
+/// [`seal_revisions_xdk2`] for an arbitrary space (AD binds `space_id`).
+pub fn seal_revisions_for(
+    dek: &KeyHandle,
+    space_id: &str,
+    record_id: &str,
+    plain_json: &str,
+) -> Result<String> {
     if revisions_empty(plain_json) {
         return Ok("[]".to_string());
     }
-    let sealed = dek.seal_record(DEFAULT_SPACE_ID, KIND_REVISIONS, record_id, plain_json)?;
+    let sealed = dek.seal_record(space_id, KIND_REVISIONS, record_id, plain_json)?;
     Ok(sentinel_column(&sealed))
 }
 
 /// Inverse of [`seal_revisions_xdk2`]. A column that is not a sentinel is
 /// returned as-is (pre-fix rows; `encrypt-private --apply` seals them).
 pub fn open_revisions_xdk2(dek: &KeyHandle, record_id: &str, col: &str) -> Result<String> {
+    open_revisions_for(dek, DEFAULT_SPACE_ID, record_id, col)
+}
+
+/// [`open_revisions_xdk2`] for an arbitrary space.
+pub fn open_revisions_for(
+    dek: &KeyHandle,
+    space_id: &str,
+    record_id: &str,
+    col: &str,
+) -> Result<String> {
     match sealed_payload(col) {
-        Some(p) => dek.open_record(DEFAULT_SPACE_ID, KIND_REVISIONS, record_id, &p),
+        Some(p) => dek.open_record(space_id, KIND_REVISIONS, record_id, &p),
         None => Ok(col.to_string()),
     }
 }
@@ -787,8 +821,19 @@ pub fn seal_default_space(
     content: &str,
     metadata_json: &str,
 ) -> Result<(String, String)> {
-    let c = dek.seal_record(DEFAULT_SPACE_ID, KIND_CONTENT, record_id, content)?;
-    let m = dek.seal_record(DEFAULT_SPACE_ID, KIND_METADATA, record_id, metadata_json)?;
+    seal_for_space(dek, DEFAULT_SPACE_ID, record_id, content, metadata_json)
+}
+
+/// [`seal_default_space`] for an arbitrary space (AD binds `space_id`).
+pub fn seal_for_space(
+    dek: &KeyHandle,
+    space_id: &str,
+    record_id: &str,
+    content: &str,
+    metadata_json: &str,
+) -> Result<(String, String)> {
+    let c = dek.seal_record(space_id, KIND_CONTENT, record_id, content)?;
+    let m = dek.seal_record(space_id, KIND_METADATA, record_id, metadata_json)?;
     Ok((c, serde_json::json!({ "encrypted": m }).to_string()))
 }
 
@@ -800,14 +845,25 @@ pub fn open_default_space(
     content_col: &str,
     metadata_col: &str,
 ) -> Result<(String, String)> {
+    open_for_space(dek, DEFAULT_SPACE_ID, record_id, content_col, metadata_col)
+}
+
+/// [`open_default_space`] for an arbitrary space.
+pub fn open_for_space(
+    dek: &KeyHandle,
+    space_id: &str,
+    record_id: &str,
+    content_col: &str,
+    metadata_col: &str,
+) -> Result<(String, String)> {
     let meta: serde_json::Value = serde_json::from_str(metadata_col)
-        .map_err(|_| anyhow::anyhow!("XDK2 metadata column is not JSON"))?;
+        .map_err(|_| anyhow::anyhow!("sealed metadata column is not JSON"))?;
     let sealed_meta = meta
         .get("encrypted")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("XDK2 metadata column is not encrypted"))?;
-    let content = dek.open_record(DEFAULT_SPACE_ID, KIND_CONTENT, record_id, content_col)?;
-    let metadata = dek.open_record(DEFAULT_SPACE_ID, KIND_METADATA, record_id, sealed_meta)?;
+        .ok_or_else(|| anyhow::anyhow!("sealed metadata column is not encrypted"))?;
+    let content = dek.open_record(space_id, KIND_CONTENT, record_id, content_col)?;
+    let metadata = dek.open_record(space_id, KIND_METADATA, record_id, sealed_meta)?;
     Ok((content, metadata))
 }
 
@@ -857,6 +913,174 @@ fn decrypt_default_space_in_place(
         mark_locked(record);
     }
     res
+}
+
+// ---- per-space stores (`XSK1`) ----
+
+/// Marker in `encrypted_dek` for rows sealed under a space's own data key.
+const SPACE_MAGIC: &[u8; 4] = b"XSK1";
+
+/// Whether an `encrypted_dek` blob marks a per-space (`XSK1`) row.
+pub fn is_space_row(wrapped: &[u8]) -> bool {
+    wrapped.starts_with(SPACE_MAGIC)
+}
+
+/// Key binding of one encrypted space's memory store: the space id (bound
+/// into every AD) and the space's key ring. The data key is looked up on every
+/// operation, so a locked space never seals, serves or stores anything, and
+/// the node record key / default-space key is never consulted.
+#[derive(Clone)]
+pub struct SpaceCrypto {
+    space_id: String,
+    ring: Arc<KeyRing>,
+}
+
+impl std::fmt::Debug for SpaceCrypto {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpaceCrypto")
+            .field("space_id", &self.space_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SpaceCrypto {
+    pub fn new(space_id: impl Into<String>, ring: Arc<KeyRing>) -> Self {
+        Self {
+            space_id: space_id.into(),
+            ring,
+        }
+    }
+
+    pub fn space_id(&self) -> &str {
+        &self.space_id
+    }
+
+    /// The space's unlocked data key. Fail closed: locked, missing keystore
+    /// and "ring says this space stores plain records" are all errors.
+    fn key(&self) -> Result<KeyHandle> {
+        self.ring.record_handle(&self.space_id)?.ok_or_else(|| {
+            anyhow::anyhow!(
+                "space {} is configured to encrypt but its key ring reports plain records",
+                self.space_id
+            )
+        })
+    }
+
+    /// Keyed digest for the hash chain of this space's rows.
+    pub fn chain_mac(&self, content: &str) -> Result<String> {
+        Ok(self.key()?.verify_mac("chain", content.as_bytes()))
+    }
+
+    /// Seal a free-form text blob (checkpoint data, graph snapshot) under the
+    /// space key. `kind` and `id` are bound into the AD.
+    pub fn seal_text(&self, kind: &str, id: &str, plain: &str) -> Result<String> {
+        self.key()?.seal_record(&self.space_id, kind, id, plain)
+    }
+
+    /// Inverse of [`SpaceCrypto::seal_text`]. A stored value that is not an
+    /// `xr1:` record is a row that predates encryption and is returned as-is.
+    pub fn open_text(&self, kind: &str, id: &str, stored: &str) -> Result<String> {
+        if !crate::espacio::keys::looks_encrypted(stored) {
+            return Ok(stored.to_string());
+        }
+        self.key()?.open_record(&self.space_id, kind, id, stored)
+    }
+
+    /// Seal `content`, `metadata` and `revisions` of a record under the
+    /// space key. Every record of an encrypting space is private: there is no
+    /// public exemption. Nothing is stored in clear and nothing falls back.
+    pub fn encrypt_for_write(
+        &self,
+        record: &mut crate::memory::store::MemoryRecord,
+    ) -> Result<bool> {
+        let dek = self.key().map_err(|e| {
+            e.context(
+                "space store: refusing a write: the space key is unavailable (nothing was stored)",
+            )
+        })?;
+        record.clearance = crate::security::clearance::ClearanceLevel::from(
+            (crate::security::clearance::level_from_metadata(&record.metadata) as i64).max(1) as u8,
+        );
+        let metadata_json = serde_json::to_string(&record.metadata)?;
+        let revisions_json = serde_json::to_string(&record.revisions)?;
+        let (c, m) = seal_for_space(
+            &dek,
+            &self.space_id,
+            &record.id,
+            &record.content,
+            &metadata_json,
+        )?;
+        let revs = seal_revisions_for(&dek, &self.space_id, &record.id, &revisions_json)?;
+        record.content = c;
+        record.metadata = serde_json::from_str(&m)?;
+        record.revisions = serde_json::from_str(&revs)?;
+        let mut marker = SPACE_MAGIC.to_vec();
+        marker.extend_from_slice(self.space_id.as_bytes());
+        record.encrypted_dek = Some(marker);
+        record.content_iv = None;
+        record.metadata_iv = None;
+        Ok(true)
+    }
+
+    /// Open a row read from this space's store. Rows without a marker pass
+    /// through (nothing to open). Any row that is not an `XSK1` row of THIS
+    /// space, or that fails authentication, or whose key is locked, becomes
+    /// the locked placeholder and returns `Err`: ciphertext is never content.
+    pub fn decrypt_in_place(&self, record: &mut crate::memory::store::MemoryRecord) -> Result<()> {
+        let wrapped = match &record.encrypted_dek {
+            None => return Ok(()),
+            Some(b) if b.is_empty() => return Ok(()),
+            Some(b) => b.clone(),
+        };
+        let res = (|| -> Result<()> {
+            if !is_space_row(&wrapped) {
+                anyhow::bail!("row is not sealed under a space key");
+            }
+            let dek = self.key()?;
+            let meta_col = serde_json::to_string(&record.metadata)?;
+            let (content, metadata_json) =
+                open_for_space(&dek, &self.space_id, &record.id, &record.content, &meta_col)?;
+            let metadata: serde_json::Value =
+                serde_json::from_str(&metadata_json).unwrap_or_else(|_| serde_json::json!({}));
+            let revs_col = serde_json::to_string(&record.revisions)?;
+            let revs_plain = open_revisions_for(&dek, &self.space_id, &record.id, &revs_col)?;
+            let revisions = serde_json::from_str(&revs_plain)
+                .map_err(|_| anyhow::anyhow!("sealed revisions column is not valid JSON"))?;
+            record.clearance = crate::security::clearance::level_from_metadata(&metadata);
+            record.content = content;
+            record.metadata = metadata;
+            record.revisions = revisions;
+            Ok(())
+        })();
+        if res.is_err() {
+            mark_locked(record);
+        }
+        res
+    }
+}
+
+/// Read-side dispatch: a space store opens rows with its own key and never
+/// touches the node record key; the default store keeps its behaviour.
+pub fn decrypt_for(
+    crypto: Option<&SpaceCrypto>,
+    record: &mut crate::memory::store::MemoryRecord,
+    node_key: Option<&[u8; 32]>,
+) -> Result<()> {
+    match crypto {
+        Some(c) => c.decrypt_in_place(record),
+        None => decrypt_with_resolved_key(record, node_key),
+    }
+}
+
+/// Write-side dispatch.
+pub fn encrypt_for(
+    crypto: Option<&SpaceCrypto>,
+    record: &mut crate::memory::store::MemoryRecord,
+) -> Result<bool> {
+    match crypto {
+        Some(c) => c.encrypt_for_write(record),
+        None => encrypt_for_write(record),
+    }
 }
 
 /// Classification-aware write encryption. Private records use the
