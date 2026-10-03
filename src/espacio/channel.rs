@@ -5,11 +5,13 @@
 //! Gossip fan-out 3 and offline queue will be wired via Iroh QUIC in a
 //! follow-up iteration; this module provides the local log and merge.
 
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+
+use super::store::SpaceStores;
 
 /// A message in a Space channel
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -26,47 +28,88 @@ pub struct ChannelMessage {
     pub created_at: DateTime<Utc>,
 }
 
-/// In-memory channel manager per Space. Append-only, CRDT merge via last-write-wins on seq.
+/// Channel manager per Space, backed by each space's `espacio.sqlite`
+/// (in-memory databases for `new()`). Append-only, CRDT merge via
+/// last-write-wins on seq. Reads always come from the store, so a reopened
+/// manager sees every previously posted message in order.
 #[derive(Debug, Default)]
 pub struct ChannelManager {
-    /// space_id -> ordered messages
-    channels: Arc<RwLock<HashMap<String, Vec<ChannelMessage>>>>,
+    stores: Arc<SpaceStores>,
 }
 
 impl ChannelManager {
+    /// Non-persistent manager (tests, ephemeral use).
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Persistent manager over `{root}/spaces/{space_id}/espacio.sqlite`.
+    pub fn open(root: impl AsRef<Path>) -> Self {
+        Self::with_stores(SpaceStores::open(root))
+    }
+
+    /// Manager sharing a store registry (e.g. `SpaceManager::stores()`).
+    pub fn with_stores(stores: Arc<SpaceStores>) -> Self {
+        Self { stores }
+    }
+
+    /// Append a message, reporting storage failures (invalid space id, I/O).
+    pub async fn try_post(
+        &self,
+        space_id: String,
+        author: String,
+        content: String,
+    ) -> Result<ChannelMessage> {
+        let content: String = content.chars().take(4096).collect();
+        self.stores
+            .get(&space_id)?
+            .append_message(&space_id, &author, &content)
+    }
+
     /// Append a message to a Space channel. Returns the stored message with assigned seq.
+    ///
+    /// Infallible for API compatibility: if the store rejects the write (invalid
+    /// space id, I/O error) the error is logged and an unpersisted message
+    /// with `seq` 0 is returned. Use [`ChannelManager::try_post`] to observe errors.
     pub async fn post(&self, space_id: String, author: String, content: String) -> ChannelMessage {
-        let mut guard = self.channels.write().await;
-        let log = guard.entry(space_id.clone()).or_default();
-        let seq = log.len() as u64;
-        let msg = ChannelMessage {
-            seq,
-            space_id,
-            author,
+        let fallback = ChannelMessage {
+            seq: 0,
+            space_id: space_id.clone(),
+            author: author.clone(),
             content: content.chars().take(4096).collect(),
             created_at: Utc::now(),
         };
-        log.push(msg.clone());
-        msg
+        match self.try_post(space_id, author, content).await {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::error!("espacio: channel post not persisted: {e}");
+                fallback
+            }
+        }
+    }
+
+    fn read(&self, space_id: &str, since: Option<u64>) -> Vec<ChannelMessage> {
+        let res = self
+            .stores
+            .get_existing(space_id)
+            .and_then(|s| s.map(|s| s.messages_since(since)).transpose());
+        match res {
+            Ok(v) => v.unwrap_or_default(),
+            Err(e) => {
+                tracing::error!("espacio: channel read failed for {space_id}: {e}");
+                Vec::new()
+            }
+        }
     }
 
     /// List messages for a Space since `since_seq` (exclusive). Ordered by seq asc.
     pub async fn list_since(&self, space_id: &str, since_seq: u64) -> Vec<ChannelMessage> {
-        let guard = self.channels.read().await;
-        match guard.get(space_id) {
-            Some(log) => log.iter().filter(|m| m.seq > since_seq).cloned().collect(),
-            None => Vec::new(),
-        }
+        self.read(space_id, Some(since_seq))
     }
 
     /// List all messages for a Space
     pub async fn list_all(&self, space_id: &str) -> Vec<ChannelMessage> {
-        let guard = self.channels.read().await;
-        guard.get(space_id).cloned().unwrap_or_default()
+        self.read(space_id, None)
     }
 
     /// Merge remote messages into local log (CRDT stub: dedup by seq, keep max seq)
@@ -74,24 +117,22 @@ impl ChannelManager {
         if remote.is_empty() {
             return;
         }
-        let mut guard = self.channels.write().await;
-        let log = guard.entry(space_id).or_default();
-        let mut max_seq = log.last().map(|m| m.seq).unwrap_or(0);
-        // Simple dedup: only append messages with seq > max_seq
-        for msg in remote {
-            if msg.seq > max_seq {
-                max_seq = msg.seq;
-                log.push(msg);
-            }
+        let res = self
+            .stores
+            .get(&space_id)
+            .and_then(|s| s.merge_messages(&space_id, &remote));
+        if let Err(e) = res {
+            tracing::error!("espacio: channel merge failed for {space_id}: {e}");
         }
-        // Keep sorted by seq
-        log.sort_by_key(|m| m.seq);
     }
 
     /// Message count for a Space
     pub async fn len(&self, space_id: &str) -> usize {
-        let guard = self.channels.read().await;
-        guard.get(space_id).map(|v| v.len()).unwrap_or(0)
+        let res = self
+            .stores
+            .get_existing(space_id)
+            .and_then(|s| s.map(|s| s.message_count()).transpose());
+        res.ok().flatten().unwrap_or(0)
     }
 }
 
