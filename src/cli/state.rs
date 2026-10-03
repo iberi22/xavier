@@ -168,13 +168,23 @@ pub fn guarded_espacio_router(state: &CliState) -> axum::Router<CliState> {
 /// to verify `xsp_` tokens (without it every `xsp_` token is a 401). With
 /// `None` espacio routes answer 503. Space tokens still only pass the narrow
 /// own-space allowlist, so `/memory` and `/mcp` stay 403 for them.
+///
+/// The manager installed here also becomes the global one the MCP tools read
+/// (`get_space_manager`), replacing any earlier instance, so the HTTP routes
+/// and the tools never hold two divergent managers. `None` clears the global.
 pub fn install_space_manager(
     app: axum::Router<CliState>,
     manager: Option<Arc<xavier::espacio::SpaceManager>>,
 ) -> axum::Router<CliState> {
     match manager {
-        Some(m) => app.layer(axum::Extension(m)),
-        None => app,
+        Some(m) => {
+            xavier::adapters::inbound::http::routes::init_space_manager(m.clone());
+            app.layer(axum::Extension(m))
+        }
+        None => {
+            xavier::adapters::inbound::http::routes::clear_space_manager();
+            app
+        }
     }
 }
 
