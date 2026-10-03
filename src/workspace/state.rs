@@ -1186,6 +1186,192 @@ impl WorkspaceState {
 
 use crate::memory::store::{FileMemoryStore, InMemoryMemoryStore};
 
+// ---- per-space workspace resolution (WP-13m) ----
+
+/// Why a space's workspace could not be resolved. Callers map `Locked` to 423,
+/// `EncryptionPending` to 501 and everything else to a refusal; nothing falls
+/// back to the default space.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpaceScopeError {
+    /// Encrypted space whose key is not loaded.
+    Locked,
+    /// The space encrypts its records but the memory store cannot yet encrypt
+    /// them. Refused before any store or file is created (fail closed): the
+    /// space's memories must never be written in plaintext.
+    EncryptionPending,
+    /// Unknown, unavailable or failed-to-open space.
+    Unavailable,
+}
+
+struct CachedSpaceWorkspace {
+    storage_path: PathBuf,
+    created_at: DateTime<Utc>,
+    /// Filled once, outside the cache lock; concurrent first requests for the
+    /// same space share one build.
+    cell: Arc<tokio::sync::OnceCell<super::registry::WorkspaceContext>>,
+    last_used: u64,
+}
+
+/// Default bound of the space workspace cache (LRU).
+const SPACE_CACHE_DEFAULT_MAX: usize = 64;
+
+/// Max cached space workspaces (`XAVIER_SPACE_WORKSPACE_CACHE_MAX`, min 1).
+fn space_cache_max() -> usize {
+    std::env::var("XAVIER_SPACE_WORKSPACE_CACHE_MAX")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n >= 1)
+        .unwrap_or(SPACE_CACHE_DEFAULT_MAX)
+}
+
+static SPACE_CACHE_TICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Cache of per-space workspaces, keyed by space id. An entry is only reused
+/// while the registered space still has the same directory AND creation
+/// time, so a deleted (trashed) and re-created space never inherits the old
+/// open store. Locking is checked on every request, never cached. The mutex
+/// guards only the map; workspaces are built outside it.
+static SPACE_WORKSPACES: std::sync::LazyLock<
+    tokio::sync::Mutex<std::collections::HashMap<String, CachedSpaceWorkspace>>,
+> = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Close the pooled connections of a space's vec store. The process-wide
+/// `ConnectionManager` keys pools by file path, so after a space directory is
+/// trashed and re-created at the same path a surviving pool would keep
+/// serving the OLD (renamed) file to the new space.
+fn release_space_connections(storage_path: &std::path::Path) {
+    let id = crate::memory::sqlite_vec_store::project_id_for_path(
+        &storage_path.join(SPACE_SQLITE_STORE_NAME),
+    );
+    crate::codebase::connection_manager::ConnectionManager::global().disconnect(&id);
+}
+
+/// Drop the cached workspace of a space (delete, trash, lock).
+pub async fn invalidate_space_workspace(space_id: &str) {
+    if let Some(old) = SPACE_WORKSPACES.lock().await.remove(space_id) {
+        release_space_connections(&old.storage_path);
+    }
+}
+
+/// Whether a workspace for `space_id` is currently cached (diagnostics/tests).
+pub async fn space_workspace_is_cached(space_id: &str) -> bool {
+    SPACE_WORKSPACES.lock().await.contains_key(space_id)
+}
+
+/// Workspace config of a space: its own id, no shared token, path-only
+/// backend taken from the space protocol. Never reads env or node settings.
+fn config_for_space(space_id: &str) -> WorkspaceConfig {
+    let protocol = super::protocol::SpaceProtocol::default();
+    WorkspaceConfig {
+        id: space_id.to_string(),
+        token: String::new(),
+        plan: protocol.limits.plan,
+        memory_backend: protocol.storage.backend,
+        storage_limit_bytes: protocol.limits.storage_limit_bytes,
+        request_limit: protocol.limits.request_limit,
+        request_unit_limit: None,
+        embedding_provider_mode: protocol.embedding_mode,
+        managed_google_embeddings: false,
+        sync_policy: protocol.sync.policy,
+        dedup: Default::default(),
+        protocol,
+    }
+}
+
+/// Resolve (building lazily) the `WorkspaceContext` of `space_id`, rooted at
+/// the space's own directory. Locked space -> `Locked`; the default
+/// workspace is never returned here.
+pub async fn space_workspace_context(
+    manager: &crate::espacio::SpaceManager,
+    space_id: &str,
+) -> std::result::Result<super::registry::WorkspaceContext, SpaceScopeError> {
+    let info = manager
+        .get(space_id)
+        .await
+        .map_err(|_| SpaceScopeError::Unavailable)?;
+    if info.id != space_id {
+        return Err(SpaceScopeError::Unavailable);
+    }
+    if let Some(ring) = manager.key_ring() {
+        if ring.is_locked(space_id) {
+            invalidate_space_workspace(space_id).await;
+            return Err(SpaceScopeError::Locked);
+        }
+    }
+    // Fail closed: records of an encrypting space cannot be stored encrypted
+    // by the memory store yet, so no memory store/file is created for it.
+    match manager.stores().get(space_id) {
+        Ok(store) => match store.encryption_flag() {
+            Ok(false) => {}
+            Ok(true) => return Err(SpaceScopeError::EncryptionPending),
+            Err(_) => return Err(SpaceScopeError::Unavailable),
+        },
+        Err(_) => return Err(SpaceScopeError::Unavailable),
+    }
+    let cell = {
+        let mut cache = SPACE_WORKSPACES.lock().await;
+        let tick = SPACE_CACHE_TICK.fetch_add(1, Ordering::Relaxed);
+        let stale = cache.get(space_id).is_some_and(|hit| {
+            hit.storage_path != info.storage_path || hit.created_at != info.created_at
+        });
+        if stale {
+            if let Some(old) = cache.remove(space_id) {
+                release_space_connections(&old.storage_path);
+            }
+        }
+        let entry = cache
+            .entry(space_id.to_string())
+            .or_insert_with(|| CachedSpaceWorkspace {
+                storage_path: info.storage_path.clone(),
+                created_at: info.created_at,
+                cell: Arc::new(tokio::sync::OnceCell::new()),
+                last_used: tick,
+            });
+        entry.last_used = tick;
+        let cell = Arc::clone(&entry.cell);
+        // LRU bound. No shutdown hook exists for a workspace's background
+        // tasks (MemoryDaemon is detached), so eviction closes the store's
+        // pooled connections and drops the cache's reference only.
+        let max = space_cache_max();
+        while cache.len() > max {
+            let Some(victim) = cache
+                .iter()
+                .filter(|(id, _)| id.as_str() != space_id)
+                .min_by_key(|(_, e)| e.last_used)
+                .map(|(id, _)| id.clone())
+            else {
+                break;
+            };
+            if let Some(old) = cache.remove(&victim) {
+                release_space_connections(&old.storage_path);
+            }
+        }
+        cell
+    };
+    let ctx = cell
+        .get_or_try_init(|| async {
+            // A fresh build always starts from a fresh pool for this path.
+            release_space_connections(&info.storage_path);
+            let ws = WorkspaceState::new_for_space(
+                config_for_space(space_id),
+                RuntimeConfig::default(),
+                info.storage_path.join("workspace"),
+                info.storage_path.clone(),
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(space = %space_id, error = %e, "space workspace unavailable");
+                SpaceScopeError::Unavailable
+            })?;
+            Ok::<_, SpaceScopeError>(super::registry::WorkspaceContext {
+                workspace_id: space_id.to_string(),
+                workspace: Arc::new(ws),
+            })
+        })
+        .await?;
+    Ok(ctx.clone())
+}
+
 #[cfg(test)]
 mod auto_detect_tests {
     use super::*;
@@ -1412,5 +1598,55 @@ mod space_store_tests {
             .expect("default space");
         assert!(env_db.exists(), "env-based sqlite path must still be used");
         assert!(!tmp.path().join("ws/memory.sqlite").exists());
+    }
+}
+
+#[cfg(test)]
+mod space_cache_tests {
+    use super::*;
+
+    async fn plain_manager(tmp: &tempfile::TempDir, ids: &[&str]) -> crate::espacio::SpaceManager {
+        let manager = crate::espacio::SpaceManager::open(tmp.path());
+        for id in ids {
+            manager
+                .create(
+                    (*id).to_string(),
+                    (*id).to_string(),
+                    String::new(),
+                    "owner".to_string(),
+                    false,
+                )
+                .await
+                .expect("create space");
+        }
+        manager
+    }
+
+    #[tokio::test]
+    async fn concurrent_first_requests_share_one_build_and_cache_is_bounded() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "disabled");
+        std::env::set_var("XAVIER_SPACE_WORKSPACE_CACHE_MAX", "2");
+        let tmp = tempfile::tempdir().unwrap();
+        let manager = plain_manager(&tmp, &["esp_c1", "esp_c2", "esp_c3"]).await;
+
+        let (a, b, c) = tokio::join!(
+            space_workspace_context(&manager, "esp_c1"),
+            space_workspace_context(&manager, "esp_c1"),
+            space_workspace_context(&manager, "esp_c1"),
+        );
+        let (a, b, c) = (a.unwrap(), b.unwrap(), c.unwrap());
+        assert!(Arc::ptr_eq(&a.workspace, &b.workspace));
+        assert!(Arc::ptr_eq(&a.workspace, &c.workspace));
+
+        space_workspace_context(&manager, "esp_c2").await.unwrap();
+        space_workspace_context(&manager, "esp_c3").await.unwrap();
+        // LRU bound: the least recently used space (c1) was evicted.
+        assert!(!space_workspace_is_cached("esp_c1").await);
+        assert!(space_workspace_is_cached("esp_c2").await);
+        assert!(space_workspace_is_cached("esp_c3").await);
+        invalidate_space_workspace("esp_c2").await;
+        invalidate_space_workspace("esp_c3").await;
+        std::env::remove_var("XAVIER_SPACE_WORKSPACE_CACHE_MAX");
     }
 }

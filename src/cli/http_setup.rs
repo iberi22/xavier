@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use tracing::warn;
 use xavier::coordination::secrets::SecretLease;
 use xavier::espacio::{can, SpaceAction, SpaceManager, SpaceRole};
+use xavier::workspace::SpaceScopeError;
 
 /// What a persistent `xav_` token must hold to reach a route.
 ///
@@ -86,18 +87,58 @@ pub(crate) fn lease_may_access(path: &str) -> bool {
     path.starts_with("/v1/proxy/")
 }
 
+/// Memory and MCP routes a space token may call, with the action each needs.
+///
+/// Every entry was audited (WP-13m): the handler works only through the
+/// request's `WorkspaceContext` (or the explicit space-bound code in
+/// `handlers::memory`), never through the node-global `CliState` stores.
+/// Anything not listed stays refused: export, graph, decay, consolidate,
+/// prune, evict, reindex, stats, sync, `/v1/memory/*` aliases and the rest.
+fn space_memory_action(method: &Method, path: &str) -> Option<SpaceAction> {
+    let post = *method == Method::POST;
+    let get = matches!(*method, Method::GET | Method::HEAD);
+    match path {
+        "/memory/search" | "/v1/memories/search" if post => Some(SpaceAction::Read),
+        "/memory/get" if get => Some(SpaceAction::Read),
+        "/memory/add" | "/v1/memories" if post => Some(SpaceAction::Write),
+        // The MCP handler re-checks the role per tool (search/get vs add).
+        "/mcp/tools/call" if post => Some(SpaceAction::Read),
+        _ if get => {
+            let rest = path.strip_prefix("/v1/memories/")?;
+            let (id, tail) = match rest.split_once('/') {
+                Some((id, tail)) => (id, Some(tail)),
+                None => (rest, None),
+            };
+            let literal_route = matches!(id, "graph" | "prune" | "search");
+            let id_ok = !id.is_empty()
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+            match tail {
+                None | Some("outline") if id_ok && !literal_route => Some(SpaceAction::Read),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Whether a path is served from the space's own memory store (needs the
+/// per-space `WorkspaceContext` extension).
+fn space_path_needs_workspace(method: &Method, path: &str) -> bool {
+    space_memory_action(method, path).is_some()
+}
+
 /// Path allowlist for `xsp_` space tokens, plus the role check.
 ///
-/// Deny by default. Today a space token reaches exactly the routes that are
-/// namespaced by space id in the router, and only for ITS OWN space:
-/// `GET|HEAD /api/v1/espacio/spaces/{own}` (Read) and
-/// `DELETE /api/v1/espacio/spaces/{own}` (Admin). Anything else, including
-/// any other sub-path, trailing slash or other space, is refused.
+/// Deny by default. A space token reaches only:
+/// * `GET|HEAD /api/v1/espacio/spaces/{own}` (Read) and
+///   `DELETE /api/v1/espacio/spaces/{own}` (Admin), for ITS OWN space, and
+/// * the audited memory routes in [`space_memory_action`] (Reader: search and
+///   get; Member and up: add), which run against the token's own space store.
 ///
-/// TODO(WP-13m): `/memory*`, `/v1/memories*` and `/mcp*` are deliberately NOT
-/// allowed. Their handlers use the workspace-global `CliState`, not the
-/// token's space, so allowing them would give a space token the whole node's
-/// memory. Add them back only once those handlers are namespaced per space.
+/// Anything else, including any other sub-path, trailing slash or other
+/// space, is refused.
 ///
 /// Paths with encoded or dot segments are refused outright so no
 /// normalisation step can turn an allowed path into another route.
@@ -118,6 +159,9 @@ pub(crate) fn space_token_may_access(
     if required_scope(method, path) == RequiredScope::RootOnly {
         return false;
     }
+    if let Some(action) = space_memory_action(method, path) {
+        return can(role, action);
+    }
     let Some(id) = path.strip_prefix("/api/v1/espacio/spaces/") else {
         return false;
     };
@@ -133,12 +177,13 @@ pub(crate) fn space_token_may_access(
     can(role, action)
 }
 
-/// Claims role for a space token. Conservative: only a space Admin maps to
-/// `User`; every other role is `Readonly`. Never `Admin`.
+/// Claims role for a space token. Conservative: a role that may write maps
+/// to `User`; Reader is `Readonly`. Never `Admin`.
 pub(crate) fn claims_role_for(role: SpaceRole) -> xavier::security::auth::UserRole {
-    match role {
-        SpaceRole::Admin => xavier::security::auth::UserRole::User,
-        _ => xavier::security::auth::UserRole::Readonly,
+    if can(role, SpaceAction::Write) {
+        xavier::security::auth::UserRole::User
+    } else {
+        xavier::security::auth::UserRole::Readonly
     }
 }
 
@@ -179,6 +224,33 @@ pub(crate) async fn handle_space_token(
     }
     if !space_token_may_access(req.uri().path(), &auth.space_id, auth.role, req.method()) {
         return forbidden();
+    }
+    // Memory and MCP routes run against the token's own space store. The
+    // context is resolved per request and OVERWRITES any default context
+    // layered outside this middleware; there is no fallback to the default
+    // workspace: locked -> 423, anything else -> refused.
+    if space_path_needs_workspace(req.method(), req.uri().path()) {
+        match xavier::workspace::space_workspace_context(&manager, &auth.space_id).await {
+            Ok(ctx) => {
+                req.extensions_mut().insert(ctx);
+            }
+            Err(SpaceScopeError::Locked) => {
+                return json_response(
+                    StatusCode::LOCKED,
+                    serde_json::json!({"status":"error","message":"Space is locked"}),
+                );
+            }
+            Err(SpaceScopeError::EncryptionPending) => {
+                return json_response(
+                    StatusCode::NOT_IMPLEMENTED,
+                    serde_json::json!({
+                        "status": "error",
+                        "message": "space memory encryption not available yet"
+                    }),
+                );
+            }
+            Err(SpaceScopeError::Unavailable) => return forbidden(),
+        }
     }
     let claims_role = claims_role_for(auth.role);
     req.extensions_mut().insert(SessionInfo {
@@ -1131,6 +1203,7 @@ mod space_token_tests {
 
     #[tokio::test]
     async fn space_token_is_403_on_workspace_global_memory_and_mcp_routes() {
+        // Routes NOT audited as space-scoped (WP-13m) stay refused for every role.
         let f = fixture().await;
         let tokens = [
             f.admin_a.clone(),
@@ -1141,15 +1214,24 @@ mod space_token_tests {
         for tok in &tokens {
             for hdr in [Hdr::Bearer, Hdr::XToken] {
                 for (m, p) in [
-                    ("POST", "/memory/search"),
                     ("GET", "/memory/search"),
                     ("GET", "/memory/export"),
-                    ("POST", "/memory/add"),
+                    ("GET", "/memory/export-markdown"),
+                    ("POST", "/memory/decay"),
+                    ("POST", "/memory/consolidate"),
+                    ("POST", "/memory/prune"),
+                    ("POST", "/memory/update"),
+                    ("POST", "/memory/delete"),
+                    ("POST", "/memory/reindex"),
+                    ("GET", "/memory/stats"),
+                    ("GET", "/memory/graph/view"),
                     ("GET", "/v1/memories"),
-                    ("POST", "/v1/memories"),
-                    ("POST", "/v1/memories/search"),
+                    ("GET", "/v1/memories/graph"),
+                    ("POST", "/v1/memories/prune"),
+                    ("GET", "/v1/graph/export"),
+                    ("POST", "/v1/memory/search"),
                     ("DELETE", "/v1/memories/x"),
-                    ("POST", "/mcp/tools/call"),
+                    ("GET", "/mcp/tools"),
                     ("POST", "/mcp"),
                     ("GET", "/mcp"),
                 ] {
@@ -1164,12 +1246,12 @@ mod space_token_tests {
     }
 
     #[tokio::test]
-    async fn claims_never_exceed_readonly_except_space_admin_user() {
+    async fn claims_never_exceed_user_and_reader_is_readonly() {
         let f = fixture().await;
         let cases = [
             (f.admin_a.clone(), "User"),
-            (issue(&f, OWN, "mod", SpaceRole::Moderator).raw, "Readonly"),
-            (issue(&f, OWN, "mem", SpaceRole::Member).raw, "Readonly"),
+            (issue(&f, OWN, "mod", SpaceRole::Moderator).raw, "User"),
+            (issue(&f, OWN, "mem", SpaceRole::Member).raw, "User"),
             (issue(&f, OWN, "rdr", SpaceRole::Reader).raw, "Readonly"),
         ];
         for (tok, want) in cases {
@@ -1178,11 +1260,12 @@ mod space_token_tests {
             assert_eq!(body["claims_role"], want);
             assert_ne!(body["claims_role"], "Admin");
         }
-        for r in [SpaceRole::Moderator, SpaceRole::Member, SpaceRole::Reader] {
-            assert_eq!(
-                claims_role_for(r),
-                xavier::security::auth::UserRole::Readonly
-            );
+        assert_eq!(
+            claims_role_for(SpaceRole::Reader),
+            xavier::security::auth::UserRole::Readonly
+        );
+        for r in [SpaceRole::Moderator, SpaceRole::Member] {
+            assert_eq!(claims_role_for(r), xavier::security::auth::UserRole::User);
         }
         assert_eq!(
             claims_role_for(SpaceRole::Admin),
@@ -1381,18 +1464,35 @@ mod space_token_tests {
     fn allowlist_unit() {
         let g = Method::GET;
         assert!(space_token_may_access(OWN_PATH, OWN, SpaceRole::Reader, &g));
-        // The memory allowlist stays removed until WP-13m namespaces it.
-        for p in [
-            "/memory/search",
-            "/memory/export",
-            "/v1/memories",
-            "/v1/memories/search",
-            "/mcp",
-            "/mcp/tools/call",
+        // Only the audited memory routes are open, with the role they need.
+        let p = Method::POST;
+        for (m, path, role, want) in [
+            (&p, "/memory/search", SpaceRole::Reader, true),
+            (&g, "/memory/get", SpaceRole::Reader, true),
+            (&p, "/v1/memories/search", SpaceRole::Reader, true),
+            (&g, "/v1/memories/abc-1.x", SpaceRole::Reader, true),
+            (&g, "/v1/memories/abc/outline", SpaceRole::Reader, true),
+            (&p, "/memory/add", SpaceRole::Reader, false),
+            (&p, "/memory/add", SpaceRole::Member, true),
+            (&p, "/v1/memories", SpaceRole::Reader, false),
+            (&p, "/v1/memories", SpaceRole::Moderator, true),
+            (&g, "/v1/memories/graph", SpaceRole::Admin, false),
+            (&g, "/v1/memories/prune", SpaceRole::Admin, false),
+            (&g, "/v1/memories/a/b", SpaceRole::Admin, false),
+            (&g, "/memory/export", SpaceRole::Admin, false),
+            (&p, "/memory/decay", SpaceRole::Admin, false),
+            (&p, "/memory/prune", SpaceRole::Admin, false),
+            (&g, "/memory/graph/view", SpaceRole::Admin, false),
+            (&g, "/v1/graph/export", SpaceRole::Admin, false),
+            (&g, "/mcp", SpaceRole::Admin, false),
+            (&p, "/mcp", SpaceRole::Admin, false),
+            (&p, "/mcp/tools/call", SpaceRole::Reader, true),
         ] {
-            for m in [Method::GET, Method::POST] {
-                assert!(!space_token_may_access(p, OWN, SpaceRole::Admin, &m), "{p}");
-            }
+            assert_eq!(
+                space_token_may_access(path, OWN, role, m),
+                want,
+                "{m} {path} {role:?}"
+            );
         }
         assert!(!space_token_may_access(
             "/v1/clavis",
