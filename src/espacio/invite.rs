@@ -104,6 +104,16 @@ impl SpaceInvite {
     }
 }
 
+/// Result of redeeming an invite. `token` is shown once and never stored.
+#[derive(Debug, Clone)]
+pub struct AcceptedInvite {
+    pub space_id: String,
+    pub member_id: String,
+    pub role: SpaceRole,
+    pub token_id: String,
+    pub token: String,
+}
+
 /// Invite registry backed by each space's `espacio.sqlite` (in-memory
 /// databases for `new()`). Revoked state and signatures are persisted; an
 /// id -> space index is rebuilt from the stores when opened.
@@ -244,6 +254,58 @@ impl InviteManager {
             return Err(anyhow!("Invite {} is unsigned", id));
         }
         Ok(invite)
+    }
+
+    /// Redeem an invite: validate it, add the member with the invite role and
+    /// issue one `xsp_` token (returned once).
+    ///
+    /// * `member_display` must equal the invite's `target_node` exactly: the
+    ///   invite (and its signature) names who may redeem it, so the caller
+    ///   cannot pick another identity.
+    /// * With `trusted_key` the signature is always required and verified
+    ///   (`require_signed` is implied); `require_signed` without a key is
+    ///   refused because it cannot be met. With no key configured, unsigned
+    ///   invites are accepted (dev mode).
+    /// * Claim, member insert and token issue are ONE transaction: concurrent
+    ///   or repeated accepts yield one token at most and a failed accept does
+    ///   not burn the invite.
+    /// * An existing member id is never overwritten or upgraded.
+    pub async fn accept_invite(
+        &self,
+        invite_id: &str,
+        member_display: &str,
+        trusted_key: Option<&VerifyingKey>,
+        require_signed: bool,
+    ) -> Result<AcceptedInvite> {
+        let member_id = member_display;
+        if member_id.is_empty()
+            || member_id.len() > 128
+            || member_id.chars().any(|c| c.is_control())
+        {
+            return Err(anyhow!("invalid member display name"));
+        }
+        let invite = match trusted_key {
+            Some(key) => self.validate_trusted(invite_id, key, true).await?,
+            None if require_signed => {
+                return Err(anyhow!("signature required but no trusted key supplied"))
+            }
+            None => self.validate(invite_id).await?,
+        };
+        if member_id != invite.target_node {
+            return Err(anyhow!(
+                "Invite {} is not addressed to this identity",
+                invite_id
+            ));
+        }
+        let store = self.stores.get(&invite.space_id)?;
+        let issued = store.redeem_invite(invite_id, &invite.space_id, member_id, invite.role)?;
+        Ok(AcceptedInvite {
+            space_id: invite.space_id,
+            member_id: member_id.to_string(),
+            role: invite.role,
+            token_id: issued.token_id,
+            token: issued.raw,
+        })
     }
 
     /// Revoke an invite (admin only)
@@ -445,5 +507,202 @@ mod tests {
             .validate_trusted(&inv.id, &sk.verifying_key(), true)
             .await
             .is_err());
+    }
+
+    /// Sign `inv` with `sk` and attach the signature.
+    async fn sign(mgr: &InviteManager, sk: &ed25519_dalek::SigningKey, inv: &SpaceInvite) {
+        use ed25519_dalek::Signer;
+        let sig = sk.sign(inv.canonical_payload().as_bytes());
+        mgr.attach_signature(&inv.id, crate::crypto::hex_encode(sig.to_bytes()))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn accept_issues_one_token_with_invite_role_and_is_single_use() {
+        let (mgr, sk) = signed_fixture();
+        let inv = make(&mgr).await;
+        sign(&mgr, &sk, &inv).await;
+        let acc = mgr
+            .accept_invite(&inv.id, "bob", Some(&sk.verifying_key()), false)
+            .await
+            .unwrap();
+        assert_eq!(acc.space_id, "esp_a");
+        assert_eq!(acc.role, SpaceRole::Member);
+        assert!(acc.token.starts_with("xsp_esp_a_"));
+        let auth = crate::espacio::tokens::verify_in_stores(&mgr.stores, &acc.token).unwrap();
+        assert_eq!(auth.member_id, "bob");
+        assert_eq!(auth.role, SpaceRole::Member);
+        // Second redemption fails (invite consumed), no second token.
+        assert!(mgr
+            .accept_invite(&inv.id, "bob", None, false)
+            .await
+            .is_err());
+        assert_eq!(
+            mgr.stores
+                .get("esp_a")
+                .unwrap()
+                .list_tokens()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn redeeming_as_a_different_identity_is_rejected() {
+        let (mgr, sk) = signed_fixture();
+        let inv = make(&mgr).await; // target_node = bob
+        sign(&mgr, &sk, &inv).await;
+        for who in ["eve", "Bob", "bob ", " bob", "adm"] {
+            assert!(
+                mgr.accept_invite(&inv.id, who, Some(&sk.verifying_key()), true)
+                    .await
+                    .is_err(),
+                "{who:?}"
+            );
+            assert!(mgr.accept_invite(&inv.id, who, None, false).await.is_err());
+        }
+        // The invite was not burned by the failed attempts.
+        assert!(mgr.validate(&inv.id).await.is_ok());
+        let store = mgr.stores.get("esp_a").unwrap();
+        assert!(store.list_tokens().unwrap().is_empty());
+        assert!(store.members().unwrap().is_empty());
+        mgr.accept_invite(&inv.id, "bob", Some(&sk.verifying_key()), true)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn trusted_key_implies_signature_required() {
+        let (mgr, sk) = signed_fixture();
+        let inv = make(&mgr).await; // unsigned
+        assert!(mgr
+            .accept_invite(&inv.id, "bob", Some(&sk.verifying_key()), false)
+            .await
+            .is_err());
+        assert!(mgr.validate(&inv.id).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn accept_rejects_forged_signature_revoked_expired_and_existing_member() {
+        use ed25519_dalek::Signer;
+        let (mgr, sk) = signed_fixture();
+        let key = sk.verifying_key();
+        // Forged signature with a key supplied.
+        let inv = make(&mgr).await;
+        let attacker = ed25519_dalek::SigningKey::from_bytes(&[4u8; 32]);
+        let sig = attacker.sign(inv.canonical_payload().as_bytes());
+        mgr.attach_signature(&inv.id, crate::crypto::hex_encode(sig.to_bytes()))
+            .await
+            .unwrap();
+        assert!(mgr
+            .accept_invite(&inv.id, "bob", Some(&key), false)
+            .await
+            .is_err());
+        // Unsigned but a key is configured.
+        let inv2 = make(&mgr).await;
+        assert!(mgr
+            .accept_invite(&inv2.id, "bob", Some(&key), true)
+            .await
+            .is_err());
+        // require_signed without a key cannot be satisfied.
+        assert!(mgr
+            .accept_invite(&inv2.id, "bob", None, true)
+            .await
+            .is_err());
+        // Revoked.
+        mgr.revoke(&inv2.id).await.unwrap();
+        assert!(mgr
+            .accept_invite(&inv2.id, "bob", None, false)
+            .await
+            .is_err());
+        // Expired.
+        let exp = mgr
+            .create_with_expiry(
+                "esp_a".into(),
+                "adm".into(),
+                "bob".into(),
+                SpaceRole::Member,
+                Utc::now() - Duration::seconds(1),
+            )
+            .await
+            .unwrap();
+        assert!(mgr
+            .accept_invite(&exp.id, "bob", None, false)
+            .await
+            .is_err());
+        // Existing member (e.g. the admin) cannot be impersonated or demoted,
+        // and the failed attempt does not burn the invite.
+        let store = mgr.stores.get("esp_a").unwrap();
+        store.add_member("bob", SpaceRole::Admin).unwrap();
+        let inv3 = make(&mgr).await;
+        assert!(mgr
+            .accept_invite(&inv3.id, "bob", None, false)
+            .await
+            .is_err());
+        assert_eq!(store.member("bob").unwrap().unwrap().role, SpaceRole::Admin);
+        assert!(mgr.validate(&inv3.id).await.is_ok());
+        // Invalid display names.
+        assert!(mgr
+            .accept_invite(&inv3.id, "  ", None, false)
+            .await
+            .is_err());
+        assert!(mgr
+            .accept_invite(&inv3.id, "a\nb", None, false)
+            .await
+            .is_err());
+        // Nothing was issued by any failed attempt.
+        assert!(store.list_tokens().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn concurrent_accept_of_one_invite_yields_exactly_one_token() {
+        let mgr = Arc::new(InviteManager::new());
+        let inv = make(&mgr).await;
+        let mut tasks = Vec::new();
+        for _ in 0..16 {
+            let m = mgr.clone();
+            let id = inv.id.clone();
+            tasks.push(tokio::spawn(async move {
+                m.accept_invite(&id, "bob", None, false).await
+            }));
+        }
+        let mut ok = 0;
+        for t in tasks {
+            if t.await.unwrap().is_ok() {
+                ok += 1;
+            }
+        }
+        assert_eq!(ok, 1);
+        let store = mgr.stores.get("esp_a").unwrap();
+        assert_eq!(store.list_tokens().unwrap().len(), 1);
+        assert_eq!(store.members().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_revoke_of_one_invite_yields_exactly_one_revoked() {
+        let mgr = Arc::new(InviteManager::new());
+        let inv = make(&mgr).await;
+        let store = mgr.stores.get("esp_a").unwrap();
+        let mut hs = Vec::new();
+        for _ in 0..16 {
+            let s = store.clone();
+            let id = inv.id.clone();
+            hs.push(std::thread::spawn(move || s.revoke_invite(&id).unwrap()));
+        }
+        let outs: Vec<_> = hs.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            outs.iter()
+                .filter(|o| **o == RevokeOutcome::Revoked)
+                .count(),
+            1
+        );
+        assert_eq!(
+            outs.iter()
+                .filter(|o| **o == RevokeOutcome::AlreadyRevoked)
+                .count(),
+            15
+        );
     }
 }

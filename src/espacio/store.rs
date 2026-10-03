@@ -139,8 +139,8 @@ pub struct SpaceStore {
 }
 
 /// Ordered migration steps; index + 1 is the resulting `user_version`.
-/// Append only. Step 2 adds `meta` (WP-13j encryption flag); WP-13l adds a
-/// `tokens` table as a later step.
+/// Append only. Step 2 adds `meta` (WP-13j encryption flag); step 3 adds the
+/// WP-13l `tokens` table.
 const MIGRATIONS: &[&str] = &[
     "
     CREATE TABLE members (
@@ -171,6 +171,17 @@ const MIGRATIONS: &[&str] = &[
     CREATE TABLE meta (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
+    );
+",
+    "
+    CREATE TABLE tokens (
+        token_id   TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        member_id  TEXT NOT NULL,
+        role       TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT,
+        revoked    INTEGER NOT NULL DEFAULT 0
     );
 ",
 ];
@@ -204,7 +215,7 @@ impl SpaceStore {
         })
     }
 
-    fn lock(&self) -> MutexGuard<'_, Connection> {
+    pub(super) fn lock(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|p| p.into_inner())
     }
 
@@ -639,13 +650,29 @@ impl SpaceStores {
 
     /// Store for a space, creating directory and database when missing.
     pub fn get(&self, space_id: &str) -> Result<Arc<SpaceStore>> {
+        self.get_inner(space_id, true)
+    }
+
+    /// Shared open path. The cache mutex is held across the open and migrate
+    /// step, so two callers can never open the same database twice.
+    fn get_inner(&self, space_id: &str, create: bool) -> Result<Arc<SpaceStore>> {
         validate_space_id(space_id)?;
         if let Some(ring) = &self.keys {
             // Locked: no store access at all, never a plaintext fallback.
             ring.check_unlocked(space_id)?;
         }
-        if let Some(s) = self.cache().get(space_id) {
+        let mut cache = self.cache();
+        if let Some(s) = cache.get(space_id) {
             return Ok(s.clone());
+        }
+        if !create {
+            let exists = self
+                .spaces_dir
+                .as_ref()
+                .is_some_and(|d| d.join(space_id).join(DB_FILE).is_file());
+            if !exists {
+                return Err(anyhow!(SpaceError::NotFound(space_id.to_string())));
+            }
         }
         // Fail closed: anything that says "encrypted" wins over a missing
         // keystore, and a plaintext-only registry refuses such a space.
@@ -662,11 +689,8 @@ impl SpaceStores {
             }
         }
         let store = self.open_new(space_id)?;
-        Ok(self
-            .cache()
-            .entry(space_id.to_string())
-            .or_insert(store)
-            .clone())
+        cache.insert(space_id.to_string(), store.clone());
+        Ok(store)
     }
 
     /// At boot: for a space without a keystore file, look for encryption
@@ -749,13 +773,12 @@ impl SpaceStores {
 
     /// Store for a space only if it already exists (never creates anything).
     pub fn get_existing(&self, space_id: &str) -> Result<Option<Arc<SpaceStore>>> {
-        validate_space_id(space_id)?;
-        if let Some(s) = self.cache().get(space_id) {
-            return Ok(Some(s.clone()));
-        }
-        match &self.spaces_dir {
-            Some(dir) if dir.join(space_id).join(DB_FILE).is_file() => self.get(space_id).map(Some),
-            _ => Ok(None),
+        match self.get_inner(space_id, false) {
+            Ok(s) => Ok(Some(s)),
+            Err(e) => match e.downcast_ref::<SpaceError>() {
+                Some(SpaceError::NotFound(_)) => Ok(None),
+                _ => Err(e),
+            },
         }
     }
 
