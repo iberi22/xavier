@@ -1829,10 +1829,18 @@ pub async fn start_http_server(
         let _ = std::fs::create_dir_all(&hc_dir);
         let hc_path = hc_dir.join("humanchallenge.db");
         match xavier::humanchallenge::HumanChallengeStore::new(&hc_path) {
-            Ok(s) => Some(Arc::new(s)),
+            Ok(s) => {
+                xavier::humanchallenge::store::set_store_backing(
+                    xavier::humanchallenge::store::StoreBacking::File,
+                );
+                Some(Arc::new(s))
+            }
             Err(e) => {
                 tracing::error!(path = %hc_path.display(), error = %e,
                     "HumanChallenge store unavailable; challenges/introspection will NOT persist");
+                xavier::humanchallenge::store::set_store_backing(
+                    xavier::humanchallenge::store::StoreBacking::Memory,
+                );
                 None
             }
         }

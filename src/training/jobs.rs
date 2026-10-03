@@ -254,6 +254,17 @@ impl JobRepository {
         Ok(n as usize)
     }
 
+    /// Forgets the artifact path of a terminal job whose files were pruned.
+    /// Returns false when the job is missing or not terminal.
+    pub fn clear_pruned_artifact(&self, id: &str) -> Result<bool> {
+        let c = self.conn.lock().map_err(|_| anyhow!("jobs db poisoned"))?;
+        Ok(c.execute(
+            "UPDATE training_jobs SET artifact_path = NULL \
+             WHERE id = ?1 AND status IN ('succeeded','failed','cancelled')",
+            params![id],
+        )? > 0)
+    }
+
     /// Marks a non-terminal job cancelled. Returns false if already terminal.
     pub fn cancel(&self, id: &str) -> Result<bool> {
         self.update(
@@ -263,6 +274,19 @@ impl JobRepository {
                 ..Default::default()
             },
         )
+    }
+}
+
+#[cfg(test)]
+impl JobRepository {
+    /// Backdates a job so retention tests do not need to sleep.
+    pub(crate) fn set_updated_at_for_test(&self, id: &str, ts: &str) {
+        let c = self.conn.lock().unwrap();
+        c.execute(
+            "UPDATE training_jobs SET updated_at = ?2 WHERE id = ?1",
+            params![id, ts],
+        )
+        .unwrap();
     }
 }
 

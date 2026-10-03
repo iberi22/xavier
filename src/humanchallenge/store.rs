@@ -80,6 +80,95 @@ const MIGRATION_SQL: &str = "
     );
 ";
 
+/// Why `verify_introspection_vote` could not apply a verdict.
+#[derive(Debug)]
+pub enum VerifyVoteError {
+    /// No vote with that id.
+    NotFound,
+    /// The vote is not an introspection insight (no `technique`).
+    NotIntrospection,
+    /// The vote was already reviewed (verdict is no longer the pending `refine`).
+    AlreadyReviewed,
+    Db(rusqlite::Error),
+}
+
+impl std::fmt::Display for VerifyVoteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => write!(f, "vote not found"),
+            Self::NotIntrospection => write!(f, "vote is not an introspection insight"),
+            Self::AlreadyReviewed => write!(f, "vote was already reviewed"),
+            Self::Db(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for VerifyVoteError {}
+
+impl From<rusqlite::Error> for VerifyVoteError {
+    fn from(e: rusqlite::Error) -> Self {
+        Self::Db(e)
+    }
+}
+
+/// How the process-wide HumanChallenge/introspection store is backed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreBacking {
+    /// Not reported yet (e.g. the daemon has not built the store).
+    Unknown,
+    File,
+    Memory,
+}
+
+static STORE_BACKING: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Record how the daemon's store is backed; read by `/health`.
+pub fn set_store_backing(backing: StoreBacking) {
+    let v = match backing {
+        StoreBacking::Unknown => 0,
+        StoreBacking::File => 1,
+        StoreBacking::Memory => 2,
+    };
+    STORE_BACKING.store(v, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn store_backing() -> StoreBacking {
+    match STORE_BACKING.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => StoreBacking::File,
+        2 => StoreBacking::Memory,
+        _ => StoreBacking::Unknown,
+    }
+}
+
+/// Reason string added to `/health` degraded reasons when the store is in-memory.
+pub const MEMORY_FALLBACK_REASON: &str =
+    "subsystem:humanchallenge_store: in-memory fallback active, challenges and introspection are not persisted";
+
+/// Add `humanchallenge_store` (and, on memory fallback, a degraded reason) to a
+/// serialized `/health` body.
+pub fn annotate_health(health: &mut serde_json::Value, backing: StoreBacking) {
+    let Some(obj) = health.as_object_mut() else {
+        return;
+    };
+    let label = match backing {
+        StoreBacking::Unknown => "unknown",
+        StoreBacking::File => "file",
+        StoreBacking::Memory => "memory",
+    };
+    obj.insert("humanchallenge_store".into(), label.into());
+    if backing == StoreBacking::Memory {
+        let reasons = obj
+            .entry("degraded_reasons")
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+        if let Some(list) = reasons.as_array_mut() {
+            list.push(MEMORY_FALLBACK_REASON.into());
+        }
+        if obj.get("status").and_then(|s| s.as_str()) == Some("healthy") {
+            obj.insert("status".into(), "degraded".into());
+        }
+    }
+}
+
 pub struct HumanChallengeStore {
     conn: Mutex<Connection>,
 }
@@ -380,6 +469,72 @@ impl HumanChallengeStore {
         Ok(count as usize)
     }
 
+    /// Introspection insights awaiting human verification (unreviewed `refine` votes
+    /// carrying a technique), oldest first.
+    pub fn list_pending_introspection_votes(&self, limit: u32) -> SqliteResult<Vec<CurationVote>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {VOTE_COLUMNS}
+             FROM curation_votes
+             WHERE technique IS NOT NULL AND verdict = 'refine' AND fact_verified = 0
+             ORDER BY voted_at ASC, id ASC LIMIT ?1"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params![limit], Self::row_to_vote)?;
+        rows.collect()
+    }
+
+    /// Apply a human verdict to a pending introspection vote.
+    ///
+    /// `accept` with `fact_verified` makes the vote training-eligible only if training
+    /// consent was recorded at completion (the vote's existing `training_eligible` flag);
+    /// verification never grants consent. `reject` is never eligible. Votes that are not
+    /// introspection insights are never touched.
+    pub fn verify_introspection_vote(
+        &self,
+        id: &str,
+        accept: bool,
+        fact_verified: bool,
+    ) -> Result<CurationVote, VerifyVoteError> {
+        let conn = self.conn.lock().unwrap();
+        let vote = {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {VOTE_COLUMNS} FROM curation_votes WHERE id = ?1"
+            ))?;
+            let mut rows = stmt.query([id])?;
+            match rows.next()? {
+                Some(row) => Self::row_to_vote(row)?,
+                None => return Err(VerifyVoteError::NotFound),
+            }
+        };
+        if vote.technique.is_none() {
+            return Err(VerifyVoteError::NotIntrospection);
+        }
+        if vote.verdict != crate::humanchallenge::types::CurationVerdict::Refine
+            || vote.fact_verified
+        {
+            return Err(VerifyVoteError::AlreadyReviewed);
+        }
+        let (verdict, fact_v, eligible) = if accept {
+            (
+                "accept",
+                fact_verified,
+                fact_verified && vote.training_eligible,
+            )
+        } else {
+            ("reject", false, false)
+        };
+        conn.execute(
+            "UPDATE curation_votes SET verdict = ?1, fact_verified = ?2, training_eligible = ?3
+             WHERE id = ?4 AND technique IS NOT NULL",
+            params![verdict, fact_v as i32, eligible as i32, id],
+        )?;
+        let mut updated = vote;
+        updated.verdict = verdict.parse().unwrap_or(updated.verdict);
+        updated.fact_verified = fact_v;
+        updated.training_eligible = eligible;
+        Ok(updated)
+    }
+
     // -----------------------------------------------------------------------
     // Introspection Session methods
     // -----------------------------------------------------------------------
@@ -618,5 +773,33 @@ mod tests {
             .unwrap();
         let eligible = store.get_training_eligible_votes(10).unwrap();
         assert_eq!(eligible[0].verdict, by_challenge[0].verdict);
+    }
+
+    #[test]
+    fn test_annotate_health_reports_backing_and_memory_reason() {
+        let mut file = serde_json::json!({"status": "healthy", "degraded_reasons": []});
+        annotate_health(&mut file, StoreBacking::File);
+        assert_eq!(file["humanchallenge_store"], "file");
+        assert_eq!(file["status"], "healthy");
+        assert_eq!(file["degraded_reasons"].as_array().unwrap().len(), 0);
+
+        let mut mem = serde_json::json!({"status": "healthy", "degraded_reasons": []});
+        annotate_health(&mut mem, StoreBacking::Memory);
+        assert_eq!(mem["humanchallenge_store"], "memory");
+        assert_eq!(mem["status"], "degraded");
+        assert_eq!(mem["degraded_reasons"][0], MEMORY_FALLBACK_REASON);
+
+        let mut unknown = serde_json::json!({"status": "healthy"});
+        annotate_health(&mut unknown, StoreBacking::Unknown);
+        assert_eq!(unknown["humanchallenge_store"], "unknown");
+    }
+
+    #[test]
+    fn test_store_backing_global_roundtrip() {
+        set_store_backing(StoreBacking::Memory);
+        assert_eq!(store_backing(), StoreBacking::Memory);
+        set_store_backing(StoreBacking::File);
+        assert_eq!(store_backing(), StoreBacking::File);
+        set_store_backing(StoreBacking::Unknown);
     }
 }

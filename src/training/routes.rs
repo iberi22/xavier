@@ -6,6 +6,7 @@ use super::backend::{
     ManualNotebookBackend, RemoteRef, DEFAULT_KILL_GRACE,
 };
 use super::jobs::{JobRepository, JobStatus, JobUpdate, NewJob, TrainingJob};
+use super::retention::{self, RetentionPolicy};
 use anyhow::Result;
 use axum::{
     body::Body,
@@ -120,6 +121,49 @@ pub struct JobsState {
     max_concurrent: usize,
     /// Serializes the concurrency check + insert in `create_job`.
     create_lock: tokio::sync::Mutex<()>,
+    /// Artifact retention (`XAVIER_TRAIN_RETENTION_DAYS`, `XAVIER_TRAIN_ARTIFACTS_BUDGET_BYTES`).
+    retention: RetentionPolicy,
+}
+
+impl JobsState {
+    /// Runs one retention pass (blocking file work).
+    fn prune_blocking(&self) {
+        if let Err(e) = retention::prune(
+            &self.repo,
+            &self.jobs_root,
+            &self.retention,
+            chrono::Utc::now(),
+        ) {
+            tracing::warn!(error = %e, "training retention pass failed");
+        }
+    }
+}
+
+/// Prunes in the background after a job reaches a terminal state.
+fn schedule_prune(st: &Arc<JobsState>) {
+    if tokio::runtime::Handle::try_current().is_err() {
+        return;
+    }
+    let st = st.clone();
+    tokio::task::spawn_blocking(move || st.prune_blocking());
+}
+
+/// Periodic retention pass (first run shortly after startup).
+fn spawn_periodic_prune(st: &Arc<JobsState>) {
+    if tokio::runtime::Handle::try_current().is_err() {
+        return;
+    }
+    let st = st.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(
+            retention::PRUNE_INTERVAL_SECS,
+        ));
+        loop {
+            tick.tick().await;
+            let s = st.clone();
+            let _ = tokio::task::spawn_blocking(move || s.prune_blocking()).await;
+        }
+    });
 }
 
 pub fn router(cfg: TrainingJobsConfig) -> Result<Router> {
@@ -148,10 +192,13 @@ pub fn router(cfg: TrainingJobsConfig) -> Result<Router> {
         max_artifact_bytes: cfg.max_artifact_bytes,
         max_concurrent: cfg.max_concurrent,
         create_lock: tokio::sync::Mutex::new(()),
+        retention: RetentionPolicy::from_env(),
     }))
 }
 
 fn router_with(state: JobsState) -> Router {
+    let state = Arc::new(state);
+    spawn_periodic_prune(&state);
     Router::new()
         .route("/v1/training/jobs", post(create_job).get(list_jobs))
         .route("/v1/training/jobs/{id}", get(get_job))
@@ -163,7 +210,7 @@ fn router_with(state: JobsState) -> Router {
             "/v1/training/jobs/{id}/notebook/{name}",
             get(get_notebook_file),
         )
-        .with_state(Arc::new(state))
+        .with_state(state)
 }
 
 type St = State<Arc<JobsState>>;
@@ -312,8 +359,14 @@ fn fail(st: &JobsState, id: &str, msg: String) {
     }
 }
 
-/// Submits the job and follows it to a terminal (or awaiting) state.
+/// Drives the job, then prunes old artifacts now that it is no longer running.
 async fn drive(st: Arc<JobsState>, backend: Arc<dyn ComputeBackend>, job: TrainingJob) {
+    drive_inner(st.clone(), backend, job).await;
+    schedule_prune(&st);
+}
+
+/// Submits the job and follows it to a terminal (or awaiting) state.
+async fn drive_inner(st: Arc<JobsState>, backend: Arc<dyn ComputeBackend>, job: TrainingJob) {
     let r = RemoteRef(job.id.clone());
     let logs = log_path(&st.jobs_root, &job.id)
         .to_string_lossy()
@@ -437,6 +490,7 @@ async fn cancel_job(State(st): St, Path(id): Path<String>) -> Response {
                 &st.notebook
             };
             let _ = b.cancel(&RemoteRef(id.clone())).await;
+            schedule_prune(&st);
             match load(&st, &id) {
                 Ok(j) => Json(j).into_response(),
                 Err(r) => r,
@@ -593,6 +647,7 @@ async fn upload_artifact(
         if let Ok(Some(j)) = st.repo.get(&id) {
             status = j.status;
         }
+        schedule_prune(&st);
     }
     Json(json!({ "kind": kind, "bytes": written, "status": status })).into_response()
 }
@@ -657,6 +712,15 @@ mod tests {
     }
 
     fn fixture_cap(script_body: &str, max: u64, cap: usize) -> Fixture {
+        fixture_with(script_body, max, cap, RetentionPolicy::disabled())
+    }
+
+    fn fixture_with(
+        script_body: &str,
+        max: u64,
+        cap: usize,
+        retention: RetentionPolicy,
+    ) -> Fixture {
         let t = tempfile::tempdir().unwrap();
         let root = t.path().join("data");
         let cmd = write_script(t.path(), script_body);
@@ -676,6 +740,7 @@ mod tests {
             max_artifact_bytes: max,
             max_concurrent: cap,
             create_lock: tokio::sync::Mutex::new(()),
+            retention,
         });
         Fixture {
             _t: t,
@@ -771,6 +836,74 @@ mod tests {
             .join("artifacts")
             .join("m.gguf")
             .is_file());
+    }
+
+    const OK_SCRIPT: &str = "printf GGUF0000 > \"$OUT/m.gguf\"";
+
+    async fn run_to_success(f: &Fixture) -> String {
+        let (_, j) = call(
+            &f.app,
+            "POST",
+            "/v1/training/jobs",
+            create_body(&f.good, "local"),
+        )
+        .await;
+        let id = j["id"].as_str().unwrap().to_string();
+        wait_status(&f.app, &id, "succeeded").await;
+        id
+    }
+
+    #[tokio::test]
+    async fn completion_prunes_over_budget_unreferenced_artifact() {
+        let retention = RetentionPolicy {
+            retention_days: 0,
+            budget_bytes: 1,
+            referenced: Arc::new(|| Ok(Vec::new())),
+        };
+        let f = fixture_with(OK_SCRIPT, 1 << 20, 8, retention);
+        let id = run_to_success(&f).await;
+        let gguf = f.root.join("jobs").join(&id).join("artifacts/m.gguf");
+        for _ in 0..200 {
+            if !gguf.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        assert!(
+            !gguf.exists(),
+            "unreferenced artifact over budget must be pruned"
+        );
+    }
+
+    #[tokio::test]
+    async fn completion_keeps_artifact_referenced_by_registry() {
+        let t_root = std::sync::Arc::new(std::sync::Mutex::new(None::<PathBuf>));
+        let seen = t_root.clone();
+        let retention = RetentionPolicy {
+            retention_days: 0,
+            budget_bytes: 1,
+            referenced: Arc::new(move || {
+                // The registry references every job's artifacts/m.gguf under the jobs tree.
+                let root = seen.lock().unwrap().clone().unwrap_or_default();
+                Ok(std::fs::read_dir(root)
+                    .map(|rd| {
+                        rd.flatten()
+                            .map(|e| e.path().join("artifacts/m.gguf"))
+                            .collect()
+                    })
+                    .unwrap_or_default())
+            }),
+        };
+        let f = fixture_with(OK_SCRIPT, 1 << 20, 8, retention);
+        *t_root.lock().unwrap() = Some(f.root.join("jobs"));
+        let id = run_to_success(&f).await;
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        assert!(f
+            .root
+            .join("jobs")
+            .join(&id)
+            .join("artifacts/m.gguf")
+            .exists());
     }
 
     #[tokio::test]
@@ -1024,6 +1157,7 @@ mod tests {
             max_artifact_bytes: 1,
             max_concurrent: 1,
             create_lock: tokio::sync::Mutex::new(()),
+            retention: RetentionPolicy::disabled(),
         };
         let mk = || {
             st.repo
