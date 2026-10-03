@@ -34,6 +34,11 @@ const INIT_SQL: &str = "
     CREATE INDEX IF NOT EXISTS idx_hc_created ON human_challenge_events(created_at);
 ";
 
+const VOTE_COLUMNS: &str = "id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at, technique";
+
+/// Votes that may feed the training gate.
+const GATE_VOTE_FILTER: &str = "training_eligible = 1 AND verdict IN ('accept', 'refine') AND NOT (technique IS NOT NULL AND fact_verified = 0)";
+
 const MIGRATION_SQL: &str = "
     CREATE TABLE IF NOT EXISTS curation_votes (
         id TEXT PRIMARY KEY,
@@ -108,6 +113,20 @@ impl HumanChallengeStore {
             conn.execute_batch(
                 "ALTER TABLE introspection_sessions ADD COLUMN training_consent INTEGER NOT NULL DEFAULT 0;",
             )?;
+        }
+        let has_technique = {
+            let mut stmt = conn.prepare("PRAGMA table_info(curation_votes)")?;
+            let names = stmt.query_map([], |row| row.get::<_, String>(1))?;
+            let mut found = false;
+            for n in names {
+                if n? == "technique" {
+                    found = true;
+                }
+            }
+            found
+        };
+        if !has_technique {
+            conn.execute_batch("ALTER TABLE curation_votes ADD COLUMN technique TEXT;")?;
         }
         Ok(())
     }
@@ -287,8 +306,8 @@ impl HumanChallengeStore {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO curation_votes
-             (id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             (id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at, technique)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 vote.id,
                 vote.challenge_id,
@@ -297,73 +316,56 @@ impl HumanChallengeStore {
                 fact_v,
                 domain_tags_json,
                 training_e,
-                voted_ts
+                voted_ts,
+                vote.technique
             ],
         )?;
         Ok(())
     }
 
-    /// Get all curation votes eligible for training (accepted or refined + training_eligible).
+    /// Shared decoder for `VOTE_COLUMNS` rows; unknown verdicts decode as `Refine`.
+    fn row_to_vote(row: &rusqlite::Row) -> SqliteResult<CurationVote> {
+        use crate::humanchallenge::types::CurationVerdict;
+
+        let domain_tags_json: String = row.get(5)?;
+        let voted_ts: i64 = row.get(7)?;
+        let verdict_str: String = row.get(2)?;
+        Ok(CurationVote {
+            id: row.get(0)?,
+            challenge_id: row.get(1)?,
+            verdict: CurationVerdict::from_str(&verdict_str).unwrap_or(CurationVerdict::Refine),
+            curated_content: row.get(3)?,
+            fact_verified: row.get::<_, i32>(4)? != 0,
+            domain_tags: serde_json::from_str(&domain_tags_json).unwrap_or_default(),
+            training_eligible: row.get::<_, i32>(6)? != 0,
+            voted_at: DateTime::from_timestamp(voted_ts, 0).unwrap_or_else(Utc::now),
+            technique: row.get(8)?,
+        })
+    }
+
+    /// Get curation votes eligible for training (accepted or refined + training_eligible).
+    /// Unverified introspection votes (technique set, fact_verified=0) are pending a human
+    /// check and never count toward the gate.
     pub fn get_training_eligible_votes(&self, limit: u32) -> SqliteResult<Vec<CurationVote>> {
-        use crate::humanchallenge::types::{CurationVerdict, CurationVote};
-        use std::str::FromStr;
-
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {VOTE_COLUMNS}
              FROM curation_votes
-             WHERE training_eligible = 1 AND verdict IN ('accept', 'refine')
-             ORDER BY voted_at DESC LIMIT ?1",
-        )?;
-
-        let rows = stmt.query_map(rusqlite::params![limit], |row| {
-            let domain_tags_json: String = row.get(5)?;
-            let domain_tags: Vec<String> =
-                serde_json::from_str(&domain_tags_json).unwrap_or_default();
-            let voted_ts: i64 = row.get(7)?;
-            Ok(CurationVote {
-                id: row.get(0)?,
-                challenge_id: row.get(1)?,
-                verdict: CurationVerdict::from_str(&row.get::<_, String>(2)?).unwrap(),
-                curated_content: row.get(3)?,
-                fact_verified: row.get::<_, i32>(4)? != 0,
-                domain_tags,
-                training_eligible: row.get::<_, i32>(6)? != 0,
-                voted_at: DateTime::from_timestamp(voted_ts, 0).unwrap_or_else(Utc::now),
-            })
-        })?;
-
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
-        Ok(results)
+             WHERE {GATE_VOTE_FILTER}
+             ORDER BY voted_at DESC LIMIT ?1"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params![limit], Self::row_to_vote)?;
+        rows.collect()
     }
 
     /// All curation votes for a challenge id (eligible or not), oldest first.
     pub fn get_votes_for_challenge(&self, challenge_id: &str) -> SqliteResult<Vec<CurationVote>> {
-        use crate::humanchallenge::types::CurationVerdict;
-
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at
-             FROM curation_votes WHERE challenge_id = ?1 ORDER BY voted_at ASC, id ASC",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![challenge_id], |row| {
-            let domain_tags_json: String = row.get(5)?;
-            let voted_ts: i64 = row.get(7)?;
-            Ok(CurationVote {
-                id: row.get(0)?,
-                challenge_id: row.get(1)?,
-                verdict: CurationVerdict::from_str(&row.get::<_, String>(2)?)
-                    .unwrap_or(CurationVerdict::Reject),
-                curated_content: row.get(3)?,
-                fact_verified: row.get::<_, i32>(4)? != 0,
-                domain_tags: serde_json::from_str(&domain_tags_json).unwrap_or_default(),
-                training_eligible: row.get::<_, i32>(6)? != 0,
-                voted_at: DateTime::from_timestamp(voted_ts, 0).unwrap_or_else(Utc::now),
-            })
-        })?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {VOTE_COLUMNS}
+             FROM curation_votes WHERE challenge_id = ?1 ORDER BY voted_at ASC, id ASC"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params![challenge_id], Self::row_to_vote)?;
         rows.collect()
     }
 
@@ -371,7 +373,7 @@ impl HumanChallengeStore {
     pub fn count_training_eligible(&self) -> SqliteResult<usize> {
         let conn = self.conn.lock().unwrap();
         let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM curation_votes WHERE training_eligible = 1 AND verdict IN ('accept', 'refine')",
+            &format!("SELECT COUNT(*) FROM curation_votes WHERE {GATE_VOTE_FILTER}"),
             [],
             |row| row.get(0),
         )?;
@@ -420,7 +422,6 @@ impl HumanChallengeStore {
         use crate::humanchallenge::types::{
             IntrospectionSession, IntrospectionStatus, IntrospectionTechnique, IntrospectionTurn,
         };
-        use std::str::FromStr;
 
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -545,6 +546,7 @@ impl HumanChallengeStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::humanchallenge::types::CurationVerdict;
 
     #[test]
     fn test_store_save_get_and_answer() {
@@ -588,5 +590,33 @@ mod tests {
         let month_events = store.list_events_by_month(&current_month, 10).unwrap();
         assert_eq!(month_events.len(), 1);
         assert_eq!(month_events[0].id, event.id);
+    }
+
+    #[test]
+    fn test_unknown_verdict_decodes_identically_in_both_readers() {
+        let store = HumanChallengeStore::in_memory().unwrap();
+        {
+            let conn = store.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO curation_votes (id, challenge_id, verdict, fact_verified, domain_tags, training_eligible, voted_at)
+                 VALUES ('cv_odd', 'hc_odd', 'weird_verdict', 1, '[]', 1, 0)",
+                [],
+            )
+            .unwrap();
+        }
+        let by_challenge = store.get_votes_for_challenge("hc_odd").unwrap();
+        let eligible = store.get_training_eligible_votes(10).unwrap();
+        // The eligible query only matches accept/refine, so compare the shared decoder directly.
+        assert_eq!(by_challenge.len(), 1);
+        assert_eq!(by_challenge[0].verdict, CurationVerdict::Refine);
+        assert!(eligible.is_empty());
+        store
+            .conn
+            .lock()
+            .unwrap()
+            .execute("UPDATE curation_votes SET verdict = 'refine'", [])
+            .unwrap();
+        let eligible = store.get_training_eligible_votes(10).unwrap();
+        assert_eq!(eligible[0].verdict, by_challenge[0].verdict);
     }
 }

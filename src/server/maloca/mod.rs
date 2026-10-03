@@ -40,13 +40,16 @@ pub fn v1_maloca_router_with_maloca_store(
     maloca_store: Option<Arc<crate::maloca::MalocaStore>>,
 ) -> Router {
     let registry_mgr = registry_route::AppRegistryManager::default();
-    let challenge_state = challenge_store
-        .clone()
-        .map(challenge_routes::ChallengeState::new)
-        .unwrap_or_else(challenge_routes::ChallengeState::in_memory);
-    let introspection_state = challenge_store
-        .map(introspection_routes::IntrospectionState::new)
-        .unwrap_or_else(introspection_routes::IntrospectionState::in_memory);
+    // Without a persistent store, both route groups must share ONE in-memory store so an
+    // introspection session still finds the challenge it refers to.
+    let challenge_store = challenge_store.unwrap_or_else(|| {
+        Arc::new(
+            HumanChallengeStore::in_memory()
+                .expect("failed to create in-memory HumanChallengeStore"),
+        )
+    });
+    let challenge_state = challenge_routes::ChallengeState::new(challenge_store.clone());
+    let introspection_state = introspection_routes::IntrospectionState::new(challenge_store);
     let mut backlog_svc = backlog_route::UnifiedBacklogService::new();
     if let Some(dir) = workspace_dir {
         backlog_svc = backlog_svc.with_workspace_dir(dir);
