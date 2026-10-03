@@ -121,7 +121,7 @@ async fn create_test_cli_state(temp_dir: &TempDir) -> CliState {
 // The std Mutex only serialises XAVIER_TOKEN mutation across tests in this binary;
 // holding it across awaits is intended and safe on the per-test runtime.
 #[allow(clippy::await_holding_lock)]
-async fn maloca_write_routes_require_token_reads_stay_public() {
+async fn maloca_support_requires_token_other_reads_stay_public() {
     let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let prev_token = std::env::var("XAVIER_TOKEN").ok();
     std::env::set_var("XAVIER_TOKEN", "maloca-auth-gate-test-token");
@@ -155,8 +155,8 @@ async fn maloca_write_routes_require_token_reads_stay_public() {
         "POST /maloca/support without a token must be rejected"
     );
 
-    // 2. GET /maloca/support with NO token -> stays public (200 OK), matching
-    //    the router's existing public-dogfood-read design.
+    // 2. GET /maloca/support with NO token -> 401: support tickets are internal
+    //    incidents ("incidencias internas") and must not be readable anonymously.
     let req = Request::builder()
         .method("GET")
         .uri("/maloca/support")
@@ -165,8 +165,35 @@ async fn maloca_write_routes_require_token_reads_stay_public() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(
         resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "GET /maloca/support without a token must be rejected"
+    );
+
+    // 2b. GET /maloca/support WITH the token -> 200.
+    let req = Request::builder()
+        .method("GET")
+        .uri("/maloca/support")
+        .header("X-Xavier-Token", "maloca-auth-gate-test-token")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
         StatusCode::OK,
-        "GET /maloca/support must remain public even with the auth gate in place"
+        "authenticated GET /maloca/support must succeed"
+    );
+
+    // 2c. Other Maloca reads stay public (panel dogfood): GET /maloca/backlog.
+    let req = Request::builder()
+        .method("GET")
+        .uri("/maloca/backlog")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_ne!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "GET /maloca/backlog stays public"
     );
 
     // 3. OPTIONS preflight on the mutating route must not be rejected by the
