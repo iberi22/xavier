@@ -139,6 +139,31 @@ impl ConversationsDb {
         })
     }
 
+    /// Pool id of the conversations database stored at `db_path`. Keyed by
+    /// path, so two spaces with the same id under different roots never share
+    /// a pool.
+    pub fn connection_id_for_path(db_path: &Path) -> String {
+        use sha2::{Digest, Sha256};
+        let digest =
+            crate::crypto::hex_encode(Sha256::digest(db_path.to_string_lossy().as_bytes()));
+        format!("conv_at_{}", &digest[..16])
+    }
+
+    /// Open (or create) the conversations database at an explicit file path
+    /// (a space keeps it inside its own directory). Never reads or writes
+    /// `~/.xavier`.
+    pub async fn open_at(project_id: &str, db_path: &Path) -> Result<Self> {
+        validate_project_id(project_id)?;
+        let full_project_id = Self::connection_id_for_path(db_path);
+        ConnectionManager::global().connect_with_path(&full_project_id, db_path.to_path_buf())?;
+
+        Ok(Self {
+            project_id: project_id.to_string(),
+            full_project_id,
+            schema_initialized: OnceCell::new(),
+        })
+    }
+
     /// Open an in-memory conversations database (for testing).
     pub async fn open_in_memory(project_id: &str) -> Result<Self> {
         validate_project_id(project_id)?;

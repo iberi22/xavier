@@ -83,6 +83,61 @@ impl SpaceLink {
     }
 }
 
+/// Parse every row of a `links` table. Rows that do not parse are dropped.
+fn read_links(conn: &rusqlite::Connection) -> Result<Vec<SpaceLink>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, resource_id, target_node, permission, expires_at, revoked,
+                created_at, namespace, path_prefix
+         FROM links ORDER BY created_at, id",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, Option<String>>(4)?,
+            r.get::<_, bool>(5)?,
+            r.get::<_, String>(6)?,
+            r.get::<_, Option<String>>(7)?,
+            r.get::<_, Option<String>>(8)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (id, resource_id, target_node, perm, exp, revoked, created, namespace, prefix) = row?;
+        // A row that does not parse is dropped: a link must never widen
+        // access because of a damaged record.
+        let (Ok(permission), Ok(created_at)) = (
+            serde_json::from_value::<Permission>(serde_json::Value::String(perm)),
+            parse_ts(&created),
+        ) else {
+            continue;
+        };
+        let expires_at = match exp {
+            Some(e) => match parse_ts(&e) {
+                Ok(t) => Some(t),
+                Err(_) => continue,
+            },
+            None => None,
+        };
+        out.push(SpaceLink {
+            grant: CrossGrant {
+                id,
+                resource_id,
+                target_node,
+                permission,
+                expires_at,
+                revoked,
+                created_at,
+            },
+            namespace,
+            path_prefix: prefix,
+        });
+    }
+    Ok(out)
+}
+
 impl SpaceStore {
     pub fn insert_link(&self, l: &SpaceLink) -> Result<()> {
         self.lock().execute(
@@ -105,59 +160,16 @@ impl SpaceStore {
     }
 
     pub fn list_links(&self) -> Result<Vec<SpaceLink>> {
-        let conn = self.lock();
-        let mut stmt = conn.prepare(
-            "SELECT id, resource_id, target_node, permission, expires_at, revoked,
-                    created_at, namespace, path_prefix
-             FROM links ORDER BY created_at, id",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, Option<String>>(4)?,
-                r.get::<_, bool>(5)?,
-                r.get::<_, String>(6)?,
-                r.get::<_, Option<String>>(7)?,
-                r.get::<_, Option<String>>(8)?,
-            ))
-        })?;
-        let mut out = Vec::new();
-        for row in rows {
-            let (id, resource_id, target_node, perm, exp, revoked, created, namespace, prefix) =
-                row?;
-            // A row that does not parse is dropped: a link must never widen
-            // access because of a damaged record.
-            let (Ok(permission), Ok(created_at)) = (
-                serde_json::from_value::<Permission>(serde_json::Value::String(perm)),
-                parse_ts(&created),
-            ) else {
-                continue;
-            };
-            let expires_at = match exp {
-                Some(e) => match parse_ts(&e) {
-                    Ok(t) => Some(t),
-                    Err(_) => continue,
-                },
-                None => None,
-            };
-            out.push(SpaceLink {
-                grant: CrossGrant {
-                    id,
-                    resource_id,
-                    target_node,
-                    permission,
-                    expires_at,
-                    revoked,
-                    created_at,
-                },
-                namespace,
-                path_prefix: prefix,
-            });
-        }
-        Ok(out)
+        read_links(&self.lock())
+    }
+
+    /// Revoke every active link whose grantee is `grantee`. Returns how many
+    /// rows changed.
+    pub fn revoke_links_to(&self, grantee: &str) -> Result<usize> {
+        Ok(self.lock().execute(
+            "UPDATE links SET revoked = 1 WHERE target_node = ?1 AND revoked = 0",
+            params![link_target(grantee)],
+        )?)
     }
 
     /// Revoke a link. Returns false when the id is unknown.
@@ -206,32 +218,113 @@ pub async fn create_link(
     Ok(link)
 }
 
+/// Links stored in `grantor`'s database. A LOCKED grantor refuses store
+/// access, but its `links` table is not encrypted: it is read through a
+/// read-only connection so the caller can still be told the space is locked.
+fn links_of(stores: &super::store::SpaceStores, grantor: &str) -> Option<Vec<SpaceLink>> {
+    match stores.get(grantor) {
+        Ok(store) => store.list_links().ok(),
+        Err(_) if stores.key_ring().is_some_and(|r| r.is_locked(grantor)) => {
+            let db = stores
+                .spaces_dir()?
+                .join(grantor)
+                .join(super::store::DB_FILE);
+            if !db.is_file() {
+                return None;
+            }
+            let conn = rusqlite::Connection::open_with_flags(
+                &db,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .ok()?;
+            let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+            read_links(&conn).ok()
+        }
+        Err(_) => None,
+    }
+}
+
 /// Active links that let `caller` read other spaces: `(grantor, link)`.
 ///
 /// Only the caller's own id is consulted from the request; the grantors'
 /// databases are scanned for grants naming it. Revoked, expired and
-/// wrong-direction rows never appear.
+/// wrong-direction rows never appear. The scan does blocking sqlite work, so
+/// it runs on the blocking pool, off the async workers.
 pub async fn inbound_links(manager: &SpaceManager, caller: &str) -> Vec<(String, SpaceLink)> {
-    let mut out = Vec::new();
-    for info in manager.list().await {
-        let grantor = info.id;
-        if grantor == caller {
+    let grantors: Vec<String> = manager
+        .list()
+        .await
+        .into_iter()
+        .map(|i| i.id)
+        .filter(|id| id != caller)
+        .collect();
+    let stores = manager.stores();
+    let caller = caller.to_string();
+    tokio::task::spawn_blocking(move || {
+        let mut out = Vec::new();
+        for grantor in grantors {
+            let Some(links) = links_of(&stores, &grantor) else {
+                continue;
+            };
+            out.extend(
+                links
+                    .into_iter()
+                    .filter(|l| l.grants_read(&grantor, &caller))
+                    .map(|l| (grantor.clone(), l)),
+            );
+        }
+        out
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Revoke every link, stored in any of `grantors`, that names `grantee`.
+/// Called when `grantee` is deleted or trashed so a later space re-created
+/// with the same id can never inherit its read access. Locked grantors are
+/// handled through a direct connection (the `links` table is not encrypted).
+/// Returns the number of links revoked. Blocking.
+pub fn revoke_links_naming(
+    stores: &super::store::SpaceStores,
+    grantors: &[String],
+    grantee: &str,
+) -> usize {
+    let mut n = 0;
+    for grantor in grantors {
+        if grantor == grantee {
             continue;
         }
-        let Ok(store) = manager.stores().get(&grantor) else {
-            continue;
+        n += match stores.get(grantor) {
+            Ok(store) => store.revoke_links_to(grantee).unwrap_or_else(|e| {
+                tracing::error!("espacio: could not revoke links of {grantee} in {grantor}: {e}");
+                0
+            }),
+            Err(_) if stores.key_ring().is_some_and(|r| r.is_locked(grantor)) => stores
+                .spaces_dir()
+                .map(|d| d.join(grantor).join(super::store::DB_FILE))
+                .filter(|db| db.is_file())
+                .and_then(|db| rusqlite::Connection::open(db).ok())
+                .and_then(|conn| {
+                    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+                    conn.execute(
+                        "UPDATE links SET revoked = 1 WHERE target_node = ?1 AND revoked = 0",
+                        params![link_target(grantee)],
+                    )
+                    .ok()
+                })
+                .unwrap_or(0),
+            Err(_) => 0,
         };
-        let Ok(links) = store.list_links() else {
-            continue;
-        };
-        out.extend(
-            links
-                .into_iter()
-                .filter(|l| l.grants_read(&grantor, caller))
-                .map(|l| (grantor.clone(), l)),
-        );
     }
-    out
+    n
+}
+
+/// Rows to fetch from a linked space for a page of `limit` results. Link
+/// filters (namespace, path prefix) and the clearance ceiling are applied
+/// AFTER the search, so fetching exactly `limit` would under-fill the page;
+/// over-fetch 3x, capped.
+pub fn linked_fetch_limit(limit: usize) -> usize {
+    limit.saturating_mul(3).clamp(limit, limit.max(300))
 }
 
 /// A linked space whose memory can be searched read-only.
@@ -296,6 +389,99 @@ mod tests {
             namespace: None,
             path_prefix: None,
         }
+    }
+
+    use crate::espacio::manager::KeyOptions;
+    use crate::espacio::{StaticNodeKek, UnlockMode};
+    use std::sync::Arc;
+
+    async fn mk(m: &SpaceManager, id: &str) {
+        m.create(id.into(), id.into(), "".into(), "owner".into(), false)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn deleting_the_grantee_revokes_links_so_id_reuse_inherits_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let m = SpaceManager::open(tmp.path());
+        mk(&m, "esp_a").await;
+        mk(&m, "esp_b").await;
+        create_link(&m, "esp_b", "esp_a", None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(inbound_links(&m, "esp_a").await.len(), 1);
+        // A is trashed and an unrelated space takes the id.
+        m.delete("esp_a").await.unwrap();
+        mk(&m, "esp_a").await;
+        assert!(
+            inbound_links(&m, "esp_a").await.is_empty(),
+            "re-created space inherited the old grantee's link"
+        );
+        // The row is revoked, not deleted (audit trail kept).
+        let links = m.stores().get("esp_b").unwrap().list_links().unwrap();
+        assert_eq!(links.len(), 1);
+        assert!(links[0].grant.revoked);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_third_space_keeps_other_links() {
+        let tmp = tempfile::tempdir().unwrap();
+        let m = SpaceManager::open(tmp.path());
+        for id in ["esp_a", "esp_b", "esp_c"] {
+            mk(&m, id).await;
+        }
+        create_link(&m, "esp_b", "esp_a", None, None, None)
+            .await
+            .unwrap();
+        m.delete("esp_c").await.unwrap();
+        assert_eq!(inbound_links(&m, "esp_a").await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn locked_grantor_is_reported_as_locked_not_silently_dropped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kek = || Arc::new(StaticNodeKek::new([6u8; 32]));
+        {
+            let m = SpaceManager::open_with_keys_and_legacy(tmp.path(), kek(), None);
+            mk(&m, "esp_a").await;
+            m.create_with_keys(
+                "esp_b".into(),
+                "b".into(),
+                "".into(),
+                "owner".into(),
+                false,
+                KeyOptions {
+                    mode: UnlockMode::PasswordRequired,
+                    password: Some("correct horse battery staple 42".into()),
+                    encrypt_records: false,
+                },
+            )
+            .await
+            .unwrap();
+            create_link(&m, "esp_b", "esp_a", None, None, None)
+                .await
+                .unwrap();
+        }
+        // Restart: the password_required grantor is locked again.
+        let m = SpaceManager::open_with_keys_and_legacy(tmp.path(), kek(), None);
+        assert!(m.key_ring().unwrap().is_locked("esp_b"));
+        let r = resolve_linked(&m, "esp_a").await;
+        assert!(r.searchable.is_empty());
+        assert_eq!(
+            r.skipped,
+            vec![serde_json::json!({"space": "esp_b", "reason": "Locked"})]
+        );
+        // A space that was never linked learns nothing about the locked one.
+        mk(&m, "esp_z").await;
+        assert!(resolve_linked(&m, "esp_z").await.skipped.is_empty());
+    }
+
+    #[test]
+    fn fetch_limit_overfetches_with_a_cap() {
+        assert_eq!(linked_fetch_limit(10), 30);
+        assert_eq!(linked_fetch_limit(100), 300);
+        assert_eq!(linked_fetch_limit(1000), 1000, "never below the page");
     }
 
     #[test]

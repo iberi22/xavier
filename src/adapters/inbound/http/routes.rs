@@ -1080,7 +1080,7 @@ where
     let admin = Router::new()
         .route(
             "/admin/spaces",
-            post(espacio_admin_create_handler).get(espacio_list_handler),
+            post(espacio_admin_create_handler).get(espacio_admin_list_handler),
         )
         .route(
             "/admin/spaces/{id}",
@@ -1333,7 +1333,7 @@ pub async fn espacio_admin_create_handler(
             .unlock_mode
             .unwrap_or(crate::espacio::UnlockMode::NodeUnlock),
         password: payload.password,
-        ..crate::espacio::KeyOptions::default()
+        encrypt_records: payload.encrypt_records.unwrap_or(true),
     };
     let work = {
         let manager = manager.clone();
@@ -1478,6 +1478,45 @@ pub async fn espacio_list_handler(
     };
     match run_blocking(async move { manager.list().await }).await {
         Some(spaces) => Json(spaces).into_response(),
+        None => espacio_join_error(),
+    }
+}
+
+/// `?adoptable=true` on the admin list.
+#[derive(serde::Deserialize, Default)]
+pub struct AdminListQuery {
+    #[serde(default)]
+    adoptable: bool,
+}
+
+/// GET /api/v1/espacio/admin/spaces - root lists every space. The body is the
+/// plain array of spaces (unchanged). With `?adoptable=true` it is an object
+/// `{"spaces": [...], "default": {...}|null, "adoptable": [...]}`: `default`
+/// is the legacy workspace recorded by reference, `adoptable` the legacy
+/// `*.sqlite` files that could become spaces later (listing only; there is no
+/// adopt action and nothing is moved).
+pub async fn espacio_admin_list_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    axum::extract::Query(query): axum::extract::Query<AdminListQuery>,
+) -> axum::response::Response {
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    let adoptable = query.adoptable;
+    let out = run_blocking(async move {
+        let spaces = manager.list().await;
+        if !adoptable {
+            return serde_json::to_value(spaces).unwrap_or_default();
+        }
+        serde_json::json!({
+            "spaces": spaces,
+            "default": manager.legacy(),
+            "adoptable": manager.adoptable(),
+        })
+    })
+    .await;
+    match out {
+        Some(body) => Json(body).into_response(),
         None => espacio_join_error(),
     }
 }
