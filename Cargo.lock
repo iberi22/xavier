@@ -16279,6 +16279,7 @@ dependencies = [
  "xavier-pageindex",
  "xxhash-rust",
  "zerocopy 0.8.59",
+ "zeroize",
  "zip 8.6.0",
  "zstd 0.14.0",
 ]
