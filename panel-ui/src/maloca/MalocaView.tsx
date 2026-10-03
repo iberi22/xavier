@@ -6,6 +6,7 @@ import { GovernanceTab } from "./components/GovernanceTab";
 import { SupportTab } from "./components/SupportTab";
 import { BacklogTab } from "./components/BacklogTab";
 import { IntrospectionTab } from "./components/IntrospectionTab";
+import { MalocaAuthPrompt } from "./components/MalocaAuthPrompt";
 import { TABS, TabConfig } from "./tabs";
 import { useMalocaView } from "./useMalocaView";
 
@@ -121,6 +122,7 @@ export default function MalocaView({ onClose }: Props) {
           </main>
         </div>
       </div>
+      <MalocaAuthPrompt />
     </div>
   );
 }
