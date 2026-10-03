@@ -1087,10 +1087,149 @@ where
             get(espacio_get_handler).delete(espacio_delete_handler),
         )
         .route_layer(axum::middleware::from_fn(require_root_credential));
-    Router::new().merge(admin).route(
-        "/spaces/{id}",
-        get(espacio_own_get_handler).delete(espacio_own_delete_handler),
-    )
+    Router::new()
+        .merge(admin)
+        .route(
+            "/spaces/{id}",
+            get(espacio_own_get_handler).delete(espacio_own_delete_handler),
+        )
+        .route(
+            "/spaces/{id}/links",
+            post(espacio_link_create_handler).get(espacio_link_list_handler),
+        )
+        .route(
+            "/spaces/{id}/links/{link_id}",
+            axum::routing::delete(espacio_link_revoke_handler),
+        )
+}
+
+/// Who may manage the links of space `id` (the grantor): the node ROOT
+/// credential, or the space's own `xsp_` token with the Admin role. Every
+/// other credential, including a space token of another space, is refused.
+fn may_manage_links(
+    root: &Option<axum::extract::Extension<RootCredential>>,
+    auth: &Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    id: &str,
+) -> bool {
+    match auth {
+        Some(a) => {
+            a.0.space_id == id && crate::espacio::can(a.0.role, crate::espacio::SpaceAction::Admin)
+        }
+        None => root.is_some(),
+    }
+}
+
+/// Body of `POST /spaces/{id}/links`: `{id}` grants `target_space` read access
+/// to its memory (one way).
+#[derive(serde::Deserialize)]
+pub struct CreateLinkRequest {
+    pub target_space: String,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub path_prefix: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// POST /api/v1/espacio/spaces/{id}/links
+pub async fn espacio_link_create_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(req): Json<CreateLinkRequest>,
+) -> axum::response::Response {
+    if !may_manage_links(&root, &auth, &id) {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    if req.target_space == id {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"status":"error","message":"a space cannot link to itself"})),
+        )
+            .into_response();
+    }
+    match run_blocking(async move {
+        crate::espacio::create_link(
+            &manager,
+            &id,
+            &req.target_space,
+            req.namespace,
+            req.path_prefix,
+            req.expires_at,
+        )
+        .await
+    })
+    .await
+    {
+        Some(Ok(link)) => (
+            axum::http::StatusCode::CREATED,
+            Json(serde_json::json!({"status":"ok","link":link})),
+        )
+            .into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
+/// GET /api/v1/espacio/spaces/{id}/links
+pub async fn espacio_link_list_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if !may_manage_links(&root, &auth, &id) {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    match run_blocking(async move {
+        manager.get(&id).await?;
+        manager.stores().get(&id)?.list_links()
+    })
+    .await
+    {
+        Some(Ok(links)) => Json(serde_json::json!({"status":"ok","links":links})).into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
+/// DELETE /api/v1/espacio/spaces/{id}/links/{link_id} - revoke (the row is
+/// kept, marked revoked).
+pub async fn espacio_link_revoke_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path((id, link_id)): axum::extract::Path<(String, String)>,
+) -> axum::response::Response {
+    if !may_manage_links(&root, &auth, &id) {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    match run_blocking(async move {
+        manager.get(&id).await?;
+        manager.stores().get(&id)?.revoke_link(&link_id)
+    })
+    .await
+    {
+        Some(Ok(true)) => Json(serde_json::json!({"status":"ok"})).into_response(),
+        Some(Ok(false)) => (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"status":"error","message":"link not found"})),
+        )
+            .into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
 }
 
 /// Marker request extension: the request authenticated with the node's ROOT
