@@ -45,6 +45,7 @@ pub async fn handle_memory_command(
             resume,
             offline: _,
             online,
+            allow_synced_backup,
         } => {
             crate::cli::commands::encrypt_private::handle_encrypt_private(
                 crate::cli::commands::encrypt_private::EncryptPrivateArgs {
@@ -56,6 +57,7 @@ pub async fn handle_memory_command(
                     rate_limit_ms,
                     resume,
                     online,
+                    allow_synced_backup,
                 },
             )
             .await
@@ -66,6 +68,8 @@ pub async fn handle_memory_command(
             backup_path,
             from_backup,
             recovery_code,
+            force,
+            allow_synced_backup,
             batch,
             resume,
             online,
@@ -77,6 +81,8 @@ pub async fn handle_memory_command(
                     backup_path,
                     from_backup,
                     recovery_code,
+                    force,
+                    allow_synced_backup,
                     batch,
                     resume,
                     online,

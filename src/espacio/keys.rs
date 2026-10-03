@@ -417,6 +417,10 @@ struct KeystoreFile {
     mode: UnlockMode,
     encrypt_records: bool,
     wrappers: Vec<WrapperRecord>,
+    /// Where the node KEK came from when the keystore was created (`env` or
+    /// `master`). Informational only (not part of any AD); absent in old files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kek_source: Option<String>,
 }
 
 fn push_field(out: &mut Vec<u8>, f: &[u8]) {
@@ -716,6 +720,7 @@ impl KeyRing {
                 mode,
                 encrypt_records,
                 wrappers,
+                kek_source: None,
             },
         )?;
         let handle = KeyHandle::new(dek);
@@ -727,6 +732,22 @@ impl KeyRing {
             },
         );
         Ok((handle, display))
+    }
+
+    /// Record (informational) where the node KEK of an existing keystore came
+    /// from. Rewrites the keystore atomically; wrappers are untouched.
+    pub fn record_kek_source(&self, space_id: &str, source: &str) -> Result<()> {
+        let dir = self.dir(space_id)?;
+        let mut file = read_keystore(&dir, space_id)?
+            .ok_or_else(|| KeysError::NoKeystore(space_id.to_string()))?;
+        file.kek_source = Some(source.to_string());
+        write_keystore(&dir, &file)
+    }
+
+    /// The KEK source recorded by [`KeyRing::record_kek_source`], if any.
+    pub fn kek_source(&self, space_id: &str) -> Result<Option<String>> {
+        let dir = self.dir(space_id)?;
+        Ok(read_keystore(&dir, space_id)?.and_then(|f| f.kek_source))
     }
 
     fn password_wrapper(

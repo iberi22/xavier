@@ -1591,12 +1591,16 @@ pub mod memory {
         /// cursor, verifies every migrated row, rebuilds FTS, truncates the WAL
         /// and runs VACUUM. A new keystore prints its recovery code ONCE.
         ///
-        /// Known leaks that stay: embeddings (kept in clear locally so vector
-        /// search works; never exported to cloud sync/backup), entities and
-        /// relations already extracted into the graph tables, the revisions
-        /// and relation columns, paths and timestamps, and memory_chain
-        /// hashes (chain rows are not rewritten; graph extraction is not
-        /// re-run). Old backups and cloud copies still hold plaintext.
+        /// The revisions column is sealed with the record. Derived graph links,
+        /// timeline details and chain hashes of migrated rows are removed or
+        /// re-keyed. Plaintext that stays (listed by --dry-run and by the end
+        /// of --apply): embeddings (local only, owner-accepted), paths and
+        /// timestamps, and tables not keyed to a memory id (belief_states,
+        /// checkpoint_records, notifications, conversations, bus_events). The
+        /// mandatory backup is a PLAINTEXT copy: it is refused inside cloud
+        /// synced directories (--allow-synced-backup overrides); keep it
+        /// offline and shred it after verification. The job ends as
+        /// "incomplete" (non-zero exit) if any private row is still not sealed.
         #[command(name = "encrypt-private")]
         EncryptPrivate {
             /// Count only (default unless --apply)
@@ -1626,6 +1630,9 @@ pub mod memory {
             /// Run while the daemon is up (busy timeout + IMMEDIATE batches)
             #[arg(long)]
             online: bool,
+            /// Allow the plaintext backup inside a cloud-synced directory
+            #[arg(long)]
+            allow_synced_backup: bool,
         },
 
         /// Restore XDK2 rows of the default workspace to plaintext columns.
@@ -1648,9 +1655,16 @@ pub mod memory {
             /// Restore from this plaintext backup instead of using the key
             #[arg(long)]
             from_backup: Option<PathBuf>,
-            /// Unlock with the recovery code instead of the node key
+            /// Unlock with the recovery code instead of the node key; the code
+            /// is read from stdin (never passed as an argument)
             #[arg(long)]
-            recovery_code: Option<String>,
+            recovery_code: bool,
+            /// Overwrite rows edited since the backup / accept a backup without manifest
+            #[arg(long)]
+            force: bool,
+            /// Allow the plaintext pre-restore backup inside a cloud-synced directory
+            #[arg(long)]
+            allow_synced_backup: bool,
             /// Rows per transaction
             #[arg(long, default_value_t = 200)]
             batch: usize,

@@ -26,6 +26,7 @@ pub struct EncryptPrivateArgs {
     pub rate_limit_ms: u64,
     pub resume: bool,
     pub online: bool,
+    pub allow_synced_backup: bool,
 }
 
 /// Arguments of `decrypt-private`.
@@ -35,10 +36,31 @@ pub struct DecryptPrivateArgs {
     pub apply: bool,
     pub backup_path: Option<PathBuf>,
     pub from_backup: Option<PathBuf>,
-    pub recovery_code: Option<String>,
+    /// Read the recovery code from stdin (never from argv).
+    pub recovery_code: bool,
+    pub force: bool,
+    pub allow_synced_backup: bool,
     pub batch: usize,
     pub resume: bool,
     pub online: bool,
+}
+
+/// Read the recovery code from stdin (prompt on stderr when interactive).
+/// It is never accepted as a command-line argument (shell history, `ps`).
+fn read_recovery_code() -> Result<String> {
+    use std::io::{BufRead, IsTerminal, Write};
+    let stdin = std::io::stdin();
+    if stdin.is_terminal() {
+        eprint!("Recovery code (input is visible; clear your terminal afterwards): ");
+        let _ = std::io::stderr().flush();
+    }
+    let mut line = String::new();
+    stdin.lock().read_line(&mut line)?;
+    let code = line.trim().to_string();
+    if code.is_empty() {
+        anyhow::bail!("no recovery code received on stdin");
+    }
+    Ok(code)
 }
 
 fn print_census(db: &std::path::Path) -> Result<at_rest::DryRunReport> {
@@ -70,7 +92,21 @@ fn print_census(db: &std::path::Path) -> Result<at_rest::DryRunReport> {
     if rep.already_xrk1 > 0 {
         println!("   Note: XRK1 rows are classified only when decrypted during --apply.");
     }
+    if rep.already_xdk2 > 0 {
+        println!(
+            "   XDK2 rows whose revisions are still plaintext (sealed by --apply): {}",
+            rep.xdk2_plain_revisions
+        );
+    }
+    print_remaining_plaintext();
     Ok(rep)
+}
+
+fn print_remaining_plaintext() {
+    println!("   Remaining plaintext after --apply (not removed by this job):");
+    for line in at_rest::REMAINING_PLAINTEXT {
+        println!("     - {line}");
+    }
 }
 
 fn stop_flag() -> Arc<AtomicBool> {
@@ -105,6 +141,23 @@ fn print_report(rep: &JobReport, db: &std::path::Path) {
             }
         }
     }
+    let s = &rep.scrub;
+    if s.graph_links
+        + s.timeline_events
+        + s.chain_hashes
+        + s.orphan_entities
+        + s.graph_snapshots
+        + s.revisions_sealed
+        > 0
+    {
+        println!(
+            "   Residue scrubbed: {} graph link(s), {} orphan entit(ies), {} timeline event(s) re-keyed, {} chain hash(es) re-keyed, {} graph snapshot(s) dropped, {} revisions column(s) sealed",
+            s.graph_links, s.orphan_entities, s.timeline_events, s.chain_hashes, s.graph_snapshots, s.revisions_sealed
+        );
+    }
+    for n in &rep.notices {
+        println!("   NOTICE: {n}");
+    }
     if !rep.complete {
         println!("   Stopped before completion: run again with --resume.");
     }
@@ -131,6 +184,7 @@ pub async fn handle_encrypt_private(args: EncryptPrivateArgs) -> Result<()> {
     opts.rate_limit_ms = args.rate_limit_ms;
     opts.resume = args.resume;
     opts.online = args.online;
+    opts.allow_synced_backup = args.allow_synced_backup;
     opts.stop = Some(stop_flag());
     let rep = tokio::task::spawn_blocking(move || {
         at_rest::apply_encrypt(&opts, &mut |code| {
@@ -143,6 +197,14 @@ pub async fn handle_encrypt_private(args: EncryptPrivateArgs) -> Result<()> {
     })
     .await??;
     print_report(&rep, &db);
+    print_remaining_plaintext();
+    if rep.incomplete {
+        anyhow::bail!(
+            "encrypt-private is INCOMPLETE: {} private row(s) still not sealed, {} failed row(s); the job can be continued with --resume",
+            rep.pending_private,
+            rep.failed
+        );
+    }
     if rep.complete {
         println!(
             "Verified {} migrated row(s); FTS rebuilt, WAL truncated, VACUUM done.",
@@ -174,13 +236,16 @@ pub async fn handle_decrypt_private(args: DecryptPrivateArgs) -> Result<()> {
     opts.batch = args.batch;
     opts.resume = args.resume;
     opts.online = args.online;
+    opts.force = args.force;
+    opts.allow_synced_backup = args.allow_synced_backup;
     opts.stop = Some(stop_flag());
     let source = match (args.from_backup, args.recovery_code) {
         (Some(p), _) => DecryptSource::FromBackup(p),
-        (None, Some(code)) => {
+        (None, true) => {
+            let code = read_recovery_code()?;
             DecryptSource::Key(Some(at_rest::unlock_default_with_recovery(&code)?))
         }
-        (None, None) => DecryptSource::Key(None),
+        (None, false) => DecryptSource::Key(None),
     };
     let rep = tokio::task::spawn_blocking(move || at_rest::apply_decrypt(&opts, source)).await??;
     print_report(&rep, &db);
