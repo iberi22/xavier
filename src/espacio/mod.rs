@@ -16,6 +16,7 @@ pub mod permissions;
 pub mod public;
 pub mod search;
 pub mod store;
+pub mod tokens;
 
 pub use channel::{ChannelManager, ChannelMessage};
 pub use context::{ContextBridge, ContextEntry, ContextKind};
@@ -29,3 +30,4 @@ pub use permissions::{can, SpaceAction, SpaceMembership};
 pub use public::{PublicConnector, PublicPack};
 pub use search::{search_over, RankedResult, SearchFilters};
 pub use store::{validate_space_id, PlaintextCodec, RecordCodec, SpaceStore, SpaceStores};
+pub use tokens::{SpaceAuth, SpaceContext, TokenError, TokenInfo};

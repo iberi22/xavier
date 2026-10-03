@@ -132,7 +132,8 @@ pub struct SpaceStore {
 
 /// Ordered migration steps; index + 1 is the resulting `user_version`.
 /// Append only. WP-13l adds a `tokens` table as the next step.
-const MIGRATIONS: &[&str] = &["
+const MIGRATIONS: &[&str] = &[
+    "
     CREATE TABLE members (
         node_id   TEXT PRIMARY KEY,
         role      TEXT NOT NULL,
@@ -156,7 +157,19 @@ const MIGRATIONS: &[&str] = &["
         content    TEXT NOT NULL,
         created_at TEXT NOT NULL
     );
-"];
+",
+    "
+    CREATE TABLE tokens (
+        token_id   TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        member_id  TEXT NOT NULL,
+        role       TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT,
+        revoked    INTEGER NOT NULL DEFAULT 0
+    );
+",
+];
 
 fn migrate(conn: &Connection) -> Result<()> {
     let current: usize = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
@@ -185,7 +198,7 @@ impl SpaceStore {
         })
     }
 
-    fn lock(&self) -> MutexGuard<'_, Connection> {
+    pub(super) fn lock(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|p| p.into_inner())
     }
 
