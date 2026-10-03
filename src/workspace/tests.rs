@@ -21,6 +21,7 @@ async fn personal_plan_defaults_to_500mb() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        protocol: Default::default(),
         dedup: crate::settings::types::DedupSettings::default(),
     };
 
@@ -66,6 +67,7 @@ async fn usage_state_persists_between_workspace_reloads() {
             embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: SyncPolicy::CloudMirror,
+            protocol: Default::default(),
             dedup: crate::settings::types::DedupSettings::default(),
         },
         RuntimeConfig::default(),
@@ -95,6 +97,7 @@ async fn usage_state_persists_between_workspace_reloads() {
             embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: SyncPolicy::CloudMirror,
+            protocol: Default::default(),
             dedup: crate::settings::types::DedupSettings::default(),
         },
         RuntimeConfig::default(),
@@ -123,6 +126,7 @@ async fn durable_memory_rehydrates_between_workspace_reloads() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        protocol: Default::default(),
         dedup: crate::settings::types::DedupSettings::default(),
     };
 
@@ -177,6 +181,7 @@ async fn session_tokens_beliefs_and_checkpoints_persist_between_reloads() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        protocol: Default::default(),
         dedup: crate::settings::types::DedupSettings::default(),
     };
 
@@ -249,6 +254,7 @@ async fn test_workspace_working_memory_is_bounded_and_contains_recent_docs() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        protocol: Default::default(),
         dedup: crate::settings::types::DedupSettings::default(),
     };
 
@@ -315,6 +321,7 @@ async fn test_entity_graph_persists_and_restores_on_reload() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::CloudMirror,
+        protocol: Default::default(),
         dedup: crate::settings::types::DedupSettings::default(),
     };
 
@@ -396,6 +403,7 @@ async fn add_memory_persists_immediately_with_empty_vector_and_is_lexically_sear
             embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: SyncPolicy::CloudMirror,
+            protocol: Default::default(),
             dedup: crate::settings::types::DedupSettings::default(),
         },
         RuntimeConfig::default(),

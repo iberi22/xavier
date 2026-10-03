@@ -2,6 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use super::protocol::SpaceProtocol;
 use crate::memory::store::MemoryBackend;
 use crate::settings::{types::DedupSettings, XavierSettings};
 use serde::{Deserialize, Serialize};
@@ -114,6 +115,8 @@ pub struct WorkspaceConfig {
     pub managed_google_embeddings: bool,
     pub sync_policy: SyncPolicy,
     pub dedup: DedupSettings,
+    #[serde(default)]
+    pub protocol: SpaceProtocol,
 }
 
 impl fmt::Debug for WorkspaceConfig {
@@ -130,6 +133,7 @@ impl fmt::Debug for WorkspaceConfig {
             .field("managed_google_embeddings", &self.managed_google_embeddings)
             .field("sync_policy", &self.sync_policy)
             .field("dedup", &self.dedup)
+            .field("protocol", &self.protocol)
             .finish()
     }
 }
@@ -171,6 +175,45 @@ impl WorkspaceConfig {
             managed_google_embeddings: settings.workspace.managed_google_embeddings,
             sync_policy: SyncPolicy::from_env(&settings.workspace.sync_policy),
             dedup: settings.memory.dedup.clone(),
+            protocol: SpaceProtocol::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod protocol_compat_tests {
+    use super::*;
+
+    fn sample() -> WorkspaceConfig {
+        WorkspaceConfig {
+            id: "ws".into(),
+            token: "t".into(),
+            plan: PlanTier::Community,
+            memory_backend: MemoryBackend::File,
+            storage_limit_bytes: None,
+            request_limit: None,
+            request_unit_limit: None,
+            embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: SyncPolicy::LocalOnly,
+            dedup: crate::settings::types::DedupSettings::default(),
+            protocol: SpaceProtocol::default(),
+        }
+    }
+
+    #[test]
+    fn config_without_protocol_still_parses() {
+        let mut v = serde_json::to_value(sample()).unwrap();
+        v.as_object_mut().unwrap().remove("protocol");
+        let cfg: WorkspaceConfig = serde_json::from_value(v).unwrap();
+        assert!(cfg.protocol.validate().is_ok());
+        assert_eq!(cfg.id, "ws");
+    }
+
+    #[test]
+    fn config_with_invalid_protocol_field_is_rejected() {
+        let mut v = serde_json::to_value(sample()).unwrap();
+        v["protocol"]["bogus"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<WorkspaceConfig>(v).is_err());
     }
 }
