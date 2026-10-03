@@ -1579,6 +1579,103 @@ pub mod memory {
             public_only: Option<bool>,
         },
 
+        /// Encrypt private rows of the default workspace under the default-space key.
+        ///
+        /// Private = everything EXCEPT records explicitly marked public
+        /// (metadata.clearance UNCLASSIFIED/PUBLIC). INTERNAL (the default) is
+        /// private; missing or garbled metadata is private (fail closed).
+        /// Default is --dry-run: counts only, no writes, no key creation.
+        /// --apply needs --backup-path (verified VACUUM INTO backup with
+        /// SHA-256, quick_check and row-count check; abort on any mismatch),
+        /// works in batches of 200 in IMMEDIATE transactions with a resumable
+        /// cursor, verifies every migrated row, rebuilds FTS, truncates the WAL
+        /// and runs VACUUM. A new keystore prints its recovery code ONCE.
+        ///
+        /// The revisions column is sealed with the record. Derived graph links,
+        /// timeline details and chain hashes of migrated rows are removed or
+        /// re-keyed. Plaintext that stays (listed by --dry-run and by the end
+        /// of --apply): embeddings (local only, owner-accepted), paths and
+        /// timestamps, and tables not keyed to a memory id (belief_states,
+        /// checkpoint_records, notifications, conversations, bus_events). The
+        /// mandatory backup is a PLAINTEXT copy: it is refused inside cloud
+        /// synced directories (--allow-synced-backup overrides); keep it
+        /// offline and shred it after verification. The job ends as
+        /// "incomplete" (non-zero exit) if any private row is still not sealed.
+        #[command(name = "encrypt-private")]
+        EncryptPrivate {
+            /// Count only (default unless --apply)
+            #[arg(long)]
+            dry_run: bool,
+            /// Actually encrypt
+            #[arg(long)]
+            apply: bool,
+            /// Backup file (or existing directory); required for --apply (not for --resume)
+            #[arg(long)]
+            backup_path: Option<PathBuf>,
+            /// Rows per transaction
+            #[arg(long, default_value_t = 200)]
+            batch: usize,
+            /// Stop after this many encrypted rows (resume later)
+            #[arg(long)]
+            max_rows: Option<u64>,
+            /// Sleep between batches (ms)
+            #[arg(long, default_value_t = 0)]
+            rate_limit_ms: u64,
+            /// Continue the unfinished job from its cursor
+            #[arg(long)]
+            resume: bool,
+            /// Refuse to run while another process holds the DB (default)
+            #[arg(long, conflicts_with = "online")]
+            offline: bool,
+            /// Run while the daemon is up (busy timeout + IMMEDIATE batches)
+            #[arg(long)]
+            online: bool,
+            /// Allow the plaintext backup inside a cloud-synced directory
+            #[arg(long)]
+            allow_synced_backup: bool,
+        },
+
+        /// Restore XDK2 rows of the default workspace to plaintext columns.
+        ///
+        /// By key (node unlock, or --recovery-code) or --from-backup <file>,
+        /// which copies the original columns byte-for-byte from a plaintext
+        /// backup (the path when the key is lost). Default is --dry-run.
+        /// --apply also requires --backup-path (a verified backup first).
+        #[command(name = "decrypt-private")]
+        DecryptPrivate {
+            /// Count only (default unless --apply)
+            #[arg(long)]
+            dry_run: bool,
+            /// Actually decrypt
+            #[arg(long)]
+            apply: bool,
+            /// Backup file (or existing directory); required for --apply (not for --resume)
+            #[arg(long)]
+            backup_path: Option<PathBuf>,
+            /// Restore from this plaintext backup instead of using the key
+            #[arg(long)]
+            from_backup: Option<PathBuf>,
+            /// Unlock with the recovery code instead of the node key; the code
+            /// is read from stdin (never passed as an argument)
+            #[arg(long)]
+            recovery_code: bool,
+            /// Overwrite rows edited since the backup / accept a backup without manifest
+            #[arg(long)]
+            force: bool,
+            /// Allow the plaintext pre-restore backup inside a cloud-synced directory
+            #[arg(long)]
+            allow_synced_backup: bool,
+            /// Rows per transaction
+            #[arg(long, default_value_t = 200)]
+            batch: usize,
+            /// Continue the unfinished job from its cursor
+            #[arg(long)]
+            resume: bool,
+            /// Run while the daemon is up (busy timeout + IMMEDIATE batches)
+            #[arg(long)]
+            online: bool,
+        },
+
         /// Prune low-utility or stale memories
         Prune {
             /// Filter memories by path prefix
