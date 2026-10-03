@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{info, warn};
 
+use crate::humanchallenge::curation_gate::{CurationGate, ReadinessThresholds};
 use crate::humanchallenge::store::HumanChallengeStore;
 
 /// Compute provider options for mini-expert fine-tuning jobs.
@@ -41,84 +42,6 @@ impl TrainingJob {
             status: "pending".to_string(),
             created_at: Utc::now(),
         }
-    }
-}
-
-/// Readiness status returned by `CurationGate`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReadinessResult {
-    pub is_ready: bool,
-    pub curated_count: usize,
-    pub message: String,
-}
-
-/// Gate that inspects `HumanChallengeStore` to determine if enough curated items exist for training.
-#[derive(Clone)]
-pub struct CurationGate {
-    store: Arc<HumanChallengeStore>,
-    min_curated_items: usize,
-}
-
-impl std::fmt::Debug for CurationGate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CurationGate")
-            .field("min_curated_items", &self.min_curated_items)
-            .finish_non_exhaustive()
-    }
-}
-
-impl CurationGate {
-    /// Constructs a new `CurationGate` with explicit threshold.
-    pub fn new(store: Arc<HumanChallengeStore>, min_curated_items: usize) -> Self {
-        Self {
-            store,
-            min_curated_items,
-        }
-    }
-
-    /// Constructs `CurationGate` using default threshold of 10 items.
-    pub fn with_defaults(store: Arc<HumanChallengeStore>) -> Self {
-        Self::new(store, 10)
-    }
-
-    /// Checks if sufficient answered/valid curated items are present in store.
-    pub fn check_readiness(&self) -> ReadinessResult {
-        let count = match self.store.list_events(None, 1000) {
-            Ok(events) => events
-                .iter()
-                .filter(|e| {
-                    e.points_awarded > 0
-                        || e.status == crate::humanchallenge::types::ChallengeStatus::Answered
-                })
-                .count(),
-            Err(_) => 0,
-        };
-
-        let is_ready = count >= self.min_curated_items;
-        let message = if is_ready {
-            format!("Ready for training with {} curated items", count)
-        } else {
-            format!(
-                "Insufficient curated items: {}/{}",
-                count, self.min_curated_items
-            )
-        };
-
-        ReadinessResult {
-            is_ready,
-            curated_count: count,
-            message,
-        }
-    }
-
-    /// Collects and exports curated items dataset for training.
-    pub fn collect_for_training(&self) -> Result<String, String> {
-        let readiness = self.check_readiness();
-        if !readiness.is_ready {
-            return Err(format!("Curation gate not ready: {}", readiness.message));
-        }
-
-        Ok(".xavier/datasets/night_training_curated.json".to_string())
     }
 }
 
@@ -176,7 +99,13 @@ impl NightTrainer {
     /// Constructs `NightTrainer` with default configuration and gate.
     pub fn with_defaults(store: Arc<HumanChallengeStore>) -> Self {
         let config = NightTrainerConfig::default();
-        let curation_gate = Arc::new(CurationGate::new(store.clone(), config.min_curated_items));
+        let curation_gate = Arc::new(CurationGate::new(
+            store.clone(),
+            ReadinessThresholds {
+                min_examples_per_domain: config.min_curated_items,
+                ..ReadinessThresholds::default()
+            },
+        ));
         Self {
             config,
             curation_gate,
@@ -205,10 +134,13 @@ impl NightTrainer {
 
     /// Prepares a training job by checking curation readiness and building a `TrainingJob`.
     pub fn prepare_job(&self) -> Result<TrainingJob, String> {
-        let dataset_path = self.curation_gate.collect_for_training()?;
+        let readiness = self.curation_gate.check_readiness();
+        if !readiness.is_ready {
+            return Err(format!("Curation gate not ready: {}", readiness.message));
+        }
         Ok(TrainingJob::new(
             self.config.compute_provider.clone(),
-            dataset_path,
+            ".xavier/datasets/night_training_curated.json",
         ))
     }
 
@@ -244,23 +176,64 @@ impl NightTrainer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::humanchallenge::types::{ChallengeStatus, ChallengeType, HumanChallengeEvent};
+    use crate::humanchallenge::types::{
+        ChallengeType, CurationVerdict, CurationVote, HumanChallengeEvent,
+    };
 
     fn create_test_store() -> Arc<HumanChallengeStore> {
         Arc::new(HumanChallengeStore::in_memory().unwrap())
     }
 
+    fn test_gate(store: &Arc<HumanChallengeStore>, min: usize) -> Arc<CurationGate> {
+        Arc::new(
+            CurationGate::new(
+                store.clone(),
+                ReadinessThresholds {
+                    min_examples_per_domain: min,
+                    ..ReadinessThresholds::default()
+                },
+            )
+            .without_queue(),
+        )
+    }
+
+    fn add_curated_votes(store: &HumanChallengeStore, n: usize) {
+        for i in 0..n {
+            let event = HumanChallengeEvent::new(
+                format!("s_{}", i),
+                ChallengeType::Decision,
+                "Test prompt",
+                "Raw content for decision",
+                0.95,
+            );
+            store.save_event(&event).unwrap();
+            let vote = CurationVote::new(
+                &event.id,
+                CurationVerdict::Accept,
+                None,
+                true,
+                vec!["rust".to_string()],
+                true,
+            );
+            store.save_curation_vote(&vote).unwrap();
+        }
+    }
+
+    fn config(start: u32, end: u32, provider: ComputeProvider) -> NightTrainerConfig {
+        NightTrainerConfig {
+            training_window_start: start,
+            training_window_end: end,
+            min_curated_items: 10,
+            compute_provider: provider,
+        }
+    }
+
     #[test]
     fn test_training_window_hours() {
         let store = create_test_store();
-        let config = NightTrainerConfig {
-            training_window_start: 2,
-            training_window_end: 6,
-            min_curated_items: 10,
-            compute_provider: ComputeProvider::Local,
-        };
-        let gate = Arc::new(CurationGate::new(store.clone(), config.min_curated_items));
-        let trainer = NightTrainer::new(config, gate, store);
+        let cfg = config(2, 6, ComputeProvider::Local);
+        let gate = test_gate(&store, cfg.min_curated_items);
+        let trainer = NightTrainer::new(cfg, gate, store);
 
         assert!(!trainer.is_training_window_at(0));
         assert!(!trainer.is_training_window_at(1));
@@ -275,49 +248,26 @@ mod tests {
     #[test]
     fn test_should_not_train_outside_window() {
         let store = create_test_store();
-        // Add 15 answered events so curation gate is ready
-        for i in 0..15 {
-            let mut event = HumanChallengeEvent::new(
-                format!("s_{}", i),
-                ChallengeType::Decision,
-                "Test prompt",
-                "Raw content for decision",
-                0.95,
-            );
-            event.status = ChallengeStatus::Answered;
-            event.points_awarded = 10;
-            store.save_event(&event).unwrap();
-        }
+        add_curated_votes(&store, 15);
 
-        let config = NightTrainerConfig {
-            training_window_start: 2,
-            training_window_end: 6,
-            min_curated_items: 10,
-            compute_provider: ComputeProvider::Local,
-        };
-        let gate = Arc::new(CurationGate::new(store.clone(), config.min_curated_items));
-        let trainer = NightTrainer::new(config, gate, store);
+        let cfg = config(2, 6, ComputeProvider::Local);
+        let gate = test_gate(&store, cfg.min_curated_items);
+        let trainer = NightTrainer::new(cfg, gate, store);
 
-        // Gate is ready
         assert!(trainer.curation_gate.check_readiness().is_ready);
 
-        // Outside window check should fail
         if !trainer.is_training_window() {
             assert!(!trainer.should_train());
         } else {
-            // Force artificial trainer with disjoint window
             let current_hour = Utc::now().hour();
-            let outside_start = (current_hour + 12) % 24;
-            let outside_end = (current_hour + 13) % 24;
-            let disjoint_config = NightTrainerConfig {
-                training_window_start: outside_start,
-                training_window_end: outside_end,
-                min_curated_items: 10,
-                compute_provider: ComputeProvider::Local,
-            };
+            let disjoint_config = config(
+                (current_hour + 12) % 24,
+                (current_hour + 13) % 24,
+                ComputeProvider::Local,
+            );
             let disjoint_trainer = NightTrainer::new(
                 disjoint_config,
-                Arc::new(CurationGate::new(trainer.store.clone(), 10)),
+                test_gate(&trainer.store, 10),
                 trainer.store.clone(),
             );
             assert!(!disjoint_trainer.should_train());
@@ -325,30 +275,23 @@ mod tests {
     }
 
     #[test]
+    fn test_prepare_job_not_ready_below_threshold() {
+        let store = create_test_store();
+        add_curated_votes(&store, 9);
+        let cfg = config(0, 23, ComputeProvider::Local);
+        let gate = test_gate(&store, cfg.min_curated_items);
+        let trainer = NightTrainer::new(cfg, gate, store);
+        assert!(trainer.prepare_job().is_err());
+    }
+
+    #[test]
     fn test_prepare_job_structure() {
         let store = create_test_store();
-        // Add 10 answered events to satisfy curation gate
-        for i in 0..10 {
-            let mut event = HumanChallengeEvent::new(
-                format!("s_{}", i),
-                ChallengeType::Decision,
-                "Sample prompt",
-                "Sample raw content",
-                0.9,
-            );
-            event.status = ChallengeStatus::Answered;
-            event.points_awarded = 5;
-            store.save_event(&event).unwrap();
-        }
+        add_curated_votes(&store, 10);
 
-        let config = NightTrainerConfig {
-            training_window_start: 0,
-            training_window_end: 23,
-            min_curated_items: 10,
-            compute_provider: ComputeProvider::Modal,
-        };
-        let gate = Arc::new(CurationGate::new(store.clone(), config.min_curated_items));
-        let trainer = NightTrainer::new(config, gate, store);
+        let cfg = config(0, 23, ComputeProvider::Modal);
+        let gate = test_gate(&store, cfg.min_curated_items);
+        let trainer = NightTrainer::new(cfg, gate, store);
 
         let job_res = trainer.prepare_job();
         assert!(
