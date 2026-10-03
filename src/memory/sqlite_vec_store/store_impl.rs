@@ -48,6 +48,31 @@ pub fn is_superset(new: &str, old: &str) -> bool {
     new.contains(old)
 }
 
+/// AD kinds of the non-record blobs sealed in a space store.
+const KIND_BELIEF: &str = "memory.belief";
+const KIND_CHECKPOINT: &str = "memory.checkpoint";
+const KIND_GRAPH_SNAPSHOT: &str = "memory.graph_snapshot";
+
+/// Checkpoint `data` column as plain JSON text. A space store opens the sealed
+/// value with its own key (AD binds space, kind and row key); the default store
+/// keeps the column as stored.
+fn open_checkpoint_data(
+    crypto: Option<&super::at_rest::SpaceCrypto>,
+    workspace_id: &str,
+    task_id: &str,
+    name: &str,
+    stored: &str,
+) -> Result<String> {
+    match crypto {
+        Some(c) => {
+            let key =
+                crate::memory::store::stable_key("checkpoint_row", &[workspace_id, task_id, name]);
+            c.open_text(KIND_CHECKPOINT, &key, stored)
+        }
+        None => Ok(stored.to_string()),
+    }
+}
+
 #[async_trait]
 impl MemoryStore for VecSqliteMemoryStore {
     fn backend(&self) -> MemoryBackend {
@@ -163,7 +188,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         }).await?;
 
         if let Some(mut record) = record {
-            super::at_rest::decrypt_record_in_place(&mut record)?;
+            super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None)?;
             Ok(Some(record))
         } else {
             Ok(None)
@@ -296,7 +321,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            let _ = super::at_rest::decrypt_record_in_place(&mut record);
+            let _ = super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None);
             results.push(record);
         }
         Ok(results)
@@ -343,6 +368,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         if post_decrypt_match {
             let filters_owned = filters.clone();
             let workspace_owned = workspace_id.to_string();
+            let crypto = self.crypto.clone();
             let records = self
                 .conn_provider
                 .with_conn(&self.project_id, move |conn| {
@@ -351,7 +377,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                     let mut out: Vec<MemoryRecord> = Vec::new();
                     while let Some(row) = rows.next()? {
                         let mut record = VecSqliteMemoryStore::deserialize_record(row)?;
-                        let _ = super::at_rest::decrypt_record_in_place(&mut record);
+                        let _ = super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
                         if crate::memory::store::record_matches_filters(
                             &record,
                             &workspace_owned,
@@ -384,7 +410,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            let _ = super::at_rest::decrypt_record_in_place(&mut record);
+            let _ = super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None);
             results.push(record);
         }
 
@@ -428,7 +454,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         let mut results = Vec::with_capacity(records.len());
         for mut record in records {
-            let _ = super::at_rest::decrypt_record_in_place(&mut record);
+            let _ = super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None);
             results.push(record);
         }
 
@@ -461,6 +487,7 @@ impl MemoryStore for VecSqliteMemoryStore {
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState> {
         let memories = self.list(workspace_id).await?;
         let workspace_id_c = workspace_id.to_string();
+        let crypto = self.crypto.clone();
 
         self.conn_provider.with_conn(&self.project_id, move |conn| {
             // Load beliefs
@@ -471,21 +498,38 @@ impl MemoryStore for VecSqliteMemoryStore {
             while let Some(row) = rows.next()? {
                 let weight = row.get::<_, f64>(4)? as f32;
                 let confidence_score = row.get::<_, f64>(5)? as f32;
-                let provenance_id = row.get::<_, String>(6)?;
-                let contradicts_edge_id = row.get::<_, Option<String>>(7)?;
+                let mut provenance_id = row.get::<_, String>(6)?;
+                let mut contradicts_edge_id = row.get::<_, Option<String>>(7)?;
+                let mut source_language: Option<String> = row.get(9)?;
+                let mut target_language: Option<String> = row.get(10)?;
                 let is_inferred: i32 = row.get(8)?;
+                let belief_id: String = row.get(0)?;
+                let (source, target, relation_type) = match &crypto {
+                    Some(c) => {
+                        let plain = c.open_text(KIND_BELIEF, &belief_id, &provenance_id)?;
+                        let v: serde_json::Value = serde_json::from_str(&plain)?;
+                        let f = |k: &str| v[k].as_str().unwrap_or_default().to_string();
+                        provenance_id = f("provenance_id");
+                        contradicts_edge_id =
+                            v["contradicts_edge_id"].as_str().map(str::to_string);
+                        source_language = v["source_language"].as_str().map(str::to_string);
+                        target_language = v["target_language"].as_str().map(str::to_string);
+                        (f("source"), f("target"), f("relation_type"))
+                    }
+                    None => (row.get(1)?, row.get(2)?, row.get(3)?),
+                };
                 beliefs.push(BeliefEdge {
-                    id: row.get(0)?,
-                    source: row.get(1)?,
-                    target: row.get(2)?,
-                    relation_type: row.get(3)?,
+                    id: belief_id,
+                    source,
+                    target,
+                    relation_type,
                     weight,
                     confidence_score,
                     provenance_id,
                     contradicts_edge_id,
                     is_inferred: is_inferred != 0,
-                    source_language: row.get(9)?,
-                    target_language: row.get(10)?,
+                    source_language,
+                    target_language,
                     created_at: chrono::DateTime::parse_from_rfc3339(
                         &row.get::<_, String>(11)?,
                     )
@@ -506,6 +550,11 @@ impl MemoryStore for VecSqliteMemoryStore {
                 let mut rows = stmt.query([&workspace_id_c])?;
                 let mut tokens = Vec::new();
                 while let Some(row) = rows.next()? {
+                    // Space stores keep only a hash of a session token: it
+                    // cannot be restored, and expires with its row.
+                    if crypto.is_some() {
+                        continue;
+                    }
                     let expires_at = chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
                             .map(|dt| dt.with_timezone(&chrono::Utc))
                             .unwrap_or_else(|_| chrono::Utc::now());
@@ -532,10 +581,19 @@ impl MemoryStore for VecSqliteMemoryStore {
                 let mut rows = stmt.query([&workspace_id_c])?;
                 let mut checkpoints = Vec::new();
                 while let Some(row) = rows.next()? {
+                    let task_id: String = row.get(0)?;
+                    let name: String = row.get(1)?;
+                    let data_str = open_checkpoint_data(
+                        crypto.as_ref(),
+                        &workspace_id_c,
+                        &task_id,
+                        &name,
+                        &row.get::<_, String>(2)?,
+                    )?;
                     checkpoints.push(Checkpoint {
-                        task_id: row.get(0)?,
-                        name: row.get(1)?,
-                        data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                        task_id,
+                        name,
+                        data: serde_json::from_str(&data_str).unwrap_or_default(),
                     });
                 }
                 checkpoints
@@ -553,7 +611,37 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn save_beliefs(&self, workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()> {
         let workspace_id = workspace_id.to_string();
+        // An encrypting space never stores belief text in clear: node ids are
+        // keyed pseudonyms and the real source/target/relation sit sealed in
+        // `properties`.
+        let crypto = self.crypto.clone();
         self.conn_provider.with_conn(&self.project_id, move |conn| {
+            let mut beliefs = beliefs;
+            if let Some(c) = &crypto {
+                for belief in beliefs.iter_mut() {
+                    let sealed = c.seal_text(
+                        KIND_BELIEF,
+                        &belief.id,
+                        &serde_json::json!({
+                            "source": belief.source,
+                            "target": belief.target,
+                            "relation_type": belief.relation_type,
+                            "provenance_id": belief.provenance_id,
+                            "contradicts_edge_id": belief.contradicts_edge_id,
+                            "source_language": belief.source_language,
+                            "target_language": belief.target_language,
+                        })
+                        .to_string(),
+                    )?;
+                    belief.source = c.mac("belief-node", &belief.source)?;
+                    belief.target = c.mac("belief-node", &belief.target)?;
+                    belief.relation_type = "sealed".to_string();
+                    belief.source_language = None;
+                    belief.target_language = None;
+                    belief.contradicts_edge_id = None;
+                    belief.provenance_id = sealed;
+                }
+            }
             for belief in &beliefs {
                 super::graph::ensure_seed_entities(
                     conn,
@@ -594,7 +682,12 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let token_key =
             crate::memory::store::stable_key("session_token_row", &[&workspace_id, &token.token]);
-        let token_val = token.token;
+        // Space stores keep only the keyed-lookup hash, never the token.
+        let token_val = if self.crypto.is_some() {
+            token_key.clone()
+        } else {
+            token.token
+        };
         let created_at = token.created_at.to_rfc3339();
         let expires_at = token.expires_at.to_rfc3339();
 
@@ -643,6 +736,11 @@ impl MemoryStore for VecSqliteMemoryStore {
         let task_id = checkpoint.task_id;
         let name = checkpoint.name;
         let data_json = serde_json::to_string(&checkpoint.data)?;
+        // An encrypting space never stores checkpoint data in clear.
+        let data_json = match &self.crypto {
+            Some(c) => c.seal_text(KIND_CHECKPOINT, &checkpoint_key, &data_json)?,
+            None => data_json,
+        };
 
         self.conn_provider.with_conn(&self.project_id, move |conn| {
             conn.execute(
@@ -672,6 +770,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let task_id = task_id.to_string();
         let name = name.to_string();
+        let crypto = self.crypto.clone();
 
         self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
@@ -681,7 +780,13 @@ impl MemoryStore for VecSqliteMemoryStore {
 
             let mut rows = stmt.query(params![workspace_id, task_id, name])?;
             if let Some(row) = rows.next()? {
-                let data_str: String = row.get(3)?;
+                let data_str = open_checkpoint_data(
+                    crypto.as_ref(),
+                    &workspace_id,
+                    &task_id,
+                    &name,
+                    &row.get::<_, String>(3)?,
+                )?;
                 Ok(Some(Checkpoint {
                     task_id: row.get(1)?,
                     name: row.get(2)?,
@@ -697,6 +802,7 @@ impl MemoryStore for VecSqliteMemoryStore {
     async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
         let workspace_id = workspace_id.to_string();
         let task_id = task_id.to_string();
+        let crypto = self.crypto.clone();
 
         self.conn_provider.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
@@ -707,10 +813,18 @@ impl MemoryStore for VecSqliteMemoryStore {
             let mut rows = stmt.query(params![workspace_id, task_id])?;
             let mut result = Vec::new();
             while let Some(row) = rows.next()? {
-                let data_str: String = row.get(3)?;
+                let ck_task: String = row.get(1)?;
+                let ck_name: String = row.get(2)?;
+                let data_str = open_checkpoint_data(
+                    crypto.as_ref(),
+                    &workspace_id,
+                    &ck_task,
+                    &ck_name,
+                    &row.get::<_, String>(3)?,
+                )?;
                 result.push(Checkpoint {
-                    task_id: row.get(1)?,
-                    name: row.get(2)?,
+                    task_id: ck_task,
+                    name: ck_name,
                     data: serde_json::from_str(&data_str)
                         .unwrap_or_default(),
                 });
@@ -786,12 +900,20 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn load_entity_graph_snapshot(&self, workspace_id: &str) -> Result<Option<String>> {
         let workspace_id = workspace_id.to_string();
+        let crypto = self.crypto.clone();
         self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 let mut stmt =
                     conn.prepare("SELECT data FROM entity_graph_snapshots WHERE workspace_id = ?")?;
                 match stmt.query_row([&workspace_id], |row| row.get::<_, String>(0)) {
-                    Ok(data) => Ok(Some(data)),
+                    Ok(data) => match &crypto {
+                        Some(c) => Ok(Some(c.open_text(
+                            KIND_GRAPH_SNAPSHOT,
+                            &workspace_id,
+                            &data,
+                        )?)),
+                        None => Ok(Some(data)),
+                    },
                     Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
                     Err(e) => Err(anyhow::anyhow!("SQLite query failed: {}", e)),
                 }
@@ -800,8 +922,11 @@ impl MemoryStore for VecSqliteMemoryStore {
     }
 
     async fn save_entity_graph_snapshot(&self, workspace_id: &str, data: &str) -> Result<()> {
+        let data = match &self.crypto {
+            Some(c) => c.seal_text(KIND_GRAPH_SNAPSHOT, workspace_id, data)?,
+            None => data.to_string(),
+        };
         let workspace_id = workspace_id.to_string();
-        let data = data.to_string();
         let now = chrono::Utc::now().to_rfc3339();
         self.conn_provider
             .with_conn(&self.project_id, move |conn| {
@@ -816,6 +941,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn symbols_for_memory(&self, memory_id: &str) -> Result<Vec<String>> {
         let memory_id = memory_id.to_string();
+        let crypto = self.crypto.clone();
         self.conn_provider
             .with_conn(&self.project_id, move |conn| {
                 // Delete stale links older than 30 days
@@ -847,8 +973,15 @@ impl MemoryStore for VecSqliteMemoryStore {
                     };
 
                     if let Some(mut record) = record {
-                        let _ = super::at_rest::decrypt_record_in_place(&mut record);
-                        symbols = Self::link_memory_on_demand(conn, &memory_id, &record.content)?;
+                        // Symbol links store raw words of the content in a
+                        // plaintext table: never derive them from a sealed row.
+                        let sealed = crypto.is_some()
+                            || record.encrypted_dek.as_ref().is_some_and(|d| !d.is_empty());
+                        if !sealed {
+                            let _ = super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
+                            symbols =
+                                Self::link_memory_on_demand(conn, &memory_id, &record.content)?;
+                        }
                     }
                 }
 
@@ -913,8 +1046,23 @@ impl VecSqliteMemoryStore {
     pub async fn put_embed(&self, mut record: MemoryRecord) -> Result<MemoryRecord> {
         // Auto-generate missing embeddings if a provider is configured
         if record.embedding.is_empty() {
-            if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
-                match crate::memory::embedder::EmbeddingClient::from_env_async().await {
+            // Private text (every record of an encrypting space, and private
+            // rows of the default store) never leaves the device: it is only
+            // embedded by a local endpoint, without the hash-keyed cache.
+            let private = self.crypto.is_some()
+                || super::at_rest::is_private_record(&record.metadata, &record.path);
+            if private && !crate::memory::embedder::EmbeddingClient::is_local_only_from_env() {
+                tracing::warn!(
+                    "Memory record {} is private and the embedding provider is not local: embedding skipped (pending)",
+                    record.id
+                );
+            } else if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
+                let client = if private {
+                    crate::memory::embedder::EmbeddingClient::from_env_private_async().await
+                } else {
+                    crate::memory::embedder::EmbeddingClient::from_env_async().await
+                };
+                match client {
                     Ok(client) => match client.embed(&record.content).await {
                         Ok(vector) => {
                             record.embedding = vector;
@@ -1013,6 +1161,7 @@ impl VecSqliteMemoryStore {
             let record_c = record.clone();
             let project_id_c = self.project_id.clone();
             let dedup_settings_c = dedup_settings.clone();
+            let crypto_c = self.crypto.clone();
 
             let record_ns = match crate::memory::schema::resolve_metadata(
                 &record_c.path,
@@ -1113,7 +1262,7 @@ impl VecSqliteMemoryStore {
                         Ok(mut stmt) => {
                             match stmt.query(rusqlite::params_from_iter(&query_params)) {
                                 Ok(mut rows) => {
-                                    let node_key = super::at_rest::resolve_record_key();
+                                    let node_key = if crypto_c.is_some() { None } else { super::at_rest::resolve_record_key() };
                                     while let Ok(Some(row)) = rows.next() {
                                         let distance = match row.get::<_, rusqlite::types::Value>(18) {
                                             Ok(rusqlite::types::Value::Real(v)) => v as f32,
@@ -1122,7 +1271,8 @@ impl VecSqliteMemoryStore {
                                         };
                                         let similarity = 1.0 - distance;
                                         if let Ok(mut rec) = Self::deserialize_record(row) {
-                                            let _ = super::at_rest::decrypt_with_resolved_key(
+                                            let _ = super::at_rest::decrypt_for(
+                                                crypto_c.as_ref(),
                                                 &mut rec,
                                                 node_key.as_ref(),
                                             );
@@ -1195,11 +1345,12 @@ impl VecSqliteMemoryStore {
                                     let mut best_sim = -1.0f32;
                                     let mut best_rec = None;
                                     // Resolve once: lets namespace matching work on encrypted rows.
-                                    let node_key = super::at_rest::resolve_record_key();
+                                    let node_key = if crypto_c.is_some() { None } else { super::at_rest::resolve_record_key() };
                                     while let Ok(Some(row)) = rows.next() {
                                         match Self::deserialize_record(row) {
                                             Ok(mut rec) => {
-                                                let _ = super::at_rest::decrypt_with_resolved_key(
+                                                let _ = super::at_rest::decrypt_for(
+                                                    crypto_c.as_ref(),
                                                     &mut rec,
                                                     node_key.as_ref(),
                                                 );
@@ -1302,7 +1453,7 @@ impl VecSqliteMemoryStore {
         // Legacy `encryption_at_rest_enabled` KEK path is retired for this
         // store: the node record key (XAVIER_RECORD_KEY / node/record.key)
         // replaces it. Reads still understand legacy KEK rows.
-        super::at_rest::encrypt_for_write(&mut record)?;
+        super::at_rest::encrypt_for(self.crypto.as_ref(), &mut record)?;
 
         Ok(record)
     }
@@ -1312,7 +1463,9 @@ impl VecSqliteMemoryStore {
         // Chain hash of a private (XDK2) row is a keyed MAC: an unsalted hash
         // of private content would allow dictionary confirmation. Fail closed
         // when the key is unavailable (the write was already sealed with it).
-        let content_hash = if record
+        let content_hash = if let Some(c) = &self.crypto {
+            c.chain_mac(&record.content)?
+        } else if record
             .encrypted_dek
             .as_deref()
             .is_some_and(super::at_rest::is_default_space_row)
@@ -1682,6 +1835,7 @@ mod tests {
             ),
             event_tx: None,
             dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
+            crypto: None,
         };
 
         store.put_link(&conn, &record).unwrap();

@@ -751,83 +751,39 @@ async fn deleted_and_recreated_space_does_not_inherit_the_cached_store() {
         .is_empty());
 }
 
-fn files_in(dir: &std::path::Path) -> Vec<String> {
-    std::fs::read_dir(dir)
-        .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .map(|e| e.file_name().to_string_lossy().to_string())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
-async fn encrypted_space_memory_fails_closed_and_writes_nothing() {
+async fn encrypted_space_memory_is_served_and_leaves_no_plaintext() {
     let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let f = fixture().await;
     let tok = create_space(&f.manager, "esp_enc", "erin", true).await;
     let dir = f.tmp.path().join("state/spaces/esp_enc");
-    let before = files_in(&dir);
 
-    for (m, p, body) in [
-        (
-            "POST",
-            "/memory/add",
-            serde_json::json!({"content": "secret plaintext", "path": "n/s"}),
-        ),
-        (
-            "POST",
-            "/v1/memories",
-            serde_json::json!({"content": "secret plaintext", "path": "n/s"}),
-        ),
-        (
-            "POST",
-            "/memory/search",
-            serde_json::json!({"query": "secret plaintext"}),
-        ),
-        (
-            "POST",
-            "/v1/memories/search",
-            serde_json::json!({"query": "secret plaintext"}),
-        ),
-        (
-            "POST",
-            "/mcp/tools/call",
-            serde_json::json!({"name": "create_memory", "arguments": {"content": "secret plaintext"}}),
-        ),
-        (
-            "POST",
-            "/mcp/tools/call",
-            serde_json::json!({"name": "mem_search", "arguments": {"query": "secret"}}),
-        ),
-    ] {
-        let (st, resp) = send(&f.app, m, p, &tok, Some(body)).await;
-        assert_eq!(st, StatusCode::NOT_IMPLEMENTED, "{m} {p}: {resp}");
-        assert!(resp.to_string().contains("not available yet"), "{resp}");
+    // WP13p: the memory store of an encrypting space seals every record with
+    // the space's own key, so the routes serve it (full coverage lives in
+    // `espacio_memory_encryption`).
+    let (st, _) = add(&f, &tok, "/memory/add", "n/s", "secret plaintext okapi").await;
+    assert_eq!(st, StatusCode::OK);
+    let rows = search(&f, &tok, "/memory/search", "okapi").await;
+    assert!(rows
+        .iter()
+        .any(|r| r.to_string().contains("secret plaintext")));
+    let mut found = Vec::new();
+    let mut stack = vec![dir.clone()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if std::fs::read(&p)
+                .map(|b| b.windows(10).any(|w| w == b"plaintext "))
+                .unwrap_or(false)
+            {
+                found.push(p);
+            }
+        }
     }
-    let (st, _) = send(&f.app, "GET", "/memory/get?id=x", &tok, None).await;
-    assert_eq!(st, StatusCode::NOT_IMPLEMENTED);
-
-    // No memory store or file was built for the encrypted space.
-    let after = files_in(&dir);
-    for name in &after {
-        assert!(
-            !name.starts_with("memory.") && name != "workspace",
-            "unexpected memory artefact {name}"
-        );
-    }
-    assert_eq!(
-        after.iter().filter(|n| n.starts_with("memory")).count(),
-        0,
-        "{before:?} -> {after:?}"
-    );
-    assert!(!xavier::workspace::space_workspace_is_cached("esp_enc").await);
-    let err = xavier::workspace::space_workspace_context(&f.manager, "esp_enc")
-        .await
-        .err()
-        .expect("refused");
-    assert_eq!(err, xavier::workspace::SpaceScopeError::EncryptionPending);
+    assert!(found.is_empty(), "plaintext on disk: {found:?}");
 
     // A plaintext space on the same node keeps working.
     let (st, _) = add(&f, &f.admin_a, "/memory/add", "n/p", "plain okapi").await;

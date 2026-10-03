@@ -263,7 +263,7 @@ pub(crate) async fn handle_space_token(
                     StatusCode::NOT_IMPLEMENTED,
                     serde_json::json!({
                         "status": "error",
-                        "message": "space memory encryption not available yet"
+                        "message": "space key ring unavailable"
                     }),
                 );
             }

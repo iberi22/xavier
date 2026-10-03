@@ -52,6 +52,9 @@ pub struct VecSqliteMemoryStore {
         Option<broadcast::Sender<crate::domain::cycle_breaks::w30_07::RealtimeEvent>>,
     pub(crate) dedup_config:
         std::sync::Arc<tokio::sync::RwLock<crate::settings::types::DedupSettings>>,
+    /// Key binding of an encrypted space's store. `None` = default/legacy
+    /// store behaviour (node-level at-rest encryption).
+    pub(crate) crypto: Option<at_rest::SpaceCrypto>,
 }
 
 /// ConnectionManager project_id for a vec-store file path.
@@ -70,6 +73,20 @@ impl VecSqliteMemoryStore {
         let settings = crate::settings::XavierSettings::current();
         *store.dedup_config.write().await = settings.memory.dedup.clone();
         Ok(store)
+    }
+
+    /// Bind this store to an encrypted space: every record is sealed with that
+    /// space's data key (AD binds the space id) and read back through the same
+    /// key ring. Must be applied before the store serves any request.
+    #[must_use]
+    pub fn with_space_crypto(mut self, crypto: at_rest::SpaceCrypto) -> Self {
+        self.crypto = Some(crypto);
+        self
+    }
+
+    /// Whether this store seals its records under a per-space key.
+    pub fn is_space_encrypted(&self) -> bool {
+        self.crypto.is_some()
     }
 
     /// Set event tx.
@@ -116,6 +133,7 @@ impl VecSqliteMemoryStore {
             dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(
                 crate::settings::types::DedupSettings::default(),
             )),
+            crypto: None,
         };
 
         // Initialize schema

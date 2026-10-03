@@ -29,7 +29,7 @@ use crate::memory::{
     schema::MemoryQueryFilters,
     semantic::SemanticMemory,
     sqlite_store::{SqliteMemoryStore, SqliteStoreConfig},
-    sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig},
+    sqlite_vec_store::{at_rest::SpaceCrypto, VecSqliteMemoryStore, VecSqliteStoreConfig},
     store::{MemoryBackend, MemoryRecord, MemoryStore, SessionTokenRecord},
     supabase_store::SupabaseMemoryStore,
     working::{MemoryItem, WorkingMemory, WorkingMemoryConfig},
@@ -131,6 +131,7 @@ async fn build_space_store(
     config: &WorkspaceConfig,
     file_store_path: &std::path::Path,
     migration_marker_path: &std::path::Path,
+    crypto: Option<&SpaceCrypto>,
 ) -> Result<(Arc<dyn MemoryStore>, bool, String)> {
     let backend = config.protocol.storage.backend;
     if !matches!(
@@ -139,6 +140,13 @@ async fn build_space_store(
     ) {
         return Err(anyhow!(
             "space storage backend {backend:?} is not allowed (only file, sqlite, vec)"
+        ));
+    }
+    // Only the vec store can seal records with a space key: an encrypting
+    // space on any other backend would store plaintext, so it is refused.
+    if crypto.is_some() && backend != MemoryBackend::Vec {
+        return Err(anyhow!(
+            "space storage backend {backend:?} cannot encrypt records (encrypting spaces require vec)"
         ));
     }
     fs::create_dir_all(root).await?;
@@ -164,8 +172,11 @@ async fn build_space_store(
         _ => {
             let mut vec_config = VecSqliteStoreConfig::from_env();
             vec_config.path = db_path;
-            let store: Arc<dyn MemoryStore> =
-                Arc::new(VecSqliteMemoryStore::new(vec_config).await?);
+            let mut vec_store = VecSqliteMemoryStore::new(vec_config).await?;
+            if let Some(c) = crypto {
+                vec_store = vec_store.with_space_crypto(c.clone());
+            }
+            let store: Arc<dyn MemoryStore> = Arc::new(vec_store);
             let m = migrate_file_store_if_needed(
                 &config.id,
                 file_store_path,
@@ -173,9 +184,31 @@ async fn build_space_store(
                 Arc::clone(&store),
             )
             .await?;
+            // A legacy plaintext JSON store of an encrypting space has been
+            // imported (sealed) by now: overwrite and remove the clear copy.
+            if crypto.is_some() {
+                shred_file(file_store_path).await;
+            }
             Ok((store, m.migrated, m.detail))
         }
     }
+}
+
+/// Best-effort secure delete: overwrite with zeros, sync, remove. A missing
+/// file is fine.
+async fn shred_file(path: &std::path::Path) {
+    let Ok(meta) = fs::metadata(path).await else {
+        return;
+    };
+    if meta.is_file() {
+        let zeros = vec![0u8; meta.len() as usize];
+        if let Ok(mut f) = fs::OpenOptions::new().write(true).open(path).await {
+            use tokio::io::AsyncWriteExt;
+            let _ = f.write_all(&zeros).await;
+            let _ = f.sync_all().await;
+        }
+    }
+    let _ = fs::remove_file(path).await;
 }
 
 impl WorkspaceState {
@@ -185,7 +218,7 @@ impl WorkspaceState {
         runtime_config: RuntimeConfig,
         workspace_root: impl Into<PathBuf>,
     ) -> Result<Self> {
-        Self::new_inner(config, runtime_config, workspace_root.into(), None).await
+        Self::new_inner(config, runtime_config, workspace_root.into(), None, None).await
     }
 
     /// New for a space: the store lives under `store_root` (created if
@@ -198,11 +231,26 @@ impl WorkspaceState {
         workspace_root: impl Into<PathBuf>,
         store_root: impl Into<PathBuf>,
     ) -> Result<Self> {
+        Self::new_for_space_keyed(config, runtime_config, workspace_root, store_root, None).await
+    }
+
+    /// [`WorkspaceState::new_for_space`] for a space that may encrypt its
+    /// records. With `crypto`, every memory record is sealed with that space's
+    /// data key (never the default-space or node key) and the space's
+    /// conversations database is disabled (it would hold message text in clear).
+    pub async fn new_for_space_keyed(
+        config: WorkspaceConfig,
+        runtime_config: RuntimeConfig,
+        workspace_root: impl Into<PathBuf>,
+        store_root: impl Into<PathBuf>,
+        crypto: Option<SpaceCrypto>,
+    ) -> Result<Self> {
         Self::new_inner(
             config,
             runtime_config,
             workspace_root.into(),
             Some(store_root.into()),
+            crypto,
         )
         .await
     }
@@ -212,7 +260,14 @@ impl WorkspaceState {
         runtime_config: RuntimeConfig,
         workspace_root: PathBuf,
         store_root: Option<PathBuf>,
+        space_crypto: Option<SpaceCrypto>,
     ) -> Result<Self> {
+        if space_crypto.is_some() {
+            // An encrypting space is local only: its store is never a source
+            // for cloud sync or mirror, whatever the supplied config says.
+            config.sync_policy = super::config::SyncPolicy::LocalOnly;
+            config.protocol.sync.policy = super::config::SyncPolicy::LocalOnly;
+        }
         fs::create_dir_all(&workspace_root).await?;
         let usage_state_path = workspace_root.join("usage.json");
         let file_store_path = match &store_root {
@@ -230,7 +285,14 @@ impl WorkspaceState {
             bool,
             String,
         ) = if let Some(root) = &store_root {
-            build_space_store(root, &config, &file_store_path, &migration_marker_path).await?
+            build_space_store(
+                root,
+                &config,
+                &file_store_path,
+                &migration_marker_path,
+                space_crypto.as_ref(),
+            )
+            .await?
         } else {
             match config.memory_backend {
                 MemoryBackend::Auto => unreachable!("auto backend should have been resolved"),
@@ -442,6 +504,12 @@ impl WorkspaceState {
             Arc::clone(&store),
         ));
         let conversations_db = match &store_root {
+            // Conversations hold message text, thread titles, beliefs and
+            // checkpoints in clear: an encrypting space gets no persistent
+            // conversations database (every call errors, no file is created).
+            Some(_) if space_crypto.is_some() => {
+                Arc::new(ConversationsDb::open_disabled(&config.id)?)
+            }
             // A space keeps its conversations inside its own directory, so
             // they are isolated, trashed with the space and never land in the
             // node-global `~/.xavier/conversations`.
@@ -453,7 +521,9 @@ impl WorkspaceState {
             #[cfg(not(test))]
             None => Arc::new(ConversationsDb::open(&config.id).await?),
         };
-        conversations_db.create_schema().await?;
+        if space_crypto.is_none() {
+            conversations_db.create_schema().await?;
+        }
 
         let settings = XavierSettings::current();
         let navigation_policy = Arc::new(RwLock::new(crate::retrieval::NavigationPolicy::new(
@@ -1217,7 +1287,7 @@ use crate::memory::store::{FileMemoryStore, InMemoryMemoryStore};
 pub enum SpaceScopeError {
     /// Encrypted space whose key is not loaded.
     Locked,
-    /// The space encrypts its records but the memory store cannot yet encrypt
+    /// The space encrypts its records but no key ring is available to seal
     /// them. Refused before any store or file is created (fail closed): the
     /// space's memories must never be written in plaintext.
     EncryptionPending,
@@ -1228,6 +1298,8 @@ pub enum SpaceScopeError {
 struct CachedSpaceWorkspace {
     storage_path: PathBuf,
     created_at: DateTime<Utc>,
+    /// Whether the store was built with a space key; a change rebuilds it.
+    encrypted: bool,
     /// Filled once, outside the cache lock; concurrent first requests for the
     /// same space share one build.
     cell: Arc<tokio::sync::OnceCell<super::registry::WorkspaceContext>>,
@@ -1325,21 +1397,38 @@ pub async fn space_workspace_context(
             return Err(SpaceScopeError::Locked);
         }
     }
-    // Fail closed: records of an encrypting space cannot be stored encrypted
-    // by the memory store yet, so no memory store/file is created for it.
-    match manager.stores().get(space_id) {
-        Ok(store) => match store.encryption_flag() {
-            Ok(false) => {}
-            Ok(true) => return Err(SpaceScopeError::EncryptionPending),
-            Err(_) => return Err(SpaceScopeError::Unavailable),
-        },
+    // An encrypting space seals every record with its own data key. Fail
+    // closed: without a key ring (or when the ring disagrees with the space's
+    // encryption flag) no memory store or file is created for it.
+    let flag = match manager.stores().get(space_id) {
+        Ok(store) => store
+            .encryption_flag()
+            .map_err(|_| SpaceScopeError::Unavailable)?,
         Err(_) => return Err(SpaceScopeError::Unavailable),
-    }
+    };
+    let crypto = match manager.key_ring() {
+        Some(ring) => match ring.record_handle(space_id) {
+            Ok(Some(_)) => Some(SpaceCrypto::new(space_id, ring)),
+            Ok(None) if flag => return Err(SpaceScopeError::Unavailable),
+            Ok(None) => None,
+            Err(e) => {
+                return Err(match e.downcast_ref::<crate::espacio::keys::KeysError>() {
+                    Some(crate::espacio::keys::KeysError::Locked(_)) => SpaceScopeError::Locked,
+                    _ => SpaceScopeError::Unavailable,
+                })
+            }
+        },
+        None if flag => return Err(SpaceScopeError::EncryptionPending),
+        None => None,
+    };
+    let encrypted = crypto.is_some();
     let cell = {
         let mut cache = SPACE_WORKSPACES.lock().await;
         let tick = SPACE_CACHE_TICK.fetch_add(1, Ordering::Relaxed);
         let stale = cache.get(space_id).is_some_and(|hit| {
-            hit.storage_path != info.storage_path || hit.created_at != info.created_at
+            hit.storage_path != info.storage_path
+                || hit.created_at != info.created_at
+                || hit.encrypted != encrypted
         });
         if stale {
             if let Some(old) = cache.remove(space_id) {
@@ -1351,6 +1440,7 @@ pub async fn space_workspace_context(
             .or_insert_with(|| CachedSpaceWorkspace {
                 storage_path: info.storage_path.clone(),
                 created_at: info.created_at,
+                encrypted,
                 cell: Arc::new(tokio::sync::OnceCell::new()),
                 last_used: tick,
             });
@@ -1379,11 +1469,12 @@ pub async fn space_workspace_context(
         .get_or_try_init(|| async {
             // A fresh build always starts from a fresh pool for this path.
             release_space_connections(&info.storage_path);
-            let ws = WorkspaceState::new_for_space(
+            let ws = WorkspaceState::new_for_space_keyed(
                 config_for_space(space_id),
                 RuntimeConfig::default(),
                 info.storage_path.join("workspace"),
                 info.storage_path.clone(),
+                crypto.clone(),
             )
             .await
             .map_err(|e| {
