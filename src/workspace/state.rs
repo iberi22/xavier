@@ -1186,6 +1186,127 @@ impl WorkspaceState {
 
 use crate::memory::store::{FileMemoryStore, InMemoryMemoryStore};
 
+// ---- per-space workspace resolution (WP-13m) ----
+
+/// Why a space's workspace could not be resolved. Callers map `Locked` to 423
+/// and everything else to a refusal; nothing falls back to the default space.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpaceScopeError {
+    /// Encrypted space whose key is not loaded.
+    Locked,
+    /// Unknown, unavailable or failed-to-open space.
+    Unavailable,
+}
+
+struct CachedSpaceWorkspace {
+    storage_path: PathBuf,
+    created_at: DateTime<Utc>,
+    ctx: super::registry::WorkspaceContext,
+}
+
+/// Cache of per-space workspaces, keyed by space id. An entry is only reused
+/// while the registered space still has the same directory AND creation
+/// time, so a deleted (trashed) and re-created space never inherits the old
+/// open store. Locking is checked on every request, never cached.
+static SPACE_WORKSPACES: std::sync::LazyLock<
+    tokio::sync::Mutex<std::collections::HashMap<String, CachedSpaceWorkspace>>,
+> = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Close the pooled connections of a space's vec store. The process-wide
+/// `ConnectionManager` keys pools by file path, so after a space directory is
+/// trashed and re-created at the same path a surviving pool would keep
+/// serving the OLD (renamed) file to the new space.
+fn release_space_connections(storage_path: &std::path::Path) {
+    let id = crate::memory::sqlite_vec_store::project_id_for_path(
+        &storage_path.join(SPACE_SQLITE_STORE_NAME),
+    );
+    crate::codebase::connection_manager::ConnectionManager::global().disconnect(&id);
+}
+
+/// Drop the cached workspace of a space (delete, trash, lock).
+pub async fn invalidate_space_workspace(space_id: &str) {
+    if let Some(old) = SPACE_WORKSPACES.lock().await.remove(space_id) {
+        release_space_connections(&old.storage_path);
+    }
+}
+
+/// Workspace config of a space: its own id, no shared token, path-only
+/// backend taken from the space protocol. Never reads env or node settings.
+fn config_for_space(space_id: &str) -> WorkspaceConfig {
+    let protocol = super::protocol::SpaceProtocol::default();
+    WorkspaceConfig {
+        id: space_id.to_string(),
+        token: String::new(),
+        plan: protocol.limits.plan,
+        memory_backend: protocol.storage.backend,
+        storage_limit_bytes: protocol.limits.storage_limit_bytes,
+        request_limit: protocol.limits.request_limit,
+        request_unit_limit: None,
+        embedding_provider_mode: protocol.embedding_mode,
+        managed_google_embeddings: false,
+        sync_policy: protocol.sync.policy,
+        dedup: Default::default(),
+        protocol,
+    }
+}
+
+/// Resolve (building lazily) the `WorkspaceContext` of `space_id`, rooted at
+/// the space's own directory. Locked space -> `Locked`; the default
+/// workspace is never returned here.
+pub async fn space_workspace_context(
+    manager: &crate::espacio::SpaceManager,
+    space_id: &str,
+) -> std::result::Result<super::registry::WorkspaceContext, SpaceScopeError> {
+    let info = manager
+        .get(space_id)
+        .await
+        .map_err(|_| SpaceScopeError::Unavailable)?;
+    if info.id != space_id {
+        return Err(SpaceScopeError::Unavailable);
+    }
+    if let Some(ring) = manager.key_ring() {
+        if ring.is_locked(space_id) {
+            invalidate_space_workspace(space_id).await;
+            return Err(SpaceScopeError::Locked);
+        }
+    }
+    let mut cache = SPACE_WORKSPACES.lock().await;
+    if let Some(hit) = cache.get(space_id) {
+        if hit.storage_path == info.storage_path && hit.created_at == info.created_at {
+            return Ok(hit.ctx.clone());
+        }
+        if let Some(old) = cache.remove(space_id) {
+            release_space_connections(&old.storage_path);
+        }
+    }
+    // A fresh build always starts from a fresh pool for this path.
+    release_space_connections(&info.storage_path);
+    let ws = WorkspaceState::new_for_space(
+        config_for_space(space_id),
+        RuntimeConfig::default(),
+        info.storage_path.join("workspace"),
+        info.storage_path.clone(),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(space = %space_id, error = %e, "space workspace unavailable");
+        SpaceScopeError::Unavailable
+    })?;
+    let ctx = super::registry::WorkspaceContext {
+        workspace_id: space_id.to_string(),
+        workspace: Arc::new(ws),
+    };
+    cache.insert(
+        space_id.to_string(),
+        CachedSpaceWorkspace {
+            storage_path: info.storage_path,
+            created_at: info.created_at,
+            ctx: ctx.clone(),
+        },
+    );
+    Ok(ctx)
+}
+
 #[cfg(test)]
 mod auto_detect_tests {
     use super::*;
