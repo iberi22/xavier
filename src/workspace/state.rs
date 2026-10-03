@@ -184,9 +184,31 @@ async fn build_space_store(
                 Arc::clone(&store),
             )
             .await?;
+            // A legacy plaintext JSON store of an encrypting space has been
+            // imported (sealed) by now: overwrite and remove the clear copy.
+            if crypto.is_some() {
+                shred_file(file_store_path).await;
+            }
             Ok((store, m.migrated, m.detail))
         }
     }
+}
+
+/// Best-effort secure delete: overwrite with zeros, sync, remove. A missing
+/// file is fine.
+async fn shred_file(path: &std::path::Path) {
+    let Ok(meta) = fs::metadata(path).await else {
+        return;
+    };
+    if meta.is_file() {
+        let zeros = vec![0u8; meta.len() as usize];
+        if let Ok(mut f) = fs::OpenOptions::new().write(true).open(path).await {
+            use tokio::io::AsyncWriteExt;
+            let _ = f.write_all(&zeros).await;
+            let _ = f.sync_all().await;
+        }
+    }
+    let _ = fs::remove_file(path).await;
 }
 
 impl WorkspaceState {

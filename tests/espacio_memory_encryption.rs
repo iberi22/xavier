@@ -748,3 +748,246 @@ async fn linked_search_decrypts_server_side_and_skips_locked() {
         "{body}"
     );
 }
+
+// ---- review fixes: symbols, beliefs/tokens, unmarked rows, embeddings ----
+
+async fn side_store(f: &Fx, name: &str, space: &str) -> (VecSqliteMemoryStore, std::path::PathBuf) {
+    let dir = space_dir(f, space).await;
+    let db = dir.join(name);
+    let store = VecSqliteMemoryStore::new(VecSqliteStoreConfig {
+        path: db.clone(),
+        embedding_dimensions: 1536,
+    })
+    .await
+    .unwrap()
+    .with_space_crypto(SpaceCrypto::new(space, f.manager.key_ring().unwrap()));
+    (store, db)
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn symbols_path_never_writes_sealed_words() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let f = fixture().await;
+    let (store, db) = side_store(&f, "sym.sqlite", "esp_a").await;
+    store
+        .put(mem_record(
+            "esp_a",
+            "s1",
+            "n/s",
+            "Zxqcanaryword Qwvcanaryother tokens",
+        ))
+        .await
+        .unwrap();
+    assert!(store.symbols_for_memory("s1").await.unwrap().is_empty());
+    checkpoint(&db).await;
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let n: i64 = conn
+        .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0);
+    drop(conn);
+    assert_eq!(
+        files_containing(&space_dir(&f, "esp_a").await, "Zxqcanaryword"),
+        Vec::<String>::new()
+    );
+
+    // Default store, node-key sealed private row: same guarantee.
+    let dflt = f.tmp.path().join("dflt-sym.sqlite");
+    let d = VecSqliteMemoryStore::new(VecSqliteStoreConfig {
+        path: dflt.clone(),
+        embedding_dimensions: 1536,
+    })
+    .await
+    .unwrap();
+    d.put(mem_record(
+        "ws",
+        "d1",
+        "n/d",
+        "Zxqdefaultword Qwvdefaultother",
+    ))
+    .await
+    .unwrap();
+    assert!(d.symbols_for_memory("d1").await.unwrap().is_empty());
+    let conn = rusqlite::Connection::open(&dflt).unwrap();
+    let n: i64 = conn
+        .query_row("SELECT COUNT(*) FROM memory_symbol_links", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn beliefs_and_session_tokens_are_not_stored_in_clear() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let f = fixture().await;
+    let (store, db) = side_store(&f, "bel.sqlite", "esp_a").await;
+    let mut edge = xavier::domain::memory::belief::BeliefEdge::new(
+        "BeliefSrcCanary".to_string(),
+        "BeliefDstCanary".to_string(),
+        "relcanary_rel".to_string(),
+        0.5,
+        "prov-canary".to_string(),
+    );
+    edge.id = "edge1".to_string();
+    store
+        .save_beliefs("esp_a", vec![edge.clone()])
+        .await
+        .unwrap();
+    let now = chrono::Utc::now();
+    store
+        .save_session_token(
+            "esp_a",
+            xavier::memory::store::SessionTokenRecord {
+                token: "SessionTokCanary".to_string(),
+                created_at: now,
+                expires_at: now + chrono::Duration::hours(1),
+            },
+        )
+        .await
+        .unwrap();
+    checkpoint(&db).await;
+    let dir = space_dir(&f, "esp_a").await;
+    for c in [
+        "BeliefSrcCanary",
+        "BeliefDstCanary",
+        "relcanary_rel",
+        "prov-canary",
+        "SessionTokCanary",
+    ] {
+        assert_eq!(files_containing(&dir, c), Vec::<String>::new(), "{c}");
+    }
+    // Round trip and token validation still work.
+    let st = store.load_workspace_state("esp_a").await.unwrap();
+    assert_eq!(st.beliefs.len(), 1);
+    assert_eq!(st.beliefs[0].source, "BeliefSrcCanary");
+    assert_eq!(st.beliefs[0].target, "BeliefDstCanary");
+    assert_eq!(st.beliefs[0].relation_type, "relcanary_rel");
+    assert!(store
+        .is_session_token_valid("esp_a", "SessionTokCanary")
+        .await
+        .unwrap());
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn unmarked_and_foreign_rows_are_never_served() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let f = fixture().await;
+    let (store, db) = side_store(&f, "inj.sqlite", "esp_a").await;
+    store
+        .put(mem_record("esp_a", "r1", "n/1", "real sealed"))
+        .await
+        .unwrap();
+    store
+        .put(mem_record("esp_a", "r2", "n/2", "real sealed two"))
+        .await
+        .unwrap();
+    store
+        .save_checkpoint(
+            "esp_a",
+            xavier::checkpoint::Checkpoint {
+                task_id: "t".into(),
+                name: "c".into(),
+                data: serde_json::json!({"k": "v"}),
+            },
+        )
+        .await
+        .unwrap();
+    store
+        .save_entity_graph_snapshot("esp_a", "{\"s\":1}")
+        .await
+        .unwrap();
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        // Unmarked plaintext row.
+        conn.execute(
+            "UPDATE memory_records SET encrypted_dek = NULL, content = 'INJECTED-PLAIN', metadata = '{}' WHERE id = 'r1'",
+            [],
+        )
+        .unwrap();
+        // A default-space (XDK2) marker on a space row.
+        conn.execute(
+            "UPDATE memory_records SET encrypted_dek = X'58444b32' WHERE id = 'r2'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE checkpoint_records SET data = '{\"k\":\"INJECTED-CK\"}'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE entity_graph_snapshots SET data = 'INJECTED-SNAP'",
+            [],
+        )
+        .unwrap();
+    }
+    for id in ["r1", "r2"] {
+        match store.get("esp_a", id).await {
+            Err(_) => {}
+            Ok(Some(r)) => {
+                assert!(!r.content.contains("INJECTED") && !r.content.contains("real sealed"))
+            }
+            Ok(None) => {}
+        }
+    }
+    for r in store.list("esp_a").await.unwrap() {
+        assert!(!r.content.contains("INJECTED") && !r.content.contains("real sealed"));
+        assert!(xavier::memory::sqlite_vec_store::at_rest::is_locked_placeholder(&r));
+    }
+    assert!(store.load_checkpoint("esp_a", "t", "c").await.is_err());
+    assert!(store.load_entity_graph_snapshot("esp_a").await.is_err());
+}
+
+#[tokio::test]
+async fn disabled_conversations_refuse_everything_and_create_no_file() {
+    let db = xavier::codebase::conversations_db::ConversationsDb::open_disabled("esp_a").unwrap();
+    assert!(db.is_disabled());
+    assert!(db.create_thread(Some("t"), None, None).await.is_err());
+    assert!(db.create_schema().await.is_err());
+    assert!(db.list_threads(10).await.is_err());
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn private_text_is_not_embedded_by_a_remote_provider() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let f = fixture().await;
+    let saved: Vec<(&str, Option<String>)> = [
+        "XAVIER_EMBEDDING_PROVIDER_MODE",
+        "XAVIER_EMBEDDER",
+        "XAVIER_EMBEDDING_URL",
+    ]
+    .iter()
+    .map(|k| (*k, std::env::var(k).ok()))
+    .collect();
+    std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+    std::env::set_var("XAVIER_EMBEDDER", "openrouter");
+    std::env::set_var("XAVIER_EMBEDDING_URL", "https://embeddings.example.invalid");
+    assert!(
+        !xavier::embedding::embedder_is_local_only(),
+        "a cloud provider must not count as local"
+    );
+    let (store, _db) = side_store(&f, "emb.sqlite", "esp_a").await;
+    let t0 = std::time::Instant::now();
+    store
+        .put(mem_record("esp_a", "e1", "n/e", "private embed canary"))
+        .await
+        .unwrap();
+    let elapsed = t0.elapsed();
+    let rec = store.get("esp_a", "e1").await.unwrap().unwrap();
+    for (k, v) in saved {
+        match v {
+            Some(v) => std::env::set_var(k, v),
+            None => std::env::remove_var(k),
+        }
+    }
+    assert!(rec.embedding.is_empty());
+    assert_eq!(rec.embedding_status, "pending");
+    assert_eq!(
+        rec.embedding_attempts, 0,
+        "no request may even be attempted"
+    );
+    assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
+}

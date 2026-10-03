@@ -925,6 +925,13 @@ pub fn is_space_row(wrapped: &[u8]) -> bool {
     wrapped.starts_with(SPACE_MAGIC)
 }
 
+/// Remaining plaintext in an encrypting space's `memory.sqlite` (by design):
+/// record `path` (and its FTS/entity-node copy), the `clearance_level` column,
+/// timestamps/revision counters, belief edge weights and ids (keyed
+/// pseudonyms, not text), and the local embeddings (owner accepted; never
+/// synced). Private text is only embedded by a local endpoint and bypasses the
+/// global hash-keyed embedding cache.
+///
 /// Key binding of one encrypted space's memory store: the space id (bound
 /// into every AD) and the space's key ring. The data key is looked up on every
 /// operation, so a locked space never seals, serves or stores anything, and
@@ -966,6 +973,13 @@ impl SpaceCrypto {
         })
     }
 
+    /// Keyed pseudonym of `data` under the space key (HMAC-SHA256, labelled).
+    /// Used where a stable, non-reversible identifier is needed in a table that
+    /// must not hold plaintext (belief graph node ids).
+    pub fn mac(&self, label: &str, data: &str) -> Result<String> {
+        Ok(self.key()?.verify_mac(label, data.as_bytes()))
+    }
+
     /// Keyed digest for the hash chain of this space's rows.
     pub fn chain_mac(&self, content: &str) -> Result<String> {
         Ok(self.key()?.verify_mac("chain", content.as_bytes()))
@@ -977,12 +991,11 @@ impl SpaceCrypto {
         self.key()?.seal_record(&self.space_id, kind, id, plain)
     }
 
-    /// Inverse of [`SpaceCrypto::seal_text`]. A stored value that is not an
-    /// `xr1:` record is a row that predates encryption and is returned as-is.
+    /// Inverse of [`SpaceCrypto::seal_text`]. A stored value that is not a
+    /// valid sealed record for this (space, kind, id) is an error.
     pub fn open_text(&self, kind: &str, id: &str, stored: &str) -> Result<String> {
-        if !crate::espacio::keys::looks_encrypted(stored) {
-            return Ok(stored.to_string());
-        }
+        // No plaintext fallback: an unsealed value in an encrypting space was
+        // not written by this store.
         self.key()?.open_record(&self.space_id, kind, id, stored)
     }
 
@@ -1022,16 +1035,14 @@ impl SpaceCrypto {
         Ok(true)
     }
 
-    /// Open a row read from this space's store. Rows without a marker pass
-    /// through (nothing to open). Any row that is not an `XSK1` row of THIS
-    /// space, or that fails authentication, or whose key is locked, becomes
+    /// Open a row read from this space's store. Any row that is not an `XSK1`
+    /// row of THIS space (including an unmarked/plaintext row), or that fails authentication, or whose key is locked, becomes
     /// the locked placeholder and returns `Err`: ciphertext is never content.
     pub fn decrypt_in_place(&self, record: &mut crate::memory::store::MemoryRecord) -> Result<()> {
-        let wrapped = match &record.encrypted_dek {
-            None => return Ok(()),
-            Some(b) if b.is_empty() => return Ok(()),
-            Some(b) => b.clone(),
-        };
+        // Every row of an encrypting space carries the space marker. An
+        // unmarked row did not come from this store's writer (injected or
+        // copied in): it is never served as authentic.
+        let wrapped = record.encrypted_dek.clone().unwrap_or_default();
         let res = (|| -> Result<()> {
             if !is_space_row(&wrapped) {
                 anyhow::bail!("row is not sealed under a space key");
