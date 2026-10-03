@@ -35,6 +35,61 @@ pub async fn handle_memory_command(
         crate::cli::commands::enums::memory::MemoryCommand::ExportMarkdown { dir, public_only } => {
             run_export_markdown(&dir, public_only.unwrap_or(false)).await
         }
+        crate::cli::commands::enums::memory::MemoryCommand::EncryptPrivate {
+            dry_run,
+            apply,
+            backup_path,
+            batch,
+            max_rows,
+            rate_limit_ms,
+            resume,
+            offline: _,
+            online,
+            allow_synced_backup,
+        } => {
+            crate::cli::commands::encrypt_private::handle_encrypt_private(
+                crate::cli::commands::encrypt_private::EncryptPrivateArgs {
+                    dry_run,
+                    apply,
+                    backup_path,
+                    batch,
+                    max_rows,
+                    rate_limit_ms,
+                    resume,
+                    online,
+                    allow_synced_backup,
+                },
+            )
+            .await
+        }
+        crate::cli::commands::enums::memory::MemoryCommand::DecryptPrivate {
+            dry_run,
+            apply,
+            backup_path,
+            from_backup,
+            recovery_code,
+            force,
+            allow_synced_backup,
+            batch,
+            resume,
+            online,
+        } => {
+            crate::cli::commands::encrypt_private::handle_decrypt_private(
+                crate::cli::commands::encrypt_private::DecryptPrivateArgs {
+                    dry_run,
+                    apply,
+                    backup_path,
+                    from_backup,
+                    recovery_code,
+                    force,
+                    allow_synced_backup,
+                    batch,
+                    resume,
+                    online,
+                },
+            )
+            .await
+        }
         crate::cli::commands::enums::memory::MemoryCommand::Prune {
             prefix,
             older_than_days,

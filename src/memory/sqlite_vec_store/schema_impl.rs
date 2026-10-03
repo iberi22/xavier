@@ -82,6 +82,9 @@ impl VecSqliteMemoryStore {
                 );
                 manager.run_migrations(conn)?;
 
+                // Private-row encryption: clearance_level column + job tables.
+                super::at_rest::ensure_private_encryption_schema(conn)?;
+
                 // Run automatic vector migration
                 Self::migrate_embeddings_on_startup(conn)?;
 

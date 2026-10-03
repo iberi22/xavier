@@ -1244,18 +1244,23 @@ impl VecSqliteMemoryStore {
                 Ok(best_cand)
             }).await;
 
-            if let Ok(Some((mut existing_record, mut similarity))) = query_res {
+            if let Ok(Some((existing_record, mut similarity))) = query_res {
                 if !existing_record.embedding.is_empty() && !record.embedding.is_empty() {
                     similarity = cosine_similarity(&record.embedding, &existing_record.embedding);
                 }
-                if similarity >= dedup_settings.threshold {
+                // Candidates come out of the query already decrypted. A row that
+                // could not be decrypted (locked private key) carries the locked
+                // placeholder and must never be merged: it would overwrite the
+                // real content.
+                let dedup_readable = similarity >= dedup_settings.threshold
+                    && !super::at_rest::is_locked_placeholder(&existing_record);
+                if dedup_readable {
                     tracing::info!(
                         "Semantic dedup (similarity {} >= {}): Updating existing memory {} with new content",
                         similarity,
                         dedup_settings.threshold,
                         existing_record.id
                     );
-                    let _ = super::at_rest::decrypt_record_in_place(&mut existing_record);
 
                     if is_superset(&record.content, &existing_record.content) {
                         let existing_revisions = existing_record.revisions.clone();
@@ -1292,17 +1297,30 @@ impl VecSqliteMemoryStore {
 
         // Per-record envelope encryption at rest (always on when a node key
         // resolves; plaintext + warning otherwise, never a startup failure).
+        // Private rows (everything except explicitly public) use the
+        // default-space key (XDK2) once its keystore exists.
         // Legacy `encryption_at_rest_enabled` KEK path is retired for this
         // store: the node record key (XAVIER_RECORD_KEY / node/record.key)
         // replaces it. Reads still understand legacy KEK rows.
-        super::at_rest::encrypt_columns_for_write(&mut record)?;
+        super::at_rest::encrypt_for_write(&mut record)?;
 
         Ok(record)
     }
 
     /// Decomposed put step 3: SQLite INSERT or REPLACE into memory_records table and hash chain linking.
     pub fn put_store(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
-        let content_hash = crate::crypto::hex_encode(Sha256::digest(record.content.as_bytes()));
+        // Chain hash of a private (XDK2) row is a keyed MAC: an unsalted hash
+        // of private content would allow dictionary confirmation. Fail closed
+        // when the key is unavailable (the write was already sealed with it).
+        let content_hash = if record
+            .encrypted_dek
+            .as_deref()
+            .is_some_and(super::at_rest::is_default_space_row)
+        {
+            super::at_rest::default_space_key()?.verify_mac("chain", record.content.as_bytes())
+        } else {
+            crate::crypto::hex_encode(Sha256::digest(record.content.as_bytes()))
+        };
 
         let prev_hash: Option<String> = {
             conn.query_row(
@@ -1359,6 +1377,21 @@ impl VecSqliteMemoryStore {
                 record.embedding_attempts,
             ],
         )?;
+
+        // Plaintext classification index (not secret). A failure is an error: a
+        // private row must never be left without its classification.
+        // Encrypted rows carry the level resolved before encryption; plaintext
+        // rows are classified from their own metadata.
+        let level = if record.encrypted_dek.is_some() {
+            record.clearance as i64
+        } else {
+            super::at_rest::clearance_level_for(&record.metadata, &record.path)
+        };
+        conn.execute(
+            "UPDATE memory_records SET clearance_level = ?1 WHERE id = ?2",
+            params![level, record.id],
+        )
+        .map_err(|e| anyhow::anyhow!("clearance_level not recorded: {e}"))?;
 
         graph::sync_memory_entities(conn, &record.workspace_id, record)?;
 

@@ -107,6 +107,19 @@ pub fn sync_memory_entities(
         params![workspace_id, memory_node_id],
     )?;
 
+    // Entities are derived from content: never extract them from a private or
+    // encrypted row (they would land in plaintext graph tables). Only rows
+    // explicitly marked public are extracted.
+    let has_dek = record.encrypted_dek.as_ref().is_some_and(|d| !d.is_empty());
+    if has_dek
+        || crate::memory::sqlite_vec_store::at_rest::is_private_record(
+            &record.metadata,
+            &record.path,
+        )
+    {
+        return Ok(());
+    }
+
     for entity in extract_entities(&record.content) {
         let entity_id = entity_node_id(workspace_id, entity.entity_type, &entity.value);
         conn.execute(
