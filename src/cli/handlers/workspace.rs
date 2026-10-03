@@ -13,14 +13,59 @@ pub struct McpToolCallPayload {
     pub arguments: serde_json::Value,
 }
 
+/// MCP tools a space token may call: only those that act on the request's
+/// `WorkspaceContext` alone (audited in `tools_memory`). Search and get need
+/// Read; add needs Write. Every other tool is refused.
+fn space_tool_action(name: &str) -> Option<xavier::espacio::SpaceAction> {
+    use xavier::espacio::SpaceAction;
+    match name {
+        "mem_search" | "search_memory" | "memory_search" | "get_memory" => Some(SpaceAction::Read),
+        "create_memory" | "memory_save" => Some(SpaceAction::Write),
+        _ => None,
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn space_tool_gate(
+    space: &xavier::espacio::tokens::SpaceContext,
+    workspace: &WorkspaceContext,
+    tool: &str,
+) -> Result<(), axum::response::Response> {
+    let forbidden = || {
+        (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"status":"error","message":"Forbidden"})),
+        )
+            .into_response()
+    };
+    // The workspace must be this token's own space, never the default one.
+    if workspace.workspace_id != space.space_id {
+        return Err(forbidden());
+    }
+    match space_tool_action(tool) {
+        Some(action) if xavier::espacio::can(space.role, action) => Ok(()),
+        _ => Err(forbidden()),
+    }
+}
+
 /// Handler for POST /mcp/tools/call
 pub async fn mcp_tools_call_handler(
     State(state): State<CliState>,
     Extension(workspace): Extension<WorkspaceContext>,
     claims: Option<Extension<xavier::security::auth::Claims>>,
+    root: Option<Extension<xavier::adapters::inbound::http::routes::RootCredential>>,
+    space: Option<Extension<xavier::espacio::tokens::SpaceContext>>,
     Json(payload): Json<McpToolCallPayload>,
-) -> impl axum::response::IntoResponse {
-    use xavier::server::mcp::server::handle_tool_call;
+) -> axum::response::Response {
+    use xavier::server::mcp::server::{handle_tool_call, with_root_credential};
+
+    // Space tokens: the workspace is the token's own space (inserted by the
+    // auth middleware) and only space-scoped memory tools are reachable.
+    if let Some(Extension(space)) = &space {
+        if let Err(resp) = space_tool_gate(space, &workspace, &payload.name) {
+            return resp;
+        }
+    }
 
     // Convert CliState to AppState
     let workspace_registry = Arc::new(xavier::workspace::WorkspaceRegistry::new());
@@ -44,12 +89,15 @@ pub async fn mcp_tools_call_handler(
     };
 
     let claims_ref = claims.as_ref().map(|c| &c.0);
-    match handle_tool_call(
-        app_state,
-        workspace,
-        claims_ref,
-        &payload.name,
-        payload.arguments,
+    match with_root_credential(
+        root.is_some() && space.is_none(),
+        handle_tool_call(
+            app_state,
+            workspace,
+            claims_ref,
+            &payload.name,
+            payload.arguments,
+        ),
     )
     .await
     {

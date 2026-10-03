@@ -107,7 +107,8 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
                 crate::security::auth::UserRole::Admin,
                 chrono::Duration::hours(1),
             ));
-        return next.run(req).await;
+        // Root-only tools key off this credential, never the claimed role.
+        return super::server::with_root_credential(true, next.run(req)).await;
     }
 
     if let Ok(secret) = std::env::var("XAVIER_JWT_SECRET") {

@@ -7,6 +7,24 @@ use crate::ports::inbound::SecurityScanPort;
 use crate::AppState;
 use serde_json::Value;
 
+tokio::task_local! {
+    /// True only inside a call made by the node's ROOT credential. Admin
+    /// claims alone (e.g. an Admin JWT) never set it.
+    static ROOT_CREDENTIAL: bool;
+}
+
+/// Run `fut` with the root-credential marker set to `is_root`. The transports
+/// set it from the `RootCredential` request extension, which only the root
+/// token branch of the auth middleware inserts.
+pub async fn with_root_credential<F: std::future::Future>(is_root: bool, fut: F) -> F::Output {
+    ROOT_CREDENTIAL.scope(is_root, fut).await
+}
+
+/// Whether the current tool call carries the root credential.
+pub(crate) fn root_credential_present() -> bool {
+    ROOT_CREDENTIAL.try_with(|v| *v).unwrap_or(false)
+}
+
 /// Get xavier tools.
 pub fn get_xavier_tools() -> Vec<MCPTool> {
     let mut tools = super::tools_core::get_xavier_core_tools();
