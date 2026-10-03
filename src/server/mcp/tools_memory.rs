@@ -12,6 +12,30 @@ use crate::AppState;
 use serde_json::{json, Value};
 use ulid::Ulid;
 
+/// Who is calling an MCP tool, as established by the transport from the
+/// authenticated request (WP-13o): the space identity of an `xsp_` token
+/// (`SpaceAuth`, never the workspace id) and the clearance ceiling the REST
+/// routes would apply to the same request.
+#[derive(Debug, Clone)]
+pub struct McpCaller {
+    pub space: Option<crate::espacio::SpaceAuth>,
+    pub clearance: crate::security::clearance::ClearanceLevel,
+}
+
+tokio::task_local! {
+    static MCP_CALLER: McpCaller;
+}
+
+/// Run `fut` with `caller` as the identity of the MCP call. Without it,
+/// `include_linked` merges nothing (fail closed).
+pub async fn with_mcp_caller<F: std::future::Future>(caller: McpCaller, fut: F) -> F::Output {
+    MCP_CALLER.scope(caller, fut).await
+}
+
+fn mcp_caller() -> Option<McpCaller> {
+    MCP_CALLER.try_with(|c| c.clone()).ok()
+}
+
 const MEMORYFRAGMENT_MAX_LIMIT: usize = 100;
 const MEMORYFRAGMENT_MAX_COMPONENT_CHARS: usize = 128;
 const MEMORYFRAGMENT_MAX_TAGS: usize = 32;
@@ -491,38 +515,54 @@ async fn handle_mem_search(
         .collect();
 
     // WP-13n: opt-in, read-only merge of spaces that linked their memory to
-    // this workspace's space. Only a registered space can have inbound links;
-    // encrypted/locked linked spaces are skipped with a note.
+    // the caller's space. The space is the SpaceAuth identity set by the
+    // transport, not the workspace id. Linked results get the same clearance
+    // ceiling as REST; encrypted/locked linked spaces are skipped with a note.
     let mut linked_skipped: Vec<Value> = Vec::new();
+    let mut linked_hidden_by_clearance = 0usize;
     let include_linked = arguments
         .get("include_linked")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     if include_linked {
-        if let Some(manager) = crate::adapters::inbound::http::routes::get_space_manager() {
-            if manager.get(&workspace.workspace_id).await.is_ok() {
-                let own = workspace.workspace_id.clone();
+        let caller = mcp_caller();
+        let own = caller
+            .as_ref()
+            .and_then(|c| c.space.as_ref())
+            .map(|a| a.space_id.clone());
+        let manager = crate::adapters::inbound::http::routes::get_space_manager();
+        if let (Some(own), Some(manager), Some(caller)) = (own, manager, caller) {
+            if manager.get(&own).await.is_ok() {
                 for c in candidates.iter_mut() {
                     c["source_space"] = json!(own);
                 }
                 let resolved = crate::espacio::link::resolve_linked(&manager, &own).await;
                 linked_skipped = resolved.skipped;
+                // Link filters and the ceiling run after the search: over-fetch.
+                let linked_fetch = crate::espacio::linked_fetch_limit(fetch_limit);
                 for lm in resolved.searchable {
                     let Ok((docs, _)) = lm
                         .ctx
                         .workspace
                         .memory
-                        .search_filtered_with_mode(query, fetch_limit, filter_ref)
+                        .search_filtered_with_mode(query, linked_fetch, filter_ref)
                         .await
                     else {
                         linked_skipped
                             .push(json!({"space": lm.space_id, "reason": "SearchFailed"}));
                         continue;
                     };
+                    let docs: Vec<_> = docs
+                        .into_iter()
+                        .filter(|d| lm.link.allows(&d.path, &d.metadata))
+                        .collect();
+                    let (docs, hidden) = crate::security::clearance::split_by_clearance(
+                        caller.clearance,
+                        docs,
+                        |d| crate::security::clearance::level_from_metadata(&d.metadata),
+                    );
+                    linked_hidden_by_clearance += hidden;
                     for doc in docs.into_iter().skip(offset).take(limit) {
-                        if !lm.link.allows(&doc.path, &doc.metadata) {
-                            continue;
-                        }
                         let mut obj = json!({
                             "id": doc.id.clone().unwrap_or_default(),
                             "path": doc.path,
@@ -602,6 +642,7 @@ async fn handle_mem_search(
         "count": candidates.len(),
         "candidates": candidates,
         "linked_skipped": linked_skipped,
+        "linked_hidden_by_clearance": linked_hidden_by_clearance,
         // "hybrid" when the embedding/vector signal contributed, "lexical" when
         // results are FTS/BM25-only (no embedder configured, or it timed out /
         // failed and search degraded gracefully instead of hanging).

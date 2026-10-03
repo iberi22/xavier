@@ -346,7 +346,11 @@ pub async fn search_handler(
         include_embedding: Some(true),
         ..Default::default()
     };
-    let linked_req = query_req.clone();
+    // Link filters run after the search: over-fetch so a filtered page fills.
+    let linked_req = xavier::memory::query_engine::SearchQuery {
+        limit: xavier::espacio::linked_fetch_limit(limit),
+        ..query_req.clone()
+    };
     let own_space = space.as_ref().map(|e| e.0.space_id.clone());
 
     let mut search_results: Vec<serde_json::Value> =
