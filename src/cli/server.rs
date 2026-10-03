@@ -1768,9 +1768,39 @@ pub async fn start_http_server(
     // `CorsLayer`/timeout layer below so those layers wrap Maloca too — previously
     // they were applied first and the Maloca merge happened after, leaving `/maloca/*`
     // and `/v1/maloca/*` with no CORS headers and no auth enforcement on writes.
+    // HumanChallenge + introspection persist in `{data dir}/humanchallenge.db` (same data
+    // dir resolution as the Maloca store). On failure fall back to in-memory (None) so the
+    // daemon still boots, but say so loudly.
+    let hc_store = {
+        let hc_dir = xavier::maloca::MalocaStore::resolve_state_dir();
+        let _ = std::fs::create_dir_all(&hc_dir);
+        let hc_path = hc_dir.join("humanchallenge.db");
+        match xavier::humanchallenge::HumanChallengeStore::new(&hc_path) {
+            Ok(s) => Some(Arc::new(s)),
+            Err(e) => {
+                tracing::error!(path = %hc_path.display(), error = %e,
+                    "HumanChallenge store unavailable; challenges/introspection will NOT persist");
+                None
+            }
+        }
+    };
+    // Opt-in harvester: only runs when XAVIER_HC_SESSIONS_DIR points at a sessions directory
+    // (no default scan of an arbitrary path on the production node).
+    if let (Some(store), Ok(dir)) = (hc_store.clone(), std::env::var("XAVIER_HC_SESSIONS_DIR")) {
+        if !dir.trim().is_empty() {
+            let config = xavier::server::maloca::HcCronBridgeConfig {
+                sessions_dir: PathBuf::from(dir),
+                ..Default::default()
+            };
+            Arc::new(xavier::server::maloca::HcCronBridge::with_shared_store(
+                config, store,
+            ))
+            .start_background_worker();
+        }
+    }
     let maloca_router = xavier::maloca::nested_router::<()>(maloca_store.clone())
         .merge(xavier::server::maloca::v1_maloca_router_with_maloca_store(
-            None,
+            hc_store,
             Some(state.workspace_dir.clone()),
             Some(maloca_store),
         ))
