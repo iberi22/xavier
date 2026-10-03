@@ -83,6 +83,17 @@ else
     fi
 fi
 
+# Repo-level scanner is mandatory when shipped: it carries the repo's own patterns
+# and works (grep fallback) even where gitleaks is not installed.
+if [ -f "scripts/check-secrets.sh" ]; then
+    note "🔐  [SWAL] check-secrets"
+    bash scripts/check-secrets.sh >/dev/null 2>&1 || {
+        fail "check-secrets: posibles secretos en ficheros trackeados (ejecuta scripts/check-secrets.sh)"
+    }
+else
+    fail "scripts/check-secrets.sh no existe: el escaneo de secretos es obligatorio"
+fi
+
 # Env-ish files must never be committed with real values. .env.example is exempt:
 # placeholders there are the whole point of the file.
 while IFS= read -r f; do
