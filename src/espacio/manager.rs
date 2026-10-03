@@ -14,6 +14,7 @@ use tokio::sync::RwLock;
 
 use super::invite::SpaceRole;
 use super::keys::{NodeKek, RecoveryCode, UnlockMode};
+use super::migrate::{self, AdoptableDb, LegacySpace, LegacyWorkspace};
 use super::permissions::SpaceMembership;
 use super::store::{self, SpaceStores};
 
@@ -38,6 +39,10 @@ pub struct CreateSpaceRequest {
     /// Required for `password_required`. Never serialized, logged or returned.
     #[serde(default, skip_serializing)]
     pub password: Option<String>,
+    /// Encrypt records with the space key. Default true; root may pass false
+    /// to get a plaintext-memory space (the choice is persisted in `space.json`).
+    #[serde(default)]
+    pub encrypt_records: Option<bool>,
 }
 
 impl std::fmt::Debug for CreateSpaceRequest {
@@ -48,6 +53,7 @@ impl std::fmt::Debug for CreateSpaceRequest {
             .field("owner_node", &self.owner_node)
             .field("is_public", &self.is_public)
             .field("unlock_mode", &self.unlock_mode)
+            .field("encrypt_records", &self.encrypt_records)
             .field("password", &self.password.as_ref().map(|_| "<redacted>"))
             .finish()
     }
@@ -116,6 +122,12 @@ struct SpaceDescriptor {
     /// legacy descriptors (plaintext spaces).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     encryption: Option<EncryptionMeta>,
+    /// WP-13o: descriptor of the pre-espacio workspace, kept by reference.
+    /// Such a descriptor is never registered as a space.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    legacy: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    legacy_store: Option<LegacyWorkspace>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -139,6 +151,8 @@ impl SpaceDescriptor {
             created_at: info.created_at,
             namespace: info.namespace.clone(),
             encryption,
+            legacy: false,
+            legacy_store: None,
         }
     }
 
@@ -179,6 +193,9 @@ pub struct SpaceManager {
     unavailable: Arc<RwLock<HashMap<String, String>>>,
     base_dir: PathBuf,
     stores: Arc<SpaceStores>,
+    /// The legacy default workspace, recorded by reference (WP-13o). Not a
+    /// registered space: root keeps serving it exactly as before.
+    legacy: Option<LegacySpace>,
 }
 
 impl SpaceManager {
@@ -191,6 +208,7 @@ impl SpaceManager {
             unavailable: Arc::new(RwLock::new(HashMap::new())),
             base_dir: base_dir.into(),
             stores: SpaceStores::in_memory(),
+            legacy: None,
         }
     }
 
@@ -210,6 +228,17 @@ impl SpaceManager {
     /// When the stores carry a key ring, every `node_unlock` space is
     /// unlocked here; `password_required` spaces stay locked.
     pub fn open_with_stores(stores: Arc<SpaceStores>) -> Self {
+        Self::open_with_stores_and_legacy(stores, None)
+    }
+
+    /// Like [`SpaceManager::open_with_stores`], additionally recording the
+    /// legacy workspace (WP-13o): when `legacy` is given and no descriptor
+    /// exists for its id, `{spaces}/{id}/space.json` is written with
+    /// `legacy: true`. Legacy data is referenced, never touched.
+    pub fn open_with_stores_and_legacy(
+        stores: Arc<SpaceStores>,
+        legacy: Option<LegacyWorkspace>,
+    ) -> Self {
         if let Some(ring) = stores.key_ring() {
             ring.auto_unlock_all();
         }
@@ -217,7 +246,17 @@ impl SpaceManager {
             .spaces_dir()
             .map(Path::to_path_buf)
             .unwrap_or_default();
-        let (spaces, unavailable, encrypted) = Self::scan(&base_dir);
+        if let (Some(legacy), true) = (&legacy, stores.is_persistent()) {
+            match migrate::ensure_default_space(&base_dir, legacy) {
+                Ok(true) => tracing::info!(
+                    "espacio: recorded legacy workspace {:?} by reference (no data moved)",
+                    legacy.id
+                ),
+                Ok(false) => {}
+                Err(e) => tracing::warn!("espacio: legacy descriptor not written: {e}"),
+            }
+        }
+        let (spaces, unavailable, encrypted, legacy_found) = Self::scan(&base_dir);
         if let Some(ring) = stores.key_ring() {
             for id in spaces.keys() {
                 stores.prime_encryption(id);
@@ -234,6 +273,7 @@ impl SpaceManager {
             unavailable: Arc::new(RwLock::new(unavailable)),
             base_dir,
             stores,
+            legacy: legacy_found,
         }
     }
 
@@ -243,7 +283,39 @@ impl SpaceManager {
     /// get a keystore and encrypted messages; `node_unlock` spaces unlock at
     /// open.
     pub fn open_with_keys(root: impl AsRef<Path>, node: Arc<dyn NodeKek>) -> Self {
-        Self::open_with_stores(SpaceStores::with_key_ring(root.as_ref(), node))
+        Self::open_with_keys_and_legacy(root, node, Some(LegacyWorkspace::from_settings()))
+    }
+
+    /// [`SpaceManager::open_with_keys`] with an explicit legacy workspace
+    /// reference (`None` skips the legacy record). Used by tests.
+    pub fn open_with_keys_and_legacy(
+        root: impl AsRef<Path>,
+        node: Arc<dyn NodeKek>,
+        legacy: Option<LegacyWorkspace>,
+    ) -> Self {
+        Self::open_with_stores_and_legacy(SpaceStores::with_key_ring(root.as_ref(), node), legacy)
+    }
+
+    /// The legacy default workspace record, when this node has one.
+    pub fn legacy(&self) -> Option<&LegacySpace> {
+        self.legacy.as_ref()
+    }
+
+    /// Legacy `*.sqlite` files that could be adopted as spaces later (listing
+    /// only, nothing is moved). Blocking filesystem read.
+    pub fn adoptable(&self) -> Vec<AdoptableDb> {
+        let Some(db_dir) = self.legacy.as_ref().and_then(|l| l.store.db_dir.as_ref()) else {
+            return Vec::new();
+        };
+        let mut taken: Vec<String> = self
+            .spaces
+            .try_read()
+            .map(|g| g.keys().cloned().collect())
+            .unwrap_or_default();
+        if let Ok(g) = self.unavailable.try_read() {
+            taken.extend(g.keys().cloned());
+        }
+        migrate::list_adoptable(db_dir, &taken)
     }
 
     /// Per-space key ring, when enabled (unlock / change password).
@@ -266,12 +338,14 @@ impl SpaceManager {
         HashMap<String, SpaceInfo>,
         HashMap<String, String>,
         Vec<String>,
+        Option<LegacySpace>,
     ) {
+        let mut legacy_found = None;
         let mut spaces = HashMap::new();
         let mut unavailable = HashMap::new();
         let mut encrypted = Vec::new();
         let Ok(rd) = std::fs::read_dir(base_dir) else {
-            return (spaces, unavailable, encrypted);
+            return (spaces, unavailable, encrypted, legacy_found);
         };
         for entry in rd.flatten() {
             let dir = entry.path();
@@ -305,6 +379,18 @@ impl SpaceManager {
                     }
                 });
             match loaded {
+                Ok(d) if d.legacy => {
+                    // Recorded by reference only: not a registered space.
+                    if let Some(store) = d.legacy_store {
+                        legacy_found = Some(LegacySpace {
+                            id: d.id,
+                            name: d.name,
+                            legacy: true,
+                            created_at: d.created_at,
+                            store,
+                        });
+                    }
+                }
                 Ok(d) => {
                     if d.encryption.is_some_and(|e| e.enabled) {
                         encrypted.push(name.clone());
@@ -320,7 +406,7 @@ impl SpaceManager {
                 }
             }
         }
-        (spaces, unavailable, encrypted)
+        (spaces, unavailable, encrypted, legacy_found)
     }
 
     /// Spaces that exist on disk but whose descriptor failed to load.
@@ -414,6 +500,10 @@ impl SpaceManager {
         opts: KeyOptions,
     ) -> Result<(SpaceInfo, Option<RecoveryCode>)> {
         Self::validate_id(&id)?;
+        if self.legacy.as_ref().is_some_and(|l| l.id == id) {
+            // The id of the legacy default workspace stays reserved.
+            return Err(anyhow!(SpaceError::AlreadyExists(id)));
+        }
         let mut guard = self.spaces.write().await;
         if guard.contains_key(&id) || self.unavailable.read().await.contains_key(&id) {
             return Err(anyhow!(SpaceError::AlreadyExists(id)));
@@ -538,6 +628,13 @@ impl SpaceManager {
                     "could not move space {id} to trash: {e}"
                 ))));
             }
+        }
+        // No inheritance by id reuse: links of other spaces that name the
+        // deleted space as grantee are revoked now.
+        let others: Vec<String> = guard.keys().cloned().collect();
+        let revoked = super::link::revoke_links_naming(&self.stores, &others, id);
+        if revoked > 0 {
+            tracing::info!("espacio: revoked {revoked} inbound link(s) of deleted space {id}");
         }
         Ok(())
     }
