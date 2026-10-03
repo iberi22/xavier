@@ -198,8 +198,26 @@ pub(crate) async fn handle_space_token(
 /// credential even though the rest of Maloca's GET surface is public.
 /// Aggregate, content-free reads (`challenges/stats`, `challenges/training-gate`)
 /// stay public. Matching is on whole path segments.
-const MALOCA_PROTECTED_READ_PREFIXES: &[&str] =
-    &["/v1/maloca/introspection", "/v1/maloca/challenges/list"];
+///
+/// The legacy `/maloca/*` ops tree is covered too: support tickets, review
+/// requests, inbox, reward receipts, proposals, votes, decisions,
+/// manager actions and data-node consent carry user/node-attributable content.
+/// Status-style reads (`pack`, `backlog`, `mesh`, `nodes`, `params`,
+/// `feed/status`) stay public. Timeline/commits/beliefs/ws routes are already
+/// behind `auth_middleware` in the main router.
+const MALOCA_PROTECTED_READ_PREFIXES: &[&str] = &[
+    "/v1/maloca/introspection",
+    "/v1/maloca/challenges/list",
+    "/maloca/support",
+    "/maloca/reviews",
+    "/maloca/inbox",
+    "/maloca/rewards",
+    "/maloca/proposals",
+    "/maloca/votes",
+    "/maloca/decisions",
+    "/maloca/manager-actions",
+    "/maloca/consent",
+];
 
 pub fn maloca_read_requires_auth(path: &str) -> bool {
     MALOCA_PROTECTED_READ_PREFIXES.iter().any(|p| {
@@ -1413,6 +1431,66 @@ mod space_token_tests {
         assert!(!maloca_read_requires_auth("/v1/maloca/introspectionx"));
         assert!(!maloca_read_requires_auth("/v1/maloca/challenges/stats"));
         assert!(!maloca_read_requires_auth("/v1/maloca/registry"));
+        assert!(maloca_read_requires_auth("/maloca/consent/node-1"));
+        assert!(maloca_read_requires_auth("/maloca/votes"));
+        assert!(!maloca_read_requires_auth("/maloca/votesx"));
+        assert!(!maloca_read_requires_auth("/maloca/mesh"));
+    }
+
+    const LEGACY_PROTECTED_READS: &[&str] = &[
+        "/maloca/support",
+        "/maloca/reviews",
+        "/maloca/inbox",
+        "/maloca/rewards",
+        "/maloca/proposals",
+        "/maloca/votes",
+        "/maloca/decisions",
+        "/maloca/manager-actions",
+        "/maloca/consent",
+    ];
+    const LEGACY_PUBLIC_READS: &[&str] = &[
+        "/maloca/pack",
+        "/maloca/backlog",
+        "/maloca/mesh",
+        "/maloca/nodes",
+        "/maloca/params",
+        "/maloca/feed/status",
+    ];
+
+    #[tokio::test]
+    async fn maloca_legacy_personal_reads_require_auth() {
+        std::env::set_var("XAVIER_TOKEN", ROOT);
+        let (state, _tmp) = test_state().await;
+        let app = xavier::maloca::nested_router::<()>(state.maloca.clone())
+            .layer(from_fn_with_state(state, maloca_mutation_auth_middleware));
+        for path in LEGACY_PROTECTED_READS {
+            assert_eq!(
+                call(&app, "GET", path, "").await,
+                StatusCode::UNAUTHORIZED,
+                "GET {path} must be 401 without a token"
+            );
+            assert_eq!(
+                call(&app, "GET", path, "wrong-token").await,
+                StatusCode::UNAUTHORIZED,
+                "{path} with a bad token"
+            );
+            assert_eq!(
+                call(&app, "GET", path, ROOT).await,
+                StatusCode::OK,
+                "{path} with root token"
+            );
+        }
+        assert_eq!(
+            call(&app, "GET", "/maloca/consent/node-1", "").await,
+            StatusCode::UNAUTHORIZED
+        );
+        for path in LEGACY_PUBLIC_READS {
+            assert_eq!(
+                call(&app, "GET", path, "").await,
+                StatusCode::OK,
+                "{path} must stay public"
+            );
+        }
     }
 
     #[tokio::test]
