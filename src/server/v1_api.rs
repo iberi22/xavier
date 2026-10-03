@@ -2629,6 +2629,7 @@ mod tests {
                 embedding_provider_mode: crate::workspace::EmbeddingProviderMode::BringYourOwn,
                 managed_google_embeddings: false,
                 sync_policy: crate::workspace::SyncPolicy::CloudMirror,
+                protocol: Default::default(),
                 dedup: crate::settings::types::DedupSettings::default(),
             },
             RuntimeConfig::default(),

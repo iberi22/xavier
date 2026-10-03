@@ -28,6 +28,7 @@ fn bench_v1_api(c: &mut Criterion) {
                 embedding_provider_mode: xavier::workspace::EmbeddingProviderMode::BringYourOwn,
                 managed_google_embeddings: false,
                 sync_policy: xavier::workspace::SyncPolicy::LocalOnly,
+                protocol: Default::default(),
                 dedup: Default::default(),
             },
             RuntimeConfig::default(),

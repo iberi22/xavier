@@ -62,6 +62,7 @@ async fn create_test_app() -> (Router, WorkspaceContext) {
             embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: SyncPolicy::CloudMirror,
+            protocol: Default::default(),
             dedup: DedupSettings::default(),
         },
         RuntimeConfig::default(),
