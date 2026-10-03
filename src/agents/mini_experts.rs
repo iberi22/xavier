@@ -232,6 +232,28 @@ pub struct ExpertRecord {
     pub status: ExpertStatus,
     pub clearance: u8,
     pub created_at: String,
+    pub language: String,
+    pub source_dataset: String,
+    /// `local`/`ollama` (served by Ollama) or another provider name (legacy HTTP invoke).
+    pub provider: String,
+    /// Provider endpoint; empty means the daemon's local Ollama.
+    pub endpoint: String,
+}
+
+impl ExpertRecord {
+    /// Legacy provider config (name, provider, endpoint) for `ProviderRouter`.
+    pub fn to_config(&self) -> MiniExpertConfig {
+        MiniExpertConfig {
+            name: self.name.clone(),
+            provider: self.provider.clone(),
+            endpoint: if self.endpoint.trim().is_empty() {
+                "http://localhost:11434/v1".to_string()
+            } else {
+                self.endpoint.clone()
+            },
+            api_key: None,
+        }
+    }
 }
 
 /// Input for registering a new expert version.
@@ -249,6 +271,11 @@ pub struct NewExpert {
     /// Empty means `{}`.
     pub metrics_json: String,
     pub clearance: u8,
+    pub language: String,
+    pub source_dataset: String,
+    /// Empty means `local`.
+    pub provider: String,
+    pub endpoint: String,
 }
 
 /// One logged invocation (feedback-loop input).
@@ -270,7 +297,8 @@ pub struct ExpertStore {
 }
 
 const EXPERT_COLUMNS: &str = "name, version, domain, base_model, bundle_hash, gguf_path, \
-     ollama_model, metrics_json, status, clearance, created_at";
+     ollama_model, metrics_json, status, clearance, created_at, language, source_dataset, \
+     provider, endpoint";
 
 fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExpertRecord> {
     let status: String = row.get(8)?;
@@ -287,7 +315,67 @@ fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExpertRecord> {
         status: ExpertStatus::parse(&status),
         clearance: clearance.clamp(0, 255) as u8,
         created_at: row.get(10)?,
+        language: row.get(11)?,
+        source_dataset: row.get(12)?,
+        provider: row.get(13)?,
+        endpoint: row.get(14)?,
     })
+}
+
+fn ensure_column(conn: &rusqlite::Connection, table: &str, column: &str, ddl: &str) -> Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let exists = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .iter()
+        .any(|c| c == column);
+    drop(stmt);
+    if !exists {
+        conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {ddl}"))?;
+    }
+    Ok(())
+}
+
+fn next_version_in(conn: &rusqlite::Connection, name: &str) -> Result<String> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM mini_experts WHERE name = ?1",
+        [name],
+        |r| r.get(0),
+    )?;
+    let mut n = count + 1;
+    loop {
+        let v = format!("v{n}");
+        let taken: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM mini_experts WHERE name = ?1 AND version = ?2",
+            [name, v.as_str()],
+            |r| r.get(0),
+        )?;
+        if taken == 0 {
+            return Ok(v);
+        }
+        n += 1;
+    }
+}
+
+fn activate_in(conn: &rusqlite::Connection, name: &str, version: &str) -> Result<()> {
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM mini_experts WHERE name = ?1 AND version = ?2",
+        [name, version],
+        |r| r.get(0),
+    )?;
+    if exists == 0 {
+        anyhow::bail!("mini-expert {name}@{version} not found");
+    }
+    conn.execute(
+        "UPDATE mini_experts SET status = 'retired' \
+         WHERE name = ?1 AND status = 'active' AND version <> ?2",
+        [name, version],
+    )?;
+    conn.execute(
+        "UPDATE mini_experts SET status = 'active' WHERE name = ?1 AND version = ?2",
+        [name, version],
+    )?;
+    Ok(())
 }
 
 impl ExpertStore {
@@ -309,8 +397,24 @@ impl ExpertStore {
     }
 
     /// Opens the store in the daemon data dir and imports legacy JSON registries.
+    ///
+    /// The store is opened (and the legacy import run) once per data dir and then
+    /// shared, so per-request callers do not reopen the DB or re-run DDL/imports.
     pub fn open_default() -> Result<Self> {
+        static CACHE: Mutex<Option<(PathBuf, ExpertStore)>> = Mutex::new(None);
         let data_dir = crate::settings::XavierSettings::resolve_data_dir();
+        let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((dir, store)) = cache.as_ref() {
+            if *dir == data_dir {
+                return Ok(store.clone());
+            }
+        }
+        let store = Self::open_default_uncached(&data_dir)?;
+        *cache = Some((data_dir, store.clone()));
+        Ok(store)
+    }
+
+    fn open_default_uncached(data_dir: &Path) -> Result<Self> {
         let store = Self::open(data_dir.join(Self::DB_FILE))?;
         for legacy in [
             data_dir.join("mini_experts.json"),
@@ -343,6 +447,10 @@ impl ExpertStore {
                     CHECK (status IN ('candidate','active','retired')),
                 clearance INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
+                language TEXT NOT NULL DEFAULT '',
+                source_dataset TEXT NOT NULL DEFAULT '',
+                provider TEXT NOT NULL DEFAULT 'local',
+                endpoint TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (name, version)
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_mini_experts_one_active
@@ -350,7 +458,9 @@ impl ExpertStore {
             CREATE TABLE IF NOT EXISTS mini_expert_centroids (
                 domain TEXT PRIMARY KEY,
                 text_sha256 TEXT NOT NULL,
-                embedding TEXT NOT NULL
+                embedding TEXT NOT NULL,
+                dimension INTEGER NOT NULL DEFAULT 0,
+                model TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS mini_expert_invocations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -362,54 +472,59 @@ impl ExpertStore {
                 ok INTEGER NOT NULL
             );",
         )?;
+        // Upgrade stores created before these columns existed.
+        for (table, column, ddl) in [
+            ("mini_experts", "language", "TEXT NOT NULL DEFAULT ''"),
+            ("mini_experts", "source_dataset", "TEXT NOT NULL DEFAULT ''"),
+            ("mini_experts", "provider", "TEXT NOT NULL DEFAULT 'local'"),
+            ("mini_experts", "endpoint", "TEXT NOT NULL DEFAULT ''"),
+            (
+                "mini_expert_centroids",
+                "dimension",
+                "INTEGER NOT NULL DEFAULT 0",
+            ),
+            ("mini_expert_centroids", "model", "TEXT NOT NULL DEFAULT ''"),
+        ] {
+            ensure_column(&conn, table, column, ddl)?;
+        }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
     }
 
+    /// Locks the connection; a poisoned mutex is recovered (the connection stays usable).
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, rusqlite::Connection>> {
-        self.conn
-            .lock()
-            .map_err(|e| anyhow::anyhow!("mini-expert store mutex poisoned: {e}"))
+        Ok(self.conn.lock().unwrap_or_else(|e| {
+            tracing::warn!("mini-expert store mutex was poisoned; recovering");
+            e.into_inner()
+        }))
     }
 
     /// Next auto version label (`vN`) for `name`.
     pub fn next_version(&self, name: &str) -> Result<String> {
         let conn = self.lock()?;
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM mini_experts WHERE name = ?1",
-            [name],
-            |r| r.get(0),
-        )?;
-        let mut n = count + 1;
-        loop {
-            let v = format!("v{n}");
-            let taken: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM mini_experts WHERE name = ?1 AND version = ?2",
-                [name, v.as_str()],
-                |r| r.get(0),
-            )?;
-            if taken == 0 {
-                return Ok(v);
-            }
-            n += 1;
-        }
+        next_version_in(&conn, name)
     }
 
     /// Registers a version as `candidate`; with `activate` it becomes the active one.
+    /// Version allocation, insert and activation happen in one transaction.
     pub fn add_version(&self, new: NewExpert, activate: bool) -> Result<ExpertRecord> {
         if new.name.trim().is_empty() {
             anyhow::bail!("mini-expert name must not be empty");
         }
-        let version = match new.version.clone() {
-            Some(v) if !v.trim().is_empty() => v,
-            _ => self.next_version(&new.name)?,
-        };
-        let ollama_model = new
-            .ollama_model
-            .clone()
-            .filter(|m| !m.trim().is_empty())
-            .unwrap_or_else(|| format!("{}:{}", new.name, version));
+        for (field, value) in [
+            ("name", Some(new.name.as_str())),
+            ("version", new.version.as_deref()),
+            ("domain", Some(new.domain.as_str())),
+            ("gguf_path", Some(new.gguf_path.as_str())),
+            ("ollama_model", new.ollama_model.as_deref()),
+            ("provider", Some(new.provider.as_str())),
+            ("endpoint", Some(new.endpoint.as_str())),
+        ] {
+            if value.is_some_and(|v| v.contains(['\r', '\n'])) {
+                anyhow::bail!("mini-expert {field} must not contain line breaks");
+            }
+        }
         let metrics = if new.metrics_json.trim().is_empty() {
             "{}".to_string()
         } else {
@@ -417,12 +532,28 @@ impl ExpertStore {
                 .context("metrics must be valid JSON")?;
             new.metrics_json.clone()
         };
-        {
-            let conn = self.lock()?;
-            conn.execute(
+        let provider = if new.provider.trim().is_empty() {
+            "local".to_string()
+        } else {
+            new.provider.trim().to_string()
+        };
+        let version = {
+            let mut conn = self.lock()?;
+            let tx = conn.transaction()?;
+            let version = match new.version.clone() {
+                Some(v) if !v.trim().is_empty() => v,
+                _ => next_version_in(&tx, &new.name)?,
+            };
+            let ollama_model = new
+                .ollama_model
+                .clone()
+                .filter(|m| !m.trim().is_empty())
+                .unwrap_or_else(|| format!("{}:{}", new.name, version));
+            tx.execute(
                 "INSERT INTO mini_experts (name, version, domain, base_model, bundle_hash, \
-                 gguf_path, ollama_model, metrics_json, status, clearance, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'candidate', ?9, ?10)",
+                 gguf_path, ollama_model, metrics_json, status, clearance, created_at, \
+                 language, source_dataset, provider, endpoint) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'candidate', ?9, ?10, ?11, ?12, ?13, ?14)",
                 rusqlite::params![
                     new.name,
                     version,
@@ -434,13 +565,19 @@ impl ExpertStore {
                     metrics,
                     i64::from(new.clearance),
                     chrono::Utc::now().to_rfc3339(),
+                    new.language,
+                    new.source_dataset,
+                    provider,
+                    new.endpoint,
                 ],
             )
             .with_context(|| format!("Failed to register {}@{}", new.name, version))?;
-        }
-        if activate {
-            self.activate(&new.name, &version)?;
-        }
+            if activate {
+                activate_in(&tx, &new.name, &version)?;
+            }
+            tx.commit()?;
+            version
+        };
         self.get_version(&new.name, &version)?
             .ok_or_else(|| anyhow::anyhow!("version vanished after insert"))
     }
@@ -449,23 +586,7 @@ impl ExpertStore {
     pub fn activate(&self, name: &str, version: &str) -> Result<()> {
         let mut conn = self.lock()?;
         let tx = conn.transaction()?;
-        let exists: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM mini_experts WHERE name = ?1 AND version = ?2",
-            [name, version],
-            |r| r.get(0),
-        )?;
-        if exists == 0 {
-            anyhow::bail!("mini-expert {name}@{version} not found");
-        }
-        tx.execute(
-            "UPDATE mini_experts SET status = 'retired' \
-             WHERE name = ?1 AND status = 'active' AND version <> ?2",
-            [name, version],
-        )?;
-        tx.execute(
-            "UPDATE mini_experts SET status = 'active' WHERE name = ?1 AND version = ?2",
-            [name, version],
-        )?;
+        activate_in(&tx, name, version)?;
         tx.commit()?;
         Ok(())
     }
@@ -572,6 +693,10 @@ impl ExpertStore {
                     domain: entry.segment.clone(),
                     gguf_path: entry.model_gguf_path.clone(),
                     ollama_model: Some(entry.name.clone()),
+                    language: entry.language.clone(),
+                    source_dataset: entry.source_dataset.clone(),
+                    provider: entry.provider.clone(),
+                    endpoint: entry.endpoint.clone(),
                     metrics_json: serde_json::json!({
                         "imported_from": "json",
                         "language": entry.language,
@@ -588,31 +713,65 @@ impl ExpertStore {
         Ok(added)
     }
 
-    /// Returns the stored centroid of `domain` if it was computed from the same text.
-    pub fn get_centroid(&self, domain: &str, text: &str) -> Result<Option<Vec<f32>>> {
+    /// Returns the stored centroid of `domain` only if it was computed from the same
+    /// text by the same embedding `model` with `dimension` components; anything else
+    /// is a cache miss (so a changed embedder recomputes instead of silently scoring 0).
+    pub fn get_centroid(
+        &self,
+        domain: &str,
+        text: &str,
+        model: &str,
+        dimension: usize,
+    ) -> Result<Option<Vec<f32>>> {
         let conn = self.lock()?;
-        let row: Option<(String, String)> = conn
+        let row: Option<(String, String, i64, String)> = conn
             .query_row(
-                "SELECT text_sha256, embedding FROM mini_expert_centroids WHERE domain = ?1",
+                "SELECT text_sha256, embedding, dimension, model \
+                 FROM mini_expert_centroids WHERE domain = ?1",
                 [domain],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .ok();
-        match row {
-            Some((hash, emb)) if hash == sha256_hex(text) => Ok(Some(
-                serde_json::from_str(&emb).context("bad stored centroid")?,
-            )),
-            _ => Ok(None),
+        let Some((hash, emb, dim, stored_model)) = row else {
+            return Ok(None);
+        };
+        if hash != sha256_hex(text) {
+            return Ok(None);
         }
+        if dim != dimension as i64 || stored_model != model {
+            tracing::warn!(
+                "mini-expert centroid for '{domain}' is stale (stored {stored_model}/{dim}d, \
+                 current {model}/{dimension}d); recomputing"
+            );
+            return Ok(None);
+        }
+        let vec: Vec<f32> = serde_json::from_str(&emb).context("bad stored centroid")?;
+        if vec.len() != dimension {
+            return Ok(None);
+        }
+        Ok(Some(vec))
     }
 
-    pub fn set_centroid(&self, domain: &str, text: &str, embedding: &[f32]) -> Result<()> {
+    pub fn set_centroid(
+        &self,
+        domain: &str,
+        text: &str,
+        model: &str,
+        embedding: &[f32],
+    ) -> Result<()> {
         let conn = self.lock()?;
         conn.execute(
-            "INSERT INTO mini_expert_centroids (domain, text_sha256, embedding) VALUES (?1, ?2, ?3) \
+            "INSERT INTO mini_expert_centroids (domain, text_sha256, embedding, dimension, model) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
              ON CONFLICT(domain) DO UPDATE SET text_sha256 = excluded.text_sha256, \
-             embedding = excluded.embedding",
-            rusqlite::params![domain, sha256_hex(text), serde_json::to_string(embedding)?],
+             embedding = excluded.embedding, dimension = excluded.dimension, model = excluded.model",
+            rusqlite::params![
+                domain,
+                sha256_hex(text),
+                serde_json::to_string(embedding)?,
+                embedding.len() as i64,
+                model
+            ],
         )?;
         Ok(())
     }
@@ -761,8 +920,14 @@ pub struct EnsureReport {
 pub fn render_modelfile(rec: &ExpertRecord) -> String {
     format!(
         "FROM {}\nPARAMETER temperature 0.2\nSYSTEM You are a personal mini-expert specialized in {}.\n",
-        rec.gguf_path, rec.domain
+        one_line(&rec.gguf_path),
+        one_line(&rec.domain)
     )
+}
+
+/// Collapses line breaks so a value cannot inject extra Modelfile directives.
+fn one_line(value: &str) -> String {
+    value.replace(['\r', '\n'], " ")
 }
 
 fn model_key(name: &str) -> &str {
@@ -1019,13 +1184,16 @@ mod tests {
     #[test]
     fn test_centroid_cache_and_invocation_log() {
         let (_d, store) = tmp_store();
-        assert!(store.get_centroid("d", "text").unwrap().is_none());
-        store.set_centroid("d", "text", &[1.0, 2.0]).unwrap();
+        assert!(store.get_centroid("d", "text", "m", 2).unwrap().is_none());
+        store.set_centroid("d", "text", "m", &[1.0, 2.0]).unwrap();
         assert_eq!(
-            store.get_centroid("d", "text").unwrap().unwrap(),
+            store.get_centroid("d", "text", "m", 2).unwrap().unwrap(),
             vec![1.0, 2.0]
         );
-        assert!(store.get_centroid("d", "other text").unwrap().is_none());
+        assert!(store
+            .get_centroid("d", "other text", "m", 2)
+            .unwrap()
+            .is_none());
 
         store.log_invocation("fx", "v1", "hello", 12, true).unwrap();
         store.log_invocation("fx", "v1", "boom", 3, false).unwrap();
@@ -1034,6 +1202,161 @@ mod tests {
         assert!(!log[0].ok);
         assert_eq!(log[1].query_sha256, sha256_hex("hello"));
         assert_ne!(log[1].query_sha256, "hello");
+    }
+
+    #[test]
+    fn test_centroid_cache_misses_on_model_or_dimension_change() {
+        let (_d, store) = tmp_store();
+        store
+            .set_centroid("d", "d", "model-a", &[1.0, 2.0])
+            .unwrap();
+        assert!(store
+            .get_centroid("d", "d", "model-a", 2)
+            .unwrap()
+            .is_some());
+        // Different embedder model, same dimension.
+        assert!(store
+            .get_centroid("d", "d", "model-b", 2)
+            .unwrap()
+            .is_none());
+        // Same model id, different dimension.
+        assert!(store
+            .get_centroid("d", "d", "model-a", 3)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn test_add_persists_provider_endpoint_language_dataset() {
+        let (_d, store) = tmp_store();
+        let rec = store
+            .add_version(
+                NewExpert {
+                    language: "es".into(),
+                    source_dataset: "ds1".into(),
+                    provider: "agy".into(),
+                    endpoint: "http://gpu-box:11434/v1".into(),
+                    ..new_expert("fx", None)
+                },
+                true,
+            )
+            .unwrap();
+        assert_eq!(rec.language, "es");
+        assert_eq!(rec.source_dataset, "ds1");
+        assert_eq!(rec.provider, "agy");
+        assert_eq!(rec.endpoint, "http://gpu-box:11434/v1");
+        let cfg = store.active("fx").unwrap().unwrap().to_config();
+        assert_eq!(cfg.provider, "agy");
+        assert_eq!(cfg.endpoint, "http://gpu-box:11434/v1");
+        // Empty provider defaults to local.
+        let rec = store.add_version(new_expert("plain", None), true).unwrap();
+        assert_eq!(rec.provider, "local");
+    }
+
+    #[test]
+    fn test_open_upgrades_pre_provider_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(ExpertStore::DB_FILE);
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE mini_experts (
+                    name TEXT NOT NULL, version TEXT NOT NULL,
+                    domain TEXT NOT NULL DEFAULT '', base_model TEXT NOT NULL DEFAULT '',
+                    bundle_hash TEXT NOT NULL DEFAULT '', gguf_path TEXT NOT NULL DEFAULT '',
+                    ollama_model TEXT NOT NULL DEFAULT '', metrics_json TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'candidate', clearance INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL, PRIMARY KEY (name, version));
+                 INSERT INTO mini_experts (name, version, status, created_at)
+                    VALUES ('old', 'v1', 'active', 'now');
+                 CREATE TABLE mini_expert_centroids (
+                    domain TEXT PRIMARY KEY, text_sha256 TEXT NOT NULL, embedding TEXT NOT NULL);",
+            )
+            .unwrap();
+        }
+        let store = ExpertStore::open(&path).unwrap();
+        let old = store.active("old").unwrap().unwrap();
+        assert_eq!(old.provider, "local");
+        assert_eq!(old.endpoint, "");
+        store
+            .set_centroid("d", "d", "m", &[1.0])
+            .expect("centroid table upgraded");
+        // Reopen is idempotent.
+        ExpertStore::open(&path).unwrap();
+    }
+
+    #[test]
+    fn test_add_rejects_line_breaks_and_render_is_single_line() {
+        let (_d, store) = tmp_store();
+        for bad in [
+            NewExpert {
+                domain: "rust\nSYSTEM evil".into(),
+                ..new_expert("a", None)
+            },
+            NewExpert {
+                gguf_path: "/m.gguf\rFROM /etc".into(),
+                ..new_expert("b", None)
+            },
+            NewExpert {
+                ollama_model: Some("m\nPARAMETER x".into()),
+                ..new_expert("c", None)
+            },
+        ] {
+            assert!(store.add_version(bad, true).is_err());
+        }
+        assert!(store.list().unwrap().is_empty());
+
+        let mut rec = store.add_version(new_expert("ok", None), true).unwrap();
+        rec.domain = "x\nSYSTEM evil".into();
+        rec.gguf_path = "/g\nFROM /etc".into();
+        let mf = render_modelfile(&rec);
+        assert_eq!(mf.lines().count(), 3, "{mf}");
+    }
+
+    #[test]
+    fn test_poisoned_mutex_is_recovered() {
+        let (_d, store) = tmp_store();
+        store.add_version(new_expert("fx", None), true).unwrap();
+        let clone = store.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = clone.conn.lock().unwrap();
+            panic!("poison the mutex");
+        })
+        .join();
+        assert!(store.conn.is_poisoned());
+        assert_eq!(store.list().unwrap().len(), 1);
+        store.add_version(new_expert("fy", None), true).unwrap();
+    }
+
+    #[test]
+    fn test_open_default_is_cached_and_imports_legacy_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let prev = std::env::var_os("XAVIER_DATA_DIR");
+        std::env::set_var("XAVIER_DATA_DIR", dir.path());
+        let a = ExpertStore::open_default().unwrap();
+        // A legacy file appearing after the first open must not be re-imported.
+        MiniExpertRegistry::new(dir.path().join("mini_experts.json"))
+            .register(MiniExpertEntry {
+                name: "late".into(),
+                segment: "s".into(),
+                language: "en".into(),
+                clearance: 0,
+                source_dataset: "d".into(),
+                model_gguf_path: String::new(),
+                provider: "local".into(),
+                endpoint: String::new(),
+                api_key: None,
+            })
+            .unwrap();
+        let b = ExpertStore::open_default().unwrap();
+        let same_conn = Arc::ptr_eq(&a.conn, &b.conn);
+        let imported = b.versions("late").unwrap().len();
+        match prev {
+            Some(v) => std::env::set_var("XAVIER_DATA_DIR", v),
+            None => std::env::remove_var("XAVIER_DATA_DIR"),
+        }
+        assert!(same_conn, "open_default must reuse one connection");
+        assert_eq!(imported, 0, "legacy import must run once per open");
     }
 
     struct FakeRunner {

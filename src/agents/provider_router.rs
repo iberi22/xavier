@@ -3,7 +3,7 @@
 //! This router manages configured mini-experts and handles routing and invocation
 //! for local, agy, or custom mini-expert endpoints.
 
-use crate::agents::mini_experts::MiniExpertRegistry;
+use crate::agents::mini_experts::{ExpertStore, MiniExpertRegistry};
 use crate::settings::types::MiniExpertConfig;
 use reqwest::Client;
 use serde_json::json;
@@ -29,6 +29,24 @@ pub enum MiniExpertInvokeError {
     NetworkError(#[from] reqwest::Error),
 }
 
+/// Overall timeout for one expert call (covers a cold Ollama model load). Kept below
+/// the bulk HTTP timeout so the caller gets a descriptive error instead of a bare 504.
+pub const INVOKE_TIMEOUT_SECS: u64 = 300;
+
+/// Process-wide HTTP client with explicit timeouts, shared by every router instance.
+fn shared_client() -> Client {
+    static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(INVOKE_TIMEOUT_SECS))
+                .build()
+                .unwrap_or_else(|_| Client::new())
+        })
+        .clone()
+}
+
 /// Router for directing calls to mini-expert endpoints.
 pub struct ProviderRouter {
     mini_experts: Vec<MiniExpertConfig>,
@@ -40,7 +58,7 @@ impl ProviderRouter {
     pub fn new(mini_experts: Vec<MiniExpertConfig>) -> Self {
         Self {
             mini_experts,
-            client: Client::new(),
+            client: shared_client(),
         }
     }
 
@@ -59,6 +77,32 @@ impl ProviderRouter {
             }
         }
 
+        Self::new(configs)
+    }
+
+    /// Creates a ProviderRouter from the SQLite registry (active versions), then
+    /// `additional_configs` for names the store does not have. An API key kept in
+    /// the legacy JSON registry is carried over (the store never holds secrets).
+    pub fn from_expert_store(
+        store: &ExpertStore,
+        legacy: &MiniExpertRegistry,
+        additional_configs: Vec<MiniExpertConfig>,
+    ) -> Self {
+        let mut configs: Vec<MiniExpertConfig> = match store.list_active() {
+            Ok(list) => list.iter().map(|r| r.to_config()).collect(),
+            Err(e) => {
+                tracing::warn!("mini-expert store unavailable: {e}");
+                Vec::new()
+            }
+        };
+        for config in &mut configs {
+            config.api_key = legacy.get(&config.name).and_then(|e| e.api_key);
+        }
+        for config in additional_configs {
+            if !configs.iter().any(|c| c.name == config.name) {
+                configs.push(config);
+            }
+        }
         Self::new(configs)
     }
 
