@@ -672,6 +672,14 @@ pub async fn start_http_server(
         state.workspace_id
     );
 
+    // Espacio: one long-lived SpaceManager under the daemon data dir. Key
+    // init failure or XAVIER_SPACES=off leaves espacio disabled, never a crash.
+    let space_manager =
+        crate::cli::state::open_space_manager(&xavier::maloca::MalocaStore::resolve_state_dir());
+    if let Some(m) = &space_manager {
+        xavier::adapters::inbound::http::routes::init_space_manager(m.clone());
+    }
+
     // Initialize and wire up the Memory Sync singleton
     let node_id = if let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() {
         identity.node_id.0
@@ -1808,9 +1816,13 @@ pub async fn start_http_server(
 
     let app = app
         .merge(protected_routes)
+        .merge(crate::cli::state::guarded_espacio_router(&state))
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
         .layer(Extension(event_bus_for_ws));
+
+    // Outside every auth layer (see `install_space_manager`).
+    let app = crate::cli::state::install_space_manager(app, space_manager.clone());
 
     let app = app.with_state(state.clone());
 
