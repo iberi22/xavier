@@ -14,6 +14,7 @@ pub fn get_xavier_tools() -> Vec<MCPTool> {
     tools.extend(super::tools_memory::get_xavier_memory_tools());
     tools.extend(super::tools_context::get_xavier_context_tools());
     tools.extend(super::telecom_tools::register_telecom_mcp_tools());
+    tools.extend(super::tools_expert::get_expert_tools());
     #[cfg(feature = "pageindex")]
     tools.extend(super::tools_pageindex::get_pageindex_tools());
     tools
@@ -135,6 +136,8 @@ pub async fn handle_tool_call(
         || name == "xavier_skill_list"
     {
         super::tools_context::handle_context_tool(state, workspace, name, arguments).await
+    } else if super::tools_expert::is_expert_tool(name) {
+        super::tools_expert::handle_expert_tool(name, arguments).await
     } else if name.starts_with("telecom_") {
         super::telecom_tools::handle_telecom_tool(name, arguments, None).await
     } else {
