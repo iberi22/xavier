@@ -76,6 +76,15 @@ impl HcCronBridge {
         }
     }
 
+    /// Construct `HcCronBridge` sharing an already-open store (e.g. the one behind the HTTP routes)
+    pub fn with_shared_store(config: HcCronBridgeConfig, store: Arc<HumanChallengeStore>) -> Self {
+        Self {
+            config,
+            scanner: SessionScanner::new(),
+            store,
+        }
+    }
+
     /// Return reference to inner `HumanChallengeStore`
     pub fn store(&self) -> Arc<HumanChallengeStore> {
         self.store.clone()

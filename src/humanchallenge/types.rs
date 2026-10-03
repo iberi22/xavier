@@ -368,6 +368,10 @@ pub struct IntrospectionSession {
     pub status: IntrospectionStatus,
     pub started_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// Explicit user consent to use this session's insights for model training.
+    /// Defaults to false; set when the session is completed.
+    #[serde(default)]
+    pub training_consent: bool,
 }
 
 impl IntrospectionSession {
@@ -382,6 +386,7 @@ impl IntrospectionSession {
             status: IntrospectionStatus::Active,
             started_at: Utc::now(),
             completed_at: None,
+            training_consent: false,
         }
     }
 
