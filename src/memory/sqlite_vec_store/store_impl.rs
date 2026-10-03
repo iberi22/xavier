@@ -49,6 +49,7 @@ pub fn is_superset(new: &str, old: &str) -> bool {
 }
 
 /// AD kinds of the non-record blobs sealed in a space store.
+const KIND_BELIEF: &str = "memory.belief";
 const KIND_CHECKPOINT: &str = "memory.checkpoint";
 const KIND_GRAPH_SNAPSHOT: &str = "memory.graph_snapshot";
 
@@ -497,21 +498,38 @@ impl MemoryStore for VecSqliteMemoryStore {
             while let Some(row) = rows.next()? {
                 let weight = row.get::<_, f64>(4)? as f32;
                 let confidence_score = row.get::<_, f64>(5)? as f32;
-                let provenance_id = row.get::<_, String>(6)?;
-                let contradicts_edge_id = row.get::<_, Option<String>>(7)?;
+                let mut provenance_id = row.get::<_, String>(6)?;
+                let mut contradicts_edge_id = row.get::<_, Option<String>>(7)?;
+                let mut source_language: Option<String> = row.get(9)?;
+                let mut target_language: Option<String> = row.get(10)?;
                 let is_inferred: i32 = row.get(8)?;
+                let belief_id: String = row.get(0)?;
+                let (source, target, relation_type) = match &crypto {
+                    Some(c) => {
+                        let plain = c.open_text(KIND_BELIEF, &belief_id, &provenance_id)?;
+                        let v: serde_json::Value = serde_json::from_str(&plain)?;
+                        let f = |k: &str| v[k].as_str().unwrap_or_default().to_string();
+                        provenance_id = f("provenance_id");
+                        contradicts_edge_id =
+                            v["contradicts_edge_id"].as_str().map(str::to_string);
+                        source_language = v["source_language"].as_str().map(str::to_string);
+                        target_language = v["target_language"].as_str().map(str::to_string);
+                        (f("source"), f("target"), f("relation_type"))
+                    }
+                    None => (row.get(1)?, row.get(2)?, row.get(3)?),
+                };
                 beliefs.push(BeliefEdge {
-                    id: row.get(0)?,
-                    source: row.get(1)?,
-                    target: row.get(2)?,
-                    relation_type: row.get(3)?,
+                    id: belief_id,
+                    source,
+                    target,
+                    relation_type,
                     weight,
                     confidence_score,
                     provenance_id,
                     contradicts_edge_id,
                     is_inferred: is_inferred != 0,
-                    source_language: row.get(9)?,
-                    target_language: row.get(10)?,
+                    source_language,
+                    target_language,
                     created_at: chrono::DateTime::parse_from_rfc3339(
                         &row.get::<_, String>(11)?,
                     )
@@ -532,6 +550,11 @@ impl MemoryStore for VecSqliteMemoryStore {
                 let mut rows = stmt.query([&workspace_id_c])?;
                 let mut tokens = Vec::new();
                 while let Some(row) = rows.next()? {
+                    // Space stores keep only a hash of a session token: it
+                    // cannot be restored, and expires with its row.
+                    if crypto.is_some() {
+                        continue;
+                    }
                     let expires_at = chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
                             .map(|dt| dt.with_timezone(&chrono::Utc))
                             .unwrap_or_else(|_| chrono::Utc::now());
@@ -588,7 +611,37 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn save_beliefs(&self, workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()> {
         let workspace_id = workspace_id.to_string();
+        // An encrypting space never stores belief text in clear: node ids are
+        // keyed pseudonyms and the real source/target/relation sit sealed in
+        // `properties`.
+        let crypto = self.crypto.clone();
         self.conn_provider.with_conn(&self.project_id, move |conn| {
+            let mut beliefs = beliefs;
+            if let Some(c) = &crypto {
+                for belief in beliefs.iter_mut() {
+                    let sealed = c.seal_text(
+                        KIND_BELIEF,
+                        &belief.id,
+                        &serde_json::json!({
+                            "source": belief.source,
+                            "target": belief.target,
+                            "relation_type": belief.relation_type,
+                            "provenance_id": belief.provenance_id,
+                            "contradicts_edge_id": belief.contradicts_edge_id,
+                            "source_language": belief.source_language,
+                            "target_language": belief.target_language,
+                        })
+                        .to_string(),
+                    )?;
+                    belief.source = c.mac("belief-node", &belief.source)?;
+                    belief.target = c.mac("belief-node", &belief.target)?;
+                    belief.relation_type = "sealed".to_string();
+                    belief.source_language = None;
+                    belief.target_language = None;
+                    belief.contradicts_edge_id = None;
+                    belief.provenance_id = sealed;
+                }
+            }
             for belief in &beliefs {
                 super::graph::ensure_seed_entities(
                     conn,
@@ -629,7 +682,12 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let token_key =
             crate::memory::store::stable_key("session_token_row", &[&workspace_id, &token.token]);
-        let token_val = token.token;
+        // Space stores keep only the keyed-lookup hash, never the token.
+        let token_val = if self.crypto.is_some() {
+            token_key.clone()
+        } else {
+            token.token
+        };
         let created_at = token.created_at.to_rfc3339();
         let expires_at = token.expires_at.to_rfc3339();
 
@@ -915,8 +973,15 @@ impl MemoryStore for VecSqliteMemoryStore {
                     };
 
                     if let Some(mut record) = record {
-                        let _ = super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
-                        symbols = Self::link_memory_on_demand(conn, &memory_id, &record.content)?;
+                        // Symbol links store raw words of the content in a
+                        // plaintext table: never derive them from a sealed row.
+                        let sealed = crypto.is_some()
+                            || record.encrypted_dek.as_ref().is_some_and(|d| !d.is_empty());
+                        if !sealed {
+                            let _ = super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
+                            symbols =
+                                Self::link_memory_on_demand(conn, &memory_id, &record.content)?;
+                        }
                     }
                 }
 
@@ -981,8 +1046,23 @@ impl VecSqliteMemoryStore {
     pub async fn put_embed(&self, mut record: MemoryRecord) -> Result<MemoryRecord> {
         // Auto-generate missing embeddings if a provider is configured
         if record.embedding.is_empty() {
-            if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
-                match crate::memory::embedder::EmbeddingClient::from_env_async().await {
+            // Private text (every record of an encrypting space, and private
+            // rows of the default store) never leaves the device: it is only
+            // embedded by a local endpoint, without the hash-keyed cache.
+            let private = self.crypto.is_some()
+                || super::at_rest::is_private_record(&record.metadata, &record.path);
+            if private && !crate::memory::embedder::EmbeddingClient::is_local_only_from_env() {
+                tracing::warn!(
+                    "Memory record {} is private and the embedding provider is not local: embedding skipped (pending)",
+                    record.id
+                );
+            } else if crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
+                let client = if private {
+                    crate::memory::embedder::EmbeddingClient::from_env_private_async().await
+                } else {
+                    crate::memory::embedder::EmbeddingClient::from_env_async().await
+                };
+                match client {
                     Ok(client) => match client.embed(&record.content).await {
                         Ok(vector) => {
                             record.embedding = vector;

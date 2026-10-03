@@ -281,6 +281,20 @@ impl EmbedderConfig {
         }
     }
 
+    /// Whether every backend of this configuration is local (loopback endpoint,
+    /// unix socket or in-process model). A single remote backend makes the
+    /// whole chain non-local, since a fallback could send the text there.
+    pub fn is_local_only(&self) -> bool {
+        match self {
+            Self::Noop | Self::Invalid(_) => true,
+            Self::Fallback(backends) => backends.iter().all(|b| match b {
+                EmbedderBackendConfig::Gllm(_) => true,
+                EmbedderBackendConfig::Ollama(c) => endpoint_is_local(&c.endpoint),
+                EmbedderBackendConfig::OpenAICompatible(c) => endpoint_is_local(&c.endpoint),
+            }),
+        }
+    }
+
     /// Is configured.
     pub fn is_configured(&self) -> bool {
         !matches!(self, Self::Noop)
@@ -573,10 +587,60 @@ impl EmbedderConfig {
 
 /// Build embedder from env.
 pub async fn build_embedder_from_env() -> Result<Arc<dyn Embedder>, EmbeddingError> {
+    build_embedder_from_env_with_cache(true).await
+}
+
+/// Embedder for private (sealed) content: refuses any configuration that could
+/// send text off the device, and never uses the persistent embedding cache
+/// (it is keyed by an unsalted hash of the text).
+pub async fn build_private_embedder_from_env() -> Result<Arc<dyn Embedder>, EmbeddingError> {
+    if !EmbedderConfig::from_env().is_local_only() {
+        return Err(EmbeddingError::Config(
+            "private content may only be embedded by a local endpoint".to_string(),
+        ));
+    }
+    build_embedder_from_env_with_cache(false).await
+}
+
+/// Whether the configured embedder keeps all text on this machine.
+pub fn embedder_is_local_only() -> bool {
+    EmbedderConfig::from_env().is_local_only()
+}
+
+/// True for loopback hosts and unix sockets: `localhost`, `127.0.0.0/8`,
+/// `::1`, `unix:` and absolute paths. Exact host match, so
+/// `localhost.example.com` or `127.0.0.1.evil.net` are remote.
+pub fn endpoint_is_local(endpoint: &str) -> bool {
+    let e = endpoint.trim();
+    if e.starts_with("unix:") || e.starts_with('/') {
+        return true;
+    }
+    let rest = e.split_once("://").map(|(_, r)| r).unwrap_or(e);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let hostport = authority.rsplit('@').next().unwrap_or("");
+    let host = if let Some(h) = hostport.strip_prefix('[') {
+        h.split(']').next().unwrap_or("")
+    } else {
+        hostport.split(':').next().unwrap_or("")
+    };
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    host.parse::<std::net::IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
+}
+
+async fn build_embedder_from_env_with_cache(
+    use_cache: bool,
+) -> Result<Arc<dyn Embedder>, EmbeddingError> {
     let embedder = EmbedderConfig::from_env().build().await?;
 
     // Wrap in the persistent cache if enabled.
-    let cache_config = cache::EmbeddingCacheConfig::from_env();
+    let mut cache_config = cache::EmbeddingCacheConfig::from_env();
+    if !use_cache {
+        cache_config.enabled = false;
+    }
     let embedder: Arc<dyn Embedder> = if cache_config.enabled && embedder.dimension() > 0 {
         info!(
             capacity = cache_config.max_capacity,
@@ -1516,5 +1580,36 @@ mod tests {
         assert_ne!(embedder.dimension(), 0);
 
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+    }
+}
+
+#[cfg(test)]
+mod local_endpoint_tests {
+    use super::endpoint_is_local;
+
+    #[test]
+    fn classifies_endpoints() {
+        for ok in [
+            "http://localhost:11434/v1/embeddings",
+            "http://127.0.0.1:8080",
+            "http://127.1.2.3/x",
+            "http://[::1]:9/x",
+            "unix:/run/emb.sock",
+            "/run/emb.sock",
+            "http://user:pw@localhost/x",
+        ] {
+            assert!(endpoint_is_local(ok), "{ok}");
+        }
+        for bad in [
+            "https://api.openai.com/v1/embeddings",
+            "http://localhost.evil.com/v1",
+            "http://127.0.0.1.evil.net/v1",
+            "http://evil.com/localhost",
+            "http://localhost@evil.com/",
+            "http://10.0.0.5:11434",
+            "http://0.0.0.0:1",
+        ] {
+            assert!(!endpoint_is_local(bad), "{bad}");
+        }
     }
 }

@@ -45,6 +45,24 @@ impl EmbeddingClient {
         Ok(!self.embed("health check").await?.is_empty())
     }
 
+    /// Whether the configured embedder keeps all text on this machine.
+    pub fn is_local_only_from_env() -> bool {
+        crate::embedding::embedder_is_local_only()
+    }
+
+    /// Client for private content: local endpoints only, no persistent cache.
+    pub async fn from_env_private_async() -> Result<Self> {
+        let config = EmbedderConfig::from_env();
+        if !config.is_configured() {
+            return Err(anyhow!("embedding provider is not configured"));
+        }
+        Ok(Self {
+            embedder: crate::embedding::build_private_embedder_from_env()
+                .await
+                .map_err(|error| anyhow!(error.to_string()))?,
+        })
+    }
+
     /// From env async.
     pub async fn from_env_async() -> Result<Self> {
         let config = EmbedderConfig::from_env();
