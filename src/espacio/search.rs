@@ -63,6 +63,23 @@ pub fn search_marketplace(
     Vec::new()
 }
 
+/// Spaces whose memory `caller_space` may search: its own (the caller is a
+/// member of it) plus every space with an ACTIVE inbound link to it. Revoked
+/// or expired links and any other space are absent. There is no way to ask
+/// for "all spaces": the caller's id is a required input.
+pub async fn visible_space_ids(
+    manager: &crate::espacio::manager::SpaceManager,
+    caller_space: &str,
+) -> Vec<String> {
+    let mut ids = vec![caller_space.to_string()];
+    for (grantor, _) in crate::espacio::link::inbound_links(manager, caller_space).await {
+        if !ids.contains(&grantor) {
+            ids.push(grantor);
+        }
+    }
+    ids
+}
+
 /// Search over a provided list of dataset metadatas (for testing and direct use)
 pub fn search_over(
     query: &str,
