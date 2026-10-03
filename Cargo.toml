@@ -289,6 +289,7 @@ sysinfo = "0.38"
 # Constant-time comparison for security tokens
 subtle = "2.6"
 hkdf = "0.13"
+zeroize = "1"
 
 # HTTP Server
 axum = { version = "0.8", features = ["ws"] }

@@ -25,8 +25,16 @@
 //!
 //! Records use `xr1:` + hex(nonce || ct) under the DEK with a fresh random
 //! 12-byte nonce each and AD = `"xavier-space-record"`, version, space id,
-//! record kind. Locked spaces answer [`KeysError::Locked`]; there is no
-//! plaintext fallback for a space whose `encrypt_records` flag is on.
+//! record kind, record id (message seq), so rows cannot be swapped inside a
+//! space. Locked spaces answer [`KeysError::Locked`]; there is no plaintext
+//! fallback for a space whose `encrypt_records` flag is on.
+//!
+//! Fail closed: the encryption decision is also persisted outside the
+//! keystore (`space.json` `encryption` block, a `meta` row in the space
+//! database, and the `xr1:` prefix of stored rows). A space that any of them
+//! marks as encrypted but whose keystore is missing answers
+//! [`KeysError::KeystoreMissing`]; it never degrades to plaintext, and a
+//! stored `xr1:` row is never returned as content.
 //!
 //! Nothing here logs or formats secrets; secret types redact `Debug`.
 
@@ -39,12 +47,12 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{compiler_fence, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use subtle::ConstantTimeEq;
+use zeroize::{Zeroize, Zeroizing};
 
 use super::store::{validate_space_id, write_atomic, RecordCodec};
 
@@ -52,7 +60,18 @@ use super::store::{validate_space_id, write_atomic, RecordCodec};
 pub const KEYSTORE_FILE: &str = "keystore.json";
 
 const FORMAT_VERSION: u32 = 1;
-const RECORD_PREFIX: &str = "xr1:";
+/// Prefix of every encrypted stored record.
+pub const RECORD_PREFIX: &str = "xr1:";
+
+/// Whether `stored` has the shape of an encrypted record: prefix plus hex of
+/// at least nonce + tag. Such a row is never served as plaintext content.
+pub fn looks_encrypted(stored: &str) -> bool {
+    stored.strip_prefix(RECORD_PREFIX).is_some_and(|b| {
+        b.len() >= 2 * (NONCE_LEN + 16)
+            && b.len() % 2 == 0
+            && b.bytes().all(|c| c.is_ascii_hexdigit())
+    })
+}
 const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 12;
 const SALT_LEN: usize = 16;
@@ -78,6 +97,9 @@ pub enum KeysError {
     NoKeystore(String),
     #[error("keystore already exists for space {0}")]
     AlreadyExists(String),
+    /// The space is known to be encrypted but its keystore is gone.
+    #[error("space {0} is encrypted but its keystore is missing; refusing plaintext access")]
+    KeystoreMissing(String),
     #[error("keystore corrupt: {0}")]
     Corrupt(String),
     #[error("invalid password: {0}")]
@@ -88,33 +110,15 @@ pub enum KeysError {
 
 // ---- secret hygiene ----
 
-#[allow(unsafe_code)]
-fn wipe(buf: &mut [u8]) {
-    for b in buf.iter_mut() {
-        // SAFETY: `b` is a valid exclusive reference into `buf`.
-        unsafe {
-            std::ptr::write_volatile(b, 0);
-        }
-    }
-    compiler_fence(Ordering::SeqCst);
-}
-
-/// Heap secret wiped on drop. `Debug` is redacted.
-pub struct Secret(Vec<u8>);
+/// Heap secret wiped on drop (`zeroize`). `Debug` is redacted.
+pub struct Secret(Zeroizing<Vec<u8>>);
 
 impl Secret {
     pub fn new(bytes: Vec<u8>) -> Self {
-        Self(bytes)
+        Self(Zeroizing::new(bytes))
     }
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
-    }
-}
-
-impl Drop for Secret {
-    fn drop(&mut self) {
-        wipe(&mut self.0);
-        self.0.clear();
     }
 }
 
@@ -201,10 +205,9 @@ fn recovery_check(code: &[u8]) -> [u8; 2] {
 }
 
 fn recovery_display(code: &[u8; KEY_LEN]) -> RecoveryCode {
-    let mut raw = code.to_vec();
+    let mut raw = Zeroizing::new(code.to_vec());
     raw.extend_from_slice(&recovery_check(code));
-    let hex = hex_encode(&raw).to_uppercase();
-    wipe(&mut raw);
+    let hex = Zeroizing::new(hex_encode(&raw).to_uppercase());
     let mut s = String::from("XRC1");
     for chunk in hex.as_bytes().chunks(8) {
         s.push('-');
@@ -364,12 +367,13 @@ fn wrap_ad_parts(space_id: &str, kind: WrapperKind, mode: UnlockMode, encrypt: b
     ad
 }
 
-fn record_ad(space_id: &str, kind: &str) -> Vec<u8> {
+fn record_ad(space_id: &str, kind: &str, record_id: &str) -> Vec<u8> {
     let mut ad = Vec::new();
     push_field(&mut ad, b"xavier-space-record");
     push_field(&mut ad, &FORMAT_VERSION.to_be_bytes());
     push_field(&mut ad, space_id.as_bytes());
     push_field(&mut ad, kind.as_bytes());
+    push_field(&mut ad, record_id.as_bytes());
     ad
 }
 
@@ -491,7 +495,8 @@ struct SpaceKeys {
 
 /// What a codec must do for one space right now.
 enum RecordKey {
-    /// No keystore, or `encrypt_records = false`: stored as given.
+    /// Legacy plaintext space (no keystore and nothing says it was ever
+    /// encrypted), or `encrypt_records = false`: stored as given.
     Plain,
     Key(KeyHandle),
 }
@@ -501,6 +506,10 @@ pub struct KeyRing {
     spaces_dir: PathBuf,
     node: Arc<dyn NodeKek>,
     state: Mutex<HashMap<String, SpaceKeys>>,
+    /// Spaces known to be encrypted from evidence outside the keystore
+    /// (descriptor flag, database meta row, `xr1:` rows). Without a keystore
+    /// they are unavailable, never plaintext.
+    required: Mutex<HashSet<String>>,
 }
 
 impl fmt::Debug for KeyRing {
@@ -517,7 +526,44 @@ impl KeyRing {
             spaces_dir: spaces_dir.into(),
             node,
             state: Mutex::new(HashMap::new()),
+            required: Mutex::new(HashSet::new()),
         })
+    }
+
+    /// Record that `space_id` is encrypted according to evidence outside the
+    /// keystore. Sticky for the life of the ring.
+    pub fn require_encryption(&self, space_id: &str) {
+        self.required
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(space_id.to_string());
+    }
+
+    fn is_required(&self, space_id: &str) -> bool {
+        self.required
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .contains(space_id)
+    }
+
+    /// A keystore without a `space.json` next to it comes from a crashed
+    /// create. Move it to `keystore.json.orphan-<ts>` (never delete) so a new
+    /// keystore can be written. Returns the new path when something moved.
+    pub fn quarantine_orphan_keystore(&self, space_id: &str) -> Result<Option<PathBuf>> {
+        let dir = self.dir(space_id)?;
+        let ks = dir.join(KEYSTORE_FILE);
+        if !ks.exists() || dir.join(super::store::DESCRIPTOR_FILE).exists() {
+            return Ok(None);
+        }
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dest = dir.join(format!("{KEYSTORE_FILE}.orphan-{ts}"));
+        std::fs::rename(&ks, &dest)?;
+        self.forget(space_id);
+        tracing::warn!("espacio: orphan keystore of space {space_id} moved aside (not deleted)");
+        Ok(Some(dest))
     }
 
     fn state(&self) -> MutexGuard<'_, HashMap<String, SpaceKeys>> {
@@ -587,7 +633,7 @@ impl KeyRing {
             Ok(wrappers)
         })();
         let display = recovery_display(&code);
-        wipe(&mut code);
+        code.zeroize();
         let wrappers = built?;
 
         write_keystore(
@@ -631,6 +677,9 @@ impl KeyRing {
         }
         let dir = self.dir(space_id)?;
         match read_keystore(&dir, space_id)? {
+            None if self.is_required(space_id) => {
+                Err(KeysError::KeystoreMissing(space_id.to_string()).into())
+            }
             None => Ok(false),
             Some(f) => {
                 self.state()
@@ -758,8 +807,17 @@ impl KeyRing {
         }
     }
 
-    /// `Err(Locked)` when the space is locked.
+    /// `Err(Locked)` when the space is locked, `Err(KeystoreMissing)` when it
+    /// is known to be encrypted but has no keystore.
     pub fn check_unlocked(&self, space_id: &str) -> Result<()> {
+        if let Err(e) = self.ensure_loaded(space_id) {
+            if matches!(
+                e.downcast_ref::<KeysError>(),
+                Some(KeysError::KeystoreMissing(_))
+            ) {
+                return Err(e);
+            }
+        }
         if self.is_locked(space_id) {
             return Err(KeysError::Locked(space_id.to_string()).into());
         }
@@ -817,6 +875,13 @@ impl KeyRing {
             .get(space_id)
             .ok_or_else(|| KeysError::Locked(space_id.to_string()))?;
         if !s.encrypt_records {
+            if self.is_required(space_id) {
+                // Evidence says encrypted, the keystore says plain.
+                return Err(KeysError::Corrupt(
+                    "encryption flag contradicts space metadata".into(),
+                )
+                .into());
+            }
             return Ok(RecordKey::Plain);
         }
         match &s.dek {
@@ -856,11 +921,11 @@ impl fmt::Debug for KeyedCodec {
 }
 
 impl RecordCodec for KeyedCodec {
-    fn seal(&self, plain: &str) -> Result<String> {
+    fn seal(&self, plain: &str, record_id: &str) -> Result<String> {
         match self.ring.record_key(&self.space_id)? {
             RecordKey::Plain => Ok(plain.to_string()),
             RecordKey::Key(k) => {
-                let ad = record_ad(&self.space_id, self.kind);
+                let ad = record_ad(&self.space_id, self.kind, record_id);
                 let (nonce, ct) = aead_seal(k.bytes(), plain.as_bytes(), &ad)?;
                 let mut raw = nonce.to_vec();
                 raw.extend_from_slice(&ct);
@@ -869,9 +934,15 @@ impl RecordCodec for KeyedCodec {
         }
     }
 
-    fn open(&self, stored: &str) -> Result<String> {
+    fn open(&self, stored: &str, record_id: &str) -> Result<String> {
         match self.ring.record_key(&self.space_id)? {
-            RecordKey::Plain => Ok(stored.to_string()),
+            RecordKey::Plain => {
+                if looks_encrypted(stored) {
+                    // Ciphertext is never content.
+                    return Err(KeysError::KeystoreMissing(self.space_id.clone()).into());
+                }
+                Ok(stored.to_string())
+            }
             RecordKey::Key(k) => {
                 let body = stored
                     .strip_prefix(RECORD_PREFIX)
@@ -881,7 +952,7 @@ impl RecordCodec for KeyedCodec {
                     return Err(anyhow!("record is corrupt"));
                 }
                 let (nonce, ct) = raw.split_at(NONCE_LEN);
-                let ad = record_ad(&self.space_id, self.kind);
+                let ad = record_ad(&self.space_id, self.kind, record_id);
                 let pt = aead_open(k.bytes(), nonce, ct, &ad)
                     .map_err(|_| anyhow!("record failed authentication"))?;
                 String::from_utf8(pt.as_bytes().to_vec())
@@ -1140,23 +1211,25 @@ mod tests {
         let c1 = r.codec("s1", "message");
         let mut nonces = HashSet::new();
         for _ in 0..200 {
-            let s = c1.seal("hello world").unwrap();
+            let s = c1.seal("hello world", "7").unwrap();
             assert!(s.starts_with("xr1:"));
             assert!(!s.contains("hello"));
             assert!(nonces.insert(s[4..28].to_string()), "nonce reused");
-            assert_eq!(c1.open(&s).unwrap(), "hello world");
+            assert_eq!(c1.open(&s, "7").unwrap(), "hello world");
         }
         // bound to space and kind
-        let sealed = c1.seal("secret").unwrap();
-        assert!(r.codec("s2", "message").open(&sealed).is_err());
-        assert!(r.codec("s1", "other").open(&sealed).is_err());
+        let sealed = c1.seal("secret", "1").unwrap();
+        assert!(r.codec("s2", "message").open(&sealed, "1").is_err());
+        assert!(r.codec("s1", "other").open(&sealed, "1").is_err());
+        // bound to the record id
+        assert!(c1.open(&sealed, "2").is_err());
         // tamper
         let mut t = sealed.clone().into_bytes();
         let n = t.len() - 1;
         t[n] = if t[n] == b'0' { b'1' } else { b'0' };
-        assert!(c1.open(&String::from_utf8(t).unwrap()).is_err());
+        assert!(c1.open(&String::from_utf8(t).unwrap(), "1").is_err());
         // no plaintext fallback while encrypting
-        assert!(c1.open("plain text row").is_err());
+        assert!(c1.open("plain text row", "1").is_err());
     }
 
     #[test]
@@ -1165,10 +1238,10 @@ mod tests {
         let r = ring(tmp.path());
         r.create_keys("s1", UnlockMode::PasswordRequired, Some(PW))
             .unwrap();
-        let sealed = r.codec("s1", "message").seal("x").unwrap();
+        let sealed = r.codec("s1", "message").seal("x", "0").unwrap();
         let r2 = ring(tmp.path());
         let c = r2.codec("s1", "message");
-        for res in [c.seal("x"), c.open(&sealed)] {
+        for res in [c.seal("x", "0"), c.open(&sealed, "0")] {
             let e = res.unwrap_err();
             assert!(matches!(
                 e.downcast_ref::<KeysError>(),
@@ -1177,7 +1250,7 @@ mod tests {
         }
         assert!(r2.check_unlocked("s1").is_err());
         r2.unlock_with_password("s1", PW).unwrap();
-        assert_eq!(c.open(&sealed).unwrap(), "x");
+        assert_eq!(c.open(&sealed, "0").unwrap(), "x");
     }
 
     #[test]
@@ -1187,8 +1260,10 @@ mod tests {
         r.create_keys_with("s1", UnlockMode::NodeUnlock, None, false)
             .unwrap();
         let c = r.codec("s1", "message");
-        assert_eq!(c.seal("abc").unwrap(), "abc");
-        assert_eq!(c.open("abc").unwrap(), "abc");
+        assert_eq!(c.seal("abc", "0").unwrap(), "abc");
+        assert_eq!(c.open("abc", "0").unwrap(), "abc");
+        // ciphertext is never served as plaintext content
+        assert!(c.open(&format!("xr1:{}", "ab".repeat(40)), "0").is_err());
     }
 
     #[test]
