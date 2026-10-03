@@ -28,8 +28,8 @@ use crate::memory::{
     qmd_memory::{estimate_document_bytes, MemoryUsage, QmdMemory},
     schema::MemoryQueryFilters,
     semantic::SemanticMemory,
-    sqlite_store::SqliteMemoryStore,
-    sqlite_vec_store::VecSqliteMemoryStore,
+    sqlite_store::{SqliteMemoryStore, SqliteStoreConfig},
+    sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig},
     store::{MemoryBackend, MemoryRecord, MemoryStore, SessionTokenRecord},
     supabase_store::SupabaseMemoryStore,
     working::{MemoryItem, WorkingMemory, WorkingMemoryConfig},
@@ -120,20 +120,106 @@ pub struct PersistedUsageState {
     pub optimization: OptimizationUsageSnapshot,
 }
 
+const SPACE_FILE_STORE_NAME: &str = "memory.jsonl";
+const SPACE_SQLITE_STORE_NAME: &str = "memory.sqlite";
+
+/// Build a per-space store rooted at `root`. Never touches env/settings paths.
+async fn build_space_store(
+    root: &std::path::Path,
+    config: &WorkspaceConfig,
+    file_store_path: &std::path::Path,
+    migration_marker_path: &std::path::Path,
+) -> Result<(Arc<dyn MemoryStore>, bool, String)> {
+    let backend = config.protocol.storage.backend;
+    if !matches!(
+        backend,
+        MemoryBackend::File | MemoryBackend::Sqlite | MemoryBackend::Vec
+    ) {
+        return Err(anyhow!(
+            "space storage backend {backend:?} is not allowed (only file, sqlite, vec)"
+        ));
+    }
+    fs::create_dir_all(root).await?;
+    let db_path = root.join(SPACE_SQLITE_STORE_NAME);
+    match backend {
+        MemoryBackend::File => Ok((
+            Arc::new(FileMemoryStore::new(file_store_path.to_path_buf()).await?),
+            false,
+            format!("space file backend using {}", file_store_path.display()),
+        )),
+        MemoryBackend::Sqlite => {
+            let store: Arc<dyn MemoryStore> =
+                Arc::new(SqliteMemoryStore::new(SqliteStoreConfig { path: db_path }).await?);
+            let m = migrate_file_store_if_needed(
+                &config.id,
+                file_store_path,
+                migration_marker_path,
+                Arc::clone(&store),
+            )
+            .await?;
+            Ok((store, m.migrated, m.detail))
+        }
+        _ => {
+            let mut vec_config = VecSqliteStoreConfig::from_env();
+            vec_config.path = db_path;
+            let store: Arc<dyn MemoryStore> =
+                Arc::new(VecSqliteMemoryStore::new(vec_config).await?);
+            let m = migrate_file_store_if_needed(
+                &config.id,
+                file_store_path,
+                migration_marker_path,
+                Arc::clone(&store),
+            )
+            .await?;
+            Ok((store, m.migrated, m.detail))
+        }
+    }
+}
+
 impl WorkspaceState {
-    /// New.
+    /// New (default/legacy space: env-based store resolution).
     pub async fn new(
-        mut config: WorkspaceConfig,
+        config: WorkspaceConfig,
         runtime_config: RuntimeConfig,
         workspace_root: impl Into<PathBuf>,
     ) -> Result<Self> {
-        let workspace_root = workspace_root.into();
+        Self::new_inner(config, runtime_config, workspace_root.into(), None).await
+    }
+
+    /// New for a space: the store lives under `store_root` (created if
+    /// missing) and the backend comes from `config.protocol.storage.backend`.
+    /// Only path-based backends (file, sqlite, vec) are accepted; nothing is
+    /// read from env or shared settings paths.
+    pub async fn new_for_space(
+        config: WorkspaceConfig,
+        runtime_config: RuntimeConfig,
+        workspace_root: impl Into<PathBuf>,
+        store_root: impl Into<PathBuf>,
+    ) -> Result<Self> {
+        Self::new_inner(
+            config,
+            runtime_config,
+            workspace_root.into(),
+            Some(store_root.into()),
+        )
+        .await
+    }
+
+    async fn new_inner(
+        mut config: WorkspaceConfig,
+        runtime_config: RuntimeConfig,
+        workspace_root: PathBuf,
+        store_root: Option<PathBuf>,
+    ) -> Result<Self> {
         fs::create_dir_all(&workspace_root).await?;
         let usage_state_path = workspace_root.join("usage.json");
-        let file_store_path = resolve_file_store_path(&workspace_root);
+        let file_store_path = match &store_root {
+            Some(root) => root.join(SPACE_FILE_STORE_NAME),
+            None => resolve_file_store_path(&workspace_root),
+        };
         let migration_marker_path = durable_migration_marker_path(&file_store_path);
 
-        if config.memory_backend == MemoryBackend::Auto {
+        if store_root.is_none() && config.memory_backend == MemoryBackend::Auto {
             config.memory_backend = detect_cloud_backend().await;
         }
 
@@ -141,51 +227,60 @@ impl WorkspaceState {
             Arc<dyn MemoryStore>,
             bool,
             String,
-        ) = match config.memory_backend {
-            MemoryBackend::Auto => unreachable!("auto backend should have been resolved"),
-            MemoryBackend::File => (
-                Arc::new(FileMemoryStore::new(file_store_path.clone()).await?),
-                false,
-                format!("file backend using {}", file_store_path.display()),
-            ),
-            MemoryBackend::Memory => (
-                Arc::new(InMemoryMemoryStore::new()),
-                false,
-                "ephemeral in-memory backend".to_string(),
-            ),
-            MemoryBackend::Sqlite => {
-                let store: Arc<dyn MemoryStore> = Arc::new(SqliteMemoryStore::from_env().await?);
-                let migration = migrate_file_store_if_needed(
-                    &config.id,
-                    &file_store_path,
-                    &migration_marker_path,
-                    Arc::clone(&store),
-                )
-                .await?;
-                (store, migration.migrated, migration.detail)
-            }
-            MemoryBackend::Vec => {
-                let store: Arc<dyn MemoryStore> = Arc::new(VecSqliteMemoryStore::from_env().await?);
-                let migration = migrate_file_store_if_needed(
-                    &config.id,
-                    &file_store_path,
-                    &migration_marker_path,
-                    Arc::clone(&store),
-                )
-                .await?;
-                (store, migration.migrated, migration.detail)
-            }
-            MemoryBackend::Postgres => {
-                let store: Arc<dyn MemoryStore> = Arc::new(PostgresMemoryStore::from_env().await?);
-                (store, false, "postgres backend".to_string())
-            }
-            MemoryBackend::Supabase => {
-                let store: Arc<dyn MemoryStore> = Arc::new(SupabaseMemoryStore::from_env().await?);
-                (store, false, "supabase backend".to_string())
-            }
-            MemoryBackend::Fallback => {
-                let store: Arc<dyn MemoryStore> = Arc::new(FallbackMemoryStore::from_env().await?);
-                (store, false, "fallback chain backend".to_string())
+        ) = if let Some(root) = &store_root {
+            build_space_store(root, &config, &file_store_path, &migration_marker_path).await?
+        } else {
+            match config.memory_backend {
+                MemoryBackend::Auto => unreachable!("auto backend should have been resolved"),
+                MemoryBackend::File => (
+                    Arc::new(FileMemoryStore::new(file_store_path.clone()).await?),
+                    false,
+                    format!("file backend using {}", file_store_path.display()),
+                ),
+                MemoryBackend::Memory => (
+                    Arc::new(InMemoryMemoryStore::new()),
+                    false,
+                    "ephemeral in-memory backend".to_string(),
+                ),
+                MemoryBackend::Sqlite => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(SqliteMemoryStore::from_env().await?);
+                    let migration = migrate_file_store_if_needed(
+                        &config.id,
+                        &file_store_path,
+                        &migration_marker_path,
+                        Arc::clone(&store),
+                    )
+                    .await?;
+                    (store, migration.migrated, migration.detail)
+                }
+                MemoryBackend::Vec => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(VecSqliteMemoryStore::from_env().await?);
+                    let migration = migrate_file_store_if_needed(
+                        &config.id,
+                        &file_store_path,
+                        &migration_marker_path,
+                        Arc::clone(&store),
+                    )
+                    .await?;
+                    (store, migration.migrated, migration.detail)
+                }
+                MemoryBackend::Postgres => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(PostgresMemoryStore::from_env().await?);
+                    (store, false, "postgres backend".to_string())
+                }
+                MemoryBackend::Supabase => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(SupabaseMemoryStore::from_env().await?);
+                    (store, false, "supabase backend".to_string())
+                }
+                MemoryBackend::Fallback => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(FallbackMemoryStore::from_env().await?);
+                    (store, false, "fallback chain backend".to_string())
+                }
             }
         };
         store.set_dedup_settings(config.dedup.clone()).await;
@@ -1180,5 +1275,142 @@ mod auto_detect_tests {
         if let Some(v) = old_sb_key {
             std::env::set_var("XAVIER_SUPABASE_KEY", v);
         }
+    }
+}
+
+#[cfg(test)]
+mod space_store_tests {
+    use super::*;
+    use crate::workspace::config::{PlanTier, SyncPolicy};
+    use ulid::Ulid;
+
+    fn cfg(id: &str, backend: MemoryBackend) -> WorkspaceConfig {
+        let mut protocol = super::super::protocol::SpaceProtocol::default();
+        protocol.storage.backend = backend;
+        WorkspaceConfig {
+            id: id.to_string(),
+            token: "t".to_string(),
+            plan: PlanTier::Personal,
+            memory_backend: MemoryBackend::File,
+            storage_limit_bytes: None,
+            request_limit: None,
+            request_unit_limit: None,
+            embedding_provider_mode: crate::workspace::config::EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: SyncPolicy::LocalOnly,
+            protocol,
+            dedup: crate::settings::types::DedupSettings::default(),
+        }
+    }
+
+    async fn ingest(ws: &WorkspaceState, text: &str) {
+        ws.ingest_typed(
+            "notes/x".to_string(),
+            text.to_string(),
+            serde_json::json!({}),
+            None,
+            Some(Vec::new()),
+            false,
+        )
+        .await
+        .expect("ingest");
+    }
+
+    fn row_count(path: &std::path::Path) -> i64 {
+        let conn = rusqlite::Connection::open(path).expect("open db");
+        conn.query_row("SELECT COUNT(*) FROM memory_records", [], |r| r.get(0))
+            .expect("count")
+    }
+
+    async fn isolation(backend: MemoryBackend) {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "disabled");
+        let tmp = tempfile::tempdir().unwrap();
+        let (ra, rb) = (tmp.path().join("a/store"), tmp.path().join("b/store"));
+        let id = Ulid::new().to_string();
+        let a = WorkspaceState::new_for_space(
+            cfg(&id, backend),
+            RuntimeConfig::default(),
+            tmp.path().join("a"),
+            &ra,
+        )
+        .await
+        .expect("space a");
+        let b = WorkspaceState::new_for_space(
+            cfg(&id, backend),
+            RuntimeConfig::default(),
+            tmp.path().join("b"),
+            &rb,
+        )
+        .await
+        .expect("space b");
+        ingest(&a, "same text").await;
+        ingest(&a, "only in a").await;
+        ingest(&b, "same text").await;
+        let (da, db) = (ra.join("memory.sqlite"), rb.join("memory.sqlite"));
+        assert_eq!(row_count(&da), 2, "space a rows");
+        assert_eq!(row_count(&db), 1, "space b rows");
+    }
+
+    #[tokio::test]
+    async fn two_sqlite_spaces_are_isolated() {
+        isolation(MemoryBackend::Sqlite).await;
+    }
+
+    #[tokio::test]
+    async fn two_vec_spaces_are_isolated() {
+        isolation(MemoryBackend::Vec).await;
+    }
+
+    #[tokio::test]
+    async fn file_space_missing_root_is_created() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("deep/er/store");
+        let ws = WorkspaceState::new_for_space(
+            cfg("f", MemoryBackend::File),
+            RuntimeConfig::default(),
+            tmp.path().join("ws"),
+            &root,
+        )
+        .await
+        .expect("file space");
+        assert_eq!(ws.durable_store_backend(), "file");
+        assert!(root.is_dir());
+    }
+
+    #[tokio::test]
+    async fn remote_backends_are_refused_with_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        for backend in [
+            MemoryBackend::Supabase,
+            MemoryBackend::Postgres,
+            MemoryBackend::Fallback,
+            MemoryBackend::Auto,
+            MemoryBackend::Memory,
+        ] {
+            let res = WorkspaceState::new_for_space(
+                cfg("r", backend),
+                RuntimeConfig::default(),
+                tmp.path().join("ws"),
+                tmp.path().join("store"),
+            )
+            .await;
+            assert!(res.is_err(), "{backend:?} must be refused");
+        }
+    }
+
+    #[tokio::test]
+    async fn default_path_still_uses_env_sqlite_path() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let env_db = tmp.path().join("env-dir/legacy.sqlite");
+        std::env::set_var("XAVIER_MEMORY_SQLITE_PATH", &env_db);
+        let mut config = cfg("d", MemoryBackend::Sqlite);
+        config.memory_backend = MemoryBackend::Sqlite;
+        let _ws = WorkspaceState::new(config, RuntimeConfig::default(), tmp.path().join("ws"))
+            .await
+            .expect("default space");
+        assert!(env_db.exists(), "env-based sqlite path must still be used");
+        assert!(!tmp.path().join("ws/memory.sqlite").exists());
     }
 }
