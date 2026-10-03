@@ -17,7 +17,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use rand::RngCore;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -120,8 +120,63 @@ pub struct IssuedToken {
     pub raw: String,
 }
 
+/// Default token lifetime in days (`XAVIER_SPACE_TOKEN_TTL_DAYS`).
+const DEFAULT_TTL_DAYS: i64 = 90;
+
+/// Expiry applied when the caller supplies none. Every token is bounded;
+/// an unset, zero, negative or unparsable env value falls back to 90 days.
+pub fn default_token_expiry() -> DateTime<Utc> {
+    let days = std::env::var("XAVIER_SPACE_TOKEN_TTL_DAYS")
+        .ok()
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .filter(|d| (1..=3650).contains(d))
+        .unwrap_or(DEFAULT_TTL_DAYS);
+    Utc::now() + chrono::Duration::days(days)
+}
+
+/// Insert a token row for an EXISTING member (the member check and the insert
+/// are one statement). Works on a connection or an open transaction.
+fn insert_token_row(
+    conn: &rusqlite::Connection,
+    space_id: &str,
+    member_id: &str,
+    role: SpaceRole,
+    expires_at: Option<DateTime<Utc>>,
+) -> Result<IssuedToken> {
+    validate_space_id(space_id)?;
+    let mut secret = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut secret);
+    let raw = format!(
+        "{TOKEN_PREFIX}{space_id}_{}",
+        crate::auth2::oauth::b64url_encode(&secret)
+    );
+    debug_assert_eq!(
+        raw.len(),
+        TOKEN_PREFIX.len() + space_id.len() + 1 + SECRET_LEN
+    );
+    let token_id = ulid::Ulid::new().to_string();
+    let expires = expires_at.unwrap_or_else(default_token_expiry);
+    let n = conn.execute(
+        "INSERT INTO tokens (token_id, token_hash, member_id, role, created_at, expires_at, revoked)
+         SELECT ?1, ?2, node_id, ?4, ?5, ?6, 0 FROM members WHERE node_id = ?3",
+        params![
+            token_id,
+            hash_token(&raw),
+            member_id,
+            role.as_str(),
+            ts(&Utc::now()),
+            ts(&expires)
+        ],
+    )?;
+    if n == 0 {
+        return Err(anyhow!("cannot issue a token: {member_id} is not a member"));
+    }
+    Ok(IssuedToken { token_id, raw })
+}
+
 impl SpaceStore {
-    /// Issue a token for `member_id` with `role`. Returns the raw token once.
+    /// Issue a token for an existing member with `role`. Returns the raw token
+    /// once. `None` expiry means the default bounded lifetime.
     pub fn issue_token(
         &self,
         space_id: &str,
@@ -129,53 +184,84 @@ impl SpaceStore {
         role: SpaceRole,
         expires_at: Option<DateTime<Utc>>,
     ) -> Result<IssuedToken> {
-        validate_space_id(space_id)?;
-        let mut secret = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut secret);
-        let raw = format!(
-            "{TOKEN_PREFIX}{space_id}_{}",
-            crate::auth2::oauth::b64url_encode(&secret)
-        );
-        debug_assert_eq!(
-            raw.len(),
-            TOKEN_PREFIX.len() + space_id.len() + 1 + SECRET_LEN
-        );
-        let token_id = ulid::Ulid::new().to_string();
-        self.lock().execute(
-            "INSERT INTO tokens (token_id, token_hash, member_id, role, created_at, expires_at, revoked)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
-            params![
-                token_id,
-                hash_token(&raw),
-                member_id,
-                role.as_str(),
-                ts(&Utc::now()),
-                expires_at.as_ref().map(ts)
-            ],
-        )?;
-        Ok(IssuedToken { token_id, raw })
+        insert_token_row(&self.lock(), space_id, member_id, role, expires_at)
     }
 
-    /// Revoke a token by id. Idempotent outcome reporting.
+    /// Rotate: issue a new token with the same member and role, then revoke
+    /// the old one, atomically. Fails (and changes nothing) when the old token
+    /// is unknown or already revoked.
+    pub fn rotate_token(&self, space_id: &str, old_token_id: &str) -> Result<IssuedToken> {
+        let mut conn = self.lock();
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (member, role): (String, String) = tx
+            .query_row(
+                "SELECT member_id, role FROM tokens WHERE token_id = ?1 AND revoked = 0",
+                params![old_token_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow!("token {old_token_id} not found or already revoked"))?;
+        let issued = insert_token_row(&tx, space_id, &member, role_from(&role)?, None)?;
+        tx.execute(
+            "UPDATE tokens SET revoked = 1 WHERE token_id = ?1",
+            params![old_token_id],
+        )?;
+        tx.commit()?;
+        Ok(issued)
+    }
+
+    /// Redeem an invite in ONE transaction: claim it (revoked 0 -> 1), insert
+    /// the member (never overwriting) and issue the token. Any failure rolls
+    /// everything back, so a failed redemption never burns the invite.
+    pub fn redeem_invite(
+        &self,
+        invite_id: &str,
+        space_id: &str,
+        member_id: &str,
+        role: SpaceRole,
+    ) -> Result<IssuedToken> {
+        let mut conn = self.lock();
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let claimed = tx.execute(
+            "UPDATE invites SET revoked = 1 WHERE id = ?1 AND revoked = 0",
+            params![invite_id],
+        )?;
+        if claimed != 1 {
+            return Err(anyhow!("Invite {invite_id} already used"));
+        }
+        let added = tx.execute(
+            "INSERT OR IGNORE INTO members (node_id, role, joined_at) VALUES (?1, ?2, ?3)",
+            params![member_id, role.as_str(), ts(&Utc::now())],
+        )?;
+        if added != 1 {
+            return Err(anyhow!("member {member_id} already exists in the space"));
+        }
+        let issued = insert_token_row(&tx, space_id, member_id, role, None)?;
+        tx.commit()?;
+        Ok(issued)
+    }
+
+    /// Revoke a token by id. A single conditional UPDATE decides the winner,
+    /// so concurrent revokes yield exactly one `Revoked`.
     pub fn revoke_token(&self, token_id: &str) -> Result<RevokeOutcome> {
         let conn = self.lock();
-        let state: Option<i64> = conn
+        let changed = conn.execute(
+            "UPDATE tokens SET revoked = 1 WHERE token_id = ?1 AND revoked = 0",
+            params![token_id],
+        )?;
+        if changed > 0 {
+            return Ok(RevokeOutcome::Revoked);
+        }
+        let exists: Option<i64> = conn
             .query_row(
-                "SELECT revoked FROM tokens WHERE token_id = ?1",
+                "SELECT 1 FROM tokens WHERE token_id = ?1",
                 params![token_id],
                 |r| r.get(0),
             )
             .optional()?;
-        Ok(match state {
-            None => RevokeOutcome::NotFound,
-            Some(0) => {
-                conn.execute(
-                    "UPDATE tokens SET revoked = 1 WHERE token_id = ?1",
-                    params![token_id],
-                )?;
-                RevokeOutcome::Revoked
-            }
+        Ok(match exists {
             Some(_) => RevokeOutcome::AlreadyRevoked,
+            None => RevokeOutcome::NotFound,
         })
     }
 
@@ -302,7 +388,12 @@ pub async fn verify_with_manager(
         .get(space_id)
         .await
         .map_err(|_| TokenError::Invalid)?;
-    verify_in_stores(&manager.stores(), raw)
+    // SQLite and a std mutex: keep them off the async workers.
+    let stores = manager.stores();
+    let raw = raw.to_string();
+    tokio::task::spawn_blocking(move || verify_in_stores(&stores, &raw))
+        .await
+        .map_err(|_| TokenError::Invalid)?
 }
 
 /// Create a space and issue its owner an admin token (returned once, never
@@ -545,5 +636,103 @@ mod tests {
         assert!(!s.add_member_if_absent("alice", SpaceRole::Reader).unwrap());
         assert_eq!(s.member("alice").unwrap().unwrap().role, SpaceRole::Admin);
         assert!(s.add_member_if_absent("carol", SpaceRole::Member).unwrap());
+    }
+
+    #[test]
+    fn default_expiry_is_applied_and_bounded() {
+        let (stores, s) = stores_with("esp_a");
+        let t = s
+            .issue_token("esp_a", "alice", SpaceRole::Admin, None)
+            .unwrap();
+        let info = s.list_tokens().unwrap().remove(0);
+        assert_eq!(info.token_id, t.token_id);
+        let exp = info.expires_at.expect("default expiry must be set");
+        let days = (exp - Utc::now()).num_days();
+        assert!((88..=90).contains(&days) || std::env::var("XAVIER_SPACE_TOKEN_TTL_DAYS").is_ok());
+        assert!(verify_in_stores(&stores, &t.raw).is_ok());
+        // An expired token is refused.
+        let past = Utc::now() - Duration::seconds(1);
+        let e = s
+            .issue_token("esp_a", "alice", SpaceRole::Admin, Some(past))
+            .unwrap();
+        assert_eq!(verify_in_stores(&stores, &e.raw), Err(TokenError::Invalid));
+    }
+
+    #[test]
+    fn issue_token_requires_an_existing_member() {
+        let (_, s) = stores_with("esp_a");
+        assert!(s
+            .issue_token("esp_a", "ghost", SpaceRole::Reader, None)
+            .is_err());
+        assert!(s.list_tokens().unwrap().is_empty());
+    }
+
+    #[test]
+    fn concurrent_revoke_yields_exactly_one_revoked() {
+        let (_, s) = stores_with("esp_a");
+        let t = s
+            .issue_token("esp_a", "alice", SpaceRole::Admin, None)
+            .unwrap();
+        let hs: Vec<_> = (0..16)
+            .map(|_| {
+                let s = s.clone();
+                let id = t.token_id.clone();
+                std::thread::spawn(move || s.revoke_token(&id).unwrap())
+            })
+            .collect();
+        let outs: Vec<_> = hs.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            outs.iter()
+                .filter(|o| **o == RevokeOutcome::Revoked)
+                .count(),
+            1
+        );
+        assert_eq!(
+            outs.iter()
+                .filter(|o| **o == RevokeOutcome::AlreadyRevoked)
+                .count(),
+            15
+        );
+    }
+
+    #[test]
+    fn rotate_issues_new_and_revokes_old() {
+        let (stores, s) = stores_with("esp_a");
+        let old = s
+            .issue_token("esp_a", "bob", SpaceRole::Reader, None)
+            .unwrap();
+        let new = s.rotate_token("esp_a", &old.token_id).unwrap();
+        assert_ne!(new.raw, old.raw);
+        assert_eq!(
+            verify_in_stores(&stores, &old.raw),
+            Err(TokenError::Invalid)
+        );
+        let auth = verify_in_stores(&stores, &new.raw).unwrap();
+        assert_eq!(
+            (auth.member_id.as_str(), auth.role),
+            ("bob", SpaceRole::Reader)
+        );
+        // The old one is gone: rotating it again fails and issues nothing.
+        assert!(s.rotate_token("esp_a", &old.token_id).is_err());
+        assert_eq!(s.list_tokens().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn get_existing_never_creates_and_concurrent_get_shares_one_handle() {
+        let tmp = tempfile::tempdir().unwrap();
+        let stores = SpaceStores::open(tmp.path());
+        assert!(stores.get_existing("nope").unwrap().is_none());
+        assert!(!tmp.path().join("spaces/nope").exists());
+        let hs: Vec<_> = (0..8)
+            .map(|_| {
+                let st = stores.clone();
+                std::thread::spawn(move || st.get("esp_a").unwrap())
+            })
+            .collect();
+        let handles: Vec<_> = hs.into_iter().map(|h| h.join().unwrap()).collect();
+        assert!(handles
+            .windows(2)
+            .all(|w| std::sync::Arc::ptr_eq(&w[0], &w[1])));
+        assert!(stores.get_existing("esp_a").unwrap().is_some());
     }
 }
