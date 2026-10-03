@@ -605,7 +605,10 @@ pub async fn start_http_server(
             .with_provider_router(provider_router_shared.clone()),
     );
 
-    let multi_db = xavier::storage::multi_db::MultiDbManager::new();
+    let multi_db = xavier::storage::multi_db::MultiDbManager::open_default().unwrap_or_else(|e| {
+        tracing::warn!("multi_db registry unavailable ({e}); using RAM-only registry");
+        xavier::storage::multi_db::MultiDbManager::new()
+    });
 
     // Clone the bus for the WebSocket layer before it moves into CliState.
     let event_bus_for_ws = event_bus.clone();
