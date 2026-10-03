@@ -1434,6 +1434,20 @@ pub async fn start_http_server(
             post(crate::cli::handlers::headless_api::headless_spawn),
         )
         .route(
+            "/v1/agents/mini-experts",
+            get(crate::cli::handlers::mini_experts::list_experts_handler),
+        )
+        .route(
+            "/v1/agents/mini-experts/invoke",
+            post(crate::cli::handlers::mini_experts::invoke_expert_handler).layer(
+                middleware::from_fn(require_permission(|r| r.can_add_memory())),
+            ),
+        )
+        .route(
+            "/v1/agents/mini-experts/{name}",
+            get(crate::cli::handlers::mini_experts::get_expert_handler),
+        )
+        .route(
             "/v1/memory/search",
             post(crate::cli::handlers::memory::search_handler),
         )

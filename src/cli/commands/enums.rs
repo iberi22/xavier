@@ -1667,10 +1667,30 @@ pub enum MiniExpertCommand {
         provider: String,
         #[arg(long, default_value = "http://localhost:11434/v1")]
         endpoint: String,
+        /// Version label (default: auto vN)
+        #[arg(long)]
+        version: Option<String>,
+        /// JSON file with eval metrics to store with this version
+        #[arg(long)]
+        metrics_file: Option<std::path::PathBuf>,
+        /// Routing domain description (default: the segment)
+        #[arg(long)]
+        domain: Option<String>,
+        /// Register as candidate instead of activating it
+        #[arg(long)]
+        candidate: bool,
     },
-    /// List registered mini-experts
+    /// List registered mini-experts (all versions)
     List,
-    /// Serve a mini-expert GGUF model via local Ollama endpoint
+    /// Make a version the single active one (rollback = activate an older version)
+    Activate { name: String, version: String },
+    /// Retire a version (the active one when --version is omitted)
+    Retire {
+        name: String,
+        #[arg(long)]
+        version: Option<String>,
+    },
+    /// Ensure active mini-experts exist in Ollama (creates from GGUF if missing)
     Serve {
         #[arg(long)]
         name: Option<String>,

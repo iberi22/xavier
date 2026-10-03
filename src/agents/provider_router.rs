@@ -164,6 +164,51 @@ impl ProviderRouter {
             }
         }
     }
+
+    /// Chats with a model through Ollama's native `/api/chat` so `keep_alive`
+    /// (VRAM residency) is honored; the OpenAI-compatible endpoint ignores it.
+    pub async fn invoke_ollama_chat(
+        &self,
+        base_url: &str,
+        model: &str,
+        prompt: &str,
+        keep_alive: &str,
+    ) -> Result<String, MiniExpertInvokeError> {
+        let url = format!("{}/api/chat", base_url.trim_end_matches('/'));
+        let response = self
+            .client
+            .post(&url)
+            .json(&json!({
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": false,
+                "keep_alive": keep_alive,
+            }))
+            .send()
+            .await?;
+        let status = response.status();
+        if status.is_success() {
+            let body: serde_json::Value = response.json().await?;
+            return Ok(body
+                .pointer("/message/content")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| body.to_string()));
+        }
+        let err_body = response.text().await.unwrap_or_default();
+        if status == reqwest::StatusCode::NOT_FOUND || err_body.to_lowercase().contains("not found")
+        {
+            Err(MiniExpertInvokeError::ModelNotInstalled {
+                model: model.to_string(),
+            })
+        } else {
+            Err(MiniExpertInvokeError::ProviderError {
+                name: model.to_string(),
+                status: status.as_u16(),
+                details: err_body,
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -310,5 +355,46 @@ mod tests {
             }
             other => panic!("expected ModelNotInstalled, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn test_invoke_ollama_chat_sends_keep_alive() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/chat")
+            .match_body(mockito::Matcher::PartialJson(
+                json!({"model": "m:v1", "keep_alive": "5m", "stream": false}),
+            ))
+            .with_status(200)
+            .with_body(r#"{"message":{"role":"assistant","content":"pong"}}"#)
+            .create_async()
+            .await;
+        let router = ProviderRouter::new(vec![]);
+        let out = router
+            .invoke_ollama_chat(&server.url(), "m:v1", "ping", "5m")
+            .await
+            .unwrap();
+        assert_eq!(out, "pong");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_invoke_ollama_chat_missing_model() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("POST", "/api/chat")
+            .with_status(404)
+            .with_body(r#"{"error":"model 'x' not found"}"#)
+            .create_async()
+            .await;
+        let router = ProviderRouter::new(vec![]);
+        let err = router
+            .invoke_ollama_chat(&server.url(), "x", "p", "5m")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            MiniExpertInvokeError::ModelNotInstalled { .. }
+        ));
     }
 }
