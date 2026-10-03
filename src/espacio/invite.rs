@@ -1,10 +1,13 @@
 //! Space invites — signed, expiring invitations for Spaces (T-02)
 //!
-//! Each invite is signed by the inviter's NodeIdentity (Ed25519) and expires
-//! after 24h. Verification checks signature, expiry and space existence.
+//! An invite may carry an Ed25519 signature (hex) over its canonical payload.
+//! Signatures are only checked when the caller supplies a trusted verifying
+//! key (`SpaceInvite::verify`, `InviteManager::validate_trusted`); unsigned
+//! invites remain accepted by plain `validate`. Invites expire after 24h.
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, Utc};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -65,6 +68,27 @@ impl SpaceInvite {
             self.target_node,
             self.role.as_str()
         )
+    }
+
+    /// True if the invite carries a signature (not necessarily valid).
+    pub fn is_signed(&self) -> bool {
+        self.signature.is_some()
+    }
+
+    /// Verify the signature against a trusted key. Unsigned, malformed or
+    /// forged signatures all return an error.
+    pub fn verify(&self, trusted: &VerifyingKey) -> Result<()> {
+        let sig_hex = self
+            .signature
+            .as_deref()
+            .ok_or_else(|| anyhow!("Invite {} is unsigned", self.id))?;
+        let bytes = crate::crypto::hex_decode(sig_hex)
+            .map_err(|_| anyhow!("Invite {} signature malformed", self.id))?;
+        let sig = Signature::from_slice(&bytes)
+            .map_err(|_| anyhow!("Invite {} signature malformed", self.id))?;
+        trusted
+            .verify(self.canonical_payload().as_bytes(), &sig)
+            .map_err(|_| anyhow!("Invite {} signature invalid", self.id))
     }
 
     /// Check if invite is expired
@@ -161,6 +185,24 @@ impl InviteManager {
         Ok(invite)
     }
 
+    /// Validate and verify the signature against a trusted key. A present
+    /// signature must verify; an unsigned invite is rejected when
+    /// `require_signed` is set.
+    pub async fn validate_trusted(
+        &self,
+        id: &str,
+        trusted: &VerifyingKey,
+        require_signed: bool,
+    ) -> Result<SpaceInvite> {
+        let invite = self.validate(id).await?;
+        if invite.is_signed() {
+            invite.verify(trusted)?;
+        } else if require_signed {
+            return Err(anyhow!("Invite {} is unsigned", id));
+        }
+        Ok(invite)
+    }
+
     /// Revoke an invite (admin only)
     pub async fn revoke(&self, id: &str) -> Result<()> {
         let mut guard = self.invites.write().await;
@@ -184,7 +226,8 @@ impl InviteManager {
             .collect()
     }
 
-    /// Attach a signature to an existing invite (Ed25519 hex over canonical payload)
+    /// Attach a signature to an existing invite (Ed25519 hex over canonical payload).
+    /// Not verified here; use `validate_trusted` on the accept path.
     pub async fn attach_signature(&self, id: &str, signature_hex: String) -> Result<()> {
         let mut guard = self.invites.write().await;
         let invite = guard
@@ -283,5 +326,77 @@ mod tests {
             revoked: false,
         };
         assert_eq!(inv.canonical_payload(), "01H:esp_a:xv1_admin:xv1_bob:admin");
+    }
+
+    fn signed_fixture() -> (InviteManager, ed25519_dalek::SigningKey) {
+        (
+            InviteManager::new(),
+            ed25519_dalek::SigningKey::from_bytes(&[3u8; 32]),
+        )
+    }
+
+    async fn make(mgr: &InviteManager) -> SpaceInvite {
+        mgr.create(
+            "esp_a".into(),
+            "adm".into(),
+            "bob".into(),
+            SpaceRole::Member,
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn valid_signature_accepted() {
+        use ed25519_dalek::Signer;
+        let (mgr, sk) = signed_fixture();
+        let inv = make(&mgr).await;
+        let sig = sk.sign(inv.canonical_payload().as_bytes());
+        mgr.attach_signature(&inv.id, crate::crypto::hex_encode(sig.to_bytes()))
+            .await
+            .unwrap();
+        let got = mgr
+            .validate_trusted(&inv.id, &sk.verifying_key(), true)
+            .await
+            .unwrap();
+        assert!(got.is_signed());
+        assert!(got.verify(&sk.verifying_key()).is_ok());
+    }
+
+    #[tokio::test]
+    async fn forged_signature_rejected() {
+        use ed25519_dalek::Signer;
+        let (mgr, sk) = signed_fixture();
+        let attacker = ed25519_dalek::SigningKey::from_bytes(&[4u8; 32]);
+        let inv = make(&mgr).await;
+        let sig = attacker.sign(inv.canonical_payload().as_bytes());
+        mgr.attach_signature(&inv.id, crate::crypto::hex_encode(sig.to_bytes()))
+            .await
+            .unwrap();
+        assert!(mgr
+            .validate_trusted(&inv.id, &sk.verifying_key(), false)
+            .await
+            .is_err());
+        mgr.attach_signature(&inv.id, "zz".into()).await.unwrap();
+        assert!(mgr
+            .validate_trusted(&inv.id, &sk.verifying_key(), false)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn unsigned_policy() {
+        let (mgr, sk) = signed_fixture();
+        let inv = make(&mgr).await;
+        assert!(!inv.is_signed());
+        assert!(inv.verify(&sk.verifying_key()).is_err());
+        assert!(mgr
+            .validate_trusted(&inv.id, &sk.verifying_key(), false)
+            .await
+            .is_ok());
+        assert!(mgr
+            .validate_trusted(&inv.id, &sk.verifying_key(), true)
+            .await
+            .is_err());
     }
 }
