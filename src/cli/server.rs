@@ -822,6 +822,19 @@ pub async fn start_http_server(
             )
             .with_state(()),
         )
+        .merge({
+            let data_dir = state.workspace_dir.clone().join("data");
+            let cfg = xavier::training::routes::TrainingJobsConfig::from_env(
+                data_dir.join("training"),
+                data_dir.join("datasets"),
+            );
+            xavier::training::routes::router(cfg)
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "training jobs API disabled");
+                    Router::new()
+                })
+                .with_state(())
+        })
         .nest(
             "/auth/google",
             xavier::server::auth_routes::router(
