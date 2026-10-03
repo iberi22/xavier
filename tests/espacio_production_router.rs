@@ -235,9 +235,11 @@ async fn espacio_production_wiring_auth_tokens_and_restart() {
     assert_eq!(list.as_array().unwrap().len(), 2);
     assert!(root.join("spaces/esp_a/space.json").exists());
 
-    // The list never leaks tokens or recovery codes.
+    // The list never leaks tokens or recovery codes (checked against the
+    // real values, not a keyword the response could trivially lack).
     assert!(!list.to_string().contains("xsp_"));
-    assert!(!list.to_string().contains("recovery"));
+    assert!(!list.to_string().contains(&owner_a));
+    assert!(!list.to_string().contains(&_recovery));
 
     // Owner token: own space ok, other space 403, admin plane 403,
     // workspace-global routes 403.
@@ -250,6 +252,9 @@ async fn espacio_production_wiring_auth_tokens_and_restart() {
     )
     .await;
     assert_eq!(st, StatusCode::OK, "{got}");
+    assert!(!got.to_string().contains("xsp_"));
+    assert!(!got.to_string().contains(&owner_a));
+    assert!(!got.to_string().contains(&_recovery));
     for (m, p) in [
         ("GET", "/api/v1/espacio/spaces/esp_b"),
         ("GET", "/api/v1/espacio/admin/spaces"),
@@ -361,4 +366,244 @@ async fn espacio_off_boots_and_routes_answer_503() {
     )
     .await;
     assert_eq!(st, StatusCode::OK);
+}
+
+const ADMIN_PATHS: [(&str, &str); 3] = [
+    ("GET", "/api/v1/espacio/admin/spaces"),
+    ("POST", "/api/v1/espacio/admin/spaces"),
+    ("DELETE", "/api/v1/espacio/admin/spaces/esp_a?confirm=esp_a"),
+];
+
+/// BLOCKING 1: ephemeral sessions, admin-role JWTs and `xav_` write tokens
+/// must not reach the admin plane; only the root credential does.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn espacio_admin_plane_is_root_only_for_every_credential() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::set_var("XAVIER_TOKEN", ROOT);
+    std::env::remove_var("XAVIER_SPACES");
+    let jwt_secret = "wp13e-test-jwt-secret-0123456789abcdef";
+    std::env::set_var("XAVIER_JWT_SECRET", jwt_secret);
+    let tmp = TempDir::new().unwrap();
+    let state = create_test_cli_state(&tmp).await;
+    let manager = open_space_manager_with_kek(&tmp.path().join("state"), kek()).expect("manager");
+    let app = production_app(&state, Some(manager.clone()));
+    let (_owner, _rec) = create_two(&app).await;
+
+    // Credentials: ephemeral session, admin JWT, xav_ write and all tokens
+    // (the token DB is redirected to the tempdir).
+    let session = state.session_manager.create_session().id;
+    let user = xavier::security::auth::User::new(
+        "admin@example.com".into(),
+        "Admin".into(),
+        xavier::security::auth::UserRole::Admin,
+    );
+    let jwt = xavier::security::auth::generate_jwt(&user, jwt_secret.as_bytes()).unwrap();
+    xavier::codebase::connection_manager::ConnectionManager::global()
+        .connect_with_path("security", tmp.path().join("security.db"))
+        .unwrap();
+    let store = xavier::security::tokens::TokenStore::new();
+    store.init_schema_async().await.unwrap();
+    let (xav_write, _) = store
+        .create_token("w".into(), vec!["write".into()], None)
+        .await
+        .unwrap();
+    let (xav_all, _) = store
+        .create_token("a".into(), vec!["all".into()], None)
+        .await
+        .unwrap();
+
+    for (name, tok) in [
+        ("ephemeral", &session),
+        ("jwt-admin", &jwt),
+        ("xav_write", &xav_write),
+        ("xav_all", &xav_all),
+    ] {
+        for (m, p) in ADMIN_PATHS {
+            let body = (m == "POST").then(|| create_body("esp_x", "mallory"));
+            let (st, _) = send(&app, m, p, Some(tok), body).await;
+            assert_eq!(st, StatusCode::FORBIDDEN, "{name} {m} {p}");
+        }
+    }
+    // Nothing was created or deleted by those attempts.
+    assert_eq!(manager.list().await.len(), 2);
+    assert!(manager.get("esp_x").await.is_err());
+
+    // Root passes (and 404 only because the confirm path is for a real id).
+    let (st, _) = send(&app, "GET", ADMIN_PATHS[0].1, Some(ROOT), None).await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = send(
+        &app,
+        "POST",
+        ADMIN_PATHS[1].1,
+        Some(ROOT),
+        Some(create_body("esp_x", "root-made")),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    std::env::remove_var("XAVIER_JWT_SECRET");
+}
+
+/// MINOR 2: delete = move to `.trash`, needs `?confirm=`, kills the tokens.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn espacio_delete_moves_to_trash_and_requires_confirm() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::set_var("XAVIER_TOKEN", ROOT);
+    std::env::remove_var("XAVIER_SPACES");
+    let tmp = TempDir::new().unwrap();
+    let state = create_test_cli_state(&tmp).await;
+    let root = tmp.path().join("state");
+    let manager = open_space_manager_with_kek(&root, kek()).expect("manager");
+    let app = production_app(&state, Some(manager.clone()));
+    let (owner_a, _) = create_two(&app).await;
+
+    // Missing / wrong confirm: 400, nothing moves.
+    for p in [
+        "/api/v1/espacio/spaces/esp_a",
+        "/api/v1/espacio/spaces/esp_a?confirm=esp_b",
+    ] {
+        let (st, _) = send(&app, "DELETE", p, Some(&owner_a), None).await;
+        assert_eq!(st, StatusCode::BAD_REQUEST, "{p}");
+    }
+    let (st, _) = send(
+        &app,
+        "DELETE",
+        "/api/v1/espacio/admin/spaces/esp_b",
+        Some(ROOT),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    assert!(root.join("spaces/esp_a/space.json").exists());
+
+    // Own admin token deletes its space with confirm.
+    let (st, body) = send(
+        &app,
+        "DELETE",
+        "/api/v1/espacio/spaces/esp_a?confirm=esp_a",
+        Some(&owner_a),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{body}");
+    assert!(!root.join("spaces/esp_a").exists());
+    let trashed: Vec<_> = std::fs::read_dir(root.join("spaces/.trash"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    assert_eq!(trashed.len(), 1, "{trashed:?}");
+    assert!(trashed[0].starts_with("esp_a-"), "{trashed:?}");
+    assert!(root
+        .join("spaces/.trash")
+        .join(&trashed[0])
+        .join("space.json")
+        .exists());
+
+    // The trashed space's token no longer authenticates.
+    let (st, _) = send(
+        &app,
+        "GET",
+        "/api/v1/espacio/spaces/esp_a",
+        Some(&owner_a),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+
+    // Root deletes the other one the same way; a restart ignores the trash.
+    let (st, _) = send(
+        &app,
+        "DELETE",
+        "/api/v1/espacio/admin/spaces/esp_b?confirm=esp_b",
+        Some(ROOT),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = send(
+        &app,
+        "DELETE",
+        "/api/v1/espacio/admin/spaces/esp_b?confirm=esp_b",
+        Some(ROOT),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+    drop(app);
+    drop(manager);
+    let manager2 = open_space_manager_with_kek(&root, kek()).expect("reopen");
+    assert!(manager2.list().await.is_empty());
+}
+
+/// MINOR 3: `password_required` is honoured by create, never echoes the
+/// password, and the space is locked after the manager reopens.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn espacio_create_honours_password_required() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::set_var("XAVIER_TOKEN", ROOT);
+    std::env::remove_var("XAVIER_SPACES");
+    let tmp = TempDir::new().unwrap();
+    let state = create_test_cli_state(&tmp).await;
+    let root = tmp.path().join("state");
+    let manager = open_space_manager_with_kek(&root, kek()).expect("manager");
+    let app = production_app(&state, Some(manager.clone()));
+    let pw = "correct horse battery staple 42";
+
+    let mut body = create_body("esp_p", "alice");
+    body["unlock_mode"] = "password_required".into();
+    body["password"] = pw.into();
+    let (st, got) = send(
+        &app,
+        "POST",
+        "/api/v1/espacio/admin/spaces",
+        Some(ROOT),
+        Some(body),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{got}");
+    assert!(!got.to_string().contains(pw));
+    assert!(got["recovery_code"].as_str().is_some());
+    assert!(got["note"].as_str().unwrap().contains("node key is lost"));
+
+    // password_required without a password is rejected, not downgraded.
+    let mut bad = create_body("esp_q", "alice");
+    bad["unlock_mode"] = "password_required".into();
+    let (st, _) = send(
+        &app,
+        "POST",
+        "/api/v1/espacio/admin/spaces",
+        Some(ROOT),
+        Some(bad),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    drop(app);
+    drop(manager);
+    let manager2 = open_space_manager_with_kek(&root, kek()).expect("reopen");
+    assert!(manager2.key_ring().unwrap().is_locked("esp_p"));
+}
+
+/// MINOR 5: one authoritative manager; re-install replaces, never splits.
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn espacio_install_keeps_a_single_authoritative_manager() {
+    use xavier::adapters::inbound::http::routes::get_space_manager;
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var("XAVIER_SPACES");
+    let tmp = TempDir::new().unwrap();
+    let state = create_test_cli_state(&tmp).await;
+    let a = open_space_manager_with_kek(&tmp.path().join("a"), kek()).unwrap();
+    let b = open_space_manager_with_kek(&tmp.path().join("b"), kek()).unwrap();
+
+    let _ = production_app(&state, Some(a.clone()));
+    assert!(Arc::ptr_eq(&get_space_manager().unwrap(), &a));
+    let _ = production_app(&state, Some(b.clone()));
+    assert!(Arc::ptr_eq(&get_space_manager().unwrap(), &b));
+    assert!(!Arc::ptr_eq(&get_space_manager().unwrap(), &a));
+    let _ = production_app(&state, None);
+    assert!(get_space_manager().is_none());
 }

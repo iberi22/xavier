@@ -18,7 +18,7 @@ use super::permissions::SpaceMembership;
 use super::store::{self, SpaceStores};
 
 /// Payload for creating a new Space
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CreateSpaceRequest {
     /// Unique space identifier (e.g., esp_01H...)
     pub id: String,
@@ -32,7 +32,29 @@ pub struct CreateSpaceRequest {
     /// Whether the space is public
     #[serde(default)]
     pub is_public: bool,
+    /// `node_unlock` (default) or `password_required`.
+    #[serde(default)]
+    pub unlock_mode: Option<UnlockMode>,
+    /// Required for `password_required`. Never serialized, logged or returned.
+    #[serde(default, skip_serializing)]
+    pub password: Option<String>,
 }
+
+impl std::fmt::Debug for CreateSpaceRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreateSpaceRequest")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("owner_node", &self.owner_node)
+            .field("is_public", &self.is_public)
+            .field("unlock_mode", &self.unlock_mode)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
+/// Directory (under the spaces dir) that holds deleted spaces.
+pub const TRASH_DIR: &str = ".trash";
 
 /// Key options for a new space (only used when the manager has a key ring).
 #[derive(Debug, Clone)]
@@ -257,6 +279,10 @@ impl SpaceManager {
                 continue;
             }
             let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                // `.trash` and other housekeeping directories.
+                continue;
+            }
             if Self::validate_id(&name).is_err() {
                 tracing::warn!("espacio: ignoring directory with invalid space id {name:?}");
                 continue;
@@ -474,8 +500,12 @@ impl SpaceManager {
         v
     }
 
-    /// Delete a Space (removes from registry and deletes storage dir)
+    /// Delete a Space: removes it from the registry and MOVES its directory
+    /// (data and keystore) to `{spaces}/.trash/{id}-{unix_ts}` with an atomic
+    /// rename. Nothing is ever removed from disk. Tokens stop working at once
+    /// because the space is no longer registered.
     pub async fn delete(&self, id: &str) -> Result<()> {
+        Self::validate_id(id)?;
         let mut guard = self.spaces.write().await;
         if self.unavailable.read().await.contains_key(id) {
             return Err(anyhow!(SpaceError::Storage(format!(
@@ -485,12 +515,30 @@ impl SpaceManager {
         let info = guard
             .remove(id)
             .ok_or_else(|| anyhow!(SpaceError::NotFound(id.to_string())))?;
-        // Close the database handle, then best-effort delete the directory
+        // Close the database handle before moving the directory.
         self.stores.evict(id);
         if let Some(ring) = self.stores.key_ring() {
             ring.forget(id);
         }
-        let _ = tokio::fs::remove_dir_all(&info.storage_path).await;
+        if info.storage_path.exists() {
+            let trash = self.base_dir.join(TRASH_DIR);
+            let mut dest = trash.join(format!("{id}-{}", Utc::now().timestamp()));
+            if dest.exists() {
+                let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+                dest = trash.join(format!("{id}-{}-{nanos}", Utc::now().timestamp()));
+            }
+            let moved = match tokio::fs::create_dir_all(&trash).await {
+                Ok(()) => tokio::fs::rename(&info.storage_path, &dest).await,
+                Err(e) => Err(e),
+            };
+            if let Err(e) = moved {
+                // Put it back: a failed move must not orphan a live space.
+                guard.insert(id.to_string(), info);
+                return Err(anyhow!(SpaceError::Storage(format!(
+                    "could not move space {id} to trash: {e}"
+                ))));
+            }
+        }
         Ok(())
     }
 

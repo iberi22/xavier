@@ -43,9 +43,10 @@ static TIME_STORE: std::sync::OnceLock<Arc<dyn TimeMetricsPort>> = std::sync::On
 /// Module-level HttpHealthAdapter (initialized by CLI)
 static HEALTH_PORT: std::sync::OnceLock<Arc<HttpHealthAdapter>> = std::sync::OnceLock::new();
 
-/// Module-level SpaceManager (initialized by CLI or lazily)
-static SPACE_MANAGER: std::sync::OnceLock<Arc<crate::espacio::SpaceManager>> =
-    std::sync::OnceLock::new();
+/// Module-level SpaceManager: the ONE authoritative manager of the node. The
+/// HTTP routes and the MCP tools both read it through [`get_space_manager`].
+static SPACE_MANAGER: std::sync::Mutex<Option<Arc<crate::espacio::SpaceManager>>> =
+    std::sync::Mutex::new(None);
 
 /// Module-level MalocaStore (initialized lazily)
 static MALOCA_STORE: std::sync::OnceLock<Arc<crate::maloca::MalocaStore>> =
@@ -72,19 +73,31 @@ pub fn init_health_port(port: Arc<HttpHealthAdapter>) {
     }
 }
 
-/// Initialize the global space manager (call once at startup)
+/// Install the node's space manager. A second call REPLACES the first (there
+/// is never more than one authoritative manager) and logs it.
 pub fn init_space_manager(manager: Arc<crate::espacio::SpaceManager>) {
-    if SPACE_MANAGER.set(manager).is_err() {
-        tracing::error!(
-            "SPACE_MANAGER global already initialized (called init_space_manager twice)"
-        );
+    let mut guard = SPACE_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    if guard
+        .as_ref()
+        .is_some_and(|old| !Arc::ptr_eq(old, &manager))
+    {
+        tracing::warn!("space manager re-initialized; the previous instance was replaced");
     }
+    *guard = Some(manager);
+}
+
+/// Drop the global manager (espacio disabled on this node).
+pub fn clear_space_manager() {
+    *SPACE_MANAGER.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// Get the global space manager, if the daemon opened one. There is no
 /// default: a relative `data/spaces` fallback would write under the CWD.
 pub fn get_space_manager() -> Option<Arc<crate::espacio::SpaceManager>> {
-    SPACE_MANAGER.get().cloned()
+    SPACE_MANAGER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
 }
 
 // ─── Router ─────────────────────────────────────────────────────────────────
@@ -1061,7 +1074,10 @@ pub fn espacio_production_routes<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    Router::new()
+    // The admin plane needs the ROOT credential marker (inserted only by the
+    // root-token branch of `auth_middleware`), whatever role other
+    // credentials (JWT, ephemeral session, xav_ token) claim.
+    let admin = Router::new()
         .route(
             "/admin/spaces",
             post(espacio_admin_create_handler).get(espacio_list_handler),
@@ -1070,10 +1086,53 @@ where
             "/admin/spaces/{id}",
             get(espacio_get_handler).delete(espacio_delete_handler),
         )
-        .route(
-            "/spaces/{id}",
-            get(espacio_own_get_handler).delete(espacio_own_delete_handler),
-        )
+        .route_layer(axum::middleware::from_fn(require_root_credential));
+    Router::new().merge(admin).route(
+        "/spaces/{id}",
+        get(espacio_own_get_handler).delete(espacio_own_delete_handler),
+    )
+}
+
+/// Marker request extension: the request authenticated with the node's ROOT
+/// token. Inserted by `auth_middleware` in the root branch and nowhere else.
+#[derive(Clone, Copy, Debug)]
+pub struct RootCredential;
+
+async fn require_root_credential(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if req.extensions().get::<RootCredential>().is_none() {
+        return espacio_forbidden();
+    }
+    next.run(req).await
+}
+
+/// Run async manager work that does blocking store/keys/fs calls on the
+/// blocking pool, not on an async worker.
+async fn run_blocking<T, F>(fut: F) -> Option<T>
+where
+    T: Send + 'static,
+    F: std::future::Future<Output = T> + Send + 'static,
+{
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::spawn_blocking(move || handle.block_on(fut))
+        .await
+        .ok()
+}
+
+fn espacio_join_error() -> axum::response::Response {
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"status":"error","message":"internal error"})),
+    )
+        .into_response()
+}
+
+/// `?confirm={space_id}` guard for deletes.
+#[derive(serde::Deserialize, Default)]
+pub struct DeleteSpaceQuery {
+    confirm: Option<String>,
 }
 
 /// True when the request carries a space token for exactly `id`.
@@ -1109,11 +1168,12 @@ pub async fn espacio_own_delete_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
     axum::extract::Path(id): axum::extract::Path<String>,
+    query: axum::extract::Query<DeleteSpaceQuery>,
 ) -> axum::response::Response {
     if !is_own_space(&auth, &id) {
         return espacio_forbidden();
     }
-    espacio_delete_handler(extension, axum::extract::Path(id)).await
+    espacio_delete_handler(extension, axum::extract::Path(id), query).await
 }
 
 /// POST /api/v1/espacio/admin/spaces - root creates a space. The response
@@ -1129,34 +1189,47 @@ pub async fn espacio_admin_create_handler(
     };
     let id = payload.id.clone();
     let owner = payload.owner_node.clone();
-    let created = manager
-        .create_with_keys(
-            payload.id,
-            payload.name,
-            payload.description,
-            payload.owner_node,
-            payload.is_public,
-            crate::espacio::KeyOptions::default(),
-        )
-        .await;
-    let (info, recovery) = match created {
-        Ok(v) => v,
-        Err(err) => return espacio_error_response(err),
+    let opts = crate::espacio::KeyOptions {
+        mode: payload
+            .unlock_mode
+            .unwrap_or(crate::espacio::UnlockMode::NodeUnlock),
+        password: payload.password,
+        ..crate::espacio::KeyOptions::default()
     };
-    let issued = manager
-        .stores()
-        .get(&id)
-        .and_then(|s| s.issue_token(&id, &owner, crate::espacio::SpaceRole::Admin, None));
-    let token = match issued {
-        Ok(t) => t,
-        Err(err) => {
-            let _ = manager.delete(&id).await;
-            return espacio_error_response(err);
+    let work = {
+        let manager = manager.clone();
+        async move {
+            let (info, recovery) = manager
+                .create_with_keys(
+                    payload.id,
+                    payload.name,
+                    payload.description,
+                    payload.owner_node,
+                    payload.is_public,
+                    opts,
+                )
+                .await?;
+            let issued = manager
+                .stores()
+                .get(&id)
+                .and_then(|s| s.issue_token(&id, &owner, crate::espacio::SpaceRole::Admin, None));
+            match issued {
+                Ok(t) => Ok((info, recovery, t.raw)),
+                Err(err) => {
+                    let _ = manager.delete(&id).await;
+                    Err(err)
+                }
+            }
         }
+    };
+    let (info, recovery, token) = match run_blocking(work).await {
+        Some(Ok(v)) => v,
+        Some(Err(err)) => return espacio_error_response(err),
+        None => return espacio_join_error(),
     };
     let mut body = serde_json::to_value(&info).unwrap_or_default();
     if let Some(obj) = body.as_object_mut() {
-        obj.insert("owner_token".into(), token.raw.into());
+        obj.insert("owner_token".into(), token.into());
         obj.insert(
             "recovery_code".into(),
             recovery
@@ -1165,7 +1238,10 @@ pub async fn espacio_admin_create_handler(
         );
         obj.insert(
             "note".into(),
-            "owner_token and recovery_code are shown once; store them now".into(),
+            "owner_token and recovery_code are shown once; store them now. The recovery \
+             code also unlocks a node_unlock space whose node key is lost (for example \
+             when a backup is restored on another node)"
+                .into(),
         );
     }
     (
@@ -1183,7 +1259,10 @@ fn espacio_error_response(err: anyhow::Error) -> axum::response::Response {
         Some(SpaceError::AlreadyExists(_)) => StatusCode::CONFLICT,
         Some(SpaceError::InvalidId(_)) => StatusCode::BAD_REQUEST,
         Some(SpaceError::NotFound(_)) => StatusCode::NOT_FOUND,
-        _ => StatusCode::INTERNAL_SERVER_ERROR,
+        _ => match err.downcast_ref::<crate::espacio::KeysError>() {
+            Some(crate::espacio::KeysError::WeakPassword(_)) => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        },
     };
     (
         status,
@@ -1258,8 +1337,10 @@ pub async fn espacio_list_handler(
     let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
         return espacio_disabled();
     };
-    let spaces = manager.list().await;
-    Json(spaces).into_response()
+    match run_blocking(async move { manager.list().await }).await {
+        Some(spaces) => Json(spaces).into_response(),
+        None => espacio_join_error(),
+    }
 }
 
 /// GET /api/v1/espacio/spaces/{id} - get space details by ID
@@ -1298,44 +1379,37 @@ pub async fn espacio_get_handler(
     }
 }
 
-/// DELETE /api/v1/espacio/spaces/{id} - delete space by ID
+/// DELETE /api/v1/espacio/spaces/{id}?confirm={id} - move a space to the
+/// trash (`{spaces}/.trash/{id}-{unix_ts}`); nothing is removed from disk.
 pub async fn espacio_delete_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     axum::extract::Path(id): axum::extract::Path<String>,
+    axum::extract::Query(query): axum::extract::Query<DeleteSpaceQuery>,
 ) -> axum::response::Response {
     use axum::http::StatusCode;
     let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
         return espacio_disabled();
     };
-    match manager.delete(&id).await {
-        Ok(()) => Json(serde_json::json!({
+    if query.confirm.as_deref() != Some(id.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": "deleting a space requires ?confirm={space_id}",
+            })),
+        )
+            .into_response();
+    }
+    let target = id.clone();
+    match run_blocking(async move { manager.delete(&target).await }).await {
+        Some(Ok(())) => Json(serde_json::json!({
             "status": "ok",
-            "message": format!("Space {} deleted", id),
+            "message": format!("Space {} moved to trash", id),
             "id": id,
         }))
         .into_response(),
-        Err(err) => {
-            if let Some(space_err) = err.downcast_ref::<crate::espacio::SpaceError>() {
-                match space_err {
-                    crate::espacio::SpaceError::NotFound(_) => (
-                        StatusCode::NOT_FOUND,
-                        crate::adapters::inbound::http::handlers::error_json(space_err),
-                    )
-                        .into_response(),
-                    _ => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        crate::adapters::inbound::http::handlers::error_json(space_err),
-                    )
-                        .into_response(),
-                }
-            } else {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    crate::adapters::inbound::http::handlers::error_json(err),
-                )
-                    .into_response()
-            }
-        }
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
     }
 }
 
@@ -2374,7 +2448,7 @@ mod route_tests {
 
         // DELETE space 2a
         let mut req_del = Request::builder()
-            .uri("/api/v1/espacio/spaces/esp_rt_2a")
+            .uri("/api/v1/espacio/spaces/esp_rt_2a?confirm=esp_rt_2a")
             .method(Method::DELETE)
             .body(Body::empty())
             .unwrap();
