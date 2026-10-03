@@ -507,7 +507,9 @@ mod tests {
             .unwrap();
         assert_eq!(votes.len(), 1);
         assert!(votes[0].training_eligible);
-        assert_eq!(reopened.count_training_eligible().unwrap(), 1);
+        assert_eq!(votes[0].technique.as_deref(), Some("pre_mortem"));
+        // Unverified insights stay out of the training gate until a human verifies them.
+        assert_eq!(reopened.count_training_eligible().unwrap(), 0);
         let session = reopened.get_introspection_session(&id).unwrap().unwrap();
         assert!(session.training_consent);
         assert_eq!(session.insights.len(), 1);
