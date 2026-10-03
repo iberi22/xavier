@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use super::store::{RevokeOutcome, SpaceStore, SpaceStores};
+
 /// Role granted by an invite
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -102,16 +104,65 @@ impl SpaceInvite {
     }
 }
 
-/// In-memory invite registry. Persists only for the process lifetime;
-/// durability will be added via SQLite in a follow-up iteration.
+/// Invite registry backed by each space's `espacio.sqlite` (in-memory
+/// databases for `new()`). Revoked state and signatures are persisted; an
+/// id -> space index is rebuilt from the stores when opened.
 #[derive(Debug, Default)]
 pub struct InviteManager {
-    invites: Arc<RwLock<HashMap<String, SpaceInvite>>>,
+    stores: Arc<SpaceStores>,
+    /// invite id -> space id
+    index: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl InviteManager {
+    /// Non-persistent manager (tests, ephemeral use).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Persistent manager over `{root}/spaces/{space_id}/espacio.sqlite`.
+    pub fn open(root: impl AsRef<std::path::Path>) -> Self {
+        Self::with_stores(SpaceStores::open(root))
+    }
+
+    /// Manager sharing a store registry (e.g. `SpaceManager::stores()`).
+    /// Reloads the invite index from every space database on disk.
+    pub fn with_stores(stores: Arc<SpaceStores>) -> Self {
+        let mut index = HashMap::new();
+        for space_id in stores.known_space_ids() {
+            match stores.get(&space_id).and_then(|s| s.invite_ids()) {
+                Ok(ids) => {
+                    for id in ids {
+                        index.insert(id, space_id.clone());
+                    }
+                }
+                Err(e) => tracing::error!("espacio: cannot load invites of {space_id}: {e}"),
+            }
+        }
+        Self {
+            stores,
+            index: Arc::new(RwLock::new(index)),
+        }
+    }
+
+    async fn insert(&self, invite: &SpaceInvite) -> Result<()> {
+        self.stores.get(&invite.space_id)?.insert_invite(invite)?;
+        self.index
+            .write()
+            .await
+            .insert(invite.id.clone(), invite.space_id.clone());
+        Ok(())
+    }
+
+    async fn store_of(&self, id: &str) -> Result<Arc<SpaceStore>> {
+        let space_id = self
+            .index
+            .read()
+            .await
+            .get(id)
+            .cloned()
+            .ok_or_else(|| anyhow!("Invite {} not found", id))?;
+        self.stores.get(&space_id)
     }
 
     /// Create a new invite. Caller must have verified inviter has permission.
@@ -123,20 +174,14 @@ impl InviteManager {
         role: SpaceRole,
     ) -> Result<SpaceInvite> {
         let now = Utc::now();
-        let invite = SpaceInvite {
-            id: ulid::Ulid::new().to_string(),
+        self.create_with_expiry(
             space_id,
             inviter_node,
             target_node,
             role,
-            created_at: now,
-            expires_at: now + Duration::hours(24),
-            signature: None,
-            revoked: false,
-        };
-        let id = invite.id.clone();
-        self.invites.write().await.insert(id, invite.clone());
-        Ok(invite)
+            now + Duration::hours(24),
+        )
+        .await
     }
 
     /// Create with explicit expiry (for testing)
@@ -159,17 +204,15 @@ impl InviteManager {
             signature: None,
             revoked: false,
         };
-        let id = invite.id.clone();
-        self.invites.write().await.insert(id, invite.clone());
+        self.insert(&invite).await?;
         Ok(invite)
     }
 
     /// Retrieve an invite by id
     pub async fn get(&self, id: &str) -> Result<SpaceInvite> {
-        let guard = self.invites.read().await;
-        guard
-            .get(id)
-            .cloned()
+        self.store_of(id)
+            .await?
+            .get_invite(id)?
             .ok_or_else(|| anyhow!("Invite {} not found", id))
     }
 
@@ -205,36 +248,40 @@ impl InviteManager {
 
     /// Revoke an invite (admin only)
     pub async fn revoke(&self, id: &str) -> Result<()> {
-        let mut guard = self.invites.write().await;
-        let invite = guard
-            .get_mut(id)
-            .ok_or_else(|| anyhow!("Invite {} not found", id))?;
-        if invite.revoked {
-            return Err(anyhow!("Invite {} already revoked", id));
+        match self.store_of(id).await?.revoke_invite(id)? {
+            RevokeOutcome::Revoked => Ok(()),
+            RevokeOutcome::AlreadyRevoked => Err(anyhow!("Invite {} already revoked", id)),
+            RevokeOutcome::NotFound => Err(anyhow!("Invite {} not found", id)),
         }
-        invite.revoked = true;
-        Ok(())
     }
 
     /// List invites for a space
     pub async fn list_for_space(&self, space_id: &str) -> Vec<SpaceInvite> {
-        let guard = self.invites.read().await;
-        guard
-            .values()
-            .filter(|i| i.space_id == space_id)
-            .cloned()
-            .collect()
+        let res = self
+            .stores
+            .get_existing(space_id)
+            .and_then(|s| s.map(|s| s.list_invites()).transpose());
+        match res {
+            Ok(v) => v.unwrap_or_default(),
+            Err(e) => {
+                tracing::error!("espacio: cannot list invites of {space_id}: {e}");
+                Vec::new()
+            }
+        }
     }
 
     /// Attach a signature to an existing invite (Ed25519 hex over canonical payload).
     /// Not verified here; use `validate_trusted` on the accept path.
     pub async fn attach_signature(&self, id: &str, signature_hex: String) -> Result<()> {
-        let mut guard = self.invites.write().await;
-        let invite = guard
-            .get_mut(id)
-            .ok_or_else(|| anyhow!("Invite {} not found", id))?;
-        invite.signature = Some(signature_hex);
-        Ok(())
+        if self
+            .store_of(id)
+            .await?
+            .set_invite_signature(id, &signature_hex)?
+        {
+            Ok(())
+        } else {
+            Err(anyhow!("Invite {} not found", id))
+        }
     }
 }
 
