@@ -1301,42 +1301,60 @@ pub struct MiniExpertInvokeResponse {
     pub response: String,
 }
 
+/// Settings-driven configs (defaults when none configured).
+fn settings_mini_experts() -> Vec<crate::settings::types::MiniExpertConfig> {
+    let configs = XavierSettings::current().workspace.mini_experts;
+    if configs.is_empty() {
+        XavierSettings::default().workspace.mini_experts
+    } else {
+        configs
+    }
+}
+
+/// Router over the SQLite registry (which imports the legacy JSON) plus settings.
+fn mini_expert_provider_router(
+    store: &crate::agents::mini_experts::ExpertStore,
+    settings_configs: Vec<crate::settings::types::MiniExpertConfig>,
+) -> crate::agents::provider_router::ProviderRouter {
+    let legacy = crate::agents::mini_experts::MiniExpertRegistry::load_default();
+    crate::agents::provider_router::ProviderRouter::from_expert_store(
+        store,
+        &legacy,
+        settings_configs,
+    )
+}
+
 /// GET /v1/agents/mini-experts — list configured mini-experts.
 pub async fn mini_experts_list_handler() -> impl axum::response::IntoResponse {
-    let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
-    let reg_entries = registry.list();
-
-    let settings = XavierSettings::current();
-    let mut mini_experts = settings.workspace.mini_experts;
-    if mini_experts.is_empty() {
-        mini_experts = XavierSettings::default().workspace.mini_experts;
-    }
-
-    for entry in reg_entries {
-        if !mini_experts.iter().any(|e| e.name == entry.name) {
-            mini_experts.push(entry.to_config());
+    let store = crate::agents::mini_experts::ExpertStore::open_default();
+    let router = match store {
+        Ok(store) => mini_expert_provider_router(&store, settings_mini_experts()),
+        Err(e) => {
+            tracing::warn!("mini-expert store unavailable: {e}");
+            crate::agents::provider_router::ProviderRouter::new(settings_mini_experts())
         }
-    }
-
-    Json(mini_experts)
+    };
+    Json(router.mini_experts().to_vec())
 }
 
 /// POST /v1/agents/mini-experts/invoke — invoke a mini-expert by name.
 pub async fn mini_expert_invoke_handler(
     Json(payload): Json<MiniExpertInvokeRequest>,
 ) -> Result<Json<MiniExpertInvokeResponse>, (axum::http::StatusCode, String)> {
-    let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
-    let settings = XavierSettings::current();
-    let mut mini_experts = settings.workspace.mini_experts;
-    if mini_experts.is_empty() {
-        mini_experts = XavierSettings::default().workspace.mini_experts;
-    }
+    let store = crate::agents::mini_experts::ExpertStore::open_default().map_err(|e| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("mini-expert store unavailable: {e}"),
+        )
+    })?;
+    let router = mini_expert_provider_router(&store, settings_mini_experts());
+    mini_expert_invoke_with(router, payload).await
+}
 
-    let router = crate::agents::provider_router::ProviderRouter::from_registry_and_configs(
-        &registry,
-        mini_experts,
-    );
-
+async fn mini_expert_invoke_with(
+    router: crate::agents::provider_router::ProviderRouter,
+    payload: MiniExpertInvokeRequest,
+) -> Result<Json<MiniExpertInvokeResponse>, (axum::http::StatusCode, String)> {
     let expert_config = router.route(&payload.name).ok_or_else(|| {
         (
             axum::http::StatusCode::NOT_FOUND,
@@ -1399,6 +1417,31 @@ mod route_tests {
     use super::{create_router, create_router_with_agent_registry};
     use crate::coordination::SimpleAgentRegistry;
 
+    /// Points `XAVIER_DATA_DIR` at a tempdir so registry-backed routes never touch
+    /// the real node data; restores the previous value on drop.
+    struct TempDataDir {
+        _dir: tempfile::TempDir,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl TempDataDir {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let prev = std::env::var_os("XAVIER_DATA_DIR");
+            std::env::set_var("XAVIER_DATA_DIR", dir.path());
+            Self { _dir: dir, prev }
+        }
+    }
+
+    impl Drop for TempDataDir {
+        fn drop(&mut self) {
+            match self.prev.take() {
+                Some(v) => std::env::set_var("XAVIER_DATA_DIR", v),
+                None => std::env::remove_var("XAVIER_DATA_DIR"),
+            }
+        }
+    }
+
     fn post_request(uri: &str) -> Request<Body> {
         Request::builder()
             .uri(uri)
@@ -1409,6 +1452,7 @@ mod route_tests {
 
     #[tokio::test]
     async fn test_route_mini_expert_invoke_missing_expert_404() {
+        let _data = TempDataDir::new();
         use axum::response::Response;
         use http_body_util::BodyExt;
         use tower::ServiceExt;
@@ -1686,6 +1730,7 @@ mod route_tests {
 
     #[tokio::test]
     async fn test_route_mini_experts_list() {
+        let _data = TempDataDir::new();
         use axum::response::Response;
         use http_body_util::BodyExt;
         use tower::ServiceExt;
@@ -1715,43 +1760,100 @@ mod route_tests {
         assert_eq!(arr[0]["provider"], "agy");
     }
 
+    fn agy_config(endpoint: String) -> crate::settings::types::MiniExpertConfig {
+        crate::settings::types::MiniExpertConfig {
+            name: "agy-expert".to_string(),
+            provider: "agy".to_string(),
+            endpoint,
+            api_key: Some("test-key".to_string()),
+        }
+    }
+
+    /// Hermetic: the expert endpoint is a local mock server, never a real host.
     #[tokio::test]
     async fn test_route_mini_expert_invoke_mock() {
-        use axum::response::Response;
-        use http_body_util::BodyExt;
-        use tower::ServiceExt;
-        let req_body = serde_json::json!({
-            "name": "agy-expert",
-            "prompt": "test prompt"
-        });
-        let response: Response = create_router()
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/agents/mini-experts/invoke")
-                    .method(Method::POST)
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
-                    .unwrap(),
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v1/experts/google")
+            .match_header("authorization", "Bearer test-key")
+            .with_status(200)
+            .with_body(r#"{"response":"hello from local mock"}"#)
+            .create_async()
+            .await;
+        let store_dir = tempfile::tempdir().unwrap();
+        let store = crate::agents::mini_experts::ExpertStore::open(
+            store_dir
+                .path()
+                .join(crate::agents::mini_experts::ExpertStore::DB_FILE),
+        )
+        .unwrap();
+        let legacy = crate::agents::mini_experts::MiniExpertRegistry::new(
+            store_dir.path().join("legacy.json"),
+        );
+        let router = crate::agents::provider_router::ProviderRouter::from_expert_store(
+            &store,
+            &legacy,
+            vec![agy_config(format!("{}/v1/experts/google", server.url()))],
+        );
+        let resp = super::mini_expert_invoke_with(
+            router,
+            super::MiniExpertInvokeRequest {
+                name: "agy-expert".to_string(),
+                prompt: "test prompt".to_string(),
+            },
+        )
+        .await
+        .expect("invoke succeeds against the local mock");
+        assert_eq!(resp.0.status, "success");
+        assert_eq!(resp.0.provider, "agy");
+        assert_eq!(resp.0.response, "hello from local mock");
+        mock.assert_async().await;
+    }
+
+    /// An expert registered through the CLI (SQLite store, endpoint persisted) is
+    /// reachable by the legacy invoke route instead of 404/falling back.
+    #[tokio::test]
+    async fn test_route_mini_expert_invoke_reads_sqlite_store() {
+        use crate::agents::mini_experts::{ExpertStore, MiniExpertRegistry, NewExpert};
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v1/chat/completions")
+            .with_status(200)
+            .with_body(r#"{"choices":[{"message":{"content":"from cli expert"}}]}"#)
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = ExpertStore::open(dir.path().join(ExpertStore::DB_FILE)).unwrap();
+        store
+            .add_version(
+                NewExpert {
+                    name: "cli-expert".into(),
+                    domain: "rust".into(),
+                    provider: "local".into(),
+                    endpoint: format!("{}/v1", server.url()),
+                    ..Default::default()
+                },
+                true,
             )
-            .await
-            .expect("request should complete");
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response
-            .into_body()
-            .collect()
-            .await
-            .expect("collect body")
-            .to_bytes();
-        let parsed: serde_json::Value =
-            serde_json::from_slice(&body).expect("parse invoke response");
-
-        assert_eq!(parsed["status"], "success");
-        assert_eq!(parsed["provider"], "agy");
-        assert!(parsed["response"]
-            .as_str()
-            .unwrap()
-            .contains("Mock response"));
+            .unwrap();
+        let legacy = MiniExpertRegistry::new(dir.path().join("legacy.json"));
+        let router = crate::agents::provider_router::ProviderRouter::from_expert_store(
+            &store,
+            &legacy,
+            vec![],
+        );
+        let resp = super::mini_expert_invoke_with(
+            router,
+            super::MiniExpertInvokeRequest {
+                name: "cli-expert".to_string(),
+                prompt: "hi".to_string(),
+            },
+        )
+        .await
+        .expect("CLI-registered expert must be found");
+        assert_eq!(resp.0.response, "from cli expert");
+        assert_eq!(resp.0.endpoint, format!("{}/v1", server.url()));
+        mock.assert_async().await;
     }
 
     #[tokio::test]

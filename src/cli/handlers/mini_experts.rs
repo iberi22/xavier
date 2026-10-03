@@ -51,17 +51,24 @@ pub async fn run_command(
         MiniExpertCommand::Add {
             name,
             segment,
-            language: _,
+            language,
             clearance,
-            source_dataset: _,
+            source_dataset,
             model_gguf_path,
-            provider: _,
-            endpoint: _,
+            provider,
+            endpoint,
             version,
             metrics_file,
             domain,
             candidate,
         } => {
+            if !matches!(provider.trim(), "" | "local" | "ollama") {
+                eprintln!(
+                    "warning: provider '{provider}' is stored, but the expert router and \
+                     `ask_expert` always call the local Ollama; only the legacy HTTP invoke \
+                     route uses the provider/endpoint."
+                );
+            }
             let metrics_json = match metrics_file {
                 Some(path) => std::fs::read_to_string(&path)
                     .with_context(|| format!("Failed to read metrics file {}", path.display()))?,
@@ -75,6 +82,10 @@ pub async fn run_command(
                     gguf_path: model_gguf_path,
                     metrics_json,
                     clearance,
+                    language,
+                    source_dataset,
+                    provider,
+                    endpoint,
                     ..Default::default()
                 },
                 !candidate,
@@ -104,7 +115,13 @@ pub async fn run_command(
                 println!("Nothing to retire for '{name}'.");
             }
         }
-        MiniExpertCommand::Serve { name, port: _ } => {
+        MiniExpertCommand::Serve { name, port } => {
+            if port.is_some() {
+                anyhow::bail!(
+                    "`serve --port` is not supported: Ollama's address comes from \
+                     XAVIER_LOCAL_LLM_URL"
+                );
+            }
             let reports = ensure_active_in_ollama(store, runner, name.as_deref()).await?;
             if reports.is_empty() {
                 println!("No active mini-experts to serve.");
@@ -199,7 +216,7 @@ pub async fn invoke_with(router: &ExpertRouter, req: InvokeRequest) -> Response 
     match router.ask(&req.prompt, req.domain.as_deref()).await {
         Ok(o) if o.expert.is_some() => Json(serde_json::json!({
             "status": "success", "expert": o.expert, "version": o.version,
-            "score": o.score, "response": o.answer
+            "score": o.score, "matched_by": o.matched_by, "response": o.answer
         }))
         .into_response(),
         Ok(_) => Json(serde_json::json!({
@@ -310,7 +327,7 @@ mod tests {
             &runner,
             MiniExpertCommand::Serve {
                 name: None,
-                port: 11434,
+                port: None,
             },
         )
         .await
@@ -330,6 +347,53 @@ mod tests {
         run_command(&store, &runner, MiniExpertCommand::List)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_cli_add_persists_all_fields_and_serve_rejects_port() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ExpertStore::open(dir.path().join("m.db")).unwrap();
+        let runner = FakeRunner {
+            created: Mutex::new(vec![]),
+        };
+        let mut cmd = add_cmd("e", None, "", false);
+        if let MiniExpertCommand::Add {
+            language,
+            source_dataset,
+            provider,
+            endpoint,
+            ..
+        } = &mut cmd
+        {
+            *language = "es".into();
+            *source_dataset = "ds-9".into();
+            *provider = "agy".into();
+            *endpoint = "http://gpu-box:11434/v1".into();
+        }
+        run_command(&store, &runner, cmd).await.unwrap();
+        let rec = store.active("e").unwrap().unwrap();
+        assert_eq!(rec.language, "es");
+        assert_eq!(rec.source_dataset, "ds-9");
+        assert_eq!(rec.provider, "agy");
+        assert_eq!(rec.endpoint, "http://gpu-box:11434/v1");
+
+        let err = run_command(
+            &store,
+            &runner,
+            MiniExpertCommand::Serve {
+                name: None,
+                port: Some(1234),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("--port"));
+    }
+
+    async fn body_json(resp: Response) -> serde_json::Value {
+        use http_body_util::BodyExt;
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&bytes).unwrap()
     }
 
     #[tokio::test]
@@ -364,23 +428,26 @@ mod tests {
             domain: domain.map(String::from),
         };
 
-        assert_eq!(
-            invoke_with(&router, req(Some("e"), None)).await.status(),
-            StatusCode::OK
-        );
+        let resp = invoke_with(&router, req(Some("e"), None)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["status"], "success");
+        assert_eq!(body["response"], "hola");
         assert_eq!(
             invoke_with(&router, req(Some("zz"), None)).await.status(),
             StatusCode::NOT_FOUND
         );
-        assert_eq!(
-            invoke_with(&router, req(None, Some("rust"))).await.status(),
-            StatusCode::OK
-        );
+        let resp = invoke_with(&router, req(None, Some("rust"))).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["status"], "success");
+        assert_eq!(body["expert"], "e");
         // No embedder + no domain -> "no_expert" (200, caller falls back).
-        assert_eq!(
-            invoke_with(&router, req(None, None)).await.status(),
-            StatusCode::OK
-        );
+        let resp = invoke_with(&router, req(None, None)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["status"], "no_expert");
+        assert!(body["response"].is_null());
         let empty = InvokeRequest {
             prompt: " ".into(),
             name: None,
