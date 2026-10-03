@@ -650,13 +650,29 @@ impl SpaceStores {
 
     /// Store for a space, creating directory and database when missing.
     pub fn get(&self, space_id: &str) -> Result<Arc<SpaceStore>> {
+        self.get_inner(space_id, true)
+    }
+
+    /// Shared open path. The cache mutex is held across the open and migrate
+    /// step, so two callers can never open the same database twice.
+    fn get_inner(&self, space_id: &str, create: bool) -> Result<Arc<SpaceStore>> {
         validate_space_id(space_id)?;
         if let Some(ring) = &self.keys {
             // Locked: no store access at all, never a plaintext fallback.
             ring.check_unlocked(space_id)?;
         }
-        if let Some(s) = self.cache().get(space_id) {
+        let mut cache = self.cache();
+        if let Some(s) = cache.get(space_id) {
             return Ok(s.clone());
+        }
+        if !create {
+            let exists = self
+                .spaces_dir
+                .as_ref()
+                .is_some_and(|d| d.join(space_id).join(DB_FILE).is_file());
+            if !exists {
+                return Err(anyhow!(SpaceError::NotFound(space_id.to_string())));
+            }
         }
         // Fail closed: anything that says "encrypted" wins over a missing
         // keystore, and a plaintext-only registry refuses such a space.
@@ -673,11 +689,8 @@ impl SpaceStores {
             }
         }
         let store = self.open_new(space_id)?;
-        Ok(self
-            .cache()
-            .entry(space_id.to_string())
-            .or_insert(store)
-            .clone())
+        cache.insert(space_id.to_string(), store.clone());
+        Ok(store)
     }
 
     /// At boot: for a space without a keystore file, look for encryption
@@ -760,13 +773,12 @@ impl SpaceStores {
 
     /// Store for a space only if it already exists (never creates anything).
     pub fn get_existing(&self, space_id: &str) -> Result<Option<Arc<SpaceStore>>> {
-        validate_space_id(space_id)?;
-        if let Some(s) = self.cache().get(space_id) {
-            return Ok(Some(s.clone()));
-        }
-        match &self.spaces_dir {
-            Some(dir) if dir.join(space_id).join(DB_FILE).is_file() => self.get(space_id).map(Some),
-            _ => Ok(None),
+        match self.get_inner(space_id, false) {
+            Ok(s) => Ok(Some(s)),
+            Err(e) => match e.downcast_ref::<SpaceError>() {
+                Some(SpaceError::NotFound(_)) => Ok(None),
+                _ => Err(e),
+            },
         }
     }
 
