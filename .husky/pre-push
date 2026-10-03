@@ -88,7 +88,19 @@ if [ "$PUSH_LINES" -eq 0 ]; then
         SCAN_RANGES+=("$UPSTREAM..HEAD" "  @{u}")
         MSG_RANGES+=("$UPSTREAM..HEAD")
     else
+        # No upstream (new branch): bound the range at the merge-base with the
+        # default branch instead of scanning the whole history.
         UPSTREAM=""
+        for _base in origin/main origin/master; do
+            if git rev-parse --verify -q "$_base" >/dev/null 2>&1; then
+                _MB="$(git merge-base "$_base" HEAD 2>/dev/null || true)"
+                if [ -n "$_MB" ]; then
+                    SCAN_RANGES+=("$_MB..HEAD" "  merge-base con $_base")
+                    MSG_RANGES+=("$_MB..HEAD")
+                    break
+                fi
+            fi
+        done
     fi
 fi
 # Bounded last resort: git gave us nothing usable, so review a recent window
