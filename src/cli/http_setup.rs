@@ -240,6 +240,15 @@ pub(crate) async fn handle_space_token(
                     serde_json::json!({"status":"error","message":"Space is locked"}),
                 );
             }
+            Err(SpaceScopeError::EncryptionPending) => {
+                return json_response(
+                    StatusCode::NOT_IMPLEMENTED,
+                    serde_json::json!({
+                        "status": "error",
+                        "message": "space memory encryption not available yet"
+                    }),
+                );
+            }
             Err(SpaceScopeError::Unavailable) => return forbidden(),
         }
     }

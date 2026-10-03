@@ -7,13 +7,10 @@
 //! `install_space_manager` for the `xsp_` path. Tempdirs and a static KEK
 //! only; nothing touches the real data dir or master key.
 
-use axum::handler::Handler;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
-    middleware,
-    routing::{get, post},
-    Extension, Router,
+    middleware, Extension, Router,
 };
 use http_body_util::BodyExt;
 use std::collections::HashMap;
@@ -27,10 +24,6 @@ use xavier::agents::rate_limit::RateLimitManager;
 use xavier::agents::RuntimeConfig;
 use xavier::app::proxy_use_case::ProxyUseCase;
 use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
-use xavier::cli::handlers::memory::{
-    add_handler, decay_handler, export_handler, get_handler, memory_prune_handler, search_handler,
-};
-use xavier::cli::handlers::workspace::mcp_tools_call_handler;
 use xavier::cli::http_setup::auth_middleware;
 use xavier::cli::state::{
     guarded_espacio_router, install_space_manager, open_space_manager_with_kek, CliState,
@@ -46,13 +39,8 @@ use xavier::memory::file_indexer::{FileIndexer, FileIndexerConfig};
 use xavier::memory::qmd_memory::QmdMemory;
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use xavier::memory::store::MemoryBackend;
-use xavier::middleware::require_permission;
 use xavier::ports::inbound::AgentLifecyclePort;
 use xavier::secrets::audit::QmdAuditLogger;
-use xavier::security::auth::Permission;
-use xavier::server::v1_api::{
-    v1_graph_export, v1_memories_get, v1_memories_graph, v1_memories_prune, v1_memories_search,
-};
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::workspace::{
     EmbeddingProviderMode, PlanTier, SyncPolicy, WorkspaceConfig, WorkspaceContext, WorkspaceState,
@@ -165,40 +153,11 @@ async fn default_ctx(tmp: &TempDir) -> WorkspaceContext {
     }
 }
 
-/// Same route set, handlers and layer order as the production router for the
-/// memory surface, plus the espacio routes.
+/// The production memory route set (`cli::server::memory_routes`) with the same
+/// layer order as the production router for the memory surface, plus the espacio routes.
 fn memory_app(state: &CliState, manager: Arc<SpaceManager>, default: WorkspaceContext) -> Router {
-    let protected = Router::new()
-        .route("/memory/search", post(search_handler))
-        .route("/memory/get", get(get_handler))
-        .route("/memory/export", get(export_handler))
-        .route(
-            "/memory/add",
-            post(add_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_add_memory()
-            }))),
-        )
-        .route(
-            "/memory/decay",
-            post(decay_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_delete_memory()
-            }))),
-        )
-        .route("/memory/prune", post(memory_prune_handler))
-        .route(
-            "/v1/memories",
-            post(
-                add_handler.layer(middleware::from_fn(require_permission(|r| {
-                    r.can_add_memory()
-                }))),
-            ),
-        )
-        .route("/v1/memories/search", post(v1_memories_search))
-        .route("/v1/memories/prune", post(v1_memories_prune))
-        .route("/v1/memories/graph", get(v1_memories_graph))
-        .route("/v1/memories/{id}", get(v1_memories_get))
-        .route("/v1/graph/export", get(v1_graph_export))
-        .route("/mcp/tools/call", post(mcp_tools_call_handler))
+    let protected = xavier::cli::server::memory_routes()
+        .merge(xavier::cli::server::memory_large_body_routes())
         .layer(middleware::from_fn(clearance_session_middleware))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -246,6 +205,35 @@ struct Fx {
     admin_b: String,
 }
 
+/// Create a space directly through the manager (the HTTP admin API always
+/// creates encrypting spaces) and return its owner admin token. Memory tests
+/// use `encrypt_records = false`: encrypting spaces refuse memory routes until
+/// record encryption exists in the memory store.
+async fn create_space(manager: &Arc<SpaceManager>, id: &str, owner: &str, encrypt: bool) -> String {
+    manager
+        .create_with_keys(
+            id.into(),
+            id.into(),
+            "".into(),
+            owner.into(),
+            false,
+            KeyOptions {
+                mode: UnlockMode::NodeUnlock,
+                password: None,
+                encrypt_records: encrypt,
+            },
+        )
+        .await
+        .expect("create space");
+    manager
+        .stores()
+        .get(id)
+        .unwrap()
+        .issue_token(id, owner, SpaceRole::Admin, None)
+        .unwrap()
+        .raw
+}
+
 async fn fixture() -> Fx {
     std::env::set_var("XAVIER_TOKEN", ROOT);
     std::env::set_var("XAVIER_JWT_SECRET", JWT_SECRET);
@@ -258,21 +246,7 @@ async fn fixture() -> Fx {
     let app = memory_app(&state, manager.clone(), default);
     let mut admins = Vec::new();
     for (id, owner) in [("esp_a", "alice"), ("esp_b", "bob")] {
-        let (st, body) = send(
-            &app,
-            "POST",
-            "/api/v1/espacio/admin/spaces",
-            ROOT,
-            Some(serde_json::json!({"id": id, "name": id, "description": "", "owner_node": owner})),
-        )
-        .await;
-        assert_eq!(st, StatusCode::CREATED, "{body}");
-        admins.push(
-            body["owner_token"]
-                .as_str()
-                .expect("owner token")
-                .to_string(),
-        );
+        admins.push(create_space(&manager, id, owner, false).await);
     }
     Fx {
         app,
@@ -518,7 +492,7 @@ async fn locked_space_is_refused_until_unlocked() {
             KeyOptions {
                 mode: UnlockMode::PasswordRequired,
                 password: Some("correct horse battery staple".into()),
-                encrypt_records: true,
+                encrypt_records: false,
             },
         )
         .await
@@ -767,16 +741,7 @@ async fn deleted_and_recreated_space_does_not_inherit_the_cached_store() {
     .await;
     assert_eq!(st, StatusCode::UNAUTHORIZED);
     // Same id again: a fresh, empty store, not the old open handle.
-    let (st, body) = send(
-        &f.app,
-        "POST",
-        "/api/v1/espacio/admin/spaces",
-        ROOT,
-        Some(serde_json::json!({"id": "esp_a", "name": "a", "description": "", "owner_node": "alice"})),
-    )
-    .await;
-    assert_eq!(st, StatusCode::CREATED, "{body}");
-    let fresh = body["owner_token"].as_str().unwrap().to_string();
+    let fresh = create_space(&f.manager, "esp_a", "alice", false).await;
     let leaked = search(&f, &fresh, "/memory/search", "ghost pangolin walks").await;
     assert!(leaked.is_empty(), "{} stale rows", leaked.len());
     let (st, _) = add(&f, &fresh, "/memory/add", "n/new", "fresh narwhal swims").await;
@@ -784,4 +749,154 @@ async fn deleted_and_recreated_space_does_not_inherit_the_cached_store() {
     assert!(!search(&f, &fresh, "/memory/search", "fresh narwhal swims")
         .await
         .is_empty());
+}
+
+fn files_in(dir: &std::path::Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn encrypted_space_memory_fails_closed_and_writes_nothing() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let f = fixture().await;
+    let tok = create_space(&f.manager, "esp_enc", "erin", true).await;
+    let dir = f.tmp.path().join("state/spaces/esp_enc");
+    let before = files_in(&dir);
+
+    for (m, p, body) in [
+        (
+            "POST",
+            "/memory/add",
+            serde_json::json!({"content": "secret plaintext", "path": "n/s"}),
+        ),
+        (
+            "POST",
+            "/v1/memories",
+            serde_json::json!({"content": "secret plaintext", "path": "n/s"}),
+        ),
+        (
+            "POST",
+            "/memory/search",
+            serde_json::json!({"query": "secret plaintext"}),
+        ),
+        (
+            "POST",
+            "/v1/memories/search",
+            serde_json::json!({"query": "secret plaintext"}),
+        ),
+        (
+            "POST",
+            "/mcp/tools/call",
+            serde_json::json!({"name": "create_memory", "arguments": {"content": "secret plaintext"}}),
+        ),
+        (
+            "POST",
+            "/mcp/tools/call",
+            serde_json::json!({"name": "mem_search", "arguments": {"query": "secret"}}),
+        ),
+    ] {
+        let (st, resp) = send(&f.app, m, p, &tok, Some(body)).await;
+        assert_eq!(st, StatusCode::NOT_IMPLEMENTED, "{m} {p}: {resp}");
+        assert!(resp.to_string().contains("not available yet"), "{resp}");
+    }
+    let (st, _) = send(&f.app, "GET", "/memory/get?id=x", &tok, None).await;
+    assert_eq!(st, StatusCode::NOT_IMPLEMENTED);
+
+    // No memory store or file was built for the encrypted space.
+    let after = files_in(&dir);
+    for name in &after {
+        assert!(
+            !name.starts_with("memory.") && name != "workspace",
+            "unexpected memory artefact {name}"
+        );
+    }
+    assert_eq!(
+        after.iter().filter(|n| n.starts_with("memory")).count(),
+        0,
+        "{before:?} -> {after:?}"
+    );
+    assert!(!xavier::workspace::space_workspace_is_cached("esp_enc").await);
+    let err = xavier::workspace::space_workspace_context(&f.manager, "esp_enc")
+        .await
+        .err()
+        .expect("refused");
+    assert_eq!(err, xavier::workspace::SpaceScopeError::EncryptionPending);
+
+    // A plaintext space on the same node keeps working.
+    let (st, _) = add(&f, &f.admin_a, "/memory/add", "n/p", "plain okapi").await;
+    assert_eq!(st, StatusCode::OK);
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn trashing_a_space_drops_its_cached_workspace() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let f = fixture().await;
+    let (st, _) = add(&f, &f.admin_a, "/memory/add", "n/c", "cached tapir").await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(xavier::workspace::space_workspace_is_cached("esp_a").await);
+    let (st, body) = send(
+        &f.app,
+        "DELETE",
+        "/api/v1/espacio/admin/spaces/esp_a?confirm=esp_a",
+        ROOT,
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{body}");
+    assert!(!xavier::workspace::space_workspace_is_cached("esp_a").await);
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn space_tokens_cannot_update_or_delete_whatever_the_role() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let f = fixture().await;
+    let tokens = [
+        ("admin", f.admin_a.clone()),
+        ("moderator", issue(&f, "esp_a", "mod", SpaceRole::Moderator)),
+        ("member", issue(&f, "esp_a", "mem", SpaceRole::Member)),
+        ("reader", issue(&f, "esp_a", "rea", SpaceRole::Reader)),
+    ];
+    // Every allowlisted memory path with the mutating verbs it must refuse.
+    let allowlisted = [
+        "/memory/search",
+        "/memory/get",
+        "/memory/add",
+        "/v1/memories",
+        "/v1/memories/search",
+        "/v1/memories/some-id",
+        "/v1/memories/some-id/outline",
+        "/mcp/tools/call",
+    ];
+    for (role, tok) in &tokens {
+        for p in allowlisted {
+            for m in ["DELETE", "PUT", "PATCH"] {
+                let (st, _) = send(&f.app, m, p, tok, Some(serde_json::json!({}))).await;
+                assert_eq!(st, StatusCode::FORBIDDEN, "{role} {m} {p}");
+            }
+        }
+        // Denied routes (not on the allowlist at all).
+        for (m, p) in [
+            ("POST", "/memory/export-pack"),
+            ("POST", "/memory/update"),
+            ("POST", "/memory/delete"),
+            ("DELETE", "/memory/evict"),
+            ("DELETE", "/v1/memories/some-id"),
+        ] {
+            let (st, _) = send(&f.app, m, p, tok, Some(serde_json::json!({}))).await;
+            assert_eq!(st, StatusCode::FORBIDDEN, "{role} {m} {p}");
+        }
+        // The outline route is allowlisted for reads: reaches the handler.
+        let (st, _) = send(&f.app, "GET", "/v1/memories/some-id/outline", tok, None).await;
+        assert_ne!(st, StatusCode::FORBIDDEN, "{role} outline");
+        assert_ne!(st, StatusCode::UNAUTHORIZED, "{role} outline");
+    }
 }
