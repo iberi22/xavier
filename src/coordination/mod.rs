@@ -10,6 +10,7 @@
 pub mod agent_registry;
 pub mod agents;
 pub mod core;
+pub mod event_log;
 pub mod events;
 pub mod message_bus;
 pub mod secrets;

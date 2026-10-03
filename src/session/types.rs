@@ -10,8 +10,8 @@ impl SessionEvent {
         self.content
             .as_ref()
             .map(|c| {
-                if c.len() > 200 {
-                    format!("{}...", &c[..200])
+                if c.chars().count() > 200 {
+                    format!("{}...", c.chars().take(200).collect::<String>())
                 } else {
                     c.clone()
                 }
