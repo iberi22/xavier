@@ -544,23 +544,30 @@ async fn link_filters_limit_what_is_visible() {
 
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
-async fn encrypted_linked_space_is_skipped_with_a_note() {
+async fn encrypted_linked_space_is_searched_server_side() {
     let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let f = fixture().await;
     seed(&f).await;
-    create_space(&f.manager, "esp_enc", "erin", true).await;
+    let tok = create_space(&f.manager, "esp_enc", "erin", true).await;
+    add_mem(&f, &tok, "notes/e", "encryptedonly kakapo").await;
     xavier::espacio::create_link(&f.manager, "esp_enc", "esp_a", None, None, None)
         .await
         .unwrap();
     grant(&f, serde_json::json!({})).await;
+    let r = search_linked(&f, &f.admin_a, "encryptedonly kakapo").await;
+    // WP13p: the encrypted space opens its own rows server-side.
+    assert!(results_text(&r).contains("encryptedonly"), "{r}");
+    assert!(sources(&r).iter().any(|s| s == "esp_enc"), "{r}");
+    // A locked encrypted space is skipped with a note; the rest still works.
+    f.manager.key_ring().unwrap().forget("esp_enc");
     let r = search_linked(&f, &f.admin_a, "betaonly wombat").await;
-    // The whole query still succeeds and the other link is served.
     assert!(results_text(&r).contains("betaonly"), "{r}");
+    assert!(!results_text(&r).contains("encryptedonly"), "{r}");
     let skipped = r["linked_skipped"].as_array().unwrap();
     assert!(
         skipped
             .iter()
-            .any(|s| s["space"] == "esp_enc" && s["reason"] == "EncryptionPending"),
+            .any(|s| s["space"] == "esp_enc" && s["reason"] == "Locked"),
         "{r}"
     );
 }

@@ -427,7 +427,7 @@ async fn isolation_matrix_over_real_http_and_across_restart() {
         "a non-root credential created a space"
     );
 
-    // --- encrypted space: memory is refused (501), not served in plaintext ---
+    // --- encrypted space: memory is served and sealed with the space's own key ---
     let (st, b) = d
         .call(
             Method::POST,
@@ -436,8 +436,8 @@ async fn isolation_matrix_over_real_http_and_across_restart() {
             Some(json!({"content": "secretc", "path": "c/1"})),
         )
         .await;
-    assert_eq!(st, StatusCode::NOT_IMPLEMENTED, "{b}");
-    let (st, _) = d
+    assert_eq!(st, StatusCode::OK, "{b}");
+    let (st, b) = d
         .call(
             Method::POST,
             "/memory/search",
@@ -445,11 +445,17 @@ async fn isolation_matrix_over_real_http_and_across_restart() {
             Some(json!({"query": "secretc"})),
         )
         .await;
-    assert_eq!(st, StatusCode::NOT_IMPLEMENTED);
-    assert!(
-        !home.join("state/spaces/esp_c/memory.sqlite").exists(),
-        "an encrypting space must not get a plaintext memory store"
-    );
+    assert_eq!(st, StatusCode::OK, "{b}");
+    assert!(b.to_string().contains("secretc"), "{b}");
+    let space_dir = home.join("state/spaces/esp_c");
+    for name in ["memory.sqlite", "memory.sqlite-wal"] {
+        if let Ok(bytes) = std::fs::read(space_dir.join(name)) {
+            assert!(
+                !bytes.windows(7).any(|w| w == b"secretc"),
+                "plaintext in {name} of an encrypting space"
+            );
+        }
+    }
 
     // --- trashed space: its token stops working at once ---
     let (st, b) = d

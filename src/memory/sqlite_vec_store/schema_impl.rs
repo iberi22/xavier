@@ -214,7 +214,7 @@ impl VecSqliteMemoryStore {
 
         let mut decrypted_records = Vec::new();
         for mut record in records {
-            if let Err(e) = super::at_rest::decrypt_record_in_place(&mut record) {
+            if let Err(e) = super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None) {
                 tracing::warn!(
                     "Failed to decrypt record {} during background reindexing: {}",
                     record.id,
