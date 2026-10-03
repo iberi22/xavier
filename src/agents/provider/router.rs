@@ -381,18 +381,31 @@ impl ProviderRouter {
 
     /// Resolves the local Ollama endpoint for a mini_expert route (e.g., `mini_expert:<id>`).
     pub fn resolve_mini_expert_endpoint(&self, model_or_expert: &str) -> String {
-        let name = model_or_expert
-            .strip_prefix("mini_expert:")
-            .or_else(|| model_or_expert.strip_prefix("mini_experts:"))
-            .unwrap_or(model_or_expert);
-
-        let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
-        if let Some(entry) = registry.get(name) {
-            if !entry.endpoint.is_empty() {
-                return entry.endpoint.clone();
+        match crate::agents::mini_experts::ExpertStore::open_default() {
+            Ok(store) => self.resolve_mini_expert_endpoint_with(&store, model_or_expert),
+            Err(e) => {
+                tracing::warn!("mini-expert store unavailable: {e}");
+                "http://localhost:11434".to_string()
             }
         }
+    }
 
+    /// Same as `resolve_mini_expert_endpoint` against an explicit registry store
+    /// (the SQLite store is the source of truth; the legacy JSON is imported into it).
+    pub fn resolve_mini_expert_endpoint_with(
+        &self,
+        store: &crate::agents::mini_experts::ExpertStore,
+        name: &str,
+    ) -> String {
+        let name = name
+            .strip_prefix("mini_expert:")
+            .or_else(|| name.strip_prefix("mini_experts:"))
+            .unwrap_or(name);
+        if let Ok(Some(rec)) = store.active(name) {
+            if !rec.endpoint.trim().is_empty() {
+                return rec.endpoint;
+            }
+        }
         "http://localhost:11434".to_string()
     }
 }
@@ -650,9 +663,34 @@ mod tests {
 
     #[test]
     fn test_mini_expert_route_resolution() {
+        use crate::agents::mini_experts::{ExpertStore, NewExpert};
+        let dir = tempfile::tempdir().unwrap();
+        let store = ExpertStore::open(dir.path().join(ExpertStore::DB_FILE)).unwrap();
         let router = ProviderRouter::new(ProviderKind::Local);
-        let endpoint = router.resolve_mini_expert_endpoint("mini_expert:f12");
-        assert_eq!(endpoint, "http://localhost:11434");
+        // Unknown expert -> local Ollama default.
+        assert_eq!(
+            router.resolve_mini_expert_endpoint_with(&store, "mini_expert:f12"),
+            "http://localhost:11434"
+        );
+        // CLI-registered expert (SQLite store) -> its persisted endpoint.
+        store
+            .add_version(
+                NewExpert {
+                    name: "f12".into(),
+                    endpoint: "http://gpu-box:11434/v1".into(),
+                    ..Default::default()
+                },
+                true,
+            )
+            .unwrap();
+        assert_eq!(
+            router.resolve_mini_expert_endpoint_with(&store, "mini_expert:f12"),
+            "http://gpu-box:11434/v1"
+        );
+        assert_eq!(
+            router.resolve_mini_expert_endpoint_with(&store, "f12"),
+            "http://gpu-box:11434/v1"
+        );
     }
 
     #[test]

@@ -44,6 +44,7 @@ pub fn outcome_payload(outcome: &AskOutcome) -> Value {
             "expert": expert,
             "version": outcome.version,
             "score": outcome.score,
+            "matched_by": outcome.matched_by,
         }),
         _ => json!({ "answer": null, "expert": "no expert", "version": null }),
     }
@@ -131,6 +132,8 @@ mod tests {
         assert_eq!(res["structuredContent"]["answer"], "42");
         assert_eq!(res["structuredContent"]["expert"], "math");
         assert_eq!(res["structuredContent"]["version"], "v1");
+        assert_eq!(res["structuredContent"]["matched_by"], "domain");
+        assert!(res["structuredContent"]["score"].is_null());
 
         assert!(run_ask_expert(&router, json!({"prompt": " "}))
             .await
