@@ -385,8 +385,8 @@ As a **user**, I can register my VPS as a private SWAL node over SSH, so that **
 **So that** I can satisfy data protection obligations while still benefiting from specialized model training.
 
 **Acceptance Criteria:**
-- [ ] AC-046.1: Training jobs produce a ZdrAuditEntry with pre/post volume hashes
-- [ ] AC-046.2: ZdrAuditEntry::verify() passes before job is marked ZDR-compliant
+- [ ] ~~AC-046.1: Training jobs produce a ZdrAuditEntry with pre/post volume hashes~~ (superseded 2026-10: Local + manual-notebook backends only)
+- [ ] ~~AC-046.2: ZdrAuditEntry::verify() passes before job is marked ZDR-compliant~~ (superseded 2026-10: see AC-046.1)
 - [ ] AC-046.3: ZDR audit log is stored locally with CONFIDENTIAL clearance level
 - [ ] AC-046.4: Enterprise plan users can select RunPod or LambdaLabs as compute provider
 - [ ] AC-046.5: Failed ZDR verification blocks future jobs from that provider until resolved

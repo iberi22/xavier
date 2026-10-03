@@ -11,9 +11,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::process::{Child, Command};
 
 pub const AUDIT_PASS_STATUSES: [&str; 4] = ["passed", "pass", "approved", "ok"];
+/// Privacy levels that may leave the node. Mirrors `REMOTE_OK_LEVELS` in
+/// `scripts/training/expert_core.py`; anything else (P4, unknown) stays local.
+pub const REMOTE_OK_LEVELS: [&str; 4] = ["P0", "P1", "P2", "P3"];
 
 /// Privacy facts about a bundle, read from `bundle_manifest.json` and
 /// `anonymization_audit.json`. Absent fields stay `None`/`false` and make
@@ -32,23 +36,37 @@ impl BundleManifest {
             &std::fs::read(&mpath).with_context(|| format!("reading {}", mpath.display()))?,
         )
         .with_context(|| format!("parsing {}", mpath.display()))?;
+        let manifest_level = m
+            .get("privacy_level")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_uppercase());
         let audit_passed = match std::fs::read(bundle_dir.join("anonymization_audit.json")) {
             Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
                 .map(|a| {
-                    a.get("passed").and_then(|v| v.as_bool()) == Some(true)
+                    let passed = a.get("passed").and_then(|v| v.as_bool()) == Some(true)
                         || a.get("status")
                             .and_then(|v| v.as_str())
                             .map(|s| AUDIT_PASS_STATUSES.contains(&s.to_lowercase().as_str()))
-                            .unwrap_or(false)
+                            .unwrap_or(false);
+                    // The audit must not contradict the manifest: a local_only
+                    // audit, or a different/non-remote level, voids the pass.
+                    let audit_local_ok =
+                        a.get("local_only").and_then(|v| v.as_bool()) != Some(true);
+                    let audit_level_ok = match a.get("privacy_level").and_then(|v| v.as_str()) {
+                        None => true,
+                        Some(l) => {
+                            let l = l.trim().to_uppercase();
+                            REMOTE_OK_LEVELS.contains(&l.as_str())
+                                && manifest_level.as_deref() == Some(l.as_str())
+                        }
+                    };
+                    passed && audit_local_ok && audit_level_ok
                 })
                 .unwrap_or(false),
             Err(_) => false,
         };
         Ok(Self {
-            privacy_level: m
-                .get("privacy_level")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_uppercase()),
+            privacy_level: manifest_level,
             local_only: m.get("local_only").and_then(|v| v.as_bool()),
             audit_passed,
         })
@@ -158,7 +176,37 @@ fn script_args(command: &[String], job: &TrainingJob, backend: &str, out: &Path)
         .arg(out)
         .arg("--backend")
         .arg(backend);
+    // Own process group so cancel/timeout can kill grandchildren too.
+    #[cfg(unix)]
+    c.process_group(0);
     c
+}
+
+/// Signals a whole process group (`pgid` = the leader's pid). Best effort.
+#[cfg(unix)]
+#[allow(unsafe_code)] // single libc::kill call; the crate has no safe killpg wrapper
+fn signal_group(pgid: u32, sig: i32) {
+    if pgid > 1 {
+        // SAFETY: plain syscall; a negative pid targets the group.
+        unsafe {
+            libc::kill(-(pgid as i32), sig);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_group(_pgid: u32, _sig: i32) {}
+
+/// SIGTERM the group now; SIGKILL it after `grace` (reaping the leader).
+fn kill_group_escalating(mut child: Child, grace: Duration) {
+    let Some(pgid) = child.id() else { return };
+    signal_group(pgid, libc::SIGTERM);
+    tokio::spawn(async move {
+        let _ = tokio::time::timeout(grace, child.wait()).await;
+        // Also reaches members that ignored SIGTERM or outlived the leader.
+        signal_group(pgid, libc::SIGKILL);
+        let _ = child.wait().await;
+    });
 }
 
 fn open_log(jobs_root: &Path, id: &str) -> Result<(std::fs::File, std::fs::File)> {
@@ -170,6 +218,12 @@ fn open_log(jobs_root: &Path, id: &str) -> Result<(std::fs::File, std::fs::File)
     Ok((f.try_clone()?, f))
 }
 
+/// `try_wait` that also returns the pid captured before the child is reaped.
+fn poll_child(child: &mut Child) -> Result<Option<(std::process::ExitStatus, Option<u32>)>> {
+    let pid = child.id();
+    Ok(child.try_wait()?.map(|st| (st, pid)))
+}
+
 fn map_exit(code: Option<i32>) -> JobPhase {
     match code {
         Some(0) => JobPhase::Succeeded,
@@ -179,8 +233,10 @@ fn map_exit(code: Option<i32>) -> JobPhase {
     }
 }
 
+pub const DEFAULT_KILL_GRACE: Duration = Duration::from_secs(5);
+
 enum Entry {
-    Running(Child),
+    Running(Child, Instant),
     Done(JobPhase),
 }
 
@@ -189,6 +245,9 @@ pub struct LocalBackend {
     command: Vec<String>,
     jobs_root: PathBuf,
     procs: Arc<Mutex<HashMap<String, Entry>>>,
+    /// Hard deadline per job; `None` = unlimited.
+    timeout: Option<Duration>,
+    grace: Duration,
 }
 
 impl LocalBackend {
@@ -199,7 +258,16 @@ impl LocalBackend {
             command,
             jobs_root,
             procs: Arc::new(Mutex::new(HashMap::new())),
+            timeout: None,
+            grace: DEFAULT_KILL_GRACE,
         }
+    }
+
+    /// `timeout`: max wall-clock per job; `grace`: SIGTERM -> SIGKILL delay.
+    pub fn with_limits(mut self, timeout: Option<Duration>, grace: Duration) -> Self {
+        self.timeout = timeout;
+        self.grace = grace;
+        self
     }
 }
 
@@ -226,7 +294,7 @@ impl ComputeBackend for LocalBackend {
         self.procs
             .lock()
             .map_err(|_| anyhow!("poisoned"))?
-            .insert(job.id.clone(), Entry::Running(child));
+            .insert(job.id.clone(), Entry::Running(child, Instant::now()));
         Ok(RemoteRef(job.id.clone()))
     }
 
@@ -235,9 +303,28 @@ impl ComputeBackend for LocalBackend {
         let phase = match procs.get_mut(&r.0) {
             None => JobPhase::Failed("process lost (daemon restarted?)".into()),
             Some(Entry::Done(p)) => p.clone(),
-            Some(Entry::Running(child)) => match child.try_wait()? {
-                None => return Ok(JobPhase::Running),
-                Some(st) => map_exit(st.code()),
+            Some(Entry::Running(child, started)) => match poll_child(child)? {
+                None => match self.timeout {
+                    Some(t) if started.elapsed() > t => {
+                        let secs = t.as_secs();
+                        if let Some(Entry::Running(child, _)) = procs.remove(&r.0) {
+                            kill_group_escalating(child, self.grace);
+                        }
+                        let phase = JobPhase::Failed(format!(
+                            "timed out after {secs}s (XAVIER_TRAIN_TIMEOUT)"
+                        ));
+                        procs.insert(r.0.clone(), Entry::Done(phase.clone()));
+                        return Ok(phase);
+                    }
+                    _ => return Ok(JobPhase::Running),
+                },
+                Some((st, pid)) => {
+                    // Leader exited: sweep any stragglers left in its group.
+                    if let Some(pid) = pid {
+                        signal_group(pid, libc::SIGKILL);
+                    }
+                    map_exit(st.code())
+                }
             },
         };
         procs.insert(r.0.clone(), Entry::Done(phase.clone()));
@@ -258,8 +345,8 @@ impl ComputeBackend for LocalBackend {
 
     async fn cancel(&self, r: &RemoteRef) -> Result<()> {
         let mut procs = self.procs.lock().map_err(|_| anyhow!("poisoned"))?;
-        if let Some(Entry::Running(child)) = procs.get_mut(&r.0) {
-            child.start_kill()?;
+        if let Some(Entry::Running(child, _)) = procs.remove(&r.0) {
+            kill_group_escalating(child, self.grace);
         }
         procs.insert(r.0.clone(), Entry::Done(JobPhase::Cancelled));
         Ok(())
@@ -271,12 +358,23 @@ impl ComputeBackend for LocalBackend {
 pub struct ManualNotebookBackend {
     command: Vec<String>,
     jobs_root: PathBuf,
+    timeout: Option<Duration>,
 }
 
 impl ManualNotebookBackend {
     pub fn new(command: Vec<String>, jobs_root: PathBuf) -> Self {
         assert!(!command.is_empty(), "empty trainer command");
-        Self { command, jobs_root }
+        Self {
+            command,
+            jobs_root,
+            timeout: None,
+        }
+    }
+
+    /// Deadline for the notebook generation script.
+    pub fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     pub fn artifacts_dir(&self, id: &str) -> PathBuf {
@@ -290,12 +388,12 @@ impl ComputeBackend for ManualNotebookBackend {
         "notebook"
     }
 
-    /// Fail closed: needs an explicit `local_only: false`, a known non-P4
-    /// privacy level and a passed anonymization audit.
+    /// Fail closed (allowlist): needs an explicit `local_only: false`, a
+    /// privacy level in exactly P0-P3 and a passed anonymization audit.
     fn accepts(&self, b: &BundleManifest) -> bool {
         b.local_only == Some(false)
             && b.audit_passed
-            && matches!(b.privacy_level.as_deref(), Some(l) if l != "P4")
+            && matches!(b.privacy_level.as_deref(), Some(l) if REMOTE_OK_LEVELS.contains(&l))
     }
 
     async fn submit(&self, job: &TrainingJob) -> Result<RemoteRef> {
@@ -305,13 +403,28 @@ impl ComputeBackend for ManualNotebookBackend {
         }
         let (out, err) = open_log(&self.jobs_root, &job.id)?;
         let out_dir = job_dir(&self.jobs_root, &job.id).join("notebook");
-        let st = script_args(&self.command, job, "notebook", &out_dir)
+        let mut child = script_args(&self.command, job, "notebook", &out_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::from(out))
             .stderr(Stdio::from(err))
-            .status()
-            .await
+            .kill_on_drop(true)
+            .spawn()
             .with_context(|| format!("spawning {:?}", self.command))?;
+        let pgid = child.id();
+        let waited = match self.timeout {
+            Some(t) => tokio::time::timeout(t, child.wait()).await,
+            None => Ok(child.wait().await),
+        };
+        let st = match waited {
+            Ok(r) => r?,
+            Err(_) => {
+                if let Some(p) = pgid {
+                    signal_group(p, libc::SIGKILL);
+                }
+                let _ = child.wait().await;
+                bail!("notebook generation timed out (XAVIER_TRAIN_TIMEOUT)");
+            }
+        };
         if !st.success() {
             bail!(
                 "notebook generation failed (exit {:?}); see logs",
@@ -365,7 +478,11 @@ pub(crate) mod test_support {
 
     /// Fake trainer. Parses `--out`; behaviour chosen by `body`.
     pub fn write_script(dir: &Path, body: &str) -> Vec<String> {
-        let p = dir.join("fake_train.sh");
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let p = dir.join(format!(
+            "fake_train_{}.sh",
+            N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
         std::fs::write(
             &p,
             format!(
@@ -501,5 +618,154 @@ mod tests {
         assert_eq!(nb.poll(&r).await.unwrap(), JobPhase::AwaitingArtifact); // report missing
         std::fs::write(dir.join("train_report.json"), b"{}").unwrap();
         assert_eq!(nb.poll(&r).await.unwrap(), JobPhase::Succeeded);
+    }
+
+    #[test]
+    fn notebook_allowlist_levels_and_audit_crosscheck() {
+        let t = tempfile::tempdir().unwrap();
+        let nb = ManualNotebookBackend::new(vec!["true".into()], t.path().join("jobs"));
+        let pass = r#"{"passed":true}"#;
+        let check = |name: &str, m: &str, a: &str| {
+            let b = write_bundle(&t.path().join(name), m, Some(a));
+            nb.accepts(&BundleManifest::load(&b).unwrap())
+        };
+        // unknown / non-allowlisted levels must be refused (not just P4)
+        for (i, lvl) in ["P5", "P9", "SECRET", "", "P", "P4", "PUBLIC"]
+            .iter()
+            .enumerate()
+        {
+            let m = format!(r#"{{"privacy_level":"{lvl}","local_only":false}}"#);
+            assert!(
+                !check(&format!("lvl{i}"), &m, pass),
+                "level {lvl:?} must be refused"
+            );
+        }
+        for (i, lvl) in ["P0", "P1", "P2", "P3", "p3"].iter().enumerate() {
+            let m = format!(r#"{{"privacy_level":"{lvl}","local_only":false}}"#);
+            assert!(
+                check(&format!("ok{i}"), &m, pass),
+                "level {lvl:?} must be accepted"
+            );
+        }
+        let ok = r#"{"privacy_level":"P3","local_only":false}"#;
+        // the audit may not contradict the manifest
+        assert!(!check("a1", ok, r#"{"passed":true,"local_only":true}"#));
+        assert!(!check("a2", ok, r#"{"passed":true,"privacy_level":"P4"}"#));
+        assert!(!check("a3", ok, r#"{"passed":true,"privacy_level":"P2"}"#));
+        assert!(check(
+            "a4",
+            ok,
+            r#"{"passed":true,"privacy_level":"P3","local_only":false}"#
+        ));
+    }
+
+    #[cfg(unix)]
+    #[allow(unsafe_code)]
+    fn kill_pid(pid: i32) {
+        // SAFETY: plain syscall on a pid this test spawned.
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+    }
+
+    #[cfg(unix)]
+    fn pid_alive(pid: i32) -> bool {
+        match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Ok(s) => s
+                .rsplit(") ")
+                .next()
+                .map(|r| !r.starts_with('Z'))
+                .unwrap_or(false),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(unix)]
+    async fn gc_pid(jobs: &Path, id: &str) -> i32 {
+        let f = job_dir(jobs, id).join("out").join("gc.pid");
+        for _ in 0..200 {
+            if let Ok(s) = std::fs::read_to_string(&f) {
+                if let Ok(p) = s.trim().parse() {
+                    return p;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("grandchild pid never written");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancel_kills_whole_process_group() {
+        let t = tempfile::tempdir().unwrap();
+        let repo = JobRepository::open_in_memory().unwrap();
+        let bundle = write_bundle(
+            t.path(),
+            r#"{"privacy_level":"P3","local_only":false}"#,
+            None,
+        );
+        let jobs = t.path().join("jobs");
+        // plain grandchild, and one that ignores SIGTERM (needs the SIGKILL escalation)
+        for body in [
+            "sleep 300 & echo $! > \"$OUT/gc.pid\"; wait",
+            "trap '' TERM; sleep 300 & echo $! > \"$OUT/gc.pid\"; wait",
+        ] {
+            let b = LocalBackend::new(write_script(t.path(), body), jobs.clone())
+                .with_limits(None, Duration::from_millis(200));
+            let j = job(&repo, &bundle, "local");
+            let r = b.submit(&j).await.unwrap();
+            let gc = gc_pid(&jobs, &j.id).await;
+            assert!(pid_alive(gc));
+            b.cancel(&r).await.unwrap();
+            let mut gone = false;
+            for _ in 0..200 {
+                if !pid_alive(gc) {
+                    gone = true;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            if !gone {
+                signal_group(gc as u32, libc::SIGKILL); // do not leak on failure
+                kill_pid(gc);
+            }
+            assert!(gone, "grandchild survived cancel ({body})");
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timeout_kills_group_and_fails_job() {
+        let t = tempfile::tempdir().unwrap();
+        let repo = JobRepository::open_in_memory().unwrap();
+        let bundle = write_bundle(
+            t.path(),
+            r#"{"privacy_level":"P3","local_only":false}"#,
+            None,
+        );
+        let jobs = t.path().join("jobs");
+        let b = LocalBackend::new(
+            write_script(t.path(), "sleep 300 & echo $! > \"$OUT/gc.pid\"; wait"),
+            jobs.clone(),
+        )
+        .with_limits(Some(Duration::from_millis(300)), Duration::from_millis(200));
+        let j = job(&repo, &bundle, "local");
+        let r = b.submit(&j).await.unwrap();
+        let gc = gc_pid(&jobs, &j.id).await;
+        let phase = wait_done(&b, &r).await;
+        assert!(
+            matches!(&phase, JobPhase::Failed(m) if m.contains("timed out")),
+            "{phase:?}"
+        );
+        let mut gone = false;
+        for _ in 0..200 {
+            if !pid_alive(gc) {
+                gone = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        if !gone {
+            kill_pid(gc);
+        }
+        assert!(gone, "grandchild survived timeout");
     }
 }

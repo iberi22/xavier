@@ -229,6 +229,31 @@ impl JobRepository {
         Ok(n > 0)
     }
 
+    /// Startup reconciliation: `queued`/`running` jobs lost their driver (and
+    /// child process) with the previous daemon, so mark them failed.
+    /// `awaiting_artifact` is left alone: it legitimately waits for a human
+    /// upload, and the artifacts on disk survive a restart. Returns the count.
+    pub fn reconcile_after_restart(&self) -> Result<usize> {
+        let c = self.conn.lock().map_err(|_| anyhow!("jobs db poisoned"))?;
+        Ok(c.execute(
+            "UPDATE training_jobs SET status = 'failed', error = 'daemon restarted', \
+                updated_at = ?1 WHERE status IN ('queued','running')",
+            params![now()],
+        )?)
+    }
+
+    /// Jobs of `backend` that still occupy compute (`queued` or `running`).
+    pub fn count_active(&self, backend: &str) -> Result<usize> {
+        let c = self.conn.lock().map_err(|_| anyhow!("jobs db poisoned"))?;
+        let n: i64 = c.query_row(
+            "SELECT COUNT(*) FROM training_jobs WHERE backend = ?1 \
+             AND status IN ('queued','running')",
+            params![backend],
+            |r| r.get(0),
+        )?;
+        Ok(n as usize)
+    }
+
     /// Marks a non-terminal job cancelled. Returns false if already terminal.
     pub fn cancel(&self, id: &str) -> Result<bool> {
         self.update(
@@ -289,5 +314,41 @@ mod tests {
             JobStatus::Cancelled
         );
         assert!(repo.get("nope").unwrap().is_none());
+    }
+
+    #[test]
+    fn reconcile_fails_stale_but_keeps_awaiting_and_terminal() {
+        let repo = JobRepository::open_in_memory().unwrap();
+        let mk = |st: JobStatus| {
+            let j = repo.create(new_job()).unwrap();
+            if st != JobStatus::Queued {
+                repo.update(
+                    &j.id,
+                    JobUpdate {
+                        status: Some(st),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            }
+            j.id
+        };
+        let q = mk(JobStatus::Queued);
+        let r = mk(JobStatus::Running);
+        let a = mk(JobStatus::AwaitingArtifact);
+        let s = mk(JobStatus::Succeeded);
+        assert_eq!(repo.count_active("local").unwrap(), 2);
+        assert_eq!(repo.reconcile_after_restart().unwrap(), 2);
+        for id in [&q, &r] {
+            let j = repo.get(id).unwrap().unwrap();
+            assert_eq!(j.status, JobStatus::Failed);
+            assert_eq!(j.error.as_deref(), Some("daemon restarted"));
+        }
+        assert_eq!(
+            repo.get(&a).unwrap().unwrap().status,
+            JobStatus::AwaitingArtifact
+        );
+        assert_eq!(repo.get(&s).unwrap().unwrap().status, JobStatus::Succeeded);
+        assert_eq!(repo.count_active("local").unwrap(), 0);
     }
 }

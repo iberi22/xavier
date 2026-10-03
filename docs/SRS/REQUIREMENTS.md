@@ -947,8 +947,8 @@ Enterprise users SHALL have access to ComputeProvider abstraction (Local, ColabP
 VastAI, LambdaLabs) with cryptographically verifiable Zero Data Retention audit trail.
 
 ### Requirements
-- REQ-051.1: ZdrAuditEntry SHALL include pre/post volume hashes signed by the provider
-- REQ-051.2: Xavier SHALL verify ZdrAuditEntry::verify() before marking a TrainingJob as ZDR-compliant
+- REQ-051.1: (SUPERSEDED 2026-10: training uses only the Local and manual-notebook backends; no provider-signed ZDR audit.) ZdrAuditEntry SHALL include pre/post volume hashes signed by the provider
+- REQ-051.2: (SUPERSEDED 2026-10: see REQ-051.1.) Xavier SHALL verify ZdrAuditEntry::verify() before marking a TrainingJob as ZDR-compliant
 - REQ-051.3: ColabPro provider SHALL require explicit Google OAuth token (not stored in plaintext)
 - REQ-051.4: Enterprise plan SHALL have access to RunPod and LambdaLabs providers
 - REQ-051.5: Free/Pro plans SHALL only access Local compute provider
