@@ -12,8 +12,9 @@
 //! tables. Deleting a space is a directory delete.
 //!
 //! Encryption seam: message content passes through a [`RecordCodec`]. The
-//! default is plaintext; WP-13j supplies an AEAD codec via
-//! [`SpaceStores::with_codec`] without touching the managers.
+//! default is plaintext; WP-13j supplies an AEAD codec per space through a
+//! [`KeyRing`] ([`SpaceStores::with_key_ring`]): message content is sealed
+//! with the space data key and a locked space refuses every store access.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -26,6 +27,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use super::channel::ChannelMessage;
 use super::invite::{SpaceInvite, SpaceRole};
+use super::keys::{KeyRing, NodeKek};
 use super::manager::SpaceError;
 use super::permissions::SpaceMembership;
 
@@ -499,6 +501,9 @@ pub struct SpaceStores {
     /// `{root}/spaces`; `None` means in-memory (tests).
     spaces_dir: Option<PathBuf>,
     codec: Arc<dyn RecordCodec>,
+    /// Per-space keys (WP-13j). When set, each space gets its own keyed codec
+    /// and locked spaces are refused.
+    keys: Option<Arc<KeyRing>>,
     open: Mutex<HashMap<String, Arc<SpaceStore>>>,
 }
 
@@ -507,6 +512,7 @@ impl Default for SpaceStores {
         Self {
             spaces_dir: None,
             codec: Arc::new(PlaintextCodec),
+            keys: None,
             open: Mutex::new(HashMap::new()),
         }
     }
@@ -531,8 +537,25 @@ impl SpaceStores {
         Arc::new(Self {
             spaces_dir: Some(root.as_ref().join("spaces")),
             codec,
+            keys: None,
             open: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Persistent stores with per-space envelope keys (WP-13j). `node`
+    /// supplies the node-bound KEK (injected, so tests need no master key).
+    pub fn with_key_ring(root: impl AsRef<Path>, node: Arc<dyn NodeKek>) -> Arc<Self> {
+        let spaces_dir = root.as_ref().join("spaces");
+        Arc::new(Self {
+            keys: Some(KeyRing::new(spaces_dir.clone(), node)),
+            spaces_dir: Some(spaces_dir),
+            ..Self::default()
+        })
+    }
+
+    /// The key ring, when per-space keys are enabled.
+    pub fn key_ring(&self) -> Option<Arc<KeyRing>> {
+        self.keys.clone()
     }
 
     pub fn is_persistent(&self) -> bool {
@@ -557,12 +580,20 @@ impl SpaceStores {
             }
             None => Connection::open_in_memory()?,
         };
-        Ok(Arc::new(SpaceStore::from_conn(conn, self.codec.clone())?))
+        let codec = match &self.keys {
+            Some(ring) => ring.codec(space_id, "message"),
+            None => self.codec.clone(),
+        };
+        Ok(Arc::new(SpaceStore::from_conn(conn, codec)?))
     }
 
     /// Store for a space, creating directory and database when missing.
     pub fn get(&self, space_id: &str) -> Result<Arc<SpaceStore>> {
         validate_space_id(space_id)?;
+        if let Some(ring) = &self.keys {
+            // Locked: no store access at all, never a plaintext fallback.
+            ring.check_unlocked(space_id)?;
+        }
         if let Some(s) = self.cache().get(space_id) {
             return Ok(s.clone());
         }

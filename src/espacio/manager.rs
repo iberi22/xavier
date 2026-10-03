@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::invite::SpaceRole;
+use super::keys::{NodeKek, RecoveryCode, UnlockMode};
 use super::permissions::SpaceMembership;
 use super::store::{self, SpaceStores};
 
@@ -31,6 +32,26 @@ pub struct CreateSpaceRequest {
     /// Whether the space is public
     #[serde(default)]
     pub is_public: bool,
+}
+
+/// Key options for a new space (only used when the manager has a key ring).
+#[derive(Debug, Clone)]
+pub struct KeyOptions {
+    pub mode: UnlockMode,
+    /// Required for `password_required`, optional for `node_unlock`.
+    pub password: Option<String>,
+    /// Encrypt message content with the space key (default true).
+    pub encrypt_records: bool,
+}
+
+impl Default for KeyOptions {
+    fn default() -> Self {
+        Self {
+            mode: UnlockMode::NodeUnlock,
+            password: None,
+            encrypt_records: true,
+        }
+    }
 }
 
 /// Information about a Space (Telegram-like group)
@@ -150,7 +171,13 @@ impl SpaceManager {
 
     /// Like [`SpaceManager::open`] but sharing an existing store registry
     /// (so channel and invite managers see the same open databases).
+    ///
+    /// When the stores carry a key ring, every `node_unlock` space is
+    /// unlocked here; `password_required` spaces stay locked.
     pub fn open_with_stores(stores: Arc<SpaceStores>) -> Self {
+        if let Some(ring) = stores.key_ring() {
+            ring.auto_unlock_all();
+        }
         let base_dir = stores
             .spaces_dir()
             .map(Path::to_path_buf)
@@ -162,6 +189,20 @@ impl SpaceManager {
             base_dir,
             stores,
         }
+    }
+
+    /// Open a persistent manager with per-space keys (WP-13j). `node`
+    /// supplies the node-bound KEK; production passes
+    /// [`super::keys::MasterNodeKek`], tests inject a static one. New spaces
+    /// get a keystore and encrypted messages; `node_unlock` spaces unlock at
+    /// open.
+    pub fn open_with_keys(root: impl AsRef<Path>, node: Arc<dyn NodeKek>) -> Self {
+        Self::open_with_stores(SpaceStores::with_key_ring(root.as_ref(), node))
+    }
+
+    /// Per-space key ring, when enabled (unlock / change password).
+    pub fn key_ring(&self) -> Option<Arc<super::keys::KeyRing>> {
+        self.stores.key_ring()
     }
 
     /// Shared per-space store registry (hand it to `ChannelManager` /
@@ -275,7 +316,9 @@ impl SpaceManager {
         format!("xavier://{}/{}/{}", space_id, app_id, instance_id)
     }
 
-    /// Create a new isolated Space
+    /// Create a new isolated Space. With a key ring the space gets the
+    /// default keys (`node_unlock`, encrypted records) and the recovery code
+    /// is discarded; use [`SpaceManager::create_with_keys`] to receive it.
     pub async fn create(
         &self,
         id: String,
@@ -284,6 +327,29 @@ impl SpaceManager {
         owner_node: String,
         is_public: bool,
     ) -> Result<SpaceInfo> {
+        self.create_with_keys(
+            id,
+            name,
+            description,
+            owner_node,
+            is_public,
+            KeyOptions::default(),
+        )
+        .await
+        .map(|(info, _)| info)
+    }
+
+    /// Create a Space and return its one-time recovery code (`None` when the
+    /// manager has no key ring). The code is not stored anywhere.
+    pub async fn create_with_keys(
+        &self,
+        id: String,
+        name: String,
+        description: String,
+        owner_node: String,
+        is_public: bool,
+        opts: KeyOptions,
+    ) -> Result<(SpaceInfo, Option<RecoveryCode>)> {
         Self::validate_id(&id)?;
         let mut guard = self.spaces.write().await;
         if guard.contains_key(&id) || self.unavailable.read().await.contains_key(&id) {
@@ -293,6 +359,17 @@ impl SpaceManager {
         tokio::fs::create_dir_all(&storage_path)
             .await
             .map_err(|e| anyhow!(SpaceError::Storage(e.to_string())))?;
+        // Keys first: nothing is ever written to the database unencrypted.
+        let mut recovery = None;
+        if let Some(ring) = self.stores.key_ring() {
+            let (_, code) = ring.create_keys_with(
+                &id,
+                opts.mode,
+                opts.password.as_deref(),
+                opts.encrypt_records,
+            )?;
+            recovery = Some(code);
+        }
 
         let info = SpaceInfo {
             id: id.clone(),
@@ -318,10 +395,13 @@ impl SpaceManager {
         };
         if let Err(e) = persist() {
             self.stores.evict(&id);
+            if let Some(ring) = self.stores.key_ring() {
+                ring.discard_keys(&id);
+            }
             return Err(anyhow!(SpaceError::Storage(e.to_string())));
         }
         guard.insert(id, info.clone());
-        Ok(info)
+        Ok((info, recovery))
     }
 
     /// Get a Space by id
@@ -359,6 +439,9 @@ impl SpaceManager {
             .ok_or_else(|| anyhow!(SpaceError::NotFound(id.to_string())))?;
         // Close the database handle, then best-effort delete the directory
         self.stores.evict(id);
+        if let Some(ring) = self.stores.key_ring() {
+            ring.forget(id);
+        }
         let _ = tokio::fs::remove_dir_all(&info.storage_path).await;
         Ok(())
     }
@@ -728,5 +811,193 @@ mod persistence_tests {
         mgr.delete("esp_a").await.unwrap();
         assert!(!tmp.path().join("spaces/esp_a").exists());
         assert!(SpaceManager::open(tmp.path()).list().await.is_empty());
+    }
+
+    // ---- WP-13j: keyed spaces ----
+
+    use crate::espacio::keys::{KeysError, StaticNodeKek};
+
+    const SECRET_TEXT: &str = "top-secret-plaintext-marker-42";
+    const PW: &str = "correct horse battery";
+
+    fn node() -> Arc<dyn NodeKek> {
+        Arc::new(StaticNodeKek::new([9u8; 32]))
+    }
+
+    fn raw_messages(root: &Path, id: &str) -> Vec<String> {
+        let conn = rusqlite::Connection::open(root.join("spaces").join(id).join("espacio.sqlite"))
+            .unwrap();
+        let mut stmt = conn
+            .prepare("SELECT content FROM messages ORDER BY seq")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        rows
+    }
+
+    fn is_locked_err(e: &anyhow::Error) -> bool {
+        matches!(e.downcast_ref::<KeysError>(), Some(KeysError::Locked(_)))
+    }
+
+    async fn keyed(root: &Path, id: &str, opts: KeyOptions) -> Option<RecoveryCode> {
+        let mgr = SpaceManager::open_with_keys(root, node());
+        let (_, code) = mgr
+            .create_with_keys(
+                id.into(),
+                "n".into(),
+                "".into(),
+                "xv1_o".into(),
+                false,
+                opts,
+            )
+            .await
+            .unwrap();
+        let ch = ChannelManager::with_stores(mgr.stores());
+        ch.try_post(id.into(), "xv1_o".into(), SECRET_TEXT.into())
+            .await
+            .unwrap();
+        code
+    }
+
+    #[tokio::test]
+    async fn encrypted_messages_not_plaintext_on_disk_and_node_unlock_reopens() {
+        let tmp = tempfile::tempdir().unwrap();
+        let code = keyed(tmp.path(), "esp_a", KeyOptions::default()).await;
+        assert!(code.is_some());
+
+        let rows = raw_messages(tmp.path(), "esp_a");
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].contains(SECRET_TEXT));
+        assert!(rows[0].starts_with("xr1:"));
+        // no secrets in the descriptor
+        let desc = std::fs::read_to_string(tmp.path().join("spaces/esp_a/space.json")).unwrap();
+        assert!(!desc.contains("xr1:") && !desc.to_lowercase().contains("key"));
+
+        // node_unlock opens automatically after reopen
+        let mgr = SpaceManager::open_with_keys(tmp.path(), node());
+        assert!(!mgr.key_ring().unwrap().is_locked("esp_a"));
+        let ch = ChannelManager::with_stores(mgr.stores());
+        let all = ch.list_all("esp_a").await;
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].content, SECRET_TEXT);
+    }
+
+    #[tokio::test]
+    async fn password_required_space_locked_after_reopen_until_unlocked() {
+        let tmp = tempfile::tempdir().unwrap();
+        let code = keyed(
+            tmp.path(),
+            "esp_p",
+            KeyOptions {
+                mode: UnlockMode::PasswordRequired,
+                password: Some(PW.into()),
+                encrypt_records: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        let mgr = SpaceManager::open_with_keys(tmp.path(), node());
+        let ring = mgr.key_ring().unwrap();
+        assert!(ring.is_locked("esp_p"));
+        let ch = ChannelManager::with_stores(mgr.stores());
+        let e = ch
+            .try_post("esp_p".into(), "x".into(), "must not store".into())
+            .await
+            .unwrap_err();
+        assert!(is_locked_err(&e));
+        assert!(mgr.stores().get("esp_p").is_err());
+        assert!(mgr
+            .add_member("esp_p", "xv1_m", SpaceRole::Member)
+            .await
+            .is_err());
+        // locked reads yield nothing, never plaintext
+        assert!(ch.list_all("esp_p").await.is_empty());
+        assert_eq!(raw_messages(tmp.path(), "esp_p").len(), 1);
+
+        assert!(ring
+            .unlock_with_password("esp_p", "wrong password!!")
+            .is_err());
+        assert!(ring.is_locked("esp_p"));
+
+        // recovery code opens it and resets the password
+        let h = ring.unlock_with_recovery("esp_p", code.expose()).unwrap();
+        ring.change_password("esp_p", &h, "fresh password 123")
+            .unwrap();
+        assert_eq!(ch.list_all("esp_p").await[0].content, SECRET_TEXT);
+
+        let mgr2 = SpaceManager::open_with_keys(tmp.path(), node());
+        let ring2 = mgr2.key_ring().unwrap();
+        assert!(ring2.is_locked("esp_p"));
+        assert!(ring2.unlock_with_password("esp_p", PW).is_err());
+        ring2
+            .unlock_with_password("esp_p", "fresh password 123")
+            .unwrap();
+        let ch2 = ChannelManager::with_stores(mgr2.stores());
+        assert_eq!(ch2.list_all("esp_p").await[0].content, SECRET_TEXT);
+    }
+
+    #[tokio::test]
+    async fn encrypt_records_false_stores_plain_and_wrong_node_key_stays_locked() {
+        let tmp = tempfile::tempdir().unwrap();
+        keyed(
+            tmp.path(),
+            "esp_plain",
+            KeyOptions {
+                encrypt_records: false,
+                ..KeyOptions::default()
+            },
+        )
+        .await;
+        assert_eq!(raw_messages(tmp.path(), "esp_plain")[0], SECRET_TEXT);
+
+        keyed(tmp.path(), "esp_enc", KeyOptions::default()).await;
+        let other: Arc<dyn NodeKek> = Arc::new(StaticNodeKek::new([1u8; 32]));
+        let mgr = SpaceManager::open_with_keys(tmp.path(), other);
+        assert!(mgr.key_ring().unwrap().is_locked("esp_enc"));
+        assert!(mgr.stores().get("esp_enc").is_err());
+    }
+
+    #[tokio::test]
+    async fn merged_messages_are_encrypted_too_and_delete_removes_keystore() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SpaceManager::open_with_keys(tmp.path(), node());
+        mgr.create("esp_m".into(), "n".into(), "".into(), "xv1_o".into(), false)
+            .await
+            .unwrap();
+        let ch = ChannelManager::with_stores(mgr.stores());
+        ch.merge(
+            "esp_m".into(),
+            vec![crate::espacio::channel::ChannelMessage {
+                seq: 1,
+                space_id: "esp_m".into(),
+                author: "a".into(),
+                content: SECRET_TEXT.into(),
+                created_at: Utc::now(),
+            }],
+        )
+        .await;
+        assert!(!raw_messages(tmp.path(), "esp_m")[0].contains(SECRET_TEXT));
+        assert_eq!(ch.list_all("esp_m").await[0].content, SECRET_TEXT);
+        mgr.delete("esp_m").await.unwrap();
+        assert!(!tmp.path().join("spaces/esp_m").exists());
+    }
+
+    #[tokio::test]
+    async fn manager_without_ring_keeps_legacy_plaintext() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = SpaceManager::open(tmp.path());
+        mgr.create("esp_l".into(), "n".into(), "".into(), "xv1_o".into(), false)
+            .await
+            .unwrap();
+        ChannelManager::with_stores(mgr.stores())
+            .try_post("esp_l".into(), "a".into(), "hi".into())
+            .await
+            .unwrap();
+        assert_eq!(raw_messages(tmp.path(), "esp_l")[0], "hi");
+        assert!(!tmp.path().join("spaces/esp_l/keystore.json").exists());
     }
 }

@@ -8,6 +8,7 @@ pub mod channel;
 pub mod context;
 pub mod graph;
 pub mod invite;
+pub mod keys;
 pub mod manager;
 pub mod marketplace;
 pub mod p2p;
@@ -21,7 +22,10 @@ pub use channel::{ChannelManager, ChannelMessage};
 pub use context::{ContextBridge, ContextEntry, ContextKind};
 pub use graph::{GraphEdge, GraphManager, GraphNode, GraphSnippet};
 pub use invite::{InviteManager, SpaceInvite, SpaceRole};
-pub use manager::{CreateSpaceRequest, SpaceError, SpaceInfo, SpaceManager};
+pub use keys::{
+    KeyHandle, KeyRing, KeysError, MasterNodeKek, NodeKek, RecoveryCode, StaticNodeKek, UnlockMode,
+};
+pub use manager::{CreateSpaceRequest, KeyOptions, SpaceError, SpaceInfo, SpaceManager};
 pub use marketplace::{folder_dataset, list_folder_pack, query_folder_pack, FolderEntry};
 pub use p2p::{ClosedNetwork, ClosedNetworkManager, EncryptedEnvelope};
 pub use pack::{Pack, PackManifest, PackMemory};
