@@ -8,6 +8,7 @@ pub mod session;
 pub mod telecom_tools;
 pub mod tools_context;
 pub mod tools_core;
+pub mod tools_expert;
 pub mod tools_memory;
 #[cfg(feature = "pageindex")]
 pub mod tools_pageindex;
