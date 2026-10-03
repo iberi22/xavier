@@ -341,6 +341,20 @@ All three must be set for the Planka integration to activate. Used for automatic
 
 ---
 
+## 16a. Training Jobs API
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `XAVIER_PYTHON` | `string` | `python3` | Interpreter used to run the trainer script |
+| `XAVIER_TRAIN_SCRIPT` | `path` | `scripts/training/train_expert.py` (resolved against the install root) | Trainer script |
+| `XAVIER_TRAIN_MAX_ARTIFACT_BYTES` | `u64` | `4294967296` | Max GGUF upload size for manual notebook jobs |
+| `XAVIER_TRAIN_TIMEOUT` | `u64` (seconds) | `21600` | Hard per-job wall-clock limit; the whole process group is killed. `0` disables |
+| `XAVIER_TRAIN_MAX_CONCURRENT` | `usize` | `1` | Max simultaneous queued/running local jobs (HTTP 429 beyond) |
+
+**Source**: `src/training/routes.rs`
+
+---
+
 ## 17. Rust Logging
 
 | Variable | Type | Default | Description |
