@@ -1309,7 +1309,18 @@ impl VecSqliteMemoryStore {
 
     /// Decomposed put step 3: SQLite INSERT or REPLACE into memory_records table and hash chain linking.
     pub fn put_store(&self, conn: &rusqlite::Connection, record: &MemoryRecord) -> Result<()> {
-        let content_hash = crate::crypto::hex_encode(Sha256::digest(record.content.as_bytes()));
+        // Chain hash of a private (XDK2) row is a keyed MAC: an unsalted hash
+        // of private content would allow dictionary confirmation. Fail closed
+        // when the key is unavailable (the write was already sealed with it).
+        let content_hash = if record
+            .encrypted_dek
+            .as_deref()
+            .is_some_and(super::at_rest::is_default_space_row)
+        {
+            super::at_rest::default_space_key()?.verify_mac("chain", record.content.as_bytes())
+        } else {
+            crate::crypto::hex_encode(Sha256::digest(record.content.as_bytes()))
+        };
 
         let prev_hash: Option<String> = {
             conn.query_row(
@@ -1367,8 +1378,8 @@ impl VecSqliteMemoryStore {
             ],
         )?;
 
-        // Plaintext classification index (not secret). Best effort: stores whose
-        // schema predates the column keep working.
+        // Plaintext classification index (not secret). A failure is an error: a
+        // private row must never be left without its classification.
         // Encrypted rows carry the level resolved before encryption; plaintext
         // rows are classified from their own metadata.
         let level = if record.encrypted_dek.is_some() {
@@ -1376,12 +1387,11 @@ impl VecSqliteMemoryStore {
         } else {
             super::at_rest::clearance_level_for(&record.metadata, &record.path)
         };
-        if let Err(e) = conn.execute(
+        conn.execute(
             "UPDATE memory_records SET clearance_level = ?1 WHERE id = ?2",
             params![level, record.id],
-        ) {
-            tracing::debug!("clearance_level not recorded: {e}");
-        }
+        )
+        .map_err(|e| anyhow::anyhow!("clearance_level not recorded: {e}"))?;
 
         graph::sync_memory_entities(conn, &record.workspace_id, record)?;
 

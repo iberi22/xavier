@@ -833,3 +833,581 @@ async fn semantic_dedup_on_xdk2_rows_merges_and_never_merges_a_locked_row() {
     let (content, _) = at_rest::open_default_space(&dek, "dd-1", &orig.0, &orig.1).unwrap();
     assert_eq!(content, "base text and more", "original content intact");
 }
+
+// ---------------------------------------------------------------------------
+// ENCPRIVFIX regression tests (B1..B5 and minors)
+// ---------------------------------------------------------------------------
+
+const REV_CANARY_A: &str = "REVCANARY-ALPHA-7731";
+const REV_CANARY_B: &str = "REVCANARY-BRAVO-9942";
+
+fn doc_record(id: &str, path: &str, content: &str, clearance: &str) -> MemoryRecord {
+    let doc = xavier::memory::qmd_memory::MemoryDocument {
+        id: Some(id.to_string()),
+        path: path.to_string(),
+        content: content.to_string(),
+        metadata: serde_json::json!({ "clearance": clearance, "topic": "rev" }),
+        embedding: vec![1.0, 0.0, 0.0],
+        ..Default::default()
+    };
+    MemoryRecord::from_document("ws", &doc, true, None)
+}
+
+fn raw_revisions(db: &Path, id: &str) -> Option<String> {
+    Connection::open(db)
+        .unwrap()
+        .query_row(
+            "SELECT revisions FROM memory_records WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// B1: `from_document` seeds `revisions` with the plaintext content; an update
+/// pushes another copy. Neither may reach the file, for XDK2 and XRK1 rows.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1_revisions_are_sealed_for_xdk2_and_xrk1_rows() {
+    let env = Env::new().await;
+    let store = env.store().await;
+
+    // XRK1 first (no keystore yet).
+    store
+        .put(doc_record(
+            "rv-old",
+            "docs/rv-old",
+            &format!("first {REV_CANARY_A}"),
+            "INTERNAL",
+        ))
+        .await
+        .unwrap();
+    store
+        .update(doc_record(
+            "rv-old",
+            "docs/rv-old",
+            &format!("second {REV_CANARY_B}"),
+            "INTERNAL",
+        ))
+        .await
+        .unwrap();
+    assert!(
+        !contains_bytes(&env.db(), REV_CANARY_A) && !contains_bytes(&env.db(), REV_CANARY_B),
+        "XRK1 row: revisions must not hold plaintext"
+    );
+    let got = store.get("ws", "docs/rv-old").await.unwrap().unwrap();
+    assert_eq!(
+        got.revisions.len(),
+        2,
+        "revisions readable through the store"
+    );
+    assert!(got.revisions[0].content.contains(REV_CANARY_A));
+    assert!(got.content.contains(REV_CANARY_B));
+
+    // XDK2 rows written after the keystore exists.
+    at_rest::create_default_keystore().unwrap();
+    store
+        .put(doc_record(
+            "rv-new",
+            "docs/rv-new",
+            "newrow first PLAINREV-1",
+            "INTERNAL",
+        ))
+        .await
+        .unwrap();
+    store
+        .update(doc_record(
+            "rv-new",
+            "docs/rv-new",
+            "newrow second PLAINREV-2",
+            "INTERNAL",
+        ))
+        .await
+        .unwrap();
+    assert!(!contains_bytes(&env.db(), "PLAINREV-1"));
+    assert!(!contains_bytes(&env.db(), "PLAINREV-2"));
+    let got = store.get("ws", "docs/rv-new").await.unwrap().unwrap();
+    assert_eq!(got.revisions.len(), 2);
+    assert!(got.revisions[0].content.contains("PLAINREV-1"));
+    drop(store);
+
+    // The legacy XRK1 row migrates with its revisions to XDK2.
+    let rep = apply(&opts(&env, "bk-rev.sqlite3")).unwrap();
+    assert!(rep.complete && !rep.incomplete, "{rep:?}");
+    assert!(!contains_bytes(&env.db(), REV_CANARY_A));
+    let sentinel = raw_revisions(&env.db(), "rv-old").unwrap();
+    assert!(sentinel.contains("sealed_revisions") && !sentinel.contains(REV_CANARY_A));
+    let store = env.store().await;
+    let got = store.get("ws", "docs/rv-old").await.unwrap().unwrap();
+    assert_eq!(got.revisions.len(), 2);
+    assert!(got.revisions[0].content.contains(REV_CANARY_A));
+    drop(store);
+
+    // Locked: no revision content is served.
+    let raw = Connection::open(env.db())
+        .unwrap()
+        .query_row(
+            "SELECT content, metadata, encrypted_dek, revisions FROM memory_records WHERE id='rv-new'",
+            [],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<Vec<u8>>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .unwrap();
+    std::env::set_var("XAVIER_RECORD_KEY", "00".repeat(32));
+    at_rest::lock_default_space();
+    let mut locked = MemoryRecord {
+        id: "rv-new".into(),
+        content: raw.0,
+        metadata: serde_json::from_str(&raw.1).unwrap(),
+        encrypted_dek: raw.2,
+        revisions: serde_json::from_str(&raw.3.unwrap()).unwrap(),
+        ..Default::default()
+    };
+    assert!(
+        !locked.revisions.is_empty(),
+        "sentinel present before decrypt"
+    );
+    assert!(at_rest::decrypt_record_in_place(&mut locked).is_err());
+    assert!(
+        locked.revisions.is_empty(),
+        "locked read returns no revisions"
+    );
+    assert_eq!(locked.content, at_rest::LOCKED_PLACEHOLDER);
+}
+
+/// B1 (pre-fix rows): an XDK2 row whose revisions column still holds plaintext
+/// is sealed by `--apply`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b1_apply_seals_plaintext_revisions_of_existing_xdk2_rows() {
+    let env = Env::new().await;
+    drop(env.store().await);
+    seed_plain(&env.db(), 3);
+    apply(&opts(&env, "bk1.sqlite3")).unwrap();
+    {
+        let conn = Connection::open(env.db()).unwrap();
+        conn.execute(
+            "UPDATE memory_records SET revisions = ?1 WHERE id = 'seed-0'",
+            params![format!(
+                r#"[{{"revision":1,"recorded_at":"2026-01-01T00:00:00Z","path":"p","content":"{REV_CANARY_A}","metadata":{{}}}}]"#
+            )],
+        )
+        .unwrap();
+    }
+    assert!(contains_bytes(&env.db(), REV_CANARY_A));
+    let dry = at_rest::dry_run_report(&env.db()).unwrap();
+    assert_eq!(dry.xdk2_plain_revisions, 1);
+    let rep = apply(&opts(&env, "bk2.sqlite3")).unwrap();
+    assert_eq!(rep.changed, 1);
+    assert!(!rep.incomplete);
+    assert!(!contains_bytes(&env.db(), REV_CANARY_A));
+}
+
+/// B2: a row that fails (undecryptable XRK1) must not let the job finish as done.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b2_failed_row_makes_the_job_incomplete() {
+    let env = Env::new().await;
+    drop(env.store().await);
+    seed_plain(&env.db(), 12);
+    {
+        let conn = Connection::open(env.db()).unwrap();
+        let mut junk = b"XRK1".to_vec();
+        junk.extend_from_slice(&[7u8; 60]);
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, metadata, encrypted_dek, content_iv, metadata_iv, created_at, updated_at) VALUES ('bad-1','ws','p','deadbeef','{\"encrypted\":\"00\"}',?1,?2,?2,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+            params![junk, vec![1u8; 12]],
+        )
+        .unwrap();
+    }
+    let rep = apply(&opts(&env, "bk.sqlite3")).unwrap();
+    assert!(rep.incomplete, "a failed row => incomplete");
+    assert!(rep.failed >= 1 && rep.pending_private >= 1, "{rep:?}");
+    let phase: String = Connection::open(env.db())
+        .unwrap()
+        .query_row(
+            "SELECT phase FROM memory_encrypt_job ORDER BY job_id DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, "incomplete");
+    // Still resumable, still incomplete while the row is bad.
+    let mut r = JobOptions::new(env.db());
+    r.resume = true;
+    let again = apply(&r).unwrap();
+    assert!(again.incomplete);
+    // The good rows were sealed anyway.
+    let s = snapshot(&env.db());
+    assert!(s["seed-0"]
+        .2
+        .as_deref()
+        .is_some_and(at_rest::is_default_space_row));
+}
+
+/// B2: rows that end up below the cursor (rowid renumbering, e.g. by VACUUM)
+/// are still migrated by the final sweep.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b2_renumbered_rowids_are_still_migrated() {
+    let env = Env::new().await;
+    drop(env.store().await);
+    seed_plain(&env.db(), 130);
+    let mut o = opts(&env, "bk.sqlite3");
+    o.batch = 20;
+    o.hooks.abort_after_batches = Some(2);
+    assert!(apply(&o).is_err());
+    {
+        // Pending rows now sit BELOW the cursor.
+        let conn = Connection::open(env.db()).unwrap();
+        // The cursor row (rowid 40) keeps its rowid, so the anchor still matches:
+        // only the final sweep can notice.
+        conn.execute_batch(
+            "UPDATE memory_records SET rowid = rowid + 10000 WHERE rowid < 40;
+             UPDATE memory_records SET rowid = rowid - 40 WHERE rowid BETWEEN 41 AND 79;",
+        )
+        .unwrap();
+    }
+    let mut r = JobOptions::new(env.db());
+    r.batch = 20;
+    r.resume = true;
+    let rep = apply(&r).unwrap();
+    assert!(rep.complete && !rep.incomplete, "{rep:?}");
+    let pending = Connection::open(env.db())
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM memory_records WHERE (encrypted_dek IS NULL OR length(encrypted_dek)=0) AND json_extract(metadata,'$.clearance') IS NOT 'UNCLASSIFIED' AND json_extract(metadata,'$.clearance') IS NOT 'public'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap();
+    assert_eq!(pending, 0, "no private row left in plaintext");
+    assert!(!contains_bytes(&env.db(), "zqcanary0x"));
+}
+
+/// B3: with the keystore present but locked, a private write errors and
+/// nothing (plaintext or XRK1) is written.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b3_locked_keystore_private_write_fails_closed() {
+    let env = Env::new().await;
+    let store = env.store().await;
+    at_rest::create_default_keystore().unwrap();
+    store
+        .put(rec(
+            "ok-1",
+            "docs/ok",
+            "stored while unlocked",
+            Some("INTERNAL"),
+        ))
+        .await
+        .unwrap();
+    let before = snapshot(&env.db());
+
+    std::env::set_var("XAVIER_RECORD_KEY", "00".repeat(32));
+    at_rest::lock_default_space();
+    let err = store
+        .put(rec(
+            "w-1",
+            "docs/locked-write",
+            "LOCKEDWRITE-CANARY-5521",
+            Some("INTERNAL"),
+        ))
+        .await;
+    assert!(
+        err.is_err(),
+        "private write with a locked keystore must fail"
+    );
+    let err2 = store
+        .put(rec(
+            "w-2",
+            "docs/locked-nometa",
+            "LOCKEDWRITE-CANARY-5522",
+            None,
+        ))
+        .await;
+    assert!(err2.is_err(), "missing clearance is private too");
+    std::env::set_var("XAVIER_RECORD_KEY", TEST_KEY_HEX);
+    at_rest::lock_default_space();
+    assert_eq!(snapshot(&env.db()), before, "nothing was written");
+    assert!(!contains_bytes(&env.db(), "LOCKEDWRITE-CANARY"));
+    // Unlocked again: the same write succeeds as XDK2.
+    store
+        .put(rec(
+            "w-1",
+            "docs/locked-write",
+            "now fine",
+            Some("INTERNAL"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(&env.db())["w-1"].2.as_deref(), Some(&b"XDK2"[..]));
+}
+
+/// B4: the plaintext backup is refused inside cloud-synced directories, is
+/// 0600, and the report carries the loud notice.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b4_backup_refuses_synced_dirs_and_is_private() {
+    let env = Env::new().await;
+    drop(env.store().await);
+    seed_plain(&env.db(), 6);
+    let synced = env.tmp.path().join("Dropbox").join("backups");
+    std::fs::create_dir_all(&synced).unwrap();
+    let mut o = JobOptions::new(env.db());
+    o.backup_path = Some(synced.join("bk.sqlite3"));
+    let err = format!("{:#}", apply(&o).unwrap_err());
+    assert!(
+        err.contains("PLAINTEXT backup") && err.contains("allow-synced-backup"),
+        "{err}"
+    );
+    assert!(!synced.join("bk.sqlite3").exists());
+    assert!(snapshot(&env.db()).values().all(|v| v.2.is_none()));
+    for name in [
+        "Google Drive",
+        "OneDrive",
+        "iCloudDrive",
+        "Nextcloud",
+        "GoogleDrive",
+        "gdrive",
+    ] {
+        let d = env.tmp.path().join(name);
+        std::fs::create_dir_all(&d).unwrap();
+        o.backup_path = Some(d.join("x.sqlite3"));
+        assert!(apply(&o).is_err(), "{name} must be refused");
+    }
+    o.allow_synced_backup = true;
+    o.backup_path = Some(synced.join("bk.sqlite3"));
+    let rep = apply(&o).unwrap();
+    assert!(rep.notices.iter().any(|n| n.contains("PLAINTEXT")));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(rep.backup_path.unwrap())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+}
+
+/// B5: derived graph rows, timeline details and unsalted chain hashes of
+/// migrated rows are scrubbed; new private writes extract nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn b5_residue_is_scrubbed_and_new_writes_leave_none() {
+    use sha2::{Digest, Sha256};
+    let env = Env::new().await;
+    let store = env.store().await;
+    drop(store);
+    let content = "plain residue body @zebraresidue #topicresidue";
+    let old_hash = xavier::crypto::hex_encode(Sha256::digest(content.as_bytes()));
+    {
+        let conn = Connection::open(env.db()).unwrap();
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, metadata, created_at, updated_at) VALUES ('res-1','ws','notes/res',?1,'{\"clearance\":\"INTERNAL\"}','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+            params![content],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO entities (id, name, entity_type, properties, workspace_id) VALUES ('mem:ws:res-1','notes/res','memory','{}','ws')", []).unwrap();
+        conn.execute("INSERT INTO entities (id, name, entity_type, properties, workspace_id) VALUES ('ent-z','@zebraresidue','mention','{}','ws')", []).unwrap();
+        conn.execute("INSERT INTO memory_entities (id, workspace_id, memory_id, entity_id, relation_type) VALUES ('me-1','ws','res-1','ent-z','mentions')", []).unwrap();
+        conn.execute("INSERT INTO relations (id, source_id, target_id, relation_type, properties, provenance_id, workspace_id) VALUES ('rel-1','mem:ws:res-1','ent-z','mentions','{}','res-1','ws')", []).unwrap();
+        conn.execute(
+            "INSERT INTO memory_chain (id, prev_hash, content_hash) VALUES ('ch-1', NULL, ?1)",
+            params![old_hash],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO timeline_events (id, workspace_id, memory_id, sequence, timestamp, operation, summary, details, agent_id, prev_hash, curr_hash) VALUES ('ev-1','ws','res-1',1,'2026-01-01T00:00:00Z','create','create notes/res','{\"clearance\":\"INTERNAL\",\"leak\":\"TIMELINE-LEAK-4411\"}','a',NULL,'abc')", []).unwrap();
+    }
+    assert!(contains_bytes(&env.db(), "zebraresidue"));
+    let rep = apply(&opts(&env, "bk.sqlite3")).unwrap();
+    assert!(rep.complete && !rep.incomplete, "{rep:?}");
+    let conn = Connection::open(env.db()).unwrap();
+    let n = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        n("SELECT COUNT(*) FROM memory_entities WHERE memory_id='res-1'"),
+        0
+    );
+    assert_eq!(
+        n("SELECT COUNT(*) FROM relations WHERE provenance_id='res-1'"),
+        0
+    );
+    assert_eq!(
+        n("SELECT COUNT(*) FROM entities WHERE name='@zebraresidue'"),
+        0,
+        "orphan entity removed"
+    );
+    let chain: String = conn
+        .query_row(
+            "SELECT content_hash FROM memory_chain WHERE id='ch-1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_ne!(chain, old_hash, "unsalted hash replaced by a keyed MAC");
+    let details: String = conn
+        .query_row(
+            "SELECT details FROM timeline_events WHERE id='ev-1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!details.contains("TIMELINE-LEAK"));
+    drop(conn);
+    assert!(
+        rep.scrub.graph_links >= 2 && rep.scrub.chain_hashes >= 1 && rep.scrub.timeline_events == 1
+    );
+    assert!(!contains_bytes(&env.db(), "zebraresidue"));
+    assert!(!contains_bytes(&env.db(), "TIMELINE-LEAK-4411"));
+
+    // New private writes: no extracted entities, keyed chain hash.
+    let store = env.store().await;
+    store
+        .put(rec(
+            "res-2",
+            "notes/res2",
+            "fresh body @mentionfresh #topicfresh",
+            Some("INTERNAL"),
+        ))
+        .await
+        .unwrap();
+    drop(store);
+    assert!(!contains_bytes(&env.db(), "mentionfresh"));
+    let conn = Connection::open(env.db()).unwrap();
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM entities WHERE name LIKE '%mentionfresh%'",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
+    let stored: String = conn
+        .query_row(
+            "SELECT content FROM memory_records WHERE id='res-2'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let plain_sha = xavier::crypto::hex_encode(Sha256::digest(stored.as_bytes()));
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM memory_chain WHERE content_hash = ?1",
+            params![plain_sha],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0,
+        "chain hash of a private row is keyed"
+    );
+}
+
+/// Minor 7: duplicate `clearance` keys are ambiguous and therefore private.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn minor7_duplicate_clearance_keys_are_private() {
+    let env = Env::new().await;
+    drop(env.store().await);
+    {
+        let conn = Connection::open(env.db()).unwrap();
+        conn.execute(
+            "INSERT INTO memory_records (id, workspace_id, path, content, metadata, created_at, updated_at) VALUES ('dup-1','ws','p','dupbody',?1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+            params![r#"{"clearance":"INTERNAL","clearance":"PUBLIC"}"#],
+        )
+        .unwrap();
+    }
+    let dry = at_rest::dry_run_report(&env.db()).unwrap();
+    assert_eq!(dry.plaintext_private, 1);
+    assert_eq!(dry.plaintext_public, 0);
+    let rep = apply(&opts(&env, "bk.sqlite3")).unwrap();
+    assert_eq!(rep.changed, 1);
+}
+
+/// Minor 6: restore from backup refuses rows changed since the backup and a
+/// tampered backup; `--force` overrides the row check.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn minor6_restore_checks_manifest_and_changed_rows() {
+    let env = Env::new().await;
+    drop(env.store().await);
+    seed_plain(&env.db(), 14);
+    let rep = apply(&opts(&env, "bk.sqlite3")).unwrap();
+    let backup = rep.backup_path.clone().unwrap();
+    {
+        let conn = Connection::open(env.db()).unwrap();
+        conn.execute(
+            "UPDATE memory_records SET updated_at = '2031-01-01T00:00:00Z', revision = revision + 1 WHERE id = 'seed-0'",
+            [],
+        )
+        .unwrap();
+    }
+    let r = at_rest::apply_decrypt(
+        &opts(&env, "pre1.sqlite3"),
+        DecryptSource::FromBackup(backup.clone()),
+    )
+    .unwrap();
+    assert!(r.complete);
+    assert_eq!(r.failed, 1, "the edited row is refused");
+    let s = snapshot(&env.db());
+    assert!(s["seed-0"]
+        .2
+        .as_deref()
+        .is_some_and(at_rest::is_default_space_row));
+    // Resume with force restores it.
+    let mut o = opts(&env, "pre2.sqlite3");
+    o.force = true;
+    let r = at_rest::apply_decrypt(&o, DecryptSource::FromBackup(backup.clone())).unwrap();
+    assert_eq!(r.failed, 0);
+    assert!(snapshot(&env.db())["seed-0"].2.is_none());
+
+    // Tampered backup: manifest SHA mismatch.
+    let mut bytes = std::fs::read(&backup).unwrap();
+    let n = bytes.len();
+    bytes[n - 1] ^= 0xFF;
+    std::fs::write(&backup, bytes).unwrap();
+    let err = at_rest::apply_decrypt(
+        &opts(&env, "pre3.sqlite3"),
+        DecryptSource::FromBackup(backup),
+    )
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("SHA-256"), "{err:#}");
+}
+
+/// Minor 1 + 4: the key cache follows the keystore bytes (not mtime/len), and
+/// the KEK source is recorded in the keystore.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn minor1_4_key_cache_fingerprint_and_kek_source() {
+    let env = Env::new().await;
+    let (h1, _code) = at_rest::create_default_keystore().unwrap();
+    let ks_path = at_rest::default_keystore_path();
+    let text = std::fs::read_to_string(&ks_path).unwrap();
+    assert!(text.contains("\"kek_source\": \"env\""), "{text}");
+    let mac1 = h1.verify_mac("t", b"x");
+    assert_eq!(
+        at_rest::default_space_key().unwrap().verify_mac("t", b"x"),
+        mac1
+    );
+
+    // A second keystore of the same size, restored with the old mtime.
+    let other = tempfile::tempdir().unwrap();
+    std::env::set_var("XAVIER_DATA_DIR", other.path());
+    let (h2, _c2) = at_rest::create_default_keystore().unwrap();
+    let other_bytes = std::fs::read(at_rest::default_keystore_path()).unwrap();
+    std::env::set_var("XAVIER_DATA_DIR", env.tmp.path().join("data"));
+    assert_eq!(other_bytes.len(), std::fs::read(&ks_path).unwrap().len());
+    let old_mtime = std::fs::metadata(&ks_path).unwrap().modified().unwrap();
+    std::fs::write(&ks_path, &other_bytes).unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&ks_path)
+        .unwrap()
+        .set_modified(old_mtime)
+        .unwrap();
+    let mac2 = h2.verify_mac("t", b"x");
+    assert_ne!(mac1, mac2);
+    assert_eq!(
+        at_rest::default_space_key().unwrap().verify_mac("t", b"x"),
+        mac2,
+        "stale cached key must not survive a replaced keystore"
+    );
+}
