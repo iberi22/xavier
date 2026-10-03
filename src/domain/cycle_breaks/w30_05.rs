@@ -146,60 +146,6 @@ pub trait IntoOnchainDaoGateway {
 mod tests {
     use super::*;
 
-    struct NoVault;
-
-    impl SwalVaultKeySource for NoVault {
-        fn unlock_derived_keys(
-            &self,
-            _pin: &str,
-            _device_key: Option<&[u8; 32]>,
-        ) -> Result<Option<DerivedNodeKeys>, String> {
-            Ok(None)
-        }
-    }
-
-    struct RecordingDao {
-        votes: std::sync::Mutex<Vec<(String, bool, u64, bool)>>,
-    }
-
-    #[async_trait]
-    impl OnchainDaoGateway for RecordingDao {
-        async fn propose(&self, _p: &str, _t: &str, _d: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        async fn vote(
-            &self,
-            proposal_id: &str,
-            approve: bool,
-            voting_power: u64,
-            is_council: bool,
-        ) -> anyhow::Result<()> {
-            let mut votes = self.votes.lock().unwrap();
-            votes.push((proposal_id.to_string(), approve, voting_power, is_council));
-            Ok(())
-        }
-
-        async fn veto(&self, _proposal_id: &str, _reason: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        async fn overrule(&self, _proposal_id: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        async fn execute(&self, _proposal_id: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        async fn get_proposal_status(
-            &self,
-            _proposal_id: &str,
-        ) -> anyhow::Result<(bool, u64, u64, u64, u64, bool, bool)> {
-            Ok((true, 1, 2, 3, 4, false, false))
-        }
-    }
-
     #[test]
     fn node_id_is_deterministic_and_prefixed() {
         let pk = [0xAB_u8; 32];
@@ -219,19 +165,77 @@ mod tests {
     }
 
     #[test]
-    fn vault_contract_is_implementable_outside_node_identity() {
-        let unlocked = NoVault.unlock_derived_keys("1234", None).unwrap();
-        assert!(unlocked.is_none());
+    fn node_store_satisfies_vault_contract() {
+        use crate::node_identity::{NodeBootstrap, NodeStore, NodeStorePaths};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = NodeStore::new(NodeStorePaths::from_data_dir(dir.path()));
+        let source: &dyn SwalVaultKeySource = &store;
+
+        // No vault on disk: the contract says `Ok(None)`, not an error.
+        assert!(matches!(source.unlock_derived_keys("1234", None), Ok(None)));
+
+        let bundle = NodeBootstrap::create(None, "1234", None).unwrap();
+        store.save_vault(&bundle.vault).unwrap();
+
+        // Right PIN re-derives the exact keys the vault was sealed from.
+        let keys = source
+            .unlock_derived_keys("1234", None)
+            .unwrap()
+            .expect("vault exists, keys expected");
+        assert_eq!(keys.node_id, bundle.keys.node_id);
+        assert_eq!(keys.ed25519_public, bundle.keys.ed25519_public);
+
+        // Wrong PIN: the vault exists but does not unlock, so `Err`.
+        assert!(source.unlock_derived_keys("0000", None).is_err());
     }
 
+    #[test]
+    fn onchain_client_cluster_id_roundtrip_and_validation() {
+        use crate::mesh::governance::onchain::{EvmDaoConfig, OnchainDaoClient};
+
+        #[cfg(feature = "dao-evm")]
+        let contract_address = alloy::primitives::Address::ZERO;
+        #[cfg(not(feature = "dao-evm"))]
+        let contract_address = String::new();
+        let client = OnchainDaoClient::new(EvmDaoConfig {
+            rpc_url: String::new(),
+            contract_address,
+            chain_id: 1,
+            private_key: String::new(),
+        });
+
+        let bytes = client.format_cluster_id("xip-1");
+        assert_eq!(client.parse_cluster_id(&bytes), "xip-1");
+        // Longer than 32 bytes is truncated, never panics.
+        let long = "x".repeat(40);
+        assert_eq!(
+            client
+                .parse_cluster_id(&client.format_cluster_id(&long))
+                .len(),
+            32
+        );
+        assert!(
+            client.validate_params("xip-1").is_err(),
+            "empty RPC URL must be rejected"
+        );
+    }
+
+    #[cfg(feature = "dao-evm")]
     #[tokio::test]
-    async fn onchain_gateway_contract_is_implementable_outside_mesh() {
-        let dao = RecordingDao {
-            votes: std::sync::Mutex::new(Vec::new()),
-        };
-        dao.vote("xip-1", true, 100, false).await.unwrap();
-        let status = dao.get_proposal_status("xip-1").await.unwrap();
-        assert_eq!(status, (true, 1, 2, 3, 4, false, false));
-        assert_eq!(dao.votes.lock().unwrap().len(), 1);
+    async fn evm_config_builds_gateway_that_rejects_bad_signer_offline() {
+        use crate::mesh::governance::onchain::EvmDaoConfig;
+
+        let gateway: Box<dyn OnchainDaoGateway> = EvmDaoConfig {
+            rpc_url: "http://127.0.0.1:1".to_string(),
+            contract_address: alloy::primitives::Address::ZERO,
+            chain_id: 1,
+            private_key: "not-a-private-key".to_string(),
+        }
+        .into_onchain_dao_gateway();
+
+        // The signer is parsed before any network call, so this fails offline and
+        // proves the call reaches the real `OnchainDaoClient`, not a stub.
+        assert!(gateway.vote("xip-1", true, 100, false).await.is_err());
     }
 }
