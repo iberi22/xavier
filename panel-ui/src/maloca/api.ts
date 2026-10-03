@@ -1,4 +1,5 @@
 import { getApiUrl } from "../api/client";
+import { AUTH_TOKEN_KEY, requestMalocaToken } from "./authPrompt";
 
 // --- Maloca Domain Types ---
 
@@ -257,17 +258,12 @@ export interface IntrospectionSessionResponse {
 export const MALOCA_OPS_PREFIX = "/maloca";
 export const MALOCA_V1_PREFIX = "/v1/maloca";
 
-async function fetchMaloca<T>(
-  endpoint: string,
-  options?: RequestInit,
-  prefix: string = MALOCA_OPS_PREFIX,
-): Promise<T> {
-  const url = getApiUrl(`${prefix}${endpoint}`);
+async function fetchMalocaOnce(url: string, options?: RequestInit): Promise<Response> {
   const activeWorkspace = typeof localStorage !== "undefined"
     ? localStorage.getItem("xavier_active_workspace") || "default"
     : "default";
 
-  const token = typeof localStorage !== "undefined" ? localStorage.getItem("auth_token") : null;
+  const token = typeof localStorage !== "undefined" ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -278,13 +274,31 @@ async function fetchMaloca<T>(
     headers["X-Xavier-Token"] = token;
   }
 
-  const response = await fetch(url, {
+  return fetch(url, {
     ...options,
     headers: {
       ...headers,
       ...(options?.headers || {})
     }
   });
+}
+
+async function fetchMaloca<T>(
+  endpoint: string,
+  options?: RequestInit,
+  prefix: string = MALOCA_OPS_PREFIX,
+): Promise<T> {
+  const url = getApiUrl(`${prefix}${endpoint}`);
+
+  let response = await fetchMalocaOnce(url, options);
+
+  // 401: ask the user for a token (stored on this device only) and retry once.
+  if (response.status === 401 && typeof localStorage !== "undefined") {
+    const token = await requestMalocaToken();
+    if (token) {
+      response = await fetchMalocaOnce(url, options);
+    }
+  }
 
   if (!response.ok) {
     let errorMsg = `HTTP Error ${response.status}`;
