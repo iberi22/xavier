@@ -122,6 +122,8 @@ pub struct PersistedUsageState {
 
 const SPACE_FILE_STORE_NAME: &str = "memory.jsonl";
 const SPACE_SQLITE_STORE_NAME: &str = "memory.sqlite";
+/// Conversations database of a space, inside the space directory.
+pub const SPACE_CONVERSATIONS_NAME: &str = "conversations.db";
 
 /// Build a per-space store rooted at `root`. Never touches env/settings paths.
 async fn build_space_store(
@@ -439,10 +441,18 @@ impl WorkspaceState {
             config.id.clone(),
             Arc::clone(&store),
         ));
-        #[cfg(test)]
-        let conversations_db = Arc::new(ConversationsDb::open_in_memory(&config.id).await?);
-        #[cfg(not(test))]
-        let conversations_db = Arc::new(ConversationsDb::open(&config.id).await?);
+        let conversations_db = match &store_root {
+            // A space keeps its conversations inside its own directory, so
+            // they are isolated, trashed with the space and never land in the
+            // node-global `~/.xavier/conversations`.
+            Some(root) => Arc::new(
+                ConversationsDb::open_at(&config.id, &root.join(SPACE_CONVERSATIONS_NAME)).await?,
+            ),
+            #[cfg(test)]
+            None => Arc::new(ConversationsDb::open_in_memory(&config.id).await?),
+            #[cfg(not(test))]
+            None => Arc::new(ConversationsDb::open(&config.id).await?),
+        };
         conversations_db.create_schema().await?;
 
         let settings = XavierSettings::current();
@@ -500,7 +510,19 @@ impl WorkspaceState {
             working_memory,
         };
 
-        crate::scheduler::daemon::MemoryDaemon::new(Arc::clone(&state.memory_manager)).spawn();
+        if store_root.is_none() {
+            crate::scheduler::daemon::MemoryDaemon::new(Arc::clone(&state.memory_manager)).spawn();
+        } else {
+            // A space does not start the node-global MemoryDaemon: its loops
+            // read cwd-relative datasets, write tuning history under the
+            // cwd's `.xavier` and run node-wide self-management checks. Only
+            // the access-statistics flush (into the space's own store) is armed.
+            let store = Arc::clone(&state.store);
+            tokio::spawn(async move {
+                crate::memory::access::ensure_flush_worker(Arc::clone(&store));
+                crate::memory::access::spawn_shutdown_flush(store);
+            });
+        }
 
         state.load_usage_state().await?;
         Ok(state)
@@ -1244,6 +1266,11 @@ fn release_space_connections(storage_path: &std::path::Path) {
         &storage_path.join(SPACE_SQLITE_STORE_NAME),
     );
     crate::codebase::connection_manager::ConnectionManager::global().disconnect(&id);
+    crate::codebase::connection_manager::ConnectionManager::global().disconnect(
+        &crate::codebase::conversations_db::ConversationsDb::connection_id_for_path(
+            &storage_path.join(SPACE_CONVERSATIONS_NAME),
+        ),
+    );
 }
 
 /// Drop the cached workspace of a space (delete, trash, lock).

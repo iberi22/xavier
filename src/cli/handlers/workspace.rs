@@ -55,6 +55,7 @@ pub async fn mcp_tools_call_handler(
     claims: Option<Extension<xavier::security::auth::Claims>>,
     root: Option<Extension<xavier::adapters::inbound::http::routes::RootCredential>>,
     space: Option<Extension<xavier::espacio::tokens::SpaceContext>>,
+    requester: Option<Extension<xavier::security::clearance::ClearanceLevel>>,
     Json(payload): Json<McpToolCallPayload>,
 ) -> axum::response::Response {
     use xavier::server::mcp::server::{handle_tool_call, with_root_credential};
@@ -89,14 +90,25 @@ pub async fn mcp_tools_call_handler(
     };
 
     let claims_ref = claims.as_ref().map(|c| &c.0);
-    match with_root_credential(
-        root.is_some() && space.is_none(),
-        handle_tool_call(
-            app_state,
-            workspace,
-            claims_ref,
-            &payload.name,
-            payload.arguments,
+    // Caller identity for tools that cross spaces (linked search): the space
+    // token's SpaceAuth and the same clearance ceiling REST applies.
+    let caller = xavier::server::mcp::tools_memory::McpCaller {
+        space: space.as_ref().map(|e| e.0.clone()),
+        clearance: requester
+            .map(|Extension(level)| level)
+            .unwrap_or_else(xavier::security::clearance::default_clearance),
+    };
+    match xavier::server::mcp::tools_memory::with_mcp_caller(
+        caller,
+        with_root_credential(
+            root.is_some() && space.is_none(),
+            handle_tool_call(
+                app_state,
+                workspace,
+                claims_ref,
+                &payload.name,
+                payload.arguments,
+            ),
         ),
     )
     .await
