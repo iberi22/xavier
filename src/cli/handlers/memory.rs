@@ -260,6 +260,7 @@ pub async fn search_handler(
     >,
     space: Option<Extension<SpaceContext>>,
     workspace: Option<Extension<WorkspaceContext>>,
+    manager: Option<Extension<Arc<xavier::espacio::SpaceManager>>>,
     axum::Json(payload): axum::Json<SearchPayload>,
 ) -> Response {
     let scoped = match scoped_memory(
@@ -345,36 +346,85 @@ pub async fn search_handler(
         include_embedding: Some(true),
         ..Default::default()
     };
+    let linked_req = query_req.clone();
+    let own_space = space.as_ref().map(|e| e.0.space_id.clone());
 
-    let search_results: Vec<serde_json::Value> = match engine.search(&scoped.qmd, query_req).await {
-        Ok(res) => res
-            .results
-            .into_iter()
-            .map(|item| {
-                serde_json::json!({
-                    "id": item.id,
-                    "path": item.path,
-                    "content": item.content,
-                    "metadata": item.metadata,
-                    "score": item.score,
-                    "vector_score": item.vector_score,
-                    "lexical_score": item.lexical_score,
-                    "embedding": item.embedding,
+    let mut search_results: Vec<serde_json::Value> =
+        match engine.search(&scoped.qmd, query_req).await {
+            Ok(res) => res
+                .results
+                .into_iter()
+                .map(|item| {
+                    let mut row = serde_json::json!({
+                        "id": item.id,
+                        "path": item.path,
+                        "content": item.content,
+                        "metadata": item.metadata,
+                        "score": item.score,
+                        "vector_score": item.vector_score,
+                        "lexical_score": item.lexical_score,
+                        "embedding": item.embedding,
+                    });
+                    if let Some(own) = &own_space {
+                        row["source_space"] = serde_json::json!(own);
+                    }
+                    row
                 })
-            })
-            .collect(),
-        Err(e) => {
-            info!("Search error: {}", e);
-            return axum::Json(serde_json::json!({
-                "results": [],
-                "query": payload.query,
-                "count": 0,
-                "error": e.to_string(),
-                "workspace_id": scoped.workspace_id,
-            }))
-            .into_response();
+                .collect(),
+            Err(e) => {
+                info!("Search error: {}", e);
+                return axum::Json(serde_json::json!({
+                    "results": [],
+                    "query": payload.query,
+                    "count": 0,
+                    "error": e.to_string(),
+                    "workspace_id": scoped.workspace_id,
+                }))
+                .into_response();
+            }
+        };
+
+    // WP-13n: opt-in, read-only merge of the spaces that linked THEIR memory to
+    // this space token's space. Never writes; encrypted spaces are skipped.
+    let mut linked_skipped: Vec<serde_json::Value> = Vec::new();
+    if payload.include_linked == Some(true) {
+        if let (Some(own), Some(Extension(manager))) = (&own_space, manager.as_ref()) {
+            let resolved = xavier::espacio::link::resolve_linked(manager, own).await;
+            linked_skipped = resolved.skipped;
+            for lm in resolved.searchable {
+                let Ok(res) = engine
+                    .search(&lm.ctx.workspace.memory, linked_req.clone())
+                    .await
+                else {
+                    linked_skipped
+                        .push(serde_json::json!({"space": lm.space_id, "reason": "SearchFailed"}));
+                    continue;
+                };
+                for item in res.results {
+                    if !lm.link.allows(&item.path, &item.metadata) {
+                        continue;
+                    }
+                    search_results.push(serde_json::json!({
+                        "id": item.id,
+                        "path": item.path,
+                        "content": item.content,
+                        "metadata": item.metadata,
+                        "score": item.score,
+                        "vector_score": item.vector_score,
+                        "lexical_score": item.lexical_score,
+                        "embedding": item.embedding,
+                        "source_space": lm.space_id,
+                    }));
+                }
+            }
+            search_results.sort_by(|a, b| {
+                let sa = a["score"].as_f64().unwrap_or(0.0);
+                let sb = b["score"].as_f64().unwrap_or(0.0);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            search_results.truncate(limit);
         }
-    };
+    }
 
     // F2.2: techo de lectura — el material por encima del nivel del solicitante
     // no se lista (la búsqueda no revela existencia; solo se cuenta).
@@ -409,6 +459,7 @@ pub async fn search_handler(
         "count": search_results.len(),
         "hidden_by_clearance": hidden_by_clearance,
         "workspace_id": scoped.workspace_id,
+        "linked_skipped": linked_skipped,
     }))
     .into_response()
 }

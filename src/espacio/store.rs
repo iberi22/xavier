@@ -184,6 +184,21 @@ const MIGRATIONS: &[&str] = &[
         revoked    INTEGER NOT NULL DEFAULT 0
     );
 ",
+    // WP-13n: one-way links stored in the GRANTOR's database (CrossGrant fields
+    // plus an optional namespace / path-prefix filter).
+    "
+    CREATE TABLE links (
+        id          TEXT PRIMARY KEY,
+        resource_id TEXT NOT NULL,
+        target_node TEXT NOT NULL,
+        permission  TEXT NOT NULL,
+        expires_at  TEXT,
+        revoked     INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        namespace   TEXT,
+        path_prefix TEXT
+    );
+",
 ];
 
 const META_ENCRYPTION: &str = "encryption";
