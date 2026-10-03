@@ -76,6 +76,7 @@ pub mod telecom;
 pub mod telegram;
 pub mod tgd;
 pub mod tools;
+pub mod training;
 pub mod ui;
 pub mod utils;
 pub mod verification;
