@@ -165,6 +165,24 @@ pub(crate) fn space_token_may_access(
     let Some(id) = path.strip_prefix("/api/v1/espacio/spaces/") else {
         return false;
     };
+    // WP-13n: link management of the OWN space, Admin only. Exactly
+    // `{own}/links` (GET, POST) and `{own}/links/{link_id}` (DELETE).
+    if let Some((space, tail)) = id.split_once('/') {
+        if space != own_space_id {
+            return false;
+        }
+        let ok = match (method, tail.split_once('/')) {
+            (&Method::GET | &Method::POST, None) => tail == "links",
+            (&Method::DELETE, Some(("links", lid))) => {
+                !lid.is_empty()
+                    && lid
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+            }
+            _ => false,
+        };
+        return ok && can(role, SpaceAction::Admin);
+    }
     // Exact match: no sub-path, no trailing slash, no prefix collision.
     if id != own_space_id {
         return false;

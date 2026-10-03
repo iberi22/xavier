@@ -22,6 +22,10 @@ pub struct SearchPayload {
     /// `filters.include_activity = true`.
     #[serde(default)]
     pub include_activity: Option<bool>,
+    /// Opt-in for space tokens: also search the memory of spaces that granted
+    /// this space a read link (read-only, results tagged `source_space`).
+    #[serde(default)]
+    pub include_linked: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

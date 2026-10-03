@@ -52,6 +52,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "include_content": { "type": "boolean", "description": "Include full document body in each candidate (default false — prefer memory_context page-in by ids)", "default": false },
                     "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid BM25+vector+RRF pipeline. Kept for forward-compatibility.", "default": "hybrid" },
                     "include_activity": { "type": "boolean", "description": "Include telemetry/noise namespaces (activity/*, gestalt/thinking/*, auto activity/insight records) that are excluded by default (default false)", "default": false },
+                    "include_linked": { "type": "boolean", "description": "Also search (read-only) the spaces that granted this space a link; results carry source_space (default false)", "default": false },
                     "filters": { "type": "object", "description": "Optional filters" }
                 },
                 "required": ["query"]
@@ -463,7 +464,7 @@ async fn handle_mem_search(
     };
 
     // Progressive disclosure: fat index by default (structured candidates).
-    let candidates: Vec<Value> = paged_results
+    let mut candidates: Vec<Value> = paged_results
         .into_iter()
         .map(|doc| {
             let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
@@ -488,6 +489,63 @@ async fn handle_mem_search(
             obj
         })
         .collect();
+
+    // WP-13n: opt-in, read-only merge of spaces that linked their memory to
+    // this workspace's space. Only a registered space can have inbound links;
+    // encrypted/locked linked spaces are skipped with a note.
+    let mut linked_skipped: Vec<Value> = Vec::new();
+    let include_linked = arguments
+        .get("include_linked")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if include_linked {
+        if let Some(manager) = crate::adapters::inbound::http::routes::get_space_manager() {
+            if manager.get(&workspace.workspace_id).await.is_ok() {
+                let own = workspace.workspace_id.clone();
+                for c in candidates.iter_mut() {
+                    c["source_space"] = json!(own);
+                }
+                let resolved = crate::espacio::link::resolve_linked(&manager, &own).await;
+                linked_skipped = resolved.skipped;
+                for lm in resolved.searchable {
+                    let Ok((docs, _)) = lm
+                        .ctx
+                        .workspace
+                        .memory
+                        .search_filtered_with_mode(query, fetch_limit, filter_ref)
+                        .await
+                    else {
+                        linked_skipped
+                            .push(json!({"space": lm.space_id, "reason": "SearchFailed"}));
+                        continue;
+                    };
+                    for doc in docs.into_iter().skip(offset).take(limit) {
+                        if !lm.link.allows(&doc.path, &doc.metadata) {
+                            continue;
+                        }
+                        let mut obj = json!({
+                            "id": doc.id.clone().unwrap_or_default(),
+                            "path": doc.path,
+                            "score": doc.score,
+                            "snippet": crate::memory::snippet::clip_chars(&doc.content, 100),
+                            "kind": doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                            "source_space": lm.space_id,
+                        });
+                        if include_content {
+                            obj["content"] = json!(doc.content);
+                        }
+                        candidates.push(obj);
+                    }
+                }
+                candidates.sort_by(|a, b| {
+                    let sa = a["score"].as_f64().unwrap_or(0.0);
+                    let sb = b["score"].as_f64().unwrap_or(0.0);
+                    sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                candidates.truncate(limit);
+            }
+        }
+    }
 
     // Record token accounting & search stats
     let total_snippet_bytes: usize = candidates
@@ -543,6 +601,7 @@ async fn handle_mem_search(
         "has_more": has_more,
         "count": candidates.len(),
         "candidates": candidates,
+        "linked_skipped": linked_skipped,
         // "hybrid" when the embedding/vector signal contributed, "lexical" when
         // results are FTS/BM25-only (no embedder configured, or it timed out /
         // failed and search degraded gracefully instead of hanging).
