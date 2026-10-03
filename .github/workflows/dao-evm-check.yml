@@ -1,0 +1,41 @@
+name: DAO EVM Feature Check
+
+# The `dao-evm` feature pulls in alloy and is NOT part of `ci-safe`, so the main CI never
+# compiles the on-chain DAO path. This job keeps it from rotting: it runs weekly, on
+# manual dispatch, and on PRs that touch the code behind the feature.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/mesh/governance/**"
+      - "src/domain/cycle_breaks/**"
+      - "src/governance/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/dao-evm-check.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: target
+
+jobs:
+  cargo-check-dao-evm:
+    name: cargo check (ci-safe + dao-evm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo Check
+        run: cargo check --package xavier --all-targets --features "ci-safe dao-evm"

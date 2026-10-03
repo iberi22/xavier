@@ -30,6 +30,11 @@ export default defineConfig({
 			use: { ...devices["Desktop Chrome"] },
 		},
 	],
+	// No backend is started here ON PURPOSE: every API call in this suite is mocked with
+	// page.route(), and vite.config.ts sets `preview.proxy = {}` so nothing can leak to a
+	// daemon on :8006 (on a production node that would be the live instance). Specs that need
+	// a real backend run from playwright.auth-e2e.config.ts, which boots a disposable
+	// `xavier http` on its own port (18016) and temp data dir.
 	webServer: {
 		command: "npx vite preview --port 4174 --host 127.0.0.1",
 		url: baseURL,
