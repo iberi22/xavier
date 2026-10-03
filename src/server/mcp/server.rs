@@ -124,7 +124,7 @@ pub async fn handle_tool_call(
     }
 
     if super::tools_core::is_core_tool(name) {
-        super::tools_core::handle_core_tool(state, workspace, name, arguments).await
+        super::tools_core::handle_core_tool(state, workspace, claims, name, arguments).await
     } else if super::tools_secrets::is_secrets_tool(name) {
         let ctx = super::tools_secrets::SecretToolContext::production();
         super::tools_secrets::handle_secrets_tool(&ctx, name, arguments).await
