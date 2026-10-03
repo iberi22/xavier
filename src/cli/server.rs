@@ -467,6 +467,17 @@ pub async fn start_http_server(
     let prompt_cache = Arc::new(parking_lot::Mutex::new(HashMap::new()));
     let security_service = Arc::new(AppSecurityService::new());
     let event_bus = XavierEventBus::new(100);
+    // Durable mirror of the in-memory bus; a failure here must not stop boot.
+    match xavier::coordination::event_log::EventLog::open(
+        &xavier::maloca::MalocaStore::resolve_state_dir(),
+        xavier::coordination::event_log::RetentionConfig::from_env(),
+    ) {
+        Ok(log) => {
+            xavier::coordination::event_log::spawn_subscriber(&event_bus, Arc::clone(&log));
+            xavier::coordination::event_log::install_global(log);
+        }
+        Err(e) => tracing::error!(error = %e, "event log unavailable; bus events are RAM-only"),
+    }
     let secrets_engine = Arc::new(KeyLendingEngine::new(
         Box::new(xavier::secrets::audit::QmdAuditLogger::new()),
         Some(event_bus.clone()),
@@ -1239,6 +1250,10 @@ pub async fn start_http_server(
             ),
         )
         .route("/xavier/events/session", post(session_event_handler))
+        .route(
+            "/xavier/events",
+            get(xavier::adapters::inbound::http::routes::events_replay_handler),
+        )
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
         .route("/xavier/agents/active", get(agent_active_handler))
@@ -1722,6 +1737,14 @@ pub async fn start_http_server(
         workspace_id: state.workspace_id.clone(),
         workspace: workspace_state.clone(),
     };
+    let working_snapshot_path =
+        xavier::memory::working::snapshot_path(&xavier::maloca::MalocaStore::resolve_state_dir());
+    xavier::memory::working::spawn_persistence(
+        Arc::clone(&workspace_state.working_memory),
+        working_snapshot_path.clone(),
+        xavier::memory::working::snapshot_interval_from_env(),
+    );
+    let working_memory_for_shutdown = Arc::clone(&workspace_state.working_memory);
 
     // Maloca ops API — public local dogfood (matches @swal/maloca-client; no token).
     let maloca_store = state.maloca.clone();
@@ -2237,6 +2260,11 @@ pub async fn start_http_server(
             if let Err(error) = tokio::signal::ctrl_c().await {
                 info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
             }
+            xavier::memory::working::save_if_dirty(
+                &working_memory_for_shutdown,
+                &working_snapshot_path,
+            )
+            .await;
             if let Some(shutdown) = sync_shutdown {
                 shutdown.shutdown();
                 shutdown.wait_for_shutdown(Duration::from_secs(5)).await;

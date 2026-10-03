@@ -427,10 +427,68 @@ async fn build_handler() -> impl axum::response::IntoResponse {
     })
 }
 
+/// Persist a received session event in the durable event log (best effort).
+fn record_session_event(event: &SessionEvent) {
+    let Some(log) = crate::coordination::event_log::global() else {
+        return;
+    };
+    let kind = serde_json::to_value(&event.event_type)
+        .ok()
+        .and_then(|v| v.as_str().map(|s| format!("session.{s}")))
+        .unwrap_or_else(|| "session.event".to_string());
+    let payload = serde_json::json!({
+        "timestamp": event.timestamp,
+        "content_preview": event.content_preview(),
+        "metadata": event.metadata,
+    });
+    if let Err(e) = log.append(&kind, Some(&event.session_id), &payload) {
+        tracing::warn!(error = %e, "session event log append failed");
+    }
+}
+
+/// Query for `GET /xavier/events`.
+#[derive(Debug, Deserialize)]
+pub struct EventsReplayQuery {
+    pub since: Option<String>,
+    pub limit: Option<usize>,
+}
+
+/// Replay durable bus events after `since` (event id or RFC 3339 timestamp).
+pub async fn events_replay_handler(
+    axum::extract::Query(q): axum::extract::Query<EventsReplayQuery>,
+) -> axum::response::Response {
+    use crate::coordination::event_log;
+    let Some(log) = event_log::global() else {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "event log unavailable"})),
+        )
+            .into_response();
+    };
+    let limit = q.limit.unwrap_or(event_log::DEFAULT_REPLAY_LIMIT);
+    let result =
+        tokio::task::spawn_blocking(move || event_log::replay(&log, q.since.as_deref(), limit))
+            .await;
+    match result {
+        Ok(Ok(events)) => {
+            let next = events.last().map(|e| e.id);
+            Json(serde_json::json!({"count": events.len(), "next_since": next, "events": events}))
+                .into_response()
+        }
+        Ok(Err(msg)) => (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
+        )
+            .into_response(),
+        Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 /// Session event handler.
 pub async fn session_event_handler(
     Json(event): Json<SessionEvent>,
 ) -> impl axum::response::IntoResponse {
+    record_session_event(&event);
     let Some(entry) = PanelThreadEntry::from_session_event(&event) else {
         return Json(SessionEventResponse {
             status: "ok",
