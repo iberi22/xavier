@@ -1813,18 +1813,30 @@ pub async fn start_http_server(
     };
     // Opt-in harvester: only runs when XAVIER_HC_SESSIONS_DIR points at a sessions directory
     // (no default scan of an arbitrary path on the production node).
-    if let (Some(store), Ok(dir)) = (hc_store.clone(), std::env::var("XAVIER_HC_SESSIONS_DIR")) {
-        if !dir.trim().is_empty() {
+    let hc_sessions_dir = match std::env::var("XAVIER_HC_SESSIONS_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => Some(dir),
+        Ok(_) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            tracing::warn!("XAVIER_HC_SESSIONS_DIR is not valid UTF-8; harvester disabled");
+            None
+        }
+        Err(std::env::VarError::NotPresent) => None,
+    };
+    let hc_harvester = match (hc_store.clone(), hc_sessions_dir) {
+        (Some(store), Some(dir)) => {
             let config = xavier::server::maloca::HcCronBridgeConfig {
                 sessions_dir: PathBuf::from(dir),
                 ..Default::default()
             };
-            Arc::new(xavier::server::maloca::HcCronBridge::with_shared_store(
-                config, store,
-            ))
-            .start_background_worker();
+            Some(
+                Arc::new(xavier::server::maloca::HcCronBridge::with_shared_store(
+                    config, store,
+                ))
+                .start_background_worker(),
+            )
         }
-    }
+        _ => None,
+    };
     let maloca_router = xavier::maloca::nested_router::<()>(maloca_store.clone())
         .merge(xavier::server::maloca::v1_maloca_router_with_maloca_store(
             hc_store,
@@ -2236,6 +2248,9 @@ pub async fn start_http_server(
         .with_graceful_shutdown(async move {
             if let Err(error) = tokio::signal::ctrl_c().await {
                 info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
+            }
+            if let Some(harvester) = hc_harvester {
+                harvester.abort();
             }
             if let Some(shutdown) = sync_shutdown {
                 shutdown.shutdown();

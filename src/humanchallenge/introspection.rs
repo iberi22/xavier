@@ -301,17 +301,20 @@ impl IntrospectionEngine {
     // -----------------------------------------------------------------------
 
     /// Persist one curation vote per insight. Ids are deterministic so re-completing
-    /// a session replaces its votes instead of duplicating them.
+    /// a session replaces its votes instead of duplicating them. Votes carry no domain
+    /// tag (the technique is not a training domain) and are written as unverified
+    /// `Refine`, so the gate ignores them until a human verifies them.
     fn write_insight_votes(&self, session: &IntrospectionSession) -> Result<(), String> {
         for (i, insight) in session.insights.iter().enumerate() {
             let mut vote = CurationVote::new(
                 session.challenge_id.clone(),
-                CurationVerdict::Accept,
+                CurationVerdict::Refine,
                 Some(insight.clone()),
                 false,
-                vec![session.technique.as_str().to_string()],
+                Vec::new(),
                 session.training_consent,
             );
+            vote.technique = Some(session.technique.as_str().to_string());
             vote.id = format!("cv_{}_{}", session.id, i);
             self.store.save_curation_vote(&vote).map_err(|e| {
                 warn!("Failed to save insight vote for {}: {}", session.id, e);
@@ -436,5 +439,89 @@ mod tests {
             IntrospectionTechnique::recommend_for(ChallengeType::Contradiction),
             IntrospectionTechnique::SteelManning
         );
+    }
+
+    fn completed_consented_session(engine: &IntrospectionEngine, challenge: &str) -> String {
+        let session = engine
+            .start_session(
+                challenge,
+                ChallengeType::Decision,
+                "Pick a storage engine",
+                Some(IntrospectionTechnique::PreMortem),
+            )
+            .unwrap();
+        engine
+            .process_turn(
+                &session.id,
+                "We would lose data because the WAL checkpoint never runs under sustained load.",
+                "Pick a storage engine",
+            )
+            .unwrap();
+        engine
+            .complete_session_with_consent(&session.id, true)
+            .unwrap();
+        session.id
+    }
+
+    #[test]
+    fn test_insight_votes_keep_technique_in_own_field_not_domain() {
+        let store = Arc::new(HumanChallengeStore::in_memory().unwrap());
+        let engine = IntrospectionEngine::new(store.clone());
+        completed_consented_session(&engine, "hc_tech");
+
+        let votes = store.get_votes_for_challenge("hc_tech").unwrap();
+        assert_eq!(votes.len(), 1);
+        assert!(votes[0].domain_tags.is_empty());
+        assert_eq!(votes[0].technique.as_deref(), Some("pre_mortem"));
+        assert!(!votes[0].fact_verified);
+        assert_ne!(votes[0].verdict, CurationVerdict::Accept);
+    }
+
+    #[test]
+    fn test_consented_insights_add_no_domain_and_do_not_change_readiness() {
+        use crate::humanchallenge::curation_gate::CurationGate;
+
+        let store = Arc::new(HumanChallengeStore::in_memory().unwrap());
+        // A ready human-curated domain (general, via empty tags would also be at risk).
+        for i in 0..25 {
+            let mut v = CurationVote::new(
+                format!("hc_h_{i}"),
+                CurationVerdict::Accept,
+                None,
+                true,
+                vec!["rust".to_string()],
+                true,
+            );
+            v.id = format!("cv_h_{i}");
+            store.save_curation_vote(&v).unwrap();
+        }
+        // A ready "general" domain too: untagged votes land there.
+        for i in 0..25 {
+            let mut v = CurationVote::new(
+                format!("hc_g_{i}"),
+                CurationVerdict::Accept,
+                None,
+                true,
+                Vec::new(),
+                true,
+            );
+            v.id = format!("cv_g_{i}");
+            store.save_curation_vote(&v).unwrap();
+        }
+        let gate = CurationGate::with_defaults(store.clone()).without_queue();
+        let before = gate.ready_domains();
+        assert_eq!(before.len(), 2);
+        let tags_before = gate.check_readiness().domain_tags;
+
+        let engine = IntrospectionEngine::new(store.clone());
+        for i in 0..30 {
+            completed_consented_session(&engine, &format!("hc_i_{i}"));
+        }
+
+        assert_eq!(gate.ready_domains(), before);
+        let after = gate.check_readiness();
+        assert_eq!(after.domain_tags, tags_before);
+        assert!(!after.domain_tags.iter().any(|t| t == "pre_mortem"));
+        assert_eq!(store.count_training_eligible().unwrap(), 50);
     }
 }

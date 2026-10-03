@@ -204,6 +204,10 @@ pub struct CurationVote {
     /// Explicit consent to use this item for model training
     pub training_eligible: bool,
     pub voted_at: DateTime<Utc>,
+    /// Introspection technique that produced this vote (None for human curation votes).
+    /// Votes with a technique stay out of the training gate until a human verifies them.
+    #[serde(default)]
+    pub technique: Option<String>,
 }
 
 impl CurationVote {
@@ -224,6 +228,7 @@ impl CurationVote {
             domain_tags,
             training_eligible,
             voted_at: Utc::now(),
+            technique: None,
         }
     }
 }
