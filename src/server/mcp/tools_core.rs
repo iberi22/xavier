@@ -355,19 +355,15 @@ pub(crate) fn mcp_health_result(
     }
 }
 
-/// The node's shared `SpaceManager` for the espacio MCP tools. Root only for
-/// now (the MCP surface is not namespaced per space): an authenticated admin
-/// identity is required, and the node must run with espacio enabled.
-fn espacio_manager_for_root(
-    claims: Option<&crate::security::auth::Claims>,
-) -> anyhow::Result<std::sync::Arc<crate::espacio::SpaceManager>> {
-    match claims {
-        Some(c) if c.role == crate::security::auth::UserRole::Admin => {}
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Forbidden: espacio tools require the root/admin identity"
-            ))
-        }
+/// The node's shared `SpaceManager` for the espacio MCP tools. Root only:
+/// the call must carry the root-credential marker (set by the transport from
+/// the `RootCredential` request extension). A claimed `Admin` role, such as
+/// an Admin JWT, is not enough. The node must also run with espacio enabled.
+fn espacio_manager_for_root() -> anyhow::Result<std::sync::Arc<crate::espacio::SpaceManager>> {
+    if !super::server::root_credential_present() {
+        return Err(anyhow::anyhow!(
+            "Forbidden: espacio tools require the root credential"
+        ));
     }
     crate::adapters::inbound::http::routes::get_space_manager()
         .ok_or_else(|| anyhow::anyhow!("espacio is disabled on this node"))
@@ -377,7 +373,7 @@ fn espacio_manager_for_root(
 pub async fn handle_core_tool(
     _state: AppState,
     workspace: WorkspaceContext,
-    claims: Option<&crate::security::auth::Claims>,
+    _claims: Option<&crate::security::auth::Claims>,
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
@@ -1111,7 +1107,7 @@ pub async fn handle_core_tool(
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         "espacio_channel_list" => {
-            let manager = espacio_manager_for_root(claims)?;
+            let manager = espacio_manager_for_root()?;
             let space_id = arguments
                 .get("space_id")
                 .and_then(|v| v.as_str())
@@ -1130,7 +1126,7 @@ pub async fn handle_core_tool(
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         "espacio_channel_create" => {
-            let manager = espacio_manager_for_root(claims)?;
+            let manager = espacio_manager_for_root()?;
             let space_id = arguments
                 .get("space_id")
                 .and_then(|v| v.as_str())
@@ -1249,7 +1245,14 @@ mod tests {
             name: &str,
             args: Value,
         ) -> anyhow::Result<Value> {
-            handle_core_tool(st.0.clone(), st.1.clone(), claims, name, args).await
+            // Only the root fixture carries the root-credential marker, the way
+            // the transports derive it from the `RootCredential` extension.
+            let is_root = claims.is_some_and(|c| c.sub == "root");
+            crate::server::mcp::server::with_root_credential(
+                is_root,
+                handle_core_tool(st.0.clone(), st.1.clone(), claims, name, args),
+            )
+            .await
         }
         let st = (state, workspace);
 
@@ -1260,7 +1263,14 @@ mod tests {
             crate::security::auth::UserRole::Readonly,
             chrono::Duration::hours(1),
         );
-        for c in [None, Some(&ro)] {
+        // An Admin JWT is not root: role claims alone never open the tools.
+        let admin_jwt = crate::security::auth::Claims::new(
+            "jwt-admin".into(),
+            "a@swal.dev".into(),
+            crate::security::auth::UserRole::Admin,
+            chrono::Duration::hours(1),
+        );
+        for c in [None, Some(&ro), Some(&admin_jwt)] {
             let err = call(
                 &st,
                 c,

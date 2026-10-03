@@ -125,6 +125,8 @@ fn production_app(state: &CliState, manager: Option<Arc<SpaceManager>>) -> Route
     let probes = Router::new()
         .route("/memory/search", post(|| async { "reached" }))
         .route("/mcp/tools/call", post(|| async { "reached" }))
+        .route("/memory/decay", post(|| async { "reached" }))
+        .route("/mcp", post(|| async { "reached" }))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -259,8 +261,9 @@ async fn espacio_production_wiring_auth_tokens_and_restart() {
         ("GET", "/api/v1/espacio/spaces/esp_b"),
         ("GET", "/api/v1/espacio/admin/spaces"),
         ("POST", "/api/v1/espacio/admin/spaces"),
-        ("POST", "/memory/search"),
-        ("POST", "/mcp/tools/call"),
+        // Not audited as space-scoped (WP-13m): still refused.
+        ("POST", "/memory/decay"),
+        ("POST", "/mcp"),
     ] {
         let (st, _) = send(&app, m, p, Some(&owner_a), Some(serde_json::json!({}))).await;
         assert_eq!(st, StatusCode::FORBIDDEN, "{m} {p}");

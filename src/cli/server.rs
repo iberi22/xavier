@@ -124,6 +124,146 @@ pub async fn get_segment_documents_handler(
     }
 }
 
+/// Memory and MCP routes of the node, shared with the isolation tests so the
+/// test composition cannot drift from production. Layers (auth, clearance,
+/// rate limit, body limit) are applied by the caller.
+pub fn memory_routes() -> Router<CliState> {
+    Router::new()
+        .route("/memory/search", post(search_handler))
+        .route(
+            "/memory/get",
+            get(crate::cli::handlers::memory::get_handler),
+        )
+        .route(
+            "/memory/update",
+            post(update_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_add_memory()
+            }))),
+        )
+        .route(
+            "/memory/delete",
+            post(delete_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route(
+            "/memory/reindex",
+            post(reindex_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_add_memory()
+            }))),
+        )
+        .route(
+            "/v1/maintenance/reindex-embeddings",
+            post(xavier::adapters::inbound::http::routes::maintenance_reindex_handler).layer(
+                middleware::from_fn(xavier::middleware::require_permission(|r| {
+                    r.can_edit_config()
+                })),
+            ),
+        )
+        .route("/memory/stats", get(stats_handler))
+        .route("/v1/stats", get(stats_handler))
+        .route("/memory/export", get(export_handler))
+        .route("/memory/export-markdown", get(export_markdown_handler))
+        .route("/v1/memory/export-markdown", get(export_markdown_handler))
+        .route(
+            "/memory/decay",
+            post(decay_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route(
+            "/memory/consolidate",
+            post(consolidate_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route(
+            "/memory/prune",
+            post(memory_prune_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route("/memory/index-self", post(memory_index_self_handler))
+        .route(
+            "/memory/evict",
+            axum::routing::delete(evict_handler).layer(middleware::from_fn(require_permission(
+                |r| r.can_delete_memory(),
+            ))),
+        )
+        .route("/memory/manage", post(manage_handler))
+        .route("/memory/timeline/query", post(timeline_query_handler))
+        .route("/v1/segments", get(list_segments_handler))
+        .route(
+            "/v1/segments/{id}/documents",
+            get(get_segment_documents_handler),
+        )
+        .route(
+            "/v1/memories",
+            post(
+                add_handler.layer(middleware::from_fn(require_permission(|r| {
+                    r.can_add_memory()
+                }))),
+            )
+            .get(stats_handler),
+        )
+        .route(
+            "/v1/memories/search",
+            post(xavier::server::v1_api::v1_memories_search),
+        )
+        .route(
+            "/v1/memories/prune",
+            post(xavier::server::v1_api::v1_memories_prune).layer(middleware::from_fn(
+                require_permission(|r| r.can_delete_memory()),
+            )),
+        )
+        .route(
+            "/v1/context/assemble",
+            post(xavier::server::v1_api::v1_context_assemble),
+        )
+        .route(
+            "/v1/context/package",
+            post(xavier::server::v1_api::v1_context_package),
+        )
+        .route(
+            "/v1/memory/recall-eval",
+            post(xavier::server::v1_api::v1_memory_recall_eval),
+        )
+        .route(
+            "/v1/memory/recall/stats",
+            get(xavier::server::v1_api::v1_memory_recall_stats),
+        )
+        .route(
+            "/v1/memories/{id}",
+            get(xavier::server::v1_api::v1_memories_get),
+        )
+        .route(
+            "/v1/memories/{id}/outline",
+            get(xavier::server::v1_api::v1_memories_outline),
+        )
+        .route(
+            "/v1/memories/graph",
+            get(xavier::server::v1_api::v1_memories_graph),
+        )
+        .route(
+            "/v1/graph/export",
+            get(xavier::server::v1_api::v1_graph_export),
+        )
+        .route("/mcp/tools", get(mcp_tools_handler))
+        .route("/mcp/tools/call", post(mcp_tools_call_handler))
+}
+
+/// Memory routes that accept large bodies (the caller adds the body limit).
+pub fn memory_large_body_routes() -> Router<CliState> {
+    Router::new()
+        .route(
+            "/memory/add",
+            post(add_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_add_memory()
+            }))),
+        )
+        .route("/memory/export-pack", post(export_pack_handler))
+}
+
 /// Start http server.
 pub async fn start_http_server(
     port: u16,
@@ -959,125 +1099,7 @@ pub async fn start_http_server(
             "/api/v1/memory/sync/resolve/{conflict_id}",
             post(xavier::adapters::inbound::http::handlers::sync::sync_resolve_handler),
         )
-        .route("/memory/search", post(search_handler))
-        .route(
-            "/memory/get",
-            get(crate::cli::handlers::memory::get_handler),
-        )
-        .route(
-            "/memory/update",
-            post(update_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_add_memory()
-            }))),
-        )
-        .route(
-            "/memory/delete",
-            post(delete_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_delete_memory()
-            }))),
-        )
-        .route(
-            "/memory/reindex",
-            post(reindex_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_add_memory()
-            }))),
-        )
-        .route(
-            "/v1/maintenance/reindex-embeddings",
-            post(xavier::adapters::inbound::http::routes::maintenance_reindex_handler).layer(
-                middleware::from_fn(xavier::middleware::require_permission(|r| {
-                    r.can_edit_config()
-                })),
-            ),
-        )
-        .route("/memory/stats", get(stats_handler))
-        .route("/v1/stats", get(stats_handler))
-        .route("/memory/export", get(export_handler))
-        .route("/memory/export-markdown", get(export_markdown_handler))
-        .route("/v1/memory/export-markdown", get(export_markdown_handler))
-        .route(
-            "/memory/decay",
-            post(decay_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_delete_memory()
-            }))),
-        )
-        .route(
-            "/memory/consolidate",
-            post(consolidate_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_delete_memory()
-            }))),
-        )
-        .route(
-            "/memory/prune",
-            post(memory_prune_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_delete_memory()
-            }))),
-        )
-        .route("/memory/index-self", post(memory_index_self_handler))
-        .route(
-            "/memory/evict",
-            axum::routing::delete(evict_handler).layer(middleware::from_fn(require_permission(
-                |r| r.can_delete_memory(),
-            ))),
-        )
-        .route("/memory/manage", post(manage_handler))
-        .route("/memory/timeline/query", post(timeline_query_handler))
-        .route("/v1/segments", get(list_segments_handler))
-        .route(
-            "/v1/segments/{id}/documents",
-            get(get_segment_documents_handler),
-        )
-        .route(
-            "/v1/memories",
-            post(
-                add_handler.layer(middleware::from_fn(require_permission(|r| {
-                    r.can_add_memory()
-                }))),
-            )
-            .get(stats_handler),
-        )
-        .route(
-            "/v1/memories/search",
-            post(xavier::server::v1_api::v1_memories_search),
-        )
-        .route(
-            "/v1/memories/prune",
-            post(xavier::server::v1_api::v1_memories_prune).layer(middleware::from_fn(
-                require_permission(|r| r.can_delete_memory()),
-            )),
-        )
-        .route(
-            "/v1/context/assemble",
-            post(xavier::server::v1_api::v1_context_assemble),
-        )
-        .route(
-            "/v1/context/package",
-            post(xavier::server::v1_api::v1_context_package),
-        )
-        .route(
-            "/v1/memory/recall-eval",
-            post(xavier::server::v1_api::v1_memory_recall_eval),
-        )
-        .route(
-            "/v1/memory/recall/stats",
-            get(xavier::server::v1_api::v1_memory_recall_stats),
-        )
-        .route(
-            "/v1/memories/{id}",
-            get(xavier::server::v1_api::v1_memories_get),
-        )
-        .route(
-            "/v1/memories/{id}/outline",
-            get(xavier::server::v1_api::v1_memories_outline),
-        )
-        .route(
-            "/v1/memories/graph",
-            get(xavier::server::v1_api::v1_memories_graph),
-        )
-        .route(
-            "/v1/graph/export",
-            get(xavier::server::v1_api::v1_graph_export),
-        )
+        .merge(memory_routes())
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
         // ── Clavis Key Vault API ─────────────────────────────────────────
@@ -1120,8 +1142,6 @@ pub async fn start_http_server(
                 r.can_manage_users()
             }))),
         )
-        .route("/mcp/tools", get(mcp_tools_handler))
-        .route("/mcp/tools/call", post(mcp_tools_call_handler))
         // Memory Knowledge Graph (EntityGraph)
         .route("/memory/graph/entities", get(memory_graph_list_entities))
         .route(
@@ -1697,13 +1717,7 @@ pub async fn start_http_server(
         ));
 
     let large_body_routes = Router::new()
-        .route(
-            "/memory/add",
-            post(add_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_add_memory()
-            }))),
-        )
-        .route("/memory/export-pack", post(export_pack_handler))
+        .merge(memory_large_body_routes())
         .route("/panel/api/chat", post(panel_process_chat))
         .route("/code/scan", post(code_scan_handler))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))

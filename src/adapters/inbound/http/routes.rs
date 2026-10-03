@@ -1402,12 +1402,17 @@ pub async fn espacio_delete_handler(
     }
     let target = id.clone();
     match run_blocking(async move { manager.delete(&target).await }).await {
-        Some(Ok(())) => Json(serde_json::json!({
-            "status": "ok",
-            "message": format!("Space {} moved to trash", id),
-            "id": id,
-        }))
-        .into_response(),
+        Some(Ok(())) => {
+            // Drop the space's cached memory workspace (and its pooled
+            // connections) so a re-created space never inherits it.
+            crate::workspace::invalidate_space_workspace(&id).await;
+            Json(serde_json::json!({
+                "status": "ok",
+                "message": format!("Space {} moved to trash", id),
+                "id": id,
+            }))
+            .into_response()
+        }
         Some(Err(err)) => espacio_error_response(err),
         None => espacio_join_error(),
     }
