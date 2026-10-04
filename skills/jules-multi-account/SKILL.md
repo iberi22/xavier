@@ -145,3 +145,22 @@ When running concurrent sessions across two accounts on the **SAME repository**:
 2. **Pre-requisites in Main**: All shared types/primitives must already be merged into `main` before dispatching dependents.
 3. **No Features Reconcile**: Subagents must NEVER touch `.gitcore/features.json`. Only the orchestrator reconciles the ledger post-merge.
 
+
+## Field report 2026-09-29 (measured on 14 real sessions, both accounts)
+
+| Repo | Sessions | Result | Typical time |
+|---|---|---|---|
+| atlas-saas (JS/TS, Cloudflare) | 3 | 3/3 COMPLETED with PR | 12–14 min |
+| swal-agent-runner (TS) | 2 | 2/2 COMPLETED with PR | ~20 min |
+| swal-vault (Flutter) | 2 | 1 COMPLETED with PR, 1 AWAITING_USER_FEEDBACK | 77–91 min |
+| iberi22/xavier (large Rust workspace) | 7 | 0/7 — "error when preparing the virtual machine environment" / "encountered an error" | — |
+
+Rules derived from the data:
+1. **Do not send iberi22/xavier to Jules** until its Jules environment is fixed (Jules web → repo settings: no heavy setup script). The runner enforces this with `jules_blocked_repos` in `~/.hermes/scripts/pipeline.toml`; those tasks run on the local free agent and CI verifies (xavier is public, CI works).
+2. **Jules is strong on small JS/TS/Flutter tasks**: ≤3 files, ≤150 changed lines, one clear acceptance list, exact file table. That profile succeeded 6/7.
+3. **Never tell Jules to run heavy builds** it cannot run; per-wave `jules_rules` in the wave file override the default rules (e.g. "do not build, CI verifies").
+4. **A FAILED session usually still contains the code** (`artifacts[].changeSet.gitPatch`): the runner salvages the last patch and runs the gates instead of redoing the task.
+5. **Stop or replace a wave → archive its Jules sessions** (`POST sessions/{id}:archive`), or they sit in AWAITING_USER_FEEDBACK holding slots and can open duplicate PRs.
+6. **Scheduled persona agents with open-ended prompts** (Bolt/Sentinel/Palette) wait forever for feedback; give them a concrete target and "finish without asking" or disable them in the Jules web UI.
+7. The hook that runs clippy on every commit killed Jules' internal commit; xavier's pre-commit is now light (PR #2718, `XAVIER_HOOK_FULL=1` to run clippy).
+8. Private repos: GitHub Actions is blocked by a billing issue since 2026-08-18, so CI-verify mode does not work there; use local gates or `act` (loop v5, VERIFY_MODE=act).
