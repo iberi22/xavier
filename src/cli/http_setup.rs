@@ -77,21 +77,39 @@ pub(crate) fn lease_may_access(path: &str) -> bool {
     path.starts_with("/v1/proxy/")
 }
 
-/// Auth gate for Maloca's mutating endpoints (`/maloca/*`, `/v1/maloca/*`).
+/// Auth gate for Maloca endpoints (`/maloca/*`, `/v1/maloca/*`).
 ///
-/// Maloca is intentionally public for reads — GET/HEAD requests pass straight
-/// through so the panel and `@swal/maloca-client` dogfood surface keep
-/// working without a token, matching the router's existing design. Every
-/// other verb (POST/PUT/PATCH/DELETE) is routed through the same
-/// [`auth_middleware`] the rest of the API uses, so writes require the root
-/// or API token like everything else. OPTIONS also passes through unchanged
-/// here; CORS preflight is handled by the `CorsLayer` wrapping this
-/// middleware, which short-circuits OPTIONS before it ever reaches us.
+/// Security policy (fix/maloca-support-auth):
+/// - `/maloca/support` and `/v1/maloca/support` (incidencias internas) require
+///   the same token for ALL verbs — including GET/HEAD — because ticket
+///   contents are internal operational data and must not be readable without
+///   authentication. Any request whose path starts with `/maloca/support` or
+///   `/v1/maloca/support` is forwarded to `auth_middleware` regardless of method.
+/// - All other `/maloca/*` GET/HEAD requests remain public (panel dogfood).
+/// - Every mutating verb (POST/PUT/PATCH/DELETE) on any `/maloca/*` path
+///   always requires auth via [`auth_middleware`].
+/// - OPTIONS passes through unchanged; CORS preflight is handled by the
+///   surrounding `CorsLayer` before it ever reaches this middleware.
 pub async fn maloca_mutation_auth_middleware(
     state: State<CliState>,
     req: Request<Body>,
     next: Next,
 ) -> Response {
+    // /maloca/support and /v1/maloca/support (incidencias internas) are
+    // always gated — reads of ticket data are sensitive internal data.
+    let path = req.uri().path();
+    let is_support_path = path == "/maloca/support"
+        || path.starts_with("/maloca/support/")
+        || path == "/v1/maloca/support"
+        || path.starts_with("/v1/maloca/support/");
+
+    // OPTIONS (CORS preflight) never carries ticket data and must not be
+    // turned into a 401 by this gate, including on support paths.
+    if is_support_path && *req.method() != Method::OPTIONS {
+        return auth_middleware(state, req, next).await;
+    }
+
+    // For all other /maloca/* paths: only mutations need auth.
     if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
         return next.run(req).await;
     }
