@@ -249,3 +249,6 @@ fn test_budget_and_double_voting_constraints() {
     assert!(err_double.is_err());
     assert!(err_double.unwrap_err().contains("already voted"));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

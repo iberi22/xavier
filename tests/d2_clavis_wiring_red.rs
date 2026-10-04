@@ -222,3 +222,6 @@ fn el_prefijo_clavis_esta_en_root_only_prefixes() {
          List was:\n{list}"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

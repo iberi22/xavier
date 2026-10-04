@@ -258,3 +258,6 @@ fn test_e2e_keygen_scope_prefixes_and_64_hex_chars() {
     assert!(live_body.chars().all(|c| c.is_ascii_hexdigit()));
     assert!(test_body.chars().all(|c| c.is_ascii_hexdigit()));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

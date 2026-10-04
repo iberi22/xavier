@@ -260,3 +260,6 @@ fn cosine_similarity(v1: &[f32], v2: &[f32]) -> f32 {
     }
     dot / (norm1 * norm2)
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

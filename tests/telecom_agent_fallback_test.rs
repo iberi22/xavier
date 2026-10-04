@@ -95,3 +95,6 @@ async fn test_telecom_agent_fallback_on_timeout() {
     assert!(fallback_error_payload.content.contains(">5000ms"));
     assert!(fallback_error_payload.content.contains("offline"));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

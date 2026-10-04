@@ -192,3 +192,6 @@ fn test_otel_json_export_structure() {
     assert_eq!(otel_span.name, "AgentPipeline");
     assert_eq!(otel_span.status.code, 1); // 1 = Ok
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

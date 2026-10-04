@@ -140,3 +140,6 @@ async fn test_full_recovery_flow() {
         .unwrap();
     assert!(!success_again);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

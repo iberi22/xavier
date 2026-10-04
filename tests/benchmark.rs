@@ -149,3 +149,6 @@ async fn run_locomo_benchmark() {
         "Benchmark failed to meet minimum accuracy threshold"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

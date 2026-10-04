@@ -117,3 +117,6 @@ mod telegram_tests {
         assert_eq!(res_no_secret_with_token, Ok(()));
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

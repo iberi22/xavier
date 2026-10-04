@@ -81,3 +81,6 @@ async fn test_full_harvest_workflow() {
     assert_eq!(output["code_changes"][0]["file"], "src/main.rs");
     assert_eq!(output["code_changes"][0]["symbols"][0], "main");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -74,6 +74,7 @@ pub mod tasks;
 pub mod telecom;
 #[cfg(feature = "telegram")]
 pub mod telegram;
+pub mod test_support;
 pub mod tgd;
 pub mod tools;
 pub mod training;

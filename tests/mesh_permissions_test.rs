@@ -244,3 +244,6 @@ async fn test_mesh_permissions_and_pairing() {
         "A should see chunks from 'open' namespace"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

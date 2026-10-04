@@ -218,3 +218,6 @@ async fn skill_semantic_rank_eval() {
         "Recall@3 {recall_at_3:.4} below 0.8 threshold"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

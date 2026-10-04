@@ -107,3 +107,6 @@ fn test_differential_privacy_noise() {
     let mean = sum / noisy_samples.len() as f64;
     assert!((mean - original_val).abs() < 20.0);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

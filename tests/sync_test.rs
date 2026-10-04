@@ -93,3 +93,6 @@ fn test_sync_no_duplicate_chunks() -> Result<()> {
 
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

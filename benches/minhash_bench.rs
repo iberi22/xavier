@@ -99,3 +99,6 @@ criterion_group!(
     bulk_comparison_bench
 );
 criterion_main!(benches);
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -921,3 +921,6 @@ async fn d8_codex_sync_skips_unchanged_and_retries_failed_import() -> Result<()>
     assert_eq!(store.attempts(), 2, "no store write on the skipped pass");
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -113,3 +113,6 @@ async fn test_embedding_models() {
         "Model {model} accuracy too low: {accuracy}%"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

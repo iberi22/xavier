@@ -373,3 +373,6 @@ fn urlencoding_encode(value: &str) -> String {
     }
     out
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

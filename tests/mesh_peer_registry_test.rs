@@ -112,3 +112,6 @@ async fn test_e2e_multi_node_memory_flow_via_mesh() {
     handle_a.abort();
     let _ = handle_a.await;
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

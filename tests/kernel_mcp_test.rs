@@ -16,3 +16,6 @@ async fn test_mcp_kernel_execution_and_token_accounting() {
     let updated_stats = TRACKER.get_stats().await;
     assert!(updated_stats.operation_count > initial_stats.operation_count);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

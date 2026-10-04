@@ -72,3 +72,6 @@ fn bench_retrieval_hormer(c: &mut Criterion) {
 
 criterion_group!(retrieval_benches, bench_retrieval_hormer);
 criterion_main!(retrieval_benches);
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

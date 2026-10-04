@@ -387,3 +387,6 @@ fn test_sanction_validator_penalties() {
         }
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

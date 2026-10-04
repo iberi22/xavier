@@ -159,3 +159,6 @@ async fn test_health_endpoint_via_xavier_binary() {
         "xavier did not enforce authentication on protected routes"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

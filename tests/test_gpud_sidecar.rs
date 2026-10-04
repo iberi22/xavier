@@ -276,3 +276,6 @@ async fn test_background_monitor_spawn() {
     tokio::time::sleep(Duration::from_millis(120)).await;
     handle.abort();
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

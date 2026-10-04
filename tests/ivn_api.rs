@@ -207,3 +207,6 @@ async fn test_ivn_api_full_lifecycle() {
         "xv1_applicant_wallet_123"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

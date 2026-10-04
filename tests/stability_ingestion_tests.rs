@@ -248,3 +248,6 @@ async fn all_importers_shared_store_second_pass_stable() -> anyhow::Result<()> {
     assert_eq!(embedder.calls.load(Ordering::SeqCst), after_first);
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -165,3 +165,6 @@ async fn test_memory_and_session_export_redaction() {
         "My email is [EMAIL] and phone is [PHONE]."
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

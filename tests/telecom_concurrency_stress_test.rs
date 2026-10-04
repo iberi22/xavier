@@ -114,3 +114,6 @@ async fn test_telecom_concurrency_stress_50_tasks_100_msgs() {
         "Expected WAL checkpoint to occur with threshold 1"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

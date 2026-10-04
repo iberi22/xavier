@@ -71,3 +71,6 @@ fn test_env_guard_serial_execution_isolation() {
     assert_eq!(std::env::var(key).unwrap(), "original_val");
     std::env::remove_var(key);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

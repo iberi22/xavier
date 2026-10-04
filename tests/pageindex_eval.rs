@@ -434,3 +434,6 @@ async fn test_eval_llm_navigator_optional() {
     }
     println!("queries: {}\n{}", qs.len(), format_report(&[col]));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

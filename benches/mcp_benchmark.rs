@@ -112,3 +112,6 @@ fn bench_mcp_ops(c: &mut Criterion) {
 
 criterion_group!(mcp_benches, bench_mcp_ops);
 criterion_main!(mcp_benches);
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

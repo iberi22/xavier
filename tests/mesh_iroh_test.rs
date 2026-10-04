@@ -51,3 +51,6 @@ async fn test_iroh_accept_loop_handshake_flow() {
     handle_a.abort();
     let _ = handle_a.await;
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

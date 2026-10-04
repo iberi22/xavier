@@ -138,3 +138,6 @@ async fn test_unified_graph_state_is_workspace_isolated() {
         .iter()
         .any(|belief| belief.relation_type == "alpha_only"));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

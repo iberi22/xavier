@@ -164,3 +164,6 @@ fn test_dynamic_quorum_adjustments() {
     assert!((dq.effective_user_quorum(0.50) - 0.20).abs() < 0.001);
     assert!((dq.effective_council_quorum(0.50) - 0.60).abs() < 0.001);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

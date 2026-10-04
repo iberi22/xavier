@@ -119,3 +119,6 @@ fn test_preflight_json_ready_true() {
     let val: serde_json::Value = serde_json::from_str(json_str).expect("Valid JSON");
     assert_eq!(val["ready"], true, "Expected ready flag to be true");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

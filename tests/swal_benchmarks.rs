@@ -198,3 +198,6 @@ fn swal_bench_recall() {
     let t = bench_cli(&["recall", "SWAL"], "recall");
     println!("  ──── recall latency: {:.2?}", t);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

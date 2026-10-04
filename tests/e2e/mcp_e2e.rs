@@ -248,3 +248,6 @@ async fn test_mcp_e2e_health_check() {
     assert!(structured_item["status"].is_string());
     assert_eq!(structured_item["handshakeOk"], true);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

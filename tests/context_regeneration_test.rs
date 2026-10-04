@@ -173,3 +173,6 @@ async fn test_background_scheduled_regeneration_loop() {
     tx.send(()).expect("Failed to send shutdown signal");
     handle.await.expect("Background loop join error");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

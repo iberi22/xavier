@@ -196,3 +196,6 @@ async fn test_uninitialized_sqlite_fails_open() {
     std::env::remove_var("XAVIER_CLEARANCE_AUDIT_PATH");
     std::env::remove_var("XAVIER_CLEARANCE_AUDIT_SQLITE");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();
