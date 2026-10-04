@@ -345,3 +345,6 @@ async fn test_uds_concurrent_agent_queries() -> Result<()> {
     let _ = server_handle.await?;
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

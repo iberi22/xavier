@@ -40,3 +40,6 @@ async fn test_messaging_status_endpoint() {
     assert!(discord.get("configured").is_some());
     assert!(discord.get("active").is_some());
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -180,3 +180,6 @@ async fn test_hormer_ranking_consistency() {
     let results = gating.retrieve(&docs, &[], &[], "Xavier", None).await;
     assert_eq!(results[0].id, "high");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

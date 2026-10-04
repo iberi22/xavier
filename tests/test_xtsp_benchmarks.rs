@@ -110,3 +110,6 @@ fn test_xtsp_default_cases_integrity() {
         assert!(!case.documents.is_empty());
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

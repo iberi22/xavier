@@ -259,3 +259,6 @@ async fn test_clavis_http_api_vault_contract() {
 
     let _ = vault.delete_secret("api_key_probe");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

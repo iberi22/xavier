@@ -52,3 +52,6 @@ fn test_live_system_one_scenarios_and_benchmark() {
         "La operación debe tomar menos de 1 microsegundo por turno"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

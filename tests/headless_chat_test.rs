@@ -113,3 +113,6 @@ async fn test_headless_chat_completions() {
 
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

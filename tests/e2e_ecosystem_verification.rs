@@ -317,3 +317,6 @@ async fn test_web_and_desktop_consent_contract() {
     assert!(!body.opt_in);
     assert_eq!(body.storage_quota_mb, 1024);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

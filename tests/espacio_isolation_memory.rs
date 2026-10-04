@@ -900,3 +900,6 @@ async fn space_tokens_cannot_update_or_delete_whatever_the_role() {
         assert_ne!(st, StatusCode::UNAUTHORIZED, "{role} outline");
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

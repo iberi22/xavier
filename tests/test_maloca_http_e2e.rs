@@ -266,3 +266,6 @@ async fn test_maloca_http_e2e_node_consent() {
     assert!(get_body_2.opt_in);
     assert_eq!(get_body_2.storage_quota_mb, 4096);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

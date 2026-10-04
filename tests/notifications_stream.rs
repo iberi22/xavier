@@ -148,3 +148,6 @@ async fn test_default_sse_stream_creation() {
         "Default SSE stream handshake should set retry to 3000ms: {handshake_str}"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

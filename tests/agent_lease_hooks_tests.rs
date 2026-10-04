@@ -96,3 +96,6 @@ async fn test_agent_task_failure_lease_revocation() {
         "Lease should have been revoked after task failure"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

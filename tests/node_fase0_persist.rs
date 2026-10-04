@@ -84,3 +84,6 @@ fn recover_from_shares_file_same_identity() {
     let (_o, keys, _) = store.unlock("999999", None).unwrap();
     assert_eq!(keys.node_id.as_str(), before.node_id);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

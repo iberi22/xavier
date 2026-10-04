@@ -104,3 +104,6 @@ async fn test_proxy_lending_zero_trust_flow() -> Result<()> {
 
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

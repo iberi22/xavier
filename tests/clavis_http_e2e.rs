@@ -286,3 +286,6 @@ async fn test_log_safety_and_vault_isolation() {
 
     let _ = HardwareVault::new("xavier-clavis").delete_secret(secret_key);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

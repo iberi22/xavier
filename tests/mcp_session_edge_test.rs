@@ -342,3 +342,6 @@ fn test_mcp_session_error_display_formatting() {
         .to_string()
         .contains("Invalid session state transition"));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

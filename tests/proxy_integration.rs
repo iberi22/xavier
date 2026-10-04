@@ -53,3 +53,6 @@ async fn test_proxy_use_case_rate_limited() {
         result
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

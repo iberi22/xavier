@@ -174,3 +174,6 @@ async fn test_headless_api_e2e() {
         assert_eq!(resp.status(), StatusCode::OK);
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

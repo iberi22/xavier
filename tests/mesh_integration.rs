@@ -606,3 +606,6 @@ async fn test_e2e_join_roundtrip_live() {
     let pub_nets: Vec<serde_json::Value> = list_pub.json().await.unwrap();
     assert!(pub_nets.is_empty());
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -197,6 +197,8 @@ impl ConnectionManager {
 
     /// Explicitly connect to a database file with a given project_id.
     pub fn connect_with_path(&self, project_id: &str, db_path: PathBuf) -> Result<()> {
+        // Test/bench binaries must never open a DB under the real user home.
+        crate::test_support::guard_user_path(&db_path);
         self.known_paths
             .write()
             .insert(project_id.to_string(), db_path.clone());

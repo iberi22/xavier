@@ -64,7 +64,9 @@ pub fn resolve_data_dir() -> PathBuf {
     }
 
     if let Some(data_dir) = dirs::data_dir() {
-        return data_dir.join("xavier");
+        let resolved = data_dir.join("xavier");
+        crate::test_support::guard_user_path(&resolved);
+        return resolved;
     }
 
     PathBuf::from("data")

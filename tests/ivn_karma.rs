@@ -146,3 +146,6 @@ fn test_exclusion_window_integration_with_selection() {
         assert_ne!(cand.wallet, excluded_val);
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

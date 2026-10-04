@@ -23,3 +23,6 @@ async fn test_sqlite_vec_available() {
 
     assert!(res.abs() < 1e-6);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

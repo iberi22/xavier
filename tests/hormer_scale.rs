@@ -81,3 +81,6 @@ async fn test_hormer_navigation_at_scale() {
     let metrics = hormer.get_metrics().await;
     assert_eq!(metrics["navigated_queries"], 50);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

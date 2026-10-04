@@ -141,3 +141,6 @@ fn test_token_savings_benchmark() {
     assert!(report.tokens_saved > 0);
     assert!(report.savings_percentage > 90.0);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

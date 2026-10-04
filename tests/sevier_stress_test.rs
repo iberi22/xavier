@@ -453,3 +453,6 @@ async fn test_unregister_endpoint_returns_error_for_missing_agent() {
     assert_eq!(parsed["agent_id"], "missing-agent");
     assert_eq!(parsed["message"], "Agent not found or already unregistered");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

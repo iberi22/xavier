@@ -512,3 +512,6 @@ async fn test_p2p_pipeline_filter_removes_unconsented() {
     let anon_diff = filtered.iter().find(|d| d.namespace == "anon_ns").unwrap();
     assert!(anon_diff.data.is_some(), "anon_ns must keep payload intact");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

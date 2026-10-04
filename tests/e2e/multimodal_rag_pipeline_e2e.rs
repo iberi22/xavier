@@ -268,3 +268,6 @@ fn test_e2e_expert_training_export_preparation() {
         "Laplace noise should alter confidence metrics in P3"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

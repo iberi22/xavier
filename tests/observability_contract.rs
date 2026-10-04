@@ -512,3 +512,6 @@ async fn test_observability_mcp_stats_surface() {
         u64_field(&stats, counter, "MCP stats tool (tools_memory.rs)");
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -54,3 +54,6 @@ async fn test_workspace_isolation() {
     assert_eq!(results_b.len(), 1);
     assert_eq!(results_b[0].content, "content for B");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

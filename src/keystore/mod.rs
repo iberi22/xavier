@@ -138,7 +138,9 @@ impl MasterKeyManager {
 
     fn get_fallback_path() -> PathBuf {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        home.join(".xavier").join("master.key")
+        let path = home.join(".xavier").join("master.key");
+        crate::test_support::guard_user_path(&path);
+        path
     }
 
     /// Stable per-installation identity sources, in resolution order.

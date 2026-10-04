@@ -388,3 +388,6 @@ async fn test_clearance_live_export_ceiling_and_audit() {
         "Audit file must exist at XAVIER_CLEARANCE_AUDIT_PATH"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

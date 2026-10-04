@@ -193,3 +193,6 @@ async fn test_http_redaction_e2e() {
     std::env::remove_var(ROUTE_POLICY_ENV);
     std::env::remove_var(TRUST_HEADER_ENV);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

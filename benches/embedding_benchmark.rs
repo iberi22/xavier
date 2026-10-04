@@ -428,3 +428,6 @@ async fn main() {
     let results = run_all_benchmarks().await;
     print_summary(&results);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

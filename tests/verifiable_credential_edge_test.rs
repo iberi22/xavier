@@ -214,3 +214,6 @@ fn test_default_context() {
     assert_eq!(ctx[0], "https://www.w3.org/ns/credentials/v2");
     assert_eq!(ctx[1], "https://schema.org");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

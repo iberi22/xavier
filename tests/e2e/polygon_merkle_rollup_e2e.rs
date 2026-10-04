@@ -250,3 +250,6 @@ fn test_e2e_negative_malformed_merkle_root_and_invalid_contract() {
         "Empty contract address must be rejected"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

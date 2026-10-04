@@ -118,3 +118,6 @@ fn test_src_reference_and_config_verified() {
         "SRC.md should be a substantive reference"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

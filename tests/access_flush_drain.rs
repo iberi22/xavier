@@ -977,3 +977,6 @@ fn shutdown_hook_is_wired_to_the_buffer() {
         "the signal handlers must call the drain"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

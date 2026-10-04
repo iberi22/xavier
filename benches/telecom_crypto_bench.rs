@@ -67,3 +67,6 @@ fn bench_key_derivation(c: &mut Criterion) {
 
 criterion_group!(benches, bench_encrypt_decrypt, bench_key_derivation);
 criterion_main!(benches);
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

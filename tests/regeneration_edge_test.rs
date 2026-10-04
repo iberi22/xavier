@@ -374,3 +374,6 @@ async fn test_background_loop_with_zero_interval() {
     tx.send(()).expect("Shutdown failed");
     handle.await.expect("Loop join failed");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

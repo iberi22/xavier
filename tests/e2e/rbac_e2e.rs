@@ -280,3 +280,6 @@ async fn test_rbac_mcp_mutative_tools_readonly_blocked() {
 
     assert!(result.is_ok());
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

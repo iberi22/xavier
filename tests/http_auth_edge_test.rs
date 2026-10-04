@@ -516,3 +516,6 @@ async fn test_middleware_invalid_token_jwt_fallback_invalid_jwt() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["message"], "Invalid API token");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

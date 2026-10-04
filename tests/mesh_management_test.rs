@@ -52,3 +52,6 @@ async fn test_mesh_acl_management() {
     acl.remove_entry(&node_id).unwrap();
     assert!(acl.get_entry(&node_id).is_none());
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

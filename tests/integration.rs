@@ -400,3 +400,6 @@ mod integration {
         assert!(server.registry.get("worker-1").await.is_none());
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();
