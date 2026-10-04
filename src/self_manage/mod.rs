@@ -1537,15 +1537,12 @@ pub struct CreatedTicketsRegistry {
 /// Path of the tickets registry. Unit tests use a per-process temp file so they
 /// never overwrite the user's real `~/.xavier/state/tickets.json`.
 fn tickets_registry_path() -> Option<std::path::PathBuf> {
-    #[cfg(test)]
-    {
-        return Some(std::env::temp_dir().join(format!(
+    if cfg!(test) {
+        Some(std::env::temp_dir().join(format!(
             "xavier-test-state-{}/tickets.json",
             std::process::id()
-        )));
-    }
-    #[cfg(not(test))]
-    {
+        )))
+    } else {
         dirs::home_dir().map(|home| home.join(".xavier/state/tickets.json"))
     }
 }
