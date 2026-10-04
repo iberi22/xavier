@@ -42,6 +42,15 @@ workspace exceeds typical sandbox limits (Jules fails while "preparing the virtu
 environment"). Remote agents only need `rustfmt`; they write code and tests, and CI verifies
 every PR (fmt, clippy `-D warnings`, tests). Use a light setup: `rustup component add rustfmt`.
 
+**Jules PRs (owner rule, 2026-10-03):** all Xavier implementation goes through Jules; the owner's
+machine never builds. PRs must be mergeable as-is:
+- Base branch = the branch named in the task (today `sprint/xavier-2026-10`), never `main`.
+- Touch ONLY the files the task lists; no lockfile, formatting-only or drive-by changes elsewhere.
+- Run `cargo fmt` on the files you touched. You MAY run the single targeted test named in the task
+  (`cargo test --lib --features ci-safe <filter>` or `--test <name>`); never the full suite.
+- CI runs on PRs to `main` and `sprint/**`. If it fails, a bot comment `@jules` brings the failing log
+  to the PR: fix only what the log shows, on the same branch.
+
 ## 3. Development by waves
 
 - Work is organized in waves: research → issues → execution → verification.
