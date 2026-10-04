@@ -74,19 +74,15 @@ impl MalocaStore {
         // `XAVIER_STATE_DIR` they get a per-process temp dir. Before this guard,
         // tests like `ticket_create_tests` wrote ~385 fake tickets into the
         // production `data/maloca/store.json`.
-        #[cfg(test)]
-        {
-            return std::env::temp_dir().join(format!("xavier-test-state-{}", std::process::id()));
-        }
-
-        #[cfg(not(test))]
-        {
+        if cfg!(test) {
+            std::env::temp_dir().join(format!("xavier-test-state-{}", std::process::id()))
+        } else {
             let data_dir = crate::settings::XavierSettings::current().memory.data_dir;
             if !data_dir.trim().is_empty() {
-                return PathBuf::from(data_dir);
+                PathBuf::from(data_dir)
+            } else {
+                PathBuf::from("data")
             }
-
-            PathBuf::from("data")
         }
     }
 
