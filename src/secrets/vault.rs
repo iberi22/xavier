@@ -231,7 +231,14 @@ impl HardwareVault {
             return Ok(dir.clone());
         }
 
-        Ok(self.backend()?.storage_dir.clone())
+        let mut base = self.backend()?.storage_dir.clone();
+        if self.service_name != "xavier" {
+            base.push(&self.service_name);
+            if !base.exists() {
+                let _ = std::fs::create_dir_all(&base);
+            }
+        }
+        Ok(base)
     }
 
     /// Vault key for the local fallback files. Tests inject a synthetic key so
