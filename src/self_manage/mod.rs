@@ -1534,9 +1534,21 @@ pub struct CreatedTicketsRegistry {
 }
 
 /// Loads the tickets registry from ~/.xavier/state/tickets.json
+/// Path of the tickets registry. Unit tests use a per-process temp file so they
+/// never overwrite the user's real `~/.xavier/state/tickets.json`.
+fn tickets_registry_path() -> Option<std::path::PathBuf> {
+    if cfg!(test) {
+        Some(std::env::temp_dir().join(format!(
+            "xavier-test-state-{}/tickets.json",
+            std::process::id()
+        )))
+    } else {
+        dirs::home_dir().map(|home| home.join(".xavier/state/tickets.json"))
+    }
+}
+
 pub fn load_tickets_registry() -> CreatedTicketsRegistry {
-    if let Some(home) = dirs::home_dir() {
-        let p = home.join(".xavier/state/tickets.json");
+    if let Some(p) = tickets_registry_path() {
         if let Ok(content) = std::fs::read_to_string(&p) {
             if let Ok(registry) = serde_json::from_str(&content) {
                 return registry;
@@ -1548,8 +1560,7 @@ pub fn load_tickets_registry() -> CreatedTicketsRegistry {
 
 /// Saves the tickets registry to ~/.xavier/state/tickets.json
 pub fn save_tickets_registry(reg: &CreatedTicketsRegistry) {
-    if let Some(home) = dirs::home_dir() {
-        let p = home.join(".xavier/state/tickets.json");
+    if let Some(p) = tickets_registry_path() {
         if let Some(parent) = p.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
