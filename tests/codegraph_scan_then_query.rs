@@ -9,7 +9,6 @@ use code_graph::db::CodeGraphDB;
 use code_graph::indexer::Indexer;
 use code_graph::query::QueryEngine;
 use std::fs;
-use std::path::Path;
 use std::sync::Arc;
 use tempfile::TempDir;
 
