@@ -108,56 +108,47 @@ pub struct ClavisProxyRequest {
 fn get_secret_with_legacy_fallback(key_name: &str) -> Result<String, SecretError> {
     let vault = clavis_vault();
 
-    // 1. Primary lookup in active clavis_vault
-    if let Ok(value) = vault.get_secret(key_name) {
+    // 1. Enforce Clavis API key prefix rule on all lookups.
+    // If the caller didn't provide `api_key_`, we assume they want an API key and prefix it.
+    // We NEVER query the vault with un-prefixed names to prevent exposing general secrets or node seeds.
+    let search_key = if key_name.starts_with("api_key_") {
+        key_name.to_string()
+    } else {
+        format!("api_key_{key_name}")
+    };
+
+    // 2. Primary lookup in active clavis_vault using the enforced prefix.
+    if let Ok(value) = vault.get_secret(&search_key) {
         return Ok(value);
     }
 
-    // 1b. Try api_key_{key_name} prefix if not already present
-    let alt_key = if !key_name.starts_with("api_key_") {
-        Some(format!("api_key_{key_name}"))
-    } else {
-        None
-    };
-
-    if let Some(ref alt) = alt_key {
-        if let Ok(value) = vault.get_secret(alt) {
-            return Ok(value);
-        }
-    }
-
-    // 2. Fallback check against legacy "xavier" service namespace.
-    // SECURITY GATE: ONLY query entries that carry the `api_key_` prefix in the legacy vault.
-    // NEVER query raw general secret names (e.g., XAVIER_OPENROUTER_API_KEY) in the legacy vault.
-    if !key_name.starts_with("api_key_") {
-        return Err(SecretError::NotFound(key_name.to_string()));
-    }
-
+    // 3. Fallback check against legacy "xavier" service namespace.
+    // SECURITY GATE: We already ensure `search_key` has the `api_key_` prefix.
     let legacy_vault = HardwareVault::new("xavier");
-    let value = match legacy_vault.get_secret(key_name) {
+    let value = match legacy_vault.get_secret(&search_key) {
         Ok(val) => val,
         Err(_) => return Err(SecretError::NotFound(key_name.to_string())),
     };
 
-    // Migrate found secret to active clavis_vault
-    if let Err(e) = vault.store_secret(key_name, &value) {
+    // 4. Migrate found secret to active clavis_vault
+    if let Err(e) = vault.store_secret(&search_key, &value) {
         tracing::warn!(
-            key = %key_name,
+            key = %search_key,
             error = %crate::clavis::mask_log_message(&e.to_string()),
             "failed to migrate key from legacy vault"
         );
     } else {
         tracing::info!(
-            key = %key_name,
+            key = %search_key,
             "migrated key from legacy 'xavier' vault to 'xavier-clavis' vault"
         );
-        if let Some(stripped) = key_name.strip_prefix("api_key_") {
+        if let Some(stripped) = search_key.strip_prefix("api_key_") {
             let _ = vault.store_secret(stripped, &value);
         }
-        let meta_key = format!("{key_name}_meta");
+        let meta_key = format!("{search_key}_meta");
         if let Ok(meta_val) = legacy_vault.get_secret(&meta_key) {
             let _ = vault.store_secret(&meta_key, &meta_val);
-            if let Some(stripped) = key_name.strip_prefix("api_key_") {
+            if let Some(stripped) = search_key.strip_prefix("api_key_") {
                 let _ = vault.store_secret(&format!("{stripped}_meta"), &meta_val);
             }
         }
