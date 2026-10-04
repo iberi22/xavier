@@ -46,8 +46,11 @@ every PR (fmt, clippy `-D warnings`, tests). Use a light setup: `rustup componen
 machine never builds. PRs must be mergeable as-is:
 - Base branch = the branch named in the task (today `sprint/xavier-2026-10`), never `main`.
 - Touch ONLY the files the task lists; no lockfile, formatting-only or drive-by changes elsewhere.
-- Run `cargo fmt` on the files you touched. You MAY run the single targeted test named in the task
-  (`cargo test --lib --features ci-safe <filter>` or `--test <name>`); never the full suite.
+- Run ONLY `cargo fmt -- <files you touched>` (rustfmt does not compile). **NEVER run `cargo build`,
+  `cargo check`, `cargo test`, `cargo clippy` or `cargo run` in a remote VM**: a cold build of this workspace
+  outlasts and exhausts the sandbox, and the session dies ~10 min later with "Jules encountered an error when
+  working on the task" (measured on 102 failed sessions, 2026-09). Write the code and the tests, open the PR,
+  and let CI compile and test it.
 - CI runs on PRs to `main` and `sprint/**`. If it fails, a bot comment `@jules` brings the failing log
   to the PR: fix only what the log shows, on the same branch.
 
