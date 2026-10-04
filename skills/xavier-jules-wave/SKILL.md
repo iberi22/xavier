@@ -12,7 +12,9 @@ tags: [xavier, rust, jules, wave, harness, gitcore, cargo, clippy]
 
 ## 0. Cuándo usar este skill
 
-- Crear cualquier issue para Jules en `iberi22/xavier` (wave-4, wave-5, etc.)
+- Crear cualquier issue para Jules en `iberi22/xavier` (waves 4-29). **Verificar el numero
+  de wave actual antes de crear labels**: `gh label list --repo iberi22/xavier --limit 300 --json name --jq '.[].name' | grep -E '^wave-' | sort -V | tail -5`.
+  La wave mas reciente al 2026-09-26 es **wave-29** (`feat-health-truth` et al, 10 issues, #2554-#2563).
 - Preparar olas con 10-15 issues paralelos
 - Auditar issues existentes contra el template canónico
 
@@ -47,14 +49,14 @@ Cada issue DEBE tener **TODAS** estas secciones en **ESTE orden**. Sin excepcion
 
 - File: `src/path/to/file.rs` (N lines, structs: Foo, Bar, fn: baz)
 - Feature: `feat-xyz` at N% in `.gitcore/features.json` (beta/stable, REQ-XXX)
-- Tests: N existing, N passing in `cargo test --lib <filter>`
+- Tests: N existing, N passing in `cargo test --package xavier --lib --features ci-safe -- --test-threads=1`
 - Handler: `src/adapters/inbound/http/handlers/...` (si aplica)
 
 ## Desired State (DELTA)
 
 - **Section A** (lines XX-YY): Add struct `Foo` + fn `bar`
 - **New file**: `src/path/to/new.rs` with `pub struct NewThing`
-- **New test**: ` cargo test --lib <filter> -- --nocapture` con N casos
+- **New test**: anade casos a `#[cfg(test)]` del propio archivo y corre `cargo test --package xavier --lib --features ci-safe <filter> -- --test-threads=1`
 - Risk: MED — descripción del riesgo
 
 ## 🌐 Web Research Required
@@ -86,10 +88,10 @@ Cada issue DEBE tener **TODAS** estas secciones en **ESTE orden**. Sin excepcion
 
 ## Acceptance Criteria (VERIFICABLES POR COMANDO)
 
-- [ ] `cargo check -p xavier --all-targets 2>&1 | grep ^error | wc -l` == 0
+- [ ] `cargo check --package xavier --all-targets --features ci-safe 2>&1 | grep "^error" | wc -l` == 0
 - [ ] `grep -c "MyStruct\|my_fn" src/path/to/file.rs` >= 1
-- [ ] `cargo test --lib <filter> -- --nocapture 2>&1 | grep ok` >= 1
-- [ ] `cargo clippy -- -D warnings 2>&1 | grep "^error" | wc -l` == 0
+- [ ] `cargo test --package xavier --lib --features ci-safe -- --test-threads=1 2>&1 | grep "test result: FAILED"` NO produce salida
+- [ ] `cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings 2>&1 | grep "^error" | wc -l` == 0
 - [ ] `gh pr view <NUM> --json files --jq '.files | length'` >= 1 (PR contains files)
 
 ## Files to Modify
@@ -112,7 +114,7 @@ Cada issue DEBE tener **TODAS** estas secciones en **ESTE orden**. Sin excepcion
 1. **READ before write**: Leer archivo COMPLETO (`read_file` con offset/limit) antes de modificar
 2. **Match existing patterns**: Usar mismo estilo (thiserror/anyhow, tokio::spawn_blocking, `anyhow::Result`)
 3. **No inventar imports**: Verificar que crates existen en `Cargo.toml` (ej. `serde`, `tokio`, `axum`)
-4. **Cargo check gate**: `cargo check -p xavier --all-targets` debe ser 0 errores antes de commit
+4. **Cargo check gate**: `cargo check --package xavier --all-targets --features ci-safe` debe dar 0 errores antes de commit
 5. **No tocar `.gitcore/features.json`**: Reconciliado al final de wave por el orquestador
 
 ## PR Delivery Requirements (ANTI-EMPTY-PR) — OBLIGATORIO
@@ -128,9 +130,9 @@ Cada issue DEBE tener **TODAS** estas secciones en **ESTE orden**. Sin excepcion
 ## Verification
 
 ```bash
-cargo check -p xavier --all-targets 2>&1 | grep ^error | wc -l  # expect 0
+cargo check --package xavier --all-targets --features ci-safe 2>&1 | grep "^error" | wc -l  # expect 0
 cargo clippy --all-targets -- -D warnings 2>&1 | grep "^error" | wc -l  # expect 0
-cargo test --lib <filter> -- --nocapture 2>&1 | tail -5  # N passed
+cargo test --package xavier --lib --features ci-safe -- --test-threads=1 2>&1 | tail -20
 cargo fmt --check  # 0 diff
 ```
 
@@ -158,8 +160,8 @@ cargo fmt --check  # 0 diff
 
 | Genérico (Dart) | Xavier Rust |
 |-----------------|-------------|
-| `dart analyze lib/...` | `cargo check -p xavier --all-targets` + `cargo clippy -- -D warnings` |
-| `flutter test` | `cargo test --lib <filter> -- --nocapture` |
+| `dart analyze lib/...` | `cargo check --package xavier --all-targets --features ci-safe` + `cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings` |
+| `flutter test` | `cargo test --package xavier --lib --features ci-safe -- --test-threads=1` |
 | `lib/vault/service.dart` | `src/adapters/inbound/http/handlers/...` + `src/memory/store.rs` |
 | `pubspec.yaml` | `Cargo.toml` + `Cargo.lock` |
 | `tests/foo.spec.ts` | `src/path/to/file.rs` con `#[cfg(test)] mod tests` |
@@ -192,10 +194,55 @@ for n in $(gh issue list --search "wave-N" --json number --jq '.[].number'); do
 done
 
 # 4. Cargo check en main
-CARGO_TARGET_DIR=target cargo check --all-targets 2>&1 | grep "^error" | wc -l  # 0
+CARGO_TARGET_DIR=target cargo check --package xavier --all-targets --features ci-safe 2>&1 | grep "^error" | wc -l  # 0
 ```
 
 Solo si todo pasa → `for n in 1743 1744 ...; do gh issue edit $n --add-label jules; done`
+
+## 4bis. Lo que CI corre de verdad (verificado 2026-09-26 contra ci.yml)
+
+El gate de `ci.yml` para cambios Rust es EXACTAMENTE esto, y nada mas:
+
+```bash
+cargo fmt --all -- --check
+cargo check --package xavier --all-targets --features ci-safe
+cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings
+cargo check --package xavier --all-targets --features ci-safe   # ademas en MSRV 1.94
+cargo test --package xavier --lib --features ci-safe -- --test-threads=1
+bash scripts/check-secrets.sh
+```
+
+Consecuencias practicas para disenar issues:
+
+1. **`--features ci-safe` es obligatorio.** Sin el flag el build intenta resolver deps locales
+   y falla en CI aunque funcione en la maquina. Todo AC de `cargo` debe incluirlo.
+2. **`--test-threads=1` es obligatorio.** Tests en `src/memory/sqlite_vec_store/schema_impl.rs`
+   mutan ENV global (`XAVIER_EMBEDDING_PROVIDER_MODE`, `OPENAI_API_KEY`) y no se paralelizan
+   entre procesos. Con 4 threads fallan 4 tests de forma determinista. Rational completo en el
+   comentario de `ci.yml` lineas 145-153.
+3. **`tests/` NO corre en CI.** El job `rust-test` usa `--lib` solamente. Un integration test
+   bajo `tests/` no es gate de nada hasta que se agregue un job. Si un issue necesita E2E como
+   gate, ese issue DEBE tocar `.github/workflows/ci.yml` — y como los workflows son el archivo
+   mas propenso a conflictos en waves paralelas, ese issue va SIEMPRE de ultimo en el merge order.
+4. **No existe job de `tests/` ni de `code-graph`.** `cargo test --package code-graph` no lo
+   corre nadie; si un issue toca esa crate, su AC debe decirlo explicitamente.
+
+## 4ter. Tamano del body vs tamano del prompt (patron verificado en WAVE-29)
+
+El body canonico de 13 secciones pesa ~10-13 KB. Es el **registro** y debe guardarse completo
+en el issue. Pero el `prompt` que se manda por REST en el `POST /sessions` no necesita ser el
+body entero.
+
+Patron usado en WAVE-29 (10 issues, 0 conflictos, 10/10 `IN_PROGRESS` al minuto):
+
+- Issues creados con el body completo via `gh issue create --body-file`.
+- El prompt se **genera por script** re-extraendo del body: Current State (evidencia medida),
+  Desired State, Files to Modify, DO NOT touch, Acceptance Criteria, Anti-Hallucination Guard,
+  PR Delivery — mas un bloque comun con los comandos de CI y las reglas de `AGENTS.md`.
+- Beneficio: cero drift entre issue y prompt, cero duplicacion de texto, y el prompt queda
+  ~10 KB en vez de 13 KB.
+- Siempre comentar el `session id` + URL en el issue de origen. Jules auto-cierra el issue
+  cuando completa, y sin ese comentario no hay forma de mapear issue -> sesion -> PR.
 
 ## 5. Qué NO hacer (errores de WAVE-4.03)
 
@@ -204,6 +251,53 @@ Solo si todo pasa → `for n in 1743 1744 ...; do gh issue edit $n --add-label j
 - ❌ PR Delivery sin `wc -l` y `grep -c "fn test_"` (permite PRs con archivos vacíos, NIDO #11)
 - ❌ Verification sin `cargo clippy` y `cargo fmt` (permite PRs que rompen CI)
 - ❌ Crear issues con `gh issue create --label wave-4,jules` (jules antes de verificar) → Jules toma issues incompletos
+
+## 5-bis. Pre-flight de dispatch y verificación de PRs (lecciones 2026-09-15)
+
+### Antes de despachar: los archivos citados DEBEN existir en `origin/main`
+
+Un issue que en `## Current State` cita archivos que viven **solo en una rama local sin subir**
+produce desastres silenciosos: Jules clona `main`, no encuentra el módulo, y (a) **recrea el archivo**
+(colisiona con la rama) o (b) **falla la sesión**. Ocurrió con 4 issues de clearance: 2 PRs prematuros
+y 1 sesión `Failed`.
+
+```bash
+# ANTES de gh issue create, por cada archivo citado en el body:
+git ls-tree origin/main -- src/security/clearance_audit.rs | wc -l   # 0 => NO está en main
+# Si devuelve 0: subir/mergear esa rama PRIMERO, y solo entonces despachar el issue.
+```
+
+### Antes de blamear a un PR por tests rojos: dos descartes obligatorios
+
+1. **Archivos sin commitear del árbol local** contaminan las corridas (un harness untracked que
+   afirmaba el modelo viejo hizo ver 3 fallos en un PR correcto). Moverlo fuera y re-correr:
+   ```bash
+   mv test/ViejoHarness.t.sol /tmp/ && forge test | tail -3   # ¿siguen los fallos?
+   ```
+2. **Comparar con `origin/main` limpio**: si los mismos tests fallan ahí, son **preexistentes** y no
+   del PR. Se arreglan mergeando el PR que los arregla *antes* de rebasar el propio.
+
+```bash
+git checkout -q origin/main && cargo test --lib <filtro>   # baseline
+git checkout -q <mi-rama>  && cargo test --lib <filtro>   # delta
+```
+
+### Los PRs de Jules llegan en draft y sin CI de tests
+
+`gh pr view <n> --json isDraft` → `true`; hay que `gh pr ready <n>` antes de mergear. En repos sin
+CI de tests (p. ej. swal-econ) los únicos checks son CodeRabbit (saltado en draft) y Socket: **la
+verificación real es local y la hace el orquestador** (`forge test` / `cargo test` en la rama del PR,
+citando el `Ran N test suites ... X passed, 0 failed` en el body del merge).
+
+### Ramas con commits de base ajenos
+
+Si la rama local arrastra commits base que ya tienen PR propio, **rebasar antes de subir**
+(`git rebase --onto origin/main <commit-base>`) para no duplicar ese trabajo en el PR:
+
+```bash
+git rev-list --count origin/main..<rama>      # tamaño real del PR
+git log --oneline --reverse origin/main..<rama> | head  # ¿el primero es mío o es base?
+```
 
 ## 6. Dónde se guarda este harness
 
@@ -331,3 +425,9 @@ Opencode con qwen3.8-flash puede **cortarse a mitad** (produjo 2/5 bodies en lug
 ### 7.5 Output format esperado del modelo
 
 El modelo emite el texto delimitado por `===ISSUE_<N>_<FEAT>===` y dentro tiene el markdown completo del body. **NO** debe emitir headers tipo `## ISSUE 1` ni prefijos tipo `Here are the 5 issues:`. Si lo hace, el parser falla — re-delega con instrucción más explícita ("OUTPUT ONLY THE 5 BODIES. NO PREAMBLE.").
+
+## ⚠️ Field report 2026-09-29 — wave-30: 13/15 Jules sessions FAILED
+- **Cause:** the Jules sandbox cannot build xavier (280k-line crate) within its time limit — `cargo check` alone took 5m48s in a probe, and the canonical ACs made Jules run check + clippy + the full test suite; sessions died with the generic "Jules encountered an error". One agent said it literally: "The `cargo check` command timed out in the sandbox".
+- **Rule (xavier on Jules):** put this in the wave's `jules_rules` (the runner appends it to every prompt): *do NOT run cargo check/clippy/test in the sandbox; verify with the AC greps and by reading code; open the PR immediately — GitHub CI runs build, clippy and tests*. Keep the cargo ACs in the issue body for CI/local verification, not for Jules.
+- **Visibility:** the wave runner blocks while it runs a local loop (subprocess.run), so it stops polling Jules for up to ~1 h. Always run `~/.hermes/scripts/jules-watch.py` (independent poller, every 2 min) — it writes `JULES-FAILED` / `JULES-AWAITING` / `JULES-COMPLETED` lines (with the agent's last message) to `~/.cache/swal/runner/inbox.md`; the orchestrator's monitor must include those patterns.
+- **AWAITING_USER_FEEDBACK:** answer via `POST /v1alpha/sessions/{id}:sendMessage` with a concrete decision + the no-build rule; the runner's in-flight timer counts from dispatch, so reset `dispatched_at` when you answer or it reassigns the session locally on restart.

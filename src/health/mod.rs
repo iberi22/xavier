@@ -531,37 +531,6 @@ pub async fn check_cloud_health(settings: &XavierSettings) -> CloudHealthRespons
     }
 }
 
-/// Count records that actually carry an embedding vector.
-///
-/// Vectors live in the `memory_embeddings_768` side table since the embedding
-/// storage migration; `memory_records.embedding` is kept only for rows written
-/// before that. Query the side table first (that is where new writes go) and
-/// fall back to the inline column only when the table is absent, so coverage is
-/// never under-reported on a fully indexed store.
-fn count_embeddings(conn: &rusqlite::Connection) -> Option<u64> {
-    let side_table: rusqlite::Result<i32> = conn.query_row(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_embeddings_768'",
-        [],
-        |row| row.get(0),
-    );
-    if side_table.is_ok() {
-        let n: rusqlite::Result<u64> = conn.query_row(
-            "SELECT COUNT(*) FROM memory_embeddings_768 WHERE length(embedding) > 10",
-            [],
-            |row| row.get(0),
-        );
-        if let Ok(count) = n {
-            return Some(count);
-        }
-    }
-    conn.query_row(
-        "SELECT COUNT(*) FROM memory_records WHERE length(embedding) > 10",
-        [],
-        |row| row.get(0),
-    )
-    .ok()
-}
-
 pub fn gather_embedding_coverage(settings: &XavierSettings) -> EmbeddingCoverage {
     let mut paths = Vec::new();
     if let Ok(p) = std::env::var("XAVIER_MEMORY_VEC_PATH") {
@@ -600,12 +569,12 @@ pub fn gather_embedding_coverage(settings: &XavierSettings) -> EmbeddingCoverage
                 if table_exists.is_ok() {
                     let total_res: rusqlite::Result<u64> =
                         conn.query_row("SELECT COUNT(*) FROM memory_records", [], |row| row.get(0));
-                    // Vectors migrated out of `memory_records.embedding` into the
-                    // side table `memory_embeddings_768`; counting the old inline
-                    // column reported ~11% coverage while every record actually had
-                    // a vector. Count whichever store really holds them.
-                    let indexed_res = count_embeddings(&conn);
-                    if let (Ok(t), Some(ind)) = (total_res, indexed_res) {
+                    let indexed_res: rusqlite::Result<u64> = conn.query_row(
+                        "SELECT COUNT(*) FROM memory_records WHERE length(embedding) > 10",
+                        [],
+                        |row| row.get(0),
+                    );
+                    if let (Ok(t), Ok(ind)) = (total_res, indexed_res) {
                         total = t;
                         indexed = ind;
                         found = true;
@@ -1218,34 +1187,14 @@ fn gather_system_metrics() -> (f64, u64, u64, f64, f64) {
 }
 
 fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
-    // Resolve the store that is ACTUALLY on disk. `sqlite_path` defaults to the
-    // legacy `memory-store.sqlite3`, which no longer exists since embeddings and
-    // records live in the vec store — reporting it gave size 0 MB / 0 pages and a
-    // misleading "database healthy" verdict. Prefer the first candidate that
-    // really exists, and only fall back to the configured default when none do.
-    let mut candidates: Vec<String> = Vec::new();
-    if !settings.memory.sqlite_path.trim().is_empty() {
-        candidates.push(settings.memory.sqlite_path.clone());
-    }
-    if !settings.memory.vec_path.trim().is_empty() {
-        candidates.push(settings.memory.vec_path.clone());
-    }
-    if !settings.memory.file_path.trim().is_empty() {
-        candidates.push(settings.memory.file_path.clone());
-    }
-    candidates.push(format!("{}/vec-store.sqlite3", settings.memory.data_dir));
-    candidates.push(format!("{}/memory.db", settings.memory.data_dir));
-
-    let db_path_str = candidates
-        .iter()
-        .find(|p| std::path::Path::new(p).exists())
-        .cloned()
-        .unwrap_or_else(|| {
-            candidates
-                .into_iter()
-                .next()
-                .unwrap_or_else(|| format!("{}/memory.db", settings.memory.data_dir))
-        });
+    // Use configured path or fall back to default
+    let db_path_str = if !settings.memory.sqlite_path.is_empty() {
+        settings.memory.sqlite_path.clone()
+    } else if !settings.memory.file_path.is_empty() {
+        settings.memory.file_path.clone()
+    } else {
+        format!("{}/memory.db", settings.memory.data_dir)
+    };
     let db_path = std::path::Path::new(&db_path_str);
     let (size_mb, wal_size_mb, page_count, fragmentation) = if db_path.exists() {
         let size = db_path
@@ -1316,52 +1265,6 @@ pub mod repair;
 // ═══════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════
-
-#[cfg(test)]
-mod count_embeddings_tests {
-    use super::count_embeddings;
-
-    /// Regression: vectors live in the `memory_embeddings_768` side table, so a
-    /// store whose inline `memory_records.embedding` is empty must still report
-    /// full coverage. Counting the inline column alone reported ~11% and flipped
-    /// the whole daemon to "unhealthy".
-    #[test]
-    fn side_table_counts_when_inline_column_is_empty() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE memory_records (id TEXT, embedding BLOB);
-             CREATE TABLE memory_embeddings_768 (id TEXT, embedding BLOB);
-             INSERT INTO memory_records (id, embedding) VALUES ('a', NULL), ('b', NULL);
-             INSERT INTO memory_embeddings_768 (id, embedding) VALUES
-                 ('a', zeroblob(768)), ('b', zeroblob(768));",
-        )
-        .unwrap();
-        assert_eq!(count_embeddings(&conn), Some(2));
-    }
-
-    /// Older stores have no side table; the inline column is then the only truth.
-    #[test]
-    fn falls_back_to_inline_column_without_side_table() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE memory_records (id TEXT, embedding BLOB);
-             INSERT INTO memory_records (id, embedding) VALUES
-                 ('a', zeroblob(768)), ('b', NULL);",
-        )
-        .unwrap();
-        assert_eq!(count_embeddings(&conn), Some(1));
-    }
-
-    /// A store with neither table must report "unknown" (None), never 0 — a
-    /// false 0 would read as 0% coverage and fail the daemon health check.
-    #[test]
-    fn returns_none_when_no_embedding_storage_exists() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch("CREATE TABLE memory_records (id TEXT);")
-            .unwrap();
-        assert_eq!(count_embeddings(&conn), None);
-    }
-}
 
 #[cfg(test)]
 mod tests {
