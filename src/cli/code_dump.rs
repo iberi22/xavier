@@ -110,7 +110,7 @@ fn perform_dump_blocking(
     Ok(dump_path)
 }
 
-/// Perform a load of the code graph from .xavier/codegraph.json into an in-memory DB
+/// Perform a load of the code graph from .xavier/codegraph.json into the per-repo database.
 pub async fn perform_load(repo_path: &str) -> Result<CodeGraphState> {
     let dump_path = codegraph_dump_path_for_target(repo_path);
 
@@ -124,16 +124,35 @@ pub async fn perform_load(repo_path: &str) -> Result<CodeGraphState> {
     let json = tokio::fs::read_to_string(&dump_path).await?;
     let dump: CodeGraphDump = serde_json::from_str(&json)?;
 
-    let db = Arc::new(code_graph::db::CodeGraphDB::in_memory()?);
+    let repo_root = find_repo_root(repo_path);
+    let canonical = repo_root.canonicalize().unwrap_or(repo_root);
+    let db_path = xavier::codebase::repo_identity::code_graph_db_path_for_root(&canonical);
+
+    if let Some(parent) = db_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let db = Arc::new(
+        crate::codebase::connection_manager::ConnectionManager::global()
+            .get_code_graph_db(&db_path)?,
+    );
     db.insert_symbols(&dump.symbols)?;
     db.insert_edges(&dump.edges)?;
 
     let indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&db)));
     let query = Arc::new(code_graph::query::QueryEngine::new(Arc::clone(&db)));
 
+    if let Some(head) = xavier::codebase::repo_identity::git_head(&canonical) {
+        let checkpoint = canonical
+            .join(".xavier")
+            .join(xavier::codebase::repo_identity::SYNC_CHECKPOINT_FILE);
+        let _ = std::fs::write(checkpoint, format!("{}\n", head));
+    }
+
     info!(
-        "Code graph loaded from {} ({} symbols, {} edges)",
+        "Code graph loaded from {} to {} ({} symbols, {} edges)",
         dump_path.display(),
+        db_path.display(),
         dump.symbols.len(),
         dump.edges.len()
     );

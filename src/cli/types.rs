@@ -113,6 +113,8 @@ pub struct CodeGraphQueryPayload {
     pub edge_type: Option<String>,
     #[serde(default = "default_graph_budget")]
     pub budget_tokens: usize,
+    #[serde(default)]
+    pub repo: Option<RepoIdentityPayload>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,6 +127,8 @@ pub struct CodeBlastRadiusPayload {
     pub depth: usize,
     #[serde(default = "default_graph_limit")]
     pub limit: usize,
+    #[serde(default)]
+    pub repo: Option<RepoIdentityPayload>,
 }
 
 #[derive(Debug, Deserialize)]
