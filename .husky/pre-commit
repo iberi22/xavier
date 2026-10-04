@@ -158,6 +158,39 @@ while IFS= read -r f; do
     fi
 done <<< "$STAGED"
 
+# ── 6. Staged scope: a skills/docs commit must not carry product code ────────
+# Incident 2026-10-04: e1b044c5 said "No code touched, only skill documentation"
+# and still reverted 111 lines of src/health/mod.rs, undoing the fix committed
+# 30s earlier (04f4232a). Caused by a whole-file `git checkout <c> -- <path>`
+# restore while src/ was dirty in the worktree. This gate only checks that the
+# commit message is honest — it does not judge whether the code change is good.
+#
+# The message must come from .git/COMMIT_EDITMSG: during pre-commit the new
+# commit does not exist yet, so `git log -1 --pretty=%B` returns the PREVIOUS
+# commit's message and the guard would compare against the wrong text.
+if [ -f "$ROOT/scripts/check-staged-scope.sh" ]; then
+    GIT_DIR_ABS="$(git rev-parse --absolute-git-dir 2>/dev/null || echo "$ROOT/.git")"
+    COMMIT_MSG=""
+    if [ -f "$GIT_DIR_ABS/COMMIT_EDITMSG" ]; then
+        COMMIT_MSG="$(cat "$GIT_DIR_ABS/COMMIT_EDITMSG" 2>/dev/null || true)"
+    fi
+    # Strip the comment lines git adds when the message comes from an editor.
+    COMMIT_MSG="$(printf '%s\n' "$COMMIT_MSG" | sed '/^#/d')"
+    # A blocked commit leaves its message behind in COMMIT_EDITMSG, and that
+    # stale text would judge the NEXT unrelated commit — which produced a false
+    # positive that blocked an honest code commit. git rewrites COMMIT_EDITMSG
+    # for every -m commit, so a message byte-identical to HEAD's own body is a
+    # leftover (an amend or a retry), not the message being written now.
+    # Nothing to judge in that case: skip rather than block.
+    PARENT_MSG="$(git log -1 --pretty=%B 2>/dev/null | sed '/^#/d' || true)"
+    if [ -n "$COMMIT_MSG" ] && [ "$COMMIT_MSG" = "$PARENT_MSG" ]; then
+        COMMIT_MSG=""
+    fi
+    if ! bash "$ROOT/scripts/check-staged-scope.sh" --message "$COMMIT_MSG"; then
+        fail "alcance del commit inconsistente (docs/skills tocando src/)"
+    fi
+fi
+
 # ── Verdict ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -ne 0 ]; then
     note ""
