@@ -34,8 +34,10 @@ pub mod navigation;
 pub mod node;
 pub mod nodes;
 pub mod provider;
+pub mod recovery;
 pub mod regen;
 pub mod repo;
+pub mod repo_pack;
 pub mod secrets;
 pub mod session;
 pub mod spawn;
@@ -183,8 +185,15 @@ impl Cli {
                 http::reindex_memories().await
             }
             Command::Code { cmd } => code::handle_code_command(cmd.clone()).await,
+            Command::Recovery { command } => {
+                recovery::handle_recovery_command(RecoveryArgs {
+                    command: command.clone(),
+                })
+                .await
+            }
             Command::Repo { cmd } => match cmd {
                 RepoCommand::Config { cmd } => repo::run_repo_config_command(cmd.clone()),
+                RepoCommand::Package { cmd } => repo_pack::run_repo_package_command(cmd.clone()),
             },
             Command::Telecom(args) => telecom::execute_telecom_command(args.clone()).await,
             Command::Exec {
