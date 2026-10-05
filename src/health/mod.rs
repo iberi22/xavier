@@ -2324,8 +2324,8 @@ mod stores_health_tests {
         }
 
         // The stores read itself must not have perturbed coverage or the db.
-        assert_eq!(
-            stores.measured, true,
+        assert!(
+            stores.measured,
             "the stores section must be a real snapshot reading"
         );
     }

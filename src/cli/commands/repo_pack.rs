@@ -827,7 +827,7 @@ mod tests {
         let id = RepoConfig::load(&repo).expect("load").project_id;
         assert_eq!(id, "declared-id");
 
-        let packed = pack_with_kek(&repo, &id, &test_kek(&id)).expect("pack");
+        pack_with_kek(&repo, &id, &test_kek(&id)).expect("pack");
         std::fs::remove_file(code_graph_db_path_for_root(&repo)).expect("rm db");
         let restored = unpack_with_kek(&repo, &test_kek(&id)).expect("unpack");
         assert_eq!(restored.project_id, "declared-id");
