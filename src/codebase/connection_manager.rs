@@ -410,8 +410,7 @@ fn test_store_root() -> Option<PathBuf> {
 /// never the repo. In a production build `test_store_root` is `None` and this
 /// is exactly the historical `<project_root>/.xavier/tests`.
 fn test_store_dir(project_root: &str) -> PathBuf {
-    let _ = project_root;
-    PathBuf::from(project_root).join(".xavier").join("tests")
+    test_store_root().unwrap_or_else(|| PathBuf::from(project_root).join(".xavier").join("tests"))
 }
 
 /// The single id→path mapping of [`ConnectionManager::connect`], extracted so
