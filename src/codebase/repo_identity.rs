@@ -157,11 +157,54 @@ pub fn derive_repo_identity(cwd: &Path) -> RepoIdentity {
     let root = find_repo_root(cwd)
         .unwrap_or_else(|| std::path::absolute(cwd).unwrap_or_else(|_| cwd.to_path_buf()));
     let canonical = root.canonicalize().unwrap_or(root);
+    // A repo (or a product inside a monorepo) may declare its own `project_id`
+    // in `<dir>/.xavier/config.toml`. That declaration wins over the id derived
+    // from the directory name, which is what makes two products inside ONE
+    // monorepo separable instead of collapsing to a single instance.
+    //
+    // The search starts at `cwd`, not at the git root: a product living at
+    // `apps/duque-mvp` carries its config in ITS OWN directory, and the git
+    // root is an ancestor of it — looking only at the root would miss the
+    // product's config and hand both products the repo-level id.
+    //
+    // A missing or unreadable config is not an error: it falls back to the
+    // directory-derived id, i.e. exactly the previous behaviour.
+    let cwd_abs = std::path::absolute(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+    let project_id =
+        nearest_declared_project_id(&cwd_abs).unwrap_or_else(|| derive_project_id(&canonical));
     RepoIdentity {
-        project_id: derive_project_id(&canonical),
+        project_id,
         root: canonical.to_string_lossy().into_owned(),
         indexed_commit: read_indexed_commit(&canonical),
     }
+}
+
+/// Closest ancestor-or-self of `dir` whose `.xavier/config.toml` exists.
+///
+/// The single walk over the config hierarchy; both the CLI and
+/// [`derive_repo_identity`] resolve products through it, so a product's
+/// identity cannot depend on which caller asked.
+pub fn nearest_config_ancestor(dir: &Path) -> Option<PathBuf> {
+    let mut current = Some(dir);
+    while let Some(candidate) = current {
+        if crate::codebase::repo_config::repo_config_path(candidate).is_file() {
+            return Some(candidate.to_path_buf());
+        }
+        current = candidate.parent();
+    }
+    None
+}
+
+/// `project_id` declared by the closest config at or above `dir`.
+///
+/// A config that exists but is malformed, or declares no `project_id`, is
+/// skipped in favour of continuing upwards: a broken config at one level must
+/// not mask a valid one above it, and must never yield a half-parsed id.
+fn nearest_declared_project_id(dir: &Path) -> Option<String> {
+    nearest_config_ancestor(dir)
+        .and_then(|c| crate::codebase::repo_config::RepoConfig::load(&c).ok())
+        .map(|cfg| cfg.project_id)
+        .filter(|id| !id.is_empty())
 }
 
 /// Canonical per-repo CodeGraph SQLite path: `<root>/.xavier/code_graph.db`.
@@ -171,6 +214,75 @@ pub fn derive_repo_identity(cwd: &Path) -> RepoIdentity {
 /// resolve to the same graph file.
 pub fn code_graph_db_path_for_root(root: &Path) -> PathBuf {
     root.join(".xavier").join("code_graph.db")
+}
+
+/// Tests for the config-driven `project_id` in [`derive_repo_identity`].
+///
+/// These cover the wiring itself: a declared `project_id` must win over the
+/// directory name, and a repo without a config must behave exactly as before.
+#[cfg(test)]
+mod repo_config_identity_tests {
+    use super::*;
+
+    fn git_repo(root: &Path) {
+        std::fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+    }
+
+    /// The point of the whole feature: two products inside ONE monorepo get
+    /// two identities. Without a declared config they would both derive the
+    /// same id from the repo directory name and collapse into one instance.
+    #[test]
+    fn declared_project_id_wins_over_directory_name() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path().join("monorepo");
+        git_repo(&repo);
+        let product = repo.join("apps").join("duque-mvp");
+        std::fs::create_dir_all(product.join(".xavier")).expect("mkdir product");
+
+        // Precondition: same repo, no config ⇒ one shared id.
+        assert_eq!(
+            derive_repo_identity(&product).project_id,
+            derive_repo_identity(&repo).project_id,
+            "without a config both products must collapse to one id"
+        );
+
+        std::fs::write(
+            product.join(".xavier").join("config.toml"),
+            "project_id = \"duque-mvp\"\nname = \"duque-mvp\"\n",
+        )
+        .expect("write config");
+
+        assert_eq!(derive_repo_identity(&product).project_id, "duque-mvp");
+    }
+
+    /// A repo with no config must keep deriving from the directory name: the
+    /// wiring must not silently change behaviour for existing checkouts.
+    #[test]
+    fn absent_config_keeps_directory_derived_id() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path().join("plain-repo");
+        git_repo(&repo);
+        assert_eq!(
+            derive_repo_identity(&repo).project_id,
+            derive_project_id(&repo)
+        );
+    }
+
+    /// A malformed config must not take the identity down with it: the
+    /// directory-derived id is the safe fallback.
+    #[test]
+    fn malformed_config_falls_back_to_directory_id() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo = tmp.path().join("broken-repo");
+        git_repo(&repo);
+        std::fs::create_dir_all(repo.join(".xavier")).expect("mkdir .xavier");
+        std::fs::write(repo.join(".xavier").join("config.toml"), "project_id = [[[")
+            .expect("write broken config");
+        assert_eq!(
+            derive_repo_identity(&repo).project_id,
+            derive_project_id(&repo)
+        );
+    }
 }
 
 #[cfg(test)]
