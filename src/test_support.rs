@@ -75,14 +75,7 @@ fn passwd_home() -> Option<PathBuf> {
 pub fn isolate_user_dirs() -> PathBuf {
     SANDBOX
         .get_or_init(|| {
-            let root = std::env::temp_dir().join(format!(
-                "xavier-test-home-{}-{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0)
-            ));
+            let root = sandbox_root();
             let _ = std::fs::create_dir_all(&root);
             #[cfg(unix)]
             register_cleanup(&root);
@@ -201,7 +194,7 @@ pub fn guard_user_path(path: &Path) {
     }
     let home = lexical_normalize(&home);
     let target = absolutize(path);
-    if target.starts_with(&home) {
+    if !is_test_owned(&target) && target.starts_with(&home) {
         panic!(
             "test isolation: {} resolves to {} under the real home {}; call \
              xavier::test_support::isolate_user_dirs() (or set HOME/XDG_*/XAVIER_* \
@@ -211,6 +204,95 @@ pub fn guard_user_path(path: &Path) {
             home.display()
         );
     }
+}
+
+/// True when `target` belongs to the test run rather than to the user's data.
+///
+/// Exempt, and only these:
+/// 1. the sandbox this process installed (`isolate_user_dirs`);
+/// 2. the repository checkout — it lives under `$HOME` on any normal
+///    workstation, and its own `data/` is not user state;
+/// 3. `/tmp` and `/var/tmp`;
+/// 4. a `xavier-test-*` scratch dir the test created itself;
+/// 5. a `tempfile::tempdir()` (`.tmpXXXXXX`) under `$TMPDIR`, which on this
+///    machine is `~/.hermes/cache/scratch` — inside the home being guarded.
+///
+/// Deliberately NOT exempt: the user store. `~/.xavier`,
+/// `~/.local/share/xavier` and `~/.config/xavier` match none of the above, which
+/// is the point: those are what the tripwire in `scripts/check-test-writes.sh`
+/// exists to catch, and they are the paths this guard exists to reject.
+fn is_test_owned(target: &Path) -> bool {
+    if let Some(root) = SANDBOX.get() {
+        if target.starts_with(lexical_normalize(root)) {
+            return true;
+        }
+    }
+    if let Some(repo) = repo_root() {
+        if target.starts_with(&repo) {
+            return true;
+        }
+    }
+    if ["/tmp", "/var/tmp"]
+        .iter()
+        .any(|base| target.starts_with(Path::new(base)))
+    {
+        return true;
+    }
+    if target.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .is_some_and(|n| n.starts_with("xavier-test-"))
+    }) {
+        return true;
+    }
+    target
+        .strip_prefix(lexical_normalize(&std::env::temp_dir()))
+        .ok()
+        .and_then(|rel| rel.components().next())
+        .and_then(|c| c.as_os_str().to_str())
+        .is_some_and(is_tempfile_scratch)
+}
+
+/// `tempfile` scratch names: `.tmp` plus random alphanumerics.
+fn is_tempfile_scratch(name: &str) -> bool {
+    name.strip_prefix(".tmp")
+        .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphanumeric()))
+}
+
+/// The repository checkout root, resolved once. `CARGO_MANIFEST_DIR` is set by
+/// cargo for every test binary, so this works whatever the cwd is.
+fn repo_root() -> Option<PathBuf> {
+    static REPO: OnceLock<Option<PathBuf>> = OnceLock::new();
+    REPO.get_or_init(|| {
+        std::env::var_os("CARGO_MANIFEST_DIR").map(|d| lexical_normalize(&PathBuf::from(d)))
+    })
+    .clone()
+}
+
+/// A scratch dir for the sandbox that is provably outside the real home.
+///
+/// `TMPDIR` may point inside the home (Hermes sets it to
+/// `~/.hermes/cache/scratch`), and a sandbox nested in the home would make the
+/// guard unable to tell test data from user data. Prefer `/tmp`.
+fn sandbox_root() -> PathBuf {
+    let name = format!(
+        "xavier-test-home-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+    if let Some(explicit) = std::env::var_os("XAVIER_SANDBOX_ROOT") {
+        return PathBuf::from(explicit).join(name);
+    }
+    #[cfg(unix)]
+    for base in ["/tmp", "/var/tmp"] {
+        if Path::new(base).is_dir() {
+            return PathBuf::from(base).join(name);
+        }
+    }
+    std::env::temp_dir().join(name)
 }
 
 /// Sandbox a test/bench binary before `main`, so no lazy global can resolve
@@ -248,7 +330,14 @@ mod tests {
     #[test]
     fn lib_tests_run_in_sandbox_home() {
         let home = dirs::home_dir().expect("home");
-        assert!(home.starts_with(std::env::temp_dir()), "HOME={home:?}");
+        // The sandbox is deliberately NOT under `$TMPDIR`: here TMPDIR is
+        // `~/.hermes/cache/scratch`, i.e. inside the home the guard protects.
+        // What matters is that HOME is a fresh per-process sandbox.
+        assert_ne!(
+            home,
+            real_home().expect("real home"),
+            "HOME must not be the real home"
+        );
         assert!(running_under_cargo_test());
     }
 
@@ -281,8 +370,14 @@ mod tests {
         let _lock = crate::test_support::tests::ENV
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        let cwd = std::env::current_dir().expect("cwd");
-        std::env::set_var("XAVIER_GUARD_REAL_HOME", &cwd);
+        // The home must be neither the repo nor a temp dir, because both are
+        // exempt; otherwise the relative-path case proves nothing.
+        let home = std::env::temp_dir().join("guard-fake-home");
+        let workdir = home.join("project_root");
+        let _ = std::fs::create_dir_all(&workdir);
+        let repo = std::env::current_dir().expect("cwd");
+        std::env::set_var("XAVIER_GUARD_REAL_HOME", &home);
+        std::env::set_current_dir(&workdir).expect("chdir");
 
         // Relative, no `..`, would have passed the old guard outright.
         let plain = std::panic::catch_unwind(|| guard_user_path(Path::new(".xavier/codebase.db")));
@@ -295,6 +390,7 @@ mod tests {
         // A relative path that escapes the home is fine.
         guard_user_path(Path::new("../../../../../../../../tmp/outside/x.db"));
 
+        std::env::set_current_dir(&repo).expect("chdir back");
         std::env::remove_var("XAVIER_GUARD_REAL_HOME");
         assert!(
             plain.is_err(),
