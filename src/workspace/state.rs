@@ -28,8 +28,8 @@ use crate::memory::{
     qmd_memory::{estimate_document_bytes, MemoryUsage, QmdMemory},
     schema::MemoryQueryFilters,
     semantic::SemanticMemory,
-    sqlite_store::SqliteMemoryStore,
-    sqlite_vec_store::VecSqliteMemoryStore,
+    sqlite_store::{SqliteMemoryStore, SqliteStoreConfig},
+    sqlite_vec_store::{at_rest::SpaceCrypto, VecSqliteMemoryStore, VecSqliteStoreConfig},
     store::{MemoryBackend, MemoryRecord, MemoryStore, SessionTokenRecord},
     supabase_store::SupabaseMemoryStore,
     working::{MemoryItem, WorkingMemory, WorkingMemoryConfig},
@@ -120,20 +120,163 @@ pub struct PersistedUsageState {
     pub optimization: OptimizationUsageSnapshot,
 }
 
+const SPACE_FILE_STORE_NAME: &str = "memory.jsonl";
+const SPACE_SQLITE_STORE_NAME: &str = "memory.sqlite";
+/// Conversations database of a space, inside the space directory.
+pub const SPACE_CONVERSATIONS_NAME: &str = "conversations.db";
+
+/// Build a per-space store rooted at `root`. Never touches env/settings paths.
+async fn build_space_store(
+    root: &std::path::Path,
+    config: &WorkspaceConfig,
+    file_store_path: &std::path::Path,
+    migration_marker_path: &std::path::Path,
+    crypto: Option<&SpaceCrypto>,
+) -> Result<(Arc<dyn MemoryStore>, bool, String)> {
+    let backend = config.protocol.storage.backend;
+    if !matches!(
+        backend,
+        MemoryBackend::File | MemoryBackend::Sqlite | MemoryBackend::Vec
+    ) {
+        return Err(anyhow!(
+            "space storage backend {backend:?} is not allowed (only file, sqlite, vec)"
+        ));
+    }
+    // Only the vec store can seal records with a space key: an encrypting
+    // space on any other backend would store plaintext, so it is refused.
+    if crypto.is_some() && backend != MemoryBackend::Vec {
+        return Err(anyhow!(
+            "space storage backend {backend:?} cannot encrypt records (encrypting spaces require vec)"
+        ));
+    }
+    fs::create_dir_all(root).await?;
+    let db_path = root.join(SPACE_SQLITE_STORE_NAME);
+    match backend {
+        MemoryBackend::File => Ok((
+            Arc::new(FileMemoryStore::new(file_store_path.to_path_buf()).await?),
+            false,
+            format!("space file backend using {}", file_store_path.display()),
+        )),
+        MemoryBackend::Sqlite => {
+            let store: Arc<dyn MemoryStore> =
+                Arc::new(SqliteMemoryStore::new(SqliteStoreConfig { path: db_path }).await?);
+            let m = migrate_file_store_if_needed(
+                &config.id,
+                file_store_path,
+                migration_marker_path,
+                Arc::clone(&store),
+            )
+            .await?;
+            Ok((store, m.migrated, m.detail))
+        }
+        _ => {
+            let mut vec_config = VecSqliteStoreConfig::from_env();
+            vec_config.path = db_path;
+            let mut vec_store = VecSqliteMemoryStore::new(vec_config).await?;
+            if let Some(c) = crypto {
+                vec_store = vec_store.with_space_crypto(c.clone());
+            }
+            let store: Arc<dyn MemoryStore> = Arc::new(vec_store);
+            let m = migrate_file_store_if_needed(
+                &config.id,
+                file_store_path,
+                migration_marker_path,
+                Arc::clone(&store),
+            )
+            .await?;
+            // A legacy plaintext JSON store of an encrypting space has been
+            // imported (sealed) by now: overwrite and remove the clear copy.
+            if crypto.is_some() {
+                shred_file(file_store_path).await;
+            }
+            Ok((store, m.migrated, m.detail))
+        }
+    }
+}
+
+/// Best-effort secure delete: overwrite with zeros, sync, remove. A missing
+/// file is fine.
+async fn shred_file(path: &std::path::Path) {
+    let Ok(meta) = fs::metadata(path).await else {
+        return;
+    };
+    if meta.is_file() {
+        let zeros = vec![0u8; meta.len() as usize];
+        if let Ok(mut f) = fs::OpenOptions::new().write(true).open(path).await {
+            use tokio::io::AsyncWriteExt;
+            let _ = f.write_all(&zeros).await;
+            let _ = f.sync_all().await;
+        }
+    }
+    let _ = fs::remove_file(path).await;
+}
+
 impl WorkspaceState {
-    /// New.
+    /// New (default/legacy space: env-based store resolution).
     pub async fn new(
-        mut config: WorkspaceConfig,
+        config: WorkspaceConfig,
         runtime_config: RuntimeConfig,
         workspace_root: impl Into<PathBuf>,
     ) -> Result<Self> {
-        let workspace_root = workspace_root.into();
+        Self::new_inner(config, runtime_config, workspace_root.into(), None, None).await
+    }
+
+    /// New for a space: the store lives under `store_root` (created if
+    /// missing) and the backend comes from `config.protocol.storage.backend`.
+    /// Only path-based backends (file, sqlite, vec) are accepted; nothing is
+    /// read from env or shared settings paths.
+    pub async fn new_for_space(
+        config: WorkspaceConfig,
+        runtime_config: RuntimeConfig,
+        workspace_root: impl Into<PathBuf>,
+        store_root: impl Into<PathBuf>,
+    ) -> Result<Self> {
+        Self::new_for_space_keyed(config, runtime_config, workspace_root, store_root, None).await
+    }
+
+    /// [`WorkspaceState::new_for_space`] for a space that may encrypt its
+    /// records. With `crypto`, every memory record is sealed with that space's
+    /// data key (never the default-space or node key) and the space's
+    /// conversations database is disabled (it would hold message text in clear).
+    pub async fn new_for_space_keyed(
+        config: WorkspaceConfig,
+        runtime_config: RuntimeConfig,
+        workspace_root: impl Into<PathBuf>,
+        store_root: impl Into<PathBuf>,
+        crypto: Option<SpaceCrypto>,
+    ) -> Result<Self> {
+        Self::new_inner(
+            config,
+            runtime_config,
+            workspace_root.into(),
+            Some(store_root.into()),
+            crypto,
+        )
+        .await
+    }
+
+    async fn new_inner(
+        mut config: WorkspaceConfig,
+        runtime_config: RuntimeConfig,
+        workspace_root: PathBuf,
+        store_root: Option<PathBuf>,
+        space_crypto: Option<SpaceCrypto>,
+    ) -> Result<Self> {
+        if space_crypto.is_some() {
+            // An encrypting space is local only: its store is never a source
+            // for cloud sync or mirror, whatever the supplied config says.
+            config.sync_policy = super::config::SyncPolicy::LocalOnly;
+            config.protocol.sync.policy = super::config::SyncPolicy::LocalOnly;
+        }
         fs::create_dir_all(&workspace_root).await?;
         let usage_state_path = workspace_root.join("usage.json");
-        let file_store_path = resolve_file_store_path(&workspace_root);
+        let file_store_path = match &store_root {
+            Some(root) => root.join(SPACE_FILE_STORE_NAME),
+            None => resolve_file_store_path(&workspace_root),
+        };
         let migration_marker_path = durable_migration_marker_path(&file_store_path);
 
-        if config.memory_backend == MemoryBackend::Auto {
+        if store_root.is_none() && config.memory_backend == MemoryBackend::Auto {
             config.memory_backend = detect_cloud_backend().await;
         }
 
@@ -141,51 +284,67 @@ impl WorkspaceState {
             Arc<dyn MemoryStore>,
             bool,
             String,
-        ) = match config.memory_backend {
-            MemoryBackend::Auto => unreachable!("auto backend should have been resolved"),
-            MemoryBackend::File => (
-                Arc::new(FileMemoryStore::new(file_store_path.clone()).await?),
-                false,
-                format!("file backend using {}", file_store_path.display()),
-            ),
-            MemoryBackend::Memory => (
-                Arc::new(InMemoryMemoryStore::new()),
-                false,
-                "ephemeral in-memory backend".to_string(),
-            ),
-            MemoryBackend::Sqlite => {
-                let store: Arc<dyn MemoryStore> = Arc::new(SqliteMemoryStore::from_env().await?);
-                let migration = migrate_file_store_if_needed(
-                    &config.id,
-                    &file_store_path,
-                    &migration_marker_path,
-                    Arc::clone(&store),
-                )
-                .await?;
-                (store, migration.migrated, migration.detail)
-            }
-            MemoryBackend::Vec => {
-                let store: Arc<dyn MemoryStore> = Arc::new(VecSqliteMemoryStore::from_env().await?);
-                let migration = migrate_file_store_if_needed(
-                    &config.id,
-                    &file_store_path,
-                    &migration_marker_path,
-                    Arc::clone(&store),
-                )
-                .await?;
-                (store, migration.migrated, migration.detail)
-            }
-            MemoryBackend::Postgres => {
-                let store: Arc<dyn MemoryStore> = Arc::new(PostgresMemoryStore::from_env().await?);
-                (store, false, "postgres backend".to_string())
-            }
-            MemoryBackend::Supabase => {
-                let store: Arc<dyn MemoryStore> = Arc::new(SupabaseMemoryStore::from_env().await?);
-                (store, false, "supabase backend".to_string())
-            }
-            MemoryBackend::Fallback => {
-                let store: Arc<dyn MemoryStore> = Arc::new(FallbackMemoryStore::from_env().await?);
-                (store, false, "fallback chain backend".to_string())
+        ) = if let Some(root) = &store_root {
+            build_space_store(
+                root,
+                &config,
+                &file_store_path,
+                &migration_marker_path,
+                space_crypto.as_ref(),
+            )
+            .await?
+        } else {
+            match config.memory_backend {
+                MemoryBackend::Auto => unreachable!("auto backend should have been resolved"),
+                MemoryBackend::File => (
+                    Arc::new(FileMemoryStore::new(file_store_path.clone()).await?),
+                    false,
+                    format!("file backend using {}", file_store_path.display()),
+                ),
+                MemoryBackend::Memory => (
+                    Arc::new(InMemoryMemoryStore::new()),
+                    false,
+                    "ephemeral in-memory backend".to_string(),
+                ),
+                MemoryBackend::Sqlite => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(SqliteMemoryStore::from_env().await?);
+                    let migration = migrate_file_store_if_needed(
+                        &config.id,
+                        &file_store_path,
+                        &migration_marker_path,
+                        Arc::clone(&store),
+                    )
+                    .await?;
+                    (store, migration.migrated, migration.detail)
+                }
+                MemoryBackend::Vec => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(VecSqliteMemoryStore::from_env().await?);
+                    let migration = migrate_file_store_if_needed(
+                        &config.id,
+                        &file_store_path,
+                        &migration_marker_path,
+                        Arc::clone(&store),
+                    )
+                    .await?;
+                    (store, migration.migrated, migration.detail)
+                }
+                MemoryBackend::Postgres => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(PostgresMemoryStore::from_env().await?);
+                    (store, false, "postgres backend".to_string())
+                }
+                MemoryBackend::Supabase => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(SupabaseMemoryStore::from_env().await?);
+                    (store, false, "supabase backend".to_string())
+                }
+                MemoryBackend::Fallback => {
+                    let store: Arc<dyn MemoryStore> =
+                        Arc::new(FallbackMemoryStore::from_env().await?);
+                    (store, false, "fallback chain backend".to_string())
+                }
             }
         };
         store.set_dedup_settings(config.dedup.clone()).await;
@@ -344,11 +503,27 @@ impl WorkspaceState {
             config.id.clone(),
             Arc::clone(&store),
         ));
-        #[cfg(test)]
-        let conversations_db = Arc::new(ConversationsDb::open_in_memory(&config.id).await?);
-        #[cfg(not(test))]
-        let conversations_db = Arc::new(ConversationsDb::open(&config.id).await?);
-        conversations_db.create_schema().await?;
+        let conversations_db = match &store_root {
+            // Conversations hold message text, thread titles, beliefs and
+            // checkpoints in clear: an encrypting space gets no persistent
+            // conversations database (every call errors, no file is created).
+            Some(_) if space_crypto.is_some() => {
+                Arc::new(ConversationsDb::open_disabled(&config.id)?)
+            }
+            // A space keeps its conversations inside its own directory, so
+            // they are isolated, trashed with the space and never land in the
+            // node-global `~/.xavier/conversations`.
+            Some(root) => Arc::new(
+                ConversationsDb::open_at(&config.id, &root.join(SPACE_CONVERSATIONS_NAME)).await?,
+            ),
+            #[cfg(test)]
+            None => Arc::new(ConversationsDb::open_in_memory(&config.id).await?),
+            #[cfg(not(test))]
+            None => Arc::new(ConversationsDb::open(&config.id).await?),
+        };
+        if space_crypto.is_none() {
+            conversations_db.create_schema().await?;
+        }
 
         let settings = XavierSettings::current();
         let navigation_policy = Arc::new(RwLock::new(crate::retrieval::NavigationPolicy::new(
@@ -405,7 +580,19 @@ impl WorkspaceState {
             working_memory,
         };
 
-        crate::scheduler::daemon::MemoryDaemon::new(Arc::clone(&state.memory_manager)).spawn();
+        if store_root.is_none() {
+            crate::scheduler::daemon::MemoryDaemon::new(Arc::clone(&state.memory_manager)).spawn();
+        } else {
+            // A space does not start the node-global MemoryDaemon: its loops
+            // read cwd-relative datasets, write tuning history under the
+            // cwd's `.xavier` and run node-wide self-management checks. Only
+            // the access-statistics flush (into the space's own store) is armed.
+            let store = Arc::clone(&state.store);
+            tokio::spawn(async move {
+                crate::memory::access::ensure_flush_worker(Arc::clone(&store));
+                crate::memory::access::spawn_shutdown_flush(store);
+            });
+        }
 
         state.load_usage_state().await?;
         Ok(state)
@@ -1063,6 +1250,7 @@ impl WorkspaceState {
                 embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
                 managed_google_embeddings: false,
                 sync_policy: SyncPolicy::LocalOnly,
+                protocol: Default::default(),
                 dedup: crate::settings::types::DedupSettings::default(),
             },
             memory,
@@ -1089,6 +1277,218 @@ impl WorkspaceState {
 }
 
 use crate::memory::store::{FileMemoryStore, InMemoryMemoryStore};
+
+// ---- per-space workspace resolution (WP-13m) ----
+
+/// Why a space's workspace could not be resolved. Callers map `Locked` to 423,
+/// `EncryptionPending` to 501 and everything else to a refusal; nothing falls
+/// back to the default space.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpaceScopeError {
+    /// Encrypted space whose key is not loaded.
+    Locked,
+    /// The space encrypts its records but no key ring is available to seal
+    /// them. Refused before any store or file is created (fail closed): the
+    /// space's memories must never be written in plaintext.
+    EncryptionPending,
+    /// Unknown, unavailable or failed-to-open space.
+    Unavailable,
+}
+
+struct CachedSpaceWorkspace {
+    storage_path: PathBuf,
+    created_at: DateTime<Utc>,
+    /// Whether the store was built with a space key; a change rebuilds it.
+    encrypted: bool,
+    /// Filled once, outside the cache lock; concurrent first requests for the
+    /// same space share one build.
+    cell: Arc<tokio::sync::OnceCell<super::registry::WorkspaceContext>>,
+    last_used: u64,
+}
+
+/// Default bound of the space workspace cache (LRU).
+const SPACE_CACHE_DEFAULT_MAX: usize = 64;
+
+/// Max cached space workspaces (`XAVIER_SPACE_WORKSPACE_CACHE_MAX`, min 1).
+fn space_cache_max() -> usize {
+    std::env::var("XAVIER_SPACE_WORKSPACE_CACHE_MAX")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n >= 1)
+        .unwrap_or(SPACE_CACHE_DEFAULT_MAX)
+}
+
+static SPACE_CACHE_TICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Cache of per-space workspaces, keyed by space id. An entry is only reused
+/// while the registered space still has the same directory AND creation
+/// time, so a deleted (trashed) and re-created space never inherits the old
+/// open store. Locking is checked on every request, never cached. The mutex
+/// guards only the map; workspaces are built outside it.
+static SPACE_WORKSPACES: std::sync::LazyLock<
+    tokio::sync::Mutex<std::collections::HashMap<String, CachedSpaceWorkspace>>,
+> = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Close the pooled connections of a space's vec store. The process-wide
+/// `ConnectionManager` keys pools by file path, so after a space directory is
+/// trashed and re-created at the same path a surviving pool would keep
+/// serving the OLD (renamed) file to the new space.
+fn release_space_connections(storage_path: &std::path::Path) {
+    let id = crate::memory::sqlite_vec_store::project_id_for_path(
+        &storage_path.join(SPACE_SQLITE_STORE_NAME),
+    );
+    crate::codebase::connection_manager::ConnectionManager::global().disconnect(&id);
+    crate::codebase::connection_manager::ConnectionManager::global().disconnect(
+        &crate::codebase::conversations_db::ConversationsDb::connection_id_for_path(
+            &storage_path.join(SPACE_CONVERSATIONS_NAME),
+        ),
+    );
+}
+
+/// Drop the cached workspace of a space (delete, trash, lock).
+pub async fn invalidate_space_workspace(space_id: &str) {
+    if let Some(old) = SPACE_WORKSPACES.lock().await.remove(space_id) {
+        release_space_connections(&old.storage_path);
+    }
+}
+
+/// Whether a workspace for `space_id` is currently cached (diagnostics/tests).
+pub async fn space_workspace_is_cached(space_id: &str) -> bool {
+    SPACE_WORKSPACES.lock().await.contains_key(space_id)
+}
+
+/// Workspace config of a space: its own id, no shared token, path-only
+/// backend taken from the space protocol. Never reads env or node settings.
+fn config_for_space(space_id: &str) -> WorkspaceConfig {
+    let protocol = super::protocol::SpaceProtocol::default();
+    WorkspaceConfig {
+        id: space_id.to_string(),
+        token: String::new(),
+        plan: protocol.limits.plan,
+        memory_backend: protocol.storage.backend,
+        storage_limit_bytes: protocol.limits.storage_limit_bytes,
+        request_limit: protocol.limits.request_limit,
+        request_unit_limit: None,
+        embedding_provider_mode: protocol.embedding_mode,
+        managed_google_embeddings: false,
+        sync_policy: protocol.sync.policy,
+        dedup: Default::default(),
+        protocol,
+    }
+}
+
+/// Resolve (building lazily) the `WorkspaceContext` of `space_id`, rooted at
+/// the space's own directory. Locked space -> `Locked`; the default
+/// workspace is never returned here.
+pub async fn space_workspace_context(
+    manager: &crate::espacio::SpaceManager,
+    space_id: &str,
+) -> std::result::Result<super::registry::WorkspaceContext, SpaceScopeError> {
+    let info = manager
+        .get(space_id)
+        .await
+        .map_err(|_| SpaceScopeError::Unavailable)?;
+    if info.id != space_id {
+        return Err(SpaceScopeError::Unavailable);
+    }
+    if let Some(ring) = manager.key_ring() {
+        if ring.is_locked(space_id) {
+            invalidate_space_workspace(space_id).await;
+            return Err(SpaceScopeError::Locked);
+        }
+    }
+    // An encrypting space seals every record with its own data key. Fail
+    // closed: without a key ring (or when the ring disagrees with the space's
+    // encryption flag) no memory store or file is created for it.
+    let flag = match manager.stores().get(space_id) {
+        Ok(store) => store
+            .encryption_flag()
+            .map_err(|_| SpaceScopeError::Unavailable)?,
+        Err(_) => return Err(SpaceScopeError::Unavailable),
+    };
+    let crypto = match manager.key_ring() {
+        Some(ring) => match ring.record_handle(space_id) {
+            Ok(Some(_)) => Some(SpaceCrypto::new(space_id, ring)),
+            Ok(None) if flag => return Err(SpaceScopeError::Unavailable),
+            Ok(None) => None,
+            Err(e) => {
+                return Err(match e.downcast_ref::<crate::espacio::keys::KeysError>() {
+                    Some(crate::espacio::keys::KeysError::Locked(_)) => SpaceScopeError::Locked,
+                    _ => SpaceScopeError::Unavailable,
+                })
+            }
+        },
+        None if flag => return Err(SpaceScopeError::EncryptionPending),
+        None => None,
+    };
+    let encrypted = crypto.is_some();
+    let cell = {
+        let mut cache = SPACE_WORKSPACES.lock().await;
+        let tick = SPACE_CACHE_TICK.fetch_add(1, Ordering::Relaxed);
+        let stale = cache.get(space_id).is_some_and(|hit| {
+            hit.storage_path != info.storage_path
+                || hit.created_at != info.created_at
+                || hit.encrypted != encrypted
+        });
+        if stale {
+            if let Some(old) = cache.remove(space_id) {
+                release_space_connections(&old.storage_path);
+            }
+        }
+        let entry = cache
+            .entry(space_id.to_string())
+            .or_insert_with(|| CachedSpaceWorkspace {
+                storage_path: info.storage_path.clone(),
+                created_at: info.created_at,
+                encrypted,
+                cell: Arc::new(tokio::sync::OnceCell::new()),
+                last_used: tick,
+            });
+        entry.last_used = tick;
+        let cell = Arc::clone(&entry.cell);
+        // LRU bound. No shutdown hook exists for a workspace's background
+        // tasks (MemoryDaemon is detached), so eviction closes the store's
+        // pooled connections and drops the cache's reference only.
+        let max = space_cache_max();
+        while cache.len() > max {
+            let Some(victim) = cache
+                .iter()
+                .filter(|(id, _)| id.as_str() != space_id)
+                .min_by_key(|(_, e)| e.last_used)
+                .map(|(id, _)| id.clone())
+            else {
+                break;
+            };
+            if let Some(old) = cache.remove(&victim) {
+                release_space_connections(&old.storage_path);
+            }
+        }
+        cell
+    };
+    let ctx = cell
+        .get_or_try_init(|| async {
+            // A fresh build always starts from a fresh pool for this path.
+            release_space_connections(&info.storage_path);
+            let ws = WorkspaceState::new_for_space_keyed(
+                config_for_space(space_id),
+                RuntimeConfig::default(),
+                info.storage_path.join("workspace"),
+                info.storage_path.clone(),
+                crypto.clone(),
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(space = %space_id, error = %e, "space workspace unavailable");
+                SpaceScopeError::Unavailable
+            })?;
+            Ok::<_, SpaceScopeError>(super::registry::WorkspaceContext {
+                workspace_id: space_id.to_string(),
+                workspace: Arc::new(ws),
+            })
+        })
+        .await?;
+    Ok(ctx.clone())
+}
 
 #[cfg(test)]
 mod auto_detect_tests {
@@ -1179,5 +1579,192 @@ mod auto_detect_tests {
         if let Some(v) = old_sb_key {
             std::env::set_var("XAVIER_SUPABASE_KEY", v);
         }
+    }
+}
+
+#[cfg(test)]
+mod space_store_tests {
+    use super::*;
+    use crate::workspace::config::{PlanTier, SyncPolicy};
+    use ulid::Ulid;
+
+    fn cfg(id: &str, backend: MemoryBackend) -> WorkspaceConfig {
+        let mut protocol = super::super::protocol::SpaceProtocol::default();
+        protocol.storage.backend = backend;
+        WorkspaceConfig {
+            id: id.to_string(),
+            token: "t".to_string(),
+            plan: PlanTier::Personal,
+            memory_backend: MemoryBackend::File,
+            storage_limit_bytes: None,
+            request_limit: None,
+            request_unit_limit: None,
+            embedding_provider_mode: crate::workspace::config::EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: SyncPolicy::LocalOnly,
+            protocol,
+            dedup: crate::settings::types::DedupSettings::default(),
+        }
+    }
+
+    async fn ingest(ws: &WorkspaceState, text: &str) {
+        ws.ingest_typed(
+            "notes/x".to_string(),
+            text.to_string(),
+            serde_json::json!({}),
+            None,
+            Some(Vec::new()),
+            false,
+        )
+        .await
+        .expect("ingest");
+    }
+
+    fn row_count(path: &std::path::Path) -> i64 {
+        let conn = rusqlite::Connection::open(path).expect("open db");
+        conn.query_row("SELECT COUNT(*) FROM memory_records", [], |r| r.get(0))
+            .expect("count")
+    }
+
+    async fn isolation(backend: MemoryBackend) {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "disabled");
+        let tmp = tempfile::tempdir().unwrap();
+        let (ra, rb) = (tmp.path().join("a/store"), tmp.path().join("b/store"));
+        let id = Ulid::new().to_string();
+        let a = WorkspaceState::new_for_space(
+            cfg(&id, backend),
+            RuntimeConfig::default(),
+            tmp.path().join("a"),
+            &ra,
+        )
+        .await
+        .expect("space a");
+        let b = WorkspaceState::new_for_space(
+            cfg(&id, backend),
+            RuntimeConfig::default(),
+            tmp.path().join("b"),
+            &rb,
+        )
+        .await
+        .expect("space b");
+        ingest(&a, "same text").await;
+        ingest(&a, "only in a").await;
+        ingest(&b, "same text").await;
+        let (da, db) = (ra.join("memory.sqlite"), rb.join("memory.sqlite"));
+        assert_eq!(row_count(&da), 2, "space a rows");
+        assert_eq!(row_count(&db), 1, "space b rows");
+    }
+
+    #[tokio::test]
+    async fn two_sqlite_spaces_are_isolated() {
+        isolation(MemoryBackend::Sqlite).await;
+    }
+
+    #[tokio::test]
+    async fn two_vec_spaces_are_isolated() {
+        isolation(MemoryBackend::Vec).await;
+    }
+
+    #[tokio::test]
+    async fn file_space_missing_root_is_created() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("deep/er/store");
+        let ws = WorkspaceState::new_for_space(
+            cfg("f", MemoryBackend::File),
+            RuntimeConfig::default(),
+            tmp.path().join("ws"),
+            &root,
+        )
+        .await
+        .expect("file space");
+        assert_eq!(ws.durable_store_backend(), "file");
+        assert!(root.is_dir());
+    }
+
+    #[tokio::test]
+    async fn remote_backends_are_refused_with_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        for backend in [
+            MemoryBackend::Supabase,
+            MemoryBackend::Postgres,
+            MemoryBackend::Fallback,
+            MemoryBackend::Auto,
+            MemoryBackend::Memory,
+        ] {
+            let res = WorkspaceState::new_for_space(
+                cfg("r", backend),
+                RuntimeConfig::default(),
+                tmp.path().join("ws"),
+                tmp.path().join("store"),
+            )
+            .await;
+            assert!(res.is_err(), "{backend:?} must be refused");
+        }
+    }
+
+    #[tokio::test]
+    async fn default_path_still_uses_env_sqlite_path() {
+        let _env = crate::settings::tests::TempEnv::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let env_db = tmp.path().join("env-dir/legacy.sqlite");
+        std::env::set_var("XAVIER_MEMORY_SQLITE_PATH", &env_db);
+        let mut config = cfg("d", MemoryBackend::Sqlite);
+        config.memory_backend = MemoryBackend::Sqlite;
+        let _ws = WorkspaceState::new(config, RuntimeConfig::default(), tmp.path().join("ws"))
+            .await
+            .expect("default space");
+        assert!(env_db.exists(), "env-based sqlite path must still be used");
+        assert!(!tmp.path().join("ws/memory.sqlite").exists());
+    }
+}
+
+#[cfg(test)]
+mod space_cache_tests {
+    use super::*;
+
+    async fn plain_manager(tmp: &tempfile::TempDir, ids: &[&str]) -> crate::espacio::SpaceManager {
+        let manager = crate::espacio::SpaceManager::open(tmp.path());
+        for id in ids {
+            manager
+                .create(
+                    (*id).to_string(),
+                    (*id).to_string(),
+                    String::new(),
+                    "owner".to_string(),
+                    false,
+                )
+                .await
+                .expect("create space");
+        }
+        manager
+    }
+
+    #[tokio::test]
+    async fn concurrent_first_requests_share_one_build_and_cache_is_bounded() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "disabled");
+        std::env::set_var("XAVIER_SPACE_WORKSPACE_CACHE_MAX", "2");
+        let tmp = tempfile::tempdir().unwrap();
+        let manager = plain_manager(&tmp, &["esp_c1", "esp_c2", "esp_c3"]).await;
+
+        let (a, b, c) = tokio::join!(
+            space_workspace_context(&manager, "esp_c1"),
+            space_workspace_context(&manager, "esp_c1"),
+            space_workspace_context(&manager, "esp_c1"),
+        );
+        let (a, b, c) = (a.unwrap(), b.unwrap(), c.unwrap());
+        assert!(Arc::ptr_eq(&a.workspace, &b.workspace));
+        assert!(Arc::ptr_eq(&a.workspace, &c.workspace));
+
+        space_workspace_context(&manager, "esp_c2").await.unwrap();
+        space_workspace_context(&manager, "esp_c3").await.unwrap();
+        // LRU bound: the least recently used space (c1) was evicted.
+        assert!(!space_workspace_is_cached("esp_c1").await);
+        assert!(space_workspace_is_cached("esp_c2").await);
+        assert!(space_workspace_is_cached("esp_c3").await);
+        invalidate_space_workspace("esp_c2").await;
+        invalidate_space_workspace("esp_c3").await;
+        std::env::remove_var("XAVIER_SPACE_WORKSPACE_CACHE_MAX");
     }
 }

@@ -5,6 +5,8 @@ import { RegistryTab } from "./components/RegistryTab";
 import { GovernanceTab } from "./components/GovernanceTab";
 import { SupportTab } from "./components/SupportTab";
 import { BacklogTab } from "./components/BacklogTab";
+import { IntrospectionTab } from "./components/IntrospectionTab";
+import { MalocaAuthPrompt } from "./components/MalocaAuthPrompt";
 import { TABS, TabConfig } from "./tabs";
 import { useMalocaView } from "./useMalocaView";
 
@@ -29,11 +31,7 @@ export default function MalocaView({ onClose }: Props) {
       case "governance": return <GovernanceTab />;
       case "support": return <SupportTab />;
       case "backlog": return <BacklogTab />;
-      case "introspection": return (
-        <div className="flex items-center justify-center h-48 text-white/40 font-mono text-sm">
-          Module 'introspection' under construction...
-        </div>
-      );
+      case "introspection": return <IntrospectionTab />;
       default: return (
         <div className="flex items-center justify-center h-48 text-white/40 font-mono text-sm">
           Module '{activeTab}' under construction...
@@ -124,6 +122,7 @@ export default function MalocaView({ onClose }: Props) {
           </main>
         </div>
       </div>
+      <MalocaAuthPrompt />
     </div>
   );
 }

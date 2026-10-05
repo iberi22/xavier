@@ -1,198 +1,156 @@
 #!/usr/bin/env bash
-# scripts/mini-expert-train.sh
-# Personal Mini-Expert Training Pipeline for Xavier [REQ-023]
+# scripts/mini-expert-train.sh - thin wrapper for the Xavier mini-expert pipeline (MX-05).
 #
-# Pipeline overview:
-#  1. Dataset export from Xavier (/v1/training/export)
-#  2. Fine-tuning via agy / Colab CLI / Vertex AI (1-3B params, target language/segment)
-#  3. GGUF quantization / export
-#  4. Local deployment via Ollama (ollama create)
-#  5. Registration in Xavier MiniExpertRegistry (.xavier/mini_experts.json)
-
+#   export bundle (daemon :8006) -> train_expert.py -> ollama create -> expert_eval.py
+#   -> register in Xavier ONLY if the eval verdict is PROMOTE.
+#
+# No mock manifests, no placeholder GGUFs: any failing step aborts with non-zero exit.
+# Auth token is read from $XAVIER_TOKEN and never printed.
 set -euo pipefail
 
-SHOW_HELP=false
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-for arg in "$@"; do
-    if [[ "$arg" == "--help" || "$arg" == "-h" ]]; then
-        SHOW_HELP=true
-        break
-    fi
-done
+usage() {
+    cat << 'EOF2'
+Usage: mini-expert-train.sh --name NAME [options]
 
-if [[ "$SHOW_HELP" == true || $# -eq 0 ]]; then
-    cat << 'EOF'
-Xavier Personal Mini-Expert Training Pipeline
-
-Usage:
-  mini-expert-train.sh --name <EXPERT_NAME> --segment <SEGMENT> --language <LANG> [options]
-  mini-expert-train.sh --help
-
-Pipeline Steps:
-  1. Export Training Dataset:
-     Queries Xavier API POST /v1/training/export to generate reproducible train/eval JSONL splits.
-
-  2. Mini-Expert Model Training:
-     Invokes agy or Colab CLI (colab run --gpu T4 train_lora.py) to train a 1-3B parameter model
-     fine-tuned specifically on the domain segment and user language.
-
-  3. GGUF Quantization & Export:
-     Converts trained weights to GGUF format (e.g., Q4_K_M or Q8_0) for fast local CPU/GPU execution.
-
-  4. Ollama Deployment:
-     Generates Modelfile and runs 'ollama create <EXPERT_NAME> -f Modelfile' to publish model locally.
-
-  5. Registry Persistence:
-     Registers entry in Xavier MiniExpertRegistry (.xavier/mini_experts.json) with segment, clearance,
-     language, source dataset, and GGUF path metadata.
+Required:
+  --name NAME              Expert name (also the Ollama model name after promotion)
 
 Options:
-  --name <NAME>            Unique name for the mini-expert (e.g., f12-code-expert)
-  --segment <SEGMENT>      Domain segment (e.g., codebase/f12, docs/security)
-  --language <LANG>        Target language ISO code (default: es)
-  --clearance <LEVEL>      Clearance level 0-5 (default: 1)
-  --source-dataset <NAME>  Name of the source dataset (default: xavier-telemetry)
-  --output-dir <DIR>       Directory for output artifacts (default: ./build/mini-experts)
-  --xavier-url <URL>       Xavier server base URL (default: http://localhost:8006)
-  --help, -h               Display this help message and exit
+  --segment SEG            Domain segment for the registry (default: general)
+  --language LANG          ISO language (default: es)
+  --clearance N            Clearance 0-5 for the registry (default: 1)
+  --source-dataset NAME    Source dataset label (default: xavier-telemetry)
+  --xavier-url URL         Daemon base URL (default: $XAVIER_URL or http://127.0.0.1:8006)
+  --bundle DIR             Use an existing bundle dir instead of exporting
+  --backend local|notebook Training backend (default: local). notebook only generates the
+                           Colab notebook + bundle.zip and stops (human step, see output)
+  --resume-gguf FILE       Continue after the notebook: use this returned model-q4_k_m.gguf
+  --base-model HF_ID       HF base model (default: Qwen/Qwen2.5-0.5B-Instruct)
+  --base-ollama NAME       Ollama model used as eval baseline (default: qwen2.5:0.5b)
+  --margin F               Required eval score gain over base (default: 0.05)
+  --output-dir DIR         Artifacts dir (default: ./build/mini-experts)
+  --xavier-bin PATH        xavier CLI binary (default: xavier)
+  -h, --help               Show this help
 
-Examples:
-  scripts/mini-expert-train.sh --name f12-expert --segment codebase/f12 --language es
-EOF
-    exit 0
-fi
+Env: XAVIER_TOKEN (daemon auth), LLAMA_CPP_DIR (llama.cpp checkout, for local training),
+     OLLAMA_URL (default http://127.0.0.1:11434).
+EOF2
+}
 
-# Parsing arguments
-NAME=""
-SEGMENT=""
-LANGUAGE="es"
-CLEARANCE="1"
-SOURCE_DATASET="xavier-telemetry"
-OUTPUT_DIR="./build/mini-experts"
-XAVIER_URL="http://localhost:8006"
+NAME=""; SEGMENT="general"; LANGUAGE="es"; CLEARANCE="1"; SOURCE_DATASET="xavier-telemetry"
+XAVIER_URL="${XAVIER_URL:-http://127.0.0.1:8006}"; BUNDLE=""; BACKEND="local"; RESUME_GGUF=""
+BASE_MODEL="Qwen/Qwen2.5-0.5B-Instruct"; BASE_OLLAMA="qwen2.5:0.5b"; MARGIN="0.05"
+OUTPUT_DIR="./build/mini-experts"; XAVIER_BIN="xavier"
+OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
 
+need_val() { [[ $# -ge 2 ]] || { echo "Missing value for $1" >&2; exit 1; }; }
+if [[ $# -eq 0 ]]; then usage; exit 1; fi
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --name)
-            NAME="$2"
-            shift 2
-            ;;
-        --segment)
-            SEGMENT="$2"
-            shift 2
-            ;;
-        --language)
-            LANGUAGE="$2"
-            shift 2
-            ;;
-        --clearance)
-            CLEARANCE="$2"
-            shift 2
-            ;;
-        --source-dataset)
-            SOURCE_DATASET="$2"
-            shift 2
-            ;;
-        --output-dir)
-            OUTPUT_DIR="$2"
-            shift 2
-            ;;
-        --xavier-url)
-            XAVIER_URL="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown argument: $1" >&2
-            exit 1
-            ;;
+        -h|--help) usage; exit 0 ;;
+        --name) need_val "$@"; NAME="$2"; shift 2 ;;
+        --segment) need_val "$@"; SEGMENT="$2"; shift 2 ;;
+        --language) need_val "$@"; LANGUAGE="$2"; shift 2 ;;
+        --clearance) need_val "$@"; CLEARANCE="$2"; shift 2 ;;
+        --source-dataset) need_val "$@"; SOURCE_DATASET="$2"; shift 2 ;;
+        --xavier-url) need_val "$@"; XAVIER_URL="$2"; shift 2 ;;
+        --bundle) need_val "$@"; BUNDLE="$2"; shift 2 ;;
+        --backend) need_val "$@"; BACKEND="$2"; shift 2 ;;
+        --resume-gguf) need_val "$@"; RESUME_GGUF="$2"; shift 2 ;;
+        --base-model) need_val "$@"; BASE_MODEL="$2"; shift 2 ;;
+        --base-ollama) need_val "$@"; BASE_OLLAMA="$2"; shift 2 ;;
+        --margin) need_val "$@"; MARGIN="$2"; shift 2 ;;
+        --output-dir) need_val "$@"; OUTPUT_DIR="$2"; shift 2 ;;
+        --xavier-bin) need_val "$@"; XAVIER_BIN="$2"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
 
-if [[ -z "$NAME" || -z "$SEGMENT" ]]; then
-    echo "Error: --name and --segment are required parameters." >&2
-    echo "Run 'scripts/mini-expert-train.sh --help' for usage information." >&2
-    exit 1
+[[ -n "$NAME" ]] || { echo "Error: --name is required." >&2; exit 1; }
+[[ "$NAME" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Error: --name must match [A-Za-z0-9._-]+" >&2; exit 1; }
+[[ "$BACKEND" == "local" || "$BACKEND" == "notebook" ]] || { echo "Error: --backend must be local|notebook" >&2; exit 1; }
+
+WORK="$OUTPUT_DIR/$NAME"
+mkdir -p "$WORK"
+WORK="$(cd "$WORK" && pwd)"
+[[ -n "$BUNDLE" ]] || BUNDLE="$WORK/bundle"
+
+# 1. Export bundle from the daemon (skipped with --bundle or --resume-gguf).
+if [[ -z "$RESUME_GGUF" && ! -f "$BUNDLE/bundle_manifest.json" ]]; then
+    echo "[1/5] Exporting bundle from $XAVIER_URL/v1/training/bundles ..."
+    mkdir -p "$BUNDLE"
+    # Token goes through a curl config on a pipe: never on the command line, never echoed.
+    auth_cfg() { if [[ -n "${XAVIER_TOKEN:-}" ]]; then printf 'header = "X-Xavier-Token: %s"\n' "$XAVIER_TOKEN"; fi; }
+    BODY="$(python3 -c 'import json,sys; print(json.dumps({"seed":42,"eval_ratio":0.1,"clearance":sys.argv[1],"language":sys.argv[2],"segment":sys.argv[3]}))' "INTERNAL" "$LANGUAGE" "$SEGMENT")"
+    curl -fsS -X POST "$XAVIER_URL/v1/training/bundles" -H "Content-Type: application/json" \
+        --config <(auth_cfg) -d "$BODY" -o "$WORK/export_response.json"
+    DATASET_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["dataset_id"])' "$WORK/export_response.json")"
+    [[ "$DATASET_ID" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Invalid dataset_id from daemon" >&2; exit 1; }
+    curl -fsS --config <(auth_cfg) "$XAVIER_URL/v1/training/datasets/$DATASET_ID" -o "$BUNDLE/bundle_manifest.json"
+    curl -fsS --config <(auth_cfg) "$XAVIER_URL/v1/training/datasets/$DATASET_ID/train" -o "$BUNDLE/train.jsonl"
+    curl -fsS --config <(auth_cfg) "$XAVIER_URL/v1/training/datasets/$DATASET_ID/eval" -o "$BUNDLE/eval.jsonl"
+    python3 -c 'import json,sys; json.dump(json.load(open(sys.argv[1]))["audit_summary"], open(sys.argv[2],"w"), indent=2)' \
+        "$WORK/export_response.json" "$BUNDLE/anonymization_audit.json"
+else
+    echo "[1/5] Using existing bundle: $BUNDLE"
 fi
 
-echo "=== Xavier Mini-Expert Pipeline ==="
-echo "Expert Name: $NAME"
-echo "Segment: $SEGMENT"
-echo "Language: $LANGUAGE"
-echo "Clearance Level: $CLEARANCE"
-echo "Source Dataset: $SOURCE_DATASET"
-echo "Output Directory: $OUTPUT_DIR"
-echo ""
+# 2. Train.
+if [[ -n "$RESUME_GGUF" ]]; then
+    [[ -f "$RESUME_GGUF" ]] || { echo "GGUF not found: $RESUME_GGUF" >&2; exit 1; }
+    GGUF="$(cd "$(dirname "$RESUME_GGUF")" && pwd)/$(basename "$RESUME_GGUF")"
+    [[ "$(head -c4 "$GGUF")" == "GGUF" ]] || { echo "Not a GGUF file (bad magic): $GGUF" >&2; exit 1; }
+    echo "[2/5] Resuming with returned artifact: $GGUF"
+else
+    echo "[2/5] Training (backend=$BACKEND) ..."
+    python3 "$HERE/training/train_expert.py" --bundle "$BUNDLE" --base-model "$BASE_MODEL" \
+        --out "$WORK/train" --backend "$BACKEND"
+    if [[ "$BACKEND" == "notebook" ]]; then
+        echo "Notebook generated. After the human run, re-invoke with --resume-gguf <model-q4_k_m.gguf>."
+        exit 0
+    fi
+    GGUF="$WORK/train/model-q4_k_m.gguf"
+fi
 
-mkdir -p "$OUTPUT_DIR/$NAME"
-
-echo "[1/5] Exporting dataset from Xavier API ($XAVIER_URL/v1/training/export)..."
-# Request dataset bundle
-curl -s -X POST "$XAVIER_URL/v1/training/export" \
-     -H "Content-Type: application/json" \
-     -d '{"seed": 42, "eval_ratio": 0.1}' \
-     > "$OUTPUT_DIR/$NAME/export_response.json" || true
-
-echo "[2/5] Training mini-expert via agy / Colab CLI..."
-echo "  Executing: colab run --gpu T4 train_lora.py --segment '$SEGMENT' --lang '$LANGUAGE'"
-# Mock/Stub execution step for training script
-echo '{"status": "trained", "model": "'"$NAME"'"}' > "$OUTPUT_DIR/$NAME/train_manifest.json"
-
-echo "[3/5] Exporting GGUF quantized model..."
-GGUF_PATH="$OUTPUT_DIR/$NAME/model-q4_k_m.gguf"
-touch "$GGUF_PATH"
-echo "  GGUF artifact created at $GGUF_PATH"
-
-echo "[4/5] Registering custom model with local Ollama instance..."
-MODELFILE_PATH="$OUTPUT_DIR/$NAME/Modelfile"
-cat << EOF > "$MODELFILE_PATH"
-FROM $GGUF_PATH
+# 3. Ollama model from the real GGUF.
+CANDIDATE="$NAME-candidate"
+MODELFILE="$WORK/Modelfile"
+cat > "$MODELFILE" << EOF2
+FROM $GGUF
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+<|im_start|>assistant
+"""
+PARAMETER stop "<|im_end|>"
 PARAMETER temperature 0.2
 SYSTEM You are a personal mini-expert specialized in $SEGMENT ($LANGUAGE).
-EOF
+EOF2
+echo "[3/5] ollama create $CANDIDATE ..."
+ollama create "$CANDIDATE" -f "$MODELFILE"
 
-if command -v ollama &> /dev/null; then
-    ollama create "$NAME" -f "$MODELFILE_PATH" || echo "  Note: ollama service offline or mock mode."
-else
-    echo "  Ollama CLI not found in PATH; skipping 'ollama create'."
+# 4. Eval base vs candidate on the fixed eval split.
+echo "[4/5] Evaluating $BASE_OLLAMA vs $CANDIDATE ..."
+set +e
+python3 "$HERE/eval/expert_eval.py" --eval "$BUNDLE/eval.jsonl" --base "$BASE_OLLAMA" \
+    --candidate "$CANDIDATE" --ollama-url "$OLLAMA_URL" --margin "$MARGIN" --report "$WORK/eval_report.json"
+EVAL_RC=$?
+set -e
+if [[ $EVAL_RC -eq 2 ]]; then
+    echo "REJECT: candidate not registered (see $WORK/eval_report.json)."
+    exit 2
+elif [[ $EVAL_RC -ne 0 ]]; then
+    echo "Eval failed (exit $EVAL_RC); not registering." >&2
+    exit "$EVAL_RC"
 fi
 
-echo "[5/5] Registering mini-expert in Xavier MiniExpertRegistry..."
-REGISTRY_FILE=".xavier/mini_experts.json"
-mkdir -p .xavier
-
-# Construct JSON entry
-NEW_ENTRY=$(cat << EOF
-{
-  "name": "$NAME",
-  "segment": "$SEGMENT",
-  "language": "$LANGUAGE",
-  "clearance": $CLEARANCE,
-  "source_dataset": "$SOURCE_DATASET",
-  "model_gguf_path": "$GGUF_PATH",
-  "provider": "local",
-  "endpoint": "http://localhost:11434/v1"
-}
-EOF
-)
-
-if [[ ! -f "$REGISTRY_FILE" ]]; then
-    echo "[$NEW_ENTRY]" > "$REGISTRY_FILE"
-else
-    # Update or append entry in .xavier/mini_experts.json
-    python3 -c "
-import json, sys
-path = '$REGISTRY_FILE'
-entry = json.loads('''$NEW_ENTRY''')
-try:
-    with open(path, 'r') as f:
-        data = json.load(f)
-except Exception:
-    data = []
-data = [e for e in data if e.get('name') != entry['name']]
-data.append(entry)
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-" || true
-fi
-
-echo "=== Mini-expert '$NAME' successfully trained and registered! ==="
+# 5. PROMOTE: publish under the final name and register.
+echo "[5/5] PROMOTE: publishing '$NAME' and registering ..."
+ollama cp "$CANDIDATE" "$NAME"
+"$XAVIER_BIN" mini-expert add --name "$NAME" --segment "$SEGMENT" --language "$LANGUAGE" \
+    --clearance "$CLEARANCE" --source-dataset "$SOURCE_DATASET" --model-gguf-path "$GGUF" \
+    --provider local --endpoint "$OLLAMA_URL/v1"
+echo "=== Mini-expert '$NAME' promoted and registered. ==="

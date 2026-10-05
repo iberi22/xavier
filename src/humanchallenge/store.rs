@@ -34,6 +34,11 @@ const INIT_SQL: &str = "
     CREATE INDEX IF NOT EXISTS idx_hc_created ON human_challenge_events(created_at);
 ";
 
+const VOTE_COLUMNS: &str = "id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at, technique";
+
+/// Votes that may feed the training gate.
+const GATE_VOTE_FILTER: &str = "training_eligible = 1 AND verdict IN ('accept', 'refine') AND NOT (technique IS NOT NULL AND fact_verified = 0)";
+
 const MIGRATION_SQL: &str = "
     CREATE TABLE IF NOT EXISTS curation_votes (
         id TEXT PRIMARY KEY,
@@ -75,6 +80,95 @@ const MIGRATION_SQL: &str = "
     );
 ";
 
+/// Why `verify_introspection_vote` could not apply a verdict.
+#[derive(Debug)]
+pub enum VerifyVoteError {
+    /// No vote with that id.
+    NotFound,
+    /// The vote is not an introspection insight (no `technique`).
+    NotIntrospection,
+    /// The vote was already reviewed (verdict is no longer the pending `refine`).
+    AlreadyReviewed,
+    Db(rusqlite::Error),
+}
+
+impl std::fmt::Display for VerifyVoteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => write!(f, "vote not found"),
+            Self::NotIntrospection => write!(f, "vote is not an introspection insight"),
+            Self::AlreadyReviewed => write!(f, "vote was already reviewed"),
+            Self::Db(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for VerifyVoteError {}
+
+impl From<rusqlite::Error> for VerifyVoteError {
+    fn from(e: rusqlite::Error) -> Self {
+        Self::Db(e)
+    }
+}
+
+/// How the process-wide HumanChallenge/introspection store is backed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreBacking {
+    /// Not reported yet (e.g. the daemon has not built the store).
+    Unknown,
+    File,
+    Memory,
+}
+
+static STORE_BACKING: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Record how the daemon's store is backed; read by `/health`.
+pub fn set_store_backing(backing: StoreBacking) {
+    let v = match backing {
+        StoreBacking::Unknown => 0,
+        StoreBacking::File => 1,
+        StoreBacking::Memory => 2,
+    };
+    STORE_BACKING.store(v, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn store_backing() -> StoreBacking {
+    match STORE_BACKING.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => StoreBacking::File,
+        2 => StoreBacking::Memory,
+        _ => StoreBacking::Unknown,
+    }
+}
+
+/// Reason string added to `/health` degraded reasons when the store is in-memory.
+pub const MEMORY_FALLBACK_REASON: &str =
+    "subsystem:humanchallenge_store: in-memory fallback active, challenges and introspection are not persisted";
+
+/// Add `humanchallenge_store` (and, on memory fallback, a degraded reason) to a
+/// serialized `/health` body.
+pub fn annotate_health(health: &mut serde_json::Value, backing: StoreBacking) {
+    let Some(obj) = health.as_object_mut() else {
+        return;
+    };
+    let label = match backing {
+        StoreBacking::Unknown => "unknown",
+        StoreBacking::File => "file",
+        StoreBacking::Memory => "memory",
+    };
+    obj.insert("humanchallenge_store".into(), label.into());
+    if backing == StoreBacking::Memory {
+        let reasons = obj
+            .entry("degraded_reasons")
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+        if let Some(list) = reasons.as_array_mut() {
+            list.push(MEMORY_FALLBACK_REASON.into());
+        }
+        if obj.get("status").and_then(|s| s.as_str()) == Some("healthy") {
+            obj.insert("status".into(), "degraded".into());
+        }
+    }
+}
+
 pub struct HumanChallengeStore {
     conn: Mutex<Connection>,
 }
@@ -85,9 +179,45 @@ impl HumanChallengeStore {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(INIT_SQL)?;
         conn.execute_batch(MIGRATION_SQL)?;
+        Self::migrate_columns(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// Additive column migrations for databases created by older versions.
+    fn migrate_columns(conn: &Connection) -> SqliteResult<()> {
+        let has_consent = {
+            let mut stmt = conn.prepare("PRAGMA table_info(introspection_sessions)")?;
+            let names = stmt.query_map([], |row| row.get::<_, String>(1))?;
+            let mut found = false;
+            for n in names {
+                if n? == "training_consent" {
+                    found = true;
+                }
+            }
+            found
+        };
+        if !has_consent {
+            conn.execute_batch(
+                "ALTER TABLE introspection_sessions ADD COLUMN training_consent INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        let has_technique = {
+            let mut stmt = conn.prepare("PRAGMA table_info(curation_votes)")?;
+            let names = stmt.query_map([], |row| row.get::<_, String>(1))?;
+            let mut found = false;
+            for n in names {
+                if n? == "technique" {
+                    found = true;
+                }
+            }
+            found
+        };
+        if !has_technique {
+            conn.execute_batch("ALTER TABLE curation_votes ADD COLUMN technique TEXT;")?;
+        }
+        Ok(())
     }
 
     /// Initialize an in-memory store for testing
@@ -95,6 +225,7 @@ impl HumanChallengeStore {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(INIT_SQL)?;
         conn.execute_batch(MIGRATION_SQL)?;
+        Self::migrate_columns(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -264,8 +395,8 @@ impl HumanChallengeStore {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO curation_votes
-             (id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             (id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at, technique)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 vote.id,
                 vote.challenge_id,
@@ -274,58 +405,134 @@ impl HumanChallengeStore {
                 fact_v,
                 domain_tags_json,
                 training_e,
-                voted_ts
+                voted_ts,
+                vote.technique
             ],
         )?;
         Ok(())
     }
 
-    /// Get all curation votes eligible for training (accepted or refined + training_eligible).
+    /// Shared decoder for `VOTE_COLUMNS` rows; unknown verdicts decode as `Refine`.
+    fn row_to_vote(row: &rusqlite::Row) -> SqliteResult<CurationVote> {
+        use crate::humanchallenge::types::CurationVerdict;
+
+        let domain_tags_json: String = row.get(5)?;
+        let voted_ts: i64 = row.get(7)?;
+        let verdict_str: String = row.get(2)?;
+        Ok(CurationVote {
+            id: row.get(0)?,
+            challenge_id: row.get(1)?,
+            verdict: CurationVerdict::from_str(&verdict_str).unwrap_or(CurationVerdict::Refine),
+            curated_content: row.get(3)?,
+            fact_verified: row.get::<_, i32>(4)? != 0,
+            domain_tags: serde_json::from_str(&domain_tags_json).unwrap_or_default(),
+            training_eligible: row.get::<_, i32>(6)? != 0,
+            voted_at: DateTime::from_timestamp(voted_ts, 0).unwrap_or_else(Utc::now),
+            technique: row.get(8)?,
+        })
+    }
+
+    /// Get curation votes eligible for training (accepted or refined + training_eligible).
+    /// Unverified introspection votes (technique set, fact_verified=0) are pending a human
+    /// check and never count toward the gate.
     pub fn get_training_eligible_votes(&self, limit: u32) -> SqliteResult<Vec<CurationVote>> {
-        use crate::humanchallenge::types::{CurationVerdict, CurationVote};
-        use std::str::FromStr;
-
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, challenge_id, verdict, curated_content, fact_verified, domain_tags, training_eligible, voted_at
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {VOTE_COLUMNS}
              FROM curation_votes
-             WHERE training_eligible = 1 AND verdict IN ('accept', 'refine')
-             ORDER BY voted_at DESC LIMIT ?1",
-        )?;
+             WHERE {GATE_VOTE_FILTER}
+             ORDER BY voted_at DESC LIMIT ?1"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params![limit], Self::row_to_vote)?;
+        rows.collect()
+    }
 
-        let rows = stmt.query_map(rusqlite::params![limit], |row| {
-            let domain_tags_json: String = row.get(5)?;
-            let domain_tags: Vec<String> =
-                serde_json::from_str(&domain_tags_json).unwrap_or_default();
-            let voted_ts: i64 = row.get(7)?;
-            Ok(CurationVote {
-                id: row.get(0)?,
-                challenge_id: row.get(1)?,
-                verdict: CurationVerdict::from_str(&row.get::<_, String>(2)?).unwrap(),
-                curated_content: row.get(3)?,
-                fact_verified: row.get::<_, i32>(4)? != 0,
-                domain_tags,
-                training_eligible: row.get::<_, i32>(6)? != 0,
-                voted_at: DateTime::from_timestamp(voted_ts, 0).unwrap_or_else(Utc::now),
-            })
-        })?;
-
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
-        }
-        Ok(results)
+    /// All curation votes for a challenge id (eligible or not), oldest first.
+    pub fn get_votes_for_challenge(&self, challenge_id: &str) -> SqliteResult<Vec<CurationVote>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {VOTE_COLUMNS}
+             FROM curation_votes WHERE challenge_id = ?1 ORDER BY voted_at ASC, id ASC"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params![challenge_id], Self::row_to_vote)?;
+        rows.collect()
     }
 
     /// Count accepted/refined training-eligible votes
     pub fn count_training_eligible(&self) -> SqliteResult<usize> {
         let conn = self.conn.lock().unwrap();
         let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM curation_votes WHERE training_eligible = 1 AND verdict IN ('accept', 'refine')",
+            &format!("SELECT COUNT(*) FROM curation_votes WHERE {GATE_VOTE_FILTER}"),
             [],
             |row| row.get(0),
         )?;
         Ok(count as usize)
+    }
+
+    /// Introspection insights awaiting human verification (unreviewed `refine` votes
+    /// carrying a technique), oldest first.
+    pub fn list_pending_introspection_votes(&self, limit: u32) -> SqliteResult<Vec<CurationVote>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {VOTE_COLUMNS}
+             FROM curation_votes
+             WHERE technique IS NOT NULL AND verdict = 'refine' AND fact_verified = 0
+             ORDER BY voted_at ASC, id ASC LIMIT ?1"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params![limit], Self::row_to_vote)?;
+        rows.collect()
+    }
+
+    /// Apply a human verdict to a pending introspection vote.
+    ///
+    /// `accept` with `fact_verified` makes the vote training-eligible only if training
+    /// consent was recorded at completion (the vote's existing `training_eligible` flag);
+    /// verification never grants consent. `reject` is never eligible. Votes that are not
+    /// introspection insights are never touched.
+    pub fn verify_introspection_vote(
+        &self,
+        id: &str,
+        accept: bool,
+        fact_verified: bool,
+    ) -> Result<CurationVote, VerifyVoteError> {
+        let conn = self.conn.lock().unwrap();
+        let vote = {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {VOTE_COLUMNS} FROM curation_votes WHERE id = ?1"
+            ))?;
+            let mut rows = stmt.query([id])?;
+            match rows.next()? {
+                Some(row) => Self::row_to_vote(row)?,
+                None => return Err(VerifyVoteError::NotFound),
+            }
+        };
+        if vote.technique.is_none() {
+            return Err(VerifyVoteError::NotIntrospection);
+        }
+        if vote.verdict != crate::humanchallenge::types::CurationVerdict::Refine
+            || vote.fact_verified
+        {
+            return Err(VerifyVoteError::AlreadyReviewed);
+        }
+        let (verdict, fact_v, eligible) = if accept {
+            (
+                "accept",
+                fact_verified,
+                fact_verified && vote.training_eligible,
+            )
+        } else {
+            ("reject", false, false)
+        };
+        conn.execute(
+            "UPDATE curation_votes SET verdict = ?1, fact_verified = ?2, training_eligible = ?3
+             WHERE id = ?4 AND technique IS NOT NULL",
+            params![verdict, fact_v as i32, eligible as i32, id],
+        )?;
+        let mut updated = vote;
+        updated.verdict = verdict.parse().unwrap_or(updated.verdict);
+        updated.fact_verified = fact_v;
+        updated.training_eligible = eligible;
+        Ok(updated)
     }
 
     // -----------------------------------------------------------------------
@@ -344,8 +551,8 @@ impl HumanChallengeStore {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO introspection_sessions
-             (id, challenge_id, technique, turns, depth_score, insights, status, started_at, completed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             (id, challenge_id, technique, turns, depth_score, insights, status, started_at, completed_at, training_consent)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 session.id,
                 session.challenge_id,
@@ -355,7 +562,8 @@ impl HumanChallengeStore {
                 insights_json,
                 session.status.as_str(),
                 started_ts,
-                completed_ts
+                completed_ts,
+                if session.training_consent { 1 } else { 0 }
             ],
         )?;
         Ok(())
@@ -369,11 +577,10 @@ impl HumanChallengeStore {
         use crate::humanchallenge::types::{
             IntrospectionSession, IntrospectionStatus, IntrospectionTechnique, IntrospectionTurn,
         };
-        use std::str::FromStr;
 
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, challenge_id, technique, turns, depth_score, insights, status, started_at, completed_at
+            "SELECT id, challenge_id, technique, turns, depth_score, insights, status, started_at, completed_at, training_consent
              FROM introspection_sessions WHERE id = ?1",
         )?;
 
@@ -402,6 +609,7 @@ impl HumanChallengeStore {
                 status: IntrospectionStatus::from_str(&row.get::<_, String>(6)?).unwrap(),
                 started_at: DateTime::from_timestamp(started_ts, 0).unwrap_or_else(Utc::now),
                 completed_at: completed_ts.and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                training_consent: row.get::<_, i32>(9)? != 0,
             }))
         } else {
             Ok(None)
@@ -493,6 +701,7 @@ impl HumanChallengeStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::humanchallenge::types::CurationVerdict;
 
     #[test]
     fn test_store_save_get_and_answer() {
@@ -536,5 +745,61 @@ mod tests {
         let month_events = store.list_events_by_month(&current_month, 10).unwrap();
         assert_eq!(month_events.len(), 1);
         assert_eq!(month_events[0].id, event.id);
+    }
+
+    #[test]
+    fn test_unknown_verdict_decodes_identically_in_both_readers() {
+        let store = HumanChallengeStore::in_memory().unwrap();
+        {
+            let conn = store.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO curation_votes (id, challenge_id, verdict, fact_verified, domain_tags, training_eligible, voted_at)
+                 VALUES ('cv_odd', 'hc_odd', 'weird_verdict', 1, '[]', 1, 0)",
+                [],
+            )
+            .unwrap();
+        }
+        let by_challenge = store.get_votes_for_challenge("hc_odd").unwrap();
+        let eligible = store.get_training_eligible_votes(10).unwrap();
+        // The eligible query only matches accept/refine, so compare the shared decoder directly.
+        assert_eq!(by_challenge.len(), 1);
+        assert_eq!(by_challenge[0].verdict, CurationVerdict::Refine);
+        assert!(eligible.is_empty());
+        store
+            .conn
+            .lock()
+            .unwrap()
+            .execute("UPDATE curation_votes SET verdict = 'refine'", [])
+            .unwrap();
+        let eligible = store.get_training_eligible_votes(10).unwrap();
+        assert_eq!(eligible[0].verdict, by_challenge[0].verdict);
+    }
+
+    #[test]
+    fn test_annotate_health_reports_backing_and_memory_reason() {
+        let mut file = serde_json::json!({"status": "healthy", "degraded_reasons": []});
+        annotate_health(&mut file, StoreBacking::File);
+        assert_eq!(file["humanchallenge_store"], "file");
+        assert_eq!(file["status"], "healthy");
+        assert_eq!(file["degraded_reasons"].as_array().unwrap().len(), 0);
+
+        let mut mem = serde_json::json!({"status": "healthy", "degraded_reasons": []});
+        annotate_health(&mut mem, StoreBacking::Memory);
+        assert_eq!(mem["humanchallenge_store"], "memory");
+        assert_eq!(mem["status"], "degraded");
+        assert_eq!(mem["degraded_reasons"][0], MEMORY_FALLBACK_REASON);
+
+        let mut unknown = serde_json::json!({"status": "healthy"});
+        annotate_health(&mut unknown, StoreBacking::Unknown);
+        assert_eq!(unknown["humanchallenge_store"], "unknown");
+    }
+
+    #[test]
+    fn test_store_backing_global_roundtrip() {
+        set_store_backing(StoreBacking::Memory);
+        assert_eq!(store_backing(), StoreBacking::Memory);
+        set_store_backing(StoreBacking::File);
+        assert_eq!(store_backing(), StoreBacking::File);
+        set_store_backing(StoreBacking::Unknown);
     }
 }

@@ -1102,7 +1102,7 @@ xavier users totp-enroll --email admin@example.com
 | `xavier agent <subcommand>` | `scan`, `index`, `push`, `pull`, `chat`, `converse` — IDE agent session import. `index` also takes `--codex`, `--jules`, `--antigravity`, `--opencode`. |
 | `xavier cloud <subcommand>` | `status`, `set-backend <backend>`, `sync`, `verify` — each with `--json`. |
 | `xavier plugin <subcommand>` | `install <name>`, `list`. |
-| `xavier mini-expert <subcommand>` | `add` (`--name`, `--segment`, `--language`, `--clearance`, `--source-dataset`, `--model-gguf-path`, `--provider`, `--endpoint`), `list`, `serve` (`--name`, `--port`, default `11434`). |
+| `xavier mini-expert <subcommand>` | `add` (`--name`, `--segment`, `--domain`, `--language`, `--clearance`, `--source-dataset`, `--model-gguf-path`, `--provider`, `--endpoint`, `--version`, `--metrics-file`, `--candidate`; all stored in the SQLite registry), `list`, `activate <name> <version>`, `retire <name> [--version]`, `serve` (`--name`; makes sure active experts exist in Ollama, whose address comes from `XAVIER_LOCAL_LLM_URL`; `--port` is rejected). Only `local`/`ollama` providers are served by the expert router and `ask_expert`; other providers are honoured only by the legacy HTTP invoke route. `XAVIER_EXPERT_THRESHOLD` is clamped to [-1, 1] (NaN/inf use the default 0.6). |
 | `xavier node <subcommand>` | SWAL node identity: `create`, `recover`, `status`, `anchor`, `anchor-pack`. |
 | `xavier nodes <subcommand>` | Node provisioning: `add`, `list`, `show`, `rotate`, `remove`, `status`. |
 | `xavier governance <subcommand>` | `list`, `create <title> <description>`, `status <id>`, `vote <id>`, `council`. |

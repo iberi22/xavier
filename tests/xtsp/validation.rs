@@ -105,6 +105,7 @@ pub async fn test_state() -> (AppState, WorkspaceContext, mockito::ServerGuard) 
             embedding_provider_mode: xavier::workspace::EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: xavier::workspace::SyncPolicy::CloudMirror,
+            protocol: Default::default(),
             dedup: xavier::settings::types::DedupSettings {
                 enabled: true,
                 ..xavier::settings::types::DedupSettings::default()

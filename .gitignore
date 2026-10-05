@@ -120,3 +120,9 @@ scripts/pageindex-e2e/pages_cache.json
 scripts/pageindex-e2e/nav_*.json
 scripts/pageindex-e2e/nav_logs/
 scripts/pageindex-e2e/__pycache__/
+
+# Runtime state / untracked runtime config (#2801, D11). The tracked template is
+# config/xavier.config.example.json; xavier.config.json is seeded from it.
+config/xavier.config.json
+config/.xavier-state/
+.xavier-state/

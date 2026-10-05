@@ -117,9 +117,25 @@ impl MemoryManager {
             let mut total_pruned = 0;
             let mut total_reclaimed = 0;
             for ws in &workspaces {
-                if let Ok(summary) = pruner.prune_memories(&*store, ws).await {
-                    total_pruned += summary.pruned_count;
-                    total_reclaimed += summary.reclaimed_bytes;
+                match pruner.prune_memories(&*store, ws).await {
+                    Ok(summary) => {
+                        if let Some(reason) = &summary.gate_block_reason {
+                            info!(
+                                workspace = ws,
+                                %reason,
+                                "Utility prune withheld by access-evidence gate"
+                            );
+                        }
+                        total_pruned += summary.pruned_count;
+                        total_reclaimed += summary.reclaimed_bytes;
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            workspace = ws,
+                            %error,
+                            "Utility prune failed; nothing deleted for this workspace"
+                        );
+                    }
                 }
             }
             stats.low_utility_pruned = total_pruned;

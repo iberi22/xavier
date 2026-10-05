@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use crate::memory::access::{self, PruneBlockReason, RECORDER};
 use crate::memory::decay::get_last_accessed;
 use crate::memory::manager::priority::MemoryPriority;
 use crate::memory::store::{MemoryRecord, MemoryStore};
@@ -49,6 +50,15 @@ pub struct TgdPruneSummary {
     pub consolidated_entities: usize,
     /// List of IDs of pruned records.
     pub pruned_ids: Vec<String>,
+    /// Why the prune gate withheld permission, when it did.
+    ///
+    /// `None` means the gate cleared the run (window elapsed and evidence
+    /// present), whether or not anything was then pruned. `Some(..)` is a
+    /// machine-readable reason a maintenance report can show, so a `0 pruned`
+    /// line is never silently indistinguishable from "there was nothing to
+    /// prune".
+    #[serde(default)]
+    pub gate_block_reason: Option<String>,
 }
 
 /// Helper function to categorize a path for logging and heuristics.
@@ -191,6 +201,44 @@ impl TgdUtilityPruner {
     }
 
     /// Executes low-utility memory pruning for a given workspace store.
+    ///
+    /// ## The prune gate
+    ///
+    /// Deletion is irreversible and the evidence for it is weak by construction:
+    /// a utility score is a heuristic and "no access recorded" is
+    /// indistinguishable from "nobody has asked yet". So the run is gated by
+    /// [`crate::memory::access`] before any candidate is deleted:
+    ///
+    /// 1. **Observation clock** ([`access::prune_block_reason`]) — read *once*
+    ///    per workspace, not once per record. Without a
+    ///    `observation_started_at` there is no proof the access signal existed
+    ///    when the oldest candidate was written, so nothing is eligible. This
+    ///    is the fail-safe direction: an unreadable clock can only ever
+    ///    *preserve*, never delete.
+    /// 2. **Observability** ([`access::record_is_observable`]) — a record
+    ///    without an embedding can never enter a vector top-k, so its zero
+    ///    access count carries no information about utility. It is not a
+    ///    candidate; pruning it would delete exactly the memories that lost
+    ///    their embedding rather than the ones that stopped being useful.
+    /// 3. **Evidence of use** (durable `memory_access` + the live buffer) — a
+    ///    record that has actually been read is demonstrably needed and is
+    ///    shielded, whatever its heuristic utility score says.
+    /// 4. **Workspace-wide fail-safe** — if nothing has ever been observed for
+    ///    this workspace, nothing is deleted at all.
+    ///
+    /// Every one of these rules can only ever *keep* a memory. There is no
+    /// path through this function that deletes on absent evidence: the delete
+    /// loop runs only after the clock is proven elapsed and for candidates
+    /// that were both observable and un-read.
+    ///
+    /// The durable table is read directly rather than through the hydrated
+    /// `RECORDER` view, so a restart with an empty in-memory view cannot make a
+    /// used record look unused. `RECORDER` is consulted in addition, so an
+    /// access recorded seconds ago and not yet flushed also shields.
+    ///
+    /// When the gate blocks, the run is *not* an error: it returns an empty
+    /// summary carrying [`TgdPruneSummary::gate_block_reason`]. GC treats a
+    /// blocked run exactly like a run with nothing to prune.
     pub async fn prune_memories(
         &self,
         store: &dyn MemoryStore,
@@ -200,7 +248,62 @@ impl TgdUtilityPruner {
         let records = store.list(workspace_id).await?;
         let total_processed = records.len();
 
+        let mut summary = TgdPruneSummary {
+            total_processed,
+            ..Default::default()
+        };
+
+        // ---- Gate, step 1: the observation clock (one read per workspace) ----
+        let observation_started_at = match access::observation_started_at(store).await {
+            Ok(started) => started,
+            Err(error) => {
+                // A clock we cannot read is not an elapsed clock. Preserve.
+                warn!(
+                    workspace = workspace_id,
+                    %error,
+                    "TGD prune blocked: observation clock unreadable; refusing to delete"
+                );
+                summary.gate_block_reason = Some(format!("observation_clock_unreadable: {error}"));
+                return Ok(summary);
+            }
+        };
+        let gate = access::prune_block_reason(observation_started_at, now);
+        if gate != PruneBlockReason::Eligible {
+            info!(
+                workspace = workspace_id,
+                reason = ?gate,
+                total_processed,
+                "TGD prune blocked by observation gate; nothing deleted"
+            );
+            summary.gate_block_reason = Some(format!("{gate:?}"));
+            return Ok(summary);
+        }
+
+        // ---- Gate, step 2+3: observability and evidence, evaluated in memory ----
+        //
+        // Both are pure predicates over data already in `records` (plus one
+        // bulk access-stats load), so neither costs a query per record. The
+        // N+1 this would otherwise introduce is avoided by loading the whole
+        // workspace's access table in a single `load_access_stats` call.
+        let durable_stats = match store.load_access_stats(workspace_id).await {
+            Ok(stats) => stats
+                .into_iter()
+                .collect::<std::collections::HashMap<_, _>>(),
+            Err(error) => {
+                warn!(
+                    workspace = workspace_id,
+                    %error,
+                    "TGD prune blocked: access evidence unreadable; refusing to delete"
+                );
+                summary.gate_block_reason = Some(format!("access_evidence_unreadable: {error}"));
+                return Ok(summary);
+            }
+        };
+        let evidence_rows = durable_stats.len();
+
         let mut candidate_indices = Vec::new();
+        let mut blocked_not_observable = 0usize;
+        let mut blocked_in_use = 0usize;
 
         for (idx, record) in records.iter().enumerate() {
             if is_pinned_or_critical(record) {
@@ -211,9 +314,68 @@ impl TgdUtilityPruner {
             let age_days = get_record_age_days(record, now);
 
             // Respect min_age_days: records younger than min_age_days are strictly preserved
-            if utility < self.config.utility_threshold && age_days >= self.config.min_age_days {
-                candidate_indices.push((idx, utility, age_days));
+            if !(utility < self.config.utility_threshold && age_days >= self.config.min_age_days) {
+                continue;
             }
+
+            // Gate 2: never observable == never a candidate. A record that can
+            // never enter a top-k has no access signal to interpret, so its
+            // zero count says nothing about utility. Checked after the cheap
+            // utility/age filters so unrelated records cost nothing extra.
+            if !access::record_is_observable(record) {
+                blocked_not_observable += 1;
+                continue;
+            }
+
+            // Gate 3: evidence of *use* protects. A record that was actually
+            // read is demonstrably needed, whatever its heuristic score says.
+            //
+            // This reads the durable `memory_access` table directly rather than
+            // the hydrated `RECORDER` view, so it is immune to the hydration
+            // trap: after a restart the in-memory view may be empty, but a
+            // durable row still shields its record. `RECORDER` is consulted
+            // additionally so an access recorded seconds ago and not yet
+            // flushed also shields.
+            let observed_uses = durable_stats
+                .get(&record.id)
+                .is_some_and(|stats| stats.access_count > 0)
+                || RECORDER.access_count(workspace_id, &record.id) > 0;
+            if observed_uses {
+                blocked_in_use += 1;
+                continue;
+            }
+
+            candidate_indices.push((idx, utility, age_days));
+        }
+
+        if blocked_not_observable > 0 || blocked_in_use > 0 {
+            info!(
+                workspace = workspace_id,
+                blocked_not_observable,
+                blocked_in_use,
+                evidence_rows,
+                "TGD prune gate suppressed candidates"
+            );
+        }
+
+        // Gate 4: workspace-wide fail-safe.
+        //
+        // If the durable table holds no rows for this workspace and the live
+        // buffer is empty, then *nothing has ever been observed here* — the
+        // instrumentation is not running for this workspace at all (unmigrated
+        // backend, reads bypassing the HTTP/MCP handlers, or a workspace that
+        // has simply never been read). Every candidate would then look "never
+        // used", which is exactly the condition the gate exists to refuse:
+        // deleting precisely what was never observed. So: no prune.
+        if evidence_rows == 0 && RECORDER.pending_count() == 0 {
+            warn!(
+                workspace = workspace_id,
+                total_processed,
+                "TGD prune blocked: no access evidence has ever been recorded for this workspace; \
+                 deleting unobserved records is not permitted"
+            );
+            summary.gate_block_reason = Some("no_access_evidence_for_workspace".to_string());
+            return Ok(summary);
         }
 
         // Sort candidates by lowest utility score first, then oldest age
@@ -226,11 +388,6 @@ impl TgdUtilityPruner {
         // Respect the safety retention floor
         let max_allowed_prunes = total_processed.saturating_sub(self.config.safety_retention_floor);
         let prunes_to_execute = candidate_indices.len().min(max_allowed_prunes);
-
-        let mut summary = TgdPruneSummary {
-            total_processed,
-            ..Default::default()
-        };
 
         let mut category_counts = std::collections::HashMap::new();
 
@@ -271,8 +428,19 @@ mod tests {
     use super::*;
     use crate::memory::store::InMemoryMemoryStore;
 
+    /// The 10-record threshold matrix, now run *through the gate*.
+    ///
+    /// `InMemoryMemoryStore` has no `observation_started_at` (the trait default
+    /// returns `None`) and no access rows, so this store is exactly the
+    /// "nothing was ever observed here" case: the gate must refuse the whole
+    /// run. Before the gate was wired in, this same store pruned 4 records —
+    /// the behaviour the gate exists to prevent.
+    ///
+    /// The full matrix with an elapsed clock and real access evidence lives in
+    /// `tests/tgd_prune_gate_test.rs`, where the observation window can
+    /// actually be reached.
     #[tokio::test]
-    async fn test_tgd_pruning_thresholds_and_safety_floor() {
+    async fn test_tgd_pruning_is_blocked_without_observation_evidence() {
         let store = InMemoryMemoryStore::new();
         let workspace_id = "test-ws";
 
@@ -374,23 +542,40 @@ mod tests {
 
         let summary = pruner.prune_memories(&store, workspace_id).await.unwrap();
 
-        assert_eq!(summary.total_processed, 10);
-        // Out of 5 candidates (r2, r3, r4, r5, r6), safety retention floor of 6 allows max 4 prunes (10 - 6 = 4)
-        assert_eq!(summary.pruned_count, 4);
-        assert_eq!(summary.retained_count, 6);
-        assert!(summary.reclaimed_bytes > 0);
+        assert_eq!(
+            summary.total_processed, 10,
+            "records are still evaluated; the gate is not a no-op"
+        );
+        assert_eq!(
+            summary.pruned_count, 0,
+            "no observation clock and no access evidence means nothing may be deleted"
+        );
+        assert_eq!(
+            summary.gate_block_reason.as_deref(),
+            Some("ObservationClockMissing"),
+            "the gate must report that the clock, not the utility score, stopped it"
+        );
+        assert_eq!(summary.pruned_ids.len(), 0);
+        assert_eq!(summary.reclaimed_bytes, 0);
 
-        // Verify r1_critical was NOT pruned
-        let r1 = store.get(workspace_id, "r1_critical").await.unwrap();
-        assert!(r1.is_some(), "Pinned/critical fact must be preserved");
-
-        // Verify r7_high_utility was NOT pruned
-        let r7 = store.get(workspace_id, "r7_high_utility").await.unwrap();
-        assert!(r7.is_some(), "High utility record must be preserved");
-
-        // Verify r8_fresh was NOT pruned
-        let r8 = store.get(workspace_id, "r8_fresh").await.unwrap();
-        assert!(r8.is_some(), "Fresh record must be preserved");
+        // Every record from the original matrix survives.
+        for id in [
+            "r1_critical",
+            "r2",
+            "r3",
+            "r4",
+            "r5",
+            "r6",
+            "r7_high_utility",
+            "r8_fresh",
+            "r9",
+            "r10",
+        ] {
+            assert!(
+                store.get(workspace_id, id).await.unwrap().is_some(),
+                "{id} must be preserved when nothing has ever been observed"
+            );
+        }
     }
 
     #[test]

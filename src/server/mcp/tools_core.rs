@@ -389,10 +389,25 @@ pub(crate) fn mcp_health_result(
     }
 }
 
+/// The node's shared `SpaceManager` for the espacio MCP tools. Root only:
+/// the call must carry the root-credential marker (set by the transport from
+/// the `RootCredential` request extension). A claimed `Admin` role, such as
+/// an Admin JWT, is not enough. The node must also run with espacio enabled.
+fn espacio_manager_for_root() -> anyhow::Result<std::sync::Arc<crate::espacio::SpaceManager>> {
+    if !super::server::root_credential_present() {
+        return Err(anyhow::anyhow!(
+            "Forbidden: espacio tools require the root credential"
+        ));
+    }
+    crate::adapters::inbound::http::routes::get_space_manager()
+        .ok_or_else(|| anyhow::anyhow!("espacio is disabled on this node"))
+}
+
 /// Handle core tool.
 pub async fn handle_core_tool(
     _state: AppState,
     workspace: WorkspaceContext,
+    _claims: Option<&crate::security::auth::Claims>,
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
@@ -1126,12 +1141,14 @@ pub async fn handle_core_tool(
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         "espacio_channel_list" => {
+            let manager = espacio_manager_for_root()?;
             let space_id = arguments
                 .get("space_id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Missing space_id"))?;
+            manager.get(space_id).await?;
 
-            let channel_mgr = ChannelManager::new();
+            let channel_mgr = ChannelManager::with_stores(manager.stores());
             let messages: Vec<ChannelMessage> = channel_mgr.list_all(space_id).await;
 
             let val = json!({
@@ -1143,6 +1160,7 @@ pub async fn handle_core_tool(
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         "espacio_channel_create" => {
+            let manager = espacio_manager_for_root()?;
             let space_id = arguments
                 .get("space_id")
                 .and_then(|v| v.as_str())
@@ -1151,15 +1169,16 @@ pub async fn handle_core_tool(
                 .get("name")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Missing name"))?;
+            manager.get(space_id).await?;
 
-            let channel_mgr = ChannelManager::new();
+            let channel_mgr = ChannelManager::with_stores(manager.stores());
             let msg: ChannelMessage = channel_mgr
-                .post(
+                .try_post(
                     space_id.to_string(),
                     "mcp_operator".to_string(),
                     name.to_string(),
                 )
-                .await;
+                .await?;
 
             let val = json!({
                 "space_id": space_id,
@@ -1276,5 +1295,119 @@ mod tests {
             err.to_string().contains("GITHUB_TOKEN"),
             "error must clearly name the missing secret, got: {err}"
         );
+    }
+
+    fn root_claims() -> crate::security::auth::Claims {
+        crate::security::auth::Claims::new(
+            "root".to_string(),
+            "admin@swal.dev".to_string(),
+            crate::security::auth::UserRole::Admin,
+            chrono::Duration::hours(1),
+        )
+    }
+
+    /// The espacio tools use the daemon's shared, persisted manager, need the
+    /// root identity, and refuse unknown spaces.
+    #[tokio::test]
+    async fn espacio_tools_use_shared_persisted_manager_and_require_root() {
+        use crate::espacio::{SpaceManager, StaticNodeKek};
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let kek = || std::sync::Arc::new(StaticNodeKek::new([7u8; 32]));
+        let manager = std::sync::Arc::new(SpaceManager::open_with_keys(tmp.path(), kek()));
+        crate::adapters::inbound::http::routes::init_space_manager(manager.clone());
+        manager
+            .create(
+                "esp_mcp".into(),
+                "mcp".into(),
+                "".into(),
+                "owner".into(),
+                false,
+            )
+            .await
+            .expect("create space");
+
+        let (state, workspace) = crate::server::mcp::tests::test_state().await;
+        let root = root_claims();
+        async fn call(
+            st: &(AppState, WorkspaceContext),
+            claims: Option<&crate::security::auth::Claims>,
+            name: &str,
+            args: Value,
+        ) -> anyhow::Result<Value> {
+            // Only the root fixture carries the root-credential marker, the way
+            // the transports derive it from the `RootCredential` extension.
+            let is_root = claims.is_some_and(|c| c.sub == "root");
+            crate::server::mcp::server::with_root_credential(
+                is_root,
+                handle_core_tool(st.0.clone(), st.1.clone(), claims, name, args),
+            )
+            .await
+        }
+        let st = (state, workspace);
+
+        // Not root: refused.
+        let ro = crate::security::auth::Claims::new(
+            "u".into(),
+            "u@swal.dev".into(),
+            crate::security::auth::UserRole::Readonly,
+            chrono::Duration::hours(1),
+        );
+        // An Admin JWT is not root: role claims alone never open the tools.
+        let admin_jwt = crate::security::auth::Claims::new(
+            "jwt-admin".into(),
+            "a@swal.dev".into(),
+            crate::security::auth::UserRole::Admin,
+            chrono::Duration::hours(1),
+        );
+        for c in [None, Some(&ro), Some(&admin_jwt)] {
+            let err = call(
+                &st,
+                c,
+                "espacio_channel_list",
+                json!({"space_id": "esp_mcp"}),
+            )
+            .await
+            .expect_err("non-root must be refused");
+            assert!(err.to_string().contains("Forbidden"), "{err}");
+        }
+        // Unknown space: error, nothing created behind the manager's back.
+        assert!(call(
+            &st,
+            Some(&root),
+            "espacio_channel_create",
+            json!({"space_id": "esp_ghost", "name": "x"})
+        )
+        .await
+        .is_err());
+        assert!(!tmp.path().join("spaces").join("esp_ghost").exists());
+
+        // Persisted across calls.
+        for n in ["one", "two"] {
+            call(
+                &st,
+                Some(&root),
+                "espacio_channel_create",
+                json!({"space_id": "esp_mcp", "name": n}),
+            )
+            .await
+            .expect("create");
+        }
+        let res = call(
+            &st,
+            Some(&root),
+            "espacio_channel_list",
+            json!({"space_id": "esp_mcp"}),
+        )
+        .await
+        .expect("list");
+        assert_eq!(res["structuredContent"]["count"], 2, "{res}");
+
+        // And across a manager restart (reopen from the same dir).
+        drop(manager);
+        let reopened = SpaceManager::open_with_keys(tmp.path(), kek());
+        let msgs = ChannelManager::with_stores(reopened.stores())
+            .list_all("esp_mcp")
+            .await;
+        assert_eq!(msgs.len(), 2);
     }
 }

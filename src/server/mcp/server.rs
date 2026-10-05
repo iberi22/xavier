@@ -7,6 +7,24 @@ use crate::ports::inbound::SecurityScanPort;
 use crate::AppState;
 use serde_json::Value;
 
+tokio::task_local! {
+    /// True only inside a call made by the node's ROOT credential. Admin
+    /// claims alone (e.g. an Admin JWT) never set it.
+    static ROOT_CREDENTIAL: bool;
+}
+
+/// Run `fut` with the root-credential marker set to `is_root`. The transports
+/// set it from the `RootCredential` request extension, which only the root
+/// token branch of the auth middleware inserts.
+pub async fn with_root_credential<F: std::future::Future>(is_root: bool, fut: F) -> F::Output {
+    ROOT_CREDENTIAL.scope(is_root, fut).await
+}
+
+/// Whether the current tool call carries the root credential.
+pub(crate) fn root_credential_present() -> bool {
+    ROOT_CREDENTIAL.try_with(|v| *v).unwrap_or(false)
+}
+
 /// Get xavier tools.
 pub fn get_xavier_tools() -> Vec<MCPTool> {
     let mut tools = super::tools_core::get_xavier_core_tools();
@@ -14,6 +32,7 @@ pub fn get_xavier_tools() -> Vec<MCPTool> {
     tools.extend(super::tools_memory::get_xavier_memory_tools());
     tools.extend(super::tools_context::get_xavier_context_tools());
     tools.extend(super::telecom_tools::register_telecom_mcp_tools());
+    tools.extend(super::tools_expert::get_expert_tools());
     #[cfg(feature = "pageindex")]
     tools.extend(super::tools_pageindex::get_pageindex_tools());
     tools
@@ -123,7 +142,7 @@ pub async fn handle_tool_call(
     }
 
     if super::tools_core::is_core_tool(name) {
-        super::tools_core::handle_core_tool(state, workspace, name, arguments).await
+        super::tools_core::handle_core_tool(state, workspace, claims, name, arguments).await
     } else if super::tools_secrets::is_secrets_tool(name) {
         let ctx = super::tools_secrets::SecretToolContext::production();
         super::tools_secrets::handle_secrets_tool(&ctx, name, arguments).await
@@ -135,6 +154,8 @@ pub async fn handle_tool_call(
         || name == "xavier_skill_list"
     {
         super::tools_context::handle_context_tool(state, workspace, name, arguments).await
+    } else if super::tools_expert::is_expert_tool(name) {
+        super::tools_expert::handle_expert_tool(name, arguments).await
     } else if name.starts_with("telecom_") {
         super::telecom_tools::handle_telecom_tool(name, arguments, None).await
     } else {

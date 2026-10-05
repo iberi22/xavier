@@ -3,7 +3,7 @@
 //! This router manages configured mini-experts and handles routing and invocation
 //! for local, agy, or custom mini-expert endpoints.
 
-use crate::agents::mini_experts::MiniExpertRegistry;
+use crate::agents::mini_experts::{ExpertStore, MiniExpertRegistry};
 use crate::settings::types::MiniExpertConfig;
 use reqwest::Client;
 use serde_json::json;
@@ -29,6 +29,24 @@ pub enum MiniExpertInvokeError {
     NetworkError(#[from] reqwest::Error),
 }
 
+/// Overall timeout for one expert call (covers a cold Ollama model load). Kept below
+/// the bulk HTTP timeout so the caller gets a descriptive error instead of a bare 504.
+pub const INVOKE_TIMEOUT_SECS: u64 = 300;
+
+/// Process-wide HTTP client with explicit timeouts, shared by every router instance.
+fn shared_client() -> Client {
+    static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(INVOKE_TIMEOUT_SECS))
+                .build()
+                .unwrap_or_else(|_| Client::new())
+        })
+        .clone()
+}
+
 /// Router for directing calls to mini-expert endpoints.
 pub struct ProviderRouter {
     mini_experts: Vec<MiniExpertConfig>,
@@ -40,7 +58,7 @@ impl ProviderRouter {
     pub fn new(mini_experts: Vec<MiniExpertConfig>) -> Self {
         Self {
             mini_experts,
-            client: Client::new(),
+            client: shared_client(),
         }
     }
 
@@ -59,6 +77,32 @@ impl ProviderRouter {
             }
         }
 
+        Self::new(configs)
+    }
+
+    /// Creates a ProviderRouter from the SQLite registry (active versions), then
+    /// `additional_configs` for names the store does not have. An API key kept in
+    /// the legacy JSON registry is carried over (the store never holds secrets).
+    pub fn from_expert_store(
+        store: &ExpertStore,
+        legacy: &MiniExpertRegistry,
+        additional_configs: Vec<MiniExpertConfig>,
+    ) -> Self {
+        let mut configs: Vec<MiniExpertConfig> = match store.list_active() {
+            Ok(list) => list.iter().map(|r| r.to_config()).collect(),
+            Err(e) => {
+                tracing::warn!("mini-expert store unavailable: {e}");
+                Vec::new()
+            }
+        };
+        for config in &mut configs {
+            config.api_key = legacy.get(&config.name).and_then(|e| e.api_key);
+        }
+        for config in additional_configs {
+            if !configs.iter().any(|c| c.name == config.name) {
+                configs.push(config);
+            }
+        }
         Self::new(configs)
     }
 
@@ -162,6 +206,51 @@ impl ProviderRouter {
                     details: err_body,
                 })
             }
+        }
+    }
+
+    /// Chats with a model through Ollama's native `/api/chat` so `keep_alive`
+    /// (VRAM residency) is honored; the OpenAI-compatible endpoint ignores it.
+    pub async fn invoke_ollama_chat(
+        &self,
+        base_url: &str,
+        model: &str,
+        prompt: &str,
+        keep_alive: &str,
+    ) -> Result<String, MiniExpertInvokeError> {
+        let url = format!("{}/api/chat", base_url.trim_end_matches('/'));
+        let response = self
+            .client
+            .post(&url)
+            .json(&json!({
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": false,
+                "keep_alive": keep_alive,
+            }))
+            .send()
+            .await?;
+        let status = response.status();
+        if status.is_success() {
+            let body: serde_json::Value = response.json().await?;
+            return Ok(body
+                .pointer("/message/content")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| body.to_string()));
+        }
+        let err_body = response.text().await.unwrap_or_default();
+        if status == reqwest::StatusCode::NOT_FOUND || err_body.to_lowercase().contains("not found")
+        {
+            Err(MiniExpertInvokeError::ModelNotInstalled {
+                model: model.to_string(),
+            })
+        } else {
+            Err(MiniExpertInvokeError::ProviderError {
+                name: model.to_string(),
+                status: status.as_u16(),
+                details: err_body,
+            })
         }
     }
 }
@@ -310,5 +399,46 @@ mod tests {
             }
             other => panic!("expected ModelNotInstalled, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn test_invoke_ollama_chat_sends_keep_alive() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/chat")
+            .match_body(mockito::Matcher::PartialJson(
+                json!({"model": "m:v1", "keep_alive": "5m", "stream": false}),
+            ))
+            .with_status(200)
+            .with_body(r#"{"message":{"role":"assistant","content":"pong"}}"#)
+            .create_async()
+            .await;
+        let router = ProviderRouter::new(vec![]);
+        let out = router
+            .invoke_ollama_chat(&server.url(), "m:v1", "ping", "5m")
+            .await
+            .unwrap();
+        assert_eq!(out, "pong");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_invoke_ollama_chat_missing_model() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("POST", "/api/chat")
+            .with_status(404)
+            .with_body(r#"{"error":"model 'x' not found"}"#)
+            .create_async()
+            .await;
+        let router = ProviderRouter::new(vec![]);
+        let err = router
+            .invoke_ollama_chat(&server.url(), "x", "p", "5m")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            MiniExpertInvokeError::ModelNotInstalled { .. }
+        ));
     }
 }

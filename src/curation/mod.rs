@@ -24,6 +24,16 @@ pub struct CurationItem {
     pub classification: Option<String>,
 }
 
+impl CurationItem {
+    /// Training domain of the item: its classification (lowercased) or `general`.
+    pub fn domain(&self) -> String {
+        match self.classification.as_deref().map(str::trim) {
+            Some(c) if !c.is_empty() => c.to_lowercase(),
+            _ => "general".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CurationHistoryEntry {
     pub who: String,
@@ -391,6 +401,18 @@ mod tests {
         assert_eq!(loaded.items[0].id, item.id);
         assert_eq!(loaded.items[0].content_ref, "ref-789");
         assert_eq!(loaded.items[0].source, Some("agent".to_string()));
+    }
+
+    #[test]
+    fn test_item_domain_defaults_to_general() {
+        let mut queue = CurationQueue::new();
+        let a = queue.submit_for_curation("a".into(), "public".into(), None);
+        assert_eq!(a.domain(), "general");
+        let mut b = a.clone();
+        b.classification = Some(" Rust ".into());
+        assert_eq!(b.domain(), "rust");
+        b.classification = Some("  ".into());
+        assert_eq!(b.domain(), "general");
     }
 
     #[test]

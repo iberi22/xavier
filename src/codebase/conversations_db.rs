@@ -120,6 +120,10 @@ pub struct ConversationsDb {
     project_id: String,
     full_project_id: String,
     schema_initialized: OnceCell<()>,
+    /// Encrypting spaces get no persistent conversations database: threads,
+    /// messages, beliefs and checkpoints would sit in clear. Every operation
+    /// fails and no file or pool is ever created.
+    disabled: bool,
 }
 
 impl ConversationsDb {
@@ -136,7 +140,50 @@ impl ConversationsDb {
             project_id: project_id.to_string(),
             full_project_id,
             schema_initialized: OnceCell::new(),
+            disabled: false,
         })
+    }
+
+    /// Pool id of the conversations database stored at `db_path`. Keyed by
+    /// path, so two spaces with the same id under different roots never share
+    /// a pool.
+    pub fn connection_id_for_path(db_path: &Path) -> String {
+        use sha2::{Digest, Sha256};
+        let digest =
+            crate::crypto::hex_encode(Sha256::digest(db_path.to_string_lossy().as_bytes()));
+        format!("conv_at_{}", &digest[..16])
+    }
+
+    /// Open (or create) the conversations database at an explicit file path
+    /// (a space keeps it inside its own directory). Never reads or writes
+    /// `~/.xavier`.
+    pub async fn open_at(project_id: &str, db_path: &Path) -> Result<Self> {
+        validate_project_id(project_id)?;
+        let full_project_id = Self::connection_id_for_path(db_path);
+        ConnectionManager::global().connect_with_path(&full_project_id, db_path.to_path_buf())?;
+
+        Ok(Self {
+            project_id: project_id.to_string(),
+            full_project_id,
+            schema_initialized: OnceCell::new(),
+            disabled: false,
+        })
+    }
+
+    /// A conversations handle that stores nothing (encrypting spaces).
+    pub fn open_disabled(project_id: &str) -> Result<Self> {
+        validate_project_id(project_id)?;
+        Ok(Self {
+            project_id: project_id.to_string(),
+            full_project_id: String::new(),
+            schema_initialized: OnceCell::new(),
+            disabled: true,
+        })
+    }
+
+    /// Whether this handle refuses all operations (encrypting space).
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
     }
 
     /// Open an in-memory conversations database (for testing).
@@ -149,11 +196,20 @@ impl ConversationsDb {
             project_id: project_id.to_string(),
             full_project_id,
             schema_initialized: OnceCell::new(),
+            disabled: false,
         })
+    }
+
+    fn refuse_if_disabled(&self) -> Result<()> {
+        if self.disabled {
+            anyhow::bail!("conversations are disabled for encrypted spaces");
+        }
+        Ok(())
     }
 
     /// Ensure the schema is created (lazy initialization).
     async fn ensure_schema(&self) -> Result<()> {
+        self.refuse_if_disabled()?;
         self.schema_initialized
             .get_or_try_init(|| async { self.create_schema().await })
             .await?;
@@ -162,6 +218,7 @@ impl ConversationsDb {
 
     /// Create all tables for the conversations database.
     pub async fn create_schema(&self) -> Result<()> {
+        self.refuse_if_disabled()?;
         ConnectionManager::global()
             .with_conn(&self.full_project_id, |conn| {
                 conn.execute_batch(
@@ -888,6 +945,7 @@ impl ConversationsDb {
             project_id: "test".to_string(),
             full_project_id: "conv_test_default".to_string(),
             schema_initialized: OnceCell::new(),
+            disabled: false,
         }
     }
 }

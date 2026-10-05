@@ -204,6 +204,10 @@ pub struct CurationVote {
     /// Explicit consent to use this item for model training
     pub training_eligible: bool,
     pub voted_at: DateTime<Utc>,
+    /// Introspection technique that produced this vote (None for human curation votes).
+    /// Votes with a technique stay out of the training gate until a human verifies them.
+    #[serde(default)]
+    pub technique: Option<String>,
 }
 
 impl CurationVote {
@@ -224,6 +228,7 @@ impl CurationVote {
             domain_tags,
             training_eligible,
             voted_at: Utc::now(),
+            technique: None,
         }
     }
 }
@@ -368,6 +373,10 @@ pub struct IntrospectionSession {
     pub status: IntrospectionStatus,
     pub started_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// Explicit user consent to use this session's insights for model training.
+    /// Defaults to false; set when the session is completed.
+    #[serde(default)]
+    pub training_consent: bool,
 }
 
 impl IntrospectionSession {
@@ -382,6 +391,7 @@ impl IntrospectionSession {
             status: IntrospectionStatus::Active,
             started_at: Utc::now(),
             completed_at: None,
+            training_consent: false,
         }
     }
 

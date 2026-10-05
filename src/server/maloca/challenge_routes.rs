@@ -172,6 +172,10 @@ pub struct TrainingGateResponse {
     pub training_eligible_count: usize,
     pub domain_tags: Vec<String>,
     pub message: String,
+    #[serde(default)]
+    pub queue_approved_count: usize,
+    #[serde(default)]
+    pub ready_domains: Vec<crate::humanchallenge::curation_gate::ReadyDomain>,
 }
 
 /// Response payload for available introspection techniques.
@@ -577,6 +581,8 @@ pub async fn training_gate_handler(State(state): State<ChallengeState>) -> impl 
         training_eligible_count: check.training_eligible_count,
         domain_tags: check.domain_tags,
         message: check.message,
+        queue_approved_count: check.queue_approved_count,
+        ready_domains: check.ready_domains,
     };
     (StatusCode::OK, Json(response)).into_response()
 }

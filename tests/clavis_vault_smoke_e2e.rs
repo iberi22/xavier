@@ -184,12 +184,12 @@ async fn test_full_cycle_api_key_generate_http_read_revoke_404() {
 #[serial_test::serial]
 async fn test_clavis_http_api_vault_contract() {
     let (_temp_dir, vault) = setup_isolated_vault();
-    let _ = vault.delete_secret("probe");
+    let _ = vault.delete_secret("api_key_probe");
 
-    // 1. PUT /v1/clavis/keys/probe -> 201 CREATED
+    // 1. PUT /v1/clavis/keys/api_key_probe -> 201 CREATED
     let put_req = build_router_request(
         Method::PUT,
-        "/v1/clavis/keys/probe",
+        "/v1/clavis/keys/api_key_probe",
         Some(r#"{"value":"e2e_test_value_abc123"}"#),
         Some(UserRole::Admin),
     );
@@ -200,12 +200,15 @@ async fn test_clavis_http_api_vault_contract() {
     assert_eq!(put_resp.status(), StatusCode::CREATED);
 
     // Verify persisted directly in the underlying hardware vault
-    assert_eq!(vault.get_secret("probe").unwrap(), "e2e_test_value_abc123");
+    assert_eq!(
+        vault.get_secret("api_key_probe").unwrap(),
+        "e2e_test_value_abc123"
+    );
 
-    // 2. GET /v1/clavis/keys/probe (authenticated) -> 200 OK
+    // 2. GET /v1/clavis/keys/api_key_probe (authenticated) -> 200 OK
     let get_req = build_router_request(
         Method::GET,
-        "/v1/clavis/keys/probe",
+        "/v1/clavis/keys/api_key_probe",
         None,
         Some(UserRole::Admin),
     );
@@ -224,10 +227,10 @@ async fn test_clavis_http_api_vault_contract() {
     let get_json: serde_json::Value = serde_json::from_slice(&body_bytes).expect("parse JSON");
     assert_eq!(get_json["value"], "e2e_test_value_abc123");
 
-    // 3. GET /v1/clavis/keys/ghost -> 404 NOT FOUND with code "clavis_key_not_found"
+    // 3. GET /v1/clavis/keys/api_key_ghost -> 404 NOT FOUND with code "clavis_key_not_found"
     let ghost_req = build_router_request(
         Method::GET,
-        "/v1/clavis/keys/ghost",
+        "/v1/clavis/keys/api_key_ghost",
         None,
         Some(UserRole::Admin),
     );
@@ -246,13 +249,13 @@ async fn test_clavis_http_api_vault_contract() {
     let ghost_json: serde_json::Value = serde_json::from_slice(&ghost_bytes).expect("parse JSON");
     assert_eq!(ghost_json["code"], "clavis_key_not_found");
 
-    // 4. GET /v1/clavis/keys/probe (unauthenticated / missing token) -> 403 FORBIDDEN
-    let unauth_req = build_router_request(Method::GET, "/v1/clavis/keys/probe", None, None);
+    // 4. GET /v1/clavis/keys/api_key_probe (unauthenticated / missing token) -> 403 FORBIDDEN
+    let unauth_req = build_router_request(Method::GET, "/v1/clavis/keys/api_key_probe", None, None);
     let unauth_resp = create_router()
         .oneshot(unauth_req)
         .await
         .expect("GET unauth failed");
     assert_eq!(unauth_resp.status(), StatusCode::FORBIDDEN);
 
-    let _ = vault.delete_secret("probe");
+    let _ = vault.delete_secret("api_key_probe");
 }

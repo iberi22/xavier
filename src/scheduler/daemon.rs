@@ -60,6 +60,29 @@ impl MemoryDaemon {
     /// - garbage collection: 24h
     /// - retrieval auto-tune + drift detection: 6h (see `run_auto_tune`)
     pub fn spawn(self) {
+        // Access-instrumentation drain paths (D4). Registered before any
+        // maintenance loop so a SIGTERM during startup still finds them.
+        //
+        // `spawn` is the process-wide entry point that owns the memory manager
+        // for the lifetime of the daemon (see `workspace::state::load`), so it
+        // is the least invasive place to arm both a periodic flush and a
+        // shutdown flush. The HTTP server's own graceful shutdown
+        // (`src/cli/server.rs`) captures SIGINT but not SIGTERM and does not
+        // reach the store, so hooking there would still miss `systemctl
+        // restart`; a second tokio signal listener sees the same signal without
+        // stealing it.
+        {
+            let memory = self.manager.memory();
+            tokio::spawn(async move {
+                if let Some(store) = memory.store().await {
+                    crate::memory::access::ensure_flush_worker(Arc::clone(&store));
+                    crate::memory::access::spawn_shutdown_flush(Arc::clone(&store));
+                } else {
+                    warn!("MemoryDaemon: no memory store at spawn; access flush hooks not armed");
+                }
+            });
+        }
+
         // Run Memory Decay every 6 hours
         let manager_decay = self.manager.clone();
         tokio::spawn(async move {

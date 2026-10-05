@@ -4,7 +4,7 @@
 //! Authenticated connections are validated against Ed25519 signatures, expiration times,
 //! and valid token payload structure. Unauthenticated or forged attempts are rejected/dropped.
 
-use crate::mesh::node::NodeIdentity;
+use crate::mesh::node::{NodeId, NodeIdentity};
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
@@ -68,9 +68,26 @@ impl SwalToken {
         })
     }
 
-    /// Verifies and authenticates the SWAL token.
-    /// Returns the authenticated Node ID and public key if successful, or an error.
+    /// Verifies the token as a self-certifying claim.
+    ///
+    /// The signature, the expiry and the binding between the embedded public
+    /// key and the claimed `node_id` are checked (the id must be derived from
+    /// the key). This proves the signer owns the claimed identity, but NOT that
+    /// the identity is one the caller trusts; use [`SwalToken::verify_with_key`]
+    /// when a trusted public key for the peer is known.
     pub fn verify(&self) -> anyhow::Result<SwalTokenPayload> {
+        self.verify_inner(None)
+    }
+
+    /// Verifies the token against a public key the caller already trusts.
+    ///
+    /// In addition to the checks done by [`SwalToken::verify`], the embedded
+    /// public key must equal `trusted_pubkey`.
+    pub fn verify_with_key(&self, trusted_pubkey: &[u8]) -> anyhow::Result<SwalTokenPayload> {
+        self.verify_inner(Some(trusted_pubkey))
+    }
+
+    fn verify_inner(&self, trusted_pubkey: Option<&[u8]>) -> anyhow::Result<SwalTokenPayload> {
         let decoded_bytes = crate::crypto::base64_decode(&self.token)
             .ok_or_else(|| anyhow::anyhow!("Invalid base64 token format"))?;
 
@@ -85,6 +102,17 @@ impl SwalToken {
 
         let public_key_bytes = crate::crypto::hex_decode(&inner_payload.public_key_hex)
             .map_err(|e| anyhow::anyhow!("Invalid public key hex format: {}", e))?;
+
+        // 0. Bind the signer key to the claimed identity.
+        if let Some(trusted) = trusted_pubkey {
+            if trusted != public_key_bytes.as_slice() {
+                anyhow::bail!("Token public key does not match the trusted key");
+            }
+        }
+        let claimed_id = NodeId::parse(&inner_payload.node_id)?;
+        if NodeId::from_public_key_bytes(&public_key_bytes) != claimed_id {
+            anyhow::bail!("node_id does not match public key");
+        }
 
         // 1. Verify cryptographic signature
         if !NodeIdentity::verify(
@@ -331,6 +359,68 @@ mod tests {
         let result = token.verify();
         assert!(result.is_err(), "Forged token must be strictly rejected");
         assert!(result.unwrap_err().to_string().contains("forgery"));
+    }
+
+    fn future_expiry() -> u64 {
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3600
+    }
+
+    /// Builds a correctly signed token whose claimed id belongs to another key.
+    fn mismatched_identity_token(signer: &NodeIdentity, claimed_id: &str) -> SwalToken {
+        let payload = SwalTokenPayload {
+            node_id: claimed_id.to_string(),
+            public_key_hex: crate::crypto::hex_encode(&signer.public_key),
+            expires_at: future_expiry(),
+            workspace_id: None,
+        };
+        let payload_str = serde_json::to_string(&payload).unwrap();
+        let signature = crate::crypto::hex_encode(signer.sign(payload_str.as_bytes()));
+        let container = SwalTokenContainer {
+            payload: payload_str,
+            signature,
+        };
+        SwalToken {
+            token: crate::crypto::base64_encode(serde_json::to_vec(&container).unwrap()),
+        }
+    }
+
+    #[test]
+    fn token_with_mismatched_node_id_is_rejected() {
+        let victim = NodeIdentity::generate();
+        let other = NodeIdentity::generate();
+        let token = mismatched_identity_token(&other, victim.node_id.as_str());
+
+        assert!(token.verify().is_err());
+        assert!(token.verify_with_key(&victim.public_key).is_err());
+        assert!(token.verify_with_key(&other.public_key).is_err());
+    }
+
+    #[test]
+    fn verify_with_key_accepts_trusted_signer() {
+        let identity = NodeIdentity::generate();
+        let token = SwalToken::create(&identity, future_expiry(), None).unwrap();
+        let payload = token.verify_with_key(&identity.public_key).unwrap();
+        assert_eq!(payload.node_id, identity.node_id.as_str());
+    }
+
+    #[test]
+    fn verify_with_key_rejects_untrusted_key() {
+        let identity = NodeIdentity::generate();
+        let other = NodeIdentity::generate();
+        let token = SwalToken::create(&identity, future_expiry(), None).unwrap();
+        assert!(token.verify_with_key(&other.public_key).is_err());
+    }
+
+    #[test]
+    fn verify_with_key_rejects_expired_token() {
+        let identity = NodeIdentity::generate();
+        let token = SwalToken::create(&identity, 1, None).unwrap();
+        let err = token.verify_with_key(&identity.public_key).unwrap_err();
+        assert!(err.to_string().contains("expired"));
     }
 
     #[test]

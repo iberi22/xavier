@@ -1,10 +1,14 @@
 //! Rest API routes for training datasets under `/v1/training/*`
 
 use crate::curation::CurationQueue;
+use crate::data_commons::privacy::{PrivacyConfig, PrivacyLevel, DEFAULT_EPSILON, DEFAULT_K};
 use crate::data_commons::training::{
-    load_dataset_manifest, load_dataset_metadata, load_dataset_split, scan_datasets,
-    write_bundle_to_dir, TrainingExporter,
+    load_dataset_audit, load_dataset_manifest, load_dataset_metadata, load_dataset_split,
+    scan_datasets, write_bundle_to_dir, ChallengeSource, MemorySource, TelemetrySource,
+    TrainingExporter, TrainingSource,
 };
+use crate::humanchallenge::store::HumanChallengeStore;
+use crate::memory::store::MemoryStore;
 use crate::security::redaction::RedactionEngine;
 use axum::{
     extract::{Path, Query},
@@ -16,11 +20,49 @@ use axum::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct TrainingState {
     pub db_path: PathBuf,
     pub data_dir: PathBuf,
+}
+
+/// Stores the non-telemetry sources read from. Layered by `router_with_sources`; without
+/// them a request for `memory` / `challenge` fails with 503.
+#[derive(Clone, Default)]
+pub struct TrainingSources {
+    pub memory_store: Option<Arc<dyn MemoryStore>>,
+    pub challenge_store: Option<Arc<HumanChallengeStore>>,
+}
+
+/// Source selection and privacy parameters shared by export and bundle requests.
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct SourceScope {
+    /// Any of `telemetry` (default), `memory`, `challenge`.
+    #[serde(default)]
+    pub sources: Vec<String>,
+    /// Required for `memory`.
+    #[serde(default)]
+    pub workspace: Option<String>,
+    /// Filters `memory` (metadata.domain / tags) and `challenge` (domain_tags).
+    #[serde(default)]
+    pub domain: Option<String>,
+    /// "P0".."P4"; default P2.
+    #[serde(default)]
+    pub privacy_level: Option<String>,
+    /// `memory` kinds to include (empty = all).
+    #[serde(default)]
+    pub kinds: Vec<String>,
+    /// `memory` namespace (project or scope) filter.
+    #[serde(default)]
+    pub namespace: Option<String>,
+    /// k for k-anonymity (default 5).
+    #[serde(default)]
+    pub k: Option<usize>,
+    /// Laplace epsilon for P3 (default 1.0).
+    #[serde(default)]
+    pub epsilon: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -30,6 +72,8 @@ pub struct GenerateBundleRequest {
     pub clearance: Option<String>,
     pub language: Option<String>,
     pub segment: Option<String>,
+    #[serde(flatten)]
+    pub scope: SourceScope,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
@@ -43,6 +87,8 @@ pub struct ExportRequest {
     pub limit: Option<usize>,
     #[serde(default)]
     pub format: Option<String>,
+    #[serde(flatten)]
+    pub scope: SourceScope,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
@@ -90,6 +136,11 @@ pub struct RejectCurateRequest {
 }
 
 pub fn router(state: TrainingState) -> Router {
+    router_with_sources(state, TrainingSources::default())
+}
+
+/// Same as `router`, with the memory / HumanChallenge stores wired in.
+pub fn router_with_sources(state: TrainingState, sources: TrainingSources) -> Router {
     Router::new()
         .route("/v1/training/datasets", get(list_datasets_handler))
         .route(
@@ -105,6 +156,10 @@ pub fn router(state: TrainingState) -> Router {
             get(get_dataset_eval_handler),
         )
         .route("/v1/training/bundles", post(generate_bundle_handler))
+        .route(
+            "/v1/training/bundles/{id}/audit",
+            get(get_bundle_audit_handler),
+        )
         .route("/v1/training/export", post(export_handler))
         .route("/v1/training/curate/bulk", post(bulk_curate_handler))
         .route("/v1/curation/pending", get(get_pending_curation_handler))
@@ -117,6 +172,108 @@ pub fn router(state: TrainingState) -> Router {
             post(reject_curation_item_handler),
         )
         .layer(Extension(state))
+        .layer(Extension(sources))
+}
+
+type ExportPlan = (TrainingExporter, Vec<Box<dyn TrainingSource>>);
+
+/// Validate the request scope and build the exporter plus the requested sources.
+fn build_export(
+    state: &TrainingState,
+    sources: &TrainingSources,
+    scope: &SourceScope,
+) -> Result<ExportPlan, (StatusCode, String)> {
+    let level = match scope.privacy_level.as_deref() {
+        None => PrivacyLevel::P2,
+        Some(v) => PrivacyLevel::parse(v).ok_or((
+            StatusCode::BAD_REQUEST,
+            format!("Invalid privacy_level '{v}' (expected P0..P4)"),
+        ))?,
+    };
+    let config = PrivacyConfig {
+        epsilon: scope.epsilon.unwrap_or(DEFAULT_EPSILON),
+        k: scope.k.unwrap_or(DEFAULT_K),
+        ..PrivacyConfig::default()
+    };
+    config
+        .validate()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    let mut names: Vec<String> = if scope.sources.is_empty() {
+        vec!["telemetry".to_string()]
+    } else {
+        scope
+            .sources
+            .iter()
+            .map(|s| s.to_ascii_lowercase())
+            .collect()
+    };
+    names.dedup();
+    let mut built: Vec<Box<dyn TrainingSource>> = Vec::new();
+    for name in &names {
+        match name.as_str() {
+            "telemetry" => built.push(Box::new(TelemetrySource::new(&state.db_path))),
+            "memory" => {
+                let workspace = scope.workspace.clone().filter(|w| !w.is_empty()).ok_or((
+                    StatusCode::BAD_REQUEST,
+                    "source 'memory' requires 'workspace'".to_string(),
+                ))?;
+                let store = sources.memory_store.clone().ok_or((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "memory source is not available on this node".to_string(),
+                ))?;
+                built.push(Box::new(
+                    MemorySource::new(store, workspace)
+                        .with_kinds(scope.kinds.clone())
+                        .with_namespace(scope.namespace.clone())
+                        .with_domain(scope.domain.clone()),
+                ));
+            }
+            "challenge" => {
+                let store = sources.challenge_store.clone().ok_or((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "challenge source is not available on this node".to_string(),
+                ))?;
+                built.push(Box::new(
+                    ChallengeSource::new(store).with_domain(scope.domain.clone()),
+                ));
+            }
+            other => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Unknown source '{other}' (expected telemetry, memory, challenge)"),
+                ))
+            }
+        }
+    }
+    let exporter = TrainingExporter::new(&state.db_path)
+        .with_privacy_level(level)
+        .with_privacy_config(config)
+        .with_scope(scope.workspace.clone(), scope.domain.clone());
+    Ok((exporter, built))
+}
+
+pub async fn get_bundle_audit_handler(
+    Extension(state): Extension<TrainingState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if id.is_empty()
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        || id == "."
+        || id == ".."
+    {
+        return (StatusCode::BAD_REQUEST, "Invalid dataset ID").into_response();
+    }
+    let dataset_dir = state.data_dir.join(&id);
+    if !dataset_dir.exists() {
+        return (StatusCode::NOT_FOUND, "Dataset not found").into_response();
+    }
+    match load_dataset_audit(&dataset_dir) {
+        Ok(audit) => Json(audit).into_response(),
+        Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
+    }
 }
 
 pub async fn get_pending_curation_handler(
@@ -258,10 +415,17 @@ pub async fn get_dataset_eval_handler(
 
 pub async fn generate_bundle_handler(
     Extension(state): Extension<TrainingState>,
+    Extension(sources): Extension<TrainingSources>,
     Json(payload): Json<GenerateBundleRequest>,
 ) -> impl IntoResponse {
-    let exporter = TrainingExporter::new(&state.db_path);
-    match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
+    let (exporter, built) = match build_export(&state, &sources, &payload.scope) {
+        Ok(v) => v,
+        Err((code, msg)) => return (code, msg).into_response(),
+    };
+    match exporter
+        .generate_bundle_from_sources(&built, payload.seed, payload.eval_ratio)
+        .await
+    {
         Ok(bundle) => {
             let id = format!(
                 "dataset_{}_{}",
@@ -299,6 +463,7 @@ pub async fn generate_bundle_handler(
                         "metadata": metadata,
                         "manifest": bundle.manifest,
                         "audit_summary": bundle.audit_summary,
+                        "audit": bundle.audit,
                     }))
                     .into_response()
                 }
@@ -405,6 +570,7 @@ pub async fn bulk_curate_handler(
 
 pub async fn export_handler(
     Extension(state): Extension<TrainingState>,
+    Extension(sources): Extension<TrainingSources>,
     Json(payload): Json<ExportRequest>,
 ) -> impl IntoResponse {
     if payload.curated_only {
@@ -455,8 +621,14 @@ pub async fn export_handler(
             });
     }
 
-    let exporter = TrainingExporter::new(&state.db_path);
-    match exporter.generate_bundle(payload.seed, payload.eval_ratio, None) {
+    let (exporter, built) = match build_export(&state, &sources, &payload.scope) {
+        Ok(v) => v,
+        Err((code, msg)) => return (code, msg).into_response(),
+    };
+    match exporter
+        .generate_bundle_from_sources(&built, payload.seed, payload.eval_ratio)
+        .await
+    {
         Ok(bundle) => {
             if payload.format.as_deref() == Some("jsonl") {
                 let stream_records = bundle.train_split.into_iter().chain(bundle.eval_split);
@@ -490,7 +662,8 @@ pub async fn export_handler(
                     "included_records": bundle.audit_summary.included_records,
                     "excluded_no_consent": bundle.audit_summary.excluded_records_no_consent,
                     "excluded_revoked": bundle.audit_summary.excluded_records_revoked
-                }
+                },
+                "anonymization_audit": bundle.audit
             }))
             .into_response()
         }
@@ -1179,6 +1352,158 @@ mod tests {
         assert_eq!(history[0].who, "admin_eve");
         assert!(history[0].what.contains(&item1.id));
         assert!(history[1].what.contains(&item2.id));
+    }
+
+    async fn post_json(
+        app: &Router,
+        uri: &str,
+        body: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
+        let req = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let val = serde_json::from_slice(&bytes)
+            .unwrap_or_else(|_| serde_json::Value::String(String::from_utf8_lossy(&bytes).into()));
+        (status, val)
+    }
+
+    async fn get_json(app: &Router, uri: &str) -> (StatusCode, serde_json::Value) {
+        let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    async fn memory_app() -> (Router, tempfile::TempDir, tempfile::TempDir) {
+        use crate::memory::store::{FileMemoryStore, MemoryRecord};
+        let mem_dir = tempdir().unwrap();
+        let store = FileMemoryStore::new(mem_dir.path().join("m.json"))
+            .await
+            .unwrap();
+        for i in 0..6 {
+            store
+                .put(MemoryRecord {
+                    id: format!("m{i}"),
+                    workspace_id: "ws1".to_string(),
+                    path: format!("dev/m{i}"),
+                    content: format!("Function {i} validates input and returns an error."),
+                    metadata: serde_json::json!({"kind": "file", "title": format!("fn_{i}")}),
+                    ..MemoryRecord::default()
+                })
+                .await
+                .unwrap();
+        }
+        let data_dir = tempdir().unwrap();
+        let state = TrainingState {
+            db_path: data_dir.path().join("unused.sqlite3"),
+            data_dir: data_dir.path().to_path_buf(),
+        };
+        let app = router_with_sources(
+            state,
+            TrainingSources {
+                memory_store: Some(Arc::new(store)),
+                challenge_store: None,
+            },
+        );
+        (app, mem_dir, data_dir)
+    }
+
+    #[tokio::test]
+    async fn test_bundle_from_memory_source_and_audit_endpoint() {
+        let (app, _m, _d) = memory_app().await;
+        let (status, body) = post_json(
+            &app,
+            "/v1/training/bundles",
+            serde_json::json!({
+                "seed": 1, "eval_ratio": 0.2, "sources": ["memory"],
+                "workspace": "ws1", "privacy_level": "P3", "kinds": ["file"]
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["audit"]["passed"], true);
+        assert_eq!(body["audit"]["privacy_level"], "P3");
+        let id = body["dataset_id"].as_str().unwrap();
+        let (status, audit) = get_json(&app, &format!("/v1/training/bundles/{id}/audit")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(audit["passed"], true);
+        assert_eq!(audit["sources"][0], "memory");
+        let (_, manifest) = get_json(&app, &format!("/v1/training/datasets/{id}")).await;
+        assert_eq!(manifest["privacy_level"], "P3");
+        assert_eq!(manifest["local_only"], false);
+    }
+
+    #[tokio::test]
+    async fn test_p4_bundle_audit_endpoint_is_local_only() {
+        let (app, _m, _d) = memory_app().await;
+        let (status, body) = post_json(
+            &app,
+            "/v1/training/bundles",
+            serde_json::json!({
+                "seed": 1, "eval_ratio": 0.2, "sources": ["memory"],
+                "workspace": "ws1", "privacy_level": "P4"
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let id = body["dataset_id"].as_str().unwrap();
+        let (_, audit) = get_json(&app, &format!("/v1/training/bundles/{id}/audit")).await;
+        assert_eq!(audit["local_only"], true);
+        assert_eq!(audit["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn test_bundle_request_validation() {
+        let (app, _m, _d) = memory_app().await;
+        let base = |extra: serde_json::Value| {
+            let mut v = serde_json::json!({"seed": 1, "eval_ratio": 0.2});
+            v.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            v
+        };
+        let (s, _) = post_json(
+            &app,
+            "/v1/training/bundles",
+            base(serde_json::json!({"sources": ["nope"]})),
+        )
+        .await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        let (s, _) = post_json(
+            &app,
+            "/v1/training/bundles",
+            base(serde_json::json!({"sources": ["memory"]})),
+        )
+        .await;
+        assert_eq!(s, StatusCode::BAD_REQUEST); // workspace missing
+        let (s, _) = post_json(
+            &app,
+            "/v1/training/bundles",
+            base(serde_json::json!({"privacy_level": "P9"})),
+        )
+        .await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        let (s, _) = post_json(
+            &app,
+            "/v1/training/bundles",
+            base(serde_json::json!({"sources": ["challenge"]})),
+        )
+        .await;
+        assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE); // not wired
+        let (s, _) = get_json(&app, "/v1/training/bundles/missing/audit").await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        let (s, _) = get_json(&app, "/v1/training/bundles/..%2Fx/audit").await;
+        assert_ne!(s, StatusCode::OK);
     }
 }
 

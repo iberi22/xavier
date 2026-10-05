@@ -15,7 +15,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::humanchallenge::{
-    types::{ChallengeType, IntrospectionSession, IntrospectionTechnique},
+    store::VerifyVoteError,
+    types::{
+        ChallengeType, CurationVerdict, CurationVote, IntrospectionSession, IntrospectionTechnique,
+    },
     HumanChallengeStore, IntrospectionEngine,
 };
 
@@ -60,10 +63,34 @@ pub struct ProcessTurnRequest {
     pub challenge_description: String,
 }
 
+/// Optional body of `POST /v1/maloca/introspection/{id}/complete`.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct CompleteIntrospectionRequest {
+    /// Explicit consent to use the insights for model training (default false).
+    #[serde(default)]
+    pub training_consent: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct IntrospectionListResponse {
     pub total: usize,
     pub sessions: Vec<IntrospectionSession>,
+}
+
+/// Body of `POST /v1/maloca/introspection/votes/{id}/verify`.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct VerifyVoteRequest {
+    /// `accept` or `reject` (anything else is a 400).
+    pub verdict: CurationVerdict,
+    /// The human checked the insight against reality. Required for training use.
+    #[serde(default)]
+    pub fact_verified: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PendingVotesResponse {
+    pub total: usize,
+    pub votes: Vec<CurationVote>,
 }
 
 // ---------------------------------------------------------------------------
@@ -122,8 +149,27 @@ pub async fn process_turn_handler(
 pub async fn complete_introspection_handler(
     State(state): State<IntrospectionState>,
     Path(session_id): Path<String>,
+    body: axum::body::Bytes,
 ) -> impl IntoResponse {
-    match state.engine.complete_session(&session_id) {
+    // The body is optional: empty means defaults (no training consent).
+    let payload: CompleteIntrospectionRequest = if body.iter().all(|b| b.is_ascii_whitespace()) {
+        CompleteIntrospectionRequest::default()
+    } else {
+        match serde_json::from_slice(&body) {
+            Ok(p) => p,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": format!("invalid body: {e}") })),
+                )
+                    .into_response()
+            }
+        }
+    };
+    match state
+        .engine
+        .complete_session_with_consent(&session_id, payload.training_consent)
+    {
         Ok(session) => (
             StatusCode::OK,
             Json(serde_json::json!({ "session": session })),
@@ -161,6 +207,62 @@ pub async fn get_introspection_handler(
     }
 }
 
+/// `GET /v1/maloca/introspection/pending-votes`: insights awaiting human verification.
+pub async fn pending_votes_handler(State(state): State<IntrospectionState>) -> impl IntoResponse {
+    match state.store.list_pending_introspection_votes(200) {
+        Ok(votes) => (
+            StatusCode::OK,
+            Json(PendingVotesResponse {
+                total: votes.len(),
+                votes,
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// `POST /v1/maloca/introspection/votes/{id}/verify`: records the human verdict on an
+/// insight. Mutating verbs on `/v1/maloca/*` require the API token (see
+/// `maloca_mutation_auth_middleware`).
+pub async fn verify_vote_handler(
+    State(state): State<IntrospectionState>,
+    Path(vote_id): Path<String>,
+    Json(payload): Json<VerifyVoteRequest>,
+) -> impl IntoResponse {
+    let accept = match payload.verdict {
+        CurationVerdict::Accept => true,
+        CurationVerdict::Reject => false,
+        CurationVerdict::Refine => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "verdict must be accept or reject" })),
+            )
+                .into_response()
+        }
+    };
+    match state
+        .store
+        .verify_introspection_vote(&vote_id, accept, payload.fact_verified)
+    {
+        Ok(vote) => (StatusCode::OK, Json(serde_json::json!({ "vote": vote }))).into_response(),
+        Err(e) => {
+            let status = match e {
+                VerifyVoteError::NotFound => StatusCode::NOT_FOUND,
+                VerifyVoteError::NotIntrospection | VerifyVoteError::AlreadyReviewed => {
+                    StatusCode::CONFLICT
+                }
+                VerifyVoteError::Db(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (status, Json(serde_json::json!({ "error": e.to_string() }))).into_response()
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -178,6 +280,14 @@ pub fn router(state: IntrospectionState) -> Router {
         .route(
             "/v1/maloca/introspection/{id}/complete",
             post(complete_introspection_handler),
+        )
+        .route(
+            "/v1/maloca/introspection/pending-votes",
+            get(pending_votes_handler),
+        )
+        .route(
+            "/v1/maloca/introspection/votes/{id}/verify",
+            post(verify_vote_handler),
         )
         .route(
             "/v1/maloca/introspection/{id}",
@@ -408,5 +518,324 @@ mod tests {
 
         let not_found_resp = app.oneshot(get_nonexistent_req).await.unwrap();
         assert_eq!(not_found_resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    async fn call(
+        app: &Router,
+        method: &str,
+        uri: &str,
+        body: serde_json::Value,
+    ) -> serde_json::Value {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert!(resp.status().is_success(), "{uri} -> {}", resp.status());
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    /// start -> turn -> complete(consent) over HTTP against a file-backed store.
+    async fn run_flow(db: &std::path::Path, challenge: &str, consent: bool) -> String {
+        let store = Arc::new(HumanChallengeStore::new(db).unwrap());
+        let app = router(IntrospectionState::new(store));
+        let started = call(
+            &app,
+            "POST",
+            "/v1/maloca/introspection/start",
+            serde_json::json!({
+                "challenge_id": challenge,
+                "challenge_type": "decision",
+                "description": "Pick a storage engine",
+                "technique": "pre_mortem",
+            }),
+        )
+        .await;
+        let id = started["session"]["id"].as_str().unwrap().to_string();
+        call(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/{id}/turn"),
+            serde_json::json!({
+                "human_input": "We would lose data because the WAL checkpoint never runs under sustained load.",
+                "challenge_description": "Pick a storage engine",
+            }),
+        )
+        .await;
+        let done = call(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/{id}/complete"),
+            serde_json::json!({ "training_consent": consent }),
+        )
+        .await;
+        assert_eq!(done["session"]["status"], "completed");
+        assert_eq!(done["session"]["training_consent"], consent);
+        id
+    }
+
+    #[tokio::test]
+    async fn test_complete_with_consent_writes_eligible_votes_and_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("humanchallenge.db");
+        let id = run_flow(&db, "chal_consent_yes", true).await;
+
+        // Reopen the store from the same path: everything must have survived.
+        let reopened = HumanChallengeStore::new(&db).unwrap();
+        let votes = reopened
+            .get_votes_for_challenge("chal_consent_yes")
+            .unwrap();
+        assert_eq!(votes.len(), 1);
+        assert!(votes[0].training_eligible);
+        assert_eq!(votes[0].technique.as_deref(), Some("pre_mortem"));
+        // Unverified insights stay out of the training gate until a human verifies them.
+        assert_eq!(reopened.count_training_eligible().unwrap(), 0);
+        let session = reopened.get_introspection_session(&id).unwrap().unwrap();
+        assert!(session.training_consent);
+        assert_eq!(session.insights.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_complete_without_consent_writes_non_eligible_votes() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("humanchallenge.db");
+        run_flow(&db, "chal_consent_no", false).await;
+
+        let reopened = HumanChallengeStore::new(&db).unwrap();
+        let votes = reopened.get_votes_for_challenge("chal_consent_no").unwrap();
+        assert_eq!(votes.len(), 1);
+        assert!(!votes[0].training_eligible);
+        assert_eq!(reopened.count_training_eligible().unwrap(), 0);
+    }
+
+    async fn status_of(
+        app: &Router,
+        method: &str,
+        uri: &str,
+        body: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or_default())
+    }
+
+    /// Two-turn flow so exactly one insight vote exists; returns (app, store, vote id).
+    async fn app_with_pending_vote(consent: bool) -> (Router, Arc<HumanChallengeStore>, String) {
+        let store = Arc::new(HumanChallengeStore::in_memory().unwrap());
+        let app = router(IntrospectionState::new(store.clone()));
+        let started = call(
+            &app,
+            "POST",
+            "/v1/maloca/introspection/start",
+            serde_json::json!({
+                "challenge_id": "chal_verify",
+                "challenge_type": "decision",
+                "description": "Pick a storage engine",
+                "technique": "pre_mortem",
+            }),
+        )
+        .await;
+        let id = started["session"]["id"].as_str().unwrap().to_string();
+        call(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/{id}/turn"),
+            serde_json::json!({
+                "human_input": "We would lose data because the WAL checkpoint never runs under sustained load.",
+                "challenge_description": "Pick a storage engine",
+            }),
+        )
+        .await;
+        call(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/{id}/complete"),
+            serde_json::json!({ "training_consent": consent }),
+        )
+        .await;
+        let votes = store.get_votes_for_challenge("chal_verify").unwrap();
+        assert_eq!(votes.len(), 1);
+        (app, store, votes[0].id.clone())
+    }
+
+    #[tokio::test]
+    async fn test_pending_votes_listed_and_not_eligible() {
+        let (app, store, vote_id) = app_with_pending_vote(true).await;
+        let (st, body) = status_of(
+            &app,
+            "GET",
+            "/v1/maloca/introspection/pending-votes",
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(body["total"], 1);
+        assert_eq!(body["votes"][0]["id"], vote_id);
+        assert_eq!(store.count_training_eligible().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_verify_accept_with_consent_becomes_eligible() {
+        let (app, store, vote_id) = app_with_pending_vote(true).await;
+        let (st, body) = status_of(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/votes/{vote_id}/verify"),
+            serde_json::json!({ "verdict": "accept", "fact_verified": true }),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK, "{body}");
+        assert_eq!(store.count_training_eligible().unwrap(), 1);
+        // No longer pending.
+        assert!(store
+            .list_pending_introspection_votes(10)
+            .unwrap()
+            .is_empty());
+        // A second verification is refused.
+        let (st, _) = status_of(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/votes/{vote_id}/verify"),
+            serde_json::json!({ "verdict": "reject" }),
+        )
+        .await;
+        assert_eq!(st, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn test_verify_accept_without_consent_stays_ineligible() {
+        let (app, store, vote_id) = app_with_pending_vote(false).await;
+        let (st, _) = status_of(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/votes/{vote_id}/verify"),
+            serde_json::json!({ "verdict": "accept", "fact_verified": true }),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(store.count_training_eligible().unwrap(), 0);
+        let vote = &store.get_votes_for_challenge("chal_verify").unwrap()[0];
+        assert!(vote.fact_verified);
+        assert!(!vote.training_eligible);
+    }
+
+    #[tokio::test]
+    async fn test_verify_accept_without_fact_verified_stays_ineligible() {
+        let (app, store, vote_id) = app_with_pending_vote(true).await;
+        let (st, _) = status_of(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/votes/{vote_id}/verify"),
+            serde_json::json!({ "verdict": "accept", "fact_verified": false }),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(store.count_training_eligible().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_verify_reject_is_excluded() {
+        let (app, store, vote_id) = app_with_pending_vote(true).await;
+        let (st, _) = status_of(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/votes/{vote_id}/verify"),
+            serde_json::json!({ "verdict": "reject", "fact_verified": true }),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(store.count_training_eligible().unwrap(), 0);
+        assert!(store
+            .list_pending_introspection_votes(10)
+            .unwrap()
+            .is_empty());
+        let vote = &store.get_votes_for_challenge("chal_verify").unwrap()[0];
+        assert_eq!(vote.verdict, CurationVerdict::Reject);
+        assert!(!vote.training_eligible && !vote.fact_verified);
+    }
+
+    #[tokio::test]
+    async fn test_verify_rejects_refine_verdict_and_unknown_vote() {
+        let (app, _store, vote_id) = app_with_pending_vote(true).await;
+        let (st, _) = status_of(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/votes/{vote_id}/verify"),
+            serde_json::json!({ "verdict": "refine" }),
+        )
+        .await;
+        assert_eq!(st, StatusCode::BAD_REQUEST);
+        let (st, _) = status_of(
+            &app,
+            "POST",
+            "/v1/maloca/introspection/votes/cv_missing/verify",
+            serde_json::json!({ "verdict": "accept", "fact_verified": true }),
+        )
+        .await;
+        assert_eq!(st, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_verify_leaves_non_introspection_votes_and_other_domains_alone() {
+        use crate::humanchallenge::curation_gate::{evaluate_domains, ReadinessThresholds};
+        let (app, store, vote_id) = app_with_pending_vote(true).await;
+        // A plain human curation vote in another domain, already eligible.
+        let human = CurationVote::new(
+            "chal_other",
+            CurationVerdict::Accept,
+            Some("rust is memory safe".into()),
+            true,
+            vec!["rust".into()],
+            true,
+        );
+        store.save_curation_vote(&human).unwrap();
+        let ready_before = |store: &HumanChallengeStore| {
+            let votes = store.get_training_eligible_votes(100).unwrap();
+            evaluate_domains(
+                &ReadinessThresholds {
+                    min_examples_per_domain: 1,
+                    ..Default::default()
+                },
+                &votes,
+                &[],
+            )
+            .into_iter()
+            .map(|d| d.domain)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(ready_before(&store), vec!["rust".to_string()]);
+
+        // Verifying a non-introspection vote is refused and leaves it intact.
+        let (st, _) = status_of(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/votes/{}/verify", human.id),
+            serde_json::json!({ "verdict": "reject" }),
+        )
+        .await;
+        assert_eq!(st, StatusCode::CONFLICT);
+        assert_eq!(store.count_training_eligible().unwrap(), 1);
+
+        // Verifying the insight adds the untagged (general) domain, only now.
+        status_of(
+            &app,
+            "POST",
+            &format!("/v1/maloca/introspection/votes/{vote_id}/verify"),
+            serde_json::json!({ "verdict": "accept", "fact_verified": true }),
+        )
+        .await;
+        let after = ready_before(&store);
+        assert!(after.contains(&"rust".to_string()));
+        assert_eq!(after.len(), 2);
     }
 }

@@ -42,6 +42,18 @@ workspace exceeds typical sandbox limits (Jules fails while "preparing the virtu
 environment"). Remote agents only need `rustfmt`; they write code and tests, and CI verifies
 every PR (fmt, clippy `-D warnings`, tests). Use a light setup: `rustup component add rustfmt`.
 
+**Jules PRs (owner rule, 2026-10-03):** all Xavier implementation goes through Jules; the owner's
+machine never builds. PRs must be mergeable as-is:
+- Base branch = the branch named in the task (today `sprint/xavier-2026-10`), never `main`.
+- Touch ONLY the files the task lists; no lockfile, formatting-only or drive-by changes elsewhere.
+- Run ONLY `cargo fmt -- <files you touched>` (rustfmt does not compile). **NEVER run `cargo build`,
+  `cargo check`, `cargo test`, `cargo clippy` or `cargo run` in a remote VM**: a cold build of this workspace
+  outlasts and exhausts the sandbox, and the session dies ~10 min later with "Jules encountered an error when
+  working on the task" (measured on 102 failed sessions, 2026-09). Write the code and the tests, open the PR,
+  and let CI compile and test it.
+- CI runs on PRs to `main` and `sprint/**`. If it fails, a bot comment `@jules` brings the failing log
+  to the PR: fix only what the log shows, on the same branch.
+
 ## 3. Development by waves
 
 - Work is organized in waves: research → issues → execution → verification.
@@ -99,6 +111,72 @@ All autonomous agents (Jules, Hermes, Antigravity, Claude, etc.) MUST strictly r
 - **Skills**: Global skills reside in `~/.hermes/skills/` (authoritative canonical store until migration completes) and project skills in `skills/` (never commit ephemeral skill files directly to repo root). The canonical store is configurable via `XAVIER_SKILL_STORE` (e.g. `$HOME/.local/share/xavier/skill-store`); Hermes remains authoritative until an approved migration completes (docs/design/skill-controller/05-DECISIONS-AND-SCOPE.md D1, D5).
 - **Runtime databases and caches**: `.xavier/`, `data/`, `*.db`, `*.sqlite*`, `metrics.db*`, `xavier_memory.db*` are strictly runtime caches. Never commit SQLite database files, WAL files, or SHM files. Only static configuration fixtures (such as `.xavier/maturity-anchors.json`) are tracked under `.xavier/`.
 - **Cargo & Compiler Settings**: `.cargo/` is the canonical Rust compiler configuration directory and must remain clean.
+
+## Build and verify — read this before running cargo
+
+This repo is large; a `cargo test` on it routinely outruns any pipe buffer.
+Audited failure: one agent ran the same `cargo test … | tail -N` **22 times**,
+changing `-N` each time (`-35 → -60 → -25`), and 15 of 22 runs returned empty
+output. Every one of those turns was wasted.
+
+```bash
+# WRONG — discards the error when the build outlasts the buffer
+cargo test --features ci-safe 2>&1 | tail -30
+
+# RIGHT — full output on disk, then read the file
+cargo test --features ci-safe > /tmp/check.log 2>&1
+```
+
+- `PKG_CONFIG_PATH=$HOME/.nix-profile/lib/pkgconfig` is needed on NixOS.
+- Fast inner loop: `cargo test --package xavier --lib --features ci-safe`.
+  Use `--test <name>` for a single integration test. Never `--release`.
+- Runs over ~30s: launch in background with completion notification, keep
+  working, read the log when it lands. Do not block on repeated `wait` polls.
+- **A retry is only justified when the error message changes.** Identical error
+  twice means the same bug — change strategy or ask, do not run it a third time.
+- A `count: 0` or empty result is a hypothesis, not a finding. Confirm on disk.
+
+## Symbol map — verified 2026-10-02 (generated from source, not prose)
+
+An audit of 10 agent sessions found **0 of 15** searched symbols documented
+anywhere in this repo's entry docs. This table is the fix. Grep here first.
+
+| Symbol | Defined at |
+|---|---|
+| `record_accesses` | `src/memory/sqlite_vec_store/store_impl.rs:869` |
+| `flush_pending` | `src/memory/access.rs:389` |
+| `maybe_flush` | `src/memory/access.rs:370` |
+| `RECORDER` (`static`) | `src/memory/access.rs:122` |
+| `MemoryStore` | `src/memory/sqlite_vec_store/store_impl.rs:52` |
+| `MemoryDaemon` | `src/scheduler/daemon.rs:25` |
+| `qmd_memory` | `src/memory/qmd_memory.rs:9` |
+| `resolve_data_dir` | `src/settings/serialization.rs:59` |
+| `XavierSettings` | `src/settings/mod.rs:143` |
+| `code_graph_db_path_for` | `src/codebase/codegraph_paths.rs:17` |
+| `open_code_graph_db` | `src/server/headless/routes.rs:192` |
+| `execute_code_tool` | `src/server/headless/routes.rs:205` |
+| `register_project` | `code-graph/src/db/mod.rs:2096` |
+| `QueryEngine` | `code-graph/src/query/mod.rs:434` |
+| `CodeGraphDB` | `code-graph/src/db/mod.rs:92` |
+
+`src/memory/access_tests.rs` is a **file**, not a symbol. Largest files by
+module: `memory` (51 files / 25.2k lines), `server` (12k), `cli` (6.1k),
+`codebase` (5.8k).
+
+### Do not trust the code graph yet (known defects, verified 2026-10-02)
+
+- `code_stats` **ignores its `path` argument** — two different repos return
+  identical numbers. The values describe the server's single shared DB.
+- `project_root` is **NULL for all 24,708 indexed symbols** and appears in no
+  `WHERE` clause, so there is no per-project isolation. `Symbol` has no
+  `project_root` field and neither INSERT writes it.
+- Consequence: `code_scan` of any repo overwrites the previous repo's index in
+  the shared `data/code_graph.db`. **Confirm the target DB path before a write
+  scan.**
+- Only `apps/xavier/data/code_graph.db` holds symbols; 18 of 19 `code_graph.db`
+  files on disk are 4 KB stubs with 0 rows.
+- A `count: 0` from `code_find` is not proof a symbol is absent — the index is
+  import-saturated (13.6k Variable / 3.2k Import vs 2.4k Function).
 
 ## Decision rights (agent panel)
 

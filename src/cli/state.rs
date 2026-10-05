@@ -92,6 +92,102 @@ impl xavier::auth2::HasAuthDb for CliState {
     }
 }
 
+/// `XAVIER_SPACES=off|0|false|disabled|no` turns the espacio API off
+/// (routes answer 503, `xsp_` tokens 401). Default: on.
+pub fn spaces_enabled() -> bool {
+    match std::env::var("XAVIER_SPACES") {
+        Ok(v) => !matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "off" | "0" | "false" | "no" | "disabled"
+        ),
+        Err(_) => true,
+    }
+}
+
+/// Open the node's one long-lived `SpaceManager` under `root` (the daemon
+/// data dir; spaces live in `{root}/spaces/`), with the node master key as
+/// KEK. Never fails boot: on a disabled switch or a key-init error it logs
+/// and returns `None` and espacio stays off.
+pub fn open_space_manager(root: &std::path::Path) -> Option<Arc<xavier::espacio::SpaceManager>> {
+    if !spaces_enabled() {
+        tracing::info!("espacio disabled (XAVIER_SPACES=off)");
+        return None;
+    }
+    match xavier::espacio::MasterNodeKek::load_or_init() {
+        Ok(kek) => open_space_manager_with_kek(root, Arc::new(kek)),
+        Err(e) => {
+            tracing::error!("espacio disabled: node key init failed: {e}");
+            None
+        }
+    }
+}
+
+/// Same as [`open_space_manager`] with an injected KEK (tests).
+pub fn open_space_manager_with_kek(
+    root: &std::path::Path,
+    kek: Arc<dyn xavier::espacio::NodeKek>,
+) -> Option<Arc<xavier::espacio::SpaceManager>> {
+    if !spaces_enabled() {
+        tracing::info!("espacio disabled (XAVIER_SPACES=off)");
+        return None;
+    }
+    if let Err(e) = std::fs::create_dir_all(root) {
+        tracing::error!("espacio disabled: cannot create {}: {e}", root.display());
+        return None;
+    }
+    let manager = Arc::new(xavier::espacio::SpaceManager::open_with_keys(root, kek));
+    tracing::info!("espacio enabled, root {}", root.display());
+    Some(manager)
+}
+
+/// The production `/api/v1/espacio` sub-router with the same middleware
+/// stack as the rest of the protected API (rate limit, clearance, auth).
+/// Pair it with [`install_space_manager`] on the OUTER router.
+pub fn guarded_espacio_router(state: &CliState) -> axum::Router<CliState> {
+    use axum::middleware;
+    axum::Router::new()
+        .nest(
+            "/api/v1/espacio",
+            xavier::adapters::inbound::http::routes::espacio_production_routes(),
+        )
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            super::http_setup::rate_limit_middleware,
+        ))
+        .layer(middleware::from_fn(
+            xavier::adapters::inbound::http::middleware::clearance::clearance_session_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            super::http_setup::auth_middleware,
+        ))
+}
+
+/// Install the `Arc<SpaceManager>` request extension on the whole app. It
+/// must sit OUTSIDE every `auth_middleware` layer: that middleware reads it
+/// to verify `xsp_` tokens (without it every `xsp_` token is a 401). With
+/// `None` espacio routes answer 503. Space tokens still only pass the narrow
+/// own-space allowlist, so `/memory` and `/mcp` stay 403 for them.
+///
+/// The manager installed here also becomes the global one the MCP tools read
+/// (`get_space_manager`), replacing any earlier instance, so the HTTP routes
+/// and the tools never hold two divergent managers. `None` clears the global.
+pub fn install_space_manager(
+    app: axum::Router<CliState>,
+    manager: Option<Arc<xavier::espacio::SpaceManager>>,
+) -> axum::Router<CliState> {
+    match manager {
+        Some(m) => {
+            xavier::adapters::inbound::http::routes::init_space_manager(m.clone());
+            app.layer(axum::Extension(m))
+        }
+        None => {
+            xavier::adapters::inbound::http::routes::clear_space_manager();
+            app
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "xavier", version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Xavier - Fast Vector Memory for AI Agents", long_about = None)]

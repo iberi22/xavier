@@ -58,6 +58,7 @@ pub async fn test_state() -> (AppState, WorkspaceContext) {
             embedding_provider_mode: crate::workspace::EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: crate::workspace::SyncPolicy::CloudMirror,
+            protocol: Default::default(),
             dedup: crate::settings::types::DedupSettings::default(),
         },
         RuntimeConfig::default(),
@@ -2027,57 +2028,37 @@ async fn espacio_channel_mcp_tools_schema_and_dispatch() {
     assert!(names.contains(&"espacio_channel_list"));
     assert!(names.contains(&"espacio_channel_create"));
 
-    // 2. Dispatch espacio_channel_create
-    let response = post_json(
-        router.clone(),
-        json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {
-                "name": "espacio_channel_create",
-                "arguments": {
-                    "space_id": "test_space_123",
-                    "name": "general"
-                }
-            }
-        }),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = get_json_body(response).await;
-    let _content = &body["result"]["content"][0];
-    assert!(body["result"]["structuredContent"].is_object());
-    let sc = &body["result"]["structuredContent"];
-    assert_eq!(sc["space_id"], "test_space_123");
-    assert_eq!(sc["channel_name"], "general");
-    assert_eq!(sc["status"], "created");
-
-    // 3. Dispatch espacio_channel_list
-    let response = post_json(
-        router.clone(),
-        json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "espacio_channel_list",
-                "arguments": {
-                    "space_id": "test_space_123"
-                }
-            }
-        }),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = get_json_body(response).await;
-    let _content = &body["result"]["content"][0];
-    assert!(body["result"]["structuredContent"].is_object());
-    let sc = &body["result"]["structuredContent"];
-    assert_eq!(sc["space_id"], "test_space_123");
-    assert_eq!(sc["count"], 0);
-    let msgs = sc["messages"].as_array().expect("messages array");
-    assert_eq!(msgs.len(), 0);
+    // 2. The tools used to answer from a throwaway in-memory manager. They now
+    // need the root identity and the node's shared manager, so an anonymous
+    // call (and a call on a node without espacio) is an error, never fake data.
+    for (id, name, arguments) in [
+        (
+            2,
+            "espacio_channel_create",
+            json!({"space_id": "test_space_123", "name": "general"}),
+        ),
+        (
+            3,
+            "espacio_channel_list",
+            json!({"space_id": "test_space_123"}),
+        ),
+    ] {
+        let response = post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments}
+            }),
+        )
+        .await;
+        let body = get_json_body(response).await;
+        assert!(
+            body["error"]["message"].is_string() && body["result"].is_null(),
+            "{name} must refuse without root: {body}"
+        );
+    }
 }
 
 #[tokio::test]
