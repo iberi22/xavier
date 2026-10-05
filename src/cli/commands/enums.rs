@@ -483,10 +483,70 @@ pub enum Command {
     /// Air-gap offline storage capsule protocol (USB detection, pack, unpack, inspect)
     Airgap(crate::cli::commands::airgap::AirgapArgs),
 
+    /// Manage the per-repo Xavier memory package (`<repo>/.xavier/config.toml`)
+    #[command(name = "repo")]
+    Repo {
+        #[command(subcommand)]
+        cmd: RepoCommand,
+    },
+
     /// Skill controller: build, apply, and roll back skill projection plans (D4)
     Skills {
         #[command(subcommand)]
         cmd: SkillsCommand,
+    },
+}
+
+/// Per-repo memory package subcommands (`xavier repo …`).
+///
+/// `--root`/`--json` live on each action rather than on the parent, so they
+/// work in the natural order (`xavier repo config show -C <dir>`) instead of
+/// forcing the user to place them before the action name.
+#[derive(Subcommand, Debug, Clone)]
+pub enum RepoCommand {
+    /// Manage `<repo>/.xavier/config.toml`
+    Config {
+        #[command(subcommand)]
+        cmd: RepoConfigCommand,
+    },
+}
+
+/// Common options for every `xavier repo config …` action.
+#[derive(Args, Debug, Clone, Default)]
+pub struct RepoConfigArgs {
+    /// Repository root (default: the git root containing the current dir)
+    #[arg(long, short = 'C')]
+    pub root: Option<PathBuf>,
+    /// Output as JSON instead of human-readable text
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+/// `xavier repo config …` actions.
+#[derive(Subcommand, Debug, Clone)]
+pub enum RepoConfigCommand {
+    /// Create a commented `config.toml` for this repo (refuses to clobber)
+    Init {
+        /// Overwrite an existing config
+        #[arg(long, default_value_t = false)]
+        force: bool,
+        #[command(flatten)]
+        args: RepoConfigArgs,
+    },
+    /// Show the effective config (defaults included) and where the id came from
+    Show {
+        #[command(flatten)]
+        args: RepoConfigArgs,
+    },
+    /// Set one key: project_id, name, clearance, sync_codegraph,
+    /// embedding_dimensions, retention_days
+    Set {
+        /// Key to set
+        key: String,
+        /// New value (sanitized and validated before writing)
+        value: String,
+        #[command(flatten)]
+        args: RepoConfigArgs,
     },
 }
 
