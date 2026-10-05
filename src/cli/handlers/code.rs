@@ -2777,11 +2777,20 @@ mod tests {
 
         let store = VecSqliteMemoryStore::new(config).await.unwrap();
 
+        // `clearance: PUBLIC` is load-bearing, not cosmetic. Symbol links are a
+        // PLAINTEXT table (`memory_symbol_links`), so the raw-word fallback in
+        // `link_memory_on_demand` may only run for a row that is explicitly
+        // public; anything else is refused there rather than skipped by the
+        // caller. An unmarked record is private by default (fail closed), so
+        // this linking path cannot be exercised without the marker.
+        // `store_impl::tests::private_row_never_gets_raw_word_links` asserts the
+        // other half of the same rule.
         let memory = MemoryRecord {
             id: "agent_mem_123".to_string(),
             workspace_id: "default".to_string(),
             path: "agent_memory://cursor/session-1".to_string(),
             content: "Discussed RBAC enforcement using require_permission middleware.".to_string(),
+            metadata: serde_json::json!({ "clearance": "PUBLIC" }),
             ..Default::default()
         };
 

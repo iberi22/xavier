@@ -973,14 +973,22 @@ impl MemoryStore for VecSqliteMemoryStore {
                     };
 
                     if let Some(mut record) = record {
-                        // Symbol links store raw words of the content in a
-                        // plaintext table: never derive them from a sealed row.
-                        let sealed = crypto.is_some()
-                            || record.encrypted_dek.as_ref().is_some_and(|d| !d.is_empty());
-                        if !sealed {
+                        // An encrypting SPACE derives nothing: its rows are all
+                        // sealed and there is no key in this context.
+                        if crypto.is_none() {
                             let _ = super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
-                            symbols =
-                                Self::link_memory_on_demand(conn, &memory_id, &record.content)?;
+                            // `link_memory_on_demand` itself refuses to store raw
+                            // words unless the row is explicitly PUBLIC. Passing
+                            // the metadata through is what lets an explicitly
+                            // public row keep its links while a private one gets
+                            // none — the two cases cannot be told apart from
+                            // `encrypted_dek`, which is always set.
+                            symbols = Self::link_memory_on_demand(
+                                conn,
+                                &memory_id,
+                                &record.content,
+                                &record.metadata,
+                            )?;
                         }
                     }
                 }
@@ -1609,6 +1617,7 @@ impl VecSqliteMemoryStore {
         conn: &rusqlite::Connection,
         memory_id: &str,
         content: &str,
+        metadata: &serde_json::Value,
     ) -> Result<Vec<String>> {
         if content.is_empty() {
             return Ok(Vec::new());
@@ -1629,13 +1638,22 @@ impl VecSqliteMemoryStore {
         }
 
         if symbol_links.is_empty() {
-            let candidate_words: std::collections::HashSet<&str> = content
-                .split(|c: char| !c.is_alphanumeric() && c != '_')
-                .filter(|w| w.len() >= 4)
-                .collect();
+            // Raw-word fallback: these ARE words lifted from the user's content,
+            // so they may only be derived from a row that is explicitly public.
+            // For anything else they would land in a plaintext table and leak the
+            // sealed text (closed in adcf69fd, which switched the whole path off
+            // rather than splitting it — that also made this function dead code
+            // for every default-store row, because `encrypt_columns_for_write`
+            // always sets `encrypted_dek`).
+            if super::at_rest::is_explicitly_public(metadata) {
+                let candidate_words: std::collections::HashSet<&str> = content
+                    .split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .filter(|w| w.len() >= 4)
+                    .collect();
 
-            for word in candidate_words {
-                symbol_links.push((word.to_string(), 1.0));
+                for word in candidate_words {
+                    symbol_links.push((word.to_string(), 1.0));
+                }
             }
         }
 
@@ -1855,8 +1873,13 @@ mod tests {
     fn test_link_memory_on_demand_and_max_10() {
         let conn = setup_test_db();
         let content = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu";
-        let symbols =
-            VecSqliteMemoryStore::link_memory_on_demand(&conn, "mem_demand", content).unwrap();
+        let symbols = VecSqliteMemoryStore::link_memory_on_demand(
+            &conn,
+            "mem_demand",
+            content,
+            &serde_json::json!({ "clearance": "PUBLIC" }),
+        )
+        .unwrap();
 
         assert!(!symbols.is_empty());
         assert!(
@@ -1873,6 +1896,54 @@ mod tests {
             .unwrap();
         assert_eq!(count as usize, symbols.len());
         assert!(count <= 10);
+    }
+
+    /// The raw-word fallback derives words FROM the user's content into a
+    /// PLAINTEXT table, so it must refuse anything that is not explicitly
+    /// public. This is the guarantee that was open before the fallback was
+    /// gated on `is_explicitly_public`.
+    #[test]
+    fn private_row_never_gets_raw_word_links() {
+        for meta in [
+            serde_json::json!({}),
+            serde_json::json!({ "clearance": "INTERNAL" }),
+            serde_json::json!({ "clearance": "SECRET" }),
+            serde_json::json!({ "clearance": null }),
+            serde_json::json!([]),
+        ] {
+            let conn = setup_test_db();
+            let canary = "Zxqcanaryword Qwvcanaryother";
+            let symbols =
+                VecSqliteMemoryStore::link_memory_on_demand(&conn, "mem_private", canary, &meta)
+                    .unwrap();
+            assert!(
+                symbols.is_empty(),
+                "a non-public row ({meta}) must not produce word links: {symbols:?}"
+            );
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM memory_symbol_links WHERE memory_id = 'mem_private'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 0, "no row may be written for a non-public memory");
+        }
+    }
+
+    /// An explicitly PUBLIC row keeps its links: the gate must not be a blanket
+    /// switch-off, which is what made this path dead code for every row.
+    #[test]
+    fn explicitly_public_row_keeps_its_links() {
+        let conn = setup_test_db();
+        let symbols = VecSqliteMemoryStore::link_memory_on_demand(
+            &conn,
+            "mem_public",
+            "alpha beta gamma delta",
+            &serde_json::json!({ "clearance": "PUBLIC" }),
+        )
+        .unwrap();
+        assert!(!symbols.is_empty(), "public rows must still link");
     }
 
     #[test]
