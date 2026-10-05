@@ -34,6 +34,7 @@ pub mod navigation;
 pub mod node;
 pub mod nodes;
 pub mod provider;
+pub mod recovery;
 pub mod regen;
 pub mod secrets;
 pub mod session;
@@ -398,6 +399,12 @@ impl Cli {
             } => cleanup::handle_cleanup(*dry_run, *apply, *days).await,
             Command::EncryptRecords { dry_run, apply } => {
                 encrypt_records::handle_encrypt_records(*dry_run, *apply).await
+            }
+            Command::Recovery { command } => {
+                recovery::handle_recovery_command(RecoveryArgs {
+                    command: command.clone(),
+                })
+                .await
             }
             Command::MirrorExport { out, limit, since } => {
                 mirror::handle_mirror_export(out.clone(), *limit, since.clone()).await

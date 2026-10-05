@@ -305,6 +305,38 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                 "required": ["space_id", "name"]
             }),
         },
+    MCPTool {
+            name: "recovery_status".to_string(),
+            description: "Report whether the memory store's encryption keys can actually be recovered. \
+                          Returns: recoverable (bool), gaps (what is missing), rclone remote in use, \
+                          and whether the Drive OAuth credential is sealed on disk. \
+                          A vault is only recoverable when a key seal exists AND the rclone crypt \
+                          passphrase is backed up somewhere: recovering the key alone does not make \
+                          the encrypted snapshots readable."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "crypt_passphrase_backed_up": {
+                        "type": "boolean",
+                        "description": "Operator assertion: is the rclone crypt passphrase stored outside this host? Omit to report it as unverified."
+                    },
+                    "recovery_dir": {
+                        "type": "string",
+                        "description": "Optional override of the recovery directory (defaults to $XAVIER_RECOVERY_DIR or ~/.xavier/recovery)"
+                    }
+                }
+            }),
+        },
+        MCPTool {
+            name: "drive_connect_status".to_string(),
+            description: "Report the Google Drive connection used for encrypted backups: whether an \
+                          existing rclone remote will be reused (no OAuth needed), which scopes the \
+                          sealed credential holds, and whether the access token is expired. \
+                          Read-only: never performs OAuth and never returns a token."
+                .to_string(),
+            input_schema: json!({"type": "object", "properties": {}}),
+        },
     ]
 }
 
@@ -328,6 +360,8 @@ pub fn is_core_tool(name: &str) -> bool {
             | "codegraph_gods"
             | "espacio_channel_list"
             | "espacio_channel_create"
+            | "recovery_status"
+            | "drive_connect_status"
     )
 }
 
@@ -1136,8 +1170,63 @@ pub async fn handle_core_tool(
 
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
-        _ => Err(anyhow::anyhow!("Unknown core tool: {}", name)),
+        "drive_connect_status" => {
+            let payload = drive_connect_status_report();
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                payload, false,
+            ))?)
+        }
+        "recovery_status" => {
+            let crypt = arguments
+                .get("crypt_passphrase_backed_up")
+                .and_then(|v| v.as_bool());
+            let store = match arguments.get("recovery_dir").and_then(|v| v.as_str()) {
+                Some(dir) if !dir.trim().is_empty() => crate::recovery::RecoveryStore::at(dir),
+                _ => crate::recovery::RecoveryStore::from_env_or_default(),
+            };
+
+            let status = store.status(crypt);
+            let manifest_present = store.read_manifest().ok().flatten().is_some();
+            let kcv_present = store.read_kcv().ok().flatten().is_some();
+
+            let payload = json!({
+                "recoverable": status.is_recoverable(),
+                "gaps": status.gaps(),
+                "manifestPresent": manifest_present,
+                "kcvPresent": kcv_present,
+                "cryptPassphraseBackedUp": crypt,
+                "rcloneRemote": crate::drive::detect_rclone_remote().map(|r| json!({
+                    "name": r.name,
+                    "encrypted": r.suitable_for_encrypted_backup(),
+                })),
+                "note": "The node record key protects every memory record; master.key protects auth2/secrets only. Recovery is reported as false while the rclone crypt passphrase is unverified, because the key alone cannot read the encrypted snapshots."
+            });
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                payload, false,
+            ))?)
+        }
+        _ => anyhow::bail!("unknown core tool: {name}"),
     }
+}
+
+/// Read-only report of the Drive connection. Never returns a token or a key.
+fn drive_connect_status_report() -> serde_json::Value {
+    let remote = crate::drive::detect_rclone_remote();
+    let store = crate::drive::credentials::DriveCredentialStore::from_env_or_default();
+
+    json!({
+        "rcloneRemote": remote.as_ref().map(|r| json!({
+            "name": r.name,
+            "remote": r.remote_string(),
+            "encrypted": r.suitable_for_encrypted_backup(),
+        })),
+        // The whole point of the native path: OAuth is only entered when no
+        // usable remote exists, so the two working timers keep using theirs.
+        "oauthRequired": remote.is_none(),
+        "credentialSealedOnDisk": store.exists(),
+        "requestedScopes": crate::drive::DriveScopes::REQUESTED,
+        "note": "Credentials are sealed under a key derived from master.key; existence is reported without unsealing them. No token is ever returned by this tool."
+    })
 }
 
 #[cfg(test)]
