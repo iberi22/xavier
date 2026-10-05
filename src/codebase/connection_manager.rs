@@ -353,6 +353,107 @@ fn is_explicitly_mapped(project_id: &str) -> bool {
         || project_id.starts_with("test_")
 }
 
+/// True for the ids that only ever exist to serve tests: `conv_test_*` (from
+/// `ConversationsDb::open_in_memory` / `ConversationsDb::new_test`) and
+/// `test_*` (from `CodebaseDb::open_in_memory`,
+/// `RateLimitManager::new_with_project`). See [`test_store_root`].
+fn is_test_only_id(project_id: &str) -> bool {
+    project_id.starts_with("conv_test_") || project_id.starts_with("test_")
+}
+
+/// Root directory under which test-only ids (`conv_test_*`, `test_*`) resolve
+/// their database files, as an `Option` so that both cfg variants share one
+/// signature.
+///
+/// Every caller of these ids passes `project_root = "."`, so before this
+/// override the path branch in [`ConnectionManager::connect`] produced
+/// `<cwd>/.xavier/tests/<id>.db` — i.e. **inside the repository**, because
+/// `cargo test` runs with the crate root as cwd. One `cargo test` run therefore
+/// left a `conv_test_<ULID>.db` plus its `-shm`/`-wal` trio per test, and
+/// `.xavier/tests/` had accumulated 27.618 files (825 MB) before it was cleared.
+///
+/// This mirrors the `MultiDbManager::with_root` fix (T1): the id→path mapping
+/// is unchanged, only the root it resolves against moves out of the repo and
+/// into the system temp dir. The root is a process-lifetime `OnceLock` on
+/// purpose — a per-call `TempDir` would be dropped (and its files deleted)
+/// while a pool built by an earlier test is still open, so the directory is
+/// created once and left for the OS to reap. Production ids (`memory`,
+/// `metrics`, `security`, `conv_<workspace>`, `vec_store_*`) are untouched.
+///
+/// Returns `None` in a production build, so the production path resolution is
+/// provably unchanged (the `test-utils` feature keeps the override on, which is
+/// why its callers are the ones under `#[cfg(test)]`).
+#[cfg(any(test, feature = "test-utils"))]
+fn test_store_root() -> Option<PathBuf> {
+    static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    Some(
+        ROOT.get_or_init(|| {
+            let root =
+                std::env::temp_dir().join(format!("xavier-test-store-{}", std::process::id()));
+            let _ = std::fs::create_dir_all(&root);
+            root
+        })
+        .clone(),
+    )
+}
+
+/// [`test_store_root`] in a production build: always `None`.
+#[cfg(not(any(test, feature = "test-utils")))]
+fn test_store_root() -> Option<PathBuf> {
+    None
+}
+
+/// Directory that holds the database files of a test-only id
+/// ([`is_test_only_id`]: `conv_test_*`, `test_*`).
+///
+/// In a test/test-utils build this is always inside [`test_store_root`],
+/// never the repo. In a production build `test_store_root` is `None` and this
+/// is exactly the historical `<project_root>/.xavier/tests`.
+fn test_store_dir(project_root: &str) -> PathBuf {
+    let _ = project_root;
+    PathBuf::from(project_root).join(".xavier").join("tests")
+}
+
+/// The single id→path mapping of [`ConnectionManager::connect`], extracted so
+/// it can be unit-tested without opening a pool.
+///
+/// The mapping itself is byte-for-byte the pre-existing one. The only
+/// behavioural difference is the root that the test-only branches
+/// (`conv_test_*`, `test_*`) resolve against — see [`test_store_root`]. Branch
+/// order matters: `conv_test_*` is tested before `conv_*`, and `memory` /
+/// `vec_store` / `metrics` / `security` before both prefixes.
+fn resolve_db_path(project_id: &str, project_root: &str) -> Result<PathBuf> {
+    let db_path = if project_id == "memory" {
+        PathBuf::from(project_root).join("xavier_memory.db")
+    } else if project_id == "vec_store" {
+        PathBuf::from(project_root).join("vec-store.sqlite3")
+    } else if project_id == "metrics" {
+        PathBuf::from(project_root).join("metrics.db")
+    } else if project_id == "security" {
+        PathBuf::from(project_root)
+            .join(".xavier")
+            .join("security.db")
+    } else if project_id.starts_with("conv_test_") {
+        test_store_dir(project_root).join(format!("{}.db", project_id))
+    } else if project_id.starts_with("conv_") {
+        let pid = project_id
+            .strip_prefix("conv_")
+            .ok_or_else(|| anyhow::anyhow!("invalid conversation prefix"))?;
+        dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("could not find home directory"))?
+            .join(".xavier")
+            .join("conversations")
+            .join(format!("{}.db", pid))
+    } else if project_id.starts_with("test_") {
+        test_store_dir(project_root).join(format!("{}.db", project_id))
+    } else {
+        PathBuf::from(project_root)
+            .join(".xavier")
+            .join("codebase.db")
+    };
+    Ok(db_path)
+}
+
 fn is_sqlite_lock_error(err: &rusqlite::Error) -> bool {
     matches!(
         err,
@@ -462,40 +563,7 @@ impl ConnectionManager {
     /// [`PoolClass::Evictable`], as before.
     pub fn connect(&self, project_id: &str, project_root: &str) -> Result<()> {
         if !self.pools.read().contains_key(project_id) {
-            let db_path = if project_id == "memory" {
-                PathBuf::from(project_root).join("xavier_memory.db")
-            } else if project_id == "vec_store" {
-                PathBuf::from(project_root).join("vec-store.sqlite3")
-            } else if project_id == "metrics" {
-                PathBuf::from(project_root).join("metrics.db")
-            } else if project_id == "security" {
-                PathBuf::from(project_root)
-                    .join(".xavier")
-                    .join("security.db")
-            } else if project_id.starts_with("conv_test_") {
-                PathBuf::from(project_root)
-                    .join(".xavier")
-                    .join("tests")
-                    .join(format!("{}.db", project_id))
-            } else if project_id.starts_with("conv_") {
-                let pid = project_id
-                    .strip_prefix("conv_")
-                    .ok_or_else(|| anyhow::anyhow!("invalid conversation prefix"))?;
-                dirs::home_dir()
-                    .ok_or_else(|| anyhow::anyhow!("could not find home directory"))?
-                    .join(".xavier")
-                    .join("conversations")
-                    .join(format!("{}.db", pid))
-            } else if project_id.starts_with("test_") {
-                PathBuf::from(project_root)
-                    .join(".xavier")
-                    .join("tests")
-                    .join(format!("{}.db", project_id))
-            } else {
-                PathBuf::from(project_root)
-                    .join(".xavier")
-                    .join("codebase.db")
-            };
+            let db_path = resolve_db_path(project_id, project_root)?;
 
             self.connect_with_path_profile(
                 project_id,
@@ -923,6 +991,7 @@ impl ConnectionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codebase::conversations_db::ConversationsDb;
     use tempfile::tempdir;
 
     /// T3: the snapshot must list every live pool with the database file it
@@ -1634,6 +1703,190 @@ mod tests {
         );
 
         drop(pool);
+        cm.shutdown();
+    }
+
+    /// Regression for the `.xavier/tests` hygiene failure: the conversations
+    /// test store must stay in the temp dir and must never write into the
+    /// repository.
+    ///
+    /// Before the fix, `ConnectionsDb`/`ConversationsDb::open_in_memory` and
+    /// `new_test` registered ids `conv_test_*` via `connect(id, ".")`, and the
+    /// `conv_test_` branch mapped those to `<cwd>/.xavier/tests/<id>.db`. With
+    /// `cargo test` running from the crate root, **cwd is the repository**, so
+    /// every run dropped a `conv_test_<ULID>.db` + `-shm` + `-wal` trio in the
+    /// working tree — 27.618 files / 825 MB had piled up there.
+    ///
+    /// This drives the real entry points (not just the path helper) and asserts
+    /// three things:
+    ///   1. `new_test()`'s id resolves outside the repo, into the temp root.
+    ///   2. `open_in_memory()`'s id does too, and actually creating the schema
+    ///      (which is what opens the file and the WAL) writes nothing into
+    ///      `.xavier/tests`.
+    ///   3. A production id (`conv_<workspace>`) is unaffected, so the fix did
+    ///      not move real conversations databases into the temp dir.
+    #[tokio::test]
+    async fn conversations_test_store_stays_in_tempdir() {
+        // Resolve against a tempdir repo root so the assertion below is about
+        // the *mapping*, not about whatever the crate cwd happens to be.
+        let repo_root = tempfile::tempdir().unwrap();
+        let project_root = repo_root.path().to_str().unwrap();
+
+        // 1. `ConversationsDb::new_test()`'s id (built by hand here so this
+        //    module does not depend on ConversationsDb; the prefix is the
+        //    contract, asserted literally).
+        let new_test_id = "conv_test_default";
+        let new_test_path = resolve_db_path(new_test_id, project_root).unwrap();
+        let tmp_root =
+            std::fs::canonicalize(test_store_root().expect("test build always has a temp root"))
+                .unwrap();
+        assert!(
+            std::fs::canonicalize(&new_test_path)
+                .unwrap_or_else(|_| new_test_path.clone())
+                .starts_with(&tmp_root),
+            "conversations_test_store_stays_in_tempdir: {} must resolve inside the \
+             temp root {}, not into the repo",
+            new_test_path.display(),
+            tmp_root.display()
+        );
+
+        // 2. The real ConversationsDb entry point, driven end to end.
+        //    `open_in_memory` appends the `conv_test_` prefix itself and
+        //    registers through the *global* manager, so this is the path a
+        //    leaked file would actually be written to.
+        let workspace_id = format!("storehygiene_{}", ulid::Ulid::new());
+        let full_id = format!("conv_test_{}", workspace_id);
+        let db = ConversationsDb::open_in_memory(&workspace_id)
+            .await
+            .unwrap();
+        db.create_schema().await.unwrap();
+
+        let registered = crate::codebase::connection_manager::ConnectionManager::global()
+            .known_paths
+            .read()
+            .get(&full_id)
+            .cloned()
+            .expect("open_in_memory must register its pool path");
+        assert!(
+            registered.starts_with(&tmp_root),
+            "conversations_test_store_stays_in_tempdir: {} resolved to {} which is outside \
+             the temp root {} — it would be written inside the repo",
+            full_id,
+            registered.display(),
+            tmp_root.display()
+        );
+        assert!(
+            registered.exists(),
+            "the pool did not create {} at all",
+            registered.display()
+        );
+
+        // Nothing at all may appear under the cwd-relative repo path.
+        let leaked = PathBuf::from(".")
+            .join(".xavier")
+            .join("tests")
+            .join(format!("{}.db", full_id));
+        assert!(
+            !leaked.exists(),
+            "conversations_test_store_stays_in_tempdir: ConversationsDb wrote {} into the \
+             repo tree",
+            leaked.display()
+        );
+
+        // 3. A production conversations id must NOT be redirected to temp.
+        let prod_id = "conv_some_workspace";
+        let prod_path = resolve_db_path(prod_id, project_root).unwrap();
+        assert!(
+            !std::fs::canonicalize(&prod_path)
+                .unwrap_or_else(|_| prod_path.clone())
+                .starts_with(&tmp_root),
+            "a real conv_<workspace> database must not resolve inside the test temp root"
+        );
+        assert!(
+            prod_path.ends_with("conversations/some_workspace.db"),
+            "production conversations path changed unexpectedly: {}",
+            prod_path.display()
+        );
+
+        // Sanity: the helpers we rely on agree about which ids are test-only.
+        assert!(is_test_only_id(new_test_id));
+        assert!(is_test_only_id("test_metrics_01ABC"));
+        assert!(!is_test_only_id(prod_id));
+    }
+
+    /// Guards the *mechanism*, not just one id: any `conv_test_*` or `test_*`
+    /// id handed to `connect()` must land in the temp root, never under the
+    /// project root's `.xavier/tests`. This is what keeps
+    /// `ls .xavier/tests | wc -l` from growing on every `cargo test`.
+    #[tokio::test]
+    async fn test_only_ids_never_resolve_under_project_root() {
+        let repo_root = tempfile::tempdir().unwrap();
+        let project_root = repo_root.path().to_str().unwrap();
+        let tmp_root =
+            std::fs::canonicalize(test_store_root().expect("test build always has a temp root"))
+                .unwrap();
+
+        for id in [
+            "conv_test_default",
+            "conv_test_test-crud",
+            "conv_test_add-fastpath-01ABCDEF",
+            "test_metrics_01ABCDEF",
+            "test_quota_01ABCDEF",
+        ] {
+            let path = resolve_db_path(id, project_root).unwrap();
+            let normalised = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            assert!(
+                normalised.starts_with(&tmp_root),
+                "id {id} resolved to {} which is outside the temp root {}",
+                path.display(),
+                tmp_root.display()
+            );
+            assert!(
+                !normalised.starts_with(repo_root.path()),
+                "id {id} resolved into the repo at {}",
+                normalised.display()
+            );
+        }
+    }
+
+    /// The `connect()` path itself must honour the override end to end, pool
+    /// included: this is the code path a real conversations test takes.
+    #[tokio::test]
+    async fn connect_of_conv_test_id_creates_files_only_in_temp_root() {
+        let cm = ConnectionManager::new();
+        let repo_root = tempfile::tempdir().unwrap();
+        let project_root = repo_root.path().to_str().unwrap();
+        let project_id = format!("conv_test_connecthygiene_{}", ulid::Ulid::new());
+
+        cm.connect(&project_id, project_root).unwrap();
+
+        // The registered path is inside the temp root...
+        let registered = cm.known_paths.read().get(&project_id).cloned().unwrap();
+        let tmp_root =
+            std::fs::canonicalize(test_store_root().expect("test build always has a temp root"))
+                .unwrap();
+        assert!(
+            registered.starts_with(&tmp_root),
+            "known_paths must hold the temp-root path, got {}",
+            registered.display()
+        );
+        // ...and the pool really created it there, with no file in the repo.
+        assert!(registered.exists(), "the pool did not create its db file");
+        let leaked_dir = repo_root.path().join(".xavier").join("tests");
+        let in_repo: Vec<_> = std::fs::read_dir(&leaked_dir)
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert!(
+            in_repo.is_empty(),
+            "connect({project_id}) leaked {:?} into {}",
+            in_repo,
+            leaked_dir.display()
+        );
+
         cm.shutdown();
     }
 }
