@@ -222,8 +222,8 @@
       "id": "feat-encryption-at-rest",
       "name": "Encryption at Rest",
       "category": "security",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "beta",
+      "progress_pct": 75,
       "description": "AES-256-GCM encryption for stored memory data with Argon2 key derivation",
       "steps": [
         "Implement AES-256-GCM encryption engine",
@@ -232,15 +232,16 @@
         "Key management (env var / platform keychain)",
         "Performance impact benchmarking"
       ],
-      "passes": true,
+      "passes": false,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-08-04",
-      "notes": "AES-256-GCM and Argon2 fully integrated into storage layer with secure key derivation.",
-      "implemented_in": "src/crypto/, src/security/",
+      "last_tested": "2026-10-05",
+      "notes": "Downgraded from stable on 2026-10-05. Records are sealed (XDK2 default-space key, XRK1 node-record key) and space memory is encrypted, but: auxiliary stores (conversations, beliefs, notifications, working-memory snapshot, bus_events) are still plaintext pending the reviewed integration of the WIP branches; and the memory->symbol link index is dead code because every sealed row skips link derivation (see xavier/bugs/2026-10-05-symbol-links-dead-code-sealed-guard). Encryption has never been exercised against production data.",
+      "implemented_in": "src/crypto/, src/security/, src/memory/sqlite_vec_store/at_rest.rs, src/espacio/",
       "tests": [
         "test_encrypt_decrypt",
-        "test_key_derivation"
+        "test_key_derivation",
+        "tests/espacio_memory_encryption.rs::symbols_path_never_writes_sealed_words"
       ],
       "req_ids": [
         "REQ-006"
