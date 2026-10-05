@@ -618,3 +618,6 @@ async fn mcp_mem_search_include_linked() {
         "{rb}"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

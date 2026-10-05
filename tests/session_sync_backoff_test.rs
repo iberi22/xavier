@@ -159,3 +159,6 @@ fn test_session_sync_hash_reset() {
         "Atomic log counter should equal 2 after hash reset and new message emission"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

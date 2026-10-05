@@ -153,6 +153,44 @@ jobs:
         # See commit message for full rationale and reproduction log.
         run: cargo test --package xavier --lib --features ci-safe -- --test-threads=1
 
+  # Job: Test-write tripwire
+  # `scripts/check-test-writes.sh` is the guard that keeps the suite from
+  # polluting the live `~/.xavier` store: it asserts every integration-test /
+  # bench crate root carries `xavier::isolate_test_process!();` (a new root
+  # without it fails here) and snapshots the real home around a representative
+  # subset of tests to prove nothing was written. It was previously dead code:
+  # not executable and referenced by no workflow, so nothing kept future tests
+  # honest. `continue-on-error` because the subset run is slow and touches
+  # PATH-sensitive state; the audit half is the part that must never drift.
+  rust-test-hygiene:
+    name: Test Hygiene Tripwire
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Audit every test/bench root installs the sandbox
+        run: |
+          missing=$(grep -L 'isolate_test_process!' tests/*.rs benches/*.rs || true)
+          if [ -n "$missing" ]; then
+            echo "::error::missing xavier::isolate_test_process!(); in: $missing" >&2
+            exit 1
+          fi
+          echo "OK: all test/bench crate roots are sandboxed"
+
+      - name: Check no test writes to the real home
+        run: bash scripts/check-test-writes.sh
+
   # Job: Observability contract gate (WAVE-29.10)
   # Scoped to the single new integration target on purpose: `tests/` holds ~119
   # test binaries, many of them environment-dependent e2e/benchmark files that

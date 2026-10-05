@@ -139,3 +139,6 @@ fn test_humanchallenge_cron_process_and_award() {
     let count = cron.process_events(&events).expect("process events");
     assert_eq!(count, 1);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

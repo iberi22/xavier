@@ -153,3 +153,6 @@ fn test_private_mesh_registry_delegacion() {
     reg.revoke_grant("net-1", &grant.id).unwrap();
     assert!(!reg.check_permission("node-b", "doc-1"));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

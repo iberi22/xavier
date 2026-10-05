@@ -320,3 +320,6 @@ async fn test_full_chain_integration() -> Result<()> {
 
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

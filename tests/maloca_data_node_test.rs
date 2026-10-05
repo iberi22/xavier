@@ -198,3 +198,6 @@ async fn test_concurrent_updates() {
     let cfg = manager.get_config();
     assert!(cfg.storage_quota_mb >= 1000);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

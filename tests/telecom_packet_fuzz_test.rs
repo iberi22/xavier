@@ -90,3 +90,6 @@ fn test_oversized_lengths_graceful_error() {
     // Serde JSON will try to parse it. We verify it doesn't hard panic.
     let _ = decode_packet(&encoded);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

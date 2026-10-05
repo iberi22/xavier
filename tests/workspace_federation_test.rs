@@ -319,3 +319,6 @@ async fn test_data_consent_token_revocation() {
     // Assert fallback now revoked
     assert!(xavier::mesh::DataConsentManager::is_token_revoked(&fallback_token_id).unwrap());
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

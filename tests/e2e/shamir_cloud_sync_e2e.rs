@@ -204,3 +204,6 @@ fn test_e2e_shamir_cloud_share_negative_tampering_and_passphrase_validation() {
     invalid_hex.ciphertext_hex = "NOT_A_VALID_HEX_STRING!@#$".to_string();
     assert!(decrypt_cloud_share_3(&invalid_hex, correct_passphrase).is_err());
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

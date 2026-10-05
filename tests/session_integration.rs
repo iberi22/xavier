@@ -318,3 +318,6 @@ mod auto_verifier_tests {
         assert!(!result.is_healthy());
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

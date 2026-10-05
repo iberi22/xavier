@@ -110,3 +110,6 @@ async fn test_daily_summary_and_hourly_usage() {
     assert_eq!(summary["daily_tokens"], 300);
     assert!(summary["requests"].as_array().unwrap().len() == 2);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -249,3 +249,6 @@ async fn maloca_support_requires_token_other_reads_stay_public() {
         None => std::env::remove_var("XAVIER_TOKEN"),
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

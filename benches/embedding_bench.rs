@@ -297,3 +297,6 @@ criterion_group!(
     bench_pipeline_process_workspace
 );
 criterion_main!(embedding_benches);
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

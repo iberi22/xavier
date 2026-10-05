@@ -198,3 +198,6 @@ criterion_group!(
     bench_vector_search_scan_10k
 );
 criterion_main!(vector_quantization_benchmarks);
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

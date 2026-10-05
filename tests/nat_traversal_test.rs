@@ -273,3 +273,6 @@ async fn test_hole_punching_state_machine() {
 
     let _ = responder.await;
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

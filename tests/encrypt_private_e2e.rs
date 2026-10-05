@@ -1411,3 +1411,6 @@ async fn minor1_4_key_cache_fingerprint_and_kek_source() {
         "stale cached key must not survive a replaced keystore"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

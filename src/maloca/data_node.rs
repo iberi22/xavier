@@ -116,6 +116,7 @@ impl ConsentRegistry {
         let data_dir = dirs::data_local_dir()
             .or_else(dirs::home_dir)
             .unwrap_or_else(|| PathBuf::from("."));
+        crate::test_support::guard_user_path(&data_dir);
         Self::open(&data_dir)
     }
 

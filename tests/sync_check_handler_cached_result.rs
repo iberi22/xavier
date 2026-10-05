@@ -208,3 +208,6 @@ async fn sync_check_handler_returns_cached_result_from_session_sync_task() {
     assert!(!response.alerts.is_empty());
     assert!(response.alerts.iter().any(|a| a.contains("unreachable")));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

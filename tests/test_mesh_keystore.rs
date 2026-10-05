@@ -52,3 +52,6 @@ fn test_mesh_keystore_probe() {
     // probe method should execute without panicking
     let _available = store.is_keyring_available();
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

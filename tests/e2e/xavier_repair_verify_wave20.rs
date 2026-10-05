@@ -271,3 +271,6 @@ async fn test_wave20_search_bounded() {
         "search execution exceeded bounded threshold: {elapsed:?}"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

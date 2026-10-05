@@ -169,3 +169,6 @@ async fn anonymous_never_reaches_above_unclassified() {
 
     std::env::remove_var(xavier::security::clearance_audit::CLEARANCE_AUDIT_ENV);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

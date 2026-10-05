@@ -129,3 +129,6 @@ async fn test_profile_vault_e2e() -> Result<(), Box<dyn std::error::Error>> {
     println!("ProfileVault E2E test completed successfully.");
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

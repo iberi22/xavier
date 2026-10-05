@@ -276,3 +276,6 @@ async fn test_nightly_consolidation_process() {
     let size_after = store.db_size().await.unwrap().unwrap_or(0);
     assert!(size_after > 0, "Database size should be greater than zero.");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

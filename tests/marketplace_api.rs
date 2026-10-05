@@ -383,3 +383,6 @@ async fn test_marketplace_full_lifecycle() {
     assert_eq!(err_json["status"], "error");
     assert!(err_json["message"].as_str().unwrap().contains("revoked"));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

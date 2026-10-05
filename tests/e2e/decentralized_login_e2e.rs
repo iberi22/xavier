@@ -184,3 +184,6 @@ fn e2e_full_pipeline_create_to_anchor() {
     assert!(receipt.dry_run);
     assert!(store.vault_exists());
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -230,3 +230,6 @@ async fn test_websocket_streaming() {
     }
     assert!(found_memory_add, "Did not receive memory.add event");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

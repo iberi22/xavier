@@ -343,3 +343,6 @@ async fn test_2fa_scoped_to_jwt_user_not_first_user() {
         "B must be able to log in with B's own live TOTP code"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

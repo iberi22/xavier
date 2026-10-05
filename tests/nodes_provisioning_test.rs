@@ -354,3 +354,6 @@ async fn test_http_get_mesh_public_nodes_filters_private_nodes() {
 
     std::env::remove_var("XAVIER_NODE_REGISTRY_PATH");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

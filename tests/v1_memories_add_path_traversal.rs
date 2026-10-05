@@ -63,3 +63,6 @@ async fn test_v1_memories_add_path_traversal() {
     // It should have sanitized the path/id to just "etcpasswd" or similar without the slashes and dots
     assert!(body_json["status"].as_str().unwrap() == "ok");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

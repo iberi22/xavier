@@ -52,3 +52,6 @@ fn bench_entity_graph(c: &mut Criterion) {
 
 criterion_group!(entity_graph_benches, bench_entity_graph);
 criterion_main!(entity_graph_benches);
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

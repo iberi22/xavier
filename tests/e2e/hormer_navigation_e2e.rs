@@ -92,3 +92,6 @@ async fn test_hormer_navigation_e2e_flow() {
     assert!(!results_after.is_empty());
     assert_eq!(results_after[0].id, "doc_alpha");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -96,3 +96,6 @@ async fn test_on_task_start_renews_lease() -> Result<()> {
 
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

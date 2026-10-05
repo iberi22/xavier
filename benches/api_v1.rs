@@ -118,3 +118,6 @@ fn bench_v1_api(c: &mut Criterion) {
 
 criterion_group!(v1_api_benches, bench_v1_api);
 criterion_main!(v1_api_benches);
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

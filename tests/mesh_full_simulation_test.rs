@@ -749,3 +749,6 @@ async fn test_mesh_permissions_killswitch_and_dao_governance() {
     assert_eq!(list_body[0].against_votes, 0);
     assert_eq!(list_body[0].total_votes, 2);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

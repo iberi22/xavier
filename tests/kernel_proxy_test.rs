@@ -102,3 +102,6 @@ fn test_condense_output() {
     let condensed = condense_output(&long_str, "");
     assert!(condensed.contains("[... condensed 1000 bytes ...]"));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

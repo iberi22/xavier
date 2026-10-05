@@ -268,3 +268,6 @@ async fn test_wave20_unknown_embedder_fails_fast() {
         err_msg
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -46,6 +46,7 @@ fn build_backend(isolated_service: Option<&str>) -> Option<VaultBackend> {
                 Some(service) => home.join(".xavier").join("vaults").join(service),
                 None => home.join(".xavier").join("secrets"),
             };
+            crate::test_support::guard_user_path(&storage_dir);
             if let Err(e) = ensure_private_dir(&storage_dir) {
                 tracing::warn!("HardwareVault: cannot create secrets dir: {e}");
                 return None;

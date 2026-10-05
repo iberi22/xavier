@@ -84,3 +84,6 @@ async fn test_mini_expert_invoke_not_found_integration() {
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();
