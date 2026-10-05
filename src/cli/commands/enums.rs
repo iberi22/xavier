@@ -448,6 +448,12 @@ pub enum Command {
         days: u64,
     },
 
+    /// Inspect, seal, or restore the memory-store encryption keys
+    Recovery {
+        #[command(subcommand)]
+        command: RecoveryCommand,
+    },
+
     /// Encrypt legacy plaintext memory records at rest (per-record envelope)
     EncryptRecords {
         /// Dry run mode (default: true if --apply is not set)
@@ -508,6 +514,43 @@ pub enum RepoCommand {
     Config {
         #[command(subcommand)]
         cmd: RepoConfigCommand,
+    },
+    /// Pack / unpack the encrypted per-repo memory package
+    /// (`<repo>/.xavier/code_graph.db.enc`)
+    Package {
+        #[command(subcommand)]
+        cmd: RepoPackageCommand,
+    },
+}
+
+/// Common options for every `xavier repo pack` / `xavier repo unpack` action.
+#[derive(Args, Debug, Clone, Default)]
+pub struct RepoPackageArgs {
+    /// Repository root (default: the nearest `.xavier/config.toml` dir, else the git root)
+    #[arg(long, short = 'C')]
+    pub root: Option<PathBuf>,
+    /// Output as JSON instead of human-readable text
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+/// `xavier repo pack` / `xavier repo unpack` actions.
+///
+/// `pack` seals `<repo>/.xavier/code_graph.db` into
+/// `<repo>/.xavier/code_graph.db.enc` (committable); `unpack` restores it and
+/// prints the sealed header so the repo's `project_id` and the commit the
+/// packaged graph corresponds to are visible.
+#[derive(Subcommand, Debug, Clone)]
+pub enum RepoPackageCommand {
+    /// Encrypt `code_graph.db` into `code_graph.db.enc`, ready to commit
+    Pack {
+        #[command(flatten)]
+        args: RepoPackageArgs,
+    },
+    /// Decrypt `code_graph.db.enc` back into `code_graph.db` and show its header
+    Unpack {
+        #[command(flatten)]
+        args: RepoPackageArgs,
     },
 }
 
@@ -1737,4 +1780,46 @@ pub enum MiniExpertCommand {
         #[arg(long, default_value_t = 11434)]
         port: u16,
     },
+}
+/// Arguments of `xavier recovery`.
+#[derive(Args, Debug)]
+pub struct RecoveryArgs {
+    #[command(subcommand)]
+    pub command: RecoveryCommand,
+}
+
+/// Subcommands of `xavier recovery`.
+///
+/// Scope: the node record key (which unwraps every per-record DEK) and the Drive
+/// connection status. This is a different domain from `security::recovery`
+/// (auth seed phrase and backup codes) — see ADR-038.
+#[derive(Subcommand, Debug, Clone)]
+pub enum RecoveryCommand {
+    /// Report whether the memory store can actually be recovered.
+    Status {
+        /// Confirm the rclone crypt passphrase is stored outside this host.
+        /// Without it the encrypted snapshots are unreadable even with the key.
+        #[arg(long)]
+        crypt_passphrase_backed_up: bool,
+    },
+    /// Seal the current record key under a passphrase and/or a 24-word mnemonic.
+    Seal {
+        /// Seal under a freshly generated BIP39 mnemonic (printed once).
+        #[arg(long)]
+        mnemonic: bool,
+        /// Seal under an interactively-entered passphrase.
+        #[arg(long)]
+        passphrase: bool,
+    },
+    /// Install a recovered record key. Refuses to overwrite an existing one.
+    Restore {
+        /// The recovered key, 64 hex characters.
+        #[arg(long)]
+        key_hex: Option<String>,
+        /// Expected key-check value. Defaults to the stored one.
+        #[arg(long)]
+        kcv: Option<String>,
+    },
+    /// Report the Google Drive connection used for encrypted backups.
+    Drive,
 }
