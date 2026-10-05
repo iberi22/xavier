@@ -82,6 +82,9 @@ impl VecSqliteMemoryStore {
                 );
                 manager.run_migrations(conn)?;
 
+                // Private-row encryption: clearance_level column + job tables.
+                super::at_rest::ensure_private_encryption_schema(conn)?;
+
                 // Run automatic vector migration
                 Self::migrate_embeddings_on_startup(conn)?;
 
@@ -210,8 +213,14 @@ impl VecSqliteMemoryStore {
             .await?;
 
         let mut decrypted_records = Vec::new();
+        let local_only = crate::embedding::embedder_is_local_only();
+        let mut private_ids = std::collections::HashSet::<String>::new();
         for mut record in records {
-            if let Err(e) = super::at_rest::decrypt_record_in_place(&mut record) {
+            // Sealed rows were private before decryption; so is every row of an
+            // encrypting space.
+            let sealed = self.crypto.is_some()
+                || record.encrypted_dek.as_ref().is_some_and(|d| !d.is_empty());
+            if let Err(e) = super::at_rest::decrypt_for(self.crypto.as_ref(), &mut record, None) {
                 tracing::warn!(
                     "Failed to decrypt record {} during background reindexing: {}",
                     record.id,
@@ -219,8 +228,28 @@ impl VecSqliteMemoryStore {
                 );
                 continue;
             }
+            let private =
+                sealed || super::at_rest::is_private_record(&record.metadata, &record.path);
+            if private && !local_only {
+                tracing::warn!(
+                    "reindex: record {} is private and the embedding provider is not local; left pending",
+                    record.id
+                );
+                continue;
+            }
+            if private {
+                private_ids.insert(record.id.clone());
+            }
             decrypted_records.push(record);
         }
+        // Private rows use an uncached, local-only embedder.
+        let private_embedder = if private_ids.is_empty() {
+            None
+        } else {
+            crate::embedding::build_private_embedder_from_env()
+                .await
+                .ok()
+        };
 
         let total_records = decrypted_records.len();
         if total_records == 0 {
@@ -245,7 +274,14 @@ impl VecSqliteMemoryStore {
         for chunk in decrypted_records.chunks(batch_size) {
             let mut tasks = Vec::new();
             for record in chunk {
-                let embedder = Arc::clone(&embedder);
+                let embedder = if private_ids.contains(&record.id) {
+                    match &private_embedder {
+                        Some(e) => Arc::clone(e),
+                        None => continue,
+                    }
+                } else {
+                    Arc::clone(&embedder)
+                };
                 let content = record.content.clone();
                 let record_id = record.id.clone();
                 tasks.push(async move {

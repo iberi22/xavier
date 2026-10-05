@@ -12,9 +12,7 @@ mod retry_tests;
 
 pub use daemon::MemoryDaemon;
 pub use job::{RecoveryConfig, ScheduledJob};
-pub use night_trainer::{
-    ComputeProvider, CurationGate, NightTrainer, NightTrainerConfig, ReadinessResult, TrainingJob,
-};
+pub use night_trainer::{ComputeProvider, NightTrainer, NightTrainerConfig, TrainingJob};
 pub use retry::{CircuitBreaker, RetryPolicy};
 
 use std::path::{Path, PathBuf};

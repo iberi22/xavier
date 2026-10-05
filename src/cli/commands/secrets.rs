@@ -82,7 +82,7 @@ pub(crate) fn vault_get_with_vault<V: VaultOps, W: std::io::Write>(
 const VAULT_SERVICE: &str = "xavier";
 
 /// Vault service name used for Clavis provider keys (`xavier keys`).
-pub(crate) const CLAVIS_VAULT_SERVICE: &str = "xavier-clavis";
+pub(crate) use xavier::clavis::CLAVIS_VAULT_SERVICE;
 
 /// Resolve the TTL: explicit flag wins, otherwise the env-configured default.
 fn resolve_ttl(ttl_secs: Option<u64>) -> Result<u64> {

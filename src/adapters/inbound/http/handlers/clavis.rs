@@ -12,7 +12,7 @@
 //! Keys are persisted through [`HardwareVault`], **not** through
 //! [`crate::clavis::ClavisEngine`]. The engine is in-memory only and would
 //! lose every key on restart. The vault writes AES-GCM encrypted files under
-//! `~/.xavier/secrets/<name>.enc` (or the OS keyring) with a master key held
+//! `~/.xavier/vaults/xavier-clavis/<name>.enc` (or the OS keyring) with a master key held
 //! in the system keyring, so values survive restarts.
 //!
 //! ## Security
@@ -22,6 +22,10 @@
 //!   ([`crate::clavis::register_secret`]) so that any message routed through
 //!   [`crate::clavis::mask_log_message`] (or the `clavis_*!` macros) has it
 //!   replaced by [`crate::clavis::mask_key`].
+//! - Only `api_key_*` names are served; any other name is rejected with 400
+//!   before the vault is consulted, so the response never reveals whether a
+//!   secret exists. The Clavis vault has its own key derivation and storage
+//!   directory, separate from the node's global vault.
 //! - Error responses carry only the key *name*, never the value.
 //! - `GET` necessarily returns the value to the caller — the client needs it —
 //!   but the handler performs no logging of the response body.
@@ -40,11 +44,7 @@ use crate::clavis::{mask_key, register_secret};
 use crate::secrets::vault::HardwareVault;
 use crate::secrets::SecretError;
 
-/// Keyring service name for the Clavis provider-key vault.
-const CLAVIS_VAULT_SERVICE: &str = "xavier-clavis";
-
-/// Longest accepted key name (also the longest accepted fallback filename).
-const MAX_KEY_NAME_LEN: usize = 128;
+use crate::clavis::{CLAVIS_VAULT_SERVICE, MAX_KEY_NAME_LEN};
 
 // ---------------------------------------------------------------------------
 // Vault wiring
@@ -102,74 +102,17 @@ pub struct ClavisProxyRequest {
 // Handlers
 // ---------------------------------------------------------------------------
 
-/// Fallback reader that checks `clavis_vault()` ("xavier-clavis"),
-/// `api_key_{key_name}` variant, and legacy "xavier" service namespace with migration
-/// strictly restricted to `api_key_*` prefixed entries to prevent exposing general secrets.
-fn get_secret_with_legacy_fallback(key_name: &str) -> Result<String, SecretError> {
-    let vault = clavis_vault();
-
-    // 1. Primary lookup in active clavis_vault
-    if let Ok(value) = vault.get_secret(key_name) {
-        return Ok(value);
-    }
-
-    // 1b. Try api_key_{key_name} prefix if not already present
-    let alt_key = if !key_name.starts_with("api_key_") {
-        Some(format!("api_key_{key_name}"))
-    } else {
-        None
-    };
-
-    if let Some(ref alt) = alt_key {
-        if let Ok(value) = vault.get_secret(alt) {
-            return Ok(value);
-        }
-    }
-
-    // 2. Fallback check against legacy "xavier" service namespace.
-    // SECURITY GATE: ONLY query entries that carry the `api_key_` prefix in the legacy vault.
-    // NEVER query raw general secret names (e.g., XAVIER_OPENROUTER_API_KEY) in the legacy vault.
-    if !key_name.starts_with("api_key_") {
-        return Err(SecretError::NotFound(key_name.to_string()));
-    }
-
-    let legacy_vault = HardwareVault::new("xavier");
-    let value = match legacy_vault.get_secret(key_name) {
-        Ok(val) => val,
-        Err(_) => return Err(SecretError::NotFound(key_name.to_string())),
-    };
-
-    // Migrate found secret to active clavis_vault
-    if let Err(e) = vault.store_secret(key_name, &value) {
-        tracing::warn!(
-            key = %key_name,
-            error = %crate::clavis::mask_log_message(&e.to_string()),
-            "failed to migrate key from legacy vault"
-        );
-    } else {
-        tracing::info!(
-            key = %key_name,
-            "migrated key from legacy 'xavier' vault to 'xavier-clavis' vault"
-        );
-        if let Some(stripped) = key_name.strip_prefix("api_key_") {
-            let _ = vault.store_secret(stripped, &value);
-        }
-        let meta_key = format!("{key_name}_meta");
-        if let Ok(meta_val) = legacy_vault.get_secret(&meta_key) {
-            let _ = vault.store_secret(&meta_key, &meta_val);
-            if let Some(stripped) = key_name.strip_prefix("api_key_") {
-                let _ = vault.store_secret(&format!("{stripped}_meta"), &meta_val);
-            }
-        }
-    }
-
-    Ok(value)
+/// Read from the isolated Clavis vault only. There is deliberately no fallback
+/// to the node's global vault or to un-prefixed aliases: the name must already
+/// be inside the `api_key_*` namespace (enforced by `validate_key_name`).
+fn get_clavis_secret(key_name: &str) -> Result<String, SecretError> {
+    clavis_vault().get_secret(key_name)
 }
 
 /// `GET /v1/clavis/keys/{key_name}` — read a stored key value.
 ///
 /// - `200` `{"value": "..."}` on success
-/// - `400` malformed key name
+/// - `400` malformed key name or a name outside the `api_key_*` namespace
 /// - `404` `{"error": "..."}` when the key is absent
 /// - `500` when the vault is unreadable
 pub async fn get_clavis_key_handler(Path(key_name): Path<String>) -> impl IntoResponse {
@@ -179,8 +122,7 @@ pub async fn get_clavis_key_handler(Path(key_name): Path<String>) -> impl IntoRe
     };
 
     let lookup = key_name.clone();
-    let result =
-        tokio::task::spawn_blocking(move || get_secret_with_legacy_fallback(&lookup)).await;
+    let result = tokio::task::spawn_blocking(move || get_clavis_secret(&lookup)).await;
 
     let value = match result {
         Ok(Ok(value)) => value,
@@ -324,31 +266,11 @@ pub async fn clavis_proxy_handler(Json(payload): Json<ClavisProxyRequest>) -> im
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Reject key names that are empty, too long, or that could escape the vault
-/// directory (`<name>.enc` is a filesystem path).
+/// Reject key names outside the `api_key_*` namespace, and names that are
+/// empty, too long, or could escape the vault directory (`<name>.enc` is a
+/// filesystem path). Existence is never consulted.
 fn validate_key_name(raw: &str) -> Result<String, String> {
-    let name = raw.trim();
-    if name.is_empty() {
-        return Err("key name must not be empty".to_string());
-    }
-    if name.len() > MAX_KEY_NAME_LEN {
-        return Err(format!(
-            "key name must be at most {} characters",
-            MAX_KEY_NAME_LEN
-        ));
-    }
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
-    {
-        return Err(
-            "key name may only contain ASCII letters, digits, '_', '-' and '.'".to_string(),
-        );
-    }
-    if name == "." || name == ".." || name.starts_with('.') {
-        return Err("key name must not start with '.'".to_string());
-    }
-    Ok(name.to_string())
+    crate::clavis::validate_namespaced_key_name(raw)
 }
 
 /// 500 body for a vault failure. Carries the key *name* and the operation —
@@ -385,16 +307,30 @@ mod tests {
 
     #[test]
     fn validate_key_name_accepts_expected_shapes() {
-        assert_eq!(validate_key_name("openai").unwrap(), "openai");
         assert_eq!(
-            validate_key_name(" openai-key_v1.2 ").unwrap(),
-            "openai-key_v1.2"
+            validate_key_name("api_key_openai").unwrap(),
+            "api_key_openai"
+        );
+        assert_eq!(
+            validate_key_name(" api_key_openai-key_v1.2 ").unwrap(),
+            "api_key_openai-key_v1.2"
         );
     }
 
     #[test]
     fn validate_key_name_rejects_path_traversal() {
         for bad in ["../escape", "..", ".hidden", "a/b", "a\\b", "a b"] {
+            assert!(
+                validate_key_name(bad).is_err(),
+                "expected '{}' to be rejected",
+                bad
+            );
+        }
+    }
+
+    #[test]
+    fn validate_key_name_rejects_names_outside_api_key_namespace() {
+        for bad in ["openai", "JWT_PRIVATE_KEY", "node_secret_x", "api_key_"] {
             assert!(
                 validate_key_name(bad).is_err(),
                 "expected '{}' to be rejected",
@@ -433,7 +369,7 @@ mod tests {
     async fn get_key_returns_404_json_when_absent() {
         let (_dir, _vault) = install_isolated_vault();
 
-        let response = get_clavis_key_handler(Path("absent-key".to_string()))
+        let response = get_clavis_key_handler(Path("api_key_absent-key".to_string()))
             .await
             .into_response();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -443,7 +379,10 @@ mod tests {
             .expect("collect body");
         let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(parsed["status"], "error");
-        assert!(parsed["error"].as_str().unwrap().contains("absent-key"));
+        assert!(parsed["error"]
+            .as_str()
+            .unwrap()
+            .contains("api_key_absent-key"));
         assert_eq!(parsed["code"], "clavis_key_not_found");
     }
 
@@ -452,10 +391,10 @@ mod tests {
     async fn get_key_returns_200_with_value() {
         let (_dir, vault) = install_isolated_vault();
         vault
-            .store_secret("stored-key", "raw-secret-value-abc")
+            .store_secret("api_key_stored-key", "raw-secret-value-abc")
             .unwrap();
 
-        let response = get_clavis_key_handler(Path("stored-key".to_string()))
+        let response = get_clavis_key_handler(Path("api_key_stored-key".to_string()))
             .await
             .into_response();
         assert_eq!(response.status(), StatusCode::OK);
@@ -483,7 +422,7 @@ mod tests {
         assert_eq!(bad_name.status(), StatusCode::BAD_REQUEST);
 
         let empty = put_clavis_key_handler(
-            Path("some-key".to_string()),
+            Path("api_key_some-key".to_string()),
             Json(ClavisKeyPutRequest {
                 value: String::new(),
             }),
@@ -499,7 +438,7 @@ mod tests {
         let (_dir, vault) = install_isolated_vault();
 
         let created = put_clavis_key_handler(
-            Path("round-trip".to_string()),
+            Path("api_key_round-trip".to_string()),
             Json(ClavisKeyPutRequest {
                 value: "«redacted:sk-…»".to_string(),
             }),
@@ -509,9 +448,12 @@ mod tests {
         assert_eq!(created.status(), StatusCode::CREATED);
 
         // Persisted for real, not held in the in-memory ClavisEngine.
-        assert_eq!(vault.get_secret("round-trip").unwrap(), "«redacted:sk-…»");
+        assert_eq!(
+            vault.get_secret("api_key_round-trip").unwrap(),
+            "«redacted:sk-…»"
+        );
 
-        let fetched = get_clavis_key_handler(Path("round-trip".to_string()))
+        let fetched = get_clavis_key_handler(Path("api_key_round-trip".to_string()))
             .await
             .into_response();
         assert_eq!(fetched.status(), StatusCode::OK);
@@ -523,7 +465,7 @@ mod tests {
 
         // Second write is an update, not a create.
         let updated = put_clavis_key_handler(
-            Path("round-trip".to_string()),
+            Path("api_key_round-trip".to_string()),
             Json(ClavisKeyPutRequest {
                 value: "«redacted:sk-…»".to_string(),
             }),
@@ -531,7 +473,10 @@ mod tests {
         .await
         .into_response();
         assert_eq!(updated.status(), StatusCode::OK);
-        assert_eq!(vault.get_secret("round-trip").unwrap(), "«redacted:sk-…»");
+        assert_eq!(
+            vault.get_secret("api_key_round-trip").unwrap(),
+            "«redacted:sk-…»"
+        );
     }
 
     #[tokio::test]
@@ -541,7 +486,7 @@ mod tests {
         let value = "«redacted:sk-…»";
 
         let stored = put_clavis_key_handler(
-            Path("log-safety".to_string()),
+            Path("api_key_log-safety".to_string()),
             Json(ClavisKeyPutRequest {
                 value: value.to_string(),
             }),
@@ -560,7 +505,7 @@ mod tests {
         assert!(logged.contains(&mask_key(value)));
 
         // 2. The on-disk artifact is encrypted, not plaintext.
-        let enc = dir.path().join("log-safety.enc");
+        let enc = dir.path().join("api_key_log-safety.enc");
         assert!(
             enc.exists(),
             "expected encrypted vault file at {}",
@@ -572,7 +517,7 @@ mod tests {
             "secret found in plaintext inside the vault file"
         );
         // The file really is the value the vault returns.
-        assert_eq!(vault.get_secret("log-safety").unwrap(), value);
+        assert_eq!(vault.get_secret("api_key_log-safety").unwrap(), value);
     }
 
     #[tokio::test]
@@ -582,10 +527,10 @@ mod tests {
         // through tracing: only the key name and a masked preview.
         let (_dir, vault) = install_isolated_vault();
         let value = "«redacted:sk-…»";
-        vault.store_secret("get-path", value).unwrap();
+        vault.store_secret("api_key_get-path", value).unwrap();
 
         crate::clavis::unregister_secret(value);
-        let response = get_clavis_key_handler(Path("get-path".to_string()))
+        let response = get_clavis_key_handler(Path("api_key_get-path".to_string()))
             .await
             .into_response();
         assert_eq!(response.status(), StatusCode::OK);
@@ -684,7 +629,7 @@ mod tests {
         let resp = create_router()
             .oneshot(route_request(
                 Method::GET,
-                "/v1/clavis/keys/route-absent",
+                "/v1/clavis/keys/api_key_route-absent",
                 None,
                 Some(UserRole::Admin),
             ))
@@ -708,7 +653,7 @@ mod tests {
         let put = create_router()
             .oneshot(route_request(
                 Method::PUT,
-                "/v1/clavis/keys/http-key",
+                "/v1/clavis/keys/api_key_http-key",
                 Some(&format!(r#"{{"value":"{}"}}"#, value)),
                 Some(UserRole::Admin),
             ))
@@ -719,12 +664,12 @@ mod tests {
             "unexpected PUT status {}",
             put.status()
         );
-        assert_eq!(vault.get_secret("http-key").unwrap(), value);
+        assert_eq!(vault.get_secret("api_key_http-key").unwrap(), value);
 
         let get = create_router()
             .oneshot(route_request(
                 Method::GET,
-                "/v1/clavis/keys/http-key",
+                "/v1/clavis/keys/api_key_http-key",
                 None,
                 Some(UserRole::Admin),
             ))

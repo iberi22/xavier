@@ -43,9 +43,10 @@ static TIME_STORE: std::sync::OnceLock<Arc<dyn TimeMetricsPort>> = std::sync::On
 /// Module-level HttpHealthAdapter (initialized by CLI)
 static HEALTH_PORT: std::sync::OnceLock<Arc<HttpHealthAdapter>> = std::sync::OnceLock::new();
 
-/// Module-level SpaceManager (initialized by CLI or lazily)
-static SPACE_MANAGER: std::sync::OnceLock<Arc<crate::espacio::SpaceManager>> =
-    std::sync::OnceLock::new();
+/// Module-level SpaceManager: the ONE authoritative manager of the node. The
+/// HTTP routes and the MCP tools both read it through [`get_space_manager`].
+static SPACE_MANAGER: std::sync::Mutex<Option<Arc<crate::espacio::SpaceManager>>> =
+    std::sync::Mutex::new(None);
 
 /// Module-level MalocaStore (initialized lazily)
 static MALOCA_STORE: std::sync::OnceLock<Arc<crate::maloca::MalocaStore>> =
@@ -72,19 +73,30 @@ pub fn init_health_port(port: Arc<HttpHealthAdapter>) {
     }
 }
 
-/// Initialize the global space manager (call once at startup)
+/// Install the node's space manager. A second call REPLACES the first (there
+/// is never more than one authoritative manager) and logs it.
 pub fn init_space_manager(manager: Arc<crate::espacio::SpaceManager>) {
-    if SPACE_MANAGER.set(manager).is_err() {
-        tracing::error!(
-            "SPACE_MANAGER global already initialized (called init_space_manager twice)"
-        );
+    let mut guard = SPACE_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    if guard
+        .as_ref()
+        .is_some_and(|old| !Arc::ptr_eq(old, &manager))
+    {
+        tracing::warn!("space manager re-initialized; the previous instance was replaced");
     }
+    *guard = Some(manager);
 }
 
-/// Get the global space manager, initializing with default path if needed
-pub fn get_space_manager() -> Arc<crate::espacio::SpaceManager> {
+/// Drop the global manager (espacio disabled on this node).
+pub fn clear_space_manager() {
+    *SPACE_MANAGER.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// Get the global space manager, if the daemon opened one. There is no
+/// default: a relative `data/spaces` fallback would write under the CWD.
+pub fn get_space_manager() -> Option<Arc<crate::espacio::SpaceManager>> {
     SPACE_MANAGER
-        .get_or_init(|| Arc::new(crate::espacio::SpaceManager::new("data/spaces")))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
         .clone()
 }
 
@@ -427,10 +439,68 @@ async fn build_handler() -> impl axum::response::IntoResponse {
     })
 }
 
+/// Persist a received session event in the durable event log (best effort).
+fn record_session_event(event: &SessionEvent) {
+    let Some(log) = crate::coordination::event_log::global() else {
+        return;
+    };
+    let kind = serde_json::to_value(&event.event_type)
+        .ok()
+        .and_then(|v| v.as_str().map(|s| format!("session.{s}")))
+        .unwrap_or_else(|| "session.event".to_string());
+    let payload = serde_json::json!({
+        "timestamp": event.timestamp,
+        "content_preview": event.content_preview(),
+        "metadata": event.metadata,
+    });
+    if let Err(e) = log.append(&kind, Some(&event.session_id), &payload) {
+        tracing::warn!(error = %e, "session event log append failed");
+    }
+}
+
+/// Query for `GET /xavier/events`.
+#[derive(Debug, Deserialize)]
+pub struct EventsReplayQuery {
+    pub since: Option<String>,
+    pub limit: Option<usize>,
+}
+
+/// Replay durable bus events after `since` (event id or RFC 3339 timestamp).
+pub async fn events_replay_handler(
+    axum::extract::Query(q): axum::extract::Query<EventsReplayQuery>,
+) -> axum::response::Response {
+    use crate::coordination::event_log;
+    let Some(log) = event_log::global() else {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "event log unavailable"})),
+        )
+            .into_response();
+    };
+    let limit = q.limit.unwrap_or(event_log::DEFAULT_REPLAY_LIMIT);
+    let result =
+        tokio::task::spawn_blocking(move || event_log::replay(&log, q.since.as_deref(), limit))
+            .await;
+    match result {
+        Ok(Ok(events)) => {
+            let next = events.last().map(|e| e.id);
+            Json(serde_json::json!({"count": events.len(), "next_since": next, "events": events}))
+                .into_response()
+        }
+        Ok(Err(msg)) => (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
+        )
+            .into_response(),
+        Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 /// Session event handler.
 pub async fn session_event_handler(
     Json(event): Json<SessionEvent>,
 ) -> impl axum::response::IntoResponse {
+    record_session_event(&event);
     let Some(entry) = PanelThreadEntry::from_session_event(&event) else {
         return Json(SessionEventResponse {
             status: "ok",
@@ -984,13 +1054,371 @@ where
         )
 }
 
+/// 503 returned by every espacio route when the node runs without a
+/// `SpaceManager` (`XAVIER_SPACES=off` or key init failed).
+fn espacio_disabled() -> axum::response::Response {
+    (
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({"status":"error","message":"espacio is disabled on this node"})),
+    )
+        .into_response()
+}
+
+/// Routes mounted in the PRODUCTION router under `/api/v1/espacio`.
+///
+/// `/admin/*` is root-only (see `ROOT_ONLY_PREFIXES`). `/spaces/{id}` serves
+/// only the space's own `xsp_` token: the handler itself requires the
+/// `SpaceAuth` the token middleware attaches (no other credential, scoped
+/// `xav_` tokens included, can address a space through it).
+pub fn espacio_production_routes<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    // The admin plane needs the ROOT credential marker (inserted only by the
+    // root-token branch of `auth_middleware`), whatever role other
+    // credentials (JWT, ephemeral session, xav_ token) claim.
+    let admin = Router::new()
+        .route(
+            "/admin/spaces",
+            post(espacio_admin_create_handler).get(espacio_admin_list_handler),
+        )
+        .route(
+            "/admin/spaces/{id}",
+            get(espacio_get_handler).delete(espacio_delete_handler),
+        )
+        .route_layer(axum::middleware::from_fn(require_root_credential));
+    Router::new()
+        .merge(admin)
+        .route(
+            "/spaces/{id}",
+            get(espacio_own_get_handler).delete(espacio_own_delete_handler),
+        )
+        .route(
+            "/spaces/{id}/links",
+            post(espacio_link_create_handler).get(espacio_link_list_handler),
+        )
+        .route(
+            "/spaces/{id}/links/{link_id}",
+            axum::routing::delete(espacio_link_revoke_handler),
+        )
+}
+
+/// Who may manage the links of space `id` (the grantor): the node ROOT
+/// credential, or the space's own `xsp_` token with the Admin role. Every
+/// other credential, including a space token of another space, is refused.
+fn may_manage_links(
+    root: &Option<axum::extract::Extension<RootCredential>>,
+    auth: &Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    id: &str,
+) -> bool {
+    match auth {
+        Some(a) => {
+            a.0.space_id == id && crate::espacio::can(a.0.role, crate::espacio::SpaceAction::Admin)
+        }
+        None => root.is_some(),
+    }
+}
+
+/// Body of `POST /spaces/{id}/links`: `{id}` grants `target_space` read access
+/// to its memory (one way).
+#[derive(serde::Deserialize)]
+pub struct CreateLinkRequest {
+    pub target_space: String,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub path_prefix: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// POST /api/v1/espacio/spaces/{id}/links
+pub async fn espacio_link_create_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(req): Json<CreateLinkRequest>,
+) -> axum::response::Response {
+    if !may_manage_links(&root, &auth, &id) {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    if req.target_space == id {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"status":"error","message":"a space cannot link to itself"})),
+        )
+            .into_response();
+    }
+    match run_blocking(async move {
+        crate::espacio::create_link(
+            &manager,
+            &id,
+            &req.target_space,
+            req.namespace,
+            req.path_prefix,
+            req.expires_at,
+        )
+        .await
+    })
+    .await
+    {
+        Some(Ok(link)) => (
+            axum::http::StatusCode::CREATED,
+            Json(serde_json::json!({"status":"ok","link":link})),
+        )
+            .into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
+/// GET /api/v1/espacio/spaces/{id}/links
+pub async fn espacio_link_list_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if !may_manage_links(&root, &auth, &id) {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    match run_blocking(async move {
+        manager.get(&id).await?;
+        manager.stores().get(&id)?.list_links()
+    })
+    .await
+    {
+        Some(Ok(links)) => Json(serde_json::json!({"status":"ok","links":links})).into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
+/// DELETE /api/v1/espacio/spaces/{id}/links/{link_id} - revoke (the row is
+/// kept, marked revoked).
+pub async fn espacio_link_revoke_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    root: Option<axum::extract::Extension<RootCredential>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path((id, link_id)): axum::extract::Path<(String, String)>,
+) -> axum::response::Response {
+    if !may_manage_links(&root, &auth, &id) {
+        return espacio_forbidden();
+    }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    match run_blocking(async move {
+        manager.get(&id).await?;
+        manager.stores().get(&id)?.revoke_link(&link_id)
+    })
+    .await
+    {
+        Some(Ok(true)) => Json(serde_json::json!({"status":"ok"})).into_response(),
+        Some(Ok(false)) => (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"status":"error","message":"link not found"})),
+        )
+            .into_response(),
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
+    }
+}
+
+/// Marker request extension: the request authenticated with the node's ROOT
+/// token. Inserted by `auth_middleware` in the root branch and nowhere else.
+#[derive(Clone, Copy, Debug)]
+pub struct RootCredential;
+
+async fn require_root_credential(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if req.extensions().get::<RootCredential>().is_none() {
+        return espacio_forbidden();
+    }
+    next.run(req).await
+}
+
+/// Run async manager work that does blocking store/keys/fs calls on the
+/// blocking pool, not on an async worker.
+async fn run_blocking<T, F>(fut: F) -> Option<T>
+where
+    T: Send + 'static,
+    F: std::future::Future<Output = T> + Send + 'static,
+{
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::spawn_blocking(move || handle.block_on(fut))
+        .await
+        .ok()
+}
+
+fn espacio_join_error() -> axum::response::Response {
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({"status":"error","message":"internal error"})),
+    )
+        .into_response()
+}
+
+/// `?confirm={space_id}` guard for deletes.
+#[derive(serde::Deserialize, Default)]
+pub struct DeleteSpaceQuery {
+    confirm: Option<String>,
+}
+
+/// True when the request carries a space token for exactly `id`.
+fn is_own_space(
+    auth: &Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    id: &str,
+) -> bool {
+    auth.as_ref().is_some_and(|a| a.0.space_id == id)
+}
+
+fn espacio_forbidden() -> axum::response::Response {
+    (
+        axum::http::StatusCode::FORBIDDEN,
+        Json(serde_json::json!({"status":"error","message":"Forbidden"})),
+    )
+        .into_response()
+}
+
+/// GET /api/v1/espacio/spaces/{id} for the space's own token.
+pub async fn espacio_own_get_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if !is_own_space(&auth, &id) {
+        return espacio_forbidden();
+    }
+    espacio_get_handler(extension, axum::extract::Path(id)).await
+}
+
+/// DELETE /api/v1/espacio/spaces/{id} for the space's own admin token.
+pub async fn espacio_own_delete_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    auth: Option<axum::extract::Extension<crate::espacio::SpaceAuth>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    query: axum::extract::Query<DeleteSpaceQuery>,
+) -> axum::response::Response {
+    if !is_own_space(&auth, &id) {
+        return espacio_forbidden();
+    }
+    espacio_delete_handler(extension, axum::extract::Path(id), query).await
+}
+
+/// POST /api/v1/espacio/admin/spaces - root creates a space. The response
+/// carries the one-time owner `xsp_` token and the one-time recovery code;
+/// neither is stored in clear nor logged.
+pub async fn espacio_admin_create_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    Json(payload): Json<crate::espacio::CreateSpaceRequest>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    let id = payload.id.clone();
+    let owner = payload.owner_node.clone();
+    let opts = crate::espacio::KeyOptions {
+        mode: payload
+            .unlock_mode
+            .unwrap_or(crate::espacio::UnlockMode::NodeUnlock),
+        password: payload.password,
+        encrypt_records: payload.encrypt_records.unwrap_or(true),
+    };
+    let work = {
+        let manager = manager.clone();
+        async move {
+            let (info, recovery) = manager
+                .create_with_keys(
+                    payload.id,
+                    payload.name,
+                    payload.description,
+                    payload.owner_node,
+                    payload.is_public,
+                    opts,
+                )
+                .await?;
+            let issued = manager
+                .stores()
+                .get(&id)
+                .and_then(|s| s.issue_token(&id, &owner, crate::espacio::SpaceRole::Admin, None));
+            match issued {
+                Ok(t) => Ok((info, recovery, t.raw)),
+                Err(err) => {
+                    let _ = manager.delete(&id).await;
+                    Err(err)
+                }
+            }
+        }
+    };
+    let (info, recovery, token) = match run_blocking(work).await {
+        Some(Ok(v)) => v,
+        Some(Err(err)) => return espacio_error_response(err),
+        None => return espacio_join_error(),
+    };
+    let mut body = serde_json::to_value(&info).unwrap_or_default();
+    if let Some(obj) = body.as_object_mut() {
+        obj.insert("owner_token".into(), token.into());
+        obj.insert(
+            "recovery_code".into(),
+            recovery
+                .map(|c| serde_json::Value::String(c.expose().to_string()))
+                .unwrap_or(serde_json::Value::Null),
+        );
+        obj.insert(
+            "note".into(),
+            "owner_token and recovery_code are shown once; store them now. The recovery \
+             code also unlocks a node_unlock space whose node key is lost (for example \
+             when a backup is restored on another node)"
+                .into(),
+        );
+    }
+    (
+        StatusCode::CREATED,
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(body),
+    )
+        .into_response()
+}
+
+fn espacio_error_response(err: anyhow::Error) -> axum::response::Response {
+    use crate::espacio::SpaceError;
+    use axum::http::StatusCode;
+    let status = match err.downcast_ref::<SpaceError>() {
+        Some(SpaceError::AlreadyExists(_)) => StatusCode::CONFLICT,
+        Some(SpaceError::InvalidId(_)) => StatusCode::BAD_REQUEST,
+        Some(SpaceError::NotFound(_)) => StatusCode::NOT_FOUND,
+        _ => match err.downcast_ref::<crate::espacio::KeysError>() {
+            Some(crate::espacio::KeysError::WeakPassword(_)) => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        },
+    };
+    (
+        status,
+        crate::adapters::inbound::http::handlers::error_json(err),
+    )
+        .into_response()
+}
+
 /// POST /api/v1/espacio/spaces - create a new space
 pub async fn espacio_create_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     Json(payload): Json<crate::espacio::CreateSpaceRequest>,
-) -> impl axum::response::IntoResponse {
+) -> axum::response::Response {
     use axum::http::StatusCode;
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
     match manager
         .create(
             payload.id,
@@ -1044,19 +1472,64 @@ pub async fn espacio_create_handler(
 /// GET /api/v1/espacio/spaces - list all spaces
 pub async fn espacio_list_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
-) -> impl axum::response::IntoResponse {
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
-    let spaces = manager.list().await;
-    Json(spaces)
+) -> axum::response::Response {
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    match run_blocking(async move { manager.list().await }).await {
+        Some(spaces) => Json(spaces).into_response(),
+        None => espacio_join_error(),
+    }
+}
+
+/// `?adoptable=true` on the admin list.
+#[derive(serde::Deserialize, Default)]
+pub struct AdminListQuery {
+    #[serde(default)]
+    adoptable: bool,
+}
+
+/// GET /api/v1/espacio/admin/spaces - root lists every space. The body is the
+/// plain array of spaces (unchanged). With `?adoptable=true` it is an object
+/// `{"spaces": [...], "default": {...}|null, "adoptable": [...]}`: `default`
+/// is the legacy workspace recorded by reference, `adoptable` the legacy
+/// `*.sqlite` files that could become spaces later (listing only; there is no
+/// adopt action and nothing is moved).
+pub async fn espacio_admin_list_handler(
+    extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
+    axum::extract::Query(query): axum::extract::Query<AdminListQuery>,
+) -> axum::response::Response {
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    let adoptable = query.adoptable;
+    let out = run_blocking(async move {
+        let spaces = manager.list().await;
+        if !adoptable {
+            return serde_json::to_value(spaces).unwrap_or_default();
+        }
+        serde_json::json!({
+            "spaces": spaces,
+            "default": manager.legacy(),
+            "adoptable": manager.adoptable(),
+        })
+    })
+    .await;
+    match out {
+        Some(body) => Json(body).into_response(),
+        None => espacio_join_error(),
+    }
 }
 
 /// GET /api/v1/espacio/spaces/{id} - get space details by ID
 pub async fn espacio_get_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> impl axum::response::IntoResponse {
+) -> axum::response::Response {
     use axum::http::StatusCode;
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
     match manager.get(&id).await {
         Ok(info) => Json(serde_json::to_value(info).unwrap_or_default()).into_response(),
         Err(err) => {
@@ -1084,42 +1557,42 @@ pub async fn espacio_get_handler(
     }
 }
 
-/// DELETE /api/v1/espacio/spaces/{id} - delete space by ID
+/// DELETE /api/v1/espacio/spaces/{id}?confirm={id} - move a space to the
+/// trash (`{spaces}/.trash/{id}-{unix_ts}`); nothing is removed from disk.
 pub async fn espacio_delete_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> impl axum::response::IntoResponse {
+    axum::extract::Query(query): axum::extract::Query<DeleteSpaceQuery>,
+) -> axum::response::Response {
     use axum::http::StatusCode;
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
-    match manager.delete(&id).await {
-        Ok(()) => Json(serde_json::json!({
-            "status": "ok",
-            "message": format!("Space {} deleted", id),
-            "id": id,
-        }))
-        .into_response(),
-        Err(err) => {
-            if let Some(space_err) = err.downcast_ref::<crate::espacio::SpaceError>() {
-                match space_err {
-                    crate::espacio::SpaceError::NotFound(_) => (
-                        StatusCode::NOT_FOUND,
-                        crate::adapters::inbound::http::handlers::error_json(space_err),
-                    )
-                        .into_response(),
-                    _ => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        crate::adapters::inbound::http::handlers::error_json(space_err),
-                    )
-                        .into_response(),
-                }
-            } else {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    crate::adapters::inbound::http::handlers::error_json(err),
-                )
-                    .into_response()
-            }
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
+    if query.confirm.as_deref() != Some(id.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": "deleting a space requires ?confirm={space_id}",
+            })),
+        )
+            .into_response();
+    }
+    let target = id.clone();
+    match run_blocking(async move { manager.delete(&target).await }).await {
+        Some(Ok(())) => {
+            // Drop the space's cached memory workspace (and its pooled
+            // connections) so a re-created space never inherits it.
+            crate::workspace::invalidate_space_workspace(&id).await;
+            Json(serde_json::json!({
+                "status": "ok",
+                "message": format!("Space {} moved to trash", id),
+                "id": id,
+            }))
+            .into_response()
         }
+        Some(Err(err)) => espacio_error_response(err),
+        None => espacio_join_error(),
     }
 }
 
@@ -1127,14 +1600,17 @@ pub async fn espacio_delete_handler(
 pub async fn espacio_isolation_handler(
     extension: Option<axum::extract::Extension<Arc<crate::espacio::SpaceManager>>>,
     axum::extract::Path((id, other)): axum::extract::Path<(String, String)>,
-) -> impl axum::response::IntoResponse {
-    let manager = extension.map(|e| e.0).unwrap_or_else(get_space_manager);
+) -> axum::response::Response {
+    let Some(manager) = extension.map(|e| e.0).or_else(get_space_manager) else {
+        return espacio_disabled();
+    };
     let isolated = manager.are_isolated(&id, &other).await;
     Json(serde_json::json!({
         "space_a": id,
         "space_b": other,
         "isolated": isolated,
     }))
+    .into_response()
 }
 
 // ─── Content Redaction API ─────────────────────────────────────────────────
@@ -1301,42 +1777,60 @@ pub struct MiniExpertInvokeResponse {
     pub response: String,
 }
 
+/// Settings-driven configs (defaults when none configured).
+fn settings_mini_experts() -> Vec<crate::settings::types::MiniExpertConfig> {
+    let configs = XavierSettings::current().workspace.mini_experts;
+    if configs.is_empty() {
+        XavierSettings::default().workspace.mini_experts
+    } else {
+        configs
+    }
+}
+
+/// Router over the SQLite registry (which imports the legacy JSON) plus settings.
+fn mini_expert_provider_router(
+    store: &crate::agents::mini_experts::ExpertStore,
+    settings_configs: Vec<crate::settings::types::MiniExpertConfig>,
+) -> crate::agents::provider_router::ProviderRouter {
+    let legacy = crate::agents::mini_experts::MiniExpertRegistry::load_default();
+    crate::agents::provider_router::ProviderRouter::from_expert_store(
+        store,
+        &legacy,
+        settings_configs,
+    )
+}
+
 /// GET /v1/agents/mini-experts — list configured mini-experts.
 pub async fn mini_experts_list_handler() -> impl axum::response::IntoResponse {
-    let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
-    let reg_entries = registry.list();
-
-    let settings = XavierSettings::current();
-    let mut mini_experts = settings.workspace.mini_experts;
-    if mini_experts.is_empty() {
-        mini_experts = XavierSettings::default().workspace.mini_experts;
-    }
-
-    for entry in reg_entries {
-        if !mini_experts.iter().any(|e| e.name == entry.name) {
-            mini_experts.push(entry.to_config());
+    let store = crate::agents::mini_experts::ExpertStore::open_default();
+    let router = match store {
+        Ok(store) => mini_expert_provider_router(&store, settings_mini_experts()),
+        Err(e) => {
+            tracing::warn!("mini-expert store unavailable: {e}");
+            crate::agents::provider_router::ProviderRouter::new(settings_mini_experts())
         }
-    }
-
-    Json(mini_experts)
+    };
+    Json(router.mini_experts().to_vec())
 }
 
 /// POST /v1/agents/mini-experts/invoke — invoke a mini-expert by name.
 pub async fn mini_expert_invoke_handler(
     Json(payload): Json<MiniExpertInvokeRequest>,
 ) -> Result<Json<MiniExpertInvokeResponse>, (axum::http::StatusCode, String)> {
-    let registry = crate::agents::mini_experts::MiniExpertRegistry::load_default();
-    let settings = XavierSettings::current();
-    let mut mini_experts = settings.workspace.mini_experts;
-    if mini_experts.is_empty() {
-        mini_experts = XavierSettings::default().workspace.mini_experts;
-    }
+    let store = crate::agents::mini_experts::ExpertStore::open_default().map_err(|e| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("mini-expert store unavailable: {e}"),
+        )
+    })?;
+    let router = mini_expert_provider_router(&store, settings_mini_experts());
+    mini_expert_invoke_with(router, payload).await
+}
 
-    let router = crate::agents::provider_router::ProviderRouter::from_registry_and_configs(
-        &registry,
-        mini_experts,
-    );
-
+async fn mini_expert_invoke_with(
+    router: crate::agents::provider_router::ProviderRouter,
+    payload: MiniExpertInvokeRequest,
+) -> Result<Json<MiniExpertInvokeResponse>, (axum::http::StatusCode, String)> {
     let expert_config = router.route(&payload.name).ok_or_else(|| {
         (
             axum::http::StatusCode::NOT_FOUND,
@@ -1399,6 +1893,31 @@ mod route_tests {
     use super::{create_router, create_router_with_agent_registry};
     use crate::coordination::SimpleAgentRegistry;
 
+    /// Points `XAVIER_DATA_DIR` at a tempdir so registry-backed routes never touch
+    /// the real node data; restores the previous value on drop.
+    struct TempDataDir {
+        _dir: tempfile::TempDir,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl TempDataDir {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let prev = std::env::var_os("XAVIER_DATA_DIR");
+            std::env::set_var("XAVIER_DATA_DIR", dir.path());
+            Self { _dir: dir, prev }
+        }
+    }
+
+    impl Drop for TempDataDir {
+        fn drop(&mut self) {
+            match self.prev.take() {
+                Some(v) => std::env::set_var("XAVIER_DATA_DIR", v),
+                None => std::env::remove_var("XAVIER_DATA_DIR"),
+            }
+        }
+    }
+
     fn post_request(uri: &str) -> Request<Body> {
         Request::builder()
             .uri(uri)
@@ -1409,6 +1928,7 @@ mod route_tests {
 
     #[tokio::test]
     async fn test_route_mini_expert_invoke_missing_expert_404() {
+        let _data = TempDataDir::new();
         use axum::response::Response;
         use http_body_util::BodyExt;
         use tower::ServiceExt;
@@ -1686,6 +2206,7 @@ mod route_tests {
 
     #[tokio::test]
     async fn test_route_mini_experts_list() {
+        let _data = TempDataDir::new();
         use axum::response::Response;
         use http_body_util::BodyExt;
         use tower::ServiceExt;
@@ -1715,43 +2236,100 @@ mod route_tests {
         assert_eq!(arr[0]["provider"], "agy");
     }
 
+    fn agy_config(endpoint: String) -> crate::settings::types::MiniExpertConfig {
+        crate::settings::types::MiniExpertConfig {
+            name: "agy-expert".to_string(),
+            provider: "agy".to_string(),
+            endpoint,
+            api_key: Some("test-key".to_string()),
+        }
+    }
+
+    /// Hermetic: the expert endpoint is a local mock server, never a real host.
     #[tokio::test]
     async fn test_route_mini_expert_invoke_mock() {
-        use axum::response::Response;
-        use http_body_util::BodyExt;
-        use tower::ServiceExt;
-        let req_body = serde_json::json!({
-            "name": "agy-expert",
-            "prompt": "test prompt"
-        });
-        let response: Response = create_router()
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/agents/mini-experts/invoke")
-                    .method(Method::POST)
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
-                    .unwrap(),
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v1/experts/google")
+            .match_header("authorization", "Bearer test-key")
+            .with_status(200)
+            .with_body(r#"{"response":"hello from local mock"}"#)
+            .create_async()
+            .await;
+        let store_dir = tempfile::tempdir().unwrap();
+        let store = crate::agents::mini_experts::ExpertStore::open(
+            store_dir
+                .path()
+                .join(crate::agents::mini_experts::ExpertStore::DB_FILE),
+        )
+        .unwrap();
+        let legacy = crate::agents::mini_experts::MiniExpertRegistry::new(
+            store_dir.path().join("legacy.json"),
+        );
+        let router = crate::agents::provider_router::ProviderRouter::from_expert_store(
+            &store,
+            &legacy,
+            vec![agy_config(format!("{}/v1/experts/google", server.url()))],
+        );
+        let resp = super::mini_expert_invoke_with(
+            router,
+            super::MiniExpertInvokeRequest {
+                name: "agy-expert".to_string(),
+                prompt: "test prompt".to_string(),
+            },
+        )
+        .await
+        .expect("invoke succeeds against the local mock");
+        assert_eq!(resp.0.status, "success");
+        assert_eq!(resp.0.provider, "agy");
+        assert_eq!(resp.0.response, "hello from local mock");
+        mock.assert_async().await;
+    }
+
+    /// An expert registered through the CLI (SQLite store, endpoint persisted) is
+    /// reachable by the legacy invoke route instead of 404/falling back.
+    #[tokio::test]
+    async fn test_route_mini_expert_invoke_reads_sqlite_store() {
+        use crate::agents::mini_experts::{ExpertStore, MiniExpertRegistry, NewExpert};
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v1/chat/completions")
+            .with_status(200)
+            .with_body(r#"{"choices":[{"message":{"content":"from cli expert"}}]}"#)
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = ExpertStore::open(dir.path().join(ExpertStore::DB_FILE)).unwrap();
+        store
+            .add_version(
+                NewExpert {
+                    name: "cli-expert".into(),
+                    domain: "rust".into(),
+                    provider: "local".into(),
+                    endpoint: format!("{}/v1", server.url()),
+                    ..Default::default()
+                },
+                true,
             )
-            .await
-            .expect("request should complete");
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response
-            .into_body()
-            .collect()
-            .await
-            .expect("collect body")
-            .to_bytes();
-        let parsed: serde_json::Value =
-            serde_json::from_slice(&body).expect("parse invoke response");
-
-        assert_eq!(parsed["status"], "success");
-        assert_eq!(parsed["provider"], "agy");
-        assert!(parsed["response"]
-            .as_str()
-            .unwrap()
-            .contains("Mock response"));
+            .unwrap();
+        let legacy = MiniExpertRegistry::new(dir.path().join("legacy.json"));
+        let router = crate::agents::provider_router::ProviderRouter::from_expert_store(
+            &store,
+            &legacy,
+            vec![],
+        );
+        let resp = super::mini_expert_invoke_with(
+            router,
+            super::MiniExpertInvokeRequest {
+                name: "cli-expert".to_string(),
+                prompt: "hi".to_string(),
+            },
+        )
+        .await
+        .expect("CLI-registered expert must be found");
+        assert_eq!(resp.0.response, "from cli expert");
+        assert_eq!(resp.0.endpoint, format!("{}/v1", server.url()));
+        mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -2053,7 +2631,7 @@ mod route_tests {
 
         // DELETE space 2a
         let mut req_del = Request::builder()
-            .uri("/api/v1/espacio/spaces/esp_rt_2a")
+            .uri("/api/v1/espacio/spaces/esp_rt_2a?confirm=esp_rt_2a")
             .method(Method::DELETE)
             .body(Body::empty())
             .unwrap();

@@ -22,10 +22,13 @@ use xavier::server::alerts::SYSTEM_ALERTS;
 /// `degraded_reasons` that `xavier health` reads come from there, nothing is injected here.
 pub async fn health_handler() -> Response {
     let status = xavier::observability::health::HEALTH.get_status().await;
-    json_response(
-        StatusCode::OK,
-        serde_json::to_value(status).unwrap_or_default(),
-    )
+    let mut body = serde_json::to_value(status).unwrap_or_default();
+    // Report whether HumanChallenge/introspection persists to a file or fell back to memory.
+    xavier::humanchallenge::store::annotate_health(
+        &mut body,
+        xavier::humanchallenge::store::store_backing(),
+    );
+    json_response(StatusCode::OK, body)
 }
 
 /// /healthz — lightweight liveness probe with embedder reachability.

@@ -232,6 +232,7 @@ async fn test_rbac_mcp_mutative_tools_readonly_blocked() {
             embedding_provider_mode: xavier::workspace::EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: xavier::workspace::SyncPolicy::CloudMirror,
+            protocol: Default::default(),
             dedup: xavier::settings::types::DedupSettings::default(),
         },
         xavier::agents::RuntimeConfig::default(),

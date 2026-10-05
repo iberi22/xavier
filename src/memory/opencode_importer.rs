@@ -80,6 +80,10 @@ struct CursorState {
     seen: HashMap<String, SessionFingerprint>,
     /// Live sessions held back by the hot window, re-checked by id only.
     deferred: HashMap<String, i64>,
+    /// Database the cursor above describes. If the resolved path changes (the
+    /// directory appeared late, an env var was fixed) the cursor belongs to a
+    /// different file and is discarded rather than trusted.
+    path: Option<PathBuf>,
 }
 
 /// What one `sync` pass did.
@@ -101,6 +105,11 @@ pub struct OpenCodeSyncStats {
     pub store_reads: usize,
     /// `store.put()` calls issued.
     pub store_writes: usize,
+    /// Sessions that could not be read this pass (unparseable/corrupt rows).
+    ///
+    /// They are skipped for this cycle and retried on the next one. A non-zero
+    /// value means part of the source corpus is not reaching the store.
+    pub read_errors: usize,
     /// Records returned to the caller.
     pub records: usize,
     /// Whether this pass skipped anything as unchanged.
@@ -108,7 +117,9 @@ pub struct OpenCodeSyncStats {
 }
 
 pub struct OpenCodeImporter {
-    db_path: PathBuf,
+    /// Explicit override. `None` means "resolve from the environment on every
+    /// pass", so a database that appears after daemon start is picked up.
+    db_path: Option<PathBuf>,
     embedder: Option<Arc<dyn Embedder>>,
     state: Mutex<CursorState>,
     hot_window_ms: i64,
@@ -122,11 +133,10 @@ impl Default for OpenCodeImporter {
 
 impl OpenCodeImporter {
     pub fn new() -> Self {
-        let db_path = Self::resolve_db_path();
-        Self::with_path(db_path)
+        Self::with_defaults(None)
     }
 
-    fn with_defaults(db_path: PathBuf) -> Self {
+    fn with_defaults(db_path: Option<PathBuf>) -> Self {
         Self {
             db_path,
             embedder: None,
@@ -141,11 +151,11 @@ impl OpenCodeImporter {
     }
 
     pub fn with_path<P: AsRef<Path>>(path: P) -> Self {
-        Self::with_defaults(path.as_ref().to_path_buf())
+        Self::with_defaults(Some(path.as_ref().to_path_buf()))
     }
 
     pub fn with_path_and_embedder<P: AsRef<Path>>(path: P, embedder: Arc<dyn Embedder>) -> Self {
-        Self::with_defaults(path.as_ref().to_path_buf()).with_embedder(embedder)
+        Self::with_defaults(Some(path.as_ref().to_path_buf())).with_embedder(embedder)
     }
 
     /// Override the hot window. Zero imports every changed session on every
@@ -153,6 +163,11 @@ impl OpenCodeImporter {
     pub fn with_hot_window(mut self, hot_window_ms: i64) -> Self {
         self.hot_window_ms = hot_window_ms.max(0);
         self
+    }
+
+    /// Database read by this pass: the explicit override, else resolved afresh.
+    fn current_db_path(&self) -> PathBuf {
+        self.db_path.clone().unwrap_or_else(Self::resolve_db_path)
     }
 
     fn resolve_db_path() -> PathBuf {
@@ -184,15 +199,13 @@ impl OpenCodeImporter {
     /// Full scan: this is the explicit path and never consults the cursor. Use
     /// [`Self::sync`] for the periodic pass.
     pub fn read_sessions(&self) -> Result<Vec<OpenCodeSession>> {
-        if !self.db_path.exists() {
-            debug!(
-                "OpenCode db path {:?} does not exist. Skipping.",
-                self.db_path
-            );
+        let db_path = self.current_db_path();
+        if !db_path.exists() {
+            debug!("OpenCode db path {:?} does not exist. Skipping.", db_path);
             return Ok(Vec::new());
         }
 
-        let conn = self.open_readonly()?;
+        let conn = self.open_readonly(&db_path)?;
         let has_updated = session_has_time_updated(&conn);
         let order = if has_updated {
             "time_updated"
@@ -244,7 +257,7 @@ impl OpenCodeImporter {
             "🔍 OpenCodeImporter read {} valid sessions ({} message rows) from {:?}",
             sessions.len(),
             message_rows,
-            self.db_path
+            db_path
         );
         Ok(sessions)
     }
@@ -260,15 +273,22 @@ impl OpenCodeImporter {
     /// the `session` table; the message and part tables are only touched for a
     /// session that actually moved.
     pub async fn sync(&self, store: &dyn MemoryStore) -> Result<OpenCodeSyncStats> {
-        if !self.db_path.exists() {
-            debug!(
-                "OpenCode db path {:?} does not exist. Skipping.",
-                self.db_path
-            );
+        let db_path = self.current_db_path();
+        if !db_path.exists() {
+            debug!("OpenCode db path {:?} does not exist. Skipping.", db_path);
             return Ok(OpenCodeSyncStats::default());
         }
 
-        let conn = self.open_readonly()?;
+        let conn = self.open_readonly(&db_path)?;
+        // A cursor describes one database. If the resolved path moved, start over.
+        if let Ok(mut state) = self.state.lock() {
+            if state.path.as_deref() != Some(db_path.as_path()) {
+                *state = CursorState {
+                    path: Some(db_path.clone()),
+                    ..Default::default()
+                };
+            }
+        }
         let has_updated = session_has_time_updated(&conn);
 
         // Snapshot under the lock, do the I/O unlocked, fold results back at the
@@ -284,6 +304,16 @@ impl OpenCodeImporter {
         // whose `time_updated` never advances stays inside the candidate set
         // instead of falling behind the watermark forever.
         let now_ms = now_ms();
+        // The watermark is clamped to the wall clock of this pass. A single row
+        // with a `time_updated` in the future — clock drift between writer and
+        // reader, seconds written where milliseconds are expected, a restored
+        // database stamped ahead — used to raise the watermark without limit, and
+        // since the floor is `watermark - REPLAY_WINDOW_MS`, that row pushed the
+        // floor above *every* real session. Ingestion then returned "0 candidates,
+        // nothing to do" on every cycle, silently, until the process restarted and
+        // the in-memory cursor was lost. A future timestamp is evidence of a
+        // broken clock, never of work to skip, so it must not move the cursor.
+        let watermark = watermark.min(now_ms);
         let floor = if watermark == 0 {
             0
         } else {
@@ -297,6 +327,10 @@ impl OpenCodeImporter {
         };
         let mut deferred: HashMap<String, i64> = HashMap::new();
         let mut observed_max = watermark;
+        // Earliest `time_updated` among sessions that failed to read this pass.
+        // The watermark must not advance past it, or once the replay window
+        // elapses the failed session would never be a candidate again.
+        let mut min_failed: Option<i64> = None;
 
         for cand in candidates {
             let fingerprint = SessionFingerprint {
@@ -324,7 +358,34 @@ impl OpenCodeImporter {
                 }
             }
 
-            let (turns, message_rows) = read_turns(&conn, &cand.id)?;
+            let (turns, message_rows) = match read_turns(&conn, &cand.id) {
+                Ok(t) => t,
+                Err(e) => {
+                    // One unreadable session must not abort the pass.
+                    //
+                    // `?` here used to return from `sync` BEFORE the cursor was
+                    // folded back, so `seen` and `watermark_ms` were thrown away
+                    // and the next cycle started again from watermark 0 — i.e. a
+                    // permanently broken row re-created the full scan the cursor
+                    // exists to avoid, on every cycle, forever.
+                    //
+                    // Deliberately NOT inserted into `seen`: a read failure is
+                    // often transient (a partially written row, a locked db), and
+                    // marking it seen would lose that session forever — the same
+                    // silent-data-loss class as the Hermes defect. The retry is
+                    // bounded to this one session per cycle and now surfaces in
+                    // `read_errors` plus the warning log, instead of stalling the
+                    // other 1722 sessions.
+                    stats.read_errors += 1;
+                    let t = cand.time_updated.unwrap_or(0);
+                    min_failed = Some(min_failed.map_or(t, |m| m.min(t)));
+                    warn!(
+                        "Skipping unreadable OpenCode session {} this pass: {}",
+                        cand.id, e
+                    );
+                    continue;
+                }
+            };
             stats.read += 1;
             stats.message_rows += message_rows;
             observed_max = observed_max.max(fingerprint.time_updated);
@@ -361,7 +422,19 @@ impl OpenCodeImporter {
             state.seen = seen;
             state.deferred = deferred;
             if has_updated {
-                state.watermark_ms = observed_max;
+                // Clamp again on the way out: `observed_max` is fed straight
+                // from row timestamps, so without this a future-dated row is
+                // written back into the cursor and the next pass reads it as the
+                // starting watermark. Clamping only the read side would fix one
+                // pass and re-poison the next.
+                let mut next = observed_max.min(now_ms);
+                if let Some(failed) = min_failed {
+                    // Hold the cursor at the earliest failure (never moving it
+                    // backwards): successful sessions are skipped by `seen`, so
+                    // the retry costs one row read, not a full scan.
+                    next = next.min(failed).max(watermark);
+                }
+                state.watermark_ms = next;
             }
         }
 
@@ -370,13 +443,14 @@ impl OpenCodeImporter {
         stats.records = stats.store_writes;
         stats.had_skips = stats.skipped > 0;
         info!(
-            "✅ OpenCodeImporter sync: {} candidates, {} read, {} skipped, {} hot-deferred, {} message rows, {} store reads",
+            "✅ OpenCodeImporter sync: {} candidates, {} read, {} skipped, {} hot-deferred, {} message rows, {} store reads, {} read errors",
             stats.candidates,
             stats.read,
             stats.skipped,
             stats.hot_deferred,
             stats.message_rows,
-            stats.store_reads
+            stats.store_reads,
+            stats.read_errors
         );
         Ok(stats)
     }
@@ -436,9 +510,9 @@ impl OpenCodeImporter {
         }
     }
 
-    fn open_readonly(&self) -> Result<Connection> {
+    fn open_readonly(&self, db_path: &Path) -> Result<Connection> {
         Ok(Connection::open_with_flags(
-            &self.db_path,
+            db_path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
         )?)
     }

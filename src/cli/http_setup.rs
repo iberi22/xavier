@@ -16,10 +16,12 @@ use axum::{
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tracing::warn;
 use xavier::coordination::secrets::SecretLease;
+use xavier::espacio::{can, SpaceAction, SpaceManager, SpaceRole};
+use xavier::workspace::SpaceScopeError;
 
 /// What a persistent `xav_` token must hold to reach a route.
 ///
@@ -42,6 +44,14 @@ const ROOT_ONLY_PREFIXES: &[&str] = &[
     "/security/tokens",
     "/v1/security/",
     "/v1/proxy/request",
+    // Clavis reads and writes the node's whole secret vault (JWT_PRIVATE_KEY,
+    // DB_MASTER_KEY, node_secret_*). It used to stop at the role gate alone,
+    // so a scoped `xav_` token holding `all` walked past the scope layer.
+    "/v1/clavis",
+    // Espacio admin plane (create, list all, get or delete any space). Space
+    // tokens only pass the narrow own-space allowlist in
+    // `space_token_may_access`, which also refuses these paths.
+    "/api/v1/espacio/admin",
 ];
 
 /// POST routes that only read, so they need `read` and not `write`.
@@ -77,15 +87,263 @@ pub(crate) fn lease_may_access(path: &str) -> bool {
     path.starts_with("/v1/proxy/")
 }
 
-/// Auth gate for Maloca endpoints (`/maloca/*`, `/v1/maloca/*`).
+/// Memory and MCP routes a space token may call, with the action each needs.
 ///
+/// Every entry was audited (WP-13m): the handler works only through the
+/// request's `WorkspaceContext` (or the explicit space-bound code in
+/// `handlers::memory`), never through the node-global `CliState` stores.
+/// Anything not listed stays refused: export, graph, decay, consolidate,
+/// prune, evict, reindex, stats, sync, `/v1/memory/*` aliases and the rest.
+fn space_memory_action(method: &Method, path: &str) -> Option<SpaceAction> {
+    let post = *method == Method::POST;
+    let get = matches!(*method, Method::GET | Method::HEAD);
+    match path {
+        "/memory/search" | "/v1/memories/search" if post => Some(SpaceAction::Read),
+        "/memory/get" if get => Some(SpaceAction::Read),
+        "/memory/add" | "/v1/memories" if post => Some(SpaceAction::Write),
+        // The MCP handler re-checks the role per tool (search/get vs add).
+        "/mcp/tools/call" if post => Some(SpaceAction::Read),
+        _ if get => {
+            let rest = path.strip_prefix("/v1/memories/")?;
+            let (id, tail) = match rest.split_once('/') {
+                Some((id, tail)) => (id, Some(tail)),
+                None => (rest, None),
+            };
+            let literal_route = matches!(id, "graph" | "prune" | "search");
+            let id_ok = !id.is_empty()
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+            match tail {
+                None | Some("outline") if id_ok && !literal_route => Some(SpaceAction::Read),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Whether a path is served from the space's own memory store (needs the
+/// per-space `WorkspaceContext` extension).
+fn space_path_needs_workspace(method: &Method, path: &str) -> bool {
+    space_memory_action(method, path).is_some()
+}
+
+/// Path allowlist for `xsp_` space tokens, plus the role check.
+///
+/// Deny by default. A space token reaches only:
+/// * `GET|HEAD /api/v1/espacio/spaces/{own}` (Read) and
+///   `DELETE /api/v1/espacio/spaces/{own}` (Admin), for ITS OWN space, and
+/// * the audited memory routes in [`space_memory_action`] (Reader: search and
+///   get; Member and up: add), which run against the token's own space store.
+///
+/// Anything else, including any other sub-path, trailing slash or other
+/// space, is refused.
+///
+/// Paths with encoded or dot segments are refused outright so no
+/// normalisation step can turn an allowed path into another route.
+pub(crate) fn space_token_may_access(
+    path: &str,
+    own_space_id: &str,
+    role: SpaceRole,
+    method: &Method,
+) -> bool {
+    if !path.starts_with('/')
+        || path.contains('%')
+        || path.contains('\\')
+        || path.contains("//")
+        || path.split('/').any(|seg| seg == "." || seg == "..")
+    {
+        return false;
+    }
+    if required_scope(method, path) == RequiredScope::RootOnly {
+        return false;
+    }
+    if let Some(action) = space_memory_action(method, path) {
+        return can(role, action);
+    }
+    let Some(id) = path.strip_prefix("/api/v1/espacio/spaces/") else {
+        return false;
+    };
+    // WP-13n: link management of the OWN space, Admin only. Exactly
+    // `{own}/links` (GET, POST) and `{own}/links/{link_id}` (DELETE).
+    if let Some((space, tail)) = id.split_once('/') {
+        if space != own_space_id {
+            return false;
+        }
+        let ok = match (method, tail.split_once('/')) {
+            (&Method::GET | &Method::POST, None) => tail == "links",
+            (&Method::DELETE, Some(("links", lid))) => {
+                !lid.is_empty()
+                    && lid
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+            }
+            _ => false,
+        };
+        return ok && can(role, SpaceAction::Admin);
+    }
+    // Exact match: no sub-path, no trailing slash, no prefix collision.
+    if id != own_space_id {
+        return false;
+    }
+    let action = match *method {
+        Method::GET | Method::HEAD => SpaceAction::Read,
+        Method::DELETE => SpaceAction::Admin,
+        _ => return false,
+    };
+    can(role, action)
+}
+
+/// Claims role for a space token. Conservative: a role that may write maps
+/// to `User`; Reader is `Readonly`. Never `Admin`.
+pub(crate) fn claims_role_for(role: SpaceRole) -> xavier::security::auth::UserRole {
+    if can(role, SpaceAction::Write) {
+        xavier::security::auth::UserRole::User
+    } else {
+        xavier::security::auth::UserRole::Readonly
+    }
+}
+
+/// Authenticate and gate a request that carries an `xsp_` token.
+///
+/// The `SpaceManager` is taken from a request extension installed by the
+/// router. When none is installed (the production router mounts it later,
+/// WP-13e) every `xsp_` token is refused with 401.
+pub(crate) async fn handle_space_token(
+    mut req: Request<Body>,
+    token: &str,
+    next: Next,
+) -> Response {
+    let unauthorized = || {
+        json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({"status":"error","message":"Unauthorized"}),
+        )
+    };
+    let forbidden = || {
+        json_response(
+            StatusCode::FORBIDDEN,
+            serde_json::json!({"status":"error","message":"Forbidden"}),
+        )
+    };
+    let Some(manager) = req.extensions().get::<Arc<SpaceManager>>().cloned() else {
+        return unauthorized();
+    };
+    let auth = match xavier::espacio::tokens::verify_with_manager(&manager, token).await {
+        Ok(a) => a,
+        Err(_) => return unauthorized(),
+    };
+    // An explicit space header must agree with the token (403, never 404).
+    if let Some(h) = req.headers().get("X-Xavier-Space") {
+        if h.as_bytes() != auth.space_id.as_bytes() {
+            return forbidden();
+        }
+    }
+    if !space_token_may_access(req.uri().path(), &auth.space_id, auth.role, req.method()) {
+        return forbidden();
+    }
+    // Memory and MCP routes run against the token's own space store. The
+    // context is resolved per request and OVERWRITES any default context
+    // layered outside this middleware; there is no fallback to the default
+    // workspace: locked -> 423, anything else -> refused.
+    if space_path_needs_workspace(req.method(), req.uri().path()) {
+        match xavier::workspace::space_workspace_context(&manager, &auth.space_id).await {
+            Ok(ctx) => {
+                req.extensions_mut().insert(ctx);
+            }
+            Err(SpaceScopeError::Locked) => {
+                return json_response(
+                    StatusCode::LOCKED,
+                    serde_json::json!({"status":"error","message":"Space is locked"}),
+                );
+            }
+            Err(SpaceScopeError::EncryptionPending) => {
+                return json_response(
+                    StatusCode::NOT_IMPLEMENTED,
+                    serde_json::json!({
+                        "status": "error",
+                        "message": "space key ring unavailable"
+                    }),
+                );
+            }
+            Err(SpaceScopeError::Unavailable) => return forbidden(),
+        }
+    }
+    let claims_role = claims_role_for(auth.role);
+    req.extensions_mut().insert(SessionInfo {
+        is_ephemeral: false,
+        api_token: None,
+        user_id: Some(auth.member_id.clone()),
+        lease: None,
+    });
+    req.extensions_mut()
+        .insert(xavier::security::auth::Claims::new(
+            auth.member_id.clone(),
+            "space_token@swal.dev".to_string(),
+            claims_role,
+            chrono::Duration::hours(1),
+        ));
+    req.extensions_mut().insert(auth);
+    next.run(req).await
+}
+
+/// Maloca read paths that carry personal user content and therefore need a
+/// credential even though the rest of Maloca's GET surface is public.
+/// Aggregate, content-free reads (`challenges/stats`, `challenges/training-gate`)
+/// stay public. Matching is on whole path segments.
+///
+/// The legacy `/maloca/*` ops tree is covered too: support tickets, review
+/// requests, inbox, reward receipts, proposals, votes, decisions,
+/// manager actions and data-node consent carry user/node-attributable content.
+/// Status-style reads (`pack`, `backlog`, `mesh`, `nodes`, `params`,
+/// `feed/status`) stay public. Timeline/commits/beliefs/ws routes are already
+/// behind `auth_middleware` in the main router.
+const MALOCA_PROTECTED_READ_PREFIXES: &[&str] = &[
+    "/v1/maloca/introspection",
+    "/v1/maloca/challenges/list",
+    "/maloca/support",
+    "/v1/maloca/support",
+    "/maloca/reviews",
+    "/maloca/inbox",
+    "/maloca/rewards",
+    "/maloca/proposals",
+    "/maloca/votes",
+    "/maloca/decisions",
+    "/maloca/manager-actions",
+    "/maloca/consent",
+];
+
+pub fn maloca_read_requires_auth(path: &str) -> bool {
+    MALOCA_PROTECTED_READ_PREFIXES.iter().any(|p| {
+        path.strip_prefix(p)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
+}
+
+/// Auth gate for Maloca's mutating endpoints (`/maloca/*`, `/v1/maloca/*`).
+///
+/// Maloca is intentionally public for reads — GET/HEAD requests pass straight
+/// through so the panel and `@swal/maloca-client` dogfood surface keep
+/// working without a token, matching the router's existing design. Every
+/// other verb (POST/PUT/PATCH/DELETE) is routed through the same
+/// [`auth_middleware`] the rest of the API uses, so writes require the root
+/// or API token like everything else. OPTIONS also passes through unchanged
+/// here; CORS preflight is handled by the `CorsLayer` wrapping this
+/// middleware, which short-circuits OPTIONS before it ever reaches us.
+///
+/// Exception: reads that return personal introspection or challenge content
+/// (session turns, insights, votes, challenge text) are NOT public; see
+/// [`maloca_read_requires_auth`]. Those go through [`auth_middleware`] too.
 /// Security policy (fix/maloca-support-auth):
 /// - `/maloca/support` and `/v1/maloca/support` (incidencias internas) require
 ///   the same token for ALL verbs — including GET/HEAD — because ticket
 ///   contents are internal operational data and must not be readable without
-///   authentication. Any request whose path starts with `/maloca/support` or
-///   `/v1/maloca/support` is forwarded to `auth_middleware` regardless of method.
-/// - All other `/maloca/*` GET/HEAD requests remain public (panel dogfood).
+///   authentication. Both spellings are enforced: the `/v1/maloca/*` tree is
+///   mounted by `v1_maloca_router` and is reachable alongside `/maloca/*`.
+/// - Every other read listed in [`MALOCA_PROTECTED_READ_PREFIXES`] is gated as
+///   well (introspection, reviews, inbox, rewards, proposals, votes, decisions,
+///   manager-actions, consent).
 /// - Every mutating verb (POST/PUT/PATCH/DELETE) on any `/maloca/*` path
 ///   always requires auth via [`auth_middleware`].
 /// - OPTIONS passes through unchanged; CORS preflight is handled by the
@@ -95,22 +353,19 @@ pub async fn maloca_mutation_auth_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Response {
-    // /maloca/support and /v1/maloca/support (incidencias internas) are
-    // always gated — reads of ticket data are sensitive internal data.
-    let path = req.uri().path();
-    let is_support_path = path == "/maloca/support"
-        || path.starts_with("/maloca/support/")
-        || path == "/v1/maloca/support"
-        || path.starts_with("/v1/maloca/support/");
-
-    // OPTIONS (CORS preflight) never carries ticket data and must not be
-    // turned into a 401 by this gate, including on support paths.
-    if is_support_path && *req.method() != Method::OPTIONS {
-        return auth_middleware(state, req, next).await;
-    }
-
-    // For all other /maloca/* paths: only mutations need auth.
-    if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
+    // Reads stay public EXCEPT two gated families, each spelled with and
+    // without the `/v1` prefix because `v1_maloca_router` mounts
+    // `/v1/maloca/*` right next to `/maloca/*`:
+    //   1. support tickets (incidencias internas) — internal operational data;
+    //   2. every prefix in MALOCA_PROTECTED_READ_PREFIXES (introspection and
+    //      other user/node-attributable content).
+    // Everything else that is not a read (POST/PUT/PATCH/DELETE) always needs
+    // the token too, so it falls through to `auth_middleware` below.
+    // OPTIONS is CORS preflight: it carries no content and must never be
+    // turned into a 401 by this gate, on any path.
+    let is_read = matches!(*req.method(), Method::GET | Method::HEAD);
+    if *req.method() == Method::OPTIONS || (is_read && !maloca_read_requires_auth(req.uri().path()))
+    {
         return next.run(req).await;
     }
     auth_middleware(state, req, next).await
@@ -171,6 +426,10 @@ pub async fn auth_middleware(
     if is_match {
         // Root token bypasses RBAC for now as "Super Admin"
         let mut req = req;
+        // Marker only this branch inserts: root-only surfaces (espacio admin)
+        // require it rather than trusting a claimed role.
+        req.extensions_mut()
+            .insert(xavier::adapters::inbound::http::routes::RootCredential);
         req.extensions_mut().insert(SessionInfo {
             is_ephemeral: false,
             api_token: None,
@@ -185,6 +444,13 @@ pub async fn auth_middleware(
                 chrono::Duration::hours(1),
             ));
         return next.run(req).await;
+    }
+
+    // 1b. Space-scoped tokens (WP-13l). Terminal: a token with this prefix is
+    // never retried against the other schemes.
+    if provided_token_str.starts_with("xsp_") {
+        let token = provided_token_str.to_string();
+        return handle_space_token(req, &token, next).await;
     }
 
     // 2. Check Lease Token (F3 - Proxy Authentication)
@@ -220,6 +486,12 @@ pub async fn auth_middleware(
 
     // 3. Check Ephemeral Session (Zero-Trust Frontend)
     if state.session_manager.validate_session(provided_token_str) {
+        if required_scope(req.method(), req.uri().path()) == RequiredScope::RootOnly {
+            return json_response(
+                StatusCode::FORBIDDEN,
+                serde_json::json!({"status":"error","message":"Insufficient scopes"}),
+            );
+        }
         let mut req = req;
         req.extensions_mut().insert(SessionInfo {
             is_ephemeral: true,
@@ -275,6 +547,12 @@ pub async fn auth_middleware(
         if let Ok(claims) =
             xavier::security::auth::validate_jwt(provided_token_str, secret.as_bytes())
         {
+            if required_scope(req.method(), req.uri().path()) == RequiredScope::RootOnly {
+                return json_response(
+                    StatusCode::FORBIDDEN,
+                    serde_json::json!({"status":"error","message":"Insufficient scopes"}),
+                );
+            }
             let mut req = req;
             req.extensions_mut().insert(SessionInfo {
                 is_ephemeral: false,
@@ -639,6 +917,799 @@ mod scope_policy_tests {
             "/security/tokens",
         ] {
             assert!(!lease_may_access(path), "a lease must not reach {path}");
+        }
+    }
+
+    /// D2: `/v1/clavis` reads and writes the node's whole secret vault
+    /// (JWT_PRIVATE_KEY, DB_MASTER_KEY, node_secret_*), yet it was absent
+    /// from `ROOT_ONLY_PREFIXES`. A scoped `xav_` token carrying `all` — the
+    /// scope the old `_ => true` arm granted everywhere — therefore cleared
+    /// the scope layer and only the role gate stood in front of the vault,
+    /// where `/secrets/*` has to agree on three layers.
+    #[test]
+    fn clavis_es_root_only_para_todos_los_scopes() {
+        for scope_list in [
+            vec!["all"],
+            vec!["read", "write", "all"],
+            vec!["read", "write", "admin", "secrets", "proxy"],
+        ] {
+            for path in ["/v1/clavis/keys/api_key_openai", "/v1/clavis/proxy"] {
+                let required = required_scope(&Method::GET, path);
+                assert_eq!(
+                    required,
+                    RequiredScope::RootOnly,
+                    "{path} must be root-only"
+                );
+                // POST is the verb the proxy route and the PUT on keys use.
+                assert_eq!(required_scope(&Method::POST, path), RequiredScope::RootOnly);
+                assert_eq!(required_scope(&Method::PUT, path), RequiredScope::RootOnly);
+                assert!(
+                    !token_satisfies(&scopes(&scope_list), &required),
+                    "{scope_list:?} must not unlock {path}"
+                );
+            }
+        }
+    }
+
+    /// `ROOT_ONLY_PREFIXES` is matched with `starts_with`, and this entry
+    /// carries no trailing `/` on purpose: it also covers the bare
+    /// `/v1/clavis`, so a route mounted at the root of the Clavis namespace is
+    /// root-only without anyone remembering to list it. The cost is that
+    /// `/v1/clavisomething` is denied too — no such route exists, and denying
+    /// it is the direction that fails safe. Pinned so that switching to
+    /// `"/v1/clavis/"` to narrow the match cannot happen by accident: it would
+    /// re-open `/v1/clavis` itself.
+    #[test]
+    fn el_prefijo_clavis_cubre_todo_el_namespace_incluso_el_bare() {
+        for path in [
+            "/v1/clavis",
+            "/v1/clavis/proxy",
+            "/v1/clavis/keys/api_key_openai",
+            "/v1/clavis/keys/JWT_PRIVATE_KEY",
+        ] {
+            assert_eq!(
+                required_scope(&Method::POST, path),
+                RequiredScope::RootOnly,
+                "{path} is inside the Clavis namespace and must stay root-only"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod space_token_tests {
+    use super::*;
+    use axum::{middleware::from_fn_with_state, routing::any, Extension, Router};
+    use tower::ServiceExt;
+    use xavier::espacio::tokens::create_space_with_owner_token;
+    use xavier::espacio::SpaceContext;
+
+    const OWN: &str = "esp_a";
+    const ROOT: &str = "test-token";
+    const OWN_PATH: &str = "/api/v1/espacio/spaces/esp_a";
+
+    /// Minimal `CliState` for driving the real `auth_middleware`.
+    async fn test_state() -> (CliState, tempfile::TempDir) {
+        use crate::cli::state::CodeGraphState;
+        use crate::codebase::connection_manager::ConnectionManager;
+        use crate::coordination::KeyLendingEngine;
+        use crate::secrets::audit::QmdAuditLogger;
+        use parking_lot::Mutex;
+        use tokio::sync::RwLock as AsyncRwLock;
+        use xavier::agents::provider::router::{ProviderKind, ProviderRouter};
+        use xavier::agents::rate_limit::RateLimitManager;
+        use xavier::app::proxy_use_case::ProxyUseCase;
+        use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
+        use xavier::app::security_service::SecurityService;
+        use xavier::codebase::conversations_db::ConversationsDb;
+        use xavier::coordination::{SimpleAgentRegistry, XavierEventBus};
+        use xavier::embedding::NoopEmbedder;
+        use xavier::memory::agent_indexer::AgentIndexer;
+        use xavier::memory::file_indexer::{FileIndexer, FileIndexerConfig};
+        use xavier::memory::openclaw_indexer::OpenClawAgentIndexer;
+        use xavier::memory::qmd_memory::QmdMemory;
+        use xavier::memory::sqlite_vec_store::{
+            VecSqliteMemoryStore, VecSqliteStoreConfig, DEFAULT_EMBEDDING_DIMENSIONS,
+        };
+        use xavier::observability::UsageCounters;
+        use xavier::security::sessions::SessionManager;
+        use xavier::tasks::store::{InMemoryTaskStore, TaskService};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let project_id = format!("test_space_token_auth_{}", uuid::Uuid::new_v4());
+        ConnectionManager::global()
+            .connect_with_path(&project_id, dir.path().join("metrics.db"))
+            .expect("isolated metrics db");
+        let audit = Box::new(QmdAuditLogger::for_project(&project_id));
+        audit.init_schema_async().await.expect("audit schema");
+        let engine =
+            Arc::new(KeyLendingEngine::new(audit, None).with_leases_project(project_id.clone()));
+
+        let docs = Arc::new(AsyncRwLock::new(Vec::new()));
+        let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
+        let memory_port = Arc::new(QmdMemoryAdapter::new(Arc::clone(&qmd_memory)));
+        let store = Arc::new(
+            VecSqliteMemoryStore::new(VecSqliteStoreConfig {
+                path: dir.path().join("vec_store.db"),
+                embedding_dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
+            })
+            .await
+            .expect("vec store"),
+        );
+        let cg_db = Arc::new(::code_graph::db::CodeGraphDB::in_memory().expect("code graph db"));
+        let cg_state = Arc::new(AsyncRwLock::new(CodeGraphState {
+            db: cg_db.clone(),
+            indexer: Arc::new(::code_graph::indexer::Indexer::new(cg_db.clone())),
+            query: Arc::new(::code_graph::query::QueryEngine::new(cg_db)),
+        }));
+        let state = CliState {
+            memory: memory_port,
+            qmd_memory,
+            store,
+            workspace_id: "test-ws".to_string(),
+            workspace_dir: dir.path().to_path_buf(),
+            state_dir: dir.path().to_path_buf(),
+            auth_db: None,
+            code_graph: cg_state,
+            security: Arc::new(SecurityService::new()),
+            security_scan: Arc::new(SecurityService::new()),
+            _time_store: None,
+            agent_registry: SimpleAgentRegistry::new(None),
+            panel_store: Arc::new(
+                ConversationsDb::open_in_memory("test-project")
+                    .await
+                    .expect("panel store"),
+            ),
+            secrets_engine: engine,
+            event_bus: XavierEventBus::new(10),
+            tasks: Arc::new(TaskService::new(Arc::new(InMemoryTaskStore::new()))),
+            rate_manager: Arc::new(RateLimitManager::new()),
+            prompt_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            http_client: reqwest::Client::new(),
+            proxy_use_case: Arc::new(ProxyUseCase::new(
+                Arc::new(RateLimitManager::new()),
+                Arc::new(Mutex::new(std::collections::HashMap::new())),
+            )),
+            usage_counters: Arc::new(UsageCounters::new()),
+            session_manager: Arc::new(SessionManager::new(60)),
+            provider_router: Arc::new(AsyncRwLock::new(ProviderRouter::new(ProviderKind::OpenAI))),
+            embedder: Arc::new(NoopEmbedder),
+            agent_indexer: Arc::new(AgentIndexer::new(FileIndexer::new(
+                FileIndexerConfig::default(),
+                None,
+            ))),
+            auth_store: None,
+            openclaw_indexer: Arc::new(OpenClawAgentIndexer::new(Arc::new(NoopEmbedder))),
+            multi_db: xavier::storage::multi_db::MultiDbManager::new(),
+            system_scan_cache: Arc::new(AsyncRwLock::new(None)),
+            maloca: xavier::maloca::MalocaStore::open(&dir.path().join("maloca")),
+        };
+        (state, dir)
+    }
+
+    async fn echo(req: Request<Body>) -> Response {
+        let ctx = req.extensions().get::<SpaceContext>().cloned();
+        let claims = req
+            .extensions()
+            .get::<xavier::security::auth::Claims>()
+            .map(|c| format!("{:?}", c.role));
+        json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "space": ctx.as_ref().map(|c| c.space_id.clone()),
+                "member": ctx.as_ref().map(|c| c.member_id.clone()),
+                "role": ctx.as_ref().map(|c| c.role.as_str()),
+                "claims_role": claims,
+            }),
+        )
+    }
+
+    /// How the token is presented.
+    #[derive(Clone, Copy)]
+    enum Hdr {
+        Bearer,
+        XToken,
+    }
+
+    struct Fixture {
+        manager: Arc<SpaceManager>,
+        app: Router,
+        bare: Router,
+        admin_a: String,
+        admin_b: String,
+        _tmp: tempfile::TempDir,
+        _tmp_state: tempfile::TempDir,
+    }
+
+    async fn fixture() -> Fixture {
+        std::env::set_var("XAVIER_TOKEN", ROOT);
+        let tmp = tempfile::tempdir().unwrap();
+        let manager = Arc::new(SpaceManager::open(tmp.path()));
+        let mut raws = Vec::new();
+        for (id, owner) in [(OWN, "alice"), ("esp_b", "bob")] {
+            let (_, raw) = create_space_with_owner_token(
+                &manager,
+                id.into(),
+                id.into(),
+                "".into(),
+                owner.into(),
+                false,
+            )
+            .await
+            .unwrap();
+            raws.push(raw);
+        }
+        let (state, tmp_state) = test_state().await;
+        // The REAL middleware, with the same layering the router uses.
+        let build = |with_manager: bool| {
+            let r = Router::new()
+                .fallback(any(echo))
+                .layer(from_fn_with_state(state.clone(), auth_middleware));
+            if with_manager {
+                r.layer(Extension(manager.clone()))
+            } else {
+                r
+            }
+        };
+        let app = build(true);
+        let bare = build(false);
+        let admin_b = raws.pop().unwrap();
+        let admin_a = raws.pop().unwrap();
+        Fixture {
+            manager,
+            app,
+            bare,
+            admin_a,
+            admin_b,
+            _tmp: tmp,
+            _tmp_state: tmp_state,
+        }
+    }
+
+    async fn send(
+        app: &Router,
+        method: &str,
+        path: &str,
+        token: &str,
+        hdr: Hdr,
+        extra: Option<(&str, &str)>,
+    ) -> (StatusCode, serde_json::Value) {
+        let mut b = Request::builder().method(method).uri(path);
+        if !token.is_empty() {
+            b = match hdr {
+                Hdr::Bearer => b.header("Authorization", format!("Bearer {token}")),
+                Hdr::XToken => b.header("X-Xavier-Token", token),
+            };
+        }
+        if let Some((k, v)) = extra {
+            b = b.header(k, v);
+        }
+        let resp = app
+            .clone()
+            .oneshot(b.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or_default())
+    }
+
+    async fn call(app: &Router, method: &str, path: &str, token: &str) -> StatusCode {
+        send(app, method, path, token, Hdr::Bearer, None).await.0
+    }
+
+    fn issue(
+        f: &Fixture,
+        space: &str,
+        member: &str,
+        role: SpaceRole,
+    ) -> xavier::espacio::tokens::IssuedToken {
+        let s = f.manager.stores().get(space).unwrap();
+        s.add_member(member, role).unwrap();
+        s.issue_token(space, member, role, None).unwrap()
+    }
+
+    #[tokio::test]
+    async fn real_middleware_accepts_both_header_forms_and_keeps_branch_order() {
+        let f = fixture().await;
+        for hdr in [Hdr::Bearer, Hdr::XToken] {
+            let (st, body) = send(&f.app, "GET", OWN_PATH, &f.admin_a, hdr, None).await;
+            assert_eq!(st, StatusCode::OK);
+            assert_eq!(body["space"], "esp_a");
+            assert_eq!(body["member"], "alice");
+            assert_eq!(body["role"], "admin");
+            // The root token still wins first and carries no space context.
+            let (st, body) = send(&f.app, "GET", "/anything", ROOT, hdr, None).await;
+            assert_eq!(st, StatusCode::OK);
+            assert!(body["space"].is_null());
+            assert_eq!(body["claims_role"], "Admin");
+            // A forged xsp_ token is terminal: 401, not retried elsewhere.
+            let forged = format!("xsp_esp_a_{}", "A".repeat(43));
+            let (st, _) = send(&f.app, "GET", OWN_PATH, &forged, hdr, None).await;
+            assert_eq!(st, StatusCode::UNAUTHORIZED);
+            // No token / junk token.
+            assert_eq!(
+                send(&f.app, "GET", OWN_PATH, "", hdr, None).await.0,
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                send(&f.app, "GET", OWN_PATH, "junk", hdr, None).await.0,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        // /health stays open and never needs a token.
+        assert_eq!(call(&f.app, "GET", "/health", "").await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn space_token_is_403_on_workspace_global_memory_and_mcp_routes() {
+        // Routes NOT audited as space-scoped (WP-13m) stay refused for every role.
+        let f = fixture().await;
+        let tokens = [
+            f.admin_a.clone(),
+            issue(&f, OWN, "mod", SpaceRole::Moderator).raw,
+            issue(&f, OWN, "mem", SpaceRole::Member).raw,
+            issue(&f, OWN, "rdr", SpaceRole::Reader).raw,
+        ];
+        for tok in &tokens {
+            for hdr in [Hdr::Bearer, Hdr::XToken] {
+                for (m, p) in [
+                    ("GET", "/memory/search"),
+                    ("GET", "/memory/export"),
+                    ("GET", "/memory/export-markdown"),
+                    ("POST", "/memory/decay"),
+                    ("POST", "/memory/consolidate"),
+                    ("POST", "/memory/prune"),
+                    ("POST", "/memory/update"),
+                    ("POST", "/memory/delete"),
+                    ("POST", "/memory/reindex"),
+                    ("GET", "/memory/stats"),
+                    ("GET", "/memory/graph/view"),
+                    ("GET", "/v1/memories"),
+                    ("GET", "/v1/memories/graph"),
+                    ("POST", "/v1/memories/prune"),
+                    ("GET", "/v1/graph/export"),
+                    ("POST", "/v1/memory/search"),
+                    ("DELETE", "/v1/memories/x"),
+                    ("GET", "/mcp/tools"),
+                    ("POST", "/mcp"),
+                    ("GET", "/mcp"),
+                ] {
+                    assert_eq!(
+                        send(&f.app, m, p, tok, hdr, None).await.0,
+                        StatusCode::FORBIDDEN,
+                        "{m} {p}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn claims_never_exceed_user_and_reader_is_readonly() {
+        let f = fixture().await;
+        let cases = [
+            (f.admin_a.clone(), "User"),
+            (issue(&f, OWN, "mod", SpaceRole::Moderator).raw, "User"),
+            (issue(&f, OWN, "mem", SpaceRole::Member).raw, "User"),
+            (issue(&f, OWN, "rdr", SpaceRole::Reader).raw, "Readonly"),
+        ];
+        for (tok, want) in cases {
+            let (st, body) = send(&f.app, "GET", OWN_PATH, &tok, Hdr::Bearer, None).await;
+            assert_eq!(st, StatusCode::OK);
+            assert_eq!(body["claims_role"], want);
+            assert_ne!(body["claims_role"], "Admin");
+        }
+        assert_eq!(
+            claims_role_for(SpaceRole::Reader),
+            xavier::security::auth::UserRole::Readonly
+        );
+        for r in [SpaceRole::Moderator, SpaceRole::Member] {
+            assert_eq!(claims_role_for(r), xavier::security::auth::UserRole::User);
+        }
+        assert_eq!(
+            claims_role_for(SpaceRole::Admin),
+            xavier::security::auth::UserRole::User
+        );
+    }
+
+    #[tokio::test]
+    async fn token_of_a_is_403_on_b_and_unknown_sub_paths_are_403() {
+        let f = fixture().await;
+        for (m, p) in [
+            ("GET", "/api/v1/espacio/spaces/esp_b"),
+            ("DELETE", "/api/v1/espacio/spaces/esp_b"),
+            ("GET", "/api/v1/espacio/spaces/esp_nonexistent"),
+            ("GET", "/api/v1/espacio/spaces"),
+            ("POST", "/api/v1/espacio/spaces"),
+            ("GET", "/api/v1/espacio/spaces/"),
+            ("GET", "/api/v1/espacio/admin/spaces"),
+            ("GET", "/api/v1/espacio/spaces/esp_a/../esp_b"),
+            ("GET", "/api/v1/espacio/spaces/esp_a/%2e%2e/esp_b"),
+            ("GET", "/api/v1/espacio/spaces/esp_ab"),
+            // Unknown sub-paths under the OWN space are denied too.
+            ("GET", "/api/v1/espacio/spaces/esp_a/"),
+            ("GET", "/api/v1/espacio/spaces/esp_a/members"),
+            ("GET", "/api/v1/espacio/spaces/esp_a/tokens"),
+            ("GET", "/api/v1/espacio/spaces/esp_a/keys"),
+            ("POST", "/api/v1/espacio/spaces/esp_a/messages"),
+            ("POST", "/api/v1/espacio/spaces/esp_a/invites"),
+            ("GET", "/api/v1/espacio/spaces/esp_a/isolation/esp_b"),
+            ("GET", "/api/v1/espacio/spaces/esp_a/whatever/deep/path"),
+            // Verbs without a route.
+            ("POST", "/api/v1/espacio/spaces/esp_a"),
+            ("PUT", "/api/v1/espacio/spaces/esp_a"),
+            ("PATCH", "/api/v1/espacio/spaces/esp_a"),
+        ] {
+            assert_eq!(
+                call(&f.app, m, p, &f.admin_a).await,
+                StatusCode::FORBIDDEN,
+                "{m} {p}"
+            );
+        }
+        assert_eq!(
+            call(&f.app, "GET", OWN_PATH, &f.admin_b).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            call(&f.app, "GET", OWN_PATH, &f.admin_a).await,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn space_header_mismatch_is_403() {
+        let f = fixture().await;
+        let (st, _) = send(
+            &f.app,
+            "GET",
+            OWN_PATH,
+            &f.admin_a,
+            Hdr::Bearer,
+            Some(("X-Xavier-Space", "esp_b")),
+        )
+        .await;
+        assert_eq!(st, StatusCode::FORBIDDEN);
+        let (st, _) = send(
+            &f.app,
+            "GET",
+            OWN_PATH,
+            &f.admin_a,
+            Hdr::Bearer,
+            Some(("X-Xavier-Space", "esp_a")),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn sensitive_and_admin_routes_are_403_even_for_space_admin() {
+        let f = fixture().await;
+        let mut toks = vec![f.admin_a.clone()];
+        for role in [SpaceRole::Moderator, SpaceRole::Member, SpaceRole::Reader] {
+            toks.push(issue(&f, OWN, &format!("u_{}", role.as_str()), role).raw);
+        }
+        for tok in toks {
+            for (m, p) in [
+                ("GET", "/v1/clavis/keys/api_key_openai"),
+                ("POST", "/v1/clavis/proxy"),
+                ("GET", "/v1/clavis"),
+                ("POST", "/secrets/exec"),
+                ("GET", "/secrets/leases"),
+                ("POST", "/v1/training/start"),
+                ("GET", "/v1/training/jobs"),
+                ("GET", "/v1/security/approve"),
+                ("POST", "/security/tokens"),
+                ("POST", "/v1/proxy/request"),
+                ("GET", "/health-ish"),
+                ("GET", "/memorybank"),
+                ("GET", "/v1/memoriesx"),
+            ] {
+                assert_eq!(call(&f.app, m, p, &tok).await, StatusCode::FORBIDDEN, "{p}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn bad_tokens_are_401() {
+        let f = fixture().await;
+        let good = "A".repeat(43);
+        let secret = f.admin_a.strip_prefix("xsp_esp_a_").unwrap().to_string();
+        let s = f.manager.stores().get(OWN).unwrap();
+        let revoked = issue(&f, OWN, "rev", SpaceRole::Member);
+        s.revoke_token(&revoked.token_id).unwrap();
+        let expired = s
+            .issue_token(
+                OWN,
+                "rev",
+                SpaceRole::Member,
+                Some(chrono::Utc::now() - chrono::Duration::seconds(5)),
+            )
+            .unwrap();
+        let bad: Vec<(&str, String)> = vec![
+            ("revoked", revoked.raw),
+            ("expired", expired.raw),
+            ("forged", format!("xsp_esp_a_{good}")),
+            ("wrong-space-prefix", format!("xsp_esp_b_{secret}")),
+            ("unknown-space", format!("xsp_nope_{secret}")),
+            ("no-secret", "xsp_esp_a_".into()),
+            ("short", format!("xsp_esp_a_{}", "A".repeat(42))),
+            ("traversal", format!("xsp_../x_{good}")),
+            ("prefix-only", "xsp_".into()),
+        ];
+        for (name, tok) in bad {
+            assert_eq!(
+                call(&f.app, "GET", OWN_PATH, &tok).await,
+                StatusCode::UNAUTHORIZED,
+                "{name}"
+            );
+        }
+        // A removed member's token is dead too.
+        let gone = issue(&f, OWN, "gone", SpaceRole::Member);
+        s.remove_member("gone").unwrap();
+        assert_eq!(
+            call(&f.app, "GET", OWN_PATH, &gone.raw).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn without_a_space_manager_every_xsp_token_is_401() {
+        let f = fixture().await;
+        for hdr in [Hdr::Bearer, Hdr::XToken] {
+            assert_eq!(
+                send(&f.bare, "GET", OWN_PATH, &f.admin_a, hdr, None)
+                    .await
+                    .0,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        // Root still works on the bare router.
+        assert_eq!(call(&f.bare, "GET", "/x", ROOT).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn deleted_space_invalidates_its_tokens() {
+        let f = fixture().await;
+        f.manager.delete(OWN).await.unwrap();
+        assert_eq!(
+            call(&f.app, "GET", OWN_PATH, &f.admin_a).await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn roles_gate_read_and_delete_on_the_own_space() {
+        let f = fixture().await;
+        let reader = issue(&f, OWN, "rita", SpaceRole::Reader);
+        let member = issue(&f, OWN, "mia", SpaceRole::Member);
+        let moderator = issue(&f, OWN, "moe", SpaceRole::Moderator);
+        for t in [&reader.raw, &member.raw, &moderator.raw, &f.admin_a] {
+            assert_eq!(call(&f.app, "GET", OWN_PATH, t).await, StatusCode::OK);
+            assert_eq!(call(&f.app, "HEAD", OWN_PATH, t).await, StatusCode::OK);
+        }
+        for t in [&reader.raw, &member.raw, &moderator.raw] {
+            assert_eq!(
+                call(&f.app, "DELETE", OWN_PATH, t).await,
+                StatusCode::FORBIDDEN
+            );
+        }
+        assert_eq!(
+            call(&f.app, "DELETE", OWN_PATH, &f.admin_a).await,
+            StatusCode::OK
+        );
+    }
+
+    #[test]
+    fn allowlist_unit() {
+        let g = Method::GET;
+        assert!(space_token_may_access(OWN_PATH, OWN, SpaceRole::Reader, &g));
+        // Only the audited memory routes are open, with the role they need.
+        let p = Method::POST;
+        for (m, path, role, want) in [
+            (&p, "/memory/search", SpaceRole::Reader, true),
+            (&g, "/memory/get", SpaceRole::Reader, true),
+            (&p, "/v1/memories/search", SpaceRole::Reader, true),
+            (&g, "/v1/memories/abc-1.x", SpaceRole::Reader, true),
+            (&g, "/v1/memories/abc/outline", SpaceRole::Reader, true),
+            (&p, "/memory/add", SpaceRole::Reader, false),
+            (&p, "/memory/add", SpaceRole::Member, true),
+            (&p, "/v1/memories", SpaceRole::Reader, false),
+            (&p, "/v1/memories", SpaceRole::Moderator, true),
+            (&g, "/v1/memories/graph", SpaceRole::Admin, false),
+            (&g, "/v1/memories/prune", SpaceRole::Admin, false),
+            (&g, "/v1/memories/a/b", SpaceRole::Admin, false),
+            (&g, "/memory/export", SpaceRole::Admin, false),
+            (&p, "/memory/decay", SpaceRole::Admin, false),
+            (&p, "/memory/prune", SpaceRole::Admin, false),
+            (&g, "/memory/graph/view", SpaceRole::Admin, false),
+            (&g, "/v1/graph/export", SpaceRole::Admin, false),
+            (&g, "/mcp", SpaceRole::Admin, false),
+            (&p, "/mcp", SpaceRole::Admin, false),
+            (&p, "/mcp/tools/call", SpaceRole::Reader, true),
+        ] {
+            assert_eq!(
+                space_token_may_access(path, OWN, role, m),
+                want,
+                "{m} {path} {role:?}"
+            );
+        }
+        assert!(!space_token_may_access(
+            "/v1/clavis",
+            OWN,
+            SpaceRole::Admin,
+            &g
+        ));
+        assert!(!space_token_may_access(
+            "memory/search",
+            OWN,
+            SpaceRole::Admin,
+            &g
+        ));
+        assert!(!space_token_may_access(
+            "/api/v1/espacio/spaces/esp_a/members",
+            OWN,
+            SpaceRole::Admin,
+            &g
+        ));
+        assert!(!space_token_may_access(
+            OWN_PATH,
+            OWN,
+            SpaceRole::Admin,
+            &Method::POST
+        ));
+    }
+
+    // ---- MALOCAPRIV: personal introspection/challenge reads need a credential ----
+
+    const PROTECTED_READS: &[&str] = &[
+        "/v1/maloca/introspection/pending-votes",
+        "/v1/maloca/introspection/available",
+        "/v1/maloca/introspection/some-session-id",
+        "/v1/maloca/challenges/list",
+    ];
+    const PUBLIC_READS: &[&str] = &[
+        "/v1/maloca/challenges/stats",
+        "/v1/maloca/challenges/training-gate",
+        "/v1/maloca/models/health",
+        "/v1/maloca/registry",
+    ];
+
+    async fn maloca_app() -> (Router, tempfile::TempDir) {
+        std::env::set_var("XAVIER_TOKEN", ROOT);
+        let (state, tmp) = test_state().await;
+        let app = xavier::server::maloca::v1_maloca_router(None, None)
+            .layer(from_fn_with_state(state, maloca_mutation_auth_middleware));
+        (app, tmp)
+    }
+
+    #[test]
+    fn maloca_read_classification_is_segment_exact() {
+        assert!(maloca_read_requires_auth("/v1/maloca/introspection"));
+        assert!(maloca_read_requires_auth("/v1/maloca/introspection/x"));
+        assert!(maloca_read_requires_auth("/v1/maloca/challenges/list"));
+        assert!(!maloca_read_requires_auth("/v1/maloca/introspectionx"));
+        assert!(!maloca_read_requires_auth("/v1/maloca/challenges/stats"));
+        assert!(!maloca_read_requires_auth("/v1/maloca/registry"));
+        assert!(maloca_read_requires_auth("/maloca/consent/node-1"));
+        assert!(maloca_read_requires_auth("/maloca/votes"));
+        assert!(!maloca_read_requires_auth("/maloca/votesx"));
+        assert!(!maloca_read_requires_auth("/maloca/mesh"));
+    }
+
+    const LEGACY_PROTECTED_READS: &[&str] = &[
+        "/maloca/support",
+        "/maloca/reviews",
+        "/maloca/inbox",
+        "/maloca/rewards",
+        "/maloca/proposals",
+        "/maloca/votes",
+        "/maloca/decisions",
+        "/maloca/manager-actions",
+        "/maloca/consent",
+    ];
+    const LEGACY_PUBLIC_READS: &[&str] = &[
+        "/maloca/pack",
+        "/maloca/backlog",
+        "/maloca/mesh",
+        "/maloca/nodes",
+        "/maloca/params",
+        "/maloca/feed/status",
+    ];
+
+    #[tokio::test]
+    async fn maloca_legacy_personal_reads_require_auth() {
+        std::env::set_var("XAVIER_TOKEN", ROOT);
+        let (state, _tmp) = test_state().await;
+        let app = xavier::maloca::nested_router::<()>(state.maloca.clone())
+            .layer(from_fn_with_state(state, maloca_mutation_auth_middleware));
+        for path in LEGACY_PROTECTED_READS {
+            assert_eq!(
+                call(&app, "GET", path, "").await,
+                StatusCode::UNAUTHORIZED,
+                "GET {path} must be 401 without a token"
+            );
+            assert_eq!(
+                call(&app, "GET", path, "wrong-token").await,
+                StatusCode::UNAUTHORIZED,
+                "{path} with a bad token"
+            );
+            assert_eq!(
+                call(&app, "GET", path, ROOT).await,
+                StatusCode::OK,
+                "{path} with root token"
+            );
+        }
+        assert_eq!(
+            call(&app, "GET", "/maloca/consent/node-1", "").await,
+            StatusCode::UNAUTHORIZED
+        );
+        for path in LEGACY_PUBLIC_READS {
+            assert_eq!(
+                call(&app, "GET", path, "").await,
+                StatusCode::OK,
+                "{path} must stay public"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn maloca_personal_reads_require_auth_and_public_reads_do_not() {
+        let (app, _tmp) = maloca_app().await;
+        for path in PROTECTED_READS {
+            for m in ["GET", "HEAD"] {
+                assert_eq!(
+                    call(&app, m, path, "").await,
+                    StatusCode::UNAUTHORIZED,
+                    "{m} {path} must be 401 without a token"
+                );
+            }
+            assert_eq!(
+                call(&app, "GET", path, "wrong-token").await,
+                StatusCode::UNAUTHORIZED,
+                "{path} with a bad token"
+            );
+            let (st, _) = send(&app, "GET", path, ROOT, Hdr::XToken, None).await;
+            assert!(
+                st == StatusCode::OK || st == StatusCode::NOT_FOUND,
+                "{path} with root token gave {st}"
+            );
+            // 404 only for an unknown session id, never for the list-style reads.
+            if !path.ends_with("some-session-id") {
+                assert_eq!(st, StatusCode::OK, "{path} with root token");
+            }
+            assert_eq!(call(&app, "GET", path, ROOT).await, st);
+        }
+        for path in PUBLIC_READS {
+            assert_eq!(
+                call(&app, "GET", path, "").await,
+                StatusCode::OK,
+                "{path} must stay public"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn maloca_personal_reads_accept_readonly_jwt() {
+        let (app, _tmp) = maloca_app().await;
+        let secret = "maloca-priv-test-secret-0123456789";
+        std::env::set_var("XAVIER_JWT_SECRET", secret);
+        let user = xavier::security::auth::User::new(
+            "ro@example.invalid".into(),
+            "ro".into(),
+            xavier::security::auth::UserRole::Readonly,
+        );
+        let jwt = xavier::security::auth::generate_jwt(&user, secret.as_bytes()).unwrap();
+        let mut results = Vec::new();
+        for path in PROTECTED_READS {
+            results.push((path, call(&app, "GET", path, &jwt).await));
+        }
+        std::env::remove_var("XAVIER_JWT_SECRET");
+        for (path, st) in results {
+            assert_ne!(st, StatusCode::UNAUTHORIZED, "{path} with readonly JWT");
+            assert_ne!(st, StatusCode::FORBIDDEN, "{path} with readonly JWT");
         }
     }
 }

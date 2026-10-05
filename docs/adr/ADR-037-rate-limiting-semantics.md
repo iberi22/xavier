@@ -43,7 +43,7 @@ Dos consecuencias:
    40 intentos y no una vía de fuerza bruta sustainable. Cambiar a deslizante exigiría un
    `Vec<Instant>` por clave con poda, es decir memoria no acotada por el número de claves, y no
    se ha medido ninguna propiedad que lo justifique. La diferencia fija-vs-deslizante queda
-   fijada por test (`t5_ventana_fija_admite_doble_en_la_frontera`) para que nadie lea
+   fijada por test (`t5_la_ventana_rueda_desde_el_primer_request_no_desde_el_reloj` (`src/security/rate_limiter/sliding_window.rs`)) para que nadie lea
    «sliding» y crea una garantía que el código no tiene.
 5. **Renombrar la realidad, no el código.** El módulo ahora dice en su doc que es de ventana
    fija. Renombrar el tipo público `SlidingWindowLimiter` queda para otra PR: tiene re-export en

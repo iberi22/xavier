@@ -8,6 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::cli::state::CliState;
+use crate::storage::multi_db::{validate_db_id, DbListing};
 use crate::workspace::{WorkspaceDb, WorkspaceDbKind};
 
 #[derive(Debug, Deserialize)]
@@ -26,7 +27,7 @@ pub struct CreateDbResponse {
 
 #[derive(Debug, Serialize)]
 pub struct ListDbsResponse {
-    pub databases: Vec<WorkspaceDb>,
+    pub databases: Vec<DbListing>,
 }
 
 #[derive(Debug, Serialize)]
@@ -65,7 +66,7 @@ pub async fn create_workspace_db_handler(
 /// GET /v1/workspaces/db
 /// Lists all registered independent SQLite DBs
 pub async fn list_workspace_dbs_handler(State(state): State<CliState>) -> Json<ListDbsResponse> {
-    let databases = state.multi_db.list_databases().await;
+    let databases = state.multi_db.list_entries().await;
     Json(ListDbsResponse { databases })
 }
 
@@ -75,6 +76,15 @@ pub async fn delete_workspace_db_handler(
     State(state): State<CliState>,
     Path(db_id): Path<String>,
 ) -> Result<Json<DeleteDbResponse>, (StatusCode, Json<DeleteDbResponse>)> {
+    if let Err(e) = validate_db_id(&db_id) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(DeleteDbResponse {
+                success: false,
+                message: format!("Invalid database id: {}", e),
+            }),
+        ));
+    }
     match state.multi_db.delete_database(&db_id).await {
         Ok(true) => Ok(Json(DeleteDbResponse {
             success: true,
@@ -87,7 +97,7 @@ pub async fn delete_workspace_db_handler(
             StatusCode::NOT_FOUND,
             Json(DeleteDbResponse {
                 success: false,
-                message: format!("Database '{}' not found in registry", db_id),
+                message: format!("Database '{}' not found", db_id),
             }),
         )),
         Err(e) => Err((

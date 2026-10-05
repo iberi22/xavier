@@ -15,7 +15,9 @@ use crate::cli::handlers::json_response;
 use crate::cli::security::secure_cli_input;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
+use xavier::espacio::tokens::SpaceContext;
 use xavier::memory::qmd_memory::MemoryDocument;
+use xavier::ports::inbound::MemoryQueryPort;
 use xavier::workspace::WorkspaceContext;
 
 use xavier::memory::schema::MemoryLevel;
@@ -45,6 +47,52 @@ fn presented_token(headers: &HeaderMap) -> Option<&str> {
         })
         .map(str::trim)
         .filter(|token| !token.is_empty())
+}
+
+/// The memory a request operates on.
+///
+/// Root and other node credentials use the node-global stores in `CliState`
+/// (unchanged). A request carrying a space token (`SpaceContext`) uses ONLY
+/// that space's own `WorkspaceContext`, inserted by the auth middleware. If
+/// the space context is present but the workspace is missing or belongs to
+/// another id, the request is refused: there is no fallback to the node
+/// stores for a space caller.
+pub(crate) struct ScopedMemory {
+    pub memory: Arc<dyn MemoryQueryPort>,
+    pub qmd: Arc<xavier::memory::qmd_memory::QmdMemory>,
+    pub workspace_id: String,
+    /// `Some` when the request is bound to a space.
+    pub space: Option<WorkspaceContext>,
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn scoped_memory(
+    state: &CliState,
+    space: Option<&SpaceContext>,
+    workspace: Option<&WorkspaceContext>,
+) -> Result<ScopedMemory, Response> {
+    let Some(space) = space else {
+        return Ok(ScopedMemory {
+            memory: state.memory.clone(),
+            qmd: state.qmd_memory.clone(),
+            workspace_id: state.workspace_id.clone(),
+            space: None,
+        });
+    };
+    match workspace {
+        Some(ws) if ws.workspace_id == space.space_id => Ok(ScopedMemory {
+            memory: Arc::new(xavier::app::qmd_memory_adapter::QmdMemoryAdapter::new(
+                ws.workspace.memory.clone(),
+            )),
+            qmd: ws.workspace.memory.clone(),
+            workspace_id: ws.workspace_id.clone(),
+            space: Some(ws.clone()),
+        }),
+        _ => Err(json_response(
+            StatusCode::FORBIDDEN,
+            serde_json::json!({"status":"error","message":"Forbidden"}),
+        )),
+    }
 }
 
 /// Embedding stats handler.
@@ -210,8 +258,19 @@ pub async fn search_handler(
             xavier::adapters::inbound::http::middleware::clearance::RequesterIdentity,
         >,
     >,
+    space: Option<Extension<SpaceContext>>,
+    workspace: Option<Extension<WorkspaceContext>>,
+    manager: Option<Extension<Arc<xavier::espacio::SpaceManager>>>,
     axum::Json(payload): axum::Json<SearchPayload>,
-) -> impl axum::response::IntoResponse {
+) -> Response {
+    let scoped = match scoped_memory(
+        &state,
+        space.as_ref().map(|e| &e.0),
+        workspace.as_ref().map(|e| &e.0),
+    ) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
     let sec_result = state
         .security
         .process_input(&payload.query)
@@ -241,8 +300,9 @@ pub async fn search_handler(
                 "confidence": sec_result.detection_confidence,
                 "attack_type": sec_result.attack_type,
             },
-            "workspace_id": state.workspace_id,
-        }));
+            "workspace_id": scoped.workspace_id,
+        }))
+        .into_response();
     }
 
     let effective_query = sec_result.effective_input();
@@ -286,14 +346,20 @@ pub async fn search_handler(
         include_embedding: Some(true),
         ..Default::default()
     };
+    // Link filters run after the search: over-fetch so a filtered page fills.
+    let linked_req = xavier::memory::query_engine::SearchQuery {
+        limit: xavier::espacio::linked_fetch_limit(limit),
+        ..query_req.clone()
+    };
+    let own_space = space.as_ref().map(|e| e.0.space_id.clone());
 
-    let search_results: Vec<serde_json::Value> =
-        match engine.search(&state.qmd_memory, query_req).await {
+    let mut search_results: Vec<serde_json::Value> =
+        match engine.search(&scoped.qmd, query_req).await {
             Ok(res) => res
                 .results
                 .into_iter()
                 .map(|item| {
-                    serde_json::json!({
+                    let mut row = serde_json::json!({
                         "id": item.id,
                         "path": item.path,
                         "content": item.content,
@@ -302,7 +368,11 @@ pub async fn search_handler(
                         "vector_score": item.vector_score,
                         "lexical_score": item.lexical_score,
                         "embedding": item.embedding,
-                    })
+                    });
+                    if let Some(own) = &own_space {
+                        row["source_space"] = serde_json::json!(own);
+                    }
+                    row
                 })
                 .collect(),
             Err(e) => {
@@ -312,10 +382,53 @@ pub async fn search_handler(
                     "query": payload.query,
                     "count": 0,
                     "error": e.to_string(),
-                    "workspace_id": state.workspace_id,
-                }));
+                    "workspace_id": scoped.workspace_id,
+                }))
+                .into_response();
             }
         };
+
+    // WP-13n: opt-in, read-only merge of the spaces that linked THEIR memory to
+    // this space token's space. Never writes; encrypted spaces are skipped.
+    let mut linked_skipped: Vec<serde_json::Value> = Vec::new();
+    if payload.include_linked == Some(true) {
+        if let (Some(own), Some(Extension(manager))) = (&own_space, manager.as_ref()) {
+            let resolved = xavier::espacio::link::resolve_linked(manager, own).await;
+            linked_skipped = resolved.skipped;
+            for lm in resolved.searchable {
+                let Ok(res) = engine
+                    .search(&lm.ctx.workspace.memory, linked_req.clone())
+                    .await
+                else {
+                    linked_skipped
+                        .push(serde_json::json!({"space": lm.space_id, "reason": "SearchFailed"}));
+                    continue;
+                };
+                for item in res.results {
+                    if !lm.link.allows(&item.path, &item.metadata) {
+                        continue;
+                    }
+                    search_results.push(serde_json::json!({
+                        "id": item.id,
+                        "path": item.path,
+                        "content": item.content,
+                        "metadata": item.metadata,
+                        "score": item.score,
+                        "vector_score": item.vector_score,
+                        "lexical_score": item.lexical_score,
+                        "embedding": item.embedding,
+                        "source_space": lm.space_id,
+                    }));
+                }
+            }
+            search_results.sort_by(|a, b| {
+                let sa = a["score"].as_f64().unwrap_or(0.0);
+                let sb = b["score"].as_f64().unwrap_or(0.0);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            search_results.truncate(limit);
+        }
+    }
 
     // F2.2: techo de lectura — el material por encima del nivel del solicitante
     // no se lista (la búsqueda no revela existencia; solo se cuenta).
@@ -349,8 +462,10 @@ pub async fn search_handler(
         "query": payload.query,
         "count": search_results.len(),
         "hidden_by_clearance": hidden_by_clearance,
-        "workspace_id": state.workspace_id,
+        "workspace_id": scoped.workspace_id,
+        "linked_skipped": linked_skipped,
     }))
+    .into_response()
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -374,8 +489,18 @@ pub struct GetMemoryQuery {
 pub async fn get_handler(
     State(state): State<CliState>,
     requester: Option<axum::extract::Extension<xavier::security::clearance::ClearanceLevel>>,
+    space: Option<Extension<SpaceContext>>,
+    workspace: Option<Extension<WorkspaceContext>>,
     Query(query): Query<GetMemoryQuery>,
 ) -> impl axum::response::IntoResponse {
+    let scoped = match scoped_memory(
+        &state,
+        space.as_ref().map(|e| &e.0),
+        workspace.as_ref().map(|e| &e.0),
+    ) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
     let key = query
         .path
         .filter(|p| !p.trim().is_empty())
@@ -396,7 +521,7 @@ pub async fn get_handler(
         .map(|axum::extract::Extension(level)| level)
         .unwrap_or_else(xavier::security::clearance::default_clearance);
 
-    match state.memory.get(&key).await {
+    match scoped.memory.get(&key).await {
         Ok(Some(record)) => {
             if !xavier::security::clearance::can_access(
                 requester_level,
@@ -417,7 +542,7 @@ pub async fn get_handler(
                 "path": record.path,
                 "content": record.content,
                 "metadata": record.metadata,
-                "workspace_id": state.workspace_id,
+                "workspace_id": scoped.workspace_id,
             }))
             .into_response()
         }
@@ -443,9 +568,18 @@ pub async fn get_handler(
 /// Add handler.
 pub async fn add_handler(
     State(state): State<CliState>,
+    space: Option<Extension<SpaceContext>>,
     workspace: Option<Extension<WorkspaceContext>>,
     axum::Json(payload): axum::Json<AddPayload>,
 ) -> impl axum::response::IntoResponse {
+    let scoped = match scoped_memory(
+        &state,
+        space.as_ref().map(|e| &e.0),
+        workspace.as_ref().map(|e| &e.0),
+    ) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
     let sec_result = state
         .security
         .process_input(&payload.content)
@@ -561,7 +695,7 @@ pub async fn add_handler(
     let normalized_metadata = xavier::memory::schema::normalize_metadata(
         &path,
         metadata,
-        &state.workspace_id,
+        &scoped.workspace_id,
         if typed.kind.is_some()
             || typed.namespace.is_some()
             || typed.provenance.is_some()
@@ -582,7 +716,7 @@ pub async fn add_handler(
 
     let record = MemoryRecord {
         id: String::new(),
-        workspace_id: state.workspace_id.clone(),
+        workspace_id: scoped.workspace_id.clone(),
         path: path.clone(),
         content: effective_content.to_string(),
         metadata: normalized_metadata.clone(),
@@ -604,7 +738,7 @@ pub async fn add_handler(
         metadata_iv: None,
         ..Default::default()
     };
-    match state.memory.add(record).await {
+    match scoped.memory.add(record).await {
         Ok(id) => {
             info!("Memory added successfully: {}", path);
             // Bridge: the v1/MCP search reads the workspace vector memory
@@ -614,7 +748,7 @@ pub async fn add_handler(
             // never delays the write response. Skipped when the caller did
             // not layer a workspace (direct unit-test routers): the record
             // store write above already succeeded.
-            if let Some(Extension(workspace)) = workspace {
+            if let (None, Some(Extension(workspace))) = (&scoped.space, workspace) {
                 let mirror = workspace.workspace.memory.clone();
                 let (mirror_id, mirror_path, mirror_content, mirror_meta) = (
                     id.clone(),

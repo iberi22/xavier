@@ -124,6 +124,146 @@ pub async fn get_segment_documents_handler(
     }
 }
 
+/// Memory and MCP routes of the node, shared with the isolation tests so the
+/// test composition cannot drift from production. Layers (auth, clearance,
+/// rate limit, body limit) are applied by the caller.
+pub fn memory_routes() -> Router<CliState> {
+    Router::new()
+        .route("/memory/search", post(search_handler))
+        .route(
+            "/memory/get",
+            get(crate::cli::handlers::memory::get_handler),
+        )
+        .route(
+            "/memory/update",
+            post(update_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_add_memory()
+            }))),
+        )
+        .route(
+            "/memory/delete",
+            post(delete_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route(
+            "/memory/reindex",
+            post(reindex_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_add_memory()
+            }))),
+        )
+        .route(
+            "/v1/maintenance/reindex-embeddings",
+            post(xavier::adapters::inbound::http::routes::maintenance_reindex_handler).layer(
+                middleware::from_fn(xavier::middleware::require_permission(|r| {
+                    r.can_edit_config()
+                })),
+            ),
+        )
+        .route("/memory/stats", get(stats_handler))
+        .route("/v1/stats", get(stats_handler))
+        .route("/memory/export", get(export_handler))
+        .route("/memory/export-markdown", get(export_markdown_handler))
+        .route("/v1/memory/export-markdown", get(export_markdown_handler))
+        .route(
+            "/memory/decay",
+            post(decay_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route(
+            "/memory/consolidate",
+            post(consolidate_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route(
+            "/memory/prune",
+            post(memory_prune_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_delete_memory()
+            }))),
+        )
+        .route("/memory/index-self", post(memory_index_self_handler))
+        .route(
+            "/memory/evict",
+            axum::routing::delete(evict_handler).layer(middleware::from_fn(require_permission(
+                |r| r.can_delete_memory(),
+            ))),
+        )
+        .route("/memory/manage", post(manage_handler))
+        .route("/memory/timeline/query", post(timeline_query_handler))
+        .route("/v1/segments", get(list_segments_handler))
+        .route(
+            "/v1/segments/{id}/documents",
+            get(get_segment_documents_handler),
+        )
+        .route(
+            "/v1/memories",
+            post(
+                add_handler.layer(middleware::from_fn(require_permission(|r| {
+                    r.can_add_memory()
+                }))),
+            )
+            .get(stats_handler),
+        )
+        .route(
+            "/v1/memories/search",
+            post(xavier::server::v1_api::v1_memories_search),
+        )
+        .route(
+            "/v1/memories/prune",
+            post(xavier::server::v1_api::v1_memories_prune).layer(middleware::from_fn(
+                require_permission(|r| r.can_delete_memory()),
+            )),
+        )
+        .route(
+            "/v1/context/assemble",
+            post(xavier::server::v1_api::v1_context_assemble),
+        )
+        .route(
+            "/v1/context/package",
+            post(xavier::server::v1_api::v1_context_package),
+        )
+        .route(
+            "/v1/memory/recall-eval",
+            post(xavier::server::v1_api::v1_memory_recall_eval),
+        )
+        .route(
+            "/v1/memory/recall/stats",
+            get(xavier::server::v1_api::v1_memory_recall_stats),
+        )
+        .route(
+            "/v1/memories/{id}",
+            get(xavier::server::v1_api::v1_memories_get),
+        )
+        .route(
+            "/v1/memories/{id}/outline",
+            get(xavier::server::v1_api::v1_memories_outline),
+        )
+        .route(
+            "/v1/memories/graph",
+            get(xavier::server::v1_api::v1_memories_graph),
+        )
+        .route(
+            "/v1/graph/export",
+            get(xavier::server::v1_api::v1_graph_export),
+        )
+        .route("/mcp/tools", get(mcp_tools_handler))
+        .route("/mcp/tools/call", post(mcp_tools_call_handler))
+}
+
+/// Memory routes that accept large bodies (the caller adds the body limit).
+pub fn memory_large_body_routes() -> Router<CliState> {
+    Router::new()
+        .route(
+            "/memory/add",
+            post(add_handler).layer(middleware::from_fn(require_permission(|r| {
+                r.can_add_memory()
+            }))),
+        )
+        .route("/memory/export-pack", post(export_pack_handler))
+}
+
 /// Start http server.
 pub async fn start_http_server(
     port: u16,
@@ -467,6 +607,17 @@ pub async fn start_http_server(
     let prompt_cache = Arc::new(parking_lot::Mutex::new(HashMap::new()));
     let security_service = Arc::new(AppSecurityService::new());
     let event_bus = XavierEventBus::new(100);
+    // Durable mirror of the in-memory bus; a failure here must not stop boot.
+    match xavier::coordination::event_log::EventLog::open(
+        &xavier::maloca::MalocaStore::resolve_state_dir(),
+        xavier::coordination::event_log::RetentionConfig::from_env(),
+    ) {
+        Ok(log) => {
+            xavier::coordination::event_log::spawn_subscriber(&event_bus, Arc::clone(&log));
+            xavier::coordination::event_log::install_global(log);
+        }
+        Err(e) => tracing::error!(error = %e, "event log unavailable; bus events are RAM-only"),
+    }
     let secrets_engine = Arc::new(KeyLendingEngine::new(
         Box::new(xavier::secrets::audit::QmdAuditLogger::new()),
         Some(event_bus.clone()),
@@ -605,7 +756,10 @@ pub async fn start_http_server(
             .with_provider_router(provider_router_shared.clone()),
     );
 
-    let multi_db = xavier::storage::multi_db::MultiDbManager::new();
+    let multi_db = xavier::storage::multi_db::MultiDbManager::open_default().unwrap_or_else(|e| {
+        tracing::warn!("multi_db registry unavailable ({e}); using RAM-only registry");
+        xavier::storage::multi_db::MultiDbManager::new()
+    });
 
     // Clone the bus for the WebSocket layer before it moves into CliState.
     let event_bus_for_ws = event_bus.clone();
@@ -657,6 +811,14 @@ pub async fn start_http_server(
         "Memory store initialized for workspace: {}",
         state.workspace_id
     );
+
+    // Espacio: one long-lived SpaceManager under the daemon data dir. Key
+    // init failure or XAVIER_SPACES=off leaves espacio disabled, never a crash.
+    let space_manager =
+        crate::cli::state::open_space_manager(&xavier::maloca::MalocaStore::resolve_state_dir());
+    if let Some(m) = &space_manager {
+        xavier::adapters::inbound::http::routes::init_space_manager(m.clone());
+    }
 
     // Initialize and wire up the Memory Sync singleton
     let node_id = if let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() {
@@ -714,6 +876,12 @@ pub async fn start_http_server(
             .with_embedder(ingestion_embedder.clone());
         let hermes_importer = xavier::memory::hermes_importer::HermesImporter::new()
             .with_embedder(ingestion_embedder.clone());
+        // Codex is built once too (D8): it carries a per-file fingerprint cursor,
+        // so rebuilding it every cycle would re-read every session file again.
+        // `with_embedder` is an associated fn, not a builder method.
+        let codex_importer = xavier::memory::codex_importer::CodexImporter::with_embedder(
+            ingestion_embedder.clone(),
+        );
         tokio::spawn(async move {
             // Initial grace period to allow server start
             tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
@@ -783,15 +951,18 @@ pub async fn start_http_server(
                     }
                 }
 
-                // 4. Codex — with_embedder is an associated fn (not a builder method)
-                let codex_importer = xavier::memory::codex_importer::CodexImporter::with_embedder(
-                    ingestion_embedder.clone(),
-                );
-                if let Ok(sessions) = codex_importer.scan_sessions().await {
-                    for s in &sessions {
-                        let _ = codex_importer
-                            .import_session(s, ingestion_store.as_ref())
-                            .await;
+                match codex_importer.sync(ingestion_store.as_ref()).await {
+                    Ok(stats) => tracing::info!(
+                        source = "codex",
+                        candidates = stats.candidates,
+                        read = stats.read,
+                        skipped = stats.skipped,
+                        errors = stats.errors,
+                        records = stats.records,
+                        "session ingestion cursor pass"
+                    ),
+                    Err(e) => {
+                        tracing::warn!(source = "codex", error = %e, "ingestion pass failed")
                     }
                 }
 
@@ -813,6 +984,19 @@ pub async fn start_http_server(
             )
             .with_state(()),
         )
+        .merge({
+            let data_dir = state.workspace_dir.clone().join("data");
+            let cfg = xavier::training::routes::TrainingJobsConfig::from_env(
+                data_dir.join("training"),
+                data_dir.join("datasets"),
+            );
+            xavier::training::routes::router(cfg)
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "training jobs API disabled");
+                    Router::new()
+                })
+                .with_state(())
+        })
         .nest(
             "/auth/google",
             xavier::server::auth_routes::router(
@@ -915,125 +1099,7 @@ pub async fn start_http_server(
             "/api/v1/memory/sync/resolve/{conflict_id}",
             post(xavier::adapters::inbound::http::handlers::sync::sync_resolve_handler),
         )
-        .route("/memory/search", post(search_handler))
-        .route(
-            "/memory/get",
-            get(crate::cli::handlers::memory::get_handler),
-        )
-        .route(
-            "/memory/update",
-            post(update_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_add_memory()
-            }))),
-        )
-        .route(
-            "/memory/delete",
-            post(delete_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_delete_memory()
-            }))),
-        )
-        .route(
-            "/memory/reindex",
-            post(reindex_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_add_memory()
-            }))),
-        )
-        .route(
-            "/v1/maintenance/reindex-embeddings",
-            post(xavier::adapters::inbound::http::routes::maintenance_reindex_handler).layer(
-                middleware::from_fn(xavier::middleware::require_permission(|r| {
-                    r.can_edit_config()
-                })),
-            ),
-        )
-        .route("/memory/stats", get(stats_handler))
-        .route("/v1/stats", get(stats_handler))
-        .route("/memory/export", get(export_handler))
-        .route("/memory/export-markdown", get(export_markdown_handler))
-        .route("/v1/memory/export-markdown", get(export_markdown_handler))
-        .route(
-            "/memory/decay",
-            post(decay_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_delete_memory()
-            }))),
-        )
-        .route(
-            "/memory/consolidate",
-            post(consolidate_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_delete_memory()
-            }))),
-        )
-        .route(
-            "/memory/prune",
-            post(memory_prune_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_delete_memory()
-            }))),
-        )
-        .route("/memory/index-self", post(memory_index_self_handler))
-        .route(
-            "/memory/evict",
-            axum::routing::delete(evict_handler).layer(middleware::from_fn(require_permission(
-                |r| r.can_delete_memory(),
-            ))),
-        )
-        .route("/memory/manage", post(manage_handler))
-        .route("/memory/timeline/query", post(timeline_query_handler))
-        .route("/v1/segments", get(list_segments_handler))
-        .route(
-            "/v1/segments/{id}/documents",
-            get(get_segment_documents_handler),
-        )
-        .route(
-            "/v1/memories",
-            post(
-                add_handler.layer(middleware::from_fn(require_permission(|r| {
-                    r.can_add_memory()
-                }))),
-            )
-            .get(stats_handler),
-        )
-        .route(
-            "/v1/memories/search",
-            post(xavier::server::v1_api::v1_memories_search),
-        )
-        .route(
-            "/v1/memories/prune",
-            post(xavier::server::v1_api::v1_memories_prune).layer(middleware::from_fn(
-                require_permission(|r| r.can_delete_memory()),
-            )),
-        )
-        .route(
-            "/v1/context/assemble",
-            post(xavier::server::v1_api::v1_context_assemble),
-        )
-        .route(
-            "/v1/context/package",
-            post(xavier::server::v1_api::v1_context_package),
-        )
-        .route(
-            "/v1/memory/recall-eval",
-            post(xavier::server::v1_api::v1_memory_recall_eval),
-        )
-        .route(
-            "/v1/memory/recall/stats",
-            get(xavier::server::v1_api::v1_memory_recall_stats),
-        )
-        .route(
-            "/v1/memories/{id}",
-            get(xavier::server::v1_api::v1_memories_get),
-        )
-        .route(
-            "/v1/memories/{id}/outline",
-            get(xavier::server::v1_api::v1_memories_outline),
-        )
-        .route(
-            "/v1/memories/graph",
-            get(xavier::server::v1_api::v1_memories_graph),
-        )
-        .route(
-            "/v1/graph/export",
-            get(xavier::server::v1_api::v1_graph_export),
-        )
+        .merge(memory_routes())
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
         // ── Clavis Key Vault API ─────────────────────────────────────────
@@ -1076,8 +1142,6 @@ pub async fn start_http_server(
                 r.can_manage_users()
             }))),
         )
-        .route("/mcp/tools", get(mcp_tools_handler))
-        .route("/mcp/tools/call", post(mcp_tools_call_handler))
         // Memory Knowledge Graph (EntityGraph)
         .route("/memory/graph/entities", get(memory_graph_list_entities))
         .route(
@@ -1217,6 +1281,10 @@ pub async fn start_http_server(
             ),
         )
         .route("/xavier/events/session", post(session_event_handler))
+        .route(
+            "/xavier/events",
+            get(xavier::adapters::inbound::http::routes::events_replay_handler),
+        )
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
         .route("/xavier/agents/active", get(agent_active_handler))
@@ -1410,6 +1478,20 @@ pub async fn start_http_server(
         .route(
             "/v1/agents/spawn",
             post(crate::cli::handlers::headless_api::headless_spawn),
+        )
+        .route(
+            "/v1/agents/mini-experts",
+            get(crate::cli::handlers::mini_experts::list_experts_handler),
+        )
+        .route(
+            "/v1/agents/mini-experts/invoke",
+            post(crate::cli::handlers::mini_experts::invoke_expert_handler).layer(
+                middleware::from_fn(require_permission(|r| r.can_add_memory())),
+            ),
+        )
+        .route(
+            "/v1/agents/mini-experts/{name}",
+            get(crate::cli::handlers::mini_experts::get_expert_handler),
         )
         .route(
             "/v1/memory/search",
@@ -1635,13 +1717,7 @@ pub async fn start_http_server(
         ));
 
     let large_body_routes = Router::new()
-        .route(
-            "/memory/add",
-            post(add_handler).layer(middleware::from_fn(require_permission(|r| {
-                r.can_add_memory()
-            }))),
-        )
-        .route("/memory/export-pack", post(export_pack_handler))
+        .merge(memory_large_body_routes())
         .route("/panel/api/chat", post(panel_process_chat))
         .route("/code/scan", post(code_scan_handler))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
@@ -1686,6 +1762,14 @@ pub async fn start_http_server(
         workspace_id: state.workspace_id.clone(),
         workspace: workspace_state.clone(),
     };
+    let working_snapshot_path =
+        xavier::memory::working::snapshot_path(&xavier::maloca::MalocaStore::resolve_state_dir());
+    xavier::memory::working::spawn_persistence(
+        Arc::clone(&workspace_state.working_memory),
+        working_snapshot_path.clone(),
+        xavier::memory::working::snapshot_interval_from_env(),
+    );
+    let working_memory_for_shutdown = Arc::clone(&workspace_state.working_memory);
 
     // Maloca ops API — public local dogfood (matches @swal/maloca-client; no token).
     let maloca_store = state.maloca.clone();
@@ -1746,9 +1830,13 @@ pub async fn start_http_server(
 
     let app = app
         .merge(protected_routes)
+        .merge(crate::cli::state::guarded_espacio_router(&state))
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
         .layer(Extension(event_bus_for_ws));
+
+    // Outside every auth layer (see `install_space_manager`).
+    let app = crate::cli::state::install_space_manager(app, space_manager.clone());
 
     let app = app.with_state(state.clone());
 
@@ -1759,9 +1847,59 @@ pub async fn start_http_server(
     // `CorsLayer`/timeout layer below so those layers wrap Maloca too — previously
     // they were applied first and the Maloca merge happened after, leaving `/maloca/*`
     // and `/v1/maloca/*` with no CORS headers and no auth enforcement on writes.
+    // HumanChallenge + introspection persist in `{data dir}/humanchallenge.db` (same data
+    // dir resolution as the Maloca store). On failure fall back to in-memory (None) so the
+    // daemon still boots, but say so loudly.
+    let hc_store = {
+        let hc_dir = xavier::maloca::MalocaStore::resolve_state_dir();
+        let _ = std::fs::create_dir_all(&hc_dir);
+        let hc_path = hc_dir.join("humanchallenge.db");
+        match xavier::humanchallenge::HumanChallengeStore::new(&hc_path) {
+            Ok(s) => {
+                xavier::humanchallenge::store::set_store_backing(
+                    xavier::humanchallenge::store::StoreBacking::File,
+                );
+                Some(Arc::new(s))
+            }
+            Err(e) => {
+                tracing::error!(path = %hc_path.display(), error = %e,
+                    "HumanChallenge store unavailable; challenges/introspection will NOT persist");
+                xavier::humanchallenge::store::set_store_backing(
+                    xavier::humanchallenge::store::StoreBacking::Memory,
+                );
+                None
+            }
+        }
+    };
+    // Opt-in harvester: only runs when XAVIER_HC_SESSIONS_DIR points at a sessions directory
+    // (no default scan of an arbitrary path on the production node).
+    let hc_sessions_dir = match std::env::var("XAVIER_HC_SESSIONS_DIR") {
+        Ok(dir) if !dir.trim().is_empty() => Some(dir),
+        Ok(_) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            tracing::warn!("XAVIER_HC_SESSIONS_DIR is not valid UTF-8; harvester disabled");
+            None
+        }
+        Err(std::env::VarError::NotPresent) => None,
+    };
+    let hc_harvester = match (hc_store.clone(), hc_sessions_dir) {
+        (Some(store), Some(dir)) => {
+            let config = xavier::server::maloca::HcCronBridgeConfig {
+                sessions_dir: PathBuf::from(dir),
+                ..Default::default()
+            };
+            Some(
+                Arc::new(xavier::server::maloca::HcCronBridge::with_shared_store(
+                    config, store,
+                ))
+                .start_background_worker(),
+            )
+        }
+        _ => None,
+    };
     let maloca_router = xavier::maloca::nested_router::<()>(maloca_store.clone())
         .merge(xavier::server::maloca::v1_maloca_router_with_maloca_store(
-            None,
+            hc_store,
             Some(state.workspace_dir.clone()),
             Some(maloca_store),
         ))
@@ -2171,6 +2309,14 @@ pub async fn start_http_server(
             if let Err(error) = tokio::signal::ctrl_c().await {
                 info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
             }
+            xavier::memory::working::save_if_dirty(
+                &working_memory_for_shutdown,
+                &working_snapshot_path,
+            )
+            .await;
+            if let Some(harvester) = hc_harvester {
+                harvester.abort();
+            }
             if let Some(shutdown) = sync_shutdown {
                 shutdown.shutdown();
                 shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
@@ -2186,12 +2332,27 @@ pub async fn start_http_server(
 ///
 /// Reads `XAVIER_INGESTION_INTERVAL_SECS` so operators can tune it without a
 /// rebuild (default 600). `0` disables the loop (emergency brake for
-/// embedding storms); unparsable values fall back to the default.
+/// embedding storms); surrounding whitespace and a trailing `s` are tolerated; unparsable values
+/// fall back to the default.
 pub fn ingestion_interval_secs() -> u64 {
     std::env::var("XAVIER_INGESTION_INTERVAL_SECS")
         .ok()
-        .and_then(|v| v.parse::<u64>().ok())
+        .and_then(|v| parse_interval_secs(&v))
         .unwrap_or(600)
+}
+
+/// Parses an interval in seconds, tolerating surrounding whitespace and a
+/// trailing `s` unit (`"0 "`, `"0s"`, `" 300s "`). A near-miss of `0` must
+/// still read as `0`: falling back to the default would silently re-enable the
+/// loop an operator just tried to brake.
+fn parse_interval_secs(raw: &str) -> Option<u64> {
+    let t = raw.trim();
+    let t = t
+        .strip_suffix('s')
+        .or_else(|| t.strip_suffix('S'))
+        .unwrap_or(t)
+        .trim();
+    t.parse::<u64>().ok()
 }
 
 /// Attempts to mark an ingestion cycle as in-flight.
@@ -2223,6 +2384,21 @@ mod ingestion_interval_tests {
         assert_eq!(ingestion_interval_secs(), 1800);
         std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", "0");
         assert_eq!(ingestion_interval_secs(), 0);
+        std::env::remove_var("XAVIER_INGESTION_INTERVAL_SECS");
+    }
+
+    #[test]
+    fn zero_with_whitespace_or_unit_still_disables() {
+        for raw in ["0 ", " 0", "0s", "0 s", "0S", "\t0s\n"] {
+            std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", raw);
+            assert_eq!(
+                ingestion_interval_secs(),
+                0,
+                "{raw:?} must disable the loop"
+            );
+        }
+        std::env::set_var("XAVIER_INGESTION_INTERVAL_SECS", " 300s ");
+        assert_eq!(ingestion_interval_secs(), 300);
         std::env::remove_var("XAVIER_INGESTION_INTERVAL_SECS");
     }
 
@@ -2298,6 +2474,7 @@ mod ingestion_wiring_tests {
             ("Antigravity", "AntigravityImporter::new()"),
             ("OpenCode", "OpenCodeImporter::new()"),
             ("Hermes", "HermesImporter::new()"),
+            ("Codex", "CodexImporter::with_embedder("),
         ] {
             let at = src
                 .find(ctor)
@@ -2309,6 +2486,26 @@ mod ingestion_wiring_tests {
                 name,
                 at,
                 loop_at
+            );
+        }
+    }
+
+    /// No importer constructor may appear inside the cycle body (D8: the Codex
+    /// importer used to be rebuilt every cycle; `find` above only sees the
+    /// first match, so this checks the loop body itself).
+    #[test]
+    fn no_importer_is_constructed_inside_the_cycle_body() {
+        let src = server_source();
+        let loop_at = cycle_loop_offset(src);
+        let body_end = loop_at
+            + src[loop_at..]
+                .find("end_cycle(&in_flight);")
+                .expect("cycle body end not found");
+        let body = &src[loop_at..body_end];
+        for needle in ["Importer::new(", "Importer::with_"] {
+            assert!(
+                !body.contains(needle),
+                "an importer is constructed inside the cycle loop ({needle}): its cursor is lost every cycle"
             );
         }
     }
@@ -2327,7 +2524,12 @@ mod ingestion_wiring_tests {
 
         let body = &src[loop_at..spawn_end];
 
-        for importer in ["ag_importer", "oc_importer", "hermes_importer"] {
+        for importer in [
+            "ag_importer",
+            "oc_importer",
+            "hermes_importer",
+            "codex_importer",
+        ] {
             assert!(
                 body.contains(&format!("{}.sync(", importer)),
                 "{} is not driven by sync() in the cycle loop",

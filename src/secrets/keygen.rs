@@ -34,7 +34,7 @@ pub const ENV_KEY_PREFIX: &str = "XAVIER_KEY_PREFIX";
 pub const ENV_KEY_TTL: &str = "XAVIER_DEFAULT_KEY_TTL_SECS";
 
 /// Vault entry holding the key body itself.
-pub const VALUE_ENTRY_PREFIX: &str = "api_key_";
+pub const VALUE_ENTRY_PREFIX: &str = clavis::API_KEY_NAMESPACE_PREFIX;
 /// Vault entry holding the non-secret metadata JSON.
 pub const META_ENTRY_SUFFIX: &str = "_meta";
 
@@ -111,6 +111,8 @@ impl KeyVault for HardwareVault {
 pub enum KeyGenError {
     #[error("invalid key name '{0}': use 1-64 chars of [A-Za-z0-9_-]")]
     InvalidName(String),
+    #[error("invalid key material: {0}")]
+    InvalidMaterial(String),
     #[error("invalid key prefix from {ENV_KEY_PREFIX}: {0}")]
     InvalidPrefix(String),
     #[error("invalid {ENV_KEY_TTL}: {0}")]
@@ -135,6 +137,47 @@ pub fn validate_name(name: &str) -> Result<(), KeyGenError> {
         Ok(())
     } else {
         Err(KeyGenError::InvalidName(name.to_string()))
+    }
+}
+
+/// Validate the vault entry names derived from `name` with the same rules the
+/// Clavis HTTP surface applies (`api_key_*` namespace, charset, length).
+fn validate_entry_names(name: &str) -> Result<(), KeyGenError> {
+    validate_name(name)?;
+    for entry in [value_entry(name), meta_entry(name)] {
+        clavis::validate_namespaced_key_name(&entry)
+            .map_err(|_| KeyGenError::InvalidName(name.to_string()))?;
+    }
+    Ok(())
+}
+
+/// Validate key material before it is stored or emitted: a known
+/// `<prefix>_<live|test>_` body prefix followed by lowercase hex of the full
+/// entropy length. Rejects empty, truncated, or foreign values.
+pub fn validate_key_material(value: &str) -> Result<(), KeyGenError> {
+    let bad = |why: &str| Err(KeyGenError::InvalidMaterial(why.to_string()));
+    let body = [ENV_LIVE, ENV_TEST].iter().find_map(|label| {
+        let marker = format!("_{label}_");
+        value
+            .find(&marker)
+            .filter(|&i| {
+                i > 0
+                    && value[..i]
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            })
+            .map(|i| &value[i + marker.len()..])
+    });
+    match body {
+        None => bad("missing '<prefix>_<live|test>_' prefix"),
+        Some(b)
+            if b.len() == KEY_ENTROPY_BYTES * 2
+                && b.chars()
+                    .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)) =>
+        {
+            Ok(())
+        }
+        Some(_) => bad("body must be lowercase hex of the full entropy length"),
     }
 }
 
@@ -204,6 +247,7 @@ pub fn meta_entry(name: &str) -> String {
 /// Read existing metadata, if any. A corrupt entry is treated as "no
 /// metadata" (rotation restarts at 0) rather than failing generation.
 pub fn load_metadata(vault: &impl KeyVault, name: &str) -> Option<KeyMetadata> {
+    validate_entry_names(name).ok()?;
     let raw = vault.read(&meta_entry(name)).ok()?;
     serde_json::from_str::<KeyMetadata>(&raw).ok()
 }
@@ -212,6 +256,8 @@ pub fn load_metadata(vault: &impl KeyVault, name: &str) -> Option<KeyMetadata> {
 /// I/O so no error path can leak it.
 pub fn store_generated(vault: &impl KeyVault, key: &GeneratedKey) -> SecretResult<()> {
     clavis::register_secret(&key.value);
+    validate_entry_names(&key.metadata.name)?;
+    validate_key_material(&key.value)?;
     let meta_json = serde_json::to_string(&key.metadata)?;
     vault.store(&value_entry(&key.metadata.name), &key.value)?;
     vault.store(&meta_entry(&key.metadata.name), &meta_json)?;
@@ -230,8 +276,9 @@ pub fn generate_key(
     ttl_secs: u64,
     now: chrono::DateTime<chrono::Utc>,
 ) -> SecretResult<GeneratedKey> {
-    validate_name(name)?;
+    validate_entry_names(name)?;
     let value = generate_key_value(scope)?;
+    validate_key_material(&value)?;
     // Mask before anything else can log or format the plaintext.
     clavis::register_secret(&value);
 
@@ -277,7 +324,7 @@ pub fn format_generate_output(key: &GeneratedKey) -> String {
 
 /// Remove a key and its metadata. A missing metadata entry is not an error.
 pub fn revoke_key(vault: &impl KeyVault, name: &str) -> SecretResult<()> {
-    validate_name(name)?;
+    validate_entry_names(name)?;
     vault.remove(&value_entry(name))?;
     match vault.remove(&meta_entry(name)) {
         Ok(()) | Err(SecretError::NotFound(_)) => Ok(()),
@@ -288,7 +335,7 @@ pub fn revoke_key(vault: &impl KeyVault, name: &str) -> SecretResult<()> {
 /// Read back the plaintext of an existing key. Callers MUST register it in the
 /// global masker and require an explicit confirmation before writing it out.
 pub fn export_key(vault: &impl KeyVault, name: &str) -> SecretResult<String> {
-    validate_name(name)?;
+    validate_entry_names(name)?;
     vault.read(&value_entry(name))
 }
 
@@ -507,6 +554,50 @@ mod tests {
                 "name {bad:?} must be rejected"
             );
         }
+    }
+
+    #[test]
+    fn keys_gen_material_validation() {
+        let good = format!("xavier_live_{}", "ab12".repeat(16));
+        assert!(validate_key_material(&good).is_ok());
+        let test_scope = format!("acme_test_{}", "0f".repeat(32));
+        assert!(validate_key_material(&test_scope).is_ok());
+        for bad in [
+            "",
+            "xavier_live_",
+            "xavier_live_abc",
+            "plain-secret-value",
+            &format!("xavier_live_{}", "AB12".repeat(16)),
+            &format!("xavier_prod_{}", "ab12".repeat(16)),
+            &format!("xavier_live_{}", "ab12".repeat(17)),
+        ] {
+            assert!(validate_key_material(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn keys_gen_store_rejects_bad_material_and_names() {
+        let vault = MemVault::default();
+        let mut key = GeneratedKey {
+            value: "not-a-generated-key".to_string(),
+            metadata: KeyMetadata {
+                name: "ok".to_string(),
+                scope: "live".to_string(),
+                ttl_secs: 0,
+                created_at: now(),
+                expires_at: None,
+                rotation_count: 0,
+                fingerprint: String::new(),
+            },
+        };
+        assert!(store_generated(&vault, &key).is_err());
+        assert!(vault.items.lock().unwrap().is_empty());
+        key.value = format!("xavier_live_{}", "ab12".repeat(16));
+        key.metadata.name = "../x".to_string();
+        assert!(store_generated(&vault, &key).is_err());
+        assert!(vault.items.lock().unwrap().is_empty());
+        key.metadata.name = "ok".to_string();
+        assert!(store_generated(&vault, &key).is_ok());
     }
 
     #[test]

@@ -51,6 +51,51 @@ pub async fn retrieve_public_espacios(
     .await
 }
 
+/// Member-only espacio retrieval arm: descriptor hits for the caller's own
+/// space plus the spaces with an ACTIVE inbound link to it (WP-13n). The
+/// caller's space id is required; there is no global enumeration.
+pub async fn retrieve_visible_espacios(
+    space_manager: &SpaceManager,
+    caller_space: &str,
+    query: &str,
+    limit: usize,
+) -> Vec<ScoredResult> {
+    let mut out = Vec::new();
+    for id in crate::espacio::visible_space_ids(space_manager, caller_space).await {
+        let Ok(space) = space_manager.get(&id).await else {
+            continue;
+        };
+        let score = crate::espacio::search::score_dataset(
+            query,
+            &space.name,
+            &space.description,
+            1.0,
+            0,
+            0,
+        );
+        if query.is_empty() || score > 0.05 {
+            out.push(ScoredResult {
+                id: format!("espacio/{}", space.id),
+                content: format!("{}: {}", space.name, space.description),
+                score: score as f32,
+                source: "espacio_visible".to_string(),
+                path: space.storage_path.to_string_lossy().to_string(),
+                updated_at: Some(space.created_at.timestamp_millis()),
+                zone: None,
+            });
+        }
+    }
+    out.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if limit > 0 {
+        out.truncate(limit);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

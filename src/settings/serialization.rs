@@ -29,6 +29,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
+/// Tracked template the untracked runtime config is seeded from (#2801).
+const CONFIG_TEMPLATE_PATH: &str = "config/xavier.config.example.json";
 const RUNTIME_STATE_FILENAME: &str = "xavier.runtime.json";
 const RUNTIME_STATE_DIRNAME: &str = ".xavier-state";
 
@@ -99,8 +101,18 @@ fn parse_settings(path: &Path) -> Result<XavierSettings> {
 /// config that is not on disk yet is NOT a reason to drop existing state: the
 /// compiled-in defaults become the base and the state file is overlaid on top.
 /// A malformed state file is reported but never takes the defaults down.
+///
+/// A *schema-incompatible* state file is the same class of problem, not a
+/// different one: `merge_runtime_state` returns Err when the overlay deserializes
+/// into something that is not a `XavierSettings` — the realistic case being a
+/// binary that changed the type of a field while an older state file is still on
+/// disk. That Err used to propagate straight to `main.rs`'s
+/// `XavierSettings::load()?`, which aborted the whole process: a corrupt state
+/// file took the server down with it. The daemon now boots on the defaults and
+/// the failure is reported instead (D10).
 pub fn load() -> Result<Option<XavierSettings>> {
     let path = resolve_config_path();
+    seed_config_from_template(&path);
     let defaults = if path.exists() {
         Some(parse_settings(&path)?)
     } else {
@@ -110,23 +122,99 @@ pub fn load() -> Result<Option<XavierSettings>> {
     let state = match load_runtime_state(&path) {
         Ok(state) => state,
         Err(e) => {
-            tracing::warn!(
-                "ignoring unreadable Xavier runtime state for {}: {}",
-                path.display(),
-                e
-            );
+            report_state_rejection("unreadable", &path, &e);
             None
         }
     };
 
+    // A state document that exists but cannot be merged must not abort startup:
+    // fall back to the defaults and keep every other setting intact.
     match (defaults, state) {
-        (Some(defaults), Some(state)) => merge_runtime_state(&state, defaults).map(Some),
+        (Some(defaults), Some(state)) => match merge_runtime_state(&state, defaults.clone()) {
+            Ok(merged) => Ok(Some(merged)),
+            Err(e) => {
+                report_state_rejection("incompatible", &path, &e);
+                Ok(Some(defaults))
+            }
+        },
         (Some(defaults), None) => Ok(Some(defaults)),
         (None, state) => match state {
-            Some(state) => merge_runtime_state(&state, XavierSettings::default()).map(Some),
+            Some(state) => match merge_runtime_state(&state, XavierSettings::default()) {
+                Ok(merged) => Ok(Some(merged)),
+                Err(e) => {
+                    report_state_rejection("incompatible", &path, &e);
+                    Ok(None)
+                }
+            },
             None => Ok(None),
         },
     }
+}
+
+/// First run (#2801): `config/xavier.config.json` is untracked and gitignored,
+/// so a fresh checkout does not have it. Seed it from the tracked template.
+///
+/// Only the in-tree default path is seeded (an explicitly pinned or per-user
+/// config is the operator's own file), and only when it is absent: an existing
+/// file is never touched. Best effort: a read-only checkout just runs on the
+/// compiled-in defaults.
+fn seed_config_from_template(path: &Path) {
+    if path.exists() || path != Path::new(DEFAULT_CONFIG_PATH) {
+        return;
+    }
+    let template = Path::new(CONFIG_TEMPLATE_PATH);
+    if !template.exists() {
+        return;
+    }
+    if let Err(e) = std::fs::copy(template, path) {
+        tracing::debug!("could not seed {} from template: {e}", path.display());
+    }
+}
+
+/// True for JSON keys that hold a credential (D11). Matched by name so a field
+/// added later (or one nested in a list, like `mini_experts[].api_key`) is
+/// covered without touching this list.
+fn is_secret_key(key: &str) -> bool {
+    key == "api_key"
+        || key == "token"
+        || key == "password"
+        || key == "postgres_url"
+        || key == "supabase_key"
+        || key.ends_with("_api_key")
+        || key.ends_with("_token")
+        || key.ends_with("_secret")
+}
+
+/// Remove every credential from a settings document, recursively.
+///
+/// Secrets live in the vault / environment (`current()` reads them from there);
+/// the runtime state keeps no value and no reference, so rotating them in `.env`
+/// takes effect and a leaked state file leaks nothing.
+fn strip_secrets(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.retain(|k, _| !is_secret_key(k));
+            map.values_mut().for_each(strip_secrets);
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_secrets),
+        _ => {}
+    }
+}
+
+/// Surface a rejected runtime state.
+///
+/// `load()` runs in `main.rs` *before* the tracing subscriber is installed, so a
+/// `tracing::warn!` alone is dropped on the floor for exactly the failure we most
+/// need to see. Write to stderr first, then mirror it into tracing for the cases
+/// where a subscriber does exist (daemon, tests, library callers).
+fn report_state_rejection(kind: &str, config_path: &Path, error: &anyhow::Error) {
+    let state_path = resolve_runtime_state_path(config_path);
+    let message = format!(
+        "Xavier runtime state at {} was rejected ({kind}); continuing with defaults: {error:#}",
+        state_path.display(),
+    );
+    eprintln!("WARN: {message}");
+    tracing::warn!("{message}");
 }
 
 /// Read the runtime-state overlay that belongs to a given defaults file.
@@ -137,12 +225,15 @@ fn load_runtime_state(config_path: &Path) -> Result<Option<Value>> {
     }
     let raw = std::fs::read_to_string(&state_path)
         .with_context(|| format!("failed to read runtime state at {}", state_path.display()))?;
-    let parsed: Value = serde_json::from_str(&raw).with_context(|| {
+    let mut parsed: Value = serde_json::from_str(&raw).with_context(|| {
         format!(
             "failed to parse runtime state file at {}",
             state_path.display()
         )
     })?;
+    // States written before D11 carry secret values that would pin them over
+    // the environment: ignore them.
+    strip_secrets(&mut parsed);
     Ok(Some(parsed))
 }
 
@@ -356,12 +447,19 @@ pub async fn save(settings: &XavierSettings) -> Result<()> {
         }
     }
 
-    let raw = serde_json::to_string_pretty(settings)
+    // D11: never persist credentials; they come from the vault / environment.
+    // Round-trip through text, not `to_value`: f32 fields would otherwise widen
+    // to f64 and persist as 0.29999998211860657 (float drift in the state).
+    let mut document: Value = serde_json::from_str(
+        &serde_json::to_string(settings).with_context(|| "failed to serialize settings to JSON")?,
+    )
+    .with_context(|| "failed to re-read serialized settings")?;
+    strip_secrets(&mut document);
+    let raw = serde_json::to_string_pretty(&document)
         .with_context(|| "failed to serialize settings to JSON")?;
 
-    // The state file can hold a token and a resolved token_secret, so it is
-    // created 0600 (a pre-existing file keeps its own mode, hence the
-    // permissions check below).
+    // Defence in depth: the state file is created 0600 (a pre-existing file
+    // keeps its own mode, hence the permissions check below).
     let mut options = fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -406,4 +504,142 @@ fn harden_state_file_permissions(path: &Path) -> Result<()> {
             .with_context(|| format!("failed to restrict permissions on {}", path.display()))?;
     }
     Ok(())
+}
+
+/// A rejected runtime state must never take the process down (D10).
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // TempEnv holds ENV_LOCK for the whole test, which is what keeps these from
+    // racing each other and the other settings tests: XAVIER_CONFIG_PATH is
+    // process-wide, and cargo runs #[test] fns on parallel threads.
+    use crate::settings::tests::TempEnv;
+
+    /// Pins the defaults file and the state file into a scratch dir, and restores
+    /// both the process env and the dir on drop. `None` defaults = the clean
+    /// machine, where no config file exists at all.
+    struct Fixture {
+        dir: PathBuf,
+        _env: TempEnv,
+    }
+
+    impl Fixture {
+        fn new(name: &str, defaults: Option<&str>, state_json: &str) -> Self {
+            // Snapshot the env BEFORE pinning anything, so Drop can put it back.
+            let env = TempEnv::new();
+            let dir =
+                std::env::temp_dir().join(format!("xavier-d10-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("scratch dir");
+
+            let config = dir.join("xavier.config.json");
+            if let Some(contents) = defaults {
+                std::fs::write(&config, contents).expect("write defaults");
+            }
+            let state_path = dir.join(RUNTIME_STATE_FILENAME);
+            std::fs::write(&state_path, state_json).expect("write state");
+            std::env::set_var("XAVIER_CONFIG_PATH", &config);
+            std::env::set_var("XAVIER_RUNTIME_STATE_PATH", &state_path);
+
+            Self { dir, _env: env }
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[test]
+    fn load_survives_a_schema_incompatible_state_file() {
+        let _f = Fixture::new(
+            "incompatible",
+            // Defaults pin a host/port that must survive the rejected overlay.
+            Some(r#"{"server":{"host":"10.0.0.5","port":9999}}"#),
+            // Valid JSON, but `server.port` is a string: exactly what a binary
+            // that changed a field's type leaves behind on disk.
+            r#"{"server":{"port":"not-a-number"}}"#,
+        );
+
+        let loaded = load()
+            .expect("load must not fail on an incompatible state file")
+            .expect("defaults exist, so settings must be Some");
+
+        assert_eq!(loaded.server.host, "10.0.0.5", "defaults must be kept");
+        assert_eq!(loaded.server.port, 9999, "defaults must be kept");
+    }
+
+    #[test]
+    fn load_ignores_secrets_in_a_legacy_state_file() {
+        let _f = Fixture::new(
+            "legacy-secrets",
+            Some(r#"{"server":{"port":9999}}"#),
+            r#"{"server":{"port":7777},"security":{"token_secret":"s3cr3t"},
+                "embedding":{"api_key":"k"},"pgheart":{"token":"t"}}"#,
+        );
+        let loaded = load().expect("load").expect("settings");
+        assert_eq!(loaded.server.port, 7777, "non-secret state still applies");
+        assert!(loaded.security.token_secret.is_none());
+        assert!(loaded.embedding.api_key.is_none());
+        assert!(loaded.pgheart.token.is_none());
+    }
+
+    #[test]
+    fn strip_secrets_removes_nested_and_listed_credentials() {
+        let mut v = serde_json::json!({
+            "models": {"llm_api_key": "a", "provider": "local", "max_tokens": 5},
+            "workspace": {"mini_experts": [{"name": "x", "api_key": "k"}]},
+            "telegram": {"bot_token": "b"}
+        });
+        strip_secrets(&mut v);
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "models": {"provider": "local", "max_tokens": 5},
+                "workspace": {"mini_experts": [{"name": "x"}]},
+                "telegram": {}
+            })
+        );
+    }
+
+    #[test]
+    fn load_survives_an_unparseable_state_file() {
+        let _f = Fixture::new(
+            "unparseable",
+            Some(r#"{"server":{"port":9999}}"#),
+            "{ this is not json at all",
+        );
+
+        let loaded = load()
+            .expect("load must not fail on an unparseable state file")
+            .expect("defaults exist, so settings must be Some");
+        assert_eq!(loaded.server.port, 9999);
+    }
+
+    #[test]
+    fn load_still_applies_a_valid_state_overlay() {
+        let _f = Fixture::new(
+            "valid",
+            Some(r#"{"server":{"host":"10.0.0.5","port":9999}}"#),
+            r#"{"server":{"port":7777}}"#,
+        );
+
+        let loaded = load().expect("load").expect("settings");
+        assert_eq!(
+            loaded.server.host, "10.0.0.5",
+            "untouched key keeps default"
+        );
+        assert_eq!(loaded.server.port, 7777, "overlay wins");
+    }
+
+    #[test]
+    fn load_without_defaults_survives_an_incompatible_state_file() {
+        // Clean machine: no defaults file, so a bad state must degrade to "no
+        // settings" instead of erroring the caller out.
+        let _f = Fixture::new("nodefaults", None, r#"{"server":{"port":{}}}"#);
+
+        let loaded = load().expect("load must not fail without defaults");
+        assert!(loaded.is_none(), "nothing to load is not an error");
+    }
 }

@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   Brain,
   ChevronRight,
-  X,
   Send,
   Lightbulb,
   AlertTriangle,
@@ -14,48 +13,17 @@ import {
   Loader2,
   ArrowLeft,
 } from "lucide-react";
-import { getApiUrl } from "../../api/client";
+import {
+  malocaApi,
+  type ChallengeType,
+  type HumanChallengeEvent,
+  type IntrospectionSession,
+  type IntrospectionTechnique as Technique,
+} from "../api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ChallengeType = "contradiction" | "decision" | "execution" | "assumption" | "clarification";
-type Technique =
-  | "socratic_questioning"
-  | "five_whys"
-  | "pre_mortem"
-  | "steel_manning"
-  | "first_principles"
-  | "pattern_recognition";
-type SessionStatus = "active" | "completed" | "abandoned";
-
-interface Challenge {
-  id: string;
-  session_id: string;
-  challenge_type: ChallengeType;
-  description: string;
-  raw_content: string;
-  confidence_score: number;
-  status: string;
-  recommended_technique: Technique;
-}
-
-interface Turn {
-  role: "llm_guide" | "human";
-  content: string;
-  timestamp: string;
-}
-
-interface IntrospectionSession {
-  session_id: string;
-  challenge_id: string;
-  technique: Technique;
-  turn_number: number;
-  llm_prompt: string;
-  depth_score: number;
-  status: SessionStatus;
-  insights: string[];
-  is_complete: boolean;
-}
+type Challenge = HumanChallengeEvent;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -129,12 +97,13 @@ function DepthDots({ score }: { score: number }) {
 
 function SessionCard({
   challenge,
+  technique,
   onEnter,
 }: {
   challenge: Challenge;
+  technique: Technique;
   onEnter: (challenge: Challenge) => void;
 }) {
-  const technique = RECOMMENDED_TECHNIQUE[challenge.challenge_type];
   const title =
     challenge.description ||
     challenge.raw_content.slice(0, 80) + (challenge.raw_content.length > 80 ? "..." : "");
@@ -197,50 +166,41 @@ function SessionCard({
 
 // ─── Introspection Chat ───────────────────────────────────────────────────────
 
+function challengeDescription(challenge: Challenge): string {
+  return challenge.description || challenge.raw_content;
+}
+
+function isKnownTechnique(t: string): t is Technique {
+  return t in TECHNIQUE_LABELS;
+}
+
 function IntrospectionChat({
   challenge,
+  technique,
   onBack,
 }: {
   challenge: Challenge;
+  technique: Technique;
   onBack: () => void;
 }) {
-  const technique = RECOMMENDED_TECHNIQUE[challenge.challenge_type];
   const [session, setSession] = useState<IntrospectionSession | null>(null);
-  const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  // Start session on mount
-  useEffect(() => {
-    startSession();
-  }, []);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [turns]);
-
-  async function callIntrospect(payload: Record<string, unknown>) {
-    const res = await fetch(getApiUrl("/v1/maloca/challenges/introspect"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    return (await res.json()) as IntrospectionSession;
-  }
+  const turns = session?.turns ?? [];
 
   async function startSession() {
     setLoading(true);
     setError(null);
     try {
-      const data = await callIntrospect({
+      const { session: created } = await malocaApi.startIntrospection({
         challenge_id: challenge.id,
-        technique: technique,
+        challenge_type: challenge.challenge_type,
+        description: challengeDescription(challenge),
+        technique,
       });
-      setSession(data);
-      setTurns([{ role: "llm_guide", content: data.llm_prompt, timestamp: new Date().toISOString() }]);
+      setSession(created);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al iniciar la sesión");
     } finally {
@@ -248,43 +208,49 @@ function IntrospectionChat({
     }
   }
 
+  // Start session on mount
+  useEffect(() => {
+    void startSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
+  }, [turns.length]);
+
   async function sendTurn() {
     if (!input.trim() || !session || loading) return;
     const userMsg = input.trim();
-    setInput("");
-    setTurns((prev) => [
-      ...prev,
-      { role: "human", content: userMsg, timestamp: new Date().toISOString() },
-    ]);
     setLoading(true);
+    setError(null);
     try {
-      const data = await callIntrospect({
-        challenge_id: challenge.id,
-        session_id: session.session_id,
+      const { session: updated } = await malocaApi.introspectionTurn(session.id, {
         human_input: userMsg,
+        challenge_description: challengeDescription(challenge),
       });
-      setSession(data);
-      setTurns((prev) => [
-        ...prev,
-        { role: "llm_guide", content: data.llm_prompt, timestamp: new Date().toISOString() },
-      ]);
+      setSession(updated);
+      setInput("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al procesar tu respuesta");
+      // Resync with the persisted session; the input is kept so the user can retry.
+      try {
+        const { session: current } = await malocaApi.getIntrospection(session.id);
+        setSession(current);
+      } catch {
+        /* keep the local state */
+      }
     } finally {
       setLoading(false);
     }
   }
 
   async function completeSession() {
-    if (!session) return;
+    if (!session || loading) return;
     setLoading(true);
+    setError(null);
     try {
-      const data = await callIntrospect({
-        challenge_id: challenge.id,
-        session_id: session.session_id,
-        complete: true,
-      });
-      setSession(data);
+      const { session: done } = await malocaApi.completeIntrospection(session.id);
+      setSession(done);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al completar la sesión");
     } finally {
@@ -292,7 +258,7 @@ function IntrospectionChat({
     }
   }
 
-  const isComplete = session?.is_complete ?? false;
+  const isComplete = session?.status === "completed";
 
   return (
     <div className="flex flex-col h-full">
@@ -301,6 +267,7 @@ function IntrospectionChat({
         <button
           type="button"
           onClick={onBack}
+          aria-label="Volver"
           className="p-1.5 rounded-lg hover:bg-white/5 text-white/40 hover:text-white transition-colors"
         >
           <ArrowLeft size={18} />
@@ -323,6 +290,7 @@ function IntrospectionChat({
           <button
             type="button"
             onClick={completeSession}
+            disabled={loading}
             className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white border border-white/10 transition-all"
           >
             Completar
@@ -402,7 +370,17 @@ function IntrospectionChat({
         {error && (
           <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/5 border border-red-500/20 rounded-lg px-3 py-2">
             <AlertTriangle size={14} />
-            {error}
+            <span className="flex-1">{error}</span>
+            {!session && (
+              <button
+                type="button"
+                onClick={() => void startSession()}
+                disabled={loading}
+                className="underline hover:text-red-300 disabled:opacity-40"
+              >
+                Reintentar
+              </button>
+            )}
           </div>
         )}
 
@@ -453,29 +431,25 @@ function IntrospectionChat({
 
 export function IntrospectionTab() {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [techniques, setTechniques] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null);
+  // null = use the technique recommended for each challenge type
+  const [techniqueOverride, setTechniqueOverride] = useState<Technique | null>(null);
+  const [selectedTechnique, setSelectedTechnique] = useState<Technique | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAvailable();
+    void fetchAvailable();
   }, []);
 
   async function fetchAvailable() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(getApiUrl("/v1/maloca/introspection/available"));
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const raw = (data.challenges ?? []) as Challenge[];
-      // Add recommended technique
-      setChallenges(
-        raw.map((c) => ({
-          ...c,
-          recommended_technique: RECOMMENDED_TECHNIQUE[c.challenge_type] ?? "socratic_questioning",
-        }))
-      );
+      const data = await malocaApi.getIntrospectionAvailable();
+      setChallenges(data.challenges ?? []);
+      setTechniques(data.techniques ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al cargar sesiones");
     } finally {
@@ -483,10 +457,21 @@ export function IntrospectionTab() {
     }
   }
 
+  function techniqueFor(challenge: Challenge): Technique {
+    return techniqueOverride ?? RECOMMENDED_TECHNIQUE[challenge.challenge_type] ?? "socratic_questioning";
+  }
+
+  function enter(challenge: Challenge) {
+    setSelectedTechnique(techniqueFor(challenge));
+    setActiveChallenge(challenge);
+  }
+
   if (activeChallenge) {
     return (
       <IntrospectionChat
+        key={activeChallenge.id}
         challenge={activeChallenge}
+        technique={selectedTechnique ?? "socratic_questioning"}
         onBack={() => setActiveChallenge(null)}
       />
     );
@@ -522,6 +507,43 @@ export function IntrospectionTab() {
         </button>
       </div>
 
+      {/* Available techniques (from /introspection/available) */}
+      {techniques.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4 shrink-0">
+          <span className="text-[10px] font-mono text-white/30 uppercase tracking-wider">Técnica</span>
+          <button
+            type="button"
+            onClick={() => setTechniqueOverride(null)}
+            aria-pressed={techniqueOverride === null}
+            className={`text-xs font-mono px-2 py-0.5 rounded border transition-all ${
+              techniqueOverride === null
+                ? "text-white bg-white/10 border-white/30"
+                : "text-white/40 border-white/10 hover:text-white/70"
+            }`}
+          >
+            Recomendada
+          </button>
+          {techniques.map((t) => {
+            const known = isKnownTechnique(t);
+            const active = techniqueOverride === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                disabled={!known}
+                onClick={() => known && setTechniqueOverride(t)}
+                aria-pressed={active}
+                className={`text-xs font-mono px-2 py-0.5 rounded border transition-all disabled:opacity-30 ${
+                  known ? (active ? TECHNIQUE_COLORS[t] : "text-white/40 border-white/10 hover:text-white/70") : "border-white/10"
+                }`}
+              >
+                {known ? TECHNIQUE_LABELS[t] : t}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto pr-1">
         {loading && challenges.length === 0 && (
@@ -533,7 +555,10 @@ export function IntrospectionTab() {
         {error && (
           <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/5 border border-red-500/20 rounded-xl px-4 py-3 mb-4">
             <AlertTriangle size={14} />
-            {error}
+            <span className="flex-1">{error}</span>
+            <button type="button" onClick={() => void fetchAvailable()} className="underline hover:text-red-300">
+              Reintentar
+            </button>
           </div>
         )}
 
@@ -554,7 +579,8 @@ export function IntrospectionTab() {
             <SessionCard
               key={challenge.id}
               challenge={challenge}
-              onEnter={setActiveChallenge}
+              technique={techniqueFor(challenge)}
+              onEnter={enter}
             />
           ))}
         </div>

@@ -1,13 +1,16 @@
-use super::privacy::{PrivacyLevel, PrivacyPipeline};
-use crate::data_commons::maintainer::decrypt_as_maintainer;
-use crate::data_commons::telemetry_db::TelemetryDb;
+use super::privacy::{
+    check_k_anonymity, AnonymizationAudit, AuditCounts, AuditInput, PiiCounts, PrivacyConfig,
+    PrivacyLevel, PrivacyPipeline,
+};
+pub use super::sources::{
+    ChallengeSource, MemorySource, SourceBatch, SourceContext, TelemetrySource, TrainingSource,
+};
 use chrono::{DateTime, Utc};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,6 +19,8 @@ pub struct TrainingBundle {
     pub train_split: Vec<serde_json::Value>,
     pub eval_split: Vec<serde_json::Value>,
     pub audit_summary: AuditSummary,
+    /// Written verbatim to `anonymization_audit.json`.
+    pub audit: AnonymizationAudit,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -24,6 +29,8 @@ pub struct AuditSummary {
     pub included_records: usize,
     pub excluded_records_no_consent: usize,
     pub excluded_records_revoked: usize,
+    #[serde(default)]
+    pub excluded_other: BTreeMap<String, usize>,
 }
 
 pub struct TrainingExporter {
@@ -31,6 +38,9 @@ pub struct TrainingExporter {
     schema_version: String,
     pub is_curated: bool,
     pub privacy_level: PrivacyLevel,
+    pub privacy_config: PrivacyConfig,
+    pub workspace: Option<String>,
+    pub domain: Option<String>,
 }
 
 impl TrainingExporter {
@@ -41,6 +51,9 @@ impl TrainingExporter {
             schema_version: "1.0.0".to_string(),
             is_curated: false,
             privacy_level: PrivacyLevel::P2,
+            privacy_config: PrivacyConfig::default(),
+            workspace: None,
+            domain: None,
         }
     }
 
@@ -56,94 +69,117 @@ impl TrainingExporter {
         self
     }
 
-    /// Generate bundle.
+    /// Set epsilon / sensitivity / k.
+    pub fn with_privacy_config(mut self, config: PrivacyConfig) -> Self {
+        self.privacy_config = config;
+        self
+    }
+
+    /// Workspace / domain recorded in the manifest and audit (sources filter on their own).
+    pub fn with_scope(mut self, workspace: Option<String>, domain: Option<String>) -> Self {
+        self.workspace = workspace;
+        self.domain = domain;
+        self
+    }
+
+    /// Telemetry-only bundle (original behavior).
     pub fn generate_bundle(
         &self,
         seed: u64,
         eval_ratio: f32,
         _generated_at: Option<DateTime<Utc>>,
     ) -> Result<TrainingBundle, String> {
+        self.check_params(eval_ratio)?;
+        let batch = TelemetrySource::new(&self.db_path).collect_sync(seed)?;
+        self.assemble(vec![("telemetry".to_string(), batch)], seed, eval_ratio)
+    }
+
+    /// Compose the given sources into one bundle.
+    pub async fn generate_bundle_from_sources(
+        &self,
+        sources: &[Box<dyn TrainingSource>],
+        seed: u64,
+        eval_ratio: f32,
+    ) -> Result<TrainingBundle, String> {
+        self.check_params(eval_ratio)?;
+        if sources.is_empty() {
+            return Err("at least one training source is required".to_string());
+        }
+        let ctx = SourceContext {
+            seed,
+            privacy_level: self.privacy_level,
+        };
+        let mut batches = Vec::new();
+        for source in sources {
+            let batch = source
+                .collect(&ctx)
+                .await
+                .map_err(|e| format!("source '{}': {}", source.name(), e))?;
+            batches.push((source.name().to_string(), batch));
+        }
+        self.assemble(batches, seed, eval_ratio)
+    }
+
+    fn check_params(&self, eval_ratio: f32) -> Result<(), String> {
         if !(0.0..=1.0).contains(&eval_ratio) {
             return Err("eval_ratio must be between 0.0 and 1.0".to_string());
         }
+        self.privacy_config.validate()
+    }
 
-        let db = TelemetryDb::new(&self.db_path).map_err(|e| e.to_string())?;
-
-        // In a real scenario, we might have a list of revoked wallets.
-        // For now, we'll assume no revocations or a placeholder.
-        let revoked_wallets: BTreeSet<String> = BTreeSet::new();
-
-        let logs = db.get_all_logs().map_err(|e| e.to_string())?;
-        let total_records_found = logs.len();
-
-        let mut processed_records = Vec::new();
-        let mut anonymized_sources = BTreeSet::new();
-        let excluded_no_consent = 0;
-        let mut excluded_revoked = 0;
-
-        for (_hash, encrypted_payload, ephemeral_pubkey, wallet, _timestamp) in logs {
-            // Check revocation
-            if revoked_wallets.contains(&wallet) {
-                excluded_revoked += 1;
-                continue;
+    fn assemble(
+        &self,
+        batches: Vec<(String, SourceBatch)>,
+        seed: u64,
+        eval_ratio: f32,
+    ) -> Result<TrainingBundle, String> {
+        let mut counts = AuditCounts::default();
+        let mut source_names = Vec::new();
+        let mut records = Vec::new();
+        for (name, batch) in batches {
+            source_names.push(name);
+            counts.total_found += batch.total_found;
+            counts.excluded_no_consent += batch.excluded_no_consent;
+            counts.excluded_revoked += batch.excluded_revoked;
+            for (reason, n) in batch.excluded_other {
+                *counts.excluded_other.entry(reason).or_insert(0) += n;
             }
-
-            // In our current TelemetryDb, we only save logs if consent was given (see funnel.rs)
-            // But if we had records without consent, we would filter them here.
-            // For now, we'll assume they all have consent since they were saved.
-
-            // The telemetry schema calls this column encrypted_dek, but the
-            // current ECIES flow stores the ephemeral public key there.
-            let mut ephemeral_pubkey_bytes = [0u8; 32];
-            if ephemeral_pubkey.len() == 32 {
-                ephemeral_pubkey_bytes.copy_from_slice(&ephemeral_pubkey);
-            } else {
-                continue;
-            }
-
-            match decrypt_as_maintainer(&encrypted_payload, &ephemeral_pubkey_bytes) {
-                Ok(decrypted_json) => {
-                    match serde_json::from_str::<serde_json::Value>(&decrypted_json) {
-                        Ok(mut val) => {
-                            if let Some(obj) = val.as_object_mut() {
-                                if !obj.contains_key("metadata") {
-                                    obj.insert(
-                                        "metadata".to_string(),
-                                        serde_json::json!({
-                                            "consent_given": true,
-                                            "is_private": false,
-                                            "revoked": false
-                                        }),
-                                    );
-                                }
-                            }
-                            processed_records.push(val);
-                            anonymized_sources.insert(self.anonymize_id(&wallet, seed));
-                        }
-                        Err(_) => continue,
-                    }
-                }
-                Err(_) => continue,
-            }
+            records.extend(batch.records);
         }
+        let included_records = records.len();
+        counts.included = included_records;
 
-        let included_records = processed_records.len();
-
-        // Apply PrivacyPipeline based on privacy_level
-        let processed_records = if self.privacy_level == PrivacyLevel::P4 {
-            processed_records
+        // Privacy pipeline (P4 bypasses scrubbing entirely).
+        let pipeline = PrivacyPipeline::with_config(self.privacy_config);
+        let mut scrubbed = PiiCounts::default();
+        let mut numeric_fields_noised = 0;
+        let mut residual = PiiCounts::default();
+        let mut processed = if self.privacy_level.is_local_only() {
+            records
         } else {
-            PrivacyPipeline::new().process_batch(processed_records, self.privacy_level)
+            for r in &records {
+                let c = pipeline.count_pii(r);
+                scrubbed.add(&c);
+                if self.privacy_level == PrivacyLevel::P3 {
+                    numeric_fields_noised += PrivacyPipeline::count_numeric_leaves(r);
+                }
+            }
+            pipeline.process_batch(records, self.privacy_level)
         };
+        for r in &processed {
+            let c = pipeline.count_pii(r);
+            residual.add(&c);
+        }
+        let k_report = check_k_anonymity(&processed, self.privacy_config.k);
 
         // Deterministic split
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let mut processed_records = processed_records;
-        processed_records.shuffle(&mut rng);
-
+        processed.shuffle(&mut rng);
         let eval_size = (included_records as f32 * eval_ratio) as usize;
-        let eval_split: Vec<serde_json::Value> = processed_records.drain(0..eval_size).collect();
-        let train_split = processed_records;
+        let eval_split: Vec<serde_json::Value> = processed.drain(0..eval_size).collect();
+        let train_split = processed;
+        counts.train = train_split.len();
+        counts.eval = eval_split.len();
 
         let mut split_counts = std::collections::HashMap::new();
         split_counts.insert("train".to_string(), train_split.len());
@@ -159,26 +195,40 @@ impl TrainingExporter {
         };
 
         let audit_summary = AuditSummary {
-            total_records_found,
+            total_records_found: counts.total_found,
             included_records,
-            excluded_records_no_consent: excluded_no_consent,
-            excluded_records_revoked: excluded_revoked,
+            excluded_records_no_consent: counts.excluded_no_consent,
+            excluded_records_revoked: counts.excluded_revoked,
+            excluded_other: counts.excluded_other.clone(),
         };
+
+        let generated_at = Utc::now().to_rfc3339();
+        let audit = AnonymizationAudit::evaluate(AuditInput {
+            level: self.privacy_level,
+            config: self.privacy_config,
+            counts,
+            scrubbed,
+            residual,
+            numeric_fields_noised,
+            k_report,
+            sources: source_names,
+            workspace: self.workspace.clone(),
+            domain: self.domain.clone(),
+            generated_at: &generated_at,
+        });
 
         Ok(TrainingBundle {
             manifest,
             train_split,
             eval_split,
             audit_summary,
+            audit,
         })
     }
 
+    #[cfg(test)]
     fn anonymize_id(&self, wallet: &str, seed: u64) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(wallet.as_bytes());
-        hasher.update(seed.to_be_bytes());
-        let result = hasher.finalize();
-        crate::crypto::hex_encode(result)[0..16].to_string()
+        TelemetrySource::anonymize_id(wallet, seed)
     }
 }
 
@@ -312,6 +362,16 @@ pub fn load_dataset_manifest(dataset_dir: &Path) -> Result<serde_json::Value, St
     Ok(val)
 }
 
+/// Load a dataset's `anonymization_audit.json`.
+pub fn load_dataset_audit(dataset_dir: &Path) -> Result<serde_json::Value, String> {
+    let audit_path = dataset_dir.join("anonymization_audit.json");
+    if !audit_path.exists() {
+        return Err("Audit not found".to_string());
+    }
+    let content = std::fs::read_to_string(&audit_path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&content).map_err(|e| e.to_string())
+}
+
 /// Load a dataset's split (train or eval) as JSONL string.
 pub fn load_dataset_split(dataset_dir: &Path, split: &str) -> Result<String, String> {
     let file_name = format!("{}.jsonl", split);
@@ -353,6 +413,19 @@ pub fn write_bundle_to_dir(
             "privacy_level".to_string(),
             serde_json::json!(bundle.manifest.privacy_level),
         );
+        obj.insert(
+            "local_only".to_string(),
+            serde_json::json!(bundle.audit.local_only),
+        );
+        obj.insert(
+            "sources".to_string(),
+            serde_json::json!(bundle.audit.sources),
+        );
+        obj.insert(
+            "workspace".to_string(),
+            serde_json::json!(bundle.audit.workspace),
+        );
+        obj.insert("domain".to_string(), serde_json::json!(bundle.audit.domain));
     }
 
     std::fs::write(
@@ -363,7 +436,7 @@ pub fn write_bundle_to_dir(
 
     std::fs::write(
         dataset_dir.join("anonymization_audit.json"),
-        serde_json::to_string_pretty(&bundle.audit_summary).map_err(|e| e.to_string())?,
+        serde_json::to_string_pretty(&bundle.audit).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
 
@@ -510,7 +583,21 @@ mod tests {
                 included_records: 0,
                 excluded_records_no_consent: 0,
                 excluded_records_revoked: 0,
+                excluded_other: BTreeMap::new(),
             },
+            audit: AnonymizationAudit::evaluate(AuditInput {
+                level: PrivacyLevel::P2,
+                config: PrivacyConfig::default(),
+                counts: AuditCounts::default(),
+                scrubbed: PiiCounts::default(),
+                residual: PiiCounts::default(),
+                numeric_fields_noised: 0,
+                k_report: check_k_anonymity(&[], 5),
+                sources: vec![],
+                workspace: None,
+                domain: None,
+                generated_at: "2026-01-01T00:00:00Z",
+            }),
         };
 
         write_bundle_to_dir(
@@ -609,5 +696,255 @@ mod tests {
             record_p4["message"],
             "Contact user@example.com for info at /home/belal/secret.rs"
         );
+    }
+
+    // ---- MX-03: sources, audit, k-anonymity -------------------------------------------
+
+    use crate::memory::store::{FileMemoryStore, MemoryRecord, MemoryStore};
+    use std::sync::Arc;
+
+    fn mem(id: &str, kind: &str, title: &str, content: &str) -> MemoryRecord {
+        MemoryRecord {
+            id: id.to_string(),
+            workspace_id: "ws1".to_string(),
+            path: format!("dev/{id}"),
+            content: content.to_string(),
+            metadata: serde_json::json!({"kind": kind, "title": title}),
+            ..MemoryRecord::default()
+        }
+    }
+
+    async fn tempdir_store(dir: &Path, n: usize, kind: &str) -> Arc<dyn MemoryStore> {
+        let store = FileMemoryStore::new(dir.join("memories.json"))
+            .await
+            .unwrap();
+        for i in 0..n {
+            store
+                .put(mem(
+                    &format!("m{i:02}"),
+                    kind,
+                    &format!("module_{i}"),
+                    &format!("Module {i} parses the config and returns typed errors."),
+                ))
+                .await
+                .unwrap();
+        }
+        Arc::new(store)
+    }
+
+    fn exporter() -> TrainingExporter {
+        TrainingExporter::new(Path::new("unused.db"))
+    }
+
+    #[tokio::test]
+    async fn test_memory_source_produces_pairs_from_tempdir_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempdir_store(dir.path(), 6, "file").await;
+        // Different kind, other workspace, too short: must not appear.
+        store
+            .put(mem(
+                "x1",
+                "decision",
+                "use sqlite",
+                "We chose sqlite because it is embedded and simple.",
+            ))
+            .await
+            .unwrap();
+        store.put(mem("x2", "file", "tiny", "short")).await.unwrap();
+        let mut other_ws = mem(
+            "x3",
+            "file",
+            "other",
+            "Content from another workspace entirely.",
+        );
+        other_ws.workspace_id = "ws2".to_string();
+        store.put(other_ws).await.unwrap();
+
+        let src = MemorySource::new(store, "ws1").with_kinds(vec!["file".into()]);
+        let ctx = SourceContext {
+            seed: 1,
+            privacy_level: PrivacyLevel::P2,
+        };
+        let batch = src.collect(&ctx).await.unwrap();
+        assert_eq!(batch.records.len(), 6);
+        assert_eq!(
+            batch.excluded_other.get("memory:content_too_short"),
+            Some(&1)
+        );
+        let r = &batch.records[0];
+        assert_eq!(r["instruction"], "What does module_0 do in this codebase?");
+        assert_eq!(
+            r["response"],
+            "Module 0 parses the config and returns typed errors."
+        );
+        assert_eq!(r["metadata"]["kind"], "file");
+        assert_eq!(r["metadata"]["workspace"], "ws1");
+    }
+
+    #[tokio::test]
+    async fn test_challenge_source_reads_training_eligible_votes() {
+        use crate::humanchallenge::store::HumanChallengeStore;
+        use crate::humanchallenge::types::{
+            ChallengeType, CurationVerdict, CurationVote, HumanChallengeEvent,
+        };
+        let hc = HumanChallengeStore::in_memory().unwrap();
+        let mut ev =
+            HumanChallengeEvent::new("s1", ChallengeType::Decision, "Why sqlite?", "raw", 0.9);
+        ev.privacy_p4_local_only = false;
+        hc.save_event(&ev).unwrap();
+        hc.save_curation_vote(&CurationVote::new(
+            &ev.id,
+            CurationVerdict::Refine,
+            Some("Because embedded.".into()),
+            true,
+            vec!["rust".into()],
+            true,
+        ))
+        .unwrap();
+        // Not eligible -> never returned.
+        hc.save_curation_vote(&CurationVote::new(
+            &ev.id,
+            CurationVerdict::Accept,
+            Some("nope".into()),
+            true,
+            vec![],
+            false,
+        ))
+        .unwrap();
+        // Local-only event: skipped unless P4.
+        let ev2 = HumanChallengeEvent::new("s1", ChallengeType::Decision, "Secret?", "raw", 0.9);
+        hc.save_event(&ev2).unwrap();
+        hc.save_curation_vote(&CurationVote::new(
+            &ev2.id,
+            CurationVerdict::Accept,
+            Some("Local.".into()),
+            true,
+            vec![],
+            true,
+        ))
+        .unwrap();
+
+        let src = ChallengeSource::new(Arc::new(hc));
+        let p3 = src
+            .collect(&SourceContext {
+                seed: 1,
+                privacy_level: PrivacyLevel::P3,
+            })
+            .await
+            .unwrap();
+        assert_eq!(p3.records.len(), 1);
+        assert_eq!(p3.records[0]["instruction"], "Why sqlite?");
+        assert_eq!(p3.records[0]["response"], "Because embedded.");
+        assert_eq!(p3.excluded_other.get("challenge:local_only"), Some(&1));
+        let p4 = src
+            .collect(&SourceContext {
+                seed: 1,
+                privacy_level: PrivacyLevel::P4,
+            })
+            .await
+            .unwrap();
+        assert_eq!(p4.records.len(), 2);
+    }
+
+    fn sources_of(store: Arc<dyn MemoryStore>) -> Vec<Box<dyn TrainingSource>> {
+        vec![Box::new(MemorySource::new(store, "ws1"))]
+    }
+
+    #[tokio::test]
+    async fn test_p4_bundle_audit_is_local_only_and_never_passes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempdir_store(dir.path(), 8, "file").await;
+        let bundle = exporter()
+            .with_privacy_level(PrivacyLevel::P4)
+            .generate_bundle_from_sources(&sources_of(store), 7, 0.25)
+            .await
+            .unwrap();
+        assert!(bundle.audit.local_only);
+        assert!(!bundle.audit.passed);
+        assert_eq!(bundle.audit.privacy_level, "P4");
+        assert!(bundle
+            .audit
+            .reasons
+            .iter()
+            .any(|r| r.contains("local-only")));
+
+        let out = tempfile::tempdir().unwrap();
+        write_bundle_to_dir(out.path(), "b4", &bundle, None, None, None).unwrap();
+        let audit = load_dataset_audit(&out.path().join("b4")).unwrap();
+        assert_eq!(audit["local_only"], true);
+        assert_eq!(audit["passed"], false);
+        let manifest = get_manifest(out.path(), "b4").unwrap();
+        assert_eq!(manifest["privacy_level"], "P4");
+        assert_eq!(manifest["local_only"], true);
+    }
+
+    #[tokio::test]
+    async fn test_p3_audit_passes_with_k_and_fails_when_k_violated() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempdir_store(dir.path(), 8, "file").await;
+        let ok = exporter()
+            .with_privacy_level(PrivacyLevel::P3)
+            .generate_bundle_from_sources(&sources_of(store.clone()), 7, 0.25)
+            .await
+            .unwrap();
+        assert!(ok.audit.passed, "reasons: {:?}", ok.audit.reasons);
+        assert!(!ok.audit.local_only);
+        assert_eq!(ok.audit.k, 5);
+        assert!(ok.audit.dp_applied);
+        assert_eq!(ok.audit.counts.included, 8);
+
+        // One lone record of another kind forms a class of size 1 < k.
+        store
+            .put(mem(
+                "zz",
+                "decision",
+                "lone",
+                "A single decision that is easy to re-identify.",
+            ))
+            .await
+            .unwrap();
+        let bad = exporter()
+            .with_privacy_level(PrivacyLevel::P3)
+            .generate_bundle_from_sources(&sources_of(store.clone()), 7, 0.25)
+            .await
+            .unwrap();
+        assert!(!bad.audit.passed);
+        assert!(!bad.audit.k_anonymity.satisfied);
+        assert!(bad.audit.reasons.iter().any(|r| r.contains("k-anonymity")));
+
+        // Configurable k: k=1 makes the same data pass.
+        let relaxed = exporter()
+            .with_privacy_level(PrivacyLevel::P3)
+            .with_privacy_config(PrivacyConfig {
+                k: 1,
+                epsilon: 0.5,
+                ..PrivacyConfig::default()
+            })
+            .generate_bundle_from_sources(&sources_of(store), 7, 0.25)
+            .await
+            .unwrap();
+        assert!(relaxed.audit.passed);
+        assert_eq!(relaxed.audit.epsilon, 0.5);
+
+        let out = tempfile::tempdir().unwrap();
+        write_bundle_to_dir(out.path(), "bad", &bad, None, None, None).unwrap();
+        let audit = load_dataset_audit(&out.path().join("bad")).unwrap();
+        assert_eq!(audit["passed"], false);
+        assert!(out.path().join("bad/anonymization_audit.json").is_file());
+    }
+
+    #[tokio::test]
+    async fn test_invalid_epsilon_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = tempdir_store(dir.path(), 5, "file").await;
+        let err = exporter()
+            .with_privacy_level(PrivacyLevel::P3)
+            .with_privacy_config(PrivacyConfig {
+                epsilon: 0.0,
+                ..PrivacyConfig::default()
+            })
+            .generate_bundle_from_sources(&sources_of(store), 1, 0.2)
+            .await;
+        assert!(err.is_err());
     }
 }

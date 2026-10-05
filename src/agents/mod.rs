@@ -7,6 +7,7 @@ pub mod belief_evaluator;
 pub mod curation;
 pub mod cve_learner;
 pub mod evolve;
+pub mod expert_router;
 pub mod extraction;
 pub mod hormer;
 pub mod mini_experts;

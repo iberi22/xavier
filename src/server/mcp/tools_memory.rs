@@ -12,6 +12,30 @@ use crate::AppState;
 use serde_json::{json, Value};
 use ulid::Ulid;
 
+/// Who is calling an MCP tool, as established by the transport from the
+/// authenticated request (WP-13o): the space identity of an `xsp_` token
+/// (`SpaceAuth`, never the workspace id) and the clearance ceiling the REST
+/// routes would apply to the same request.
+#[derive(Debug, Clone)]
+pub struct McpCaller {
+    pub space: Option<crate::espacio::SpaceAuth>,
+    pub clearance: crate::security::clearance::ClearanceLevel,
+}
+
+tokio::task_local! {
+    static MCP_CALLER: McpCaller;
+}
+
+/// Run `fut` with `caller` as the identity of the MCP call. Without it,
+/// `include_linked` merges nothing (fail closed).
+pub async fn with_mcp_caller<F: std::future::Future>(caller: McpCaller, fut: F) -> F::Output {
+    MCP_CALLER.scope(caller, fut).await
+}
+
+fn mcp_caller() -> Option<McpCaller> {
+    MCP_CALLER.try_with(|c| c.clone()).ok()
+}
+
 const MEMORYFRAGMENT_MAX_LIMIT: usize = 100;
 const MEMORYFRAGMENT_MAX_COMPONENT_CHARS: usize = 128;
 const MEMORYFRAGMENT_MAX_TAGS: usize = 32;
@@ -52,6 +76,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "include_content": { "type": "boolean", "description": "Include full document body in each candidate (default false — prefer memory_context page-in by ids)", "default": false },
                     "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid BM25+vector+RRF pipeline. Kept for forward-compatibility.", "default": "hybrid" },
                     "include_activity": { "type": "boolean", "description": "Include telemetry/noise namespaces (activity/*, gestalt/thinking/*, auto activity/insight records) that are excluded by default (default false)", "default": false },
+                    "include_linked": { "type": "boolean", "description": "Also search (read-only) the spaces that granted this space a link; results carry source_space (default false)", "default": false },
                     "filters": { "type": "object", "description": "Optional filters" }
                 },
                 "required": ["query"]
@@ -430,19 +455,6 @@ async fn handle_mem_search(
         .search_filtered_with_mode(query, fetch_limit, filter_ref)
         .await?;
 
-    // Phase 1 access instrumentation: an MCP read is a user-facing read, so it
-    // counts as evidence of utility exactly like the HTTP search does. Note
-    // this records the *candidate* set, before pagination — the agent looked
-    // at the ranking either way. Recording here rather than in
-    // `MemoryStore::get` keeps internal reads (consolidation, GC, backup,
-    // ingestion) out of the signal.
-    crate::memory::access::record_user_access(
-        &workspace.workspace.memory_manager,
-        &workspace.workspace.memory,
-        &results,
-    )
-    .await;
-
     let results = if depth > 0 {
         workspace
             .workspace
@@ -457,6 +469,16 @@ async fn handle_mem_search(
     let total_matched = results.len();
     let has_more = total_matched > page * limit;
     let paged_results: Vec<_> = results.into_iter().skip(offset).take(limit).collect();
+
+    // Phase 1 access instrumentation (D6): record only the page actually
+    // returned. Recording the whole `page * limit + 1` candidate set would
+    // re-count pages 1..N-1 on every page-N request.
+    crate::memory::access::record_user_access(
+        &workspace.workspace.memory_manager,
+        &workspace.workspace.memory,
+        &paged_results,
+    )
+    .await;
     let total_pages = if total_matched == 0 {
         0
     } else if has_more {
@@ -466,7 +488,7 @@ async fn handle_mem_search(
     };
 
     // Progressive disclosure: fat index by default (structured candidates).
-    let candidates: Vec<Value> = paged_results
+    let mut candidates: Vec<Value> = paged_results
         .into_iter()
         .map(|doc| {
             let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
@@ -491,6 +513,79 @@ async fn handle_mem_search(
             obj
         })
         .collect();
+
+    // WP-13n: opt-in, read-only merge of spaces that linked their memory to
+    // the caller's space. The space is the SpaceAuth identity set by the
+    // transport, not the workspace id. Linked results get the same clearance
+    // ceiling as REST; encrypted/locked linked spaces are skipped with a note.
+    let mut linked_skipped: Vec<Value> = Vec::new();
+    let mut linked_hidden_by_clearance = 0usize;
+    let include_linked = arguments
+        .get("include_linked")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if include_linked {
+        let caller = mcp_caller();
+        let own = caller
+            .as_ref()
+            .and_then(|c| c.space.as_ref())
+            .map(|a| a.space_id.clone());
+        let manager = crate::adapters::inbound::http::routes::get_space_manager();
+        if let (Some(own), Some(manager), Some(caller)) = (own, manager, caller) {
+            if manager.get(&own).await.is_ok() {
+                for c in candidates.iter_mut() {
+                    c["source_space"] = json!(own);
+                }
+                let resolved = crate::espacio::link::resolve_linked(&manager, &own).await;
+                linked_skipped = resolved.skipped;
+                // Link filters and the ceiling run after the search: over-fetch.
+                let linked_fetch = crate::espacio::linked_fetch_limit(fetch_limit);
+                for lm in resolved.searchable {
+                    let Ok((docs, _)) = lm
+                        .ctx
+                        .workspace
+                        .memory
+                        .search_filtered_with_mode(query, linked_fetch, filter_ref)
+                        .await
+                    else {
+                        linked_skipped
+                            .push(json!({"space": lm.space_id, "reason": "SearchFailed"}));
+                        continue;
+                    };
+                    let docs: Vec<_> = docs
+                        .into_iter()
+                        .filter(|d| lm.link.allows(&d.path, &d.metadata))
+                        .collect();
+                    let (docs, hidden) = crate::security::clearance::split_by_clearance(
+                        caller.clearance,
+                        docs,
+                        |d| crate::security::clearance::level_from_metadata(&d.metadata),
+                    );
+                    linked_hidden_by_clearance += hidden;
+                    for doc in docs.into_iter().skip(offset).take(limit) {
+                        let mut obj = json!({
+                            "id": doc.id.clone().unwrap_or_default(),
+                            "path": doc.path,
+                            "score": doc.score,
+                            "snippet": crate::memory::snippet::clip_chars(&doc.content, 100),
+                            "kind": doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                            "source_space": lm.space_id,
+                        });
+                        if include_content {
+                            obj["content"] = json!(doc.content);
+                        }
+                        candidates.push(obj);
+                    }
+                }
+                candidates.sort_by(|a, b| {
+                    let sa = a["score"].as_f64().unwrap_or(0.0);
+                    let sb = b["score"].as_f64().unwrap_or(0.0);
+                    sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                candidates.truncate(limit);
+            }
+        }
+    }
 
     // Record token accounting & search stats
     let total_snippet_bytes: usize = candidates
@@ -546,6 +641,8 @@ async fn handle_mem_search(
         "has_more": has_more,
         "count": candidates.len(),
         "candidates": candidates,
+        "linked_skipped": linked_skipped,
+        "linked_hidden_by_clearance": linked_hidden_by_clearance,
         // "hybrid" when the embedding/vector signal contributed, "lexical" when
         // results are FTS/BM25-only (no embedder configured, or it timed out /
         // failed and search degraded gracefully instead of hanging).

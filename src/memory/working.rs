@@ -188,6 +188,8 @@ pub struct WorkingMemory {
     items: HashMap<String, MemoryItem>,
     /// Map from ID to position in queue for O(1) lookups
     position_map: HashMap<String, usize>,
+    /// Set by every mutation, cleared after a successful snapshot
+    dirty: bool,
 }
 
 impl WorkingMemory {
@@ -203,6 +205,7 @@ impl WorkingMemory {
             items_queue: VecDeque::new(),
             items: HashMap::new(),
             position_map: HashMap::new(),
+            dirty: false,
         }
     }
 
@@ -239,6 +242,7 @@ impl WorkingMemory {
     /// If at capacity, evicts oldest items using FIFO/LRU strategy.
     /// Returns the evicted item if any.
     pub fn push(&mut self, item: MemoryItem) -> Option<MemoryItem> {
+        self.dirty = true;
         // If item with same ID exists, update it instead
         if let std::collections::hash_map::Entry::Occupied(mut entry) =
             self.items.entry(item.id.clone())
@@ -310,6 +314,7 @@ impl WorkingMemory {
 
     /// Remove an item by ID
     fn remove(&mut self, id: &str) -> Option<MemoryItem> {
+        self.dirty = true;
         // Remove from queue and rebuild position map
         if let Some(pos) = self.position_map.remove(id) {
             self.items_queue.remove(pos);
@@ -330,6 +335,7 @@ impl WorkingMemory {
 
     /// Clear all items
     pub fn clear(&mut self) {
+        self.dirty = true;
         self.items.clear();
         self.items_queue.clear();
         self.position_map.clear();
@@ -414,6 +420,183 @@ impl WorkingMemory {
                 .count(),
         }
     }
+}
+
+/// On-disk snapshot format version
+const SNAPSHOT_VERSION: u32 = 1;
+
+#[derive(Serialize, Deserialize)]
+struct WorkingMemorySnapshot {
+    version: u32,
+    /// Items in insertion order (oldest first)
+    items: Vec<MemoryItem>,
+}
+
+/// Default snapshot cadence in seconds
+pub const DEFAULT_SNAPSHOT_INTERVAL_SECS: u64 = 60;
+
+/// Canonical snapshot path under a state directory
+pub fn snapshot_path(state_dir: &std::path::Path) -> std::path::PathBuf {
+    state_dir.join("working_memory").join("snapshot.json")
+}
+
+/// Snapshot cadence from `XAVIER_WORKING_SNAPSHOT_INTERVAL_SECS` (0 disables).
+pub fn snapshot_interval_from_env() -> Option<std::time::Duration> {
+    let secs = match std::env::var("XAVIER_WORKING_SNAPSHOT_INTERVAL_SECS") {
+        Ok(v) => v.trim().parse::<u64>().unwrap_or_else(|_| {
+            tracing::warn!(
+                "XAVIER_WORKING_SNAPSHOT_INTERVAL_SECS '{}' is invalid, using default",
+                v
+            );
+            DEFAULT_SNAPSHOT_INTERVAL_SECS
+        }),
+        Err(_) => DEFAULT_SNAPSHOT_INTERVAL_SECS,
+    };
+    (secs > 0).then(|| std::time::Duration::from_secs(secs))
+}
+
+impl WorkingMemory {
+    /// True when state changed since the last successful snapshot
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Atomically write a snapshot (temp file + rename) and clear the dirty flag.
+    pub fn save_snapshot(&mut self, path: &std::path::Path) -> std::io::Result<()> {
+        let snapshot = WorkingMemorySnapshot {
+            version: SNAPSHOT_VERSION,
+            items: self.items().into_iter().cloned().collect(),
+        };
+        let bytes = serde_json::to_vec(&snapshot).map_err(std::io::Error::other)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        {
+            use std::io::Write;
+            let mut file = std::fs::File::create(&tmp)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+        }
+        std::fs::rename(&tmp, path)?;
+        if let Some(parent) = path.parent() {
+            // Make the rename itself durable (best effort; unsupported on some platforms).
+            if let Ok(dir) = std::fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+        self.dirty = false;
+        Ok(())
+    }
+
+    /// Restore items from a snapshot, merging into the current contents.
+    ///
+    /// A missing file is a normal first boot. A corrupt or unreadable snapshot
+    /// is logged and ignored: boot must never fail because of it. Capacity is
+    /// always respected (older items are evicted first). Returns items restored.
+    pub fn restore_snapshot(&mut self, path: &std::path::Path) -> usize {
+        // A crash mid-save can leave a stale temp file behind.
+        let _ = std::fs::remove_file(path.with_extension("json.tmp"));
+        let raw = match std::fs::read(path) {
+            Ok(raw) => raw,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return 0,
+            Err(e) => {
+                tracing::error!(path = %path.display(), error = %e, "working memory snapshot unreadable; starting empty");
+                return 0;
+            }
+        };
+        let snapshot = match serde_json::from_slice::<WorkingMemorySnapshot>(&raw) {
+            Ok(s) if s.version == SNAPSHOT_VERSION => s,
+            Ok(s) => {
+                tracing::error!(path = %path.display(), version = s.version, "working memory snapshot has unknown version; starting empty");
+                return 0;
+            }
+            Err(e) => {
+                tracing::error!(path = %path.display(), error = %e, "working memory snapshot corrupt; starting empty");
+                return 0;
+            }
+        };
+        // Keep only the newest `capacity` items so restore never churns evictions.
+        let skip = snapshot.items.len().saturating_sub(self.config.capacity);
+        let mut restored = 0;
+        for item in snapshot.items.into_iter().skip(skip) {
+            if self.items.contains_key(&item.id) {
+                continue;
+            }
+            self.push(item);
+            restored += 1;
+        }
+        self.dirty = false;
+        restored
+    }
+}
+
+/// Save the snapshot if dirty (blocking file IO runs off the async workers).
+pub async fn save_if_dirty(
+    wm: &std::sync::Arc<tokio::sync::RwLock<WorkingMemory>>,
+    path: &std::path::Path,
+) {
+    let wm = std::sync::Arc::clone(wm);
+    let path = path.to_path_buf();
+    let result = tokio::task::spawn_blocking(move || {
+        let mut guard = wm.blocking_write();
+        if guard.is_dirty() {
+            guard.save_snapshot(&path)
+        } else {
+            Ok(())
+        }
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::warn!(error = %e, "working memory snapshot failed"),
+        Err(e) => tracing::warn!(error = %e, "working memory snapshot task failed"),
+    }
+}
+
+/// Restore the snapshot, then snapshot periodically (only when dirty) and on SIGTERM.
+///
+/// The HTTP server's own graceful shutdown (SIGINT) additionally calls
+/// [`save_if_dirty`] directly.
+pub fn spawn_persistence(
+    wm: std::sync::Arc<tokio::sync::RwLock<WorkingMemory>>,
+    path: std::path::PathBuf,
+    interval: Option<std::time::Duration>,
+) {
+    {
+        let wm = std::sync::Arc::clone(&wm);
+        let path = path.clone();
+        tokio::spawn(async move {
+            let restored = wm.write().await.restore_snapshot(&path);
+            if restored > 0 {
+                tracing::info!(restored, "working memory restored from snapshot");
+            }
+        });
+    }
+    let Some(interval) = interval else {
+        tracing::info!("working memory periodic snapshot disabled");
+        return;
+    };
+    {
+        let wm = std::sync::Arc::clone(&wm);
+        let path = path.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                save_if_dirty(&wm, &path).await;
+            }
+        });
+    }
+    #[cfg(unix)]
+    tokio::spawn(async move {
+        use tokio::signal::unix::{signal, SignalKind};
+        if let Ok(mut sigterm) = signal(SignalKind::terminate()) {
+            sigterm.recv().await;
+            save_if_dirty(&wm, &path).await;
+        }
+    });
 }
 
 impl Default for WorkingMemory {
@@ -622,5 +805,58 @@ mod tests {
         // Non-matching query should have 0 score
         let no_match = bm25_score(doc, &["xyz"], avg_len, 1.5, 0.75);
         assert_eq!(no_match, 0.0);
+    }
+
+    #[test]
+    fn test_snapshot_roundtrip_and_dirty_flag() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = snapshot_path(dir.path());
+        let mut wm = WorkingMemory::new();
+        assert!(!wm.is_dirty());
+        wm.push(MemoryItem::new("1", "alpha"));
+        wm.push(MemoryItem::new("2", "beta"));
+        assert!(wm.is_dirty());
+        wm.save_snapshot(&path).expect("save");
+        assert!(!wm.is_dirty());
+        assert!(!path.with_extension("json.tmp").exists());
+
+        let mut fresh = WorkingMemory::new();
+        assert_eq!(fresh.restore_snapshot(&path), 2);
+        assert_eq!(fresh.get("2").expect("item").content, "beta");
+        let order: Vec<&str> = fresh.items().iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(order, ["1", "2"]);
+        assert!(!fresh.is_dirty());
+    }
+
+    #[test]
+    fn test_snapshot_restore_respects_capacity() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = snapshot_path(dir.path());
+        let mut wm = WorkingMemory::new();
+        for i in 0..10 {
+            wm.push(MemoryItem::new(i.to_string(), "x"));
+        }
+        wm.save_snapshot(&path).expect("save");
+
+        let mut small = WorkingMemory::with_config(WorkingMemoryConfig {
+            capacity: 3,
+            ..WorkingMemoryConfig::default()
+        });
+        assert_eq!(small.restore_snapshot(&path), 3);
+        assert_eq!(small.len(), 3);
+        assert!(small.get("9").is_some());
+    }
+
+    #[test]
+    fn test_corrupt_or_missing_snapshot_starts_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = snapshot_path(dir.path());
+        let mut wm = WorkingMemory::new();
+        assert_eq!(wm.restore_snapshot(&path), 0);
+
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, b"{ not json").expect("write");
+        assert_eq!(wm.restore_snapshot(&path), 0);
+        assert!(wm.is_empty());
     }
 }

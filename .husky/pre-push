@@ -22,20 +22,95 @@ skip() { printf '⏭  %s\n' "$*"; }
 note "🛡️  [SWAL] pre-push · $(basename "$ROOT")"
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
 
-# A bare remote-tracking ref is not an upstream: @{u} needs branch.<n>.merge, and
-# without it every push looks like "no upstream" and silently skips the whole scan.
-if [ -z "$UPSTREAM" ]; then
-    for cand in origin/"$BRANCH" origin/main origin/master; do
-        if git rev-parse --verify -q "$cand" >/dev/null 2>&1; then
-            UPSTREAM="$cand"
-            note "   (sin upstream configurado; usando $UPSTREAM)"
-            break
-        fi
-    done
+# ── 0. What is actually leaving this machine ───────────────────────────────────
+# git hands the hook the real answer on stdin, one line per ref:
+#
+#     <local_ref> <local_sha> <remote_ref> <remote_sha>
+#
+# The remote sha is the authoritative "where the remote already is". Deriving the
+# range from @{u} instead — as this hook used to — is wrong twice over: on a branch
+# with no upstream it produced "everything ever" (604 fixtures, always fails, so
+# everyone learns to pass --no-verify), and the commit-message filter then walked
+# HEAD..HEAD and reviewed nothing.
+#
+# stdin must be captured before anything else can consume it.
+STDIN_TEXT="$(cat)"
+STDIN_REFS=()
+while read -r _lr _ls _rr _rs; do
+    [ -z "${_lr:-}" ] && continue
+    STDIN_REFS+=("$_lr $_ls $_rr $_rs")
+done <<< "$STDIN_TEXT"
+
+# Force-push detection.
+#
+# git invokes the hook as `pre-push <remote-name> <remote-url>` and passes NO
+# flags: grepping "$*" for --force (as this hook used to) is dead code, it can
+# never fire. The signal that actually exists is in the refs themselves — a push
+# whose remote sha is not an ancestor of the local sha is a non-fast-forward, i.e.
+# a history rewrite. Flags are still checked as a belt-and-braces measure in case
+# a wrapper forwards them.
+FORCE_PUSH=0
+for _arg in "$@"; do
+    case "$_arg" in
+        --force|--force-with-lease|--force-with-lease=*|-f) FORCE_PUSH=1 ;;
+    esac
+done
+
+# One range per ref: remote_sha..local_sha. An all-zero remote sha means the ref
+# does not exist remotely yet (a brand-new branch), where the honest range is the
+# single local sha. A local sha equal to the remote sha is a no-op push.
+SCAN_RANGES=()
+MSG_RANGES=()
+PUSH_LINES=0
+while read -r _lr _ls _rr _rs; do
+    [ -z "${_ls:-}" ] && continue
+    PUSH_LINES=$(( PUSH_LINES + 1 ))
+    if [ -z "${_rs:-}" ] || [ "$_rs" = "0000000000000000000000000000000000000000" ]; then
+        SCAN_RANGES+=("$_ls" "  (rama nueva en el remoto)")
+        continue
+    fi
+    # rev-parse both sides so a stale/invalid entry cannot poison the range
+    # silently; fall back to the bare shas if either is unknown locally.
+    _L="$(git rev-parse --verify -q "$_ls" 2>/dev/null || printf '%s' "$_ls")"
+    _R="$(git rev-parse --verify -q "$_rs" 2>/dev/null || printf '%s' "$_rs")"
+    if ! git merge-base --is-ancestor "$_R" "$_L" 2>/dev/null; then
+        FORCE_PUSH=1
+    fi
+    SCAN_RANGES+=("$_R..$_L" "  $_lr → $_rr")
+    MSG_RANGES+=("$_R..$_L")
+done <<< "$STDIN_TEXT"
+
+UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+if [ "$PUSH_LINES" -eq 0 ]; then
+    note "⚠️  git no pasó ninguna ref por stdin; se recurre a @{u}"
+    if [ -n "$UPSTREAM" ] && git rev-parse --verify -q "$UPSTREAM" >/dev/null 2>&1; then
+        SCAN_RANGES+=("$UPSTREAM..HEAD" "  @{u}")
+        MSG_RANGES+=("$UPSTREAM..HEAD")
+    else
+        # No upstream (new branch): bound the range at the merge-base with the
+        # default branch instead of scanning the whole history.
+        UPSTREAM=""
+        for _base in origin/main origin/master; do
+            if git rev-parse --verify -q "$_base" >/dev/null 2>&1; then
+                _MB="$(git merge-base "$_base" HEAD 2>/dev/null || true)"
+                if [ -n "$_MB" ]; then
+                    SCAN_RANGES+=("$_MB..HEAD" "  merge-base con $_base")
+                    MSG_RANGES+=("$_MB..HEAD")
+                    break
+                fi
+            fi
+        done
+    fi
+fi
+# Bounded last resort: git gave us nothing usable, so review a recent window
+# rather than nothing at all (and say so, so the gap is visible).
+if [ "${#MSG_RANGES[@]}" -eq 0 ]; then
+    MSG_RANGES+=("${SWAL_PUSH_RANGE:-HEAD~20..HEAD}")
+    note "⚠️  sin rango determinable: revisando los últimos 20 commits (${MSG_RANGES[0]})"
 fi
 note "   rama $BRANCH${UPSTREAM:+ → $UPSTREAM}"
+[ "$FORCE_PUSH" = "1" ] && note "   ⚠️  push forzado detectado (rewrite de historia)"
 
 # ── 1. Secrets across the commits being pushed ────────────────────────────────
 # pre-commit only sees staged content. A commit pushed from elsewhere, or one made
@@ -46,22 +121,23 @@ if [ -z "$GLEAKS" ]; then
 fi
 
 if [ -n "$GLEAKS" ] && [ -x "$GLEAKS" ]; then
-    RANGE=""
-    if [ -n "$UPSTREAM" ]; then
-        RANGE="$(git rev-list --count "$UPSTREAM..HEAD" 2>/dev/null || echo 0)"
-    else
-        # No upstream: scanning the whole history would flag every historical
-        # fixture and make the push always fail, which teaches everyone to use
-        # --no-verify. Scan nothing and say so instead.
-        note "⚠️  sin upstream: no se escanea el historial (evita bloquear por fixtures antiguos)"
-        RANGE=0
-    fi
-    if [ "${RANGE:-0}" -gt 0 ] 2>/dev/null; then
+    TOTAL_NEW=0
+    while [ "${#SCAN_RANGES[@]}" -gt 0 ]; do
+        RANGE="${SCAN_RANGES[0]}"; LABEL="${SCAN_RANGES[1]:-}"; SCAN_RANGES=( "${SCAN_RANGES[@]:2}" )
+        [ -n "$RANGE" ] || continue
+        N="$(git rev-list --count "$RANGE" 2>/dev/null || echo 0)"
+        [ "${N:-0}" -gt 0 ] 2>/dev/null || continue
+        TOTAL_NEW=$(( TOTAL_NEW + N ))
+        note "🔎 $LABEL · $N commit(s) en $RANGE"
         REPORT="$(mktemp -t swal-gitleaks-push.XXXXXX.json)"
-        "$GLEAKS" detect --redact --no-banner --log-opts="$UPSTREAM..HEAD" \
+        "$GLEAKS" detect --redact --no-banner --log-opts="$RANGE" \
             --report-format json --report-path "$REPORT" >/dev/null 2>&1
-        COUNT="$(grep -c '"RuleID"' "$REPORT" 2>/dev/null || echo 0)"
-        if [ "${COUNT:-0}" -gt 0 ]; then
+        COUNT="$(grep -c '"RuleID"' "$REPORT" 2>/dev/null || true)"
+        # `grep -c` prints 0 AND exits 1 when there is no match, so `|| echo 0`
+        # would capture "0\n0" and break the integer test below. Normalise here.
+        COUNT="$(printf '%s' "${COUNT:-0}" | grep -oE '[0-9]+' | head -1)"
+        COUNT="${COUNT:-0}"
+        if [ "$COUNT" -gt 0 ] 2>/dev/null; then
             fail "gitleaks: $COUNT secreto(s) en el historial que se va a subir"
             python3 - "$REPORT" <<'PY' 2>/dev/null || true
 import json,sys
@@ -70,10 +146,11 @@ for f in json.load(open(sys.argv[1])):
 PY
             note "   Si son fixtures de test, añádelos al allowlist; si son reales, ROTA la credencial."
         else
-            note "🔐  [SWAL] gitleaks · $RANGE commit(s) limpio(s)"
+            note "🔐  [SWAL] gitleaks · $N commit(s) limpio(s) en $RANGE"
         fi
         rm -f "$REPORT" 2>/dev/null || true
-    else
+    done
+    if [ "${TOTAL_NEW:-0}" -eq 0 ]; then
         note "🔐  [SWAL] nada nuevo que subir"
     fi
 else
@@ -83,32 +160,27 @@ fi
 # ── 2. Commit messages must not describe the attack surface ───────────────────
 # This is a SWAL-specific rule, not a generic one: the repo is public and a message
 # that explains how a vector was exploited hands that over to a reader.
-# git passes "<remote> <url>" as $1 $2; --force/--force-with-lease arrive on stdin.
-FORCE_PUSH=0
-if printf '%s\n' "$@" | grep -qE '^--force(-with-lease)?$|^--force-with-lease='; then
-    FORCE_PUSH=1
-fi
-[ "$FORCE_PUSH" = "1" ] || [ "$1" = "--force" ] || [ "$2" = "--force" ] && FORCE_PUSH=1
+# FORCE_PUSH was already resolved above from the refs git passed on stdin, and
+# MSG_RANGES already holds the exact range(s) being pushed. The filter must review
+# those same commits: the old code fell back to HEAD..HEAD on a branch with no
+# upstream and so reviewed nothing at all.
 
-if [ -n "$UPSTREAM" ]; then
-    MSG_RANGE="$UPSTREAM..HEAD"
-else
-    MSG_RANGE="${SWAL_PUSH_RANGE:-HEAD~20..HEAD}"
-    note "⚠️  sin upstream: revisando los últimos 20 commits ($MSG_RANGE)"
-fi
-
-while IFS= read -r msg; do
-    [ -z "$msg" ] && continue
-    LOW="$(printf '%s' "$msg" | tr 'A-Z' 'a-z')"
-    case "$LOW" in
-        *"reachable from the lan"*|*"secret route"*|*"vector de ataque"*|*"attack vector"*|\
-        *"exploit"*|*"bypass de auth"*|*"auth bypass"*|*"credential leak"*|*"api key leak"*)
-            fail "el mensaje describe el vector de ataque; en un repo público eso regala el fallo:"
-            note "      $msg"
-            note "   Reescríbelo genérico: qué cambia el código, no qué se rompió antes."
-            ;;
-    esac
-done < <(git log --format='%s' "$MSG_RANGE" 2>/dev/null || true)
+while [ "${#MSG_RANGES[@]}" -gt 0 ]; do
+    MSG_RANGE="${MSG_RANGES[0]}"; MSG_RANGES=( "${MSG_RANGES[@]:1}" )
+    note "   mensajes · $MSG_RANGE"
+    while IFS= read -r msg; do
+        [ -z "$msg" ] && continue
+        LOW="$(printf '%s' "$msg" | tr 'A-Z' 'a-z')"
+        case "$LOW" in
+            *"reachable from the lan"*|*"secret route"*|*"vector de ataque"*|*"attack vector"*|\
+            *"exploit"*|*"bypass de auth"*|*"auth bypass"*|*"credential leak"*|*"api key leak"*)
+                fail "el mensaje describe el vector de ataque; en un repo público eso regala el fallo:"
+                note "      $msg"
+                note "   Reescríbelo genérico: qué cambia el código, no qué se rompió antes."
+                ;;
+        esac
+    done < <(git log --format='%s' "$MSG_RANGE" 2>/dev/null || true)
+done
 
 # ── 3. Nothing generated or private may be tracked ────────────────────────────
 BAD_TRACKED="$(git ls-files 2>/dev/null | grep -E '(^|/)\.env$|\.sqlite3?$|\.db$|-wal$|-shm$|master\.key$|^target/|node_modules/' | head -10 || true)"
@@ -123,7 +195,10 @@ if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
 fi
 
 # ── 5. Force-push to a shared branch ──────────────────────────────────────────
-if printf '%s\n' "$*" | grep -qE '^\s*--force(\s|$)|^\s*-f(\s|$)' && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ]; then
+# FORCE_PUSH is resolved from the refs git passed on stdin above (a remote sha
+# that is not an ancestor of the local sha is a history rewrite). main/master are
+# the shared branches where a rewrite is unrecoverable for everyone else.
+if [ "$FORCE_PUSH" = "1" ] && { [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ]; }; then
     skip "force-push a $BRANCH"
 fi
 

@@ -13,7 +13,7 @@ from typing import List, Dict, Optional
 import re
 
 # Configuration
-XAVIER_URL = "http://127.0.0.1:8003"
+XAVIER_URL = os.environ.get("XAVIER_URL", "http://127.0.0.1:8006")  # daemon port is 8006
 def get_required_xavier_token() -> str:
     for env_var in ("XAVIER_TOKEN", "XAVIER_API_KEY", "XAVIER_TOKEN"):
         token = os.environ.get(env_var, "").strip()

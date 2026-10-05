@@ -7,151 +7,44 @@
 //! high-quality insights become training data when human marks them eligible.
 
 use chrono::Utc;
-use tracing::info;
+use std::sync::Arc;
+use tracing::{info, warn};
 
 use crate::humanchallenge::{
     store::HumanChallengeStore,
     types::{
-        ChallengeType, IntrospectionSession, IntrospectionStatus, IntrospectionTechnique,
-        IntrospectionTurn, TurnRole,
+        ChallengeType, CurationVerdict, CurationVote, IntrospectionSession, IntrospectionStatus,
+        IntrospectionTechnique, IntrospectionTurn, TurnRole,
     },
 };
 
-/// Engine that manages introspection sessions.
-pub struct IntrospectionEngine {
-    store: std::sync::Arc<HumanChallengeStore>,
+/// Source of the guide's prompts. The default [`TemplateGuide`] needs no LLM;
+/// an LLM-backed provider can be plugged in via [`IntrospectionEngine::with_guide`].
+pub trait GuideProvider: Send + Sync {
+    /// Short identifier of the provider (documents which guide was used).
+    fn name(&self) -> &str;
+
+    /// Opening prompt that frames the session.
+    fn opening_prompt(&self, technique: &IntrospectionTechnique, description: &str) -> String;
+
+    /// Next guide prompt after a human turn.
+    fn guide_response(
+        &self,
+        technique: &IntrospectionTechnique,
+        description: &str,
+        human_input: &str,
+        turn_number: usize,
+    ) -> String;
 }
 
-impl IntrospectionEngine {
-    pub fn new(store: std::sync::Arc<HumanChallengeStore>) -> Self {
-        Self { store }
+/// Default guide: fixed templates, no LLM.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TemplateGuide;
+
+impl GuideProvider for TemplateGuide {
+    fn name(&self) -> &str {
+        "template"
     }
-
-    /// Start a new introspection session for a challenge.
-    /// Auto-selects technique if not specified.
-    pub fn start_session(
-        &self,
-        challenge_id: &str,
-        challenge_type: ChallengeType,
-        challenge_description: &str,
-        technique: Option<IntrospectionTechnique>,
-    ) -> Result<IntrospectionSession, String> {
-        let technique =
-            technique.unwrap_or_else(|| IntrospectionTechnique::recommend_for(challenge_type));
-        let mut session = IntrospectionSession::new(challenge_id, technique);
-
-        // Add the opening LLM turn (the guide sets the frame)
-        let opening = self.opening_prompt(&technique, challenge_description);
-        session.turns.push(IntrospectionTurn {
-            role: TurnRole::LlmGuide,
-            content: opening,
-            timestamp: Utc::now(),
-        });
-
-        self.store
-            .save_introspection_session(&session)
-            .map_err(|e| e.to_string())?;
-
-        info!(
-            "Introspection session {} started for challenge {} using {:?}",
-            session.id, challenge_id, technique
-        );
-
-        Ok(session)
-    }
-
-    /// Process a human turn and generate the next LLM guide prompt.
-    /// Returns the updated session with the new LLM response appended.
-    pub fn process_turn(
-        &self,
-        session_id: &str,
-        human_input: &str,
-        challenge_description: &str,
-    ) -> Result<IntrospectionSession, String> {
-        let mut session = self
-            .store
-            .get_introspection_session(session_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Session {} not found", session_id))?;
-
-        if session.status != IntrospectionStatus::Active {
-            return Err(format!("Session {} is not active", session_id));
-        }
-
-        // Record the human turn
-        session.turns.push(IntrospectionTurn {
-            role: TurnRole::Human,
-            content: human_input.to_string(),
-            timestamp: Utc::now(),
-        });
-
-        // Count human turns to determine depth
-        let human_turns = session
-            .turns
-            .iter()
-            .filter(|t| t.role == TurnRole::Human)
-            .count();
-
-        let llm_response = self.guide_response(
-            &session.technique,
-            challenge_description,
-            human_input,
-            human_turns,
-        );
-
-        session.turns.push(IntrospectionTurn {
-            role: TurnRole::LlmGuide,
-            content: llm_response,
-            timestamp: Utc::now(),
-        });
-
-        // Update depth score
-        session.depth_score = session.compute_depth_score();
-
-        // Auto-complete at depth 5 for 5 Whys
-        if session.technique == IntrospectionTechnique::FiveWhys && human_turns >= 5 {
-            session.status = IntrospectionStatus::Completed;
-            session.completed_at = Some(Utc::now());
-            session.insights = self.extract_insights(&session);
-        }
-
-        self.store
-            .save_introspection_session(&session)
-            .map_err(|e| e.to_string())?;
-
-        Ok(session)
-    }
-
-    /// Complete a session manually and extract insights.
-    pub fn complete_session(&self, session_id: &str) -> Result<IntrospectionSession, String> {
-        let mut session = self
-            .store
-            .get_introspection_session(session_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Session {} not found", session_id))?;
-
-        session.status = IntrospectionStatus::Completed;
-        session.completed_at = Some(Utc::now());
-        session.depth_score = session.compute_depth_score();
-        session.insights = self.extract_insights(&session);
-
-        self.store
-            .save_introspection_session(&session)
-            .map_err(|e| e.to_string())?;
-
-        info!(
-            "Introspection session {} completed with depth_score={:.2} and {} insights",
-            session_id,
-            session.depth_score,
-            session.insights.len()
-        );
-
-        Ok(session)
-    }
-
-    // -----------------------------------------------------------------------
-    // Private: guide response generation
-    // -----------------------------------------------------------------------
 
     fn opening_prompt(&self, technique: &IntrospectionTechnique, description: &str) -> String {
         match technique {
@@ -241,6 +134,194 @@ impl IntrospectionEngine {
                 )
             }
         }
+    }
+}
+
+/// Engine that manages introspection sessions.
+pub struct IntrospectionEngine {
+    store: Arc<HumanChallengeStore>,
+    guide: Arc<dyn GuideProvider>,
+}
+
+impl IntrospectionEngine {
+    pub fn new(store: Arc<HumanChallengeStore>) -> Self {
+        Self {
+            store,
+            guide: Arc::new(TemplateGuide),
+        }
+    }
+
+    /// Replace the guide provider (e.g. with an LLM-backed one).
+    pub fn with_guide(mut self, guide: Arc<dyn GuideProvider>) -> Self {
+        self.guide = guide;
+        self
+    }
+
+    /// Start a new introspection session for a challenge.
+    /// Auto-selects technique if not specified.
+    pub fn start_session(
+        &self,
+        challenge_id: &str,
+        challenge_type: ChallengeType,
+        challenge_description: &str,
+        technique: Option<IntrospectionTechnique>,
+    ) -> Result<IntrospectionSession, String> {
+        let technique =
+            technique.unwrap_or_else(|| IntrospectionTechnique::recommend_for(challenge_type));
+        let mut session = IntrospectionSession::new(challenge_id, technique);
+
+        // Add the opening LLM turn (the guide sets the frame)
+        let opening = self.guide.opening_prompt(&technique, challenge_description);
+        session.turns.push(IntrospectionTurn {
+            role: TurnRole::LlmGuide,
+            content: opening,
+            timestamp: Utc::now(),
+        });
+
+        self.store
+            .save_introspection_session(&session)
+            .map_err(|e| e.to_string())?;
+
+        info!(
+            "Introspection session {} started for challenge {} using {:?}",
+            session.id, challenge_id, technique
+        );
+
+        Ok(session)
+    }
+
+    /// Process a human turn and generate the next LLM guide prompt.
+    /// Returns the updated session with the new LLM response appended.
+    pub fn process_turn(
+        &self,
+        session_id: &str,
+        human_input: &str,
+        challenge_description: &str,
+    ) -> Result<IntrospectionSession, String> {
+        let mut session = self
+            .store
+            .get_introspection_session(session_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Session {} not found", session_id))?;
+
+        if session.status != IntrospectionStatus::Active {
+            return Err(format!("Session {} is not active", session_id));
+        }
+
+        // Record the human turn
+        session.turns.push(IntrospectionTurn {
+            role: TurnRole::Human,
+            content: human_input.to_string(),
+            timestamp: Utc::now(),
+        });
+
+        // Count human turns to determine depth
+        let human_turns = session
+            .turns
+            .iter()
+            .filter(|t| t.role == TurnRole::Human)
+            .count();
+
+        let llm_response = self.guide.guide_response(
+            &session.technique,
+            challenge_description,
+            human_input,
+            human_turns,
+        );
+
+        session.turns.push(IntrospectionTurn {
+            role: TurnRole::LlmGuide,
+            content: llm_response,
+            timestamp: Utc::now(),
+        });
+
+        // Update depth score
+        session.depth_score = session.compute_depth_score();
+
+        // Auto-complete at depth 5 for 5 Whys
+        if session.technique == IntrospectionTechnique::FiveWhys && human_turns >= 5 {
+            session.status = IntrospectionStatus::Completed;
+            session.completed_at = Some(Utc::now());
+            session.insights = self.extract_insights(&session);
+        }
+
+        self.store
+            .save_introspection_session(&session)
+            .map_err(|e| e.to_string())?;
+
+        if session.status == IntrospectionStatus::Completed {
+            // Auto-completion carries no explicit consent: votes are non-eligible.
+            self.write_insight_votes(&session)?;
+        }
+
+        Ok(session)
+    }
+
+    /// Complete a session manually and extract insights (no training consent).
+    pub fn complete_session(&self, session_id: &str) -> Result<IntrospectionSession, String> {
+        self.complete_session_with_consent(session_id, false)
+    }
+
+    /// Complete a session, extract insights and write one `curation_votes` row per
+    /// insight. Rows are `training_eligible` only when `training_consent` is true.
+    pub fn complete_session_with_consent(
+        &self,
+        session_id: &str,
+        training_consent: bool,
+    ) -> Result<IntrospectionSession, String> {
+        let mut session = self
+            .store
+            .get_introspection_session(session_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Session {} not found", session_id))?;
+
+        session.status = IntrospectionStatus::Completed;
+        session.completed_at = Some(Utc::now());
+        session.depth_score = session.compute_depth_score();
+        session.insights = self.extract_insights(&session);
+        session.training_consent = training_consent;
+
+        self.store
+            .save_introspection_session(&session)
+            .map_err(|e| e.to_string())?;
+        self.write_insight_votes(&session)?;
+
+        info!(
+            "Introspection session {} completed with depth_score={:.2} and {} insights",
+            session_id,
+            session.depth_score,
+            session.insights.len()
+        );
+
+        Ok(session)
+    }
+
+    // -----------------------------------------------------------------------
+    // Private: guide response generation
+    // -----------------------------------------------------------------------
+
+    /// Persist one curation vote per insight. Ids are deterministic so re-completing
+    /// a session replaces its votes instead of duplicating them. Votes carry no domain
+    /// tag (the technique is not a training domain) and are written as unverified
+    /// `Refine`, so the gate ignores them until a human verifies them.
+    fn write_insight_votes(&self, session: &IntrospectionSession) -> Result<(), String> {
+        for (i, insight) in session.insights.iter().enumerate() {
+            let mut vote = CurationVote::new(
+                session.challenge_id.clone(),
+                CurationVerdict::Refine,
+                Some(insight.clone()),
+                false,
+                Vec::new(),
+                session.training_consent,
+            );
+            vote.technique = Some(session.technique.as_str().to_string());
+            vote.id = format!("cv_{}_{}", session.id, i);
+            self.store.save_curation_vote(&vote).map_err(|e| {
+                warn!("Failed to save insight vote for {}: {}", session.id, e);
+                e.to_string()
+            })?;
+        }
+        Ok(())
     }
 
     fn extract_insights(&self, session: &IntrospectionSession) -> Vec<String> {
@@ -358,5 +439,89 @@ mod tests {
             IntrospectionTechnique::recommend_for(ChallengeType::Contradiction),
             IntrospectionTechnique::SteelManning
         );
+    }
+
+    fn completed_consented_session(engine: &IntrospectionEngine, challenge: &str) -> String {
+        let session = engine
+            .start_session(
+                challenge,
+                ChallengeType::Decision,
+                "Pick a storage engine",
+                Some(IntrospectionTechnique::PreMortem),
+            )
+            .unwrap();
+        engine
+            .process_turn(
+                &session.id,
+                "We would lose data because the WAL checkpoint never runs under sustained load.",
+                "Pick a storage engine",
+            )
+            .unwrap();
+        engine
+            .complete_session_with_consent(&session.id, true)
+            .unwrap();
+        session.id
+    }
+
+    #[test]
+    fn test_insight_votes_keep_technique_in_own_field_not_domain() {
+        let store = Arc::new(HumanChallengeStore::in_memory().unwrap());
+        let engine = IntrospectionEngine::new(store.clone());
+        completed_consented_session(&engine, "hc_tech");
+
+        let votes = store.get_votes_for_challenge("hc_tech").unwrap();
+        assert_eq!(votes.len(), 1);
+        assert!(votes[0].domain_tags.is_empty());
+        assert_eq!(votes[0].technique.as_deref(), Some("pre_mortem"));
+        assert!(!votes[0].fact_verified);
+        assert_ne!(votes[0].verdict, CurationVerdict::Accept);
+    }
+
+    #[test]
+    fn test_consented_insights_add_no_domain_and_do_not_change_readiness() {
+        use crate::humanchallenge::curation_gate::CurationGate;
+
+        let store = Arc::new(HumanChallengeStore::in_memory().unwrap());
+        // A ready human-curated domain (general, via empty tags would also be at risk).
+        for i in 0..25 {
+            let mut v = CurationVote::new(
+                format!("hc_h_{i}"),
+                CurationVerdict::Accept,
+                None,
+                true,
+                vec!["rust".to_string()],
+                true,
+            );
+            v.id = format!("cv_h_{i}");
+            store.save_curation_vote(&v).unwrap();
+        }
+        // A ready "general" domain too: untagged votes land there.
+        for i in 0..25 {
+            let mut v = CurationVote::new(
+                format!("hc_g_{i}"),
+                CurationVerdict::Accept,
+                None,
+                true,
+                Vec::new(),
+                true,
+            );
+            v.id = format!("cv_g_{i}");
+            store.save_curation_vote(&v).unwrap();
+        }
+        let gate = CurationGate::with_defaults(store.clone()).without_queue();
+        let before = gate.ready_domains();
+        assert_eq!(before.len(), 2);
+        let tags_before = gate.check_readiness().domain_tags;
+
+        let engine = IntrospectionEngine::new(store.clone());
+        for i in 0..30 {
+            completed_consented_session(&engine, &format!("hc_i_{i}"));
+        }
+
+        assert_eq!(gate.ready_domains(), before);
+        let after = gate.check_readiness();
+        assert_eq!(after.domain_tags, tags_before);
+        assert!(!after.domain_tags.iter().any(|t| t == "pre_mortem"));
+        assert_eq!(store.count_training_eligible().unwrap(), 50);
     }
 }

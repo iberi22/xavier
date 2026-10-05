@@ -20,6 +20,7 @@ pub mod billing;
 pub mod cleanup;
 pub mod code;
 pub mod data_commons;
+pub mod encrypt_private;
 pub mod encrypt_records;
 pub mod enums;
 pub mod governance;
