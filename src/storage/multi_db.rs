@@ -15,6 +15,12 @@ use crate::workspace::{WorkspaceDb, WorkspaceDbKind};
 
 #[derive(Clone, Default)]
 pub struct MultiDbManager {
+    /// Data dir override for path resolution.
+    ///
+    /// `None` means "resolve from settings" (the production behaviour). Tests
+    /// must use [`MultiDbManager::with_root`] so every file they create lands
+    /// inside a tempdir instead of the real `{XAVIER_DATA_DIR}/db`.
+    root: Option<PathBuf>,
     databases: Arc<RwLock<HashMap<String, WorkspaceDb>>>,
     /// Opened stores keyed by `db_id`.
     ///
@@ -35,9 +41,23 @@ impl std::fmt::Debug for MultiDbManager {
 }
 
 impl MultiDbManager {
-    /// New.
+    /// New. Resolves database paths from [`XavierSettings`], i.e. the real
+    /// `{XAVIER_DATA_DIR}/db`. Tests must use [`MultiDbManager::with_root`].
     pub fn new() -> Self {
         Self {
+            root: None,
+            databases: Arc::new(RwLock::new(HashMap::new())),
+            stores: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// New manager rooted at an explicit data dir.
+    ///
+    /// Every database file this manager creates lands under `<root>/db/`, so
+    /// passing a tempdir keeps tests fully inside the tempdir.
+    pub fn with_root(root: PathBuf) -> Self {
+        Self {
+            root: Some(root),
             databases: Arc::new(RwLock::new(HashMap::new())),
             stores: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -52,6 +72,15 @@ impl MultiDbManager {
             PathBuf::from(&settings.memory.data_dir)
         };
         data_dir.join("db").join(format!("{}.sqlite", db_id))
+    }
+
+    /// Instance path resolution: honours the [`MultiDbManager::with_root`]
+    /// override, otherwise falls back to [`MultiDbManager::resolve_db_path`].
+    fn db_path(&self, db_id: &str) -> PathBuf {
+        match &self.root {
+            Some(root) => root.join("db").join(format!("{}.sqlite", db_id)),
+            None => Self::resolve_db_path(db_id),
+        }
     }
 
     /// Create and initialize a new SQLite database
@@ -76,7 +105,7 @@ impl MultiDbManager {
             ));
         }
 
-        let db_path = Self::resolve_db_path(&db_id);
+        let db_path = self.db_path(&db_id);
 
         let workspace_db = WorkspaceDb {
             db_id: db_id.clone(),
@@ -194,7 +223,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_multi_db_manager_lifecycle() {
-        let manager = MultiDbManager::new();
+        let dir = tempfile::tempdir().unwrap();
+        let manager = MultiDbManager::with_root(dir.path().to_path_buf());
         let db_id = "test_project_123".to_string();
         let display_name = "Test Project".to_string();
 
@@ -244,7 +274,8 @@ mod tests {
     /// invalidate the cached entry before removing the file.
     #[tokio::test]
     async fn test_store_is_cached_and_invalidated_on_delete() {
-        let manager = MultiDbManager::new();
+        let dir = tempfile::tempdir().unwrap();
+        let manager = MultiDbManager::with_root(dir.path().to_path_buf());
         let db_id = "test_cached_store".to_string();
 
         let db = manager
@@ -284,7 +315,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_db_id() {
-        let manager = MultiDbManager::new();
+        let dir = tempfile::tempdir().unwrap();
+        let manager = MultiDbManager::with_root(dir.path().to_path_buf());
         let result = manager
             .create_database(
                 "../invalid".to_string(),
@@ -293,5 +325,70 @@ mod tests {
             )
             .await;
         assert!(result.is_err());
+    }
+
+    /// T1 acceptance: the whole `create` → `list` → `get` → `get_store` →
+    /// `delete` lifecycle must never touch the settings-resolved data dir
+    /// (`{XAVIER_DATA_DIR}/db`). Before `with_root`, path resolution went
+    /// straight to `XavierSettings::current()`, so every `cargo test` run left
+    /// a `test_*.sqlite` file behind in the real `data/db/`.
+    #[tokio::test]
+    async fn lifecycle_never_touches_settings_data_dir() {
+        let settings_data_dir = XavierSettings::current().memory.data_dir.trim().to_string();
+        let settings_db_dir = if settings_data_dir.is_empty() {
+            PathBuf::from("data").join("db")
+        } else {
+            PathBuf::from(&settings_data_dir).join("db")
+        };
+        // Normalise so the comparison below works with any cwd spelling.
+        let settings_db_dir = std::fs::canonicalize(&settings_db_dir).ok();
+
+        let dir = tempfile::tempdir().unwrap();
+        let manager = MultiDbManager::with_root(dir.path().to_path_buf());
+        let db_id = "lifecycle_hygiene_probe".to_string();
+
+        let db = manager
+            .create_database(
+                db_id.clone(),
+                "Hygiene".to_string(),
+                WorkspaceDbKind::Personal,
+            )
+            .await
+            .unwrap();
+
+        // 1. The file must live inside the tempdir...
+        let db_path = std::fs::canonicalize(&db.db_path).unwrap();
+        let tmp_root = std::fs::canonicalize(dir.path()).unwrap();
+        assert!(
+            db_path.starts_with(&tmp_root),
+            "the created database must live inside the tempdir, got {}",
+            db_path.display()
+        );
+
+        // 2. ...and must NOT be the settings-resolved one.
+        if let Some(settings_db_dir) = settings_db_dir.as_ref() {
+            assert_ne!(
+                db_path,
+                settings_db_dir.join(format!("{}.sqlite", db_id)),
+                "with_root must override the settings-resolved data dir"
+            );
+        }
+
+        // 3. Drive the rest of the lifecycle; a leak in any of these steps
+        //    (re-open, store cache, delete) would show up here.
+        assert!(manager.get_store(&db_id).await.is_ok());
+        assert_eq!(manager.list_databases().await.len(), 1);
+        assert!(manager.delete_database(&db_id).await.unwrap());
+
+        // 4. The settings data dir must be byte-identical: no file created,
+        //    none left behind.
+        if let Some(settings_db_dir) = settings_db_dir.as_ref() {
+            let leaked = settings_db_dir.join(format!("{}.sqlite", db_id));
+            assert!(
+                !leaked.exists(),
+                "the lifecycle wrote {} into the real data dir",
+                leaked.display()
+            );
+        }
     }
 }
