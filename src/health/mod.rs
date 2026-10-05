@@ -2242,9 +2242,54 @@ mod stores_health_tests {
     /// file: coverage must still come from the `memory_embeddings_768` side
     /// table, and `database.path` must still be a file that exists with its
     /// real size. T14 must not perturb either.
+    ///
+    /// Runs against a private temp data dir, not `XavierSettings::default()`.
+    /// Reading the live store made this test depend on execution order: the
+    /// daemon grows `vec-store.sqlite3` while the suite runs, so the size read
+    /// at the start no longer matched the size re-read a few lines later, and
+    /// the test failed only in the full-suite run, never in isolation.
     #[test]
     fn stores_section_does_not_perturb_coverage_or_database_health() {
-        let settings = XavierSettings::default();
+        // Point every memory path at a private temp dir so nothing here reads
+        // the live store.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let base = XavierSettings::default();
+        let settings = XavierSettings {
+            memory: crate::settings::MemorySettings {
+                data_dir: dir.path().to_string_lossy().into_owned(),
+                file_path: dir
+                    .path()
+                    .join("memory-store.json")
+                    .to_string_lossy()
+                    .into_owned(),
+                sqlite_path: dir
+                    .path()
+                    .join("memory-store.sqlite3")
+                    .to_string_lossy()
+                    .into_owned(),
+                vec_path: dir
+                    .path()
+                    .join("vec-store.sqlite3")
+                    .to_string_lossy()
+                    .into_owned(),
+                ..base.memory.clone()
+            },
+            ..base
+        };
+        // Seed a real store BEFORE the first read: the assertions below require a
+        // path that exists with a real size. Without it `gather_db_health`
+        // legitimately falls back to a non-existent default and the guard can
+        // never be exercised.
+        let seed = dir.path().join("vec-store.sqlite3");
+        {
+            let conn = rusqlite::Connection::open(&seed).expect("seed store");
+            conn.execute_batch(
+                "CREATE TABLE memory_records (id TEXT PRIMARY KEY, content BLOB);
+                 INSERT INTO memory_records (id, content) VALUES ('a', x'00');",
+            )
+            .expect("seed schema");
+        }
+
         let cov = super::gather_embedding_coverage(&settings);
         let db = super::gather_db_health(&settings);
         let stores = super::gather_stores_health();
