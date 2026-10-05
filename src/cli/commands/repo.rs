@@ -92,7 +92,7 @@ pub fn run_repo_config_command(cmd: RepoConfigCommand) -> Result<()> {
 ///    *its own* declared identity instead of inheriting the monorepo root's),
 /// 3. the git root containing the cwd,
 /// 4. the cwd itself.
-fn resolve_root(root: Option<PathBuf>) -> Result<PathBuf> {
+pub(crate) fn resolve_root(root: Option<PathBuf>) -> Result<PathBuf> {
     let cwd = std::env::current_dir()?;
     let explicit = root.is_some();
     let start = root.unwrap_or_else(|| cwd.clone());
@@ -157,15 +157,11 @@ fn resolve_root_for_init(root: Option<PathBuf>) -> Result<PathBuf> {
 }
 
 /// Closest ancestor-or-self of `dir` that declares its own `.xavier/config.toml`.
+///
+/// Delegates to the shared walk so the CLI and `derive_repo_identity` cannot
+/// disagree about which directory owns a product.
 fn nearest_config_ancestor(dir: &std::path::Path) -> Option<PathBuf> {
-    let mut current = Some(dir);
-    while let Some(candidate) = current {
-        if repo_config_path(candidate).is_file() {
-            return Some(candidate.to_path_buf());
-        }
-        current = candidate.parent();
-    }
-    None
+    xavier::codebase::repo_identity::nearest_config_ancestor(dir)
 }
 
 fn report(root: &std::path::Path, cfg: &RepoConfig) -> serde_json::Value {

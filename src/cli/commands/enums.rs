@@ -515,11 +515,15 @@ pub enum RepoCommand {
         #[command(subcommand)]
         cmd: RepoConfigCommand,
     },
-    /// Pack / unpack the encrypted per-repo memory package
-    /// (`<repo>/.xavier/code_graph.db.enc`)
-    Package {
-        #[command(subcommand)]
-        cmd: RepoPackageCommand,
+    /// Encrypt `code_graph.db` into `code_graph.db.enc`, ready to commit
+    Pack {
+        #[command(flatten)]
+        args: RepoPackageArgs,
+    },
+    /// Decrypt `code_graph.db.enc` back into `code_graph.db` and show its header
+    Unpack {
+        #[command(flatten)]
+        args: RepoPackageArgs,
     },
 }
 
@@ -532,26 +536,6 @@ pub struct RepoPackageArgs {
     /// Output as JSON instead of human-readable text
     #[arg(long, default_value_t = false)]
     pub json: bool,
-}
-
-/// `xavier repo pack` / `xavier repo unpack` actions.
-///
-/// `pack` seals `<repo>/.xavier/code_graph.db` into
-/// `<repo>/.xavier/code_graph.db.enc` (committable); `unpack` restores it and
-/// prints the sealed header so the repo's `project_id` and the commit the
-/// packaged graph corresponds to are visible.
-#[derive(Subcommand, Debug, Clone)]
-pub enum RepoPackageCommand {
-    /// Encrypt `code_graph.db` into `code_graph.db.enc`, ready to commit
-    Pack {
-        #[command(flatten)]
-        args: RepoPackageArgs,
-    },
-    /// Decrypt `code_graph.db.enc` back into `code_graph.db` and show its header
-    Unpack {
-        #[command(flatten)]
-        args: RepoPackageArgs,
-    },
 }
 
 /// Common options for every `xavier repo config …` action.

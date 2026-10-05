@@ -193,7 +193,8 @@ impl Cli {
             }
             Command::Repo { cmd } => match cmd {
                 RepoCommand::Config { cmd } => repo::run_repo_config_command(cmd.clone()),
-                RepoCommand::Package { cmd } => repo_pack::run_repo_package_command(cmd.clone()),
+                RepoCommand::Pack { args } => repo_pack::run_repo_pack_command(args.clone()),
+                RepoCommand::Unpack { args } => repo_pack::run_repo_unpack_command(args.clone()),
             },
             Command::Telecom(args) => telecom::execute_telecom_command(args.clone()).await,
             Command::Exec {
