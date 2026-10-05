@@ -117,7 +117,7 @@ fn seal(mnemonic: bool, passphrase: bool) -> Result<()> {
     store.write_kcv(&key)?;
     // The manifest stores KCVs only, never keys.
     let master = xavier::keystore::MasterKeyManager::load_or_init().ok();
-    let master_bytes = master.as_ref().map(|m| master_key_bytes(m));
+    let master_bytes = master.as_ref().map(master_key_bytes);
     store.write_manifest(&RecoveryManifest::new(&key, master_bytes.as_ref()))?;
     println!("Sealed recovery material for the node record key (source: {source:?}).");
 
