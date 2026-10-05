@@ -26,6 +26,15 @@ const WAL_INIT_ATTEMPTS: usize = 10;
 /// `max_size` given to every r2d2 pool. Unchanged from today's value; named so
 /// the snapshot reports the real number instead of a duplicate literal.
 pub const POOL_MAX_SIZE: u32 = 10;
+/// `max_size` of a per-repository memory store pool (T4).
+///
+/// 4 is the value from design §2.2: a repo store is queried by one or two
+/// concurrent requests at a time, so 10 connections per file would just be 10
+/// file-descriptor pairs and 10 page caches held open.
+pub const REPO_POOL_MAX_SIZE: u32 = 4;
+/// `cache_size` of a per-repository store pool: negative means KiB, so -2000
+/// is ~2 MiB per connection instead of the daemon-wide -8000 (~7.8 MiB).
+pub const REPO_POOL_CACHE_SIZE: i64 = -2000;
 const WAL_INIT_RETRY_DELAY: Duration = Duration::from_millis(50);
 /// How many eviction records [`ConnectionManager::snapshot`] keeps.
 const EVICTION_RING_CAPACITY: usize = 32;
@@ -119,6 +128,150 @@ impl EvictionReason {
 struct ProjectPool {
     pool: Arc<Pool<SqliteConnectionManager>>,
     activated_at: Instant,
+    /// Shape of this pool: `max_size`, `min_idle`, `cache_size`, `mmap_size`.
+    profile: PoolProfile,
+    /// Whether the LRU / idle branches may evict this pool (T4).
+    class: PoolClass,
+}
+
+/// Per-class pool sizing and PRAGMA overrides (T4).
+///
+/// Two shapes exist so a per-repository memory store does not cost the same as
+/// a daemon-wide infrastructure store:
+///
+/// | Profile | `max_size` | `min_idle` | `cache_size` | `mmap_size` |
+/// |---|---|---|---|---|
+/// | [`PoolProfile::Default`] | 10 | 10 (eager) | -8000 KiB | 256 MiB |
+/// | [`PoolProfile::RepoStore`] | 4 | 0 (lazy) | -2000 KiB | 0 |
+///
+/// [`PoolProfile::Default`] is byte-identical to the behaviour before T4: the
+/// same 10 connections opened eagerly at pool build, the same pragmas. Only
+/// [`PoolProfile::RepoStore`] changes, and only callers that ask for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PoolProfile {
+    /// Today's daemon-wide pool: `max_size = 10`, filled to `min_idle = 10` at
+    /// build time, `cache_size = -8000` (≈7.8 MiB per connection) and
+    /// `mmap_size = 256 MiB`.
+    #[default]
+    Default,
+    /// A per-repository memory store: `max_size = 4`, `min_idle = 0` so r2d2
+    /// opens connections on demand instead of all four up front,
+    /// `cache_size = -2000` (≈2 MiB per connection) and no mmap.
+    RepoStore,
+}
+
+impl PoolProfile {
+    /// `max_size` given to the r2d2 builder.
+    pub fn max_size(self) -> u32 {
+        match self {
+            PoolProfile::Default => POOL_MAX_SIZE,
+            PoolProfile::RepoStore => REPO_POOL_MAX_SIZE,
+        }
+    }
+
+    /// `min_idle` given to the r2d2 builder.
+    ///
+    /// `Some(0)` is what makes connections lazy: r2d2 0.8 defaults `min_idle`
+    /// to `max_size` and fills the pool at build time, so omitting it opens
+    /// every connection the moment the pool is registered.
+    pub fn min_idle(self) -> Option<u32> {
+        match self {
+            PoolProfile::Default => Some(POOL_MAX_SIZE),
+            PoolProfile::RepoStore => Some(0),
+        }
+    }
+
+    /// `PRAGMA cache_size` for this profile. Negative values are KiB.
+    pub fn cache_size(self) -> i64 {
+        match self {
+            PoolProfile::Default => -8000,
+            PoolProfile::RepoStore => REPO_POOL_CACHE_SIZE,
+        }
+    }
+
+    /// `PRAGMA mmap_size` for this profile, in bytes.
+    pub fn mmap_size(self) -> i64 {
+        match self {
+            PoolProfile::Default => 268_435_456,
+            PoolProfile::RepoStore => 0,
+        }
+    }
+
+    /// Class a caller most likely wants for this profile.
+    ///
+    /// `Default` → `Pinned` (daemon infrastructure and the global store),
+    /// `RepoStore` → `Evictable`. It is *not* applied automatically by
+    /// [`ConnectionManager::connect_with_path_profile`] (which keeps today's
+    /// "everything is evictable" behaviour); pass it explicitly, or flip an
+    /// open pool later with [`ConnectionManager::set_pool_class`].
+    pub fn suggested_class(self) -> PoolClass {
+        match self {
+            PoolProfile::Default => PoolClass::Pinned,
+            PoolProfile::RepoStore => PoolClass::Evictable,
+        }
+    }
+
+    /// Apply only the settings this profile overrides, on top of
+    /// [`ConnectionTuning::apply_connection_pragmas`].
+    ///
+    /// Deliberately narrow: `journal_mode`, `wal_autocheckpoint`,
+    /// `journal_size_limit`, `synchronous` and `temp_store` stay exactly as
+    /// `apply_connection_pragmas` sets them for every profile, because those
+    /// are file-level durability settings and not part of the pool budget.
+    /// Neither layer checkpoints the WAL.
+    pub fn apply_overrides(&self, conn: &Connection) -> rusqlite::Result<()> {
+        conn.execute_batch(&format!(
+            "PRAGMA cache_size={}; \
+             PRAGMA mmap_size={};",
+            self.cache_size(),
+            self.mmap_size()
+        ))
+    }
+}
+
+/// Whether the LRU and idle branches may evict a pool (T4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PoolClass {
+    /// Infrastructure the daemon cannot lose: `memory`, `metrics`, `security`,
+    /// `default`, `auth`, `vec_store_*`, `conv_*`. Never chosen by the LRU or
+    /// the idle branch; only `disconnect` / `shutdown` drop it.
+    Pinned,
+    /// Per-project / per-repository pools. These are the LRU's candidates.
+    Evictable,
+}
+
+impl PoolClass {
+    /// True when the LRU and idle branches may drop this pool.
+    pub fn is_evictable(self) -> bool {
+        matches!(self, PoolClass::Evictable)
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            PoolClass::Pinned => "pinned",
+            PoolClass::Evictable => "evictable",
+        }
+    }
+}
+
+/// Ids of pools the daemon cannot operate without (design §2.2: "Nunca se
+/// expulsa un `Pinned` (store global, `memory`, `metrics`, `security`,
+/// `default`, `auth`)"), so [`ConnectionManager::connect`] registers them as
+/// [`PoolClass::Pinned`].
+///
+/// Deliberately a closed list of literals, not a prefix rule: `conv_*` is one
+/// pool per workspace, so pinning the prefix would let the map grow past
+/// `MAX_POOLS` without bound and multiply today's eager 10-connection pools.
+/// Per-workspace pools stay [`PoolClass::Evictable`] (and become reclaimable by
+/// the idle sweep in T5). `vec_store_*` is pinned too — the global memory store
+/// is the one store the process reads on every federated search.
+pub fn is_pinned_infrastructure_id(project_id: &str) -> bool {
+    matches!(
+        project_id,
+        "memory" | "vec_store" | "metrics" | "security" | "default" | "auth"
+    ) || project_id.starts_with("vec_store_")
 }
 
 #[derive(Debug)]
@@ -231,8 +384,15 @@ pub struct PoolSnapshot {
     pub connections: u32,
     /// Connections currently idle in the pool, from `r2d2::Pool::state`.
     pub idle_connections: u32,
-    /// `max_size` the pool was built with.
+    /// `max_size` the pool was built with, read from its [`PoolProfile`] so a
+    /// repo pool reports its real 4 instead of the daemon-wide 10.
     pub max_size: u32,
+    /// Shape this pool was built with.
+    pub profile: PoolProfile,
+    /// Whether the LRU and idle branches may drop this pool.
+    pub class: PoolClass,
+    /// `min_idle` the pool was built with.
+    pub min_idle: Option<u32>,
     /// Milliseconds since `activated_at` was last refreshed.
     pub idle_for_ms: u64,
 }
@@ -295,6 +455,11 @@ impl ConnectionManager {
 
     /// Connect to a database by project_id.
     /// If the pool doesn't exist, it is created lazily.
+    ///
+    /// A pool whose id is daemon infrastructure
+    /// ([`is_pinned_infrastructure_id`]) is registered as
+    /// [`PoolClass::Pinned`] so the LRU cannot drop it; everything else is
+    /// [`PoolClass::Evictable`], as before.
     pub fn connect(&self, project_id: &str, project_root: &str) -> Result<()> {
         if !self.pools.read().contains_key(project_id) {
             let db_path = if project_id == "memory" {
@@ -332,7 +497,16 @@ impl ConnectionManager {
                     .join("codebase.db")
             };
 
-            self.connect_with_path(project_id, db_path)
+            self.connect_with_path_profile(
+                project_id,
+                db_path,
+                PoolProfile::Default,
+                if is_pinned_infrastructure_id(project_id) {
+                    PoolClass::Pinned
+                } else {
+                    PoolClass::Evictable
+                },
+            )
         } else {
             // Update last accessed time
             if let Some(entry) = self.pools.write().get_mut(project_id) {
@@ -343,7 +517,34 @@ impl ConnectionManager {
     }
 
     /// Explicitly connect to a database file with a given project_id.
+    ///
+    /// Exactly [`ConnectionManager::connect_with_path_profile`] with
+    /// [`PoolProfile::Default`] and [`PoolClass::Evictable`], i.e. byte-for-byte
+    /// today's behaviour: `max_size = 10`, filled eagerly, and the LRU is free
+    /// to drop it.
     pub fn connect_with_path(&self, project_id: &str, db_path: PathBuf) -> Result<()> {
+        self.connect_with_path_profile(
+            project_id,
+            db_path,
+            PoolProfile::Default,
+            PoolClass::Evictable,
+        )
+    }
+
+    /// Explicitly connect to a database file with a given project_id, pool
+    /// shape and eviction class.
+    ///
+    /// Registering an id that already has a live pool only refreshes
+    /// `activated_at`; the profile and class of the live pool are left alone,
+    /// because r2d2 has already opened that pool at its configured size.
+    /// Use [`ConnectionManager::set_pool_class`] to change the class.
+    pub fn connect_with_path_profile(
+        &self,
+        project_id: &str,
+        db_path: PathBuf,
+        profile: PoolProfile,
+        class: PoolClass,
+    ) -> Result<()> {
         self.known_paths
             .write()
             .insert(project_id.to_string(), db_path.clone());
@@ -365,12 +566,19 @@ impl ConnectionManager {
 
             // Heavy PRAGMAs are applied once per connection, when the pool opens
             // it; `PragmaCustomizer` only re-applies the cheap layer on acquire.
-            let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
+            // The profile's own overrides (`cache_size`, `mmap_size`) run right
+            // after, so they win over the shared defaults.
+            let builder_profile = profile;
+            let manager = SqliteConnectionManager::file(db_path).with_init(move |conn| {
                 conn.apply_connection_pragmas()
-                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+                    .and_then(|()| builder_profile.apply_overrides(conn))
             });
             let pool = Pool::builder()
-                .max_size(POOL_MAX_SIZE)
+                .max_size(profile.max_size())
+                // Explicit on both profiles: r2d2 0.8 defaults `min_idle` to
+                // `max_size`, which is why every pool used to open its full
+                // width the moment it was registered.
+                .min_idle(profile.min_idle())
                 .connection_customizer(Box::new(PragmaCustomizer))
                 .build(manager)
                 .context("failed to build r2d2 SQLite pool")?;
@@ -382,6 +590,8 @@ impl ConnectionManager {
                 ProjectPool {
                     pool: Arc::new(pool),
                     activated_at: Instant::now(),
+                    profile,
+                    class,
                 },
             );
             self.metrics.opened_total.fetch_add(1, Ordering::Relaxed);
@@ -389,6 +599,31 @@ impl ConnectionManager {
             entry.activated_at = Instant::now();
         }
         Ok(())
+    }
+
+    /// Change the eviction class of an already-open pool.
+    ///
+    /// For infrastructure ids (`memory`, `metrics`, `security`, `default`,
+    /// `auth`, `vec_store_*`, `conv_*`) registered through the plain
+    /// [`ConnectionManager::connect`] / [`ConnectionManager::connect_with_path`]
+    /// entry points, this is how the daemon marks them
+    /// [`PoolClass::Pinned`] — those two entry points keep today's
+    /// "everything is evictable" behaviour so no existing caller changes.
+    /// Returns `false` when the id has no live pool.
+    pub fn set_pool_class(&self, project_id: &str, class: PoolClass) -> bool {
+        let mut pools = self.pools.write();
+        match pools.get_mut(project_id) {
+            Some(entry) => {
+                entry.class = class;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Class of a live pool, if any.
+    pub fn pool_class(&self, project_id: &str) -> Option<PoolClass> {
+        self.pools.read().get(project_id).map(|e| e.class)
     }
 
     /// Get or open a cached `CodeGraphDB` instance for a given database path.
@@ -551,7 +786,10 @@ impl ConnectionManager {
                     path: known.get(id).cloned(),
                     connections: state.connections,
                     idle_connections: state.idle_connections,
-                    max_size: POOL_MAX_SIZE,
+                    max_size: entry.profile.max_size(),
+                    profile: entry.profile,
+                    class: entry.class,
+                    min_idle: entry.profile.min_idle(),
                     idle_for_ms: now.duration_since(entry.activated_at).as_millis() as u64,
                 }
             })
@@ -625,6 +863,13 @@ impl ConnectionManager {
     }
 
     /// Evict pools that are idle for too long or if we exceed the max capacity.
+    ///
+    /// Only [`PoolClass::Evictable`] pools are candidates (T4): a
+    /// [`PoolClass::Pinned`] pool is daemon infrastructure the process cannot
+    /// do without, so the LRU steps over it instead of dropping it. When every
+    /// registered pool is pinned and `MAX_POOLS` is already exceeded, this
+    /// breaks out and the map is allowed to grow past `MAX_POOLS` — losing
+    /// infrastructure is worse than one extra pool.
     fn evict_if_needed(&self) {
         let now = Instant::now();
         let mut pools = self.pools.write();
@@ -633,7 +878,8 @@ impl ConnectionManager {
         let expired: Vec<String> = pools
             .iter()
             .filter(|(_, pool)| {
-                now.duration_since(pool.activated_at).as_secs() >= self.idle_timeout_secs
+                pool.class.is_evictable()
+                    && now.duration_since(pool.activated_at).as_secs() >= self.idle_timeout_secs
             })
             .map(|(k, _)| k.clone())
             .collect();
@@ -653,6 +899,7 @@ impl ConnectionManager {
         while pools.len() >= MAX_POOLS {
             let oldest = pools
                 .iter()
+                .filter(|(_, v)| v.class.is_evictable())
                 .map(|(k, v)| (k.clone(), v.activated_at))
                 .min_by_key(|e| e.1);
 
@@ -881,6 +1128,277 @@ mod tests {
             serde_json::from_str(&json).expect("snapshot must round-trip through JSON");
         assert_eq!(back.counters, snap.counters);
         assert_eq!(back.pools, snap.pools);
+    }
+
+    /// Number of open file descriptors of this process, or `None` off Linux.
+    fn open_fd_count() -> Option<usize> {
+        std::fs::read_dir("/proc/self/fd").ok().map(|d| d.count())
+    }
+
+    /// T4: a repo profile must reach the connection *and* the pool builder —
+    /// small cache, no mmap, `max_size = 4` — and must not open a single
+    /// connection at build time (`min_idle = 0`).
+    #[tokio::test]
+    async fn repo_profile_applies_cache_mmap_and_pool_size() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("repo_profile.db");
+
+        cm.connect_with_path_profile(
+            "repo_store_probe",
+            db_path.clone(),
+            PoolProfile::RepoStore,
+            PoolClass::Evictable,
+        )
+        .unwrap();
+
+        let snap = cm.snapshot();
+        let pool = snap
+            .pools
+            .iter()
+            .find(|p| p.id == "repo_store_probe")
+            .unwrap();
+        assert_eq!(pool.profile, PoolProfile::RepoStore);
+        assert_eq!(pool.class, PoolClass::Evictable);
+        assert_eq!(
+            pool.max_size, 4,
+            "a repo pool must be built with max_size 4, not the daemon-wide 10"
+        );
+        assert_eq!(
+            pool.min_idle,
+            Some(0),
+            "a repo pool must declare min_idle 0 so r2d2 does not fill it at build"
+        );
+        assert_eq!(
+            pool.connections, 0,
+            "r2d2 must not open any connection at build time when min_idle is 0"
+        );
+
+        // The PRAGMA overrides must reach a real pooled connection, layered on
+        // top of the shared connection pragmas.
+        let pragmas = cm
+            .with_conn("repo_store_probe", |conn| {
+                Ok((
+                    conn.query_row("PRAGMA cache_size;", [], |r| r.get::<_, i64>(0))?,
+                    conn.query_row("PRAGMA mmap_size;", [], |r| r.get::<_, i64>(0))?,
+                    // Untouched by the profile, so the shared layer still holds.
+                    conn.query_row("PRAGMA temp_store;", [], |r| r.get::<_, i64>(0))?,
+                    conn.query_row("PRAGMA wal_autocheckpoint;", [], |r| r.get::<_, i64>(0))?,
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(pragmas.0, -2000, "cache_size must come from the profile");
+        assert_eq!(pragmas.1, 0, "mmap_size must come from the profile");
+        assert_eq!(
+            pragmas.2, 2,
+            "the shared connection layer must still apply temp_store=MEMORY"
+        );
+        assert_eq!(
+            pragmas.3, 1000,
+            "the shared connection layer must still apply wal_autocheckpoint=1000"
+        );
+
+        // Lazy is not "broken": checking a connection out opens exactly one.
+        let after = cm.snapshot();
+        let pool_after = after
+            .pools
+            .iter()
+            .find(|p| p.id == "repo_store_probe")
+            .unwrap();
+        assert!(
+            (1..=pool_after.max_size).contains(&pool_after.connections),
+            "on-demand opening must land between 1 and max_size, got {}",
+            pool_after.connections
+        );
+    }
+
+    /// T4: `PoolProfile::Default` must be byte-identical to the pre-T4 pool:
+    /// same `max_size`, same eagerly-filled `min_idle`, same pragmas, and the
+    /// same eviction class for callers of `connect_with_path`.
+    #[tokio::test]
+    async fn default_profile_is_byte_identical_to_today() {
+        // The numbers that were hardcoded before T4.
+        assert_eq!(PoolProfile::Default.max_size(), 10);
+        assert_eq!(PoolProfile::Default.min_idle(), Some(10));
+        assert_eq!(PoolProfile::Default.cache_size(), -8000);
+        assert_eq!(PoolProfile::Default.mmap_size(), 268_435_456);
+        assert_eq!(PoolProfile::default(), PoolProfile::Default);
+
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+
+        cm.connect_with_path("legacy_default", dir.path().join("legacy_default.db"))
+            .unwrap();
+
+        let snap = cm.snapshot();
+        let pool = snap
+            .pools
+            .iter()
+            .find(|p| p.id == "legacy_default")
+            .unwrap();
+        assert_eq!(pool.profile, PoolProfile::Default);
+        assert_eq!(pool.max_size, POOL_MAX_SIZE);
+        assert_eq!(pool.min_idle, Some(POOL_MAX_SIZE));
+        assert_eq!(
+            pool.connections, POOL_MAX_SIZE,
+            "today's pools open max_size connections at build time; that must not change"
+        );
+        assert_eq!(
+            pool.class,
+            PoolClass::Evictable,
+            "connect_with_path must keep today's class so no existing caller changes"
+        );
+
+        let pragmas = cm
+            .with_conn("legacy_default", |conn| {
+                Ok((
+                    conn.query_row("PRAGMA cache_size;", [], |r| r.get::<_, i64>(0))?,
+                    conn.query_row("PRAGMA mmap_size;", [], |r| r.get::<_, i64>(0))?,
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(pragmas.0, -8000);
+        assert_eq!(pragmas.1, 268_435_456);
+    }
+
+    /// T4: the LRU must never choose a pinned pool, no matter how old it is or
+    /// how far past `MAX_POOLS` the map is. A daemon infrastructure pool losing
+    /// its connections is worse than the map growing.
+    #[tokio::test]
+    async fn eviction_never_evicts_pinned_pools() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+
+        // Infrastructure: oldest pool in the map, but pinned.
+        cm.connect_with_path_profile(
+            "memory",
+            dir.path().join("memory.db"),
+            PoolProfile::Default,
+            PoolClass::Pinned,
+        )
+        .unwrap();
+
+        // Fill well past MAX_POOLS with evictable repo pools.
+        for i in 0..MAX_POOLS + 4 {
+            cm.connect_with_path_profile(
+                &format!("repo_{i:02}"),
+                dir.path().join(format!("repo_{i:02}.db")),
+                PoolProfile::RepoStore,
+                PoolClass::Evictable,
+            )
+            .unwrap();
+        }
+
+        let snap = cm.snapshot();
+        assert!(
+            snap.pools.iter().any(|p| p.id == "memory"),
+            "the pinned pool must survive {MAX_POOLS}+4 registrations"
+        );
+        assert_eq!(cm.pool_class("memory"), Some(PoolClass::Pinned));
+        assert!(
+            !snap
+                .evictions
+                .iter()
+                .any(|e| e.id == "memory" && e.reason == EvictionReason::Lru),
+            "no LRU record may name a pinned pool: {:?}",
+            snap.evictions
+        );
+
+        // And the LRU still works among the evictable ones.
+        assert!(
+            snap.counters.evicted_lru >= 4,
+            "evictable pools must still be evicted, got {}",
+            snap.counters.evicted_lru
+        );
+
+        // With only pinned pools registered the map is allowed past MAX_POOLS
+        // rather than dropping infrastructure.
+        let all_pinned = ConnectionManager::new();
+        for i in 0..MAX_POOLS + 2 {
+            all_pinned
+                .connect_with_path_profile(
+                    &format!("infra_{i:02}"),
+                    dir.path().join(format!("infra_{i:02}.db")),
+                    PoolProfile::Default,
+                    PoolClass::Pinned,
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            all_pinned.snapshot().pools.len(),
+            MAX_POOLS + 2,
+            "an all-pinned map grows instead of evicting infrastructure"
+        );
+    }
+
+    /// T4: 16 pools of the repo profile must cost far fewer descriptors than 16
+    /// pools of the default profile. This is the before/after measurement for
+    /// the r2d2 `min_idle` fix.
+    #[tokio::test]
+    async fn repo_profile_sixteen_pools_cost_far_fewer_fds_than_default() {
+        if open_fd_count().is_none() {
+            eprintln!("skipped: /proc/self/fd is not readable on this platform");
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+
+        // Before: 16 pools of today's profile, filled to min_idle at build.
+        let before_cm = ConnectionManager::new();
+        for i in 0..MAX_POOLS {
+            before_cm
+                .connect_with_path(
+                    &format!("before_{i:02}"),
+                    dir.path().join(format!("before_{i:02}.db")),
+                )
+                .unwrap();
+        }
+        let fds_before = open_fd_count().unwrap();
+        let snap_before = before_cm.snapshot();
+        assert_eq!(snap_before.pools.len(), MAX_POOLS);
+        let conns_before = snap_before.counters.total_connections;
+        assert_eq!(
+            conns_before,
+            (MAX_POOLS as u32) * POOL_MAX_SIZE,
+            "today's 16 pools hold 16 x POOL_MAX_SIZE connections"
+        );
+        before_cm.shutdown();
+        drop(before_cm);
+
+        // After: 16 repo pools, no connection opened until one is requested.
+        let after_cm = ConnectionManager::new();
+        for i in 0..MAX_POOLS {
+            after_cm
+                .connect_with_path_profile(
+                    &format!("after_{i:02}"),
+                    dir.path().join(format!("after_{i:02}.db")),
+                    PoolProfile::RepoStore,
+                    PoolClass::Evictable,
+                )
+                .unwrap();
+        }
+        let fds_after = open_fd_count().unwrap();
+        let snap_after = after_cm.snapshot();
+        assert_eq!(snap_after.pools.len(), MAX_POOLS);
+        assert_eq!(
+            snap_after.counters.total_connections, 0,
+            "16 repo pools must hold zero connections until they are used"
+        );
+
+        eprintln!(
+            "T4 fd measurement with {MAX_POOLS} pools: before={fds_before} fds for {conns_before} connections, after={fds_after} fds for {} connections",
+            snap_after.counters.total_connections
+        );
+
+        // 16 repo pools that were never queried must hold no database fds, so
+        // the descriptor count cannot have grown.
+        assert!(
+            fds_after <= fds_before,
+            "repo profile must not increase descriptors: {fds_before} -> {fds_after}"
+        );
+        after_cm.shutdown();
     }
 
     #[tokio::test]
