@@ -14,11 +14,13 @@ El repositorio de memoria por repo vive en `<repo>/.xavier/`.
 | Identidad por repo | ✅ existe | `src/codebase/repo_identity.rs` |
 | `code_graph.db` por repo | ✅ existe | `src/codebase/codegraph_paths.rs` |
 | Codegraph anclado a un commit | ✅ existe | `.xavier/codegraph-sync-commit` |
-| Config por repo | ✅ nueva | `src/codebase/repo_config.rs` |
-| CLI de config | ✅ nuevo | `src/cli/commands/repo.rs` |
-| Cifrado en reposo del paquete | ✅ nuevo | `src/codebase/repo_package_crypto.rs` |
-| **Paquete exportable por CLI** | ❌ pendiente | falta el flujo `pack`/`unpack` |
-| **BD de memoria por repo** | ❌ pendiente | las memorias viven en el store global |
+| Config por repo | ✅ | `src/codebase/repo_config.rs` |
+| CLI de config | ✅ | `src/cli/commands/repo.rs` |
+| Cifrado en reposo del paquete | ✅ | `src/codebase/repo_package_crypto.rs` |
+| `pack` / `unpack` del paquete | ✅ | `src/cli/commands/repo_pack.rs` |
+| La config manda en la identidad | ✅ | `src/codebase/repo_identity.rs` |
+| BD de memoria por repo (ruta) | ✅ ruta, no aislamiento | `src/memory/repo_memory_store_path.rs` |
+| **Aislamiento físico de la memoria** | ❌ pendiente | ver abajo |
 
 ## Configuración por repo
 
@@ -65,6 +67,23 @@ Todo `project_id`, venga del directorio o del config, pasa por el mismo
 `sanitize_project_id()`. No hay dos normalizadores: un id con guion o con
 barras nunca puede acabar siendo una ruta en un caso y no en el otro.
 
+## Empaquetar y restaurar
+
+```bash
+xavier repo pack   -C <dir>   # cifra code_graph.db -> code_graph.db.enc
+xavier repo unpack -C <dir>   # lo restaura y muestra el header
+```
+
+`pack` deja `<repo>/.xavier/code_graph.db.enc` listo para commitear: es el
+único artefacto que hay que versionar. El `indexed_commit` viaja dentro del
+paquete cifrado, así que el codegraph siempre se restaura en la versión del
+commit con el que se construyó. Sin checkpoint ni HEAD de git, el valor es
+`unknown` — nunca un hash inventado.
+
+`unpack` es **atómico**: descifra a un temporal y renombra solo si todo va
+bien, de modo que un paquete corrupto o cifrado con la clave de otro repo no
+deja un `code_graph.db` a medias.
+
 ## Paquete cifrado
 
 El codegraph por repo (`code_graph.db`) se cifra en reposo para poder
@@ -105,15 +124,20 @@ reporta como `degraded` **para ese repo**, con su identidad propia.
 `codegraph-sync-commit` registra el commit indexado, y las consultas lo
 reportan como `unknown` cuando no hay checkpoint — nunca inventa un hash.
 
-## Pendiente
+## Lo que falta: aislamiento físico de la memoria
 
-1. **Flujo CLI del paquete**: existe la criptografía, falta `pack`/`unpack`
-   para cifrar y descifrar el paquete desde la línea de órdenes.
-2. **BD de memoria por repo**: hoy solo hay `code_graph.db` por repo; los
-   registros de memoria siguen en el store global. Sin esto el aislamiento
-   es del codegraph, no del resto de la memoria.
-3. **Cablear la config a `derive_repo_identity()`** y a
-   `codegraph_sync::write_checkpoint()`, que hoy siguen el camino antiguo.
+El aislamiento del **codegraph** está hecho. El de los **registros de
+memoria**, no, y conviene decirlo sin adornos.
 
-Nada de esto migra ni modifica las memorias existentes: es trabajo futuro
-sobre la misma base.
+Hoy `memory_store_path_for()` resuelve la ruta por repo y la selección a
+partir de la `RepoIdentity`, pero el daemon sigue abriendo **un único store
+global** (`data/vec-store.sqlite3`), con todos los registros multiplexados en
+la columna `workspace_id`. Dos repositorios que compartan ese daemon comparten
+las mismas filas.
+
+Lo que falta para el aislamiento real es mover ese multiplexado a una base
+por repo. Es el paso grande que queda, y no se ha hecho a propósito en esta
+ola: cambia dónde viven 22.000+ registros existentes y pidió explícitamente no
+tocar las memorias actuales.
+
+Nada de lo hecho hasta aquí migra ni modifica memorias existentes.
