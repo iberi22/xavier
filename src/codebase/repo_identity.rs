@@ -50,6 +50,17 @@ pub fn derive_project_id(root: &Path) -> String {
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("default");
+    sanitize_project_id(raw)
+}
+
+/// The single sanitizer for any `project_id`, whether it came from a directory
+/// name (`derive_project_id`) or was declared by a repo in
+/// `<repo>/.xavier/config.toml` (see [`crate::codebase::repo_config`]).
+///
+/// Extracted so a declared id is sanitized by the exact same rule: no second,
+/// subtly different normalizer that could let one id be a file path and the
+/// other not.
+pub fn sanitize_project_id(raw: &str) -> String {
     let sanitized: String = raw
         .chars()
         .map(|c| {
