@@ -972,17 +972,17 @@ impl MemoryStore for VecSqliteMemoryStore {
                         }
                     };
 
-                    if let Some(mut record) = record {
-                        // An encrypting SPACE derives nothing: its rows are all
-                        // sealed and there is no key in this context.
-                        if crypto.is_none() {
-                            let _ = super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
-                            // `link_memory_on_demand` itself refuses to store raw
-                            // words unless the row is explicitly PUBLIC. Passing
-                            // the metadata through is what lets an explicitly
-                            // public row keep its links while a private one gets
-                            // none — the two cases cannot be told apart from
-                            // `encrypted_dek`, which is always set.
+                    // An encrypting SPACE derives nothing: every row is sealed
+                    // under the space key and there is no context here to open it.
+                    if crypto.is_none() {
+                        if let Some(mut record) = record {
+                            // Still sealed under the node key (XRK1) even when
+                            // PUBLIC, so it must be opened before its words can
+                            // be read. The PUBLIC gate lives in
+                            // `link_memory_on_demand`: `encrypted_dek` cannot tell
+                            // public from private because it is always set here.
+                            let _ =
+                                super::at_rest::decrypt_for(crypto.as_ref(), &mut record, None);
                             symbols = Self::link_memory_on_demand(
                                 conn,
                                 &memory_id,
