@@ -68,11 +68,113 @@ pub struct HealthResponse {
     pub dependency_graph: ComponentDependencyGraph,
     pub checks: Vec<HealthCheck>,
     pub embedding_coverage: EmbeddingCoverage,
+    /// Per-repo memory store pools, measured from
+    /// `ConnectionManager::snapshot()` (T14). Verbatim passthrough of what the
+    /// manager measured: nothing here is inferred from settings or from a
+    /// computed path.
+    #[serde(default)]
+    pub stores: StoresHealth,
     /// Why `status` is not `healthy`, as `host:<check>` (resource pressure on
     /// the machine) or `subsystem:<check>` (a Xavier component failing).
     /// Empty when `status == "healthy"`.
     #[serde(default)]
     pub degraded_reasons: Vec<String>,
+}
+
+/// State of the memory store pools as reported by
+/// [`ConnectionManager`](crate::codebase::connection_manager::ConnectionManager).
+///
+/// Every counter here comes from a single real
+/// [`ConnectionManager::snapshot`] call; nothing is estimated and no value is
+/// derived from configuration. That matters because Xavier is moving from one
+/// global memory store to one store per repository: without these numbers a
+/// regression in pool opening or eviction would be invisible in
+/// `GET /health`.
+///
+/// `measured == false` means the section carries **no** reading at all (the
+/// default used by the degraded fallback and before the first real collection).
+/// Every counter is then meaningless and its zero is not a measurement — the
+/// same rule `EmbeddingCoverage::default` follows with `status: "unknown"`.
+/// A consumer must check `measured` before reading any counter.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct StoresHealth {
+    /// Whether the counters below come from a real `snapshot()` call.
+    pub measured: bool,
+    /// Pools currently registered, i.e. stores actually open.
+    pub open_pools: usize,
+    /// Hard cap on concurrently registered pools.
+    pub max_pools: usize,
+    /// SQLite connections held across all live pools.
+    pub total_connections: u32,
+    /// Connections idle inside the live pools.
+    pub total_idle_connections: u32,
+    /// Ids with a remembered database path. Survives eviction, so
+    /// `known_paths > open_pools` is the count of stores whose pool is closed
+    /// but whose path is still resolvable — not a pool count.
+    pub known_paths: usize,
+    /// Pools built since process start, fresh plus resurrected.
+    pub opened_total: u64,
+    /// Pools rebuilt by `get_or_reconnect_pool` after being absent.
+    pub resurrected_total: u64,
+    /// Every eviction, any reason.
+    pub evicted_total: u64,
+    /// Evictions from the `max_pools` LRU branch.
+    pub evicted_lru: u64,
+    /// Evictions from the idle-timeout branch.
+    pub evicted_idle: u64,
+    /// Evictions from an explicit `disconnect`.
+    pub evicted_manual: u64,
+    /// Evictions where `PRAGMA wal_checkpoint(TRUNCATE)` ran.
+    pub evicted_checkpointed: u64,
+    /// Evictions where no connection was free, so no checkpoint ran.
+    pub evicted_uncheckpointed: u64,
+    /// One entry per live pool, sorted by id.
+    pub pools: Vec<StorePoolHealth>,
+    /// Most recent evictions, newest last.
+    pub evictions: Vec<StoreEvictionHealth>,
+}
+
+/// One live store pool, as [`ConnectionSnapshot`] reported it.
+///
+/// A store whose pool is closed does not appear here at all: it is a known path
+/// plus an entry in [`StoresHealth::evictions`]. Absence is the honest signal,
+/// so nothing is listed with a "closed" or "healthy" verdict attached.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StorePoolHealth {
+    /// The `project_id` the pool is registered under.
+    pub id: String,
+    /// The database file the pool actually opens, from the manager's own
+    /// `known_paths`. `None` when the manager has no resolved path for this id.
+    pub path: Option<String>,
+    /// Whether that file exists right now. `None` when `path` is `None`: not
+    /// measured, which is not the same as missing.
+    pub path_exists: Option<bool>,
+    /// Connections r2d2 has actually opened for this pool.
+    pub connections: u32,
+    /// Connections idle inside this pool.
+    pub idle_connections: u32,
+    /// `max_size` the pool was built with.
+    pub max_size: u32,
+    /// Milliseconds since this pool was last activated.
+    pub idle_for_ms: u64,
+    /// `open` when the pool is live and its file exists, `path_missing` when
+    /// the file it owns is gone, `path_unresolved` when the manager reports no
+    /// path. Never `healthy`: a live pool over a missing file is a fault and
+    /// must not read as one.
+    pub status: String,
+}
+
+/// One recorded eviction, verbatim from the manager's bounded ring.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StoreEvictionHealth {
+    /// The `project_id` whose pool was dropped.
+    pub id: String,
+    /// Why it was dropped.
+    pub reason: crate::codebase::connection_manager::EvictionReason,
+    /// Milliseconds since the manager was created. Monotonic, in-process.
+    pub at_ms: u64,
+    /// Whether `PRAGMA wal_checkpoint(TRUNCATE)` ran before removal.
+    pub checkpointed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -235,6 +337,11 @@ pub struct HealthState {
     pub dependency_graph: ComponentDependencyGraph,
     pub checks: Vec<HealthCheck>,
     pub embedding_coverage: EmbeddingCoverage,
+    /// Last successfully collected `stores` section, replayed by
+    /// [`fast_degraded_health_fallback`]. `None` until the first real
+    /// collection completes, which is how that fallback knows to report
+    /// `measured: false` instead of a stale-but-plausible zero.
+    pub stores: Option<StoresHealth>,
 }
 
 impl Default for HealthState {
@@ -279,6 +386,7 @@ impl Default for HealthState {
             dependency_graph: ComponentDependencyGraph::default(),
             checks: Vec::new(),
             embedding_coverage: EmbeddingCoverage::default(),
+            stores: None,
         }
     }
 }
@@ -363,6 +471,10 @@ pub(crate) fn fast_degraded_health_fallback() -> HealthResponse {
                 dependency_graph: reg.dependency_graph.clone(),
                 checks: reg.checks.clone(),
                 embedding_coverage: reg.embedding_coverage.clone(),
+                // Last-known-good, so the stale snapshot keeps reporting real
+                // pool numbers. When no registry exists the `Default` below is
+                // used instead, which is `measured: false` — never a fabricated 0.
+                stores: reg.stores.clone().unwrap_or_default(),
                 degraded_reasons: std::iter::once(STALE_SNAPSHOT_REASON.to_string())
                     .chain(degraded_reasons_for(&reg.checks, "degraded"))
                     .collect(),
@@ -413,6 +525,9 @@ pub(crate) fn fast_degraded_health_fallback() -> HealthResponse {
         dependency_graph: ComponentDependencyGraph::default(),
         checks: vec![],
         embedding_coverage: EmbeddingCoverage::default(),
+        // No snapshot was ever taken, so there is nothing to report: `measured`
+        // stays false instead of inventing a pool count of 0.
+        stores: StoresHealth::default(),
         degraded_reasons: vec![NO_SNAPSHOT_REASON.to_string()],
     }
 }
@@ -562,6 +677,93 @@ fn count_embeddings(conn: &rusqlite::Connection) -> Option<u64> {
     .ok()
 }
 
+/// Read the live store pool state out of [`ConnectionManager::snapshot`] (T14).
+///
+/// This is the only source of the `stores` section: the counts, the paths and
+/// the eviction attributions are copied from what the manager measured. Paths
+/// are never derived from settings — the manager's `known_paths` is the record
+/// of what each pool *actually* opened, which is exactly the lesson of the
+/// earlier bug where health reported a legacy path that no longer existed
+/// (`d68b44e5`). Deriving a path here would risk repeating it.
+///
+/// `ConnectionManager::snapshot` is read-only and takes only the pools read
+/// lock, so calling it cannot block a checkout nor perturb eviction.
+pub fn gather_stores_health() -> StoresHealth {
+    use crate::codebase::connection_manager::ConnectionManager;
+
+    stores_health_from_snapshot(&ConnectionManager::global().snapshot())
+}
+
+/// Map one real [`ConnectionSnapshot`](crate::codebase::connection_manager::ConnectionSnapshot)
+/// into the health section.
+///
+/// Split out from [`gather_stores_health`] so it can be tested against a
+/// manager the test owns, instead of the process-wide singleton whose pool
+/// count depends on which other tests ran first. Same code path either way.
+fn stores_health_from_snapshot(
+    snap: &crate::codebase::connection_manager::ConnectionSnapshot,
+) -> StoresHealth {
+    let pools = snap
+        .pools
+        .iter()
+        .map(|p| {
+            // Only meaningful when we have a path to stat. `Option` so "no path
+            // to check" never degrades into a false `false` (missing) or a
+            // fabricated `true`.
+            let path_exists = p.path.as_deref().map(std::path::Path::exists);
+            let status = match (&p.path, path_exists) {
+                (None, _) => "path_unresolved",
+                (Some(_), Some(true)) => "open",
+                (Some(_), Some(false)) => "path_missing",
+                // Unreachable: `path_exists` is None exactly when path is None.
+                (Some(_), None) => "path_unresolved",
+            }
+            .to_string();
+
+            StorePoolHealth {
+                id: p.id.clone(),
+                path: p.path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                path_exists,
+                connections: p.connections,
+                idle_connections: p.idle_connections,
+                max_size: p.max_size,
+                idle_for_ms: p.idle_for_ms,
+                status,
+            }
+        })
+        .collect();
+
+    let c = snap.counters;
+
+    StoresHealth {
+        measured: true,
+        open_pools: c.open_pools,
+        max_pools: c.max_pools,
+        total_connections: c.total_connections,
+        total_idle_connections: c.total_idle_connections,
+        known_paths: c.known_paths,
+        opened_total: c.opened_total,
+        resurrected_total: c.resurrected_total,
+        evicted_total: c.evicted_total,
+        evicted_lru: c.evicted_lru,
+        evicted_idle: c.evicted_idle,
+        evicted_manual: c.evicted_manual,
+        evicted_checkpointed: c.evicted_checkpointed,
+        evicted_uncheckpointed: c.evicted_uncheckpointed,
+        pools,
+        evictions: snap
+            .evictions
+            .iter()
+            .map(|e| StoreEvictionHealth {
+                id: e.id.clone(),
+                reason: e.reason,
+                at_ms: e.at_ms,
+                checkpointed: e.checkpointed,
+            })
+            .collect(),
+    }
+}
+
 pub fn gather_embedding_coverage(settings: &XavierSettings) -> EmbeddingCoverage {
     let mut paths = Vec::new();
     if let Ok(p) = std::env::var("XAVIER_MEMORY_VEC_PATH") {
@@ -679,6 +881,13 @@ async fn collect_health_impl(
     let db_start = std::time::Instant::now();
     let mut db_health = gather_db_health(settings);
     db_health.latency_ms = db_start.elapsed().as_secs_f64() * 1000.0;
+
+    // --- Store pools (T14) ---
+    // Reported but deliberately NOT part of `overall_status`: an evicted or
+    // closed store is normal operation, and folding it in would make the
+    // endpoint flap. It is diagnostic data for diagnosing a regression, which
+    // is what the degraded subsystem signal is read for.
+    let stores = gather_stores_health();
 
     // --- Embedding health ---
     let probe_start = std::time::Instant::now();
@@ -1036,6 +1245,7 @@ async fn collect_health_impl(
         degraded_reasons: degraded_reasons_for(&checks, overall_status),
         checks,
         embedding_coverage,
+        stores,
     };
 
     // Record snapshot to 24h history ring buffer
@@ -1069,6 +1279,7 @@ async fn collect_health_impl(
         reg.dependency_graph = response.dependency_graph.clone();
         reg.checks = response.checks.clone();
         reg.embedding_coverage = response.embedding_coverage.clone();
+        reg.stores = Some(response.stores.clone());
     }
 
     response
@@ -1809,6 +2020,268 @@ mod tests {
             "status={} reasons={:?}",
             health.status,
             health.degraded_reasons
+        );
+    }
+}
+
+/// T14: the `stores` section of `GET /health` must reflect
+/// `ConnectionManager::snapshot()` and nothing else.
+#[cfg(test)]
+mod stores_health_tests {
+    use super::{stores_health_from_snapshot, StoresHealth};
+    use crate::codebase::connection_manager::{ConnectionManager, MAX_POOLS};
+    use crate::settings::XavierSettings;
+    use tempfile::tempdir;
+
+    /// Two pools registered => the health section must say 2 and list exactly
+    /// those two ids with the files they really opened. Guards against both
+    /// failure directions: reporting 0 (section wired to nothing) and
+    /// reporting something that was not measured.
+    #[test]
+    fn health_stores_section_reflects_snapshot() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        let path_a = dir.path().join("store_a.db");
+        let path_b = dir.path().join("store_b.db");
+
+        cm.connect_with_path("repo_a", path_a.clone()).unwrap();
+        cm.connect_with_path("repo_b", path_b.clone()).unwrap();
+
+        let stores = stores_health_from_snapshot(&cm.snapshot());
+
+        assert!(
+            stores.measured,
+            "the section must be flagged as a real measurement, not a default"
+        );
+        assert_eq!(
+            stores.open_pools, 2,
+            "two registered pools must report exactly 2, not 0 and not 3"
+        );
+        assert_eq!(
+            stores.pools.len(),
+            2,
+            "one entry per live pool, no more and no less"
+        );
+        assert_eq!(stores.known_paths, 2, "both ids had a real path registered");
+        assert_eq!(stores.opened_total, 2);
+        assert_eq!(stores.max_pools, MAX_POOLS);
+        assert_eq!(
+            stores.evicted_total, 0,
+            "nothing was evicted yet; a nonzero here would be invented"
+        );
+        assert!(stores.evictions.is_empty());
+
+        // `total_connections` comes from r2d2, never invented: with max_size 10
+        // a live pool has connections. Assert it is consistent with the pool
+        // entries instead of a hardcoded value.
+        let summed: u32 = stores.pools.iter().map(|p| p.connections).sum();
+        assert_eq!(
+            stores.total_connections, summed,
+            "aggregate must be the sum over the listed pools"
+        );
+        assert!(stores.total_connections > 0);
+
+        for (id, expected) in [("repo_a", &path_a), ("repo_b", &path_b)] {
+            let pool = stores
+                .pools
+                .iter()
+                .find(|p| p.id == id)
+                .unwrap_or_else(|| panic!("{id} missing from the stores section"));
+            assert_eq!(
+                pool.path.as_deref(),
+                Some(expected.to_string_lossy().as_ref()),
+                "{id} must report the file it actually opened"
+            );
+            assert_eq!(
+                pool.path_exists,
+                Some(true),
+                "{id}'s file was created by connect_with_path and must be reported as existing"
+            );
+            assert_eq!(
+                pool.status, "open",
+                "a live pool over an existing file is 'open', never 'healthy'"
+            );
+        }
+    }
+
+    /// Eviction counters and their per-reason attribution must survive into
+    /// the health section, or a store-regression would be invisible.
+    #[test]
+    fn stores_section_attributes_evictions_by_reason() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+
+        cm.connect_with_path("manual_victim", dir.path().join("manual_victim.db"))
+            .unwrap();
+        cm.disconnect("manual_victim");
+
+        // Fill past MAX_POOLS so the LRU branch fires exactly once.
+        for i in 0..MAX_POOLS {
+            cm.connect_with_path(
+                &format!("filler_{i:02}"),
+                dir.path().join(format!("filler_{i:02}.db")),
+            )
+            .unwrap();
+        }
+        cm.connect_with_path("lru_trigger", dir.path().join("lru_trigger.db"))
+            .unwrap();
+
+        let stores = stores_health_from_snapshot(&cm.snapshot());
+
+        assert_eq!(stores.evicted_manual, 1, "disconnect is a manual eviction");
+        assert_eq!(stores.evicted_lru, 1, "exceeding MAX_POOLS evicts one");
+        assert_eq!(stores.evicted_idle, 0);
+        assert_eq!(stores.evicted_total, 2, "total must be the sum by reason");
+        assert_eq!(
+            stores.evicted_checkpointed + stores.evicted_uncheckpointed,
+            stores.evicted_total,
+            "every eviction is either checkpointed or explicitly not"
+        );
+        assert_eq!(stores.open_pools, MAX_POOLS, "the cap still holds");
+
+        // The reason reaches the health payload verbatim.
+        let reasons: Vec<_> = stores
+            .evictions
+            .iter()
+            .map(|e| (e.id.as_str(), e.reason))
+            .collect();
+        assert!(
+            reasons.contains(&(
+                "manual_victim",
+                crate::codebase::connection_manager::EvictionReason::Manual
+            )),
+            "the manual eviction must be attributed in the ring, got {reasons:?}"
+        );
+        assert_eq!(
+            stores.evictions.len(),
+            stores.evicted_total as usize,
+            "every eviction recorded must appear in the ring"
+        );
+    }
+
+    /// A closed store must never be listed as healthy, and a pool whose file
+    /// vanished must not read as `open`. Both are the "closed store reported as
+    /// not measured, not healthy" requirement.
+    #[test]
+    fn closed_store_reported_as_not_measured_not_healthy() {
+        let cm = ConnectionManager::new();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("closable.db");
+
+        cm.connect_with_path("closable", path.clone()).unwrap();
+        assert_eq!(
+            stores_health_from_snapshot(&cm.snapshot())
+                .pools
+                .first()
+                .unwrap()
+                .status,
+            "open"
+        );
+
+        // Close the pool: it must disappear from `pools` entirely rather than
+        // linger with a reassuring verdict.
+        cm.disconnect("closable");
+        let stores = stores_health_from_snapshot(&cm.snapshot());
+
+        assert!(
+            stores.pools.iter().all(|p| p.id != "closable"),
+            "a closed store must not be listed among live pools"
+        );
+        assert_eq!(stores.open_pools, 0);
+        assert_eq!(
+            stores.known_paths, 1,
+            "the path survives eviction, which is how a closed store stays diagnosable"
+        );
+        assert!(
+            stores.pools.iter().all(|p| p.status != "healthy"),
+            "no pool may carry a 'healthy' verdict"
+        );
+
+        // Now a live pool whose file was removed underneath it.
+        let cm2 = ConnectionManager::new();
+        let gone = dir.path().join("gone.db");
+        cm2.connect_with_path("gone", gone.clone()).unwrap();
+        std::fs::remove_file(&gone).unwrap();
+        let stores2 = stores_health_from_snapshot(&cm2.snapshot());
+        let pool = stores2.pools.iter().find(|p| p.id == "gone").unwrap();
+        assert_eq!(pool.path_exists, Some(false));
+        assert_eq!(
+            pool.status, "path_missing",
+            "a live pool over a missing file is a fault, not 'open'"
+        );
+    }
+
+    /// `measured: false` means "no reading", so no counter in it may be read as
+    /// a measurement. This is the guard against a fabricated 0 pool count
+    /// appearing in the degraded fallback.
+    #[test]
+    fn default_stores_section_is_flagged_unmeasured() {
+        let d = StoresHealth::default();
+        assert!(
+            !d.measured,
+            "a default section must not claim to be measured"
+        );
+        assert!(d.pools.is_empty());
+
+        // A real collection is always flagged as measured.
+        let stores = super::gather_stores_health();
+        assert!(
+            stores.measured,
+            "gather_stores_health always takes a real snapshot"
+        );
+
+        // And the section must survive a JSON round trip with its flag intact,
+        // since the endpoint is what operators read.
+        let json = serde_json::to_string(&stores).unwrap();
+        let back: StoresHealth = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.measured, stores.measured);
+        assert_eq!(back.open_pools, stores.open_pools);
+    }
+
+    /// Regression guard for the two numbers that were already fixed in this
+    /// file: coverage must still come from the `memory_embeddings_768` side
+    /// table, and `database.path` must still be a file that exists with its
+    /// real size. T14 must not perturb either.
+    #[test]
+    fn stores_section_does_not_perturb_coverage_or_database_health() {
+        let settings = XavierSettings::default();
+        let cov = super::gather_embedding_coverage(&settings);
+        let db = super::gather_db_health(&settings);
+        let stores = super::gather_stores_health();
+
+        // Adding the stores section must not change what either of them reports.
+        let cov2 = super::gather_embedding_coverage(&settings);
+        let db2 = super::gather_db_health(&settings);
+        assert_eq!(cov, cov2, "coverage must be unaffected by the stores read");
+        assert_eq!(db.path, db2.path, "database path must be unaffected");
+
+        if cov.total == 0 {
+            assert_eq!(cov.status, "unknown", "unmeasured coverage is 'unknown'");
+        } else {
+            assert!(cov.indexed <= cov.total);
+        }
+        if db.path.is_empty() {
+            // Only legal when nothing exists at all, and then it must be flagged
+            // by the caller rather than silently reported as a real store.
+            assert_eq!(db.size_mb, 0.0);
+        } else {
+            assert!(
+                std::path::Path::new(&db.path).exists(),
+                "database.path must name a file that exists, got {}",
+                db.path
+            );
+            let real =
+                std::path::Path::new(&db.path).metadata().unwrap().len() as f64 / (1024.0 * 1024.0);
+            assert_eq!(
+                db.size_mb, real,
+                "database.size_mb must be the file's real size, not an estimate"
+            );
+        }
+
+        // The stores read itself must not have perturbed coverage or the db.
+        assert_eq!(
+            stores.measured, true,
+            "the stores section must be a real snapshot reading"
         );
     }
 }
