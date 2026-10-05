@@ -3337,6 +3337,38 @@
         "REQ-035"
       ],
       "user_stories": []
+    },
+    "feat-repo-memory-instance": {
+      "id": "feat-repo-memory-instance",
+      "name": "Per-repo memory instance (XAV-REPO)",
+      "category": "memory",
+      "status": "beta",
+      "progress_pct": 70,
+      "description": "Cada repo git, y cada producto dentro de un monorepo, tiene su propia instancia de memoria: codegraph por repo, config propia, nivel de privacidad, y un paquete cifrado que se puede commitear al repo. Cierra el gap del monorepo (derive_project_id colapsaba todos los productos al id del directorio) y permite commitear el codegraph sin filtrar nada.",
+      "steps": [
+        "Identidad por repo anclada a su root, sin sustituir datos de otro repo (repo_identity.rs) — ya existia",
+        "code_graph.db por repo en <repo>/.xavier/ (codegraph_paths.rs) — ya existia",
+        "Checkpoint .xavier/codegraph-sync-commit para anclar el codegraph a un commit — ya existia",
+        "Config por repo en <repo>/.xavier/config.toml, configurable por el usuario (repo_config.rs) — NUEVO",
+        "CLI `xavier repo config init|show|set` con -C (cli/commands/repo.rs) — NUEVO",
+        "Cifrado en reposo del paquete por repo, HKDF domain-separated + DEK envuelto (repo_package_crypto.rs) — NUEVO",
+        "init escribe junto al producto, no en la raiz del git (bug de aislamiento del monorepo) — NUEVO",
+        "Flujo CLI pack/unpack del paquete cifrado — PENDIENTE",
+        "BD de memoria por repo (hoy solo el codegraph; las memorias viven en el store global) — PENDIENTE",
+        "Cablear la config a derive_repo_identity() y a codegraph_sync::write_checkpoint() — PENDIENTE"
+      ],
+      "passes": true,
+      "verified_by": "unit-tests+e2e",
+      "last_tested": "2026-10-04",
+      "notes": "No migra ni modifica memorias existentes. Cifrado verificado con una BD real: el secreto y la cabecera SQLite no sobreviven en claro, el roundtrip es byte-identico y la clave de otro repo se rechaza sin escribir. Pendiente lo que figura en steps. Detalle en docs/features/repo-memory-instance.md.",
+      "implemented_in": "src/codebase/repo_config.rs, src/codebase/repo_package_crypto.rs, src/codebase/repo_identity.rs, src/cli/commands/repo.rs",
+      "tests": [
+        "repo_package_crypto (16)",
+        "repo_config (19)",
+        "repo (94 en total con el filtro repo)"
+      ],
+      "req_ids": [],
+      "user_stories": []
     }
   },
   "verification_commands": {
