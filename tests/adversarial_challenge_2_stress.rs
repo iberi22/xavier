@@ -305,3 +305,6 @@ fn test_adversarial_concurrency_isolation_multi_vaults() {
 
     assert_eq!(success_count.load(Ordering::SeqCst), 8);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

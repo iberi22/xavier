@@ -482,3 +482,6 @@ async fn test_consolidation_merge_duplicate_paths_after_dedup_config_change() {
     assert_eq!(items_after[0].id, "rec_1");
     assert!(items_after[0].content.contains("consolidated updates"));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

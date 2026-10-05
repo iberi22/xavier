@@ -101,3 +101,6 @@ async fn test_multi_island_events_and_persistence() {
         .iter()
         .any(|n| n.id == err_n.id && matches!(n.island_id, IslandId::Errors)));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

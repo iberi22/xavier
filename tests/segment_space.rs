@@ -150,3 +150,6 @@ async fn test_list_returns_only_documents_of_namespace() {
     let admin_docs = space.list("seg-admin", 10).await.unwrap();
     assert_eq!(admin_docs.len(), 0);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

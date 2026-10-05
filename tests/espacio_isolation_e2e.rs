@@ -585,3 +585,6 @@ async fn spaces_off_leaves_the_legacy_path_unchanged() {
         .await;
     assert_eq!(st, StatusCode::UNAUTHORIZED);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

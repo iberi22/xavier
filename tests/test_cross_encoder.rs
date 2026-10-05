@@ -214,3 +214,6 @@ fn test_9_multi_threaded_concurrent_reranker_calls() {
         assert_eq!(res.len(), 2);
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -112,3 +112,6 @@ async fn space_workspace_files_stay_inside_the_space_dir_and_follow_it_to_trash(
         );
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

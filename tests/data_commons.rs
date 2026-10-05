@@ -122,3 +122,6 @@ async fn test_data_commons_phase_2_e2e_flow() {
 
     println!("Data Commons Phase 2.2 E2E (Triage & Governance) passed successfully!");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

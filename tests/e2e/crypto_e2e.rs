@@ -86,3 +86,6 @@ fn test_corrupted_ciphertext_verification() {
     let result_tampered = decrypt_data(&blob.ciphertext, &dek, nonce.as_bytes());
     assert!(result_tampered.is_err());
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

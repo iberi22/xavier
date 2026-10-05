@@ -610,3 +610,6 @@ async fn espacio_install_keeps_a_single_authoritative_manager() {
     let _ = production_app(&state, None);
     assert!(get_space_manager().is_none());
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

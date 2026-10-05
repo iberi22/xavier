@@ -49,3 +49,6 @@ async fn test_start_mesh_node_lifecycle_and_handshake() {
     let _ = handle_a.await;
     let _ = handle_b.await;
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -58,3 +58,6 @@ async fn test_embedding_fallback_cloud_to_gllm() -> Result<()> {
 
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

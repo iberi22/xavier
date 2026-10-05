@@ -91,3 +91,6 @@ async fn test_context_regen_loop_e2e_flow() {
     assert_eq!(final_stats.rebuild_count, 2);
     assert_eq!(final_stats.tokens_at_last_rebuild, 140);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

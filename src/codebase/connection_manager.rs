@@ -612,6 +612,11 @@ impl ConnectionManager {
         profile: PoolProfile,
         class: PoolClass,
     ) -> Result<()> {
+        // Test/bench binaries must never open a DB under the real user home.
+        // Kept here (not in `connect_with_path`) so it also covers the
+        // project-relative paths that `connect` resolves.
+        crate::test_support::guard_user_path(&db_path);
+
         self.known_paths
             .write()
             .insert(project_id.to_string(), db_path.clone());

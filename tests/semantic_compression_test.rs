@@ -180,3 +180,6 @@ fn test_aged_session_detection() {
         .with_timestamp(old_timestamp);
     assert!(compressor.is_session_aged(&[aged_turn]));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

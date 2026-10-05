@@ -256,3 +256,6 @@ async fn test_mesh_status_with_license_e2e() {
     // Cleanup
     let _ = std::fs::remove_file(temp_config_path);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

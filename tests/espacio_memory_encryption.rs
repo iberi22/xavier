@@ -991,3 +991,6 @@ async fn private_text_is_not_embedded_by_a_remote_provider() {
     );
     assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

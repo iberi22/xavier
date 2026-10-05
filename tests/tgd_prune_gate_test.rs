@@ -497,3 +497,6 @@ async fn threshold_matrix_behind_an_open_gate() {
     }
     RECORDER.reset();
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

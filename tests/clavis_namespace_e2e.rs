@@ -191,3 +191,6 @@ async fn test_rejection_of_non_api_key_legacy_secret() {
     // Cleanup
     let _ = legacy_vault.delete_secret("node_private_seed");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

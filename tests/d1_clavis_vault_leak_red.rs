@@ -388,3 +388,6 @@ async fn global_vault_api_key_entry_is_not_visible_to_clavis() {
 
     let _ = global.delete_secret("api_key_global_only");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -228,3 +228,6 @@ async fn test_identical_stores_no_sync_needed() {
     assert!(to_push.is_empty(), "identical stores: nothing to push");
     assert!(to_pull.is_empty(), "identical stores: nothing to pull");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

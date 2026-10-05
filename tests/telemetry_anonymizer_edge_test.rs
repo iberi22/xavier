@@ -251,3 +251,6 @@ fn test_traits_debug_clone_default() {
     assert!(cloned_config.enable_dp);
     assert_eq!(cloned_config.dp_epsilon, 1.0);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

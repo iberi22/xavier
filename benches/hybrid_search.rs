@@ -357,3 +357,6 @@ criterion_group!(
     bench_memory_store_operations
 );
 criterion_main!(hybrid_search_benches);
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

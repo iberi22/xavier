@@ -148,3 +148,6 @@ async fn test_wave20_stats_responsive_when_write_pool_busy() {
     assert_eq!(json_body["status"], "ok");
     assert_eq!(json_body["write_pool_busy"], true);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

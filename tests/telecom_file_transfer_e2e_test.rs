@@ -187,3 +187,6 @@ async fn test_e2e_10mb_file_transfer_with_dropped_chunks_recovery() -> Result<()
 
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

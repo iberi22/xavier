@@ -409,3 +409,6 @@ async fn test_cloud_memory_sync_pagination_over_batch_size_limit() {
         "Cloud and fresh local manifests must converge"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

@@ -220,3 +220,6 @@ async fn test_hc_e2e_full_cognitive_alignment_loop() {
     assert_eq!(mesh_scores[0].challenge_type, ChallengeType::Decision);
     assert!(mesh_scores[0].points >= base_points);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

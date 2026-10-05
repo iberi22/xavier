@@ -76,3 +76,6 @@ fn test_ledger_skill_entries_valid() {
         }
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

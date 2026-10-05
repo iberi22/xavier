@@ -287,3 +287,6 @@ async fn resolve_rejects_invalid_resolution() {
         "should mention allowed values: {result}"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

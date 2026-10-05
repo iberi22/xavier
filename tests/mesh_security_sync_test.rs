@@ -1018,3 +1018,6 @@ async fn test_empty_workspace_sync() {
 
     eprintln!("✅ test_empty_workspace_sync: empty manifest + empty fetch OK");
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

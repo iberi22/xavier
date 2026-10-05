@@ -144,3 +144,6 @@ async fn test_ws_message_serde() {
     assert!(json_lag.contains("\"type\":\"lagged\""));
     assert!(json_lag.contains("\"skipped\":15"));
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

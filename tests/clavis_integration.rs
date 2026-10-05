@@ -303,3 +303,6 @@ async fn test_mcp_tool_secret_resolution_lease_revocation() -> Result<()> {
     println!("✅ MCP Tool Secret Resolution Lease Revocation Test PASSED.");
     Ok(())
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

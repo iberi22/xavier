@@ -370,3 +370,6 @@ async fn test_multi_node_e2e_sync() {
         "Content should match"
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

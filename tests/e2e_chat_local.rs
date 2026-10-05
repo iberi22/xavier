@@ -116,3 +116,6 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
         content
     );
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

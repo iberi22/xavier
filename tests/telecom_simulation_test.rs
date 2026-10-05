@@ -611,3 +611,6 @@ mod tests {
         assert_eq!(snapshot.total_messages_sent, 0);
     }
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();

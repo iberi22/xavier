@@ -417,3 +417,6 @@ async fn test_jwt_refresh_cycle() {
         .unwrap();
     assert_eq!(status_res.status(), StatusCode::OK);
 }
+
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();
