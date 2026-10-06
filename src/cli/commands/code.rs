@@ -132,6 +132,7 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .json(&serde_json::json!({
                     "query": query,
                     "depth": depth,
+                    "repo": repo,
                 }))
                 .send()
                 .await?
@@ -157,7 +158,8 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                     "query": query,
                     "depth": depth,
                     "limit": limit,
-                    "edge_type": edge_type
+                    "edge_type": edge_type,
+                    "repo": repo
                 }))
                 .send()
                 .await?
@@ -175,7 +177,8 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                     "query": query,
                     "depth": depth,
                     "limit": limit,
-                    "edge_type": edge_type
+                    "edge_type": edge_type,
+                    "repo": repo
                 }))
                 .send()
                 .await?
