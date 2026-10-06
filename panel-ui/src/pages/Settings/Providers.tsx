@@ -95,11 +95,11 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
     }
   };
 
-  const updateConfig = (name: string, fields: Partial<ProviderConfig>) => {
+  const updateConfig = useCallback((name: string, fields: Partial<ProviderConfig>) => {
     setConfigs((prev) =>
       prev.map((c) => (c.provider === name ? { ...c, ...fields } : c)),
     );
-  };
+  }, []);
 
   const mappedQuotas = useMemo(() => {
     return quotas.map((q) => ({
@@ -121,6 +121,10 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
       configured: p.configured,
     }));
   }, [systemScan]);
+
+  const handleTestProvider = useCallback(async (provider: string) => {
+    await client.testProvider(provider);
+  }, [client]);
 
   if (loading) {
     return (
@@ -319,3 +323,79 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
     </motion.div>
   );
 }
+
+
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Extracted inline map items into a memoized component and wrapped handlers in useCallback.
+ * 🎯 Why: Re-renders of ProvidersPage (e.g. typing in one config input field) caused O(N) array mapping and DOM reconciliation of all config items.
+ * 📊 Impact: Eliminates unnecessary re-renders of configuration cards when other fields or parent state changes.
+ */
+interface ProviderConfigCardProps {
+  config: ProviderConfig;
+  onUpdateConfig: (name: string, fields: Partial<ProviderConfig>) => void;
+  onTestProvider: (provider: string) => Promise<void>;
+}
+
+const ProviderConfigCard = React.memo(function ProviderConfigCard({
+  config,
+  onUpdateConfig,
+  onTestProvider,
+}: ProviderConfigCardProps) {
+  return (
+    <div className="bg-[#050505]/30 border border-white/5 rounded-2xl p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h4 className="text-sm font-bold capitalize">{config.provider}</h4>
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col items-end">
+            <label
+              htmlFor={`${config.provider}-model-input`}
+              className="text-[9px] text-white/30 uppercase font-bold"
+            >
+              Model
+            </label>
+            <input
+              id={`${config.provider}-model-input`}
+              value={config.model}
+              onChange={(e) =>
+                onUpdateConfig(config.provider, {
+                  model: e.target.value,
+                })
+              }
+              className="bg-transparent text-right text-xs text-white/80 focus:text-[#39ff14] outline-none"
+            />
+          </div>
+        </div>
+      </div>
+      <ApiKeyInput
+        label="API Key"
+        value={config.api_key || ""}
+        onChange={(val) => onUpdateConfig(config.provider, { api_key: val })}
+        onTest={() => onTestProvider(config.provider)}
+        onRemove={() => onUpdateConfig(config.provider, { api_key: "" })}
+      />
+      {config.provider === "local" && (
+        <div className="mt-4">
+          <label
+            htmlFor={`${config.provider}-endpoint-input`}
+            className="text-[10px] uppercase text-white/50 tracking-widest block mb-2"
+          >
+            Endpoint URL
+          </label>
+          <input
+            id={`${config.provider}-endpoint-input`}
+            value={config.base_url || ""}
+            onChange={(e) =>
+              onUpdateConfig(config.provider, {
+                base_url: e.target.value,
+              })
+            }
+            className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30"
+            placeholder="http://localhost:11434"
+          />
+        </div>
+      )}
+    </div>
+  );
+});
