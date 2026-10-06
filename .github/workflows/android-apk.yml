@@ -26,7 +26,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  ANDROID_PACKAGE: com.swalsystems.xavier
 
 jobs:
   android-apk:
@@ -41,7 +40,7 @@ jobs:
       - name: Install Rust toolchain with the Android target
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi
+          targets: aarch64-linux-android
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -64,12 +63,9 @@ jobs:
 
       - name: Build the Android binary
         # Same feature set as the desktop builds. The APK ships this as its
-        # `libxavier.so`, so it must be built for the ABI the app targets.
-        working-directory: panel-ui
-        run: |
-          rustup target add aarch64-linux-android armv7-linux-androideabi
-          cargo build --release --target aarch64-linux-android --features "ci-safe,pageindex-pdfium"
-        # Only the outer cd; cargo runs in the workspace like the other jobs do.
+        # `libxavier.so`, so it must be built for the ABI the app targets; the
+        # target itself is installed by the toolchain step above.
+        run: cargo build --release --target aarch64-linux-android --features "ci-safe,pageindex-pdfium"
 
       - name: Assemble the APK with Gradle
         # `gradlew` is committed without the executable bit, and `compileSdk = 36`
