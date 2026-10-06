@@ -84,7 +84,25 @@ jobs:
           # AppImage tooling needs FUSE-less extraction on CI runners.
           APPIMAGE_EXTRACT_AND_RUN: '1'
           NO_STRIP: 'true'
-        run: pnpm exec tauri build --bundles appimage,deb
+        # `rpm` is a declared bundle target in tauri.conf.json but was never
+        # built here, so the target was advertised and not produced. Added after
+        # the .deb proved the packaging path works; if rpm tooling ever becomes a
+        # problem on the runner, drop it from this line rather than the config.
+        run: pnpm exec tauri build --bundles appimage,deb,rpm
+
+      - name: Verify the expected bundles were produced
+        working-directory: panel-ui
+        run: |
+          set -euo pipefail
+          missing=0
+          for ext in AppImage deb rpm; do
+            if compgen -G "src-tauri/target/release/bundle/*/*.$ext" > /dev/null; then
+              echo "OK: $ext"
+            else
+              echo "MISSING: $ext"; missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || { echo "bundle verification failed"; exit 1; }
 
       - name: Repack AppImage without bundled libwayland
         # linuxdeploy bundles Ubuntu's libwayland-*; on hosts with a newer Mesa
