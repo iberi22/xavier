@@ -214,6 +214,28 @@ fn degraded_stats_response(
     }))
 }
 
+/// The declared `XAVIER_CODE_EXTRA_ROOTS`, as reportable JSON.
+///
+/// `all_code_roots` puts the workspace root first, so everything after it is what
+/// the operator added. Empty when the variable is unset, which leaves the
+/// response shape unchanged for everyone who does not use it.
+fn extra_roots_json(workspace: &std::path::Path) -> Vec<serde_json::Value> {
+    use xavier::codebase::repo_identity::{all_code_roots, code_graph_db_path_for_root};
+    let mut roots = all_code_roots(workspace);
+    if !roots.is_empty() {
+        roots.remove(0);
+    }
+    roots
+        .into_iter()
+        .map(|root| {
+            serde_json::json!({
+                "root": root.to_string_lossy(),
+                "indexed": code_graph_db_path_for_root(&root).exists(),
+            })
+        })
+        .collect()
+}
+
 /// Legacy global stats (pre-XAV-01 single-workspace graph).
 async fn legacy_stats_json(state: &CliState) -> serde_json::Value {
     let db_path = code_graph_db_path_for(&state.workspace_dir);
@@ -264,6 +286,12 @@ fn with_repo_echo(
     body["project_id"] = serde_json::json!(r.project_id);
     body["root"] = serde_json::json!(r.root.to_string_lossy());
     body["indexed_commit"] = serde_json::json!(r.indexed_commit);
+    // xav-cg.02: the extra roots this process answers for, reported alongside the
+    // requested repo. Here because every per-repo response funnels through this
+    // function, so no branch can forget it. They are NOT merged into `body`'s
+    // counts: `find`/`stats` stay per-repo, so listing another repo in the
+    // variable cannot become a way to read its graph.
+    body["extra_roots"] = serde_json::json!(extra_roots_json(&r.root));
     if legacy {
         body["legacy_index"] = serde_json::json!(true);
     }
@@ -2579,6 +2607,69 @@ fn map_edges_to_graph(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// xav-cg.02 wiring: every per-repo response must carry `extra_roots`.
+    ///
+    /// Without this, `extra_code_roots()` is dead code that passes its own unit
+    /// tests while `code stats` shows nothing — the failure mode this test exists
+    /// to prevent.
+    #[test]
+    fn with_repo_echo_reports_extra_roots() {
+        let _g = crate::settings::tests::TempEnv::new();
+        let dir = tempfile::tempdir().unwrap();
+        let extra = dir.path().join("extra_repo");
+        std::fs::create_dir_all(extra.join(".git")).unwrap();
+
+        let repo = ResolvedRepo {
+            project_id: "mainrepo".to_string(),
+            root: dir.path().to_path_buf(),
+            indexed_commit: "abc123".to_string(),
+            head: "abc123".to_string(),
+            db_path: dir.path().join(".xavier/code_graph.db"),
+            stale: false,
+            project_id_mismatch: false,
+        };
+        std::env::set_var("XAVIER_CODE_EXTRA_ROOTS", &extra);
+
+        let body = with_repo_echo(serde_json::json!({"status": "ok"}), &repo, false);
+        let extras = body["extra_roots"]
+            .as_array()
+            .unwrap_or_else(|| panic!("extra_roots must be an array, got {body}"));
+        assert_eq!(
+            extras.len(),
+            1,
+            "the declared root must be reported: {body}"
+        );
+        assert_eq!(extras[0]["root"], extra.to_string_lossy().as_ref());
+        // The requested repo's own fields must survive untouched.
+        assert_eq!(body["project_id"], "mainrepo");
+        assert_eq!(body["root"], dir.path().to_string_lossy().as_ref());
+
+        std::env::remove_var("XAVIER_CODE_EXTRA_ROOTS");
+    }
+
+    /// Unset must produce an empty list, not a missing key and not null.
+    #[test]
+    fn with_repo_echo_extra_roots_empty_when_unset() {
+        let _g = crate::settings::tests::TempEnv::new();
+        std::env::remove_var("XAVIER_CODE_EXTRA_ROOTS");
+        let dir = tempfile::tempdir().unwrap();
+        let repo = ResolvedRepo {
+            project_id: "mainrepo".to_string(),
+            root: dir.path().to_path_buf(),
+            indexed_commit: "abc123".to_string(),
+            head: "abc123".to_string(),
+            db_path: dir.path().join(".xavier/code_graph.db"),
+            stale: false,
+            project_id_mismatch: false,
+        };
+        let body = with_repo_echo(serde_json::json!({"status": "ok"}), &repo, false);
+        assert_eq!(
+            body["extra_roots"],
+            serde_json::json!([]),
+            "unset must yield an empty array, not a missing field"
+        );
+    }
     use code_graph::db::CodeGraphDB;
     use code_graph::types::{CodeEdge, EdgeType, Language, Symbol, SymbolKind};
 
