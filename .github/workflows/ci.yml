@@ -226,6 +226,39 @@ jobs:
           cargo test --package xavier --features ci-safe --test clavis_namespace_e2e -- --test-threads=1
           cargo test --package xavier --features ci-safe --test clavis_vault_smoke_e2e -- --test-threads=1
 
+  # Job 3b: Espacios (per-space keys, stores, tokens, links, routing)
+  #
+  # These are `tests/*.rs` targets, so `cargo test --lib` never compiles or runs
+  # them: the whole Espacios surface — the core this branch integrates — had no
+  # automated coverage at all until this job existed. Run one target at a time,
+  # for the same ENV-mutation reason as `rust-test`.
+  espacio-tests:
+    name: Espacios Integration Tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Espacios isolation, encryption, links and auth-gate tests
+        # 1 thread: these suites mutate global ENV (see `rust-test`).
+        run: |
+          cargo test --package xavier --features ci-safe --test espacio_memory_encryption -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test espacio_isolation_memory -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test espacio_links -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test espacio_space_paths -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test espacio_production_router -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test espacio_isolation_e2e -- --test-threads=1
+          cargo test --package xavier --features ci-safe --test test_maloca_auth_gate -- --test-threads=1
+
   # Job 4: Secret Scan
   secret-scan:
     name: Secret Scan (Gitleaks)
