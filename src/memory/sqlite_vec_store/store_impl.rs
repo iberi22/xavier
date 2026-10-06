@@ -1623,6 +1623,20 @@ impl VecSqliteMemoryStore {
             return Ok(Vec::new());
         }
 
+        // BOTH paths below derive words FROM THE USER'S CONTENT and write them to
+        // PLAINTEXT stores: `memory_symbol_links` here, and `code_graph.db`
+        // inside `link_memory_to_symbols`, which tokenizes `content` and returns
+        // every word that matches a symbol name. A symbol NAME is not a user
+        // word, but the match is driven entirely by the user's text — so a
+        // private row would leak its wording through which symbol ids come back.
+        //
+        // Therefore nothing may be derived unless the row is explicitly PUBLIC
+        // (fail closed). This is the invariant adcf69fd was reaching for when it
+        // vetoed the whole path.
+        if !super::at_rest::is_explicitly_public(metadata) {
+            return Ok(Vec::new());
+        }
+
         let mut symbol_links: Vec<(String, f64)> = Vec::new();
 
         let code_db_path =
@@ -1638,22 +1652,13 @@ impl VecSqliteMemoryStore {
         }
 
         if symbol_links.is_empty() {
-            // Raw-word fallback: these ARE words lifted from the user's content,
-            // so they may only be derived from a row that is explicitly public.
-            // For anything else they would land in a plaintext table and leak the
-            // sealed text (closed in adcf69fd, which switched the whole path off
-            // rather than splitting it — that also made this function dead code
-            // for every default-store row, because `encrypt_columns_for_write`
-            // always sets `encrypted_dek`).
-            if super::at_rest::is_explicitly_public(metadata) {
-                let candidate_words: std::collections::HashSet<&str> = content
-                    .split(|c: char| !c.is_alphanumeric() && c != '_')
-                    .filter(|w| w.len() >= 4)
-                    .collect();
+            let candidate_words: std::collections::HashSet<&str> = content
+                .split(|c: char| !c.is_alphanumeric() && c != '_')
+                .filter(|w| w.len() >= 4)
+                .collect();
 
-                for word in candidate_words {
-                    symbol_links.push((word.to_string(), 1.0));
-                }
+            for word in candidate_words {
+                symbol_links.push((word.to_string(), 1.0));
             }
         }
 
@@ -1928,6 +1933,82 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(n, 0, "no row may be written for a non-public memory");
+        }
+    }
+
+    /// The codegraph path also derives words from the user's content:
+    /// `link_memory_to_symbols` tokenizes `content` and returns every word that
+    /// matches a symbol name, writing to `code_graph.db` (plaintext) as well. So
+    /// the PUBLIC gate must hold with a REAL codegraph present, not only on the
+    /// raw-word fallback.
+    #[test]
+    fn private_row_never_links_through_the_codegraph() {
+        let dir = tempfile::tempdir().unwrap();
+        let cg_path = dir.path().join("code_graph.db");
+        {
+            let cg = code_graph::db::CodeGraphDB::new(&cg_path).unwrap();
+            cg.insert_symbol(&code_graph::types::Symbol {
+                id: None,
+                stable_id: Some("Zxqcanaryword".to_string()),
+                name: "Zxqcanaryword".to_string(),
+                kind: code_graph::types::SymbolKind::Function,
+                lang: code_graph::types::Language::Rust,
+                file_path: "src/canary.rs".to_string(),
+                start_line: 1,
+                end_line: 2,
+                start_col: 1,
+                end_col: 1,
+                signature: None,
+                parent: None,
+                complexity: None,
+            })
+            .unwrap();
+        }
+        let prev = std::env::var("XAVIER_CODE_GRAPH_DB_PATH").ok();
+        std::env::set_var("XAVIER_CODE_GRAPH_DB_PATH", &cg_path);
+
+        let conn = setup_test_db();
+        let cg_for_links = code_graph::db::CodeGraphDB::new(&cg_path).unwrap();
+        for meta in [
+            serde_json::json!({}),
+            serde_json::json!({ "clearance": "INTERNAL" }),
+        ] {
+            let links = VecSqliteMemoryStore::link_memory_on_demand(
+                &conn,
+                "mem_private_cg",
+                "Zxqcanaryword appears in private text",
+                &meta,
+            )
+            .unwrap();
+            assert!(
+                links.is_empty(),
+                "a private row ({meta}) must not link even with a codegraph: {links:?}"
+            );
+        }
+        // Nothing may have reached the PLAINTEXT codegraph either. Read the file
+        // directly: that is the artefact an attacker would inspect, and it is
+        // unencrypted.
+        drop(cg_for_links);
+        let raw = rusqlite::Connection::open(&cg_path).unwrap();
+        let n: i64 = raw
+            .query_row(
+                "SELECT COUNT(*) FROM memory_symbol_links WHERE memory_id = 'mem_private_cg'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        assert_eq!(n, 0, "no link row may reach the plaintext codegraph");
+        // And the canary must not appear anywhere in that file.
+        drop(raw);
+        let bytes = std::fs::read(&cg_path).unwrap();
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains("Zxqcanaryword"),
+            "the private word leaked into code_graph.db"
+        );
+
+        match prev {
+            Some(p) => std::env::set_var("XAVIER_CODE_GRAPH_DB_PATH", p),
+            None => std::env::remove_var("XAVIER_CODE_GRAPH_DB_PATH"),
         }
     }
 
