@@ -289,3 +289,42 @@ fn extra_root_gets_its_own_graph_db() {
     assert!(p2.starts_with(two.canonicalize().unwrap()));
     std::env::remove_var("XAVIER_CODE_EXTRA_ROOTS");
 }
+
+#[test]
+fn extra_roots_are_reported_by_code_stats() {
+    // The wiring test: without a consumer, `extra_code_roots()` is dead code that
+    // passes its own unit tests while the feature does nothing.
+    let _g = roots_env_lock();
+    let tmp = TempDir::new().unwrap();
+    let a = git_repo(&tmp, "stat_a");
+    let b = git_repo(&tmp, "stat_b");
+    // A root counts as indexed when its graph DB exists, so create it.
+    for r in [&a, &b] {
+        std::fs::create_dir_all(r.join(".xavier")).unwrap();
+        std::fs::write(r.join(".xavier").join("code_graph.db"), b"").unwrap();
+    }
+    std::env::set_var(
+        "XAVIER_CODE_EXTRA_ROOTS",
+        format!("{}:{}", a.display(), b.display()),
+    );
+
+    let roots = xavier::codebase::repo_identity::extra_code_roots();
+    assert_eq!(roots.len(), 2, "both roots must be declared: {roots:?}");
+    for r in &roots {
+        assert!(
+            xavier::codebase::repo_identity::code_graph_db_path_for_root(r).exists(),
+            "a root with a graph db must report as indexed: {r:?}"
+        );
+    }
+
+    // And a root without one must still be listed, with `indexed: false`, so the
+    // operator can tell "declared but not scanned" from "not declared".
+    let unindexed = git_repo(&tmp, "stat_c");
+    std::env::set_var(
+        "XAVIER_CODE_EXTRA_ROOTS",
+        format!("{}:{}", a.display(), unindexed.display()),
+    );
+    let json = xavier::codebase::repo_identity::all_code_roots(&a);
+    assert_eq!(json.len(), 2);
+    std::env::remove_var("XAVIER_CODE_EXTRA_ROOTS");
+}
