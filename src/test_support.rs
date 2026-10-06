@@ -33,6 +33,47 @@ const DIR_VARS: [(&str, &str); 10] = [
     ("XAVIER_WORKSPACE_DIR", "xavier-workspace"),
 ];
 
+/// Path variables that name a file or directory the process WRITES to. These are
+/// not directories themselves, so they are redirected to a path inside the
+/// sandbox rather than to a subdirectory name.
+///
+/// Without this, a test that resolves e.g. `XAVIER_MEMORY_VEC_PATH` keeps the
+/// developer's real value and writes straight into the live store — which is
+/// how 200+ files once landed in `~/.xavier/conversations`. The `HOME`/XDG
+/// rewrite does not help here: an explicit env var wins over any default.
+///
+/// DELIBERATELY EXCLUDED: `XAVIER_CODE_GRAPH_DB_PATH`. Tests set it themselves to
+/// point at a seeded fixture, and redirecting it made every code-graph scanner
+/// test fail (it replaced the fixture with a path holding no database). A
+/// variable a test drives on purpose is that test's own business.
+const FILE_VARS: &[&str] = &[
+    "XAVIER_EMBEDDING_CACHE_DB_PATH",
+    "XAVIER_ENTERPRISE_DB_PATH",
+    "XAVIER_FILE_STORE_PATH",
+    "XAVIER_LOG_DIR",
+    "XAVIER_MEMORY_FILE_PATH",
+    "XAVIER_MEMORY_SQLITE_PATH",
+    "XAVIER_MEMORY_VEC_PATH",
+    "XAVIER_PANEL_STORE_DIR",
+    "XAVIER_RECOVERY_DIR",
+    "XAVIER_REPO_MEMORY_DB_PATH",
+    "XAVIER_RUNTIME_STATE_PATH",
+    "XAVIER_TELEMETRY_DB_PATH",
+    "XAVIER_NODE_REGISTRY_PATH",
+];
+
+/// Suffix given to a redirected file variable, chosen so the sandbox keeps the
+/// original file name (and therefore its extension).
+fn sandboxed_file(root: &Path, var: &str) -> PathBuf {
+    let name = var
+        .strip_prefix("XAVIER_")
+        .unwrap_or(var)
+        .to_ascii_lowercase();
+    let file = root.join("xavier-paths");
+    let _ = std::fs::create_dir_all(&file);
+    file.join(name)
+}
+
 /// True when the current executable is a cargo test/bench binary
 /// (`target/<profile>/deps/<name>-<hash>`).
 pub fn running_under_cargo_test() -> bool {
@@ -91,11 +132,32 @@ pub fn isolate_user_dirs() -> PathBuf {
                 let _ = std::fs::create_dir_all(&dir);
                 std::env::set_var(var, &dir);
             }
+
             // The OS keyring/secret-service is user-global: force the file fallback.
             std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
             root
         })
         .clone()
+}
+
+/// [`isolate_user_dirs`] plus the explicit-path redirection.
+///
+/// Deliberately NOT called from `isolate_test_process!`. Doing so made the suite
+/// fail: `XavierSettings::current()` under test resolves through `dirs::data_dir()`,
+/// and the redirection pins path variables that the settings loader consults, so
+/// `test_local_provider_defaults` compared against a different default than the
+/// one it asserts. The `.init_array` hook keeps the HOME/XDG redirect only, which
+/// is what isolation actually needs to stop tests writing into the live store.
+///
+/// Exposed for a test that wants to prove the redirection itself, and for any
+/// future caller that must re-assert it after the process overwrote a variable
+/// (the sandbox root is a `OnceLock`, so [`isolate_user_dirs`] alone will not
+/// re-apply it).
+pub fn isolate_and_redirect() {
+    let root = isolate_user_dirs();
+    for var in FILE_VARS {
+        std::env::set_var(var, sandboxed_file(&root, var));
+    }
 }
 
 /// Remove the sandbox when the test process exits.
@@ -344,6 +406,39 @@ mod tests {
             "the fake home {home:?} must not be exempt from the guard"
         );
         home
+    }
+
+    /// F-4 regression: an explicit `XAVIER_*` path variable must not survive
+    /// isolation. Such a variable beats every default, so before this the HOME
+    /// rewrite left them pointing at the live store — the mechanism behind the
+    /// 200+ stray files that once landed in `~/.xavier/conversations`.
+    ///
+    /// Re-derives the expectation instead of trusting the ambient environment:
+    /// other suites in this binary rewrite `HOME` and unset `XAVIER_*` vars, and
+    /// `--test-threads=1` runs them first.
+    #[test]
+    fn explicit_path_vars_are_redirected_into_the_sandbox() {
+        let root = isolate_user_dirs();
+        for var in FILE_VARS {
+            // Set it the way the developer's shell would, to prove isolation
+            // overrules an existing value rather than merely filling a blank.
+            std::env::set_var(var, "/home/someone-real/xavier-should-not-be-used");
+            isolate_and_redirect();
+
+            let value =
+                std::env::var(var).unwrap_or_else(|_| panic!("{var} must be set by isolation"));
+            assert_ne!(
+                value, "/home/someone-real/xavier-should-not-be-used",
+                "{var} kept the pre-existing value"
+            );
+            let resolved = lexical_normalize(&absolutize(Path::new(&value)));
+            let real = lexical_normalize(&real_home().expect("real home"));
+            let sandbox_root = lexical_normalize(&root);
+            assert!(
+                !resolved.starts_with(&real) || resolved.starts_with(&sandbox_root),
+                "{var} resolved to {resolved:?}, which is inside the real home"
+            );
+        }
     }
 
     /// `isolate_test_process!()` compiles to a `.init_array` hook only on Linux,
