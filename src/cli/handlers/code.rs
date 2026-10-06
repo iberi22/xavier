@@ -743,6 +743,35 @@ pub async fn code_scan_handler(
                 maybe_sync_colby_project(std::path::Path::new(&path), bin);
             }
 
+            // Persist the scanned graph to the per-repo database file `<repo_root>/.xavier/code_graph.db`
+            if let Some(repo_root) =
+                xavier::codebase::repo_identity::find_repo_root(std::path::Path::new(&path))
+            {
+                let canonical = repo_root
+                    .canonicalize()
+                    .unwrap_or_else(|_| repo_root.clone());
+                let db_path =
+                    xavier::codebase::repo_identity::code_graph_db_path_for_root(&canonical);
+                if let Some(parent) = db_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Ok(repo_db) = ConnectionManager::global().get_code_graph_db(&db_path) {
+                    if let (Ok(symbols), Ok(edges)) = (
+                        code_graph.db.get_all_symbols(),
+                        code_graph.db.get_all_edges(),
+                    ) {
+                        let _ = repo_db.insert_symbols(&symbols);
+                        let _ = repo_db.insert_edges(&edges);
+                    }
+                }
+                if let Some(head) = xavier::codebase::repo_identity::git_head(&canonical) {
+                    let checkpoint = canonical
+                        .join(".xavier")
+                        .join(xavier::codebase::repo_identity::SYNC_CHECKPOINT_FILE);
+                    let _ = std::fs::write(checkpoint, format!("{}\n", head));
+                }
+            }
+
             // Automatically trigger soft dump after successful scan
             let (dump_msg, dump_path_str, dump_success) =
                 match perform_dump(&code_graph, &path).await {
@@ -1754,9 +1783,29 @@ pub async fn code_blast_radius_handler(
         .unwrap_or_else(|| sec_result.original_input.clone());
 
     let depth = payload.depth.clamp(1, 8);
-    let code_graph = state.code_graph.read().await;
 
-    match code_graph.query.blast_radius(&query, depth) {
+    let query_engine = if let Some(repo) = payload.repo.as_ref() {
+        if let Some(r) = resolve_requested_repo(repo.project_id.as_deref(), repo.root.as_deref()) {
+            if r.db_path.exists() {
+                if let Ok(repo_db) = ConnectionManager::global().get_code_graph_db(&r.db_path) {
+                    Some(code_graph::query::QueryEngine::new(Arc::new(repo_db)))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let code_graph = state.code_graph.read().await;
+    let engine = query_engine.as_ref().unwrap_or(&code_graph.query);
+
+    match engine.blast_radius(&query, depth) {
         Ok(results) => {
             let json_results: Vec<_> = results
                 .into_iter()
@@ -1909,17 +1958,33 @@ async fn code_graph_edges_response(
     let limit = payload.limit.clamp(1, 1000);
     let budget_tokens = payload.budget_tokens.clamp(100, 16_000);
 
-    let code_graph = state.code_graph.read().await;
-    let result = if call_chain {
-        code_graph.query.call_chain(&query, depth, limit)
-    } else if reverse {
-        code_graph
-            .query
-            .reverse_dependencies(&query, edge_type, depth, limit)
+    let query_engine = if let Some(repo) = payload.repo.as_ref() {
+        if let Some(r) = resolve_requested_repo(repo.project_id.as_deref(), repo.root.as_deref()) {
+            if r.db_path.exists() {
+                if let Ok(repo_db) = ConnectionManager::global().get_code_graph_db(&r.db_path) {
+                    Some(code_graph::query::QueryEngine::new(Arc::new(repo_db)))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     } else {
-        code_graph
-            .query
-            .dependencies(&query, edge_type, depth, limit)
+        None
+    };
+
+    let code_graph = state.code_graph.read().await;
+    let engine = query_engine.as_ref().unwrap_or(&code_graph.query);
+
+    let result = if call_chain {
+        engine.call_chain(&query, depth, limit)
+    } else if reverse {
+        engine.reverse_dependencies(&query, edge_type, depth, limit)
+    } else {
+        engine.dependencies(&query, edge_type, depth, limit)
     };
 
     match result {
