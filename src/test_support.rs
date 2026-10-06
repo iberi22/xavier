@@ -418,25 +418,24 @@ mod tests {
     /// `--test-threads=1` runs them first.
     #[test]
     fn explicit_path_vars_are_redirected_into_the_sandbox() {
-        let root = isolate_user_dirs();
+        // Poison every variable first, as a developer's shell would, so the
+        // assertion proves isolation OVERRULES an existing value rather than
+        // merely filling a blank.
+        const POISON: &str = "/home/someone-real/xavier-should-not-be-used";
         for var in FILE_VARS {
-            // Set it the way the developer's shell would, to prove isolation
-            // overrules an existing value rather than merely filling a blank.
-            std::env::set_var(var, "/home/someone-real/xavier-should-not-be-used");
-            isolate_and_redirect();
+            std::env::set_var(var, POISON);
+        }
+        isolate_and_redirect();
 
-            let value =
-                std::env::var(var).unwrap_or_else(|_| panic!("{var} must be set by isolation"));
-            assert_ne!(
-                value, "/home/someone-real/xavier-should-not-be-used",
-                "{var} kept the pre-existing value"
-            );
+        let real = lexical_normalize(&real_home().expect("real home"));
+        let sandbox = lexical_normalize(&isolate_user_dirs());
+        for var in FILE_VARS {
+            let value = std::env::var(var).unwrap_or_else(|_| panic!("{var} must be set"));
+            assert_ne!(value, POISON, "{var} kept the pre-existing value");
             let resolved = lexical_normalize(&absolutize(Path::new(&value)));
-            let real = lexical_normalize(&real_home().expect("real home"));
-            let sandbox_root = lexical_normalize(&root);
             assert!(
-                !resolved.starts_with(&real) || resolved.starts_with(&sandbox_root),
-                "{var} resolved to {resolved:?}, which is inside the real home"
+                !resolved.starts_with(&real) || resolved.starts_with(&sandbox),
+                "{var} resolved to {resolved:?}, inside the real home"
             );
         }
     }
