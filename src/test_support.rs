@@ -323,6 +323,29 @@ crate::isolate_test_process!();
 mod tests {
     use super::*;
 
+    /// A directory the guard will NOT treat as test-owned, for tests that need a
+    /// fake "real home" the guard must actually police.
+    ///
+    /// `is_test_owned` exempts the repo, `/tmp`, `/var/tmp`, any `xavier-test-*`
+    /// component, and a `tempfile` `.tmpXXXXXX` scratch dir under `$TMPDIR`. So
+    /// the fake home has to sit outside ALL of those — putting it under
+    /// `std::env::temp_dir()` is what made this test pass locally (TMPDIR is
+    /// `~/.hermes/cache/scratch`) while failing on CI, where TMPDIR is `/tmp`.
+    ///
+    /// It lives in a uniquely named sibling of the repo, which is outside the
+    /// repo root, outside any temp dir, and has no `xavier-test-` component.
+    fn fake_home_outside_temp() -> PathBuf {
+        let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("manifest"));
+        let unique = format!("guard-fake-home-{}", std::process::id());
+        let home = manifest.parent().expect("repo parent").join(unique);
+        let _ = std::fs::create_dir_all(home.join("project_root"));
+        assert!(
+            !super::is_test_owned(&home),
+            "the fake home {home:?} must not be exempt from the guard"
+        );
+        home
+    }
+
     /// `isolate_test_process!()` compiles to a `.init_array` hook only on Linux,
     /// so off Linux the sandbox is never installed and `HOME` is untouched.
     /// Gating the assertion keeps the suite green on macOS/Windows.
@@ -370,9 +393,15 @@ mod tests {
         let _lock = crate::test_support::tests::ENV
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        // The home must be neither the repo nor a temp dir, because both are
-        // exempt; otherwise the relative-path case proves nothing.
-        let home = std::env::temp_dir().join("guard-fake-home");
+        // The home must be under a directory the guard does NOT exempt, or the
+        // relative-path case proves nothing. `is_test_owned` exempts the repo,
+        // `/tmp`, `/var/tmp`, any `xavier-test-*` component, and a
+        // `tempfile` `.tmpXXXXXX` scratch dir under `$TMPDIR` — so a home inside
+        // `std::env::temp_dir()` is itself exempt and the assert can never fire.
+        // This is why the test passed here (TMPDIR is `~/.hermes/cache/scratch`,
+        // so the path is exempt for a different reason) while it would fail on CI
+        // where TMPDIR is `/tmp`. Use the home itself, never the temp dir.
+        let home = fake_home_outside_temp();
         let workdir = home.join("project_root");
         let _ = std::fs::create_dir_all(&workdir);
         let repo = std::env::current_dir().expect("cwd");
