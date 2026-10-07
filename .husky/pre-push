@@ -42,6 +42,9 @@ while read -r _lr _ls _rr _rs; do
     STDIN_REFS+=("$_lr $_ls $_rr $_rs")
 done <<< "$STDIN_TEXT"
 
+# Optional local Rust/disk hygiene on pushes to main (fail-open; skipped if the helper is not installed).
+[ -x "$HOME/.hermes/scripts/swal-rust-hygiene.sh" ] && "$HOME/.hermes/scripts/swal-rust-hygiene.sh" pre-push <<< "$STDIN_TEXT" || true
+
 # Force-push detection.
 #
 # git invokes the hook as `pre-push <remote-name> <remote-url>` and passes NO
