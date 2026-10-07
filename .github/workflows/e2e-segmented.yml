@@ -30,6 +30,8 @@ env:
 jobs:
   e2e-01:
     name: W01 resto_a (22)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -40,14 +42,18 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 22 targets of wave 01
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'agent_lease_hooks_tests'
-            'ci_version_gate.test'
+            'ci_version_gate'
             'clearance_live_e2e'
             'd1_clavis_vault_leak_red'
             'd2_clavis_wiring_red'
@@ -78,6 +84,7 @@ jobs:
           echo
           echo "==== wave 01 (resto_a): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -89,6 +96,8 @@ jobs:
 
   e2e-02:
     name: W02 resto_b (19)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -99,11 +108,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 19 targets of wave 02
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'adversarial_challenge_2_stress'
             'agent_task_lifecycle_tests'
@@ -134,6 +147,7 @@ jobs:
           echo
           echo "==== wave 02 (resto_b): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -145,6 +159,8 @@ jobs:
 
   e2e-03:
     name: W03 resto_c (18)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -155,11 +171,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 18 targets of wave 03
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'benchmark'
             'clearance_audit_sqlite'
@@ -189,6 +209,7 @@ jobs:
           echo
           echo "==== wave 03 (resto_c): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -200,6 +221,8 @@ jobs:
 
   e2e-04:
     name: W04 resto_d (18)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -210,11 +233,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 18 targets of wave 04
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'chronicle_harvest_test'
             'clearance_e2e'
@@ -244,6 +271,7 @@ jobs:
           echo
           echo "==== wave 04 (resto_d): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -255,6 +283,8 @@ jobs:
 
   e2e-05:
     name: W05 mesh (10)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -265,11 +295,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 10 targets of wave 05
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'mesh_full_simulation_test'
             'mesh_integration'
@@ -291,6 +325,7 @@ jobs:
           echo
           echo "==== wave 05 (mesh): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -302,6 +337,8 @@ jobs:
 
   e2e-06:
     name: W06 search_embedding (7)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -312,13 +349,17 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 7 targets of wave 06
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
-            'embedding_fallback_resilience_test'
+            'embedding_fallback_resilience'
             'embedding_fallback_test'
             'embedding_local_integration'
             'semantic_compression_test'
@@ -335,6 +376,7 @@ jobs:
           echo
           echo "==== wave 06 (search_embedding): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -346,6 +388,8 @@ jobs:
 
   e2e-07:
     name: W07 session_sync_panel (7)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -356,11 +400,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 7 targets of wave 07
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'http_pressure_wave20'
             'kernel_mcp_test'
@@ -379,6 +427,7 @@ jobs:
           echo
           echo "==== wave 07 (session_sync_panel): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -390,6 +439,8 @@ jobs:
 
   e2e-08:
     name: W08 security_secrets (6)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -400,11 +451,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 6 targets of wave 08
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'http_auth_edge_test'
             'profile_vault_e2e'
@@ -422,6 +477,7 @@ jobs:
           echo
           echo "==== wave 08 (security_secrets): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -433,6 +489,8 @@ jobs:
 
   e2e-09:
     name: W09 memory_sync (8)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -443,11 +501,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 8 targets of wave 09
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'access_flush_drain'
             'cloud_memory_sync_cycle_test'
@@ -467,6 +529,7 @@ jobs:
           echo
           echo "==== wave 09 (memory_sync): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -478,6 +541,8 @@ jobs:
 
   e2e-10:
     name: W10 maloca (4)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -488,11 +553,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 4 targets of wave 10
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'maloca_data_node_test'
             'maloca_live_sync_test'
@@ -508,6 +577,7 @@ jobs:
           echo
           echo "==== wave 10 (maloca): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -519,6 +589,8 @@ jobs:
 
   e2e-11:
     name: W11 telemetry_skill (3)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -529,11 +601,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 3 targets of wave 11
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'ledger_skill_entries'
             'telemetry_anonymizer_edge_test'
@@ -548,6 +624,7 @@ jobs:
           echo
           echo "==== wave 11 (telemetry_skill): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -559,6 +636,8 @@ jobs:
 
   e2e-12:
     name: W12 codegraph (3)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -569,11 +648,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 3 targets of wave 12
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'codegraph_installer_e2e'
             'codegraph_scan_then_query'
@@ -588,6 +671,7 @@ jobs:
           echo
           echo "==== wave 12 (codegraph): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -599,6 +683,8 @@ jobs:
 
   e2e-13:
     name: W13 storage (2)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -609,11 +695,15 @@ jobs:
       - name: Cache Cargo Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run all 2 targets of wave 13
-        # No `set -e` and no `break`: a red target must not hide the rest of its
-        # wave. `pipefail` keeps the cargo failure visible through the pipe.
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
         shell: bash
         run: |
-          set -uo pipefail
+          set +e +o pipefail
+          set -u
           targets=(
             'storage_isolation'
             'unified_storage_validation'
@@ -627,6 +717,7 @@ jobs:
           echo
           echo "==== wave 13 (storage): ${#failed[@]}/${#targets[@]} failed ===="
           echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v7
@@ -635,3 +726,44 @@ jobs:
           path: "*.log"
           retention-days: 14
           if-no-files-found: ignore
+
+  # The single blocking job promised by the header comment. The 13 wave jobs stay
+  # green-for-visibility (a red target must not hide the other waves); this gate
+  # aggregates their results and goes RED iff any wave reported a failing target.
+  gate:
+    name: E2E gate
+    needs: [e2e-01, e2e-02, e2e-03, e2e-04, e2e-05, e2e-06, e2e-07, e2e-08, e2e-09, e2e-10, e2e-11, e2e-12, e2e-13]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide whether any wave had failing targets
+        run: |
+          set -u
+          gate_failed=0
+          check() {
+            local job="$1" result="$2"
+            if [ "$result" != "none" ]; then
+              echo "::error::$job reported failing targets: $result"
+              gate_failed=1
+            else
+              echo "$job: all targets passed"
+            fi
+          }
+          check e2e-01 '${{ needs.e2e-01.outputs.failed }}'
+          check e2e-02 '${{ needs.e2e-02.outputs.failed }}'
+          check e2e-03 '${{ needs.e2e-03.outputs.failed }}'
+          check e2e-04 '${{ needs.e2e-04.outputs.failed }}'
+          check e2e-05 '${{ needs.e2e-05.outputs.failed }}'
+          check e2e-06 '${{ needs.e2e-06.outputs.failed }}'
+          check e2e-07 '${{ needs.e2e-07.outputs.failed }}'
+          check e2e-08 '${{ needs.e2e-08.outputs.failed }}'
+          check e2e-09 '${{ needs.e2e-09.outputs.failed }}'
+          check e2e-10 '${{ needs.e2e-10.outputs.failed }}'
+          check e2e-11 '${{ needs.e2e-11.outputs.failed }}'
+          check e2e-12 '${{ needs.e2e-12.outputs.failed }}'
+          check e2e-13 '${{ needs.e2e-13.outputs.failed }}'
+          if [ "$gate_failed" -ne 0 ]; then
+            echo "E2E gate FAILED: at least one wave reported failing targets"
+            exit 1
+          fi
+          echo "E2E gate PASSED: all 13 waves reported no failing targets"

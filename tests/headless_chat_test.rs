@@ -98,7 +98,10 @@ async fn test_headless_chat_completions() {
             || resp.status() == StatusCode::OK
     );
 
-    // 3. POST /v1/chat/completions (Valid Token, Invalid Lease) -> 403 (FORBIDDEN)
+    // 3. POST /v1/chat/completions (Valid Token, Invalid Lease)
+    // The invalid lease now degrades gracefully to the memory fallback (parity
+    // with the panel) instead of a bare 403/500, so the handler returns 200 OK
+    // with a memory-fallback completion.
     let resp = client
         .post(&url)
         .header("X-Xavier-Token", "test-token")
@@ -111,7 +114,9 @@ async fn test_headless_chat_completions() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["model"], "memory-fallback");
 }
 
 // Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.

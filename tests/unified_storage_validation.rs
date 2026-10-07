@@ -9,6 +9,17 @@ async fn test_unified_storage_persistence() {
     let tmp = tempdir().unwrap();
     let db_path = tmp.path().join("unified_test.db");
 
+    // Entity extraction only runs for plaintext, explicitly-public rows. This
+    // test exercises that extraction path, so make the node record key
+    // unresolvable (point its lookup at an uncreatable path) to keep the row at
+    // rest in plaintext. With a node key present the always-on envelope
+    // encryption seals the row (`encrypted_dek` set) and the extraction guard
+    // skips it — the same gate that protects private content from leaking into
+    // the plaintext graph tables.
+    let key_blocker = tmp.path().join("no-key-blocker");
+    std::fs::write(&key_blocker, b"not a directory").unwrap();
+    std::env::set_var("XAVIER_DATA_DIR", key_blocker.join("data"));
+
     let config = VecSqliteStoreConfig {
         path: db_path.clone(),
         embedding_dimensions: 3,
@@ -27,6 +38,7 @@ async fn test_unified_storage_persistence() {
         embedding: vec![1.0, 0.0, 0.0],
         created_at: now,
         updated_at: now,
+        metadata: serde_json::json!({ "clearance": "public" }),
         ..Default::default()
     };
 
