@@ -29,7 +29,7 @@
     "prismjs": "^1.30.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-force-graph-2d": "1.29.1",
+    "react-force-graph-2d": "1.29.2",
     "recharts": "^3.10.1",
     "tailwindcss": "4.3.3",
     "zustand": "^5.0.15",
