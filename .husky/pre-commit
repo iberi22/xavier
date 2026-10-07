@@ -186,6 +186,9 @@ if [ -f "$ROOT/scripts/check-staged-scope.sh" ]; then
     fi
 fi
 
+# Optional local Rust/disk hygiene (fail-open; skipped if the helper is not installed).
+[ -x "$HOME/.hermes/scripts/swal-rust-hygiene.sh" ] && "$HOME/.hermes/scripts/swal-rust-hygiene.sh" pre-commit || true
+
 # ── Verdict ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -ne 0 ]; then
     note ""
