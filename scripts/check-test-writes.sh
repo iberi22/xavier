@@ -14,7 +14,7 @@ trap 'rm -rf "$SBX"' EXIT
 
 snapshot() {
   for d in "$REAL_HOME/.xavier" "$REAL_HOME/.local/share/xavier"; do
-    [ -d "$d" ] && find "$d" -mindepth 1 -not -path '*/.quarantine*' 2>/dev/null
+    if [ -d "$d" ]; then find "$d" -mindepth 1 -not -path '*/.quarantine*' 2>/dev/null; fi
   done | sort
 }
 snapshot >"$SBX/before.txt"
