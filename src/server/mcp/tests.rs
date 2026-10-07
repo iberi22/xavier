@@ -2149,12 +2149,26 @@ async fn codegraph_route_and_gods_mcp_tools_dispatch() {
 
 /// Write a fixture skill in real store shape: `<root>/skills/<name>/SKILL.md`.
 fn write_fixture_skill(root: &std::path::Path, name: &str, description: &str) {
+    write_skill_with_visibility(root, name, description, Some("public"));
+}
+
+/// Write a fixture skill with an explicit `visibility` (or none, to exercise the
+/// fail-closed default).
+fn write_skill_with_visibility(
+    root: &std::path::Path,
+    name: &str,
+    description: &str,
+    visibility: Option<&str>,
+) {
     let dir = root.join("skills").join(name);
     std::fs::create_dir_all(&dir).expect("fixture skill dir");
+    let visibility_line = visibility
+        .map(|v| format!("visibility: {v}\n"))
+        .unwrap_or_default();
     std::fs::write(
         dir.join("SKILL.md"),
         format!(
-            "---\nname: {name}\ndescription: \"{description}\"\n---\n\n# {name}\n\nFixture body.\n"
+            "---\nname: {name}\ndescription: \"{description}\"\n{visibility_line}---\n\n# {name}\n\nFixture body.\n"
         ),
     )
     .expect("fixture SKILL.md");
@@ -2215,6 +2229,109 @@ async fn test_mcp_dispatch_tool_roundtrip() {
             .as_u64()
             .expect("total_tokens present");
         assert!(total <= 2000, "pack exceeds budget: {total}");
+    })
+    .await;
+}
+
+/// Dispatch `task` over MCP as a caller with the given clearance ceiling.
+async fn dispatch_as(
+    clearance: crate::security::clearance::ClearanceLevel,
+    state: AppState,
+    workspace: WorkspaceContext,
+    task: &str,
+) -> Value {
+    let out = super::tools_memory::with_mcp_caller(
+        super::tools_memory::McpCaller {
+            space: None,
+            clearance,
+        },
+        super::tools_context::handle_context_tool(
+            state,
+            workspace,
+            "xavier_dispatch_skill",
+            json!({"task": task, "max_tokens": 2000}),
+        ),
+    )
+    .await
+    .expect("dispatch must be fail-open, never throw");
+    mcp_text_payload(&out)
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_dispatch_omits_private_skill_for_public_ceiling() {
+    use crate::security::clearance::ClearanceLevel;
+    with_isolated_home(|| async {
+        let work = tempfile::tempdir().expect("temp workspace");
+        write_skill_with_visibility(
+            work.path(),
+            "private-reviewer",
+            "Review pull requests for internal evidence",
+            Some("private"),
+        );
+        let (state, mut workspace) = test_state().await;
+        workspace.workspace_id = work.path().to_string_lossy().into_owned();
+        let task = "review this pull request for internal evidence";
+
+        let hidden = dispatch_as(
+            ClearanceLevel::Unclassified,
+            state.clone(),
+            workspace.clone(),
+            task,
+        )
+        .await;
+        assert_ne!(
+            hidden["skill_name"], "private-reviewer",
+            "private skill leaked to a public ceiling"
+        );
+        assert_eq!(hidden["hidden_by_clearance"].as_u64(), Some(1));
+        assert!(
+            hidden["context_pack"]["system_instructions"]
+                .as_str()
+                .unwrap_or("")
+                .is_empty(),
+            "hidden body must never be returned"
+        );
+
+        // Control: at or above its ceiling the same skill dispatches.
+        let visible = dispatch_as(ClearanceLevel::Confidential, state, workspace, task).await;
+        assert_eq!(visible["skill_name"], "private-reviewer");
+        assert_eq!(visible["hidden_by_clearance"].as_u64(), Some(0));
+    })
+    .await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_dispatch_treats_null_visibility_as_private() {
+    use crate::security::clearance::ClearanceLevel;
+    with_isolated_home(|| async {
+        let work = tempfile::tempdir().expect("temp workspace");
+        write_skill_with_visibility(
+            work.path(),
+            "unlabeled-reviewer",
+            "Review pull requests for internal evidence",
+            None,
+        );
+        let (state, mut workspace) = test_state().await;
+        workspace.workspace_id = work.path().to_string_lossy().into_owned();
+        let task = "review this pull request for internal evidence";
+
+        let hidden = dispatch_as(
+            ClearanceLevel::Unclassified,
+            state.clone(),
+            workspace.clone(),
+            task,
+        )
+        .await;
+        assert_ne!(
+            hidden["skill_name"], "unlabeled-reviewer",
+            "unlabeled skill must default to private"
+        );
+        assert_eq!(hidden["hidden_by_clearance"].as_u64(), Some(1));
+
+        let visible = dispatch_as(ClearanceLevel::Confidential, state, workspace, task).await;
+        assert_eq!(visible["skill_name"], "unlabeled-reviewer");
     })
     .await;
 }

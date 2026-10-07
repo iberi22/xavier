@@ -438,7 +438,8 @@ pub async fn handle_context_tool(
 
             let registry = build_skill_registry(Path::new(&workspace.workspace_id)).await;
             let memory = workspace.workspace.memory.clone();
-            let dispatcher = SkillDispatcher::new(registry, Some(memory));
+            let dispatcher = SkillDispatcher::new(registry, Some(memory))
+                .with_clearance(super::tools_memory::caller_clearance());
             match dispatcher
                 .dispatch(&SkillDispatchRequest {
                     task: task.to_string(),
@@ -461,6 +462,7 @@ pub async fn handle_context_tool(
                             "total_tokens": result.context_pack.total_tokens,
                         },
                         "estimated_savings_pct": result.estimated_savings_pct,
+                        "hidden_by_clearance": result.hidden_by_clearance,
                     }))?,
                     false,
                 ),
