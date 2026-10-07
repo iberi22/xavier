@@ -519,6 +519,8 @@ pub async fn add_document_typed_with_embedding(
     typed: Option<TypedMemoryPayload>,
     embedding: Option<Vec<f32>>,
 ) -> Result<String> {
+    // Ingestion guard: no detected secret value is ever persisted in a record.
+    let (content, _redacted) = crate::security::ingest_guard::redact_secrets(&content);
     let check = validate_write(&content)
         .map_err(|reason| anyhow::anyhow!("Content validation failed: {reason}"))?;
     // Normalize and stamp before the duplicate check: the identity of a write
@@ -934,6 +936,40 @@ fn dedupe_variants(variants: Vec<(String, String, Value)>) -> Vec<(String, Strin
             seen.insert(key)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod ingest_guard_tests {
+    use super::super::QmdMemory;
+    use super::add_document_typed;
+    use std::sync::Arc;
+    use tokio::sync::RwLock as AsyncRwLock;
+
+    // Fake value only: shaped to match the existing detector patterns.
+    const FAKE_API: &str = "FAKEkey0123456789ABCDEFGH";
+
+    #[tokio::test]
+    async fn memory_write_redacts_detected_secret() {
+        let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(Vec::new())));
+        add_document_typed(
+            &memory,
+            "notes/secret-probe".to_string(),
+            format!("API_KEY={FAKE_API}\nnormal note"),
+            serde_json::json!({}),
+            None,
+        )
+        .await
+        .expect("write succeeds");
+
+        let docs = memory.docs.read().await;
+        assert_eq!(docs.len(), 1, "{docs:?}");
+        assert!(!docs[0].content.contains(FAKE_API), "{}", docs[0].content);
+        assert!(
+            docs[0].content.contains("«redacted:"),
+            "{}",
+            docs[0].content
+        );
+    }
 }
 
 #[cfg(test)]

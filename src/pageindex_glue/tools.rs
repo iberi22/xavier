@@ -298,13 +298,15 @@ fn index_document(state: &PageIndexState, args: &Value, ctx: &ToolContext) -> Re
             "Pass 'path' to a .pdf under XAVIER_PAGEINDEX_INGEST_ROOTS",
         ));
     }
+    // Detected secret values are replaced before anything reaches the index.
     let text = |b: &[u8]| {
-        std::str::from_utf8(b).map(str::to_string).map_err(|_| {
+        let decoded = std::str::from_utf8(b).map_err(|_| {
             fail(
                 "document is not valid UTF-8 text",
                 "Convert it to UTF-8 or use format=pdf",
             )
-        })
+        })?;
+        Ok::<String, Value>(crate::security::ingest_guard::redact_secrets(decoded).0)
     };
     let owned;
     let source = match format.as_str() {
@@ -392,6 +394,12 @@ fn resolve_ingest_path(
         .any(|r| resolved.starts_with(r));
     if !inside {
         return Err(denied());
+    }
+    if crate::security::ingest_guard::is_secret_path(&resolved) {
+        return Err(fail(
+            "refusing to ingest a secret-bearing file",
+            "Choose a file that is not a credential or key store",
+        ));
     }
     let meta = std::fs::metadata(&resolved).map_err(|_| denied())?;
     if !meta.is_file() {
@@ -603,6 +611,67 @@ mod tests {
         .await;
         assert_eq!(v["ok"], false);
         assert!(v["error"].as_str().unwrap().contains("disabled"), "{v}");
+    }
+
+    #[tokio::test]
+    async fn test_path_ingest_rejects_secret_filenames() {
+        let root = tempfile::tempdir().unwrap();
+        for name in [
+            ".env",
+            "credentials.json",
+            "id_rsa",
+            "server.pem",
+            "record.key",
+        ] {
+            std::fs::write(
+                root.path().join(name),
+                "API_KEY=FAKEkey0123456789ABCDEFGH\n",
+            )
+            .unwrap();
+            let st = state_with(vec![root.path().to_path_buf()]);
+            let v = call(
+                &st,
+                TOOL_INDEX,
+                &json!({"doc_name": name, "path": root.path().join(name)}),
+                &rw(),
+            )
+            .await;
+            assert_eq!(v["ok"], false, "{name}: {v}");
+            assert!(
+                v["error"].as_str().unwrap().contains("secret"),
+                "{name}: {v}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_path_ingest_redacts_allowed_file_content() {
+        let root = tempfile::tempdir().unwrap();
+        let secret = "FAKEkey0123456789ABCDEFGH";
+        std::fs::write(
+            root.path().join("notes.md"),
+            format!("# Note\nAPI_KEY={secret}\n"),
+        )
+        .unwrap();
+        let st = state_with(vec![root.path().to_path_buf()]);
+        let v = call(
+            &st,
+            TOOL_INDEX,
+            &json!({"doc_name": "n", "path": root.path().join("notes.md")}),
+            &rw(),
+        )
+        .await;
+        assert_eq!(v["ok"], true, "{v}");
+        let pages = call(
+            &st,
+            TOOL_GET_PAGES,
+            &json!({"doc_name": "n", "pages": "1"}),
+            &rw(),
+        )
+        .await;
+        assert_eq!(pages["ok"], true, "{pages}");
+        let text = pages["pages"][0]["text"].as_str().unwrap_or_default();
+        assert!(!text.contains(secret), "{pages}");
     }
 
     #[tokio::test]
