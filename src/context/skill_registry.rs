@@ -14,6 +14,13 @@ use tokio::fs;
 use tracing::{debug, info, warn};
 
 use crate::ports::outbound::embedding_port::EmbeddingPort;
+use crate::security::clearance::ClearanceLevel;
+
+/// Clearance required by a skill that does not declare one.
+///
+/// Private by default: absent or unknown visibility metadata must never
+/// downgrade a skill to public.
+pub const PRIVATE_SKILL_CLEARANCE: ClearanceLevel = ClearanceLevel::Confidential;
 
 /// A skill indexed for semantic search and dispatch.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +86,8 @@ impl IndexedSkill {
 pub struct SkillRegistry {
     /// All indexed skills by name
     skills: HashMap<String, IndexedSkill>,
+    /// Required clearance per skill name; a missing entry is private (fail closed).
+    clearances: HashMap<String, ClearanceLevel>,
     /// Directories to scan for skills
     scan_paths: Vec<PathBuf>,
     /// Skill names excluded via Hermes `skills.disabled` (fail-open if unreadable)
@@ -282,6 +291,7 @@ impl SkillRegistry {
     pub fn new(scan_paths: Vec<PathBuf>) -> Self {
         Self {
             skills: HashMap::new(),
+            clearances: HashMap::new(),
             scan_paths,
             disabled: HashSet::new(),
         }
@@ -340,6 +350,7 @@ impl SkillRegistry {
             .unwrap_or_default();
         Self {
             skills: HashMap::new(),
+            clearances: HashMap::new(),
             scan_paths: default_scan_paths(workspace_root, home, store_override),
             disabled,
         }
@@ -386,6 +397,8 @@ impl SkillRegistry {
         if pruned > 0 {
             info!("Pruned {} invalid skills from registry memory", pruned);
         }
+        let valid: HashSet<String> = self.skills.keys().cloned().collect();
+        self.clearances.retain(|name, _| valid.contains(name));
     }
 
     /// Index a single skill file. Returns true if it was new or changed.
@@ -422,6 +435,7 @@ impl SkillRegistry {
         if self.disabled.contains(&name) {
             debug!("Skipping disabled skill: {}", name);
             self.skills.remove(&name);
+            self.clearances.remove(&name);
             return Ok(IndexStatus::Unchanged);
         }
 
@@ -439,6 +453,7 @@ impl SkillRegistry {
 
         let token_cost = content.split_whitespace().count();
         let domains = infer_domains(&description, &content);
+        let clearance = parse_skill_clearance(&content);
 
         let mut skill = IndexedSkill {
             name: name.clone(),
@@ -461,6 +476,7 @@ impl SkillRegistry {
             }
         }
 
+        self.clearances.insert(name.clone(), clearance);
         self.skills.insert(name, skill);
         Ok(IndexStatus::Indexed)
     }
@@ -654,6 +670,25 @@ impl SkillRegistry {
         self.skills.get(name)
     }
 
+    /// Clearance required to receive a skill's body.
+    /// Unknown names are private (fail closed).
+    pub fn clearance_of(&self, name: &str) -> ClearanceLevel {
+        self.clearances
+            .get(name)
+            .copied()
+            .unwrap_or(PRIVATE_SKILL_CLEARANCE)
+    }
+
+    /// Attach a clearance to an already-indexed skill (registry metadata path).
+    pub fn set_skill_clearance(&mut self, name: &str, level: ClearanceLevel) -> bool {
+        if self.skills.contains_key(name) {
+            self.clearances.insert(name.to_string(), level);
+            true
+        } else {
+            false
+        }
+    }
+
     /// List all indexed skill names.
     pub fn list(&self) -> Vec<&str> {
         self.skills.keys().map(|s| s.as_str()).collect()
@@ -780,18 +815,49 @@ fn score_skill_match(skill: &IndexedSkill, query_lower: &str, query_terms: &[&st
     score.min(0.99)
 }
 
-/// Parse YAML frontmatter from a skill markdown file.
-fn parse_frontmatter(content: &str) -> (Option<String>, String) {
+/// Raw YAML frontmatter block of a skill markdown file, if present.
+fn frontmatter_block(content: &str) -> Option<&str> {
     if !content.starts_with("---") {
-        return (None, String::new());
+        return None;
     }
-
     let parts: Vec<&str> = content.splitn(3, "---").collect();
     if parts.len() < 3 {
-        return (None, String::new());
+        return None;
     }
+    Some(parts[1])
+}
 
-    let frontmatter = parts[1];
+/// Clearance required by a skill, read from its frontmatter.
+///
+/// An explicit `clearance:` wins; an unknown value restricts
+/// (`parse_required_level`). Otherwise `visibility: public` maps to
+/// `Unclassified`, while `private`, an unknown value, or no declaration at all
+/// stays private (fail closed).
+fn parse_skill_clearance(content: &str) -> ClearanceLevel {
+    let mut visibility: Option<String> = None;
+    for line in frontmatter_block(content).unwrap_or("").lines() {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("clearance:") {
+            return crate::security::clearance::parse_required_level(
+                value.trim().trim_matches('"'),
+            );
+        }
+        if let Some(value) = line.strip_prefix("visibility:") {
+            visibility = Some(value.trim().trim_matches('"').to_ascii_lowercase());
+        }
+    }
+    match visibility.as_deref() {
+        Some("public") => ClearanceLevel::Unclassified,
+        _ => PRIVATE_SKILL_CLEARANCE,
+    }
+}
+
+/// Parse YAML frontmatter from a skill markdown file.
+fn parse_frontmatter(content: &str) -> (Option<String>, String) {
+    let Some(frontmatter) = frontmatter_block(content) else {
+        return (None, String::new());
+    };
+
     let mut name = None;
     let mut description = String::new();
 
@@ -932,6 +998,50 @@ Instructions here.
         let (name, desc) = parse_frontmatter(content);
         assert_eq!(name.unwrap(), "test-skill");
         assert_eq!(desc, "A test skill for unit testing");
+    }
+
+    #[test]
+    fn skill_clearance_defaults_to_private_without_visibility() {
+        // Fail closed: no declaration, or an unknown one, requires private.
+        assert_eq!(
+            parse_skill_clearance("no frontmatter here"),
+            PRIVATE_SKILL_CLEARANCE
+        );
+        assert_eq!(
+            parse_skill_clearance("---\nname: s\ndescription: \"d\"\n---\nbody"),
+            PRIVATE_SKILL_CLEARANCE
+        );
+        assert_eq!(
+            parse_skill_clearance("---\nvisibility: internal-ish\n---\nbody"),
+            PRIVATE_SKILL_CLEARANCE
+        );
+        assert_eq!(
+            parse_skill_clearance("---\nvisibility: private\n---\nbody"),
+            PRIVATE_SKILL_CLEARANCE
+        );
+        // Explicit public is readable at the lowest ceiling.
+        assert_eq!(
+            parse_skill_clearance("---\nvisibility: public\n---\nbody"),
+            ClearanceLevel::Unclassified
+        );
+        // An explicit clearance wins and an unknown value restricts.
+        assert_eq!(
+            parse_skill_clearance("---\nclearance: secret\n---\nbody"),
+            ClearanceLevel::Secret
+        );
+        assert_eq!(
+            parse_skill_clearance("---\nclearance: tpsecret\n---\nbody"),
+            ClearanceLevel::TopSecret
+        );
+    }
+
+    #[test]
+    fn clearance_of_unknown_skill_is_private() {
+        let registry = SkillRegistry::new(Vec::new());
+        assert_eq!(
+            registry.clearance_of("never-indexed"),
+            PRIVATE_SKILL_CLEARANCE
+        );
     }
 
     #[test]
