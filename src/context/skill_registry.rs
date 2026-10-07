@@ -745,8 +745,12 @@ fn score_skill_match(skill: &IndexedSkill, query_lower: &str, query_terms: &[&st
     let desc_lower = skill.description.to_lowercase();
     let name_lower = skill.name.to_lowercase();
 
-    // Exact name match
-    if query_lower.contains(&name_lower) || name_lower.contains(query_lower) {
+    // Whole-token name match (word boundary, not substring)
+    if name_lower.len() >= 4
+        && query_lower.split_whitespace().any(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_') == name_lower
+        })
+    {
         score += 0.5;
     }
 
@@ -957,6 +961,73 @@ Instructions here.
         let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
         let score = super::score_skill_match(&skill, &query_lower, &query_terms);
         assert!(score > 0.3, "Expected high match score, got {}", score);
+    }
+
+    #[test]
+    fn substring_inside_word_scores_no_name_bonus() {
+        // Issue #2825: "explanation" contains "plan"; old substring test awarded +0.5.
+        let skill = IndexedSkill {
+            name: "plan".to_string(),
+            description: "Helps plan projects".to_string(),
+            domains: vec![],
+            content_hash: "abc".to_string(),
+            token_cost: 500,
+            content: "# Instructions".to_string(),
+            source_path: "test".to_string(),
+            embedding: None,
+        };
+        let query = "please give explanation of rust architecture";
+        let query_lower = query.to_lowercase();
+        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+        let score = super::score_skill_match(&skill, &query_lower, &query_terms);
+        assert!(
+            score < 0.5,
+            "substring must not earn name bonus, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn whole_word_name_still_earns_bonus() {
+        let skill = IndexedSkill {
+            name: "plan".to_string(),
+            description: "Helps plan projects".to_string(),
+            domains: vec![],
+            content_hash: "abc".to_string(),
+            token_cost: 500,
+            content: "# Instructions".to_string(),
+            source_path: "test".to_string(),
+            embedding: None,
+        };
+        let query = "what is the plan for today";
+        let query_lower = query.to_lowercase();
+        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+        let score = super::score_skill_match(&skill, &query_lower, &query_terms);
+        assert!(
+            score >= 0.5,
+            "whole-word match must earn bonus, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn short_name_gets_no_bonus() {
+        // Names shorter than 4 chars are pure noise magnets ("web", "box", ...).
+        let skill = IndexedSkill {
+            name: "web".to_string(),
+            description: "Search the web".to_string(),
+            domains: vec![],
+            content_hash: "abc".to_string(),
+            token_cost: 500,
+            content: "# Instructions".to_string(),
+            source_path: "test".to_string(),
+            embedding: None,
+        };
+        let query = "web search help";
+        let query_lower = query.to_lowercase();
+        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+        let score = super::score_skill_match(&skill, &query_lower, &query_terms);
+        assert!(score < 0.5, "short name must not earn bonus, got {}", score);
     }
 
     fn write_skill_md(dir: &Path, name: &str) {
