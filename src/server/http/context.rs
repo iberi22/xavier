@@ -113,6 +113,21 @@ pub struct DeepenRequest {
     pub focus: Vec<String>,
 }
 
+/// Truncate fused skill instructions to the remaining token budget.
+/// Returns `None` when there is no budget left, so the caller injects
+/// nothing instead of the full untruncated body (issue #2826).
+fn compact_skill_instructions(instructions: String, remaining_budget: usize) -> Option<String> {
+    if instructions.is_empty() || remaining_budget == 0 {
+        return None;
+    }
+    let words: Vec<&str> = instructions.split_whitespace().collect();
+    if words.len() > remaining_budget {
+        Some(words[..remaining_budget].join(" "))
+    } else {
+        Some(instructions)
+    }
+}
+
 /// V1 context regenerate.
 pub async fn v1_context_regenerate(
     Extension(workspace): Extension<WorkspaceContext>,
@@ -226,17 +241,11 @@ pub async fn v1_context_regenerate(
 
                     if !result.context_pack.system_instructions.is_empty() {
                         let instructions = result.context_pack.system_instructions;
-                        let compacted = if remaining_budget > 0 {
-                            let words: Vec<&str> = instructions.split_whitespace().collect();
-                            if words.len() > remaining_budget {
-                                words[..remaining_budget].join(" ")
-                            } else {
-                                instructions
-                            }
-                        } else {
-                            instructions
-                        };
-                        injected_skills.push(compacted);
+                        if let Some(compacted) =
+                            compact_skill_instructions(instructions, remaining_budget)
+                        {
+                            injected_skills.push(compacted);
+                        }
                     }
 
                     for mem_ref in result.context_pack.relevant_memories {
@@ -521,6 +530,29 @@ mod tests {
         let builder = ContextBuilder::new(ContextBuilderConfig::default());
         let context = builder.build(ContextLevel::Maximum, &[], &[], &[compacted]);
         assert!(context.contains("# Available Skills"));
+    }
+
+    #[test]
+    fn test_zero_budget_injects_nothing_2826() {
+        // Issue #2826: exhausted budget must inject nothing, not the full body.
+        let body = "word ".repeat(500);
+        assert!(compact_skill_instructions(body, 0).is_none());
+        assert!(compact_skill_instructions(String::new(), 10).is_none());
+    }
+
+    #[test]
+    fn test_partial_budget_clamped_to_remaining_2826() {
+        // Issue #2826: partial budget -> injected length <= remaining budget.
+        let body = "word ".repeat(500);
+        let remaining = 50usize;
+        let compacted =
+            compact_skill_instructions(body, remaining).expect("partial budget injects");
+        assert!(compacted.split_whitespace().count() <= remaining);
+        let short = "just a short skill".to_string();
+        assert_eq!(
+            compact_skill_instructions(short.clone(), 100).as_deref(),
+            Some(short.as_str())
+        );
     }
 
     fn env_lock() -> &'static tokio::sync::Mutex<()> {
