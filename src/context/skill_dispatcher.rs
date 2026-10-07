@@ -17,6 +17,7 @@ use tracing::info;
 use super::skill_registry::SkillRegistry;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::virtual_memory::{MemoryReference, VirtualMemory};
+use crate::security::clearance::ClearanceLevel;
 
 /// Request from an agent/IDE to dispatch a task.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +45,10 @@ pub struct SkillDispatchResult {
     pub context_pack: ContextPack,
     /// How many tokens were saved vs. sending everything raw
     pub estimated_savings_pct: f32,
+    /// Candidates withheld because they exceeded the requester's ceiling.
+    /// Only a count: hidden bodies are never returned.
+    #[serde(default)]
+    pub hidden_by_clearance: usize,
 }
 
 /// A minimal-token payload containing everything the LLM needs.
@@ -74,24 +79,52 @@ pub const DISPATCH_CONFIDENCE_THRESHOLD: f32 = MIN_DISPATCH_CONFIDENCE;
 
 const _: () = assert!(MIN_DISPATCH_CONFIDENCE > 0.0 && MIN_DISPATCH_CONFIDENCE < 1.0);
 
+/// Candidates fetched before the clearance ceiling is applied (over-fetch so a
+/// private top match cannot crowd out a readable one).
+const SKILL_DISPATCH_FETCH: usize = 10;
+
 /// The dispatcher that ties the registry, memory, and retrieval together.
 pub struct SkillDispatcher {
     registry: SkillRegistry,
     memory: Option<Arc<QmdMemory>>,
+    /// Read ceiling applied to matched skills. `None` keeps legacy callers
+    /// unfiltered; MCP sets it from the authenticated caller.
+    requester_clearance: Option<ClearanceLevel>,
 }
 
 impl SkillDispatcher {
     /// Create a new dispatcher with a skill registry and optional memory backend.
     pub fn new(registry: SkillRegistry, memory: Option<Arc<QmdMemory>>) -> Self {
-        Self { registry, memory }
+        Self {
+            registry,
+            memory,
+            requester_clearance: None,
+        }
+    }
+
+    /// Apply the requester's clearance ceiling to matched skills.
+    pub fn with_clearance(mut self, clearance: ClearanceLevel) -> Self {
+        self.requester_clearance = Some(clearance);
+        self
     }
 
     /// Dispatch a task: find the best skill, gather context, build a pack.
     pub async fn dispatch(&self, request: &SkillDispatchRequest) -> Result<SkillDispatchResult> {
         let max_tokens = request.max_tokens.unwrap_or(4000);
 
-        // 1. Find the best matching skill
-        let matches = self.registry.search(&request.task, 3);
+        // 1. Find the best matching skill, then apply the caller's ceiling:
+        //    hidden matches are counted, never returned (same rule as memories).
+        let matches = self.registry.search(&request.task, SKILL_DISPATCH_FETCH);
+        let (matches, hidden_by_clearance) = match self.requester_clearance {
+            Some(ceiling) => crate::security::clearance::split_by_clearance(
+                ceiling,
+                matches,
+                |(_, skill): &(f32, &super::skill_registry::IndexedSkill)| {
+                    self.registry.clearance_of(&skill.name)
+                },
+            ),
+            None => (matches, 0),
+        };
 
         // Instead of unconditionally taking matches.first(), ensure the score meets minimum threshold.
         let (confidence, skill) = if let Some((score, skill)) = matches
@@ -112,6 +145,7 @@ impl SkillDispatcher {
                     total_tokens: 0,
                 },
                 estimated_savings_pct: 0.0,
+                hidden_by_clearance,
             });
         };
 
@@ -177,6 +211,7 @@ impl SkillDispatcher {
                 total_tokens,
             },
             estimated_savings_pct,
+            hidden_by_clearance,
         })
     }
 
@@ -289,6 +324,7 @@ mod tests {
                 total_tokens: 1,
             },
             estimated_savings_pct: 73.2,
+            hidden_by_clearance: 0,
         };
 
         let json = serde_json::to_string(&result).unwrap();
