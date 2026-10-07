@@ -14,6 +14,7 @@ pub mod detections;
 pub mod egress;
 pub mod encryption_keys;
 pub mod groups;
+pub mod ingest_guard;
 pub mod initializer;
 pub mod layers;
 pub mod license;
