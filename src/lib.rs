@@ -19,7 +19,6 @@ pub mod agents;
 pub mod api;
 pub mod auth2;
 pub mod auto_improvement;
-
 pub mod billing;
 pub mod checkpoint;
 pub mod chronicle;
