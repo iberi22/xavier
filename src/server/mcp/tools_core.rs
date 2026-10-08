@@ -1204,12 +1204,42 @@ pub async fn handle_core_tool(
                 _ => crate::recovery::RecoveryStore::from_env_or_default(),
             };
 
-            let status = store.status(crypt);
+            use crate::memory::sqlite_vec_store::at_rest::{
+                peek_record_key_with_source, KeySource,
+            };
+            use crate::recovery::{KcvState, SealHealth};
+            let (live_key, source) = peek_record_key_with_source();
+            let status = store.status(crypt, live_key.as_ref());
+            let live_source = match source {
+                KeySource::Env => "env",
+                KeySource::File(_) => "file",
+                KeySource::Missing(_) => "missing",
+                KeySource::Unavailable(_) | KeySource::Generated(_) => "unavailable",
+            };
+            let seal_report = |seal: &SealHealth| match seal {
+                SealHealth::Absent => json!({"state": "absent", "reason": null, "mode0600": false}),
+                SealHealth::Malformed(reason) => {
+                    json!({"state": "malformed", "reason": reason, "mode0600": false})
+                }
+                SealHealth::Valid { mode_0600 } => {
+                    json!({"state": "valid", "reason": null, "mode0600": mode_0600})
+                }
+            };
+            let openable = (status.mnemonic_seal_present || status.passphrase_seal_present)
+                && matches!(
+                    status.kcv,
+                    KcvState::MatchesLiveKey | KcvState::LiveKeyMissing
+                );
             let manifest_present = store.read_manifest().ok().flatten().is_some();
             let kcv_present = store.read_kcv().ok().flatten().is_some();
 
             let payload = json!({
                 "recoverable": status.is_recoverable(),
+                "mnemonicSeal": seal_report(&status.mnemonic_seal),
+                "passphraseSeal": seal_report(&status.passphrase_seal),
+                "kcvState": status.kcv,
+                "liveKeySource": live_source,
+                "openable": openable,
                 "gaps": status.gaps(),
                 "manifestPresent": manifest_present,
                 "kcvPresent": kcv_present,
@@ -1218,7 +1248,7 @@ pub async fn handle_core_tool(
                     "name": r.name,
                     "encrypted": r.suitable_for_encrypted_backup(),
                 })),
-                "note": "The node record key protects every memory record; master.key protects auth2/secrets only. Recovery is reported as false while the rclone crypt passphrase is unverified, because the key alone cannot read the encrypted snapshots."
+                "note": "The node record key protects XRK1 rows; XDK2 rows require the master key and default-space keystore. Recovery is reported as false while the rclone crypt passphrase is unverified, because the key alone cannot read the encrypted snapshots."
             });
             Ok(serde_json::to_value(MCPToolResult::structured(
                 payload, false,

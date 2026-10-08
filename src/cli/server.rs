@@ -2292,48 +2292,131 @@ pub async fn start_http_server(
         }
     });
 
-    if let (Ok(cert), Ok(key)) = (
+    let tls_config = if let (Ok(cert), Ok(key)) = (
         std::env::var("XAVIER_TLS_CERT"),
         std::env::var("XAVIER_TLS_KEY"),
     ) {
         info!("TLS 1.3 encryption enabled");
-        let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
-
-        let handle = axum_server::Handle::<std::net::SocketAddr>::new();
-        let _shutdown_handle = handle.clone();
-
-        let addr = listener.local_addr()?;
-        use std::net::SocketAddr;
-        axum_server::bind_rustls(addr, rustls_config)
-            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
-            .await?;
+        Some(RustlsConfig::from_pem_file(cert, key).await?)
     } else {
-        use std::net::SocketAddr;
+        None
+    };
+    let drain = Duration::from_secs(
+        std::env::var("XAVIER_SHUTDOWN_GRACE_SECS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(10),
+    );
+    let tls_handle = tls_config
+        .as_ref()
+        .map(|_| axum_server::Handle::<std::net::SocketAddr>::new());
+    let shutdown_handle = tls_handle.clone();
+    let (stop_server, server_shutdown) = tokio::sync::oneshot::channel();
+    let (server_done, mut server_finished) = tokio::sync::oneshot::channel();
+    // Register eagerly, before the task is scheduled, so SIGTERM is never missed.
+    let signal = shutdown_signal();
+    let shutdown_task = tokio::spawn(async move {
+        tokio::select! {
+            _ = signal => {},
+            _ = &mut server_finished => return,
+        }
+        let deadline = tokio::time::Instant::now() + drain;
+        if let Some(handle) = shutdown_handle {
+            handle.graceful_shutdown(Some(drain));
+        }
+        let _ = stop_server.send(());
+        xavier::memory::working::save_if_dirty(
+            &working_memory_for_shutdown,
+            &working_snapshot_path,
+        )
+        .await;
+        if let Some(harvester) = hc_harvester {
+            harvester.abort();
+        }
+        if let Some(shutdown) = sync_shutdown {
+            shutdown.shutdown();
+            shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
+        }
+        // Cleanup must finish before the deadline can force an exit.
+        tokio::select! {
+            biased;
+            _ = &mut server_finished => {},
+            _ = tokio::time::sleep_until(deadline) => {
+                tracing::warn!("HTTP shutdown grace period expired after cleanup; forcing exit");
+                std::process::exit(0);
+            }
+        }
+    });
+
+    use std::net::SocketAddr;
+    let server_result = if let Some(rustls_config) = tls_config {
+        let addr = listener.local_addr()?;
+        drop(listener);
+        axum_server::bind_rustls(addr, rustls_config)
+            .handle(tls_handle.expect("TLS shutdown handle"))
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+    } else {
         axum::serve(
             listener,
             app.into_make_service_with_connect_info::<SocketAddr>(),
         )
         .with_graceful_shutdown(async move {
-            if let Err(error) = tokio::signal::ctrl_c().await {
-                info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
-            }
-            xavier::memory::working::save_if_dirty(
-                &working_memory_for_shutdown,
-                &working_snapshot_path,
-            )
-            .await;
-            if let Some(harvester) = hc_harvester {
-                harvester.abort();
-            }
-            if let Some(shutdown) = sync_shutdown {
-                shutdown.shutdown();
-                shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
-            }
+            let _ = server_shutdown.await;
         })
-        .await?;
-    }
+        .await
+    };
+    let _ = server_done.send(());
+    shutdown_task.await?;
+    server_result?;
 
     Ok(())
+}
+
+/// Registers shutdown listeners eagerly and waits for either termination signal.
+pub(crate) fn shutdown_signal() -> impl std::future::Future<Output = &'static str> + Send {
+    #[cfg(unix)]
+    let (mut terminate, mut interrupt) = {
+        use tokio::signal::unix::{signal, SignalKind};
+        (
+            signal(SignalKind::terminate()).expect("install SIGTERM listener"),
+            signal(SignalKind::interrupt()).expect("install SIGINT listener"),
+        )
+    };
+
+    async move {
+        #[cfg(unix)]
+        let signal = tokio::select! {
+            _ = terminate.recv() => "SIGTERM",
+            _ = interrupt.recv() => "SIGINT",
+        };
+        #[cfg(not(unix))]
+        let signal = {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("install Ctrl+C listener");
+            "SIGINT"
+        };
+        info!(signal, "HTTP server shutdown requested");
+        signal
+    }
+}
+
+#[cfg(all(test, unix))]
+mod shutdown_tests {
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn shutdown_signal_receives_sigterm() {
+        let signal = super::shutdown_signal();
+        // The eager listener above replaces SIGTERM's default disposition.
+        assert_eq!(unsafe { libc::kill(libc::getpid(), libc::SIGTERM) }, 0);
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(5), signal)
+                .await
+                .expect("SIGTERM should resolve shutdown within five seconds"),
+            "SIGTERM"
+        );
+    }
 }
 
 /// Cadence of the universal agent session ingestion loop, in seconds.

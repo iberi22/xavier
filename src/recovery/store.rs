@@ -13,14 +13,20 @@
 //! [`RecoveryStore::restore_into`] therefore never writes over an existing file:
 //!
 //! ```text
-//! 1. write candidate to  <dir>/<name>.candidate   (0600)
+//! 1. stage unique 0600 candidate (<dir>/<name>.candidate.<pid>.<rand>)
 //! 2. verify its KCV against the manifest          <- fails here => nothing changes
-//! 3. atomic rename(candidate, <dir>/<name>)        <- only after verification
+//! 3. hard_link(candidate, <dir>/<name>)           <- fails if target exists; only after verification
+//! 4. remove candidate
 //! ```
 //!
 //! A failed verification leaves both the live key and the candidate untouched.
 //! There is no code path in this module that calls `fs::write` on an existing key
 //! file, and [`RestoreOutcome`] reports which of the two cases occurred.
+//!
+//! Restore uses `hard_link` for an atomic no-clobber install, so the data
+//! directory must be on a filesystem that supports hard links (ext4/btrfs/xfs
+//! do; some FUSE/vfat/exFAT USB mounts do not) and on such filesystems restore
+//! fails cleanly without touching the target.
 //!
 //! # Nothing here prints key material
 //!
@@ -58,10 +64,112 @@ pub enum KeySourceReport {
     Env,
     /// Read from `<data_dir>/node/record.key`.
     File(PathBuf),
-    /// Generated because nothing existed.
-    Generated(PathBuf),
+    /// No key exists at this path; probing never creates one.
+    Missing(PathBuf),
     /// Nothing available: the node keeps running but writes plaintext.
     Unavailable(String),
+}
+
+/// Structural health of a seal; this does not validate the caller's secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+pub enum SealHealth {
+    #[default]
+    Absent,
+    Malformed(&'static str),
+    Valid {
+        mode_0600: bool,
+    },
+}
+
+impl SealHealth {
+    pub fn is_valid(&self) -> bool {
+        matches!(self, Self::Valid { .. })
+    }
+}
+
+/// Whether the stored KCV establishes which record key the seals protect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum KcvState {
+    #[default]
+    Absent,
+    Malformed,
+    ManifestDisagrees,
+    MatchesLiveKey,
+    MismatchesLiveKey,
+    LiveKeyMissing,
+}
+
+#[derive(Clone, Copy)]
+enum SealKind {
+    Mnemonic,
+    Passphrase,
+}
+
+fn inspect_seal(path: &Path, kind: SealKind) -> SealHealth {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return SealHealth::Absent,
+        Err(_) => return SealHealth::Malformed("not_regular_file"),
+    };
+    if !metadata.file_type().is_file() {
+        return SealHealth::Malformed("not_regular_file");
+    }
+    if metadata.len() > 64 * 1024 {
+        return SealHealth::Malformed("too_large");
+    }
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(_) => return SealHealth::Malformed("json_invalid"),
+    };
+    let (salt, nonce, ciphertext, known_kdf) = match kind {
+        SealKind::Mnemonic => {
+            let seal: MnemonicSeal = match serde_json::from_slice(&bytes) {
+                Ok(seal) => seal,
+                Err(_) => return SealHealth::Malformed("json_invalid"),
+            };
+            let known = seal.kdf == MnemonicPath::kdf_label();
+            (seal.salt, seal.nonce, seal.ciphertext, known)
+        }
+        SealKind::Passphrase => {
+            let seal: PassphraseSeal = match serde_json::from_slice(&bytes) {
+                Ok(seal) => seal,
+                Err(_) => return SealHealth::Malformed("json_invalid"),
+            };
+            let known =
+                serde_json::from_str::<serde_json::Value>(&seal.params).is_ok_and(|params| {
+                    params["variant"] == "argon2id"
+                        && params["domain"] == "xavier-recovery-passphrase-v1"
+                        && params["m_cost"] == 19456
+                        && params["t_cost"] == 2
+                        && params["p_cost"] == 1
+                });
+            (seal.salt, seal.nonce, seal.ciphertext, known)
+        }
+    };
+    for (field, length, reason) in [
+        (&salt, 16, "salt"),
+        (&nonce, 12, "nonce"),
+        (&ciphertext, 48, "ciphertext_len"),
+    ] {
+        if !hex_decode(field).is_ok_and(|decoded| decoded.len() == length) {
+            return SealHealth::Malformed(reason);
+        }
+    }
+    if !known_kdf {
+        return SealHealth::Malformed(match kind {
+            SealKind::Mnemonic => "kdf_unknown",
+            SealKind::Passphrase => "kdf_params_unknown",
+        });
+    }
+    #[cfg(unix)]
+    let mode_0600 = {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o777 == 0o600
+    };
+    #[cfg(not(unix))]
+    let mode_0600 = false;
+    SealHealth::Valid { mode_0600 }
 }
 
 /// Result of a restore attempt.
@@ -193,6 +301,31 @@ impl RecoveryStore {
         })
     }
 
+    /// Install a mnemonic seal only when no entry exists at its destination.
+    /// The atomic install also refuses dangling symlinks and concurrent writers.
+    pub fn write_mnemonic_seal_new(&self, key: &[u8; 32], words: &str) -> Result<PathBuf> {
+        let seal = MnemonicPath::seal(key, words)?;
+        self.write_verified_seal_with_replace(
+            MNEMONIC_SEAL_FILE,
+            &seal,
+            key,
+            |s: &MnemonicSeal| MnemonicPath::open(s, words),
+            false,
+        )
+    }
+
+    /// Install a passphrase seal only when no entry exists at its destination.
+    pub fn write_passphrase_seal_new(&self, key: &[u8; 32], pass: &str) -> Result<PathBuf> {
+        let seal = PassphrasePath::seal(key, pass)?;
+        self.write_verified_seal_with_replace(
+            PASSPHRASE_SEAL_FILE,
+            &seal,
+            key,
+            |s: &PassphraseSeal| PassphrasePath::open(s, pass),
+            false,
+        )
+    }
+
     /// Stage `seal` into a unique per-operation candidate file as `0600`, prove the
     /// bytes on disk reopen to `key`, then rename over `file`. On any failure only
     /// this operation's staging file is removed and the previous seal (if any) is
@@ -203,6 +336,21 @@ impl RecoveryStore {
         seal: &S,
         key: &[u8; 32],
         open: F,
+    ) -> Result<PathBuf>
+    where
+        S: serde::Serialize + serde::de::DeserializeOwned,
+        F: Fn(&S) -> Result<[u8; 32]>,
+    {
+        self.write_verified_seal_with_replace(file, seal, key, open, true)
+    }
+
+    fn write_verified_seal_with_replace<S, F>(
+        &self,
+        file: &str,
+        seal: &S,
+        key: &[u8; 32],
+        open: F,
+        replace: bool,
     ) -> Result<PathBuf>
     where
         S: serde::Serialize + serde::de::DeserializeOwned,
@@ -233,16 +381,24 @@ impl RecoveryStore {
                 }
             });
         if let Err(e) = verified {
-            let _ = fs::remove_file(&staging);
+            remove_staging(&staging);
             return Err(e.context(format!(
                 "seal verification failed; {} was left untouched",
                 path.display()
             )));
         }
 
-        if let Err(e) = fs::rename(&staging, &path) {
-            let _ = fs::remove_file(&staging);
+        let install = if replace {
+            fs::rename(&staging, &path)
+        } else {
+            fs::hard_link(&staging, &path)
+        };
+        if let Err(e) = install {
+            remove_staging(&staging);
             bail!("cannot install seal at {}: {e}", path.display());
+        }
+        if !replace {
+            remove_staging(&staging);
         }
         Ok(path)
     }
@@ -360,17 +516,17 @@ impl RecoveryStore {
 
         match fs::hard_link(&staging, target) {
             Ok(()) => {
-                let _ = fs::remove_file(&staging);
+                remove_staging(&staging);
                 Ok(RestoreOutcome::Installed)
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                let _ = fs::remove_file(&staging);
+                remove_staging(&staging);
                 Ok(RestoreOutcome::Rejected {
                     reason: "target_exists".to_string(),
                 })
             }
             Err(e) => {
-                let _ = fs::remove_file(&staging);
+                remove_staging(&staging);
                 bail!("cannot install restored key at {}: {e}", target.display())
             }
         }
@@ -385,18 +541,70 @@ impl RecoveryStore {
         self.restore_into(candidate_hex, &record_key_path(), expected.as_deref())
     }
 
-    /// Report whether a recoverable path exists, without touching any key.
+    /// Report structural recovery health without creating or changing keys.
     pub fn status(
         &self,
         crypt_passphrase_backed_up: Option<bool>,
+        live_key: Option<&[u8; 32]>,
     ) -> crate::recovery::RecoveryStatus {
-        let manifest = self.read_manifest().ok().flatten();
-        let has_kcv = self.read_kcv().ok().flatten().is_some();
+        let mnemonic_seal = inspect_seal(&self.root.join(MNEMONIC_SEAL_FILE), SealKind::Mnemonic);
+        let passphrase_seal =
+            inspect_seal(&self.root.join(PASSPHRASE_SEAL_FILE), SealKind::Passphrase);
+        let kcv = match self.read_kcv() {
+            Ok(None) => KcvState::Absent,
+            Err(_) => KcvState::Malformed,
+            Ok(Some(stored)) => {
+                if stored.len() != 64 || !stored.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    KcvState::Malformed
+                } else {
+                    match self.read_manifest() {
+                        Err(_) => KcvState::Malformed,
+                        Ok(Some(manifest)) if manifest.record_key_kcv != stored => {
+                            KcvState::ManifestDisagrees
+                        }
+                        _ => match live_key {
+                            None => KcvState::LiveKeyMissing,
+                            Some(key) if self.verify_kcv(key).unwrap_or(false) => {
+                                KcvState::MatchesLiveKey
+                            }
+                            Some(_) => KcvState::MismatchesLiveKey,
+                        },
+                    }
+                }
+            }
+        };
         crate::recovery::RecoveryStatus {
-            mnemonic_seal_present: manifest.is_some() && has_kcv,
-            passphrase_seal_present: manifest.is_some() && has_kcv,
+            mnemonic_seal_present: mnemonic_seal.is_valid(),
+            passphrase_seal_present: passphrase_seal.is_valid(),
+            mnemonic_seal,
+            passphrase_seal,
+            kcv,
+            default_space_keystore_exists:
+                crate::memory::sqlite_vec_store::at_rest::default_keystore_exists(),
             crypt_passphrase_backed_up,
         }
+    }
+}
+
+/// Remove a staging file, warning when cleanup fails.
+///
+/// `NotFound` is silent (the file may already be gone). Any other failure
+/// emits a `tracing::warn!` and an `eprintln!` naming the staging path and the
+/// io error — never key material — so a CLI user sees the leftover.
+fn remove_staging(staging: &Path) {
+    if let Err(e) = fs::remove_file(staging) {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            return;
+        }
+        tracing::warn!(
+            path = %staging.display(),
+            error = %e,
+            "failed to remove staging file"
+        );
+        eprintln!(
+            "warning: failed to remove staging file {}: {e}",
+            staging.display()
+        );
     }
 }
 
@@ -407,17 +615,15 @@ fn record_key_path() -> PathBuf {
 
 /// The live key source, for operator reporting.
 ///
-/// `Generated` is kept distinct from `File` on purpose: a key that was just
-/// minted means every existing row is already unreadable, which is the single
-/// most important thing this module can report.
+/// This probe never mints a key when the live file is missing.
 pub fn live_key_source() -> KeySourceReport {
     use crate::memory::sqlite_vec_store::at_rest::KeySource as Src;
-    match crate::memory::sqlite_vec_store::at_rest::resolve_record_key_with_source() {
+    match crate::memory::sqlite_vec_store::at_rest::peek_record_key_with_source() {
         (Some(_), Src::Env) => KeySourceReport::Env,
         (Some(_), Src::File(p)) => KeySourceReport::File(p),
-        (Some(_), Src::Generated(p)) => KeySourceReport::Generated(p),
+        (_, Src::Missing(p)) => KeySourceReport::Missing(p),
         (_, Src::Unavailable(reason)) => KeySourceReport::Unavailable(reason),
-        (None, other) => KeySourceReport::Unavailable(format!("{other:?}")),
+        (_, other) => KeySourceReport::Unavailable(format!("{other:?}")),
     }
 }
 
@@ -574,9 +780,155 @@ mod tests {
             .unwrap();
         store.write_kcv(&KEY_A).unwrap();
 
-        assert!(!store.status(Some(false)).is_recoverable());
-        assert!(store.status(Some(true)).is_recoverable());
-        assert!(!store.status(None).is_recoverable());
+        // A manifest and KCV alone do not establish that any seal exists.
+        assert!(!store.status(Some(true), Some(&KEY_A)).is_recoverable());
+        let (words, _) = MnemonicPath::generate().unwrap();
+        store.write_mnemonic_seal(&KEY_A, &words).unwrap();
+        assert!(!store.status(Some(false), Some(&KEY_A)).is_recoverable());
+        assert!(store.status(Some(true), Some(&KEY_A)).is_recoverable());
+        assert!(!store.status(None, Some(&KEY_A)).is_recoverable());
+    }
+
+    #[test]
+    fn seal_inspection_checks_structure_and_known_kdf() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("seal.json");
+        assert_eq!(
+            inspect_seal(&path, SealKind::Passphrase),
+            SealHealth::Absent
+        );
+        fs::write(&path, b"{").unwrap();
+        assert_eq!(
+            inspect_seal(&path, SealKind::Passphrase),
+            SealHealth::Malformed("json_invalid")
+        );
+        let seal = PassphraseSeal {
+            salt: "aa".repeat(16),
+            nonce: "aa".repeat(12),
+            ciphertext: "aa".repeat(48),
+            params: serde_json::json!({
+                "variant": "argon2id", "domain": "xavier-recovery-passphrase-v1",
+                "m_cost": 19456, "t_cost": 2, "p_cost": 1,
+            })
+            .to_string(),
+        };
+        for (field, value, reason) in [
+            ("salt", "zz", "salt"),
+            ("nonce", "aa", "nonce"),
+            ("ciphertext", "aa", "ciphertext_len"),
+            ("params", "{}", "kdf_params_unknown"),
+        ] {
+            let mut bad = serde_json::to_value(&seal).unwrap();
+            bad[field] = serde_json::Value::String(value.to_string());
+            fs::write(&path, serde_json::to_vec(&bad).unwrap()).unwrap();
+            assert_eq!(
+                inspect_seal(&path, SealKind::Passphrase),
+                SealHealth::Malformed(reason)
+            );
+        }
+        write_private_file(&path, &serde_json::to_vec(&seal).unwrap()).unwrap();
+        #[cfg(unix)]
+        assert_eq!(
+            inspect_seal(&path, SealKind::Passphrase),
+            SealHealth::Valid { mode_0600: true }
+        );
+        let mut mnemonic = MnemonicSeal {
+            salt: seal.salt,
+            nonce: seal.nonce,
+            ciphertext: seal.ciphertext,
+            kdf: MnemonicPath::kdf_label(),
+        };
+        fs::write(&path, serde_json::to_vec(&mnemonic).unwrap()).unwrap();
+        assert!(inspect_seal(&path, SealKind::Mnemonic).is_valid());
+        mnemonic.kdf.push('x');
+        fs::write(&path, serde_json::to_vec(&mnemonic).unwrap()).unwrap();
+        assert_eq!(
+            inspect_seal(&path, SealKind::Mnemonic),
+            SealHealth::Malformed("kdf_unknown")
+        );
+        fs::write(&path, vec![b' '; 65537]).unwrap();
+        assert_eq!(
+            inspect_seal(&path, SealKind::Mnemonic),
+            SealHealth::Malformed("too_large")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn seal_inspection_rejects_symlinks_and_reports_unsafe_modes() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("seal.json");
+        let link = dir.path().join("link.json");
+        symlink(&path, &link).unwrap();
+        assert_eq!(
+            inspect_seal(&link, SealKind::Mnemonic),
+            SealHealth::Malformed("not_regular_file")
+        );
+        fs::create_dir(&path).unwrap();
+        assert_eq!(
+            inspect_seal(&path, SealKind::Mnemonic),
+            SealHealth::Malformed("not_regular_file")
+        );
+        fs::remove_dir(&path).unwrap();
+        let seal = MnemonicSeal {
+            salt: "aa".repeat(16),
+            nonce: "aa".repeat(12),
+            ciphertext: "aa".repeat(48),
+            kdf: MnemonicPath::kdf_label(),
+        };
+        fs::write(&path, serde_json::to_vec(&seal).unwrap()).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            inspect_seal(&path, SealKind::Mnemonic),
+            SealHealth::Valid { mode_0600: false }
+        );
+    }
+
+    #[test]
+    fn status_distinguishes_kcv_health_and_actual_seals() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = RecoveryStore::at(dir.path());
+        assert_eq!(store.status(Some(true), Some(&KEY_A)).kcv, KcvState::Absent);
+        store.write_kcv(&KEY_A).unwrap();
+        assert_eq!(
+            store.status(Some(true), Some(&KEY_A)).kcv,
+            KcvState::MatchesLiveKey
+        );
+        assert_eq!(
+            store.status(Some(true), Some(&KEY_B)).kcv,
+            KcvState::MismatchesLiveKey
+        );
+        assert_eq!(store.status(Some(true), None).kcv, KcvState::LiveKeyMissing);
+        assert!(!store.status(Some(true), None).is_recoverable());
+        let seal = MnemonicSeal {
+            salt: "aa".repeat(16),
+            nonce: "aa".repeat(12),
+            ciphertext: "aa".repeat(48),
+            kdf: MnemonicPath::kdf_label(),
+        };
+        write_private_file(
+            &store.root().join(MNEMONIC_SEAL_FILE),
+            &serde_json::to_vec(&seal).unwrap(),
+        )
+        .unwrap();
+        let status = store.status(Some(true), None);
+        assert!(status.mnemonic_seal_present);
+        assert!(!status.passphrase_seal_present);
+        assert!(status.is_recoverable());
+        assert!(!store.status(Some(true), Some(&KEY_B)).is_recoverable());
+        store
+            .write_manifest(&RecoveryManifest::new(&KEY_B, None))
+            .unwrap();
+        assert_eq!(
+            store.status(Some(true), Some(&KEY_A)).kcv,
+            KcvState::ManifestDisagrees
+        );
+        fs::write(store.root().join(KCV_FILENAME), "bad").unwrap();
+        assert_eq!(
+            store.status(Some(true), Some(&KEY_A)).kcv,
+            KcvState::Malformed
+        );
     }
 
     #[test]
@@ -725,6 +1077,88 @@ mod tests {
         assert!(leftovers.is_empty(), "candidate leftovers: {leftovers:?}");
     }
 
+    #[test]
+    fn concurrent_new_seals_have_exactly_one_winner_and_preserve_it() {
+        for mnemonic in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = RecoveryStore::at(dir.path().join("recovery"));
+            let pairs: Vec<_> = (0..3)
+                .map(|i| {
+                    let key = [i + 1; 32];
+                    let secret = if mnemonic {
+                        MnemonicPath::generate().unwrap().0
+                    } else {
+                        format!("concurrent-new-passphrase-{i}")
+                    };
+                    (key, secret)
+                })
+                .collect();
+            let barrier = std::sync::Barrier::new(pairs.len());
+            let successes = std::thread::scope(|scope| {
+                let handles: Vec<_> = pairs
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (key, secret))| {
+                        let store = &store;
+                        let barrier = &barrier;
+                        scope.spawn(move || {
+                            barrier.wait();
+                            let result = if mnemonic {
+                                store.write_mnemonic_seal_new(key, secret)
+                            } else {
+                                store.write_passphrase_seal_new(key, secret)
+                            };
+                            result.ok().map(|path| (index, path))
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .filter_map(|handle| handle.join().unwrap())
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(
+                successes.len(),
+                1,
+                "exactly one no-clobber install must win"
+            );
+            let (winner, path) = &successes[0];
+            let before = fs::read(path).unwrap();
+            for (index, (key, secret)) in pairs.iter().enumerate() {
+                let opened = if mnemonic {
+                    store.unseal_mnemonic(secret)
+                } else {
+                    store.unseal_passphrase(secret)
+                };
+                if index == *winner {
+                    assert_eq!(opened.unwrap(), *key);
+                } else {
+                    assert!(
+                        opened.is_err(),
+                        "a losing secret must not open the installed seal"
+                    );
+                }
+                let retry = if mnemonic {
+                    store.write_mnemonic_seal_new(key, secret)
+                } else {
+                    store.write_passphrase_seal_new(key, secret)
+                };
+                assert!(retry.is_err(), "every retry must refuse the existing seal");
+                assert_eq!(
+                    fs::read(path).unwrap(),
+                    before,
+                    "winning seal was overwritten"
+                );
+            }
+            let leftovers: Vec<_> = fs::read_dir(store.root())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .filter(|name| name.contains(CANDIDATE_SUFFIX))
+                .collect();
+            assert!(leftovers.is_empty(), "candidate leftovers: {leftovers:?}");
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn restore_into_refuses_dangling_symlink_target() {
@@ -746,5 +1180,30 @@ mod tests {
             .unwrap()
             .file_type()
             .is_symlink());
+    }
+
+    #[test]
+    fn remove_staging_is_silent_for_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("no-such-candidate");
+        remove_staging(&missing);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_staging_warns_but_does_not_panic_on_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        fs::create_dir(&locked).unwrap();
+        let victim = locked.join("victim.candidate");
+        fs::write(&victim, "staging").unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o500)).unwrap();
+        remove_staging(&victim);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).unwrap();
+        if victim.exists() {
+            assert!(victim.exists());
+        }
+        // Else running as root: unlink succeeded despite the mode; no assertion.
     }
 }
