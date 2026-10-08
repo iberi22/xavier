@@ -38,11 +38,18 @@ use crate::crypto::hex_encode;
 use crate::keystore::{ensure_private_dir, write_private_file};
 use crate::recovery::kcv::encode_kcv;
 use crate::recovery::manifest::RecoveryManifest;
+use crate::recovery::mnemonic::{MnemonicPath, MnemonicSeal};
+use crate::recovery::passphrase::{PassphrasePath, PassphraseSeal};
 
 /// Filename of the KCV sidecar.
 const KCV_FILENAME: &str = "record.key.kcv";
 /// Suffix of the pre-verification staging file.
 const CANDIDATE_SUFFIX: &str = ".candidate";
+
+/// Filename of the mnemonic seal.
+pub const MNEMONIC_SEAL_FILE: &str = "record.mnemonic.seal.json";
+/// Filename of the passphrase seal.
+pub const PASSPHRASE_SEAL_FILE: &str = "record.passphrase.seal.json";
 
 /// Where a key came from, for operator-facing reporting.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +170,118 @@ impl RecoveryStore {
             None => Ok(false),
             Some(stored) => Ok(crate::recovery::kcv::verify_kcv(candidate, &stored).is_ok()),
         }
+    }
+
+    /// Seal `key` under a 24-word mnemonic and install it as a `0600` file.
+    ///
+    /// The staged file is re-read from disk and reopened with the same words
+    /// *before* it replaces any previous seal, so a seal that cannot be opened
+    /// is never installed and never clobbers a good one.
+    pub fn write_mnemonic_seal(&self, key: &[u8; 32], words: &str) -> Result<PathBuf> {
+        let seal = MnemonicPath::seal(key, words)?;
+        self.write_verified_seal(MNEMONIC_SEAL_FILE, &seal, key, |s: &MnemonicSeal| {
+            MnemonicPath::open(s, words)
+        })
+    }
+
+    /// Seal `key` under a passphrase; same guarantees as
+    /// [`Self::write_mnemonic_seal`].
+    pub fn write_passphrase_seal(&self, key: &[u8; 32], pass: &str) -> Result<PathBuf> {
+        let seal = PassphrasePath::seal(key, pass)?;
+        self.write_verified_seal(PASSPHRASE_SEAL_FILE, &seal, key, |s: &PassphraseSeal| {
+            PassphrasePath::open(s, pass)
+        })
+    }
+
+    /// Stage `seal` as `0600`, prove the bytes on disk reopen to `key`, then
+    /// rename over `file`. On any failure the staging file is removed and the
+    /// previous seal (if any) is left untouched.
+    fn write_verified_seal<S, F>(
+        &self,
+        file: &str,
+        seal: &S,
+        key: &[u8; 32],
+        open: F,
+    ) -> Result<PathBuf>
+    where
+        S: serde::Serialize + serde::de::DeserializeOwned,
+        F: Fn(&S) -> Result<[u8; 32]>,
+    {
+        self.ensure_root()?;
+        let path = self.root.join(file);
+        let staging = self.root.join(format!("{file}{CANDIDATE_SUFFIX}"));
+        let bytes = serde_json::to_vec_pretty(seal).context("cannot serialize seal")?;
+        write_private_file(&staging, &bytes)
+            .with_context(|| format!("cannot stage seal at {}", staging.display()))?;
+
+        let verified = fs::read(&staging)
+            .context("cannot re-read staged seal")
+            .and_then(|b| serde_json::from_slice::<S>(&b).context("staged seal is malformed"))
+            .and_then(|s| open(&s).context("staged seal cannot be reopened"))
+            .and_then(|reopened| {
+                if &reopened == key {
+                    Ok(())
+                } else {
+                    bail!("reopened key does not match the sealed key")
+                }
+            });
+        if let Err(e) = verified {
+            let _ = fs::remove_file(&staging);
+            return Err(e.context(format!(
+                "seal verification failed; {} was left untouched",
+                path.display()
+            )));
+        }
+
+        if let Err(e) = fs::rename(&staging, &path) {
+            let _ = fs::remove_file(&staging);
+            bail!("cannot install seal at {}: {e}", path.display());
+        }
+        Ok(path)
+    }
+
+    /// Read the mnemonic seal from disk, open it with words, and verify against stored KCV if present.
+    /// Never logs or prints key material.
+    pub fn unseal_mnemonic(&self, words: &str) -> Result<[u8; 32]> {
+        let path = self.root.join(MNEMONIC_SEAL_FILE);
+        if !path.exists() {
+            bail!("mnemonic seal not found at {}", path.display());
+        }
+        let bytes = fs::read(&path)
+            .with_context(|| format!("cannot read mnemonic seal at {}", path.display()))?;
+        let seal: MnemonicSeal = serde_json::from_slice(&bytes)
+            .with_context(|| format!("mnemonic seal at {} is malformed", path.display()))?;
+        let key = MnemonicPath::open(&seal, words)
+            .context("failed to open mnemonic seal: wrong words or corrupted file")?;
+
+        if let Some(expected_kcv) = self.read_kcv()? {
+            crate::recovery::kcv::verify_kcv(&key, &expected_kcv)
+                .map_err(|e| anyhow::anyhow!("key-check value verification failed: {e}"))?;
+        }
+
+        Ok(key)
+    }
+
+    /// Read the passphrase seal from disk, open it with pass, and verify against stored KCV if present.
+    /// Never logs or prints key material.
+    pub fn unseal_passphrase(&self, pass: &str) -> Result<[u8; 32]> {
+        let path = self.root.join(PASSPHRASE_SEAL_FILE);
+        if !path.exists() {
+            bail!("passphrase seal not found at {}", path.display());
+        }
+        let bytes = fs::read(&path)
+            .with_context(|| format!("cannot read passphrase seal at {}", path.display()))?;
+        let seal: PassphraseSeal = serde_json::from_slice(&bytes)
+            .with_context(|| format!("passphrase seal at {} is malformed", path.display()))?;
+        let key = PassphrasePath::open(&seal, pass)
+            .context("failed to open passphrase seal: wrong passphrase or corrupted file")?;
+
+        if let Some(expected_kcv) = self.read_kcv()? {
+            crate::recovery::kcv::verify_kcv(&key, &expected_kcv)
+                .map_err(|e| anyhow::anyhow!("key-check value verification failed: {e}"))?;
+        }
+
+        Ok(key)
     }
 
     /// Restore a key to `target` **without ever overwriting an existing key**.
@@ -437,5 +556,102 @@ mod tests {
         assert!(!store.status(Some(false)).is_recoverable());
         assert!(store.status(Some(true)).is_recoverable());
         assert!(!store.status(None).is_recoverable());
+    }
+
+    #[test]
+    fn mnemonic_seal_write_and_unseal_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = RecoveryStore::at(dir.path().join("recovery"));
+        let (words, _) = MnemonicPath::generate().unwrap();
+        store.write_kcv(&KEY_A).unwrap();
+
+        let seal_path = store.write_mnemonic_seal(&KEY_A, &words).unwrap();
+        assert!(seal_path.exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&seal_path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        let unsealed = store.unseal_mnemonic(&words).unwrap();
+        assert_eq!(unsealed, KEY_A);
+
+        let (wrong_words, _) = MnemonicPath::generate().unwrap();
+        assert!(store.unseal_mnemonic(&wrong_words).is_err());
+    }
+
+    #[test]
+    fn passphrase_seal_write_and_unseal_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = RecoveryStore::at(dir.path().join("recovery"));
+        let pass = "test-passphrase-sufficiently-long-123";
+        store.write_kcv(&KEY_A).unwrap();
+
+        let seal_path = store.write_passphrase_seal(&KEY_A, pass).unwrap();
+        assert!(seal_path.exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&seal_path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        let unsealed = store.unseal_passphrase(pass).unwrap();
+        assert_eq!(unsealed, KEY_A);
+
+        assert!(store
+            .unseal_passphrase("wrong-passphrase-still-long-123")
+            .is_err());
+    }
+
+    #[test]
+    fn unseal_fails_on_kcv_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = RecoveryStore::at(dir.path().join("recovery"));
+        let pass = "test-passphrase-sufficiently-long-123";
+        // Seal KEY_A
+        store.write_passphrase_seal(&KEY_A, pass).unwrap();
+        // But store KCV for KEY_B
+        store.write_kcv(&KEY_B).unwrap();
+
+        let err = store.unseal_passphrase(pass).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("key-check value verification failed"));
+    }
+
+    /// A seal that does not reopen to the sealed key must not be installed and
+    /// must not replace the previous, good seal.
+    #[test]
+    fn unverifiable_seal_is_rejected_and_previous_seal_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = RecoveryStore::at(dir.path().join("recovery"));
+        let pass = "test-passphrase-sufficiently-long-123";
+        let good = store.write_passphrase_seal(&KEY_A, pass).unwrap();
+        let before = fs::read(&good).unwrap();
+
+        let seal = PassphrasePath::seal(&KEY_A, pass).unwrap();
+        let err = store
+            .write_verified_seal(
+                PASSPHRASE_SEAL_FILE,
+                &seal,
+                &KEY_A,
+                |_s: &PassphraseSeal| Ok(KEY_B),
+            )
+            .unwrap_err();
+
+        assert!(format!("{err:#}").contains("does not match"), "{err:#}");
+        assert_eq!(fs::read(&good).unwrap(), before, "previous seal clobbered");
+        let staging = store
+            .root()
+            .join(format!("{PASSPHRASE_SEAL_FILE}{CANDIDATE_SUFFIX}"));
+        assert!(!staging.exists(), "staging file left behind");
     }
 }

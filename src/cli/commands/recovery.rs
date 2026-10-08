@@ -21,7 +21,9 @@
 //!   can permanently orphan every row (ADR-038).
 //! - `restore` verifies the KCV *before* writing anything.
 
-use anyhow::{bail, Result};
+use std::path::PathBuf;
+
+use anyhow::{bail, Context, Result};
 use xavier::drive;
 use xavier::memory::sqlite_vec_store::at_rest;
 use xavier::recovery::{
@@ -47,6 +49,13 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
             })?;
             restore(&key_hex, kcv.as_deref())
         }
+        RecoveryCommand::Unseal {
+            mnemonic,
+            passphrase,
+            words_file,
+            passphrase_file,
+            out,
+        } => unseal(mnemonic, passphrase, words_file, passphrase_file, out),
         RecoveryCommand::Drive => drive_status(),
     }
 }
@@ -127,19 +136,17 @@ fn seal(mnemonic: bool, passphrase: bool) -> Result<()> {
             .with_confirmation("Repeat the passphrase", "The passphrases do not match")
             .interact()
             .map_err(|e| anyhow::anyhow!("cannot read passphrase: {e}"))?;
-        let sealed = PassphrasePath::seal(&key, &pass)?;
-        let path = store.root().join("record.passphrase.seal.json");
-        std::fs::write(&path, serde_json::to_vec_pretty(&sealed)?)?;
+        let path = store.write_passphrase_seal(&key, &pass)?;
         println!("  passphrase seal: {}", path.display());
+        println!("  verified       : the seal reopens with what you just entered");
         println!("  Copy it OFF this host and verify it restores.");
     }
 
     if mnemonic {
         let (words, _) = MnemonicPath::generate()?;
-        let sealed = MnemonicPath::seal(&key, &words)?;
-        let path = store.root().join("record.mnemonic.seal.json");
-        std::fs::write(&path, serde_json::to_vec_pretty(&sealed)?)?;
+        let path = store.write_mnemonic_seal(&key, &words)?;
         println!("  mnemonic seal  : {}", path.display());
+        println!("  verified       : the seal reopens with what you just entered");
         println!();
         println!("  ══════════════════════════════════════════════");
         println!("  WRITE THESE 24 WORDS ON PAPER NOW:");
@@ -152,6 +159,72 @@ fn seal(mnemonic: bool, passphrase: bool) -> Result<()> {
         println!("  them can decrypt the whole memory store.");
     }
     Ok(())
+}
+
+/// Unseal a recovery key from mnemonic or passphrase and install or export it.
+fn unseal(
+    mnemonic: bool,
+    passphrase: bool,
+    words_file: Option<PathBuf>,
+    passphrase_file: Option<PathBuf>,
+    out: Option<PathBuf>,
+) -> Result<()> {
+    if mnemonic == passphrase {
+        bail!("choose exactly one of --mnemonic or --passphrase");
+    }
+
+    let store = RecoveryStore::from_env_or_default();
+    let key = if mnemonic {
+        let words = match words_file {
+            Some(path) => std::fs::read_to_string(&path)
+                .with_context(|| format!("cannot read words from {}", path.display()))?
+                .trim()
+                .to_string(),
+            None => dialoguer::Password::new()
+                .with_prompt("Enter 24-word recovery mnemonic")
+                .interact()
+                .map_err(|e| anyhow::anyhow!("cannot read mnemonic: {e}"))?,
+        };
+        store.unseal_mnemonic(&words)?
+    } else {
+        let pass = match passphrase_file {
+            Some(path) => std::fs::read_to_string(&path)
+                .with_context(|| format!("cannot read passphrase from {}", path.display()))?
+                .trim()
+                .to_string(),
+            None => dialoguer::Password::new()
+                .with_prompt("Enter recovery passphrase")
+                .interact()
+                .map_err(|e| anyhow::anyhow!("cannot read passphrase: {e}"))?,
+        };
+        store.unseal_passphrase(&pass)?
+    };
+
+    let key_hex = xavier::crypto::hex_encode(key);
+
+    if let Some(out_path) = out {
+        if out_path.exists() {
+            bail!("output file already exists: {}", out_path.display());
+        }
+        xavier::keystore::write_private_file(&out_path, key_hex.as_bytes())
+            .with_context(|| format!("cannot write key to {}", out_path.display()))?;
+        println!("Unsealed key written to {}.", out_path.display());
+        Ok(())
+    } else {
+        let expected = store.read_kcv()?;
+        let target = at_rest::record_key_path();
+        println!("target: {}", target.display());
+
+        match store.restore_into(&key_hex, &target, expected.as_deref())? {
+            xavier::recovery::RestoreOutcome::Installed => {
+                println!("installed. Verify by reading a record before trusting it.");
+                Ok(())
+            }
+            xavier::recovery::RestoreOutcome::Rejected { reason } => {
+                bail!("restore refused ({reason}); the existing key was left untouched")
+            }
+        }
+    }
 }
 
 /// Master key bytes, used only to derive its KCV immediately.
@@ -248,5 +321,86 @@ mod tests {
             std::fs::read_to_string(&target).unwrap(),
             "live-key-material"
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn unseal_command_with_words_file_installs_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let recovery_dir = dir.path().join("recovery");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir_all(&recovery_dir).unwrap();
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let prev_recovery = std::env::var("XAVIER_RECOVERY_DIR").ok();
+        let prev_data = std::env::var("XAVIER_DATA_DIR").ok();
+        let prev_record = std::env::var("XAVIER_RECORD_KEY").ok();
+        let prev_home = std::env::var("HOME").ok();
+
+        std::env::set_var("XAVIER_RECOVERY_DIR", &recovery_dir);
+        std::env::set_var("XAVIER_DATA_DIR", &data_dir);
+        std::env::set_var("HOME", dir.path());
+        std::env::remove_var("XAVIER_RECORD_KEY");
+
+        let store = RecoveryStore::at(&recovery_dir);
+        let key = [0x42u8; 32];
+        let (words, _) = MnemonicPath::generate().unwrap();
+        store.write_kcv(&key).unwrap();
+        store.write_mnemonic_seal(&key, &words).unwrap();
+
+        let words_file = dir.path().join("words.txt");
+        std::fs::write(&words_file, &words).unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let res = rt.block_on(handle_recovery_command(RecoveryArgs {
+            command: RecoveryCommand::Unseal {
+                mnemonic: true,
+                passphrase: false,
+                words_file: Some(words_file),
+                passphrase_file: None,
+                out: None,
+            },
+        }));
+
+        let installed_path = at_rest::record_key_path();
+        let key_exists = installed_path.exists();
+        let read_hex = if key_exists {
+            Some(std::fs::read_to_string(&installed_path).unwrap())
+        } else {
+            None
+        };
+
+        if let Some(v) = prev_recovery {
+            std::env::set_var("XAVIER_RECOVERY_DIR", v);
+        } else {
+            std::env::remove_var("XAVIER_RECOVERY_DIR");
+        }
+        if let Some(v) = prev_data {
+            std::env::set_var("XAVIER_DATA_DIR", v);
+        } else {
+            std::env::remove_var("XAVIER_DATA_DIR");
+        }
+        if let Some(v) = prev_record {
+            std::env::set_var("XAVIER_RECORD_KEY", v);
+        } else {
+            std::env::remove_var("XAVIER_RECORD_KEY");
+        }
+        if let Some(v) = prev_home {
+            std::env::set_var("HOME", v);
+        } else {
+            std::env::remove_var("HOME");
+        }
+
+        assert!(res.is_ok(), "unseal command failed: {:?}", res);
+        assert!(
+            key_exists,
+            "key must be installed at {}",
+            installed_path.display()
+        );
+        assert_eq!(read_hex.unwrap(), xavier::crypto::hex_encode(key));
     }
 }
