@@ -51,6 +51,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'agent_lease_hooks_tests'
             'ci_version_gate'
@@ -117,6 +118,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'adversarial_challenge_2_stress'
             'agent_task_lifecycle_tests'
@@ -180,6 +182,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'benchmark'
             'clearance_audit_sqlite'
@@ -242,6 +245,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'chronicle_harvest_test'
             'clearance_e2e'
@@ -304,6 +308,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'mesh_full_simulation_test'
             'mesh_integration'
@@ -358,6 +363,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'embedding_fallback_resilience'
             'embedding_fallback_test'
@@ -409,6 +415,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'http_pressure_wave20'
             'kernel_mcp_test'
@@ -460,6 +467,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'http_auth_edge_test'
             'profile_vault_e2e'
@@ -510,6 +518,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'access_flush_drain'
             'cloud_memory_sync_cycle_test'
@@ -562,6 +571,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'maloca_data_node_test'
             'maloca_live_sync_test'
@@ -610,6 +620,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'ledger_skill_entries'
             'telemetry_anonymizer_edge_test'
@@ -657,6 +668,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'codegraph_installer_e2e'
             'codegraph_scan_then_query'
@@ -704,6 +716,7 @@ jobs:
         run: |
           set +e +o pipefail
           set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
           targets=(
             'storage_isolation'
             'unified_storage_validation'
