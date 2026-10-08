@@ -217,6 +217,14 @@ pub fn memory_routes() -> Router<CliState> {
             )),
         )
         .route(
+            "/v1/memories/consolidate",
+            post(xavier::server::v1_api::v1_memories_consolidate),
+        )
+        .route(
+            "/v1/events",
+            post(xavier::server::v1_api::v1_events_add).get(xavier::server::v1_api::v1_events_list),
+        )
+        .route(
             "/v1/context/assemble",
             post(xavier::server::v1_api::v1_context_assemble),
         )

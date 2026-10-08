@@ -2619,6 +2619,440 @@ pub async fn v1_graph_export(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// V1 Events & Consolidation API (ADR-041)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct V1EventEnvelope {
+    #[serde(default = "default_protocol_version")]
+    pub protocol_version: String,
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u16,
+    #[serde(default)]
+    pub message_id: Option<String>,
+    #[serde(default = "default_namespace")]
+    pub namespace: String,
+    pub event_type: String,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub run_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default = "default_occurred_at")]
+    pub occurred_at: i64,
+    #[serde(default)]
+    pub payload: serde_json::Value,
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
+    #[serde(default)]
+    pub trigger_consolidation: Option<bool>,
+}
+
+fn default_protocol_version() -> String {
+    "xavier-events/1".to_string()
+}
+
+fn default_schema_version() -> u16 {
+    1
+}
+
+fn default_namespace() -> String {
+    "default".to_string()
+}
+
+fn default_occurred_at() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1EventAddResponse {
+    pub status: String,
+    pub event_id: i64,
+    pub seq: i64,
+    pub disposition: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consolidation: Option<crate::consolidation::ConsolidationStats>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct V1EventsQuery {
+    pub since: Option<String>,
+    pub limit: Option<usize>,
+    pub session_id: Option<String>,
+    pub task_id: Option<String>,
+    pub event_type: Option<String>,
+    pub namespace: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1EventsListResponse {
+    pub status: String,
+    pub count: usize,
+    pub next_since: Option<i64>,
+    pub events: Vec<crate::coordination::event_log::LoggedEvent>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct V1ConsolidateRequest {
+    pub decay_rate: Option<f32>,
+    pub similarity_threshold: Option<f32>,
+    pub min_importance_for_decay: Option<f32>,
+    pub batch_size: Option<usize>,
+    pub enable_tgd: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1ConsolidateResponse {
+    pub status: String,
+    pub stats: crate::consolidation::ConsolidationStats,
+}
+
+fn get_or_init_event_log(
+    workspace: Option<&WorkspaceContext>,
+) -> Arc<crate::coordination::event_log::EventLog> {
+    if let Some(log) = crate::coordination::event_log::global() {
+        return log;
+    }
+    let state_dir = if let Some(ws) = workspace {
+        ws.workspace
+            .usage_state_path
+            .parent()
+            .unwrap_or(&ws.workspace.usage_state_path)
+            .to_path_buf()
+    } else {
+        std::env::temp_dir().join("xavier-events-default")
+    };
+    let log = crate::coordination::event_log::EventLog::open(
+        &state_dir,
+        crate::coordination::event_log::RetentionConfig::default(),
+    )
+    .unwrap_or_else(|_| {
+        let fallback_dir =
+            std::env::temp_dir().join(format!("xavier-events-{}", ulid::Ulid::new()));
+        crate::coordination::event_log::EventLog::open(
+            &fallback_dir,
+            crate::coordination::event_log::RetentionConfig::default(),
+        )
+        .expect("failed to open fallback EventLog")
+    });
+    crate::coordination::event_log::install_global(Arc::clone(&log));
+    log
+}
+
+/// Ingest an event envelope (e.g. micro-advance or coordination event) per ADR-041.
+pub async fn v1_events_add(
+    workspace: Option<Extension<WorkspaceContext>>,
+    Json(payload): Json<V1EventEnvelope>,
+) -> impl IntoResponse {
+    if payload.event_type.trim().is_empty() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({
+                "status": "error",
+                "error": "event_type is required",
+                "disposition": "rejected"
+            })),
+        )
+            .into_response();
+    }
+
+    let raw_payload = serde_json::to_string(&payload.payload).unwrap_or_default();
+    if raw_payload.len() > 65536 {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(serde_json::json!({
+                "status": "error",
+                "error": "Payload exceeds 64 KiB limit",
+                "disposition": "rejected"
+            })),
+        )
+            .into_response();
+    }
+
+    let screened = {
+        let raw = raw_payload.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::security::get_security_service().process_input(&raw)
+        })
+        .await
+    };
+
+    let disposition = match screened {
+        Ok(result) if !result.allowed => {
+            tracing::warn!("v1_events_add: security policy violation detected in payload");
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(serde_json::json!({
+                    "status": "blocked",
+                    "reason": "security_policy_violation",
+                    "disposition": "quarantined",
+                    "detection": {
+                        "is_injection": result.detection.is_injection,
+                        "confidence": result.detection.confidence,
+                        "attack_type": result.detection.attack_type.as_str(),
+                    }
+                })),
+            )
+                .into_response();
+        }
+        _ => "accepted",
+    };
+
+    let log = get_or_init_event_log(workspace.as_ref().map(|Extension(ws)| ws));
+    let kind = format!("{}:{}", payload.namespace, payload.event_type);
+    let session_or_task = payload.session_id.as_deref().or(payload.task_id.as_deref());
+
+    let mut enriched_payload = payload.payload.clone();
+    if !enriched_payload.is_object() {
+        enriched_payload = serde_json::json!({ "data": enriched_payload });
+    }
+    if let serde_json::Value::Object(ref mut map) = enriched_payload {
+        map.insert(
+            "protocol_version".to_string(),
+            serde_json::json!(payload.protocol_version),
+        );
+        map.insert(
+            "schema_version".to_string(),
+            serde_json::json!(payload.schema_version),
+        );
+        map.insert(
+            "namespace".to_string(),
+            serde_json::json!(payload.namespace),
+        );
+        map.insert(
+            "event_type".to_string(),
+            serde_json::json!(payload.event_type),
+        );
+        if let Some(ref mid) = payload.message_id {
+            map.insert("message_id".to_string(), serde_json::json!(mid));
+        }
+        if let Some(ref tid) = payload.task_id {
+            map.insert("task_id".to_string(), serde_json::json!(tid));
+        }
+        if let Some(ref rid) = payload.run_id {
+            map.insert("run_id".to_string(), serde_json::json!(rid));
+        }
+        if let Some(ref sid) = payload.session_id {
+            map.insert("session_id".to_string(), serde_json::json!(sid));
+        }
+        if let Some(ref idem) = payload.idempotency_key {
+            map.insert("idempotency_key".to_string(), serde_json::json!(idem));
+        }
+        map.insert(
+            "occurred_at".to_string(),
+            serde_json::json!(payload.occurred_at),
+        );
+    }
+
+    let append_result = {
+        let log = Arc::clone(&log);
+        let kind = kind.clone();
+        let session = session_or_task.map(|s| s.to_string());
+        let val = enriched_payload.clone();
+        tokio::task::spawn_blocking(move || log.append(&kind, session.as_deref(), &val)).await
+    };
+
+    let event_id = match append_result {
+        Ok(Ok(id)) => id,
+        Ok(Err(e)) => {
+            tracing::error!("Failed to append event to event log: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "status": "error",
+                    "error": format!("Failed to append event: {}", e)
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Event log append task panicked: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "status": "error",
+                    "error": format!("Task error: {}", e)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let should_consolidate = payload.trigger_consolidation.unwrap_or(false)
+        || payload
+            .payload
+            .get("trigger_consolidation")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        || (payload.event_type == "micro_advance"
+            && payload
+                .payload
+                .get("consolidate")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false));
+
+    let consolidation_stats = if should_consolidate {
+        if let Some(Extension(ref ws)) = workspace {
+            let task = crate::consolidation::ConsolidationTask::default();
+            match task.consolidate(ws, None).await {
+                Ok(stats) => Some(stats),
+                Err(e) => {
+                    tracing::warn!("Consolidation triggered by event failed: {}", e);
+                    None
+                }
+            }
+        } else {
+            tracing::warn!(
+                "Consolidation requested on /v1/events but no workspace context available"
+            );
+            None
+        }
+    } else {
+        None
+    };
+
+    (
+        StatusCode::OK,
+        Json(V1EventAddResponse {
+            status: "ok".to_string(),
+            event_id,
+            seq: event_id,
+            disposition: disposition.to_string(),
+            consolidation: consolidation_stats,
+        }),
+    )
+        .into_response()
+}
+
+/// Query and replay persisted events from the durable event log.
+pub async fn v1_events_list(
+    workspace: Option<Extension<WorkspaceContext>>,
+    Query(q): Query<V1EventsQuery>,
+) -> impl IntoResponse {
+    let log = get_or_init_event_log(workspace.as_ref().map(|Extension(ws)| ws));
+    let limit = q
+        .limit
+        .unwrap_or(crate::coordination::event_log::DEFAULT_REPLAY_LIMIT);
+    let since = q.since.clone();
+
+    let replay_result = tokio::task::spawn_blocking(move || {
+        crate::coordination::event_log::replay(&log, since.as_deref(), limit)
+    })
+    .await;
+
+    match replay_result {
+        Ok(Ok(events)) => {
+            let filtered_events: Vec<crate::coordination::event_log::LoggedEvent> = events
+                .into_iter()
+                .filter(|e| {
+                    if let Some(ref sid) = q.session_id {
+                        let match_sess = e.session_id.as_deref() == Some(sid)
+                            || e.payload.get("session_id").and_then(|v| v.as_str()) == Some(sid);
+                        if !match_sess {
+                            return false;
+                        }
+                    }
+                    if let Some(ref tid) = q.task_id {
+                        let match_task =
+                            e.payload.get("task_id").and_then(|v| v.as_str()) == Some(tid);
+                        if !match_task {
+                            return false;
+                        }
+                    }
+                    if let Some(ref et) = q.event_type {
+                        let match_type = e.kind.ends_with(&format!(":{}", et))
+                            || e.kind == *et
+                            || e.payload.get("event_type").and_then(|v| v.as_str()) == Some(et);
+                        if !match_type {
+                            return false;
+                        }
+                    }
+                    if let Some(ref ns) = q.namespace {
+                        let match_ns = e.kind.starts_with(&format!("{}:", ns))
+                            || e.payload.get("namespace").and_then(|v| v.as_str()) == Some(ns);
+                        if !match_ns {
+                            return false;
+                        }
+                    }
+                    true
+                })
+                .collect();
+
+            let next_since = filtered_events.last().map(|e| e.id);
+            let count = filtered_events.len();
+
+            (
+                StatusCode::OK,
+                Json(V1EventsListResponse {
+                    status: "ok".to_string(),
+                    count,
+                    next_since,
+                    events: filtered_events,
+                }),
+            )
+                .into_response()
+        }
+        Ok(Err(err)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "status": "error", "error": err })),
+        )
+            .into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "error": format!("Task panicked: {}", err)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Trigger on-demand consolidation via POST /v1/memories/consolidate.
+pub async fn v1_memories_consolidate(
+    Extension(workspace): Extension<WorkspaceContext>,
+    payload: Option<Json<V1ConsolidateRequest>>,
+) -> impl IntoResponse {
+    let mut task = crate::consolidation::ConsolidationTask::default();
+    if let Some(Json(req)) = payload {
+        if let Some(decay) = req.decay_rate {
+            task.decay_rate = decay;
+        }
+        if let Some(sim) = req.similarity_threshold {
+            task.similarity_threshold = sim;
+        }
+        if let Some(min_imp) = req.min_importance_for_decay {
+            task.min_importance_for_decay = min_imp;
+        }
+        if let Some(batch) = req.batch_size {
+            task.batch_size = batch;
+        }
+        if let Some(tgd) = req.enable_tgd {
+            task.enable_tgd_in_consolidation = tgd;
+        }
+    }
+    match task.consolidate(&workspace, None).await {
+        Ok(stats) => (
+            StatusCode::OK,
+            Json(V1ConsolidateResponse {
+                status: "ok".to_string(),
+                stats,
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "error": e.to_string(),
+            })),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2719,6 +3153,8 @@ mod tests {
             .route("/v1/memories/{id}/outline", get(v1_memories_outline))
             .route("/v1/memories/search", post(v1_memories_search))
             .route("/v1/memories/prune", post(v1_memories_prune))
+            .route("/v1/memories/consolidate", post(v1_memories_consolidate))
+            .route("/v1/events", post(v1_events_add).get(v1_events_list))
             .route("/v1/context/assemble", post(v1_context_assemble))
             .route("/v1/context/package", post(v1_context_package))
             .route("/v1/memory/recall-eval", post(v1_memory_recall_eval))
@@ -4418,5 +4854,145 @@ mod tests {
         );
 
         crate::memory::access::RECORDER.reset();
+    }
+
+    #[tokio::test]
+    async fn test_v1_events_micro_advance_and_list() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        let event_payload = serde_json::json!({
+            "protocol_version": "xavier-events/1",
+            "schema_version": 1,
+            "namespace": "swal/xavier",
+            "event_type": "micro_advance",
+            "task_id": "task-test-micro-1",
+            "session_id": "session-micro-42",
+            "payload": {
+                "step": 2,
+                "description": "Component 2 ConsolidationTask and /v1/events wired",
+                "status": "in_progress"
+            }
+        });
+
+        let add_req = Request::builder()
+            .method("POST")
+            .uri("/v1/events")
+            .header("content-type", "application/json")
+            .body(Body::from(event_payload.to_string()))
+            .expect("failed to build event request");
+
+        let resp = app
+            .clone()
+            .oneshot(add_req)
+            .await
+            .expect("failed to execute event request");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = to_bytes(resp.into_body(), 1024 * 1024).await.expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).expect("json");
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["disposition"], "accepted");
+        assert!(body["event_id"].as_i64().unwrap_or(0) > 0);
+
+        // Query events filtering by task_id
+        let list_req = Request::builder()
+            .method("GET")
+            .uri("/v1/events?task_id=task-test-micro-1")
+            .body(Body::empty())
+            .expect("failed to build list request");
+
+        let list_resp = app
+            .clone()
+            .oneshot(list_req)
+            .await
+            .expect("failed to execute list request");
+        assert_eq!(list_resp.status(), StatusCode::OK);
+        let list_bytes = to_bytes(list_resp.into_body(), 1024 * 1024)
+            .await
+            .expect("body");
+        let list_json: serde_json::Value = serde_json::from_slice(&list_bytes).expect("json");
+        assert_eq!(list_json["status"], "ok");
+        assert!(list_json["count"].as_u64().unwrap_or(0) >= 1);
+        let events = list_json["events"].as_array().expect("events array");
+        assert!(events
+            .iter()
+            .any(|e| { e["payload"]["task_id"] == "task-test-micro-1" }));
+    }
+
+    #[tokio::test]
+    async fn test_v1_events_trigger_consolidation() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace.clone());
+
+        // Add memories to workspace
+        let add_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": "Memory item A for consolidation test",
+                    "user_id": "test/cons_a",
+                    "kind": "feature",
+                })
+                .to_string(),
+            ))
+            .expect("failed to build add req");
+        let resp = app.clone().oneshot(add_req).await.expect("failed");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Send micro_advance with trigger_consolidation: true
+        let event_payload = serde_json::json!({
+            "event_type": "micro_advance",
+            "task_id": "task-cons-trigger",
+            "trigger_consolidation": true,
+            "payload": {
+                "progress": "halfway done"
+            }
+        });
+
+        let event_req = Request::builder()
+            .method("POST")
+            .uri("/v1/events")
+            .header("content-type", "application/json")
+            .body(Body::from(event_payload.to_string()))
+            .expect("failed to build event req");
+
+        let event_resp = app.clone().oneshot(event_req).await.expect("failed");
+        assert_eq!(event_resp.status(), StatusCode::OK);
+        let body_bytes = to_bytes(event_resp.into_body(), 1024 * 1024)
+            .await
+            .expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).expect("json");
+        assert_eq!(body["status"], "ok");
+        assert!(body.get("consolidation").is_some());
+        assert!(body["consolidation"]["duration_ms"].is_number());
+    }
+
+    #[tokio::test]
+    async fn test_v1_memories_consolidate_endpoint() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        let cons_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/consolidate")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "decay_rate": 0.94,
+                    "similarity_threshold": 0.88,
+                    "min_importance_for_decay": 0.30
+                })
+                .to_string(),
+            ))
+            .expect("failed to build cons req");
+
+        let resp = app.clone().oneshot(cons_req).await.expect("failed");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = to_bytes(resp.into_body(), 1024 * 1024).await.expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).expect("json");
+        assert_eq!(body["status"], "ok");
+        assert!(body.get("stats").is_some());
     }
 }
