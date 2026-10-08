@@ -7,8 +7,8 @@ use ratatui::style::Color;
 use serde_json::json;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use tokio::net::TcpListener;
+use tokio::process::Command;
 
 const FONT_WIDTH: u32 = 8;
 const FONT_HEIGHT: u32 = 8;
@@ -230,13 +230,21 @@ async fn start_mock_server() -> String {
     format!("http://127.0.0.1:{}", port)
 }
 
-fn run_tui_dump(url: &str, tab: usize) -> Buffer {
+async fn run_tui_dump(url: &str, tab: usize) -> Buffer {
+    // Use `tokio::process::Command` so the in-process tokio runtime is NOT
+    // blocked while we wait for the child. The mock HTTP server spawned by
+    // `start_mock_server` runs on the SAME runtime; if we used
+    // `std::process::Command::output()` here, the runtime worker that runs
+    // this future would block on the child, so the server could never reply
+    // to the child's HTTP requests, and the child would hang waiting for
+    // a response that will never arrive.
     let output = Command::new(env!("CARGO_BIN_EXE_xavier-tui"))
         .env("XAVIER_TUI_DUMP", "1")
         .env("XAVIER_TUI_TAB", tab.to_string())
         .env("XAVIER_URL", url)
         .env("XAVIER_TOKEN", "test-token")
         .output()
+        .await
         .expect("failed to run xavier-tui");
 
     if !output.status.success() {
@@ -264,7 +272,7 @@ async fn test_tui_screenshots() {
     ];
 
     for (tab_idx, name, expected_text) in tabs {
-        let buffer = run_tui_dump(&mock_url, tab_idx);
+        let buffer = run_tui_dump(&mock_url, tab_idx).await;
 
         // Verify content
         let mut found = false;
