@@ -153,16 +153,25 @@ pub async fn create_checkout(
         });
     }
 
-    let plan = match payload.plan.to_lowercase().as_str() {
-        "cloud" => Plan::Cloud,
+    let plan = match Plan::from_catalog_id(&payload.plan) {
+        Some(plan) if plan.monthly_price_cents() > 0 => plan,
         _ => {
             return Json(CreateCheckoutResponse {
                 status: "error".to_string(),
                 checkout_url: None,
-                message: Some("Invalid plan. Use: cloud".to_string()),
+                message: Some("Invalid plan. Use: fundador, respaldo (alias cloud), pro, equipo".to_string()),
             });
         }
     };
+
+    // Catálogo v1: ningún plan de pago se vende todavía (cobro con Polar pendiente).
+    if !plan.is_purchasable() {
+        return Json(CreateCheckoutResponse {
+            status: "error".to_string(),
+            checkout_url: None,
+            message: Some(format!("Plan {} not on sale yet (waitlist / coming soon)", plan)),
+        });
+    }
 
     let config = BillingConfig::from_env();
 
@@ -312,22 +321,17 @@ pub async fn billing_status(
     }
 }
 
-/// Get available billing plans
+/// Get available billing plans (catálogo canónico v1).
 pub async fn billing_plans() -> impl IntoResponse {
-    let plans = vec![
-        PlanInfo {
-            name: "free".to_string(),
-            display_name: "Free".to_string(),
-            monthly_price_cents: 0,
-            limits: PlanLimits::for_plan(Plan::Free),
-        },
-        PlanInfo {
-            name: "cloud".to_string(),
-            display_name: "Cloud".to_string(),
-            monthly_price_cents: Plan::Cloud.monthly_price_cents(),
-            limits: PlanLimits::for_plan(Plan::Cloud),
-        },
-    ];
+    let plans = Plan::ALL
+        .iter()
+        .map(|plan| PlanInfo {
+            name: plan.catalog_id().to_string(),
+            display_name: plan.display_name().to_string(),
+            monthly_price_cents: plan.monthly_price_cents(),
+            limits: PlanLimits::for_plan(*plan),
+        })
+        .collect::<Vec<_>>();
 
     Json(BillingPlansResponse {
         status: "ok".to_string(),
