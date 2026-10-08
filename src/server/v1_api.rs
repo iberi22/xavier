@@ -630,6 +630,14 @@ pub async fn v1_mesh_handshake(
             .into_response();
     }
 
+    if crate::mesh::node::NodeId::from_public_key_bytes(&public_key) != payload.node_id {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "accepted": false, "reason": "node_id does not match public key" })),
+        )
+            .into_response();
+    }
+
     // 2. Verify Pairing Secret if provided
     let mut auto_register = false;
     if let Some(secret) = payload.pairing_secret {
