@@ -849,6 +849,19 @@ pub async fn join_workspace_handler(
         }
     };
 
+    let Ok(expected_node_id) = xavier::mesh::node::NodeId::parse(&node_id_str) else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "Invalid node_id format" }),
+        );
+    };
+    if xavier::mesh::node::NodeId::from_public_key_bytes(&public_key_bytes) != expected_node_id {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({ "error": "node_id does not match public key" }),
+        );
+    }
+
     if !xavier::mesh::node::NodeIdentity::verify(
         &public_key_bytes,
         payload_str.as_bytes(),
@@ -1084,6 +1097,29 @@ pub async fn query_workspace_handler(
         }
     };
 
+    let node_id_str = match inner_payload.get("node_id").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing node_id in token payload" }),
+            )
+        }
+    };
+
+    let Ok(expected_node_id) = xavier::mesh::node::NodeId::parse(&node_id_str) else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "Invalid node_id format" }),
+        );
+    };
+    if xavier::mesh::node::NodeId::from_public_key_bytes(&public_key_bytes) != expected_node_id {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({ "error": "node_id does not match public key" }),
+        );
+    }
+
     if !xavier::mesh::node::NodeIdentity::verify(
         &public_key_bytes,
         payload_str.as_bytes(),
@@ -1128,11 +1164,7 @@ pub async fn query_workspace_handler(
         _ => {}
     }
 
-    let sender_node_id = inner_payload
-        .get("node_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
+    let sender_node_id = node_id_str;
 
     let workspace_id = match inner_payload.get("workspace_id").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
