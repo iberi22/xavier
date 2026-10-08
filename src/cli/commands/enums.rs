@@ -232,8 +232,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: UsageCommand,
     },
-    /// Show API usage and account balance
-    Billing,
+    /// Xavier plans, checkout and your xavier-cloud plan/usage (default: status)
+    Billing {
+        #[command(subcommand)]
+        cmd: Option<BillingCommand>,
+    },
     /// List and synchronize Xavier tasks
     Tasks {
         #[command(subcommand)]
@@ -1517,21 +1520,34 @@ pub enum DataCommonsCommand {
     },
 }
 
-/// Billing & subscription management subcommands
+/// `xavier billing` subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum BillingCommand {
-    /// Show current billing status / subscription info
-    Status,
-    /// List available billing plans
-    Plans,
-    /// Generate or show an invoice summary
-    Invoice {
-        /// Invoice period: current, last, or specific month (YYYY-MM)
-        #[arg(short, long, default_value = "current")]
-        period: String,
-        /// Output format: table or json
-        #[arg(short, long, default_value = "table")]
-        format: String,
+    /// Your xavier-cloud plan and usage (GET /v1/cloud/usage; needs PGHEART_TOKEN)
+    Status {
+        /// Print the raw JSON returned by xavier-cloud
+        #[arg(long)]
+        json: bool,
+    },
+    /// Xavier plans served by swal-billing (GET /v1/xavier/plans)
+    Plans {
+        /// Print the raw JSON returned by swal-billing
+        #[arg(long)]
+        json: bool,
+    },
+    /// Start a checkout for a plan (POST /v1/xavier/checkout)
+    Checkout {
+        /// Plan id from `xavier billing plans` (e.g. fundador, respaldo)
+        plan: String,
+        /// Email for the payment receipt / waitlist
+        #[arg(long)]
+        email: Option<String>,
+        /// xavier-cloud tenant; defaults to the tenant of PGHEART_TOKEN
+        #[arg(long)]
+        tenant: Option<String>,
+        /// Print the outcome as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
