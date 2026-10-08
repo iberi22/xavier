@@ -397,6 +397,38 @@ pub async fn start_http_server(
     let store = Arc::new(store_inner);
     let vec_project_id_for_vacuum = store.connection_project_id().to_string();
 
+    // Encrypted Xavier Cloud backup: runs only with PGHEART_URL/PGHEART_TOKEN AND a
+    // backup passphrase; XAVIER_CLOUD_BACKUP_INTERVAL_MINS=0 disables it.
+    if let Some(cloud_cfg) = xavier::sync::xavier_cloud::CloudBackupConfig::from_env() {
+        match (
+            xavier::sync::xavier_cloud::passphrase_from_env(),
+            xavier::sync::xavier_cloud::interval_from_env(),
+        ) {
+            (Ok(Some(pass)), Some(interval)) => {
+                tracing::info!(
+                    instance = %cloud_cfg.instance_id,
+                    interval_mins = interval.as_secs() / 60,
+                    "cloud_backup: periodic encrypted backup enabled"
+                );
+                let backup_store: Arc<dyn xavier::memory::store::MemoryStore> = store.clone();
+                tokio::spawn(xavier::sync::xavier_cloud::periodic_backup_loop(
+                    backup_store,
+                    cloud_cfg,
+                    pass,
+                    interval,
+                ));
+            }
+            (Ok(None), _) => tracing::warn!(
+                "cloud_backup: PGHEART_* is set but {} is not: periodic cloud backup disabled, nothing is uploaded",
+                xavier::sync::xavier_cloud::PASSPHRASE_ENV
+            ),
+            (Err(e), _) => tracing::warn!("cloud_backup: disabled: {e:#}"),
+            (Ok(Some(_)), None) => {
+                tracing::info!("cloud_backup: periodic backup disabled by interval 0")
+            }
+        }
+    }
+
     let time_store = Arc::new(TimeMetricsStore::new());
     let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new());
     let rate_manager = Arc::new(RateLimitManager::new());
