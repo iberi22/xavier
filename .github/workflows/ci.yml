@@ -234,6 +234,9 @@ jobs:
           cargo build --package xavier --features ci-safe --bin xavier
           bash scripts/test-recovery-e2e.sh --bin target/debug/xavier
 
+      - name: Run E3 (una credencial nunca vuelve en memory_search)
+        run: cargo test --package xavier --features ci-safe --test v1_api_ingest_test -- --test-threads=1
+
   # Job 3b: Espacios (per-space keys, stores, tokens, links, routing)
   #
   # These are `tests/*.rs` targets, so `cargo test --lib` never compiles or runs
