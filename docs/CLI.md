@@ -193,12 +193,46 @@ xavier session-save session-001 "Summary of current work"
 
 ## Billing
 
-### `xavier billing`
+Xavier never talks to a payment provider. Plans and checkout come from
+**swal-billing** (Polar as merchant of record); your plan and usage come from
+**xavier-cloud**. Every value printed comes from those servers: if a server is
+unreachable or rejects your key, the command fails with a clear message instead
+of showing defaults.
 
-Show API usage and account balance through `/v1/account/usage`.
+| Variable | Used by | Default |
+|---|---|---|
+| `XAVIER_BILLING_URL` | `plans`, `checkout` | `http://127.0.0.1:8787` (`pnpm dev` in swal-billing; there is no public deployment yet) |
+| `PGHEART_URL` (alias `XAVIER_PGHEART_URL`) | `status`, `checkout` | `https://xavier-cloud.swal.network` |
+| `PGHEART_TOKEN` (alias `XAVIER_PGHEART_TOKEN`) | `status`, `checkout` | none: your xavier-cloud tenant API key, sent as `Authorization: Bearer` |
+
+The `PGHEART_*` names win over the `XAVIER_PGHEART_*` aliases when both are set.
+
+### `xavier billing plans [--json]`
+
+Lists the plan catalog served by swal-billing (`GET /v1/xavier/plans`): status,
+price, storage, AI tokens per day and devices. It warns if the server catalog
+version differs from the one this CLI was built with, and says which paid plans
+are on sale right now.
+
+### `xavier billing checkout <plan> [--email <email>] [--tenant <tenant>] [--json]`
+
+Asks swal-billing for a checkout (`POST /v1/xavier/checkout`). The tenant is the
+one xavier-cloud reports for `PGHEART_TOKEN`, unless `--tenant` is given. While
+a plan is on the waitlist, coming soon or contact-only, swal-billing answers 409
+and the CLI explains that nothing was charged. If a plan is on sale, the CLI
+prints the payment link.
+
+### `xavier billing status [--json]` (default for `xavier billing`)
+
+Shows your tenant, plan, storage used against your quota, chunks and AI tokens
+per day from xavier-cloud (`GET /v1/cloud/usage`). An xavier-cloud deployment
+without per-plan quotas does not report a plan; the CLI says so instead of guessing.
 
 ```bash
-xavier billing
+export PGHEART_TOKEN=...            # your tenant API key
+xavier billing                      # = xavier billing status
+XAVIER_BILLING_URL=http://127.0.0.1:8787 xavier billing plans
+xavier billing checkout fundador --email you@example.com
 ```
 
 ## Code Graph
