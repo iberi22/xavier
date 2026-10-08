@@ -161,6 +161,17 @@ fn seal(mnemonic: bool, passphrase: bool) -> Result<()> {
     Ok(())
 }
 
+/// Strip at most one trailing line ending (`\r\n` or `\n`), preserving any
+/// leading, internal, or trailing space before the line ending.
+fn strip_one_line_ending(mut s: String) -> String {
+    if s.ends_with("\r\n") {
+        s.truncate(s.len() - 2);
+    } else if s.ends_with('\n') {
+        s.truncate(s.len() - 1);
+    }
+    s
+}
+
 /// Unseal a recovery key from mnemonic or passphrase and install or export it.
 fn unseal(
     mnemonic: bool,
@@ -188,10 +199,11 @@ fn unseal(
         store.unseal_mnemonic(&words)?
     } else {
         let pass = match passphrase_file {
-            Some(path) => std::fs::read_to_string(&path)
-                .with_context(|| format!("cannot read passphrase from {}", path.display()))?
-                .trim()
-                .to_string(),
+            Some(path) => {
+                let content = std::fs::read_to_string(&path)
+                    .with_context(|| format!("cannot read passphrase from {}", path.display()))?;
+                strip_one_line_ending(content)
+            }
             None => dialoguer::Password::new()
                 .with_prompt("Enter recovery passphrase")
                 .interact()
@@ -203,11 +215,12 @@ fn unseal(
     let key_hex = xavier::crypto::hex_encode(key);
 
     if let Some(out_path) = out {
-        if out_path.exists() {
-            bail!("output file already exists: {}", out_path.display());
+        if let Err(e) = xavier::keystore::create_private_file_new(&out_path, key_hex.as_bytes()) {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                bail!("output file already exists: {}", out_path.display());
+            }
+            return Err(e).with_context(|| format!("cannot write key to {}", out_path.display()));
         }
-        xavier::keystore::write_private_file(&out_path, key_hex.as_bytes())
-            .with_context(|| format!("cannot write key to {}", out_path.display()))?;
         println!("Unsealed key written to {}.", out_path.display());
         Ok(())
     } else {
@@ -402,5 +415,16 @@ mod tests {
             installed_path.display()
         );
         assert_eq!(read_hex.unwrap(), xavier::crypto::hex_encode(key));
+    }
+
+    #[test]
+    fn test_strip_one_line_ending() {
+        assert_eq!(
+            strip_one_line_ending("  pass with spaces  \n".to_string()),
+            "  pass with spaces  "
+        );
+        assert_eq!(strip_one_line_ending("abc\r\n".to_string()), "abc");
+        assert_eq!(strip_one_line_ending("abc\n\n".to_string()), "abc\n");
+        assert_eq!(strip_one_line_ending("abc".to_string()), "abc");
     }
 }
