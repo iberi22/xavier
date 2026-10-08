@@ -1,0 +1,110 @@
+{
+  "$comment": "Catálogo canónico de planes de Xavier / Xavier Cloud. Fuente única de verdad: iberi22/xavier-cloud plans/catalog.v1.json. Las copias en otros repos deben ser idénticas (hay tests que lo comprueban). Cambiar un precio o límite = nueva versión + PR en cada repo.",
+  "version": "2026-10-08.1",
+  "approved_by": "Brahyan Belalcázar",
+  "approved_on": "2026-10-08",
+  "currency": "USD",
+  "payment_provider": "polar",
+  "payment_provider_role": "merchant_of_record",
+  "status_values": {
+    "available": "disponible hoy",
+    "waitlist": "lista de espera, sin cobro activo",
+    "coming_soon": "próximamente, no se vende todavía",
+    "contact": "a medida, por contacto"
+  },
+  "plans": [
+    {
+      "id": "local",
+      "name": "Local",
+      "status": "available",
+      "price": { "monthly_usd": 0, "yearly_usd": null },
+      "cloud": false,
+      "limits": {
+        "storage_bytes": 0,
+        "devices": null,
+        "ai_tokens_per_day": 0,
+        "mcp_clients": null,
+        "seats_included": 1
+      },
+      "features": ["xavier_local_agpl", "mcp_local", "cli", "rest", "codegraph", "session_importers", "mesh_own_devices"]
+    },
+    {
+      "id": "fundador",
+      "name": "Fundador",
+      "status": "waitlist",
+      "price": { "monthly_usd": 10, "yearly_usd": null, "price_locked_for_life": true },
+      "max_customers": 50,
+      "pro_upgrade_included_months": 12,
+      "cloud": true,
+      "limits": {
+        "storage_bytes": 5368709120,
+        "devices": 3,
+        "ai_tokens_per_day": 50000,
+        "mcp_clients": null,
+        "seats_included": 1
+      },
+      "features": ["encrypted_backup", "restore", "sync_devices", "cloud_ai_capped", "email_support", "founder_channel"]
+    },
+    {
+      "id": "respaldo",
+      "name": "Respaldo",
+      "status": "waitlist",
+      "price": { "monthly_usd": 10, "yearly_usd": 100 },
+      "trial_days": 14,
+      "cloud": true,
+      "limits": {
+        "storage_bytes": 5368709120,
+        "devices": 3,
+        "ai_tokens_per_day": 50000,
+        "mcp_clients": null,
+        "seats_included": 1
+      },
+      "features": ["encrypted_backup", "restore", "sync_devices", "cloud_ai_capped", "email_support"]
+    },
+    {
+      "id": "pro",
+      "name": "Pro",
+      "status": "coming_soon",
+      "price": { "monthly_usd": 19, "yearly_usd": null },
+      "cloud": true,
+      "limits": {
+        "storage_bytes": 10737418240,
+        "devices": 3,
+        "ai_tokens_per_day": 100000,
+        "mcp_clients": 5,
+        "seats_included": 1
+      },
+      "features": ["encrypted_backup", "restore", "sync_devices", "cloud_ai_capped", "email_support", "hosted_mcp", "embeddings_included"]
+    },
+    {
+      "id": "equipo",
+      "name": "Equipo",
+      "status": "coming_soon",
+      "price": { "monthly_usd": 49, "yearly_usd": null, "extra_seat_monthly_usd": 12 },
+      "cloud": true,
+      "limits": {
+        "storage_bytes": 26843545600,
+        "devices": null,
+        "ai_tokens_per_day": 300000,
+        "mcp_clients": null,
+        "seats_included": 3
+      },
+      "features": ["encrypted_backup", "restore", "sync_devices", "cloud_ai_capped", "hosted_mcp", "embeddings_included", "spaces_per_client", "acl", "audit_log", "priority_support"]
+    },
+    {
+      "id": "empresa",
+      "name": "Empresa",
+      "status": "contact",
+      "price": { "monthly_usd": null, "yearly_usd": null },
+      "cloud": true,
+      "limits": {
+        "storage_bytes": null,
+        "devices": null,
+        "ai_tokens_per_day": null,
+        "mcp_clients": null,
+        "seats_included": null
+      },
+      "features": ["self_host", "sla", "commercial_license"]
+    }
+  ]
+}
