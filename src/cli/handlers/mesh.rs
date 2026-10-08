@@ -939,7 +939,7 @@ pub async fn join_workspace_handler(
         }
     };
 
-    let node_id = NodeId(node_id_str.clone());
+    let node_id = expected_node_id.clone();
     let mut peer = match registry.get_peer(&node_id) {
         Some(existing) => existing.clone(),
         None => PeerInfo {
@@ -1164,7 +1164,7 @@ pub async fn query_workspace_handler(
         _ => {}
     }
 
-    let sender_node_id = node_id_str;
+    let sender_node_id = expected_node_id.as_str().to_string();
 
     let workspace_id = match inner_payload.get("workspace_id").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
