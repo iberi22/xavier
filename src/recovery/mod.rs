@@ -64,6 +64,19 @@
 //!   escrow key; the record key is *wrapped* by it. Binding the vault to the
 //!   words themselves would make the paper the single point of failure.
 //!
+//! # Cómo se enchufaría Shamir
+//!
+//! Shamir Secret Sharing (`src/node_identity/shamir.rs`) podría integrarse repartiendo
+//! la clave de recuperación de 32 bytes que hoy codifican las 24 palabras en N partes
+//! con un umbral K. Un comando `unseal --shares` reconstruiría esa clave de 32 bytes
+//! y continuaría por el mismo flujo de apertura de [`crate::recovery::mnemonic::MnemonicSeal`]
+//! y validación de KCV.
+//!
+//! Riesgos y consideraciones operativas:
+//! - Dónde vive cada parte: custodios independientes y almacenamiento desacoplado.
+//! - Co-ubicación: evitar estrictamente que el archivo de sello resida en el mismo sitio
+//!   o soporte que K partes del secreto, para no invalidar el umbral.
+//!
 //! # Non-destructive restore
 //!
 //! [`RecoveryStore::restore_into`] never overwrites: it writes to a sibling temp
@@ -83,4 +96,6 @@ pub use kcv::{compute_kcv, KcvError};
 pub use manifest::{RecoveryManifest, RecoveryStatus, RECOVERY_FORMAT_VERSION};
 pub use mnemonic::{MnemonicPath, MNEMONIC_WORD_COUNT};
 pub use passphrase::PassphrasePath;
-pub use store::{KeySourceReport, RecoveryStore, RestoreOutcome};
+pub use store::{
+    KeySourceReport, RecoveryStore, RestoreOutcome, MNEMONIC_SEAL_FILE, PASSPHRASE_SEAL_FILE,
+};

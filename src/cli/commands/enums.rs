@@ -1922,6 +1922,24 @@ pub enum RecoveryCommand {
         #[arg(long)]
         kcv: Option<String>,
     },
+    /// Unseal a record key from a mnemonic or passphrase seal.
+    Unseal {
+        /// Unseal using the 24-word mnemonic seal.
+        #[arg(long)]
+        mnemonic: bool,
+        /// Unseal using the passphrase seal.
+        #[arg(long)]
+        passphrase: bool,
+        /// Path to a file containing the 24 words (for scripts and non-interactive use).
+        #[arg(long)]
+        words_file: Option<std::path::PathBuf>,
+        /// Path to a file containing the passphrase (for scripts and non-interactive use).
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Optional path to write the unsealed key in hex (0600) instead of installing it.
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
     /// Report the Google Drive connection used for encrypted backups.
     Drive,
 }

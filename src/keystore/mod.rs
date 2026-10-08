@@ -74,6 +74,24 @@ pub fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Create a new private file with mode `0600` atomically using `create_new(true)`
+/// and `O_NOFOLLOW` on Unix. Fails if the path already exists (including a dangling symlink).
+pub fn create_private_file_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+        opts.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = opts.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+
 /// Master Key Manager handles the core encryption key for the system.
 pub struct MasterKeyManager {
     master_key: [u8; MASTER_KEY_LEN],
