@@ -331,7 +331,9 @@ impl Cli {
             Command::Keys { cmd } => secrets::handle_keys_command(cmd.clone()).await,
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
             Command::Tasks { cmd } => tasks::handle_tasks_command(cmd.clone()).await,
-            Command::Billing => crate::cli::handlers::billing::handle_billing_command().await,
+            Command::Billing { cmd } => {
+                crate::cli::handlers::billing::handle_billing_command(cmd.clone()).await
+            }
             Command::Task { cmd } => {
                 crate::cli::handlers::tasks::handle_task_command(cmd.clone()).await
             }
