@@ -584,7 +584,7 @@ mod tests {
         workspace_ctx
             .workspace
             .memory
-            .add_document(
+            .add_document_typed_with_embedding(
                 "notes/active.md".to_string(),
                 "Active project decision note with substantial content to preserve.".to_string(),
                 serde_json::json!({
@@ -592,6 +592,8 @@ mod tests {
                     "memory_priority": "high",
                     "kind": "decision"
                 }),
+                None,
+                Some(Vec::new()),
             )
             .await
             .unwrap();
@@ -601,7 +603,7 @@ mod tests {
         workspace_ctx
             .workspace
             .memory
-            .add_document(
+            .add_document_typed_with_embedding(
                 "notes/stale_low.md".to_string(),
                 "Stale low importance scratch note from past iterations.".to_string(),
                 serde_json::json!({
@@ -610,6 +612,8 @@ mod tests {
                     "created_at": old_ts.to_rfc3339(),
                     "kind": "scratch"
                 }),
+                None,
+                Some(Vec::new()),
             )
             .await
             .unwrap();
@@ -665,13 +669,15 @@ mod tests {
         workspace_ctx
             .workspace
             .memory
-            .add_document(
+            .add_document_typed_with_embedding(
                 "docs/feature_a.md".to_string(),
                 "The authentication token must be bound to NodeId public key to prevent impersonation.".to_string(),
                 serde_json::json!({
                     "memory_importance": 0.85,
                     "kind": "spec"
                 }),
+                None,
+                Some(Vec::new()),
             )
             .await
             .unwrap();
@@ -679,13 +685,15 @@ mod tests {
         workspace_ctx
             .workspace
             .memory
-            .add_document(
+            .add_document_typed_with_embedding(
                 "docs/feature_b.md".to_string(),
                 "The authentication token must be bound to NodeId public key to prevent impersonation attacks.".to_string(),
                 serde_json::json!({
                     "memory_importance": 0.85,
                     "kind": "spec"
                 }),
+                None,
+                Some(Vec::new()),
             )
             .await
             .unwrap();

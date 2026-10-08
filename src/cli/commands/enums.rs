@@ -1912,6 +1912,21 @@ pub enum RecoveryCommand {
         /// Seal under an interactively-entered passphrase.
         #[arg(long)]
         passphrase: bool,
+        /// Read the passphrase without prompting.
+        #[arg(long, requires = "passphrase")]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Write the new mnemonic to a new private file instead of stdout.
+        #[arg(long, requires = "mnemonic")]
+        words_out: Option<std::path::PathBuf>,
+        /// Explicitly replace an existing mnemonic seal.
+        #[arg(long, requires = "mnemonic")]
+        replace_mnemonic: bool,
+        /// Explicitly replace an existing passphrase seal.
+        #[arg(long, requires = "passphrase")]
+        replace_passphrase: bool,
+        /// Allow sealing a key different from the stored KCV.
+        #[arg(long)]
+        rekey: bool,
     },
     /// Install a recovered record key. Refuses to overwrite an existing one.
     Restore {

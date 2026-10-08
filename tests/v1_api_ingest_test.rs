@@ -200,6 +200,71 @@ async fn production_v1_memories_blocks_and_drops_secret() {
 }
 
 #[tokio::test]
+async fn e3_secret_value_never_returned_by_memory_search() {
+    let (app, state, _tmp) = production_fixture().await;
+    let marker = "e3markerquaysidebramble9271";
+
+    // A credential-bearing write alongside the marker must be screened out
+    // (same fake-secret shape as the block test above).
+    let secret_path = "security/e3-secret-marker";
+    let (status, body) = send(
+        &app,
+        "/v1/memories",
+        Some(ROOT_TOKEN),
+        serde_json::json!({"content": format!("API_KEY={FAKE_API_KEY} note {marker}"), "path": secret_path}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"].as_str(), Some("blocked"), "{body}");
+
+    // A benign memory carrying the same marker, so search is not trivially empty.
+    let benign_path = "security/e3-benign-marker";
+    let benign_content = format!("benign harbour lighthouse note {marker}");
+    let (status, body) = send(
+        &app,
+        "/v1/memories",
+        Some(ROOT_TOKEN),
+        serde_json::json!({"content": benign_content, "path": benign_path}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"].as_str(), Some("ok"), "{body}");
+
+    // Search via the production router the fixture serves (`memory_routes`).
+    let (status, body) = send(
+        &app,
+        "/memory/search",
+        Some(ROOT_TOKEN),
+        serde_json::json!({"query": marker}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let raw = serde_json::to_string(&body).unwrap();
+    assert!(
+        !raw.contains(FAKE_API_KEY),
+        "the raw credential value must never come back from search"
+    );
+    assert!(
+        !raw.contains(secret_path),
+        "the blocked secret memory must not appear in search results"
+    );
+    let results = body["results"].as_array().cloned().unwrap_or_default();
+    assert!(
+        results
+            .iter()
+            .any(|r| r["path"].as_str() == Some(benign_path)),
+        "the benign memory must be found, otherwise the search is trivially empty: {raw}"
+    );
+
+    // Store-level belt: the raw secret was never persisted.
+    let docs = state.qmd_memory.all_documents().await;
+    assert!(
+        !docs.iter().any(|d| d.content.contains(FAKE_API_KEY)),
+        "the raw credential must never be stored"
+    );
+}
+
+#[tokio::test]
 async fn production_v1_memories_persists_plain_text() {
     let (app, state, _tmp) = production_fixture().await;
     let path = "security/ingest-plain";

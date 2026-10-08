@@ -342,37 +342,37 @@ fn cli_unseal_roundtrip_via_binary() {
         String::from_utf8_lossy(&out_d.stderr)
     );
 
-    let node_key_path = data_dir.join("node").join("record.key");
-    let record_file = if node_key_path.exists()
-        && fs::read_to_string(&node_key_path).unwrap_or_default() == expected_hex
+    let record_file = data_dir.join("node").join("record.key");
+    assert!(
+        record_file.exists(),
+        "record.key must exist at {}",
+        record_file.display()
+    );
+    #[cfg(unix)]
     {
-        node_key_path
-    } else {
-        fn find_hex_file(dir: &std::path::Path, target_hex: &str) -> Option<std::path::PathBuf> {
-            if let Ok(entries) = fs::read_dir(dir) {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    let path = entry.path();
-                    if path.is_file() {
-                        if let Ok(c) = fs::read_to_string(&path) {
-                            if c == target_hex {
-                                return Some(path);
-                            }
-                        }
-                    } else if path.is_dir() {
-                        if let Some(p) = find_hex_file(&path, target_hex) {
-                            return Some(p);
-                        }
-                    }
-                }
-            }
-            None
-        }
-        find_hex_file(&data_dir, &expected_hex).expect("record key file not found in data_dir")
-    };
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&record_file)
+                .expect("metadata record.key")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600,
+            "record.key must have mode 0600"
+        );
+    }
     assert_eq!(
         fs::read_to_string(&record_file).expect("read record key"),
         expected_hex
     );
+    for entry in fs::read_dir(record_file.parent().unwrap()).expect("read node dir") {
+        let name = entry.expect("dir entry").file_name();
+        let name = name.to_string_lossy();
+        assert!(
+            !name.contains(".candidate"),
+            "no staging file must remain, found: {name}"
+        );
+    }
 
     // e) run (d) again -> non-zero exit, stderr contains "target_exists", file unchanged.
     let out_e = run_cmd(&[
@@ -392,6 +392,14 @@ fn cli_unseal_roundtrip_via_binary() {
         fs::read_to_string(&record_file).expect("read record key unchanged"),
         expected_hex
     );
+    for entry in fs::read_dir(record_file.parent().unwrap()).expect("read node dir") {
+        let name = entry.expect("dir entry").file_name();
+        let name = name.to_string_lossy();
+        assert!(
+            !name.contains(".candidate"),
+            "no staging file must remain, found: {name}"
+        );
+    }
 
     // f) wrong passphrase file -> non-zero exit and stdout+stderr do NOT contain hex_encode(key).
     let wrong_pass_file = base_path.join("wrong_pass.txt");
