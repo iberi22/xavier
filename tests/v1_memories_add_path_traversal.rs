@@ -12,6 +12,7 @@ use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
 
 #[tokio::test]
 async fn test_v1_memories_add_path_traversal() {
+    std::env::set_var("XAVIER_TOKEN", "test-token");
     let temp_dir = tempfile::tempdir().unwrap();
     let config = WorkspaceConfig::from_env();
     let runtime = RuntimeConfig::from_env();

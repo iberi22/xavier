@@ -16,7 +16,9 @@ use axum::{
 use http_body_util::BodyExt;
 use tower::util::ServiceExt;
 
-use xavier::adapters::inbound::http::handlers::sync::init_memory_sync;
+use xavier::adapters::inbound::http::handlers::sync::{
+    init_memory_sync, reset_memory_sync_for_test,
+};
 use xavier::adapters::inbound::http::routes::create_router;
 use xavier::memory::store::{InMemoryMemoryStore, MemoryRecord, MemoryStore};
 use xavier::memory::sync::adapter::SyncEndpointAdapter;
@@ -95,6 +97,9 @@ fn record(id: &str, path: &str, content: &str) -> MemoryRecord {
 /// Full scenario exercising all new control-plane endpoints.
 #[tokio::test]
 async fn control_plane_push_pull_status_resolve() {
+    // The sync singleton is process-global; other tests in this binary call
+    // `init_memory_sync`, so reset it first to probe the uninitialised state.
+    reset_memory_sync_for_test();
     let router = create_router();
 
     // ── status: not initialised yet ──────────────────────────────────────────

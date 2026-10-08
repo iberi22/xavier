@@ -56,6 +56,27 @@ pub fn init_memory_sync(sync: Arc<PeerMemorySync>) {
     }
 }
 
+/// Reset the module-level sync singletons to their pristine state.
+///
+/// Test-only helper: the singletons are process-global and never reset in
+/// production, so an integration test that probes the *uninitialised* status
+/// needs a way to clear state left behind by another test in the same binary.
+/// `#[cfg(test)]` cannot be used here: integration tests link against the
+/// library compiled **without** `cfg(test)`, so the item must be a real `pub`
+/// (hidden from docs) to be reachable from `tests/`.
+#[doc(hidden)]
+pub fn reset_memory_sync_for_test() {
+    if let Ok(mut guard) = MEMORY_SYNC.write() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = LAST_SESSION.write() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = RESOLVED_CONFLICTS.write() {
+        guard.clear();
+    }
+}
+
 /// Snapshot of the active sync service, if one has been initialised.
 fn current_sync() -> Option<Arc<PeerMemorySync>> {
     MEMORY_SYNC.read().ok().and_then(|guard| guard.clone())
