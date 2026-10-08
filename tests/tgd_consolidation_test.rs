@@ -47,6 +47,7 @@ impl LlmProvider for MockRefinementProvider {
 #[tokio::test]
 async fn test_tgd_consolidation_refinement() {
     std::env::set_var("XAVIER_TOKEN", "test-token");
+    std::env::set_var("XAVIER_TOKEN", "test-token");
     let temp_dir = tempdir().unwrap();
     let workspace_dir = temp_dir.path().to_path_buf();
 

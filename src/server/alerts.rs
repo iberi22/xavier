@@ -95,7 +95,19 @@ impl SystemAlertStore {
     }
 
     /// Check if an email notification for the given key should be sent based on deduplication window.
-    pub async fn should_notify_email_async(&self, alert_key: &str, window_secs: u64) -> bool {
+    ///
+    /// `exclude_id` is the id of the notification that triggered this check. The
+    /// in-app provider runs before the email provider and writes the *same*
+    /// event to the shared `notifications` table; without excluding that row the
+    /// dedup query would see the event's own in-app row and self-suppress every
+    /// first email. Excluding the current id keeps genuine repeat-suppression
+    /// (a *different* row for the same title within the window) intact.
+    pub async fn should_notify_email_async(
+        &self,
+        alert_key: &str,
+        exclude_id: &str,
+        window_secs: u64,
+    ) -> bool {
         let now = Utc::now();
         let window_duration = chrono::Duration::seconds(window_secs as i64);
 
@@ -109,12 +121,13 @@ impl SystemAlertStore {
 
         // Check SQLite notifications table if memory pool is available to persist window check across restarts
         let key_owned = alert_key.to_string();
+        let exclude_owned = exclude_id.to_string();
         let db_last_ts: Option<DateTime<Utc>> = crate::codebase::connection_manager::ConnectionManager::global()
             .with_conn("memory", move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT timestamp FROM notifications WHERE title = ? ORDER BY timestamp DESC LIMIT 1",
+                    "SELECT timestamp FROM notifications WHERE title = ?1 AND id != ?2 ORDER BY timestamp DESC LIMIT 1",
                 )?;
-                let mut rows = stmt.query([key_owned])?;
+                let mut rows = stmt.query([key_owned, exclude_owned])?;
                 if let Some(row) = rows.next()? {
                     let ts_str: String = row.get(0)?;
                     Ok(ts_str.parse::<DateTime<Utc>>().ok())
