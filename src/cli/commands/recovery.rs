@@ -3,8 +3,9 @@
 //! # What is being recovered, and what is not
 //!
 //! This command protects the **node record key**
-//! (`xavier::memory::sqlite_vec_store::at_rest`), the only key that unwraps the
-//! per-record DEKs. It is a *different domain* from
+//! (`xavier::memory::sqlite_vec_store::at_rest`), which unwraps XRK1 per-record
+//! DEKs. XDK2 rows also require the master key and default-space keystore.
+//! It is a *different domain* from
 //! `xavier::security::recovery`, which handles the auth seed phrase and backup
 //! codes; see ADR-038 for why the two must not be merged.
 //!
@@ -27,8 +28,8 @@ use anyhow::{bail, Context, Result};
 use xavier::drive;
 use xavier::memory::sqlite_vec_store::at_rest;
 use xavier::recovery::{
-    manifest::RecoveryManifest, store::live_key_source, KeySourceReport, MnemonicPath,
-    PassphrasePath, RecoveryStore,
+    manifest::RecoveryManifest, store::live_key_source, KcvState, KeySourceReport, MnemonicPath,
+    RecoveryStore, SealHealth, MNEMONIC_SEAL_FILE, PASSPHRASE_SEAL_FILE,
 };
 
 use crate::cli::commands::enums::{RecoveryArgs, RecoveryCommand};
@@ -42,7 +43,20 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
         RecoveryCommand::Seal {
             mnemonic,
             passphrase,
-        } => seal(mnemonic, passphrase),
+            passphrase_file,
+            words_out,
+            replace_mnemonic,
+            replace_passphrase,
+            rekey,
+        } => seal(
+            mnemonic,
+            passphrase,
+            passphrase_file,
+            words_out,
+            replace_mnemonic,
+            replace_passphrase,
+            rekey,
+        ),
         RecoveryCommand::Restore { key_hex, kcv } => {
             let key_hex = key_hex.ok_or_else(|| {
                 anyhow::anyhow!("--key-hex is required (or pipe it: --key-hex -)")
@@ -62,9 +76,9 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
 
 fn status(crypt_passphrase_backed_up: bool) -> Result<()> {
     let store = RecoveryStore::from_env_or_default();
-    let report = store.status(Some(crypt_passphrase_backed_up));
+    let (live_key, _) = at_rest::peek_record_key_with_source();
+    let report = store.status(Some(crypt_passphrase_backed_up), live_key.as_ref());
     let manifest = store.read_manifest().ok().flatten();
-    let kcv_present = store.read_kcv().ok().flatten().is_some();
 
     println!("Xavier recovery status");
     println!("  recovery dir    : {}", store.root().display());
@@ -78,7 +92,20 @@ fn status(crypt_passphrase_backed_up: bool) -> Result<()> {
     );
     println!(
         "  key-check value : {}",
-        if kcv_present { "present" } else { "ABSENT" }
+        match report.kcv {
+            KcvState::Absent => "ABSENT",
+            KcvState::Malformed => "MALFORMED",
+            KcvState::ManifestDisagrees =>
+                "MANIFEST DISAGREES — MISMATCH between manifest and sidecar",
+            KcvState::MatchesLiveKey => "matches live key",
+            KcvState::MismatchesLiveKey => "MISMATCH — seals protect another key",
+            KcvState::LiveKeyMissing => "present, live key missing (restore possible)",
+        }
+    );
+    println!("  mnemonic seal   : {}", seal_health(&report.mnemonic_seal));
+    println!(
+        "  passphrase seal : {}",
+        seal_health(&report.passphrase_seal)
     );
     println!(
         "  crypt passphrase: {}",
@@ -93,10 +120,8 @@ fn status(crypt_passphrase_backed_up: bool) -> Result<()> {
         match live_key_source() {
             KeySourceReport::Env => format!("env ({})", at_rest::RECORD_KEY_ENV),
             KeySourceReport::File(p) => format!("file {}", p.display()),
-            // A key generated just now means every pre-existing row is already
-            // unreadable. This is the state that silently destroys a vault.
-            KeySourceReport::Generated(p) => format!(
-                "GENERATED NOW at {} — every pre-existing record is already unreadable!",
+            KeySourceReport::Missing(p) => format!(
+                "MISSING at {} — do not start the daemon or run write commands; run 'xavier recovery unseal' first",
                 p.display()
             ),
             KeySourceReport::Unavailable(r) => format!("UNAVAILABLE ({r})"),
@@ -106,67 +131,176 @@ fn status(crypt_passphrase_backed_up: bool) -> Result<()> {
         "  recoverable     : {}",
         if report.is_recoverable() { "yes" } else { "NO" }
     );
+    println!(
+        "  note: \"valid\" = structurally openable; words/passphrase correctness needs unseal"
+    );
     for gap in report.gaps() {
         println!("  ! {gap}");
     }
     Ok(())
 }
 
-/// Seal the current record key under a passphrase and/or a mnemonic.
-fn seal(mnemonic: bool, passphrase: bool) -> Result<()> {
+fn seal_health(health: &SealHealth) -> String {
+    match health {
+        SealHealth::Absent => "ABSENT".into(),
+        SealHealth::Malformed(reason) => format!("MALFORMED ({reason})"),
+        SealHealth::Valid { mode_0600: true } => "valid (0600)".into(),
+        SealHealth::Valid { mode_0600: false } => "valid (MODE NOT 0600)".into(),
+    }
+}
+
+/// Validate all input before installing seals; publish the KCV and manifest last.
+fn seal(
+    mnemonic: bool,
+    passphrase: bool,
+    passphrase_file: Option<PathBuf>,
+    words_out: Option<PathBuf>,
+    replace_mnemonic: bool,
+    replace_passphrase: bool,
+    rekey: bool,
+) -> Result<()> {
+    use std::io::Write;
     if !mnemonic && !passphrase {
         bail!("choose at least one of --mnemonic or --passphrase");
     }
-    let (key, source) = at_rest::resolve_record_key_with_source();
-    let Some(key) = key else {
-        bail!("no node record key is resolvable ({source:?})");
-    };
-
+    let (key, _) = at_rest::peek_record_key_with_source();
+    let key = key.ok_or_else(|| {
+        anyhow::anyhow!(
+            "no record key at {}; refusing to seal a key that protects no data",
+            at_rest::record_key_path().display()
+        )
+    })?;
     let store = RecoveryStore::from_env_or_default();
-    store.write_kcv(&key)?;
-    // The manifest stores KCVs only, never keys.
-    let master = xavier::keystore::MasterKeyManager::load_or_init().ok();
-    let master_bytes = master.as_ref().map(master_key_bytes);
-    store.write_manifest(&RecoveryManifest::new(&key, master_bytes.as_ref()))?;
-    println!("Sealed recovery material for the node record key (source: {source:?}).");
-
-    if passphrase {
-        let pass = dialoguer::Password::new()
-            .with_prompt("Choose a passphrase (>= 12 chars)")
-            .with_confirmation("Repeat the passphrase", "The passphrases do not match")
-            .interact()
-            .map_err(|e| anyhow::anyhow!("cannot read passphrase: {e}"))?;
-        let path = store.write_passphrase_seal(&key, &pass)?;
-        println!("  passphrase seal: {}", path.display());
-        println!("  verified       : the seal reopens with what you just entered");
-        println!("  Copy it OFF this host and verify it restores.");
-    }
-
-    if mnemonic {
-        let (words, _) = MnemonicPath::generate()?;
-        let path = store.write_mnemonic_seal(&key, &words)?;
-        println!("  mnemonic seal  : {}", path.display());
-        println!("  verified       : the seal reopens with what you just entered");
-        println!();
-        println!("  ══════════════════════════════════════════════");
-        println!("  WRITE THESE 24 WORDS ON PAPER NOW:");
-        println!("  ══════════════════════════════════════════════");
-        for (i, w) in words.split_whitespace().enumerate() {
-            println!("  {:>2}. {w}", i + 1);
+    for (selected, replace, file, flag) in [
+        (
+            mnemonic,
+            replace_mnemonic,
+            MNEMONIC_SEAL_FILE,
+            "--replace-mnemonic",
+        ),
+        (
+            passphrase,
+            replace_passphrase,
+            PASSPHRASE_SEAL_FILE,
+            "--replace-passphrase",
+        ),
+    ] {
+        if selected && !replace && std::fs::symlink_metadata(store.root().join(file)).is_ok() {
+            bail!("seal already exists; use {flag} to replace it explicitly");
         }
-        println!("  ══════════════════════════════════════════════");
-        println!("  They ARE the key: 256 bits, no reset. Anyone holding");
-        println!("  them can decrypt the whole memory store.");
+    }
+    if let Some(stored) = store.read_kcv()? {
+        if !rekey && xavier::recovery::kcv::verify_kcv(&key, &stored).is_err() {
+            bail!("stored KCV differs from the live key; use --rekey explicitly");
+        }
+    }
+    let pass = if passphrase {
+        let pass = match passphrase_file {
+            Some(path) => strip_one_line_ending(
+                std::fs::read_to_string(&path)
+                    .with_context(|| format!("cannot read passphrase from {}", path.display()))?,
+            ),
+            None => dialoguer::Password::new()
+                .with_prompt("Choose a passphrase (>= 12 chars)")
+                .with_confirmation("Repeat the passphrase", "The passphrases do not match")
+                .interact()
+                .map_err(|e| anyhow::anyhow!("cannot read passphrase: {e}"))?,
+        };
+        if pass.chars().count() < xavier::recovery::passphrase::MIN_PASSPHRASE_LEN {
+            bail!(
+                "passphrase too short: {} characters minimum",
+                xavier::recovery::passphrase::MIN_PASSPHRASE_LEN
+            );
+        }
+        Some(pass)
+    } else {
+        None
+    };
+    let words = if mnemonic {
+        Some(MnemonicPath::generate()?.0)
+    } else {
+        None
+    };
+    let mut manifest = RecoveryManifest::new(&key, None);
+    match xavier::keystore::MasterKeyManager::load_existing() {
+        Ok(Some(master)) => manifest.master_key_kcv = master.kcv_hex(),
+        _ => {
+            let note = "master key not found on this host; master KCV omitted";
+            manifest.note = Some(note.into());
+            eprintln!("warning: {note}");
+        }
+    }
+    // Deliver the words before the seal exists, using checked I/O.
+    if let Some(words) = &words {
+        match &words_out {
+            Some(path) => {
+                xavier::keystore::create_private_file_new(path, format!("{words}\n").as_bytes())
+                    .with_context(|| format!("cannot write words to {}", path.display()))?
+            }
+            None => {
+                let mut stdout = std::io::stdout().lock();
+                writeln!(
+                    stdout,
+                    "WRITE THESE 24 WORDS ON PAPER NOW (they ARE the key):"
+                )?;
+                for (i, w) in words.split_whitespace().enumerate() {
+                    writeln!(stdout, "  {:>2}. {w}", i + 1)?;
+                }
+                stdout.flush()?;
+            }
+        }
+    }
+    let installed = (|| -> Result<()> {
+        if let Some(pass) = &pass {
+            if replace_passphrase {
+                store.write_passphrase_seal(&key, pass)?;
+            } else {
+                store.write_passphrase_seal_new(&key, pass)?;
+            }
+        }
+        if let Some(words) = &words {
+            if replace_mnemonic {
+                store.write_mnemonic_seal(&key, words)?;
+            } else {
+                store.write_mnemonic_seal_new(&key, words)?;
+            }
+        }
+        Ok(())
+    })();
+    if installed.is_err() {
+        if let Some(path) = &words_out {
+            if words.is_some() {
+                std::fs::remove_file(path).with_context(|| {
+                    format!(
+                        "cannot remove words file {} after seal failure",
+                        path.display()
+                    )
+                })?;
+            }
+        }
+    }
+    installed?;
+    // Once a seal exists, keep its delivered words even if metadata publication fails.
+    store.write_kcv(&key)?;
+    store.write_manifest(&manifest)?;
+    if let Some(path) = &words_out {
+        println!("words written to {}", path.display());
+    }
+    if mnemonic && words_out.is_none() {
+        println!("mnemonic seal verified: reopens with these words");
+    }
+    if passphrase {
+        println!("passphrase seal verified: reopens with this passphrase");
     }
     Ok(())
 }
 
-/// Strip at most one trailing line ending (`\r\n` or `\n`), preserving any
+/// Strip at most one trailing line ending (`\r\n`, `\n`, or `\r`), preserving any
 /// leading, internal, or trailing space before the line ending.
 fn strip_one_line_ending(mut s: String) -> String {
     if s.ends_with("\r\n") {
         s.truncate(s.len() - 2);
-    } else if s.ends_with('\n') {
+    } else if s.ends_with(['\n', '\r']) {
         s.truncate(s.len() - 1);
     }
     s
@@ -240,13 +374,6 @@ fn unseal(
     }
 }
 
-/// Master key bytes, used only to derive its KCV immediately.
-fn master_key_bytes(manager: &xavier::keystore::MasterKeyManager) -> [u8; 32] {
-    // `vault_key()` is an HKDF label of the master key; the manifest stores only
-    // the resulting KCV, so no extra exposure occurs here.
-    manager.vault_key().unwrap_or([0u8; 32])
-}
-
 /// Install a recovered record key — never overwriting an existing one.
 fn restore(key_hex: &str, kcv_hex: Option<&str>) -> Result<()> {
     let store = RecoveryStore::from_env_or_default();
@@ -305,6 +432,11 @@ mod tests {
                 command: RecoveryCommand::Seal {
                     mnemonic: false,
                     passphrase: false,
+                    passphrase_file: None,
+                    words_out: None,
+                    replace_mnemonic: false,
+                    replace_passphrase: false,
+                    rekey: false,
                 },
             }))
             .unwrap_err();
@@ -425,6 +557,7 @@ mod tests {
         );
         assert_eq!(strip_one_line_ending("abc\r\n".to_string()), "abc");
         assert_eq!(strip_one_line_ending("abc\n\n".to_string()), "abc\n");
+        assert_eq!(strip_one_line_ending("abc\r".to_string()), "abc");
         assert_eq!(strip_one_line_ending("abc".to_string()), "abc");
     }
 }
