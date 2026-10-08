@@ -2409,7 +2409,12 @@ mod shutdown_tests {
     async fn shutdown_signal_receives_sigterm() {
         let signal = super::shutdown_signal();
         // The eager listener above replaces SIGTERM's default disposition.
-        assert_eq!(unsafe { libc::kill(libc::getpid(), libc::SIGTERM) }, 0);
+        // `kill(1)` keeps the crate free of `unsafe` (lib.rs: deny(unsafe_code)).
+        let status = std::process::Command::new("kill")
+            .args(["-TERM", &std::process::id().to_string()])
+            .status()
+            .expect("run kill -TERM");
+        assert!(status.success(), "kill -TERM failed: {status}");
         assert_eq!(
             tokio::time::timeout(std::time::Duration::from_secs(5), signal)
                 .await
