@@ -343,6 +343,41 @@ pub async fn v1_memories_add(
     } else {
         String::new()
     };
+
+    // Ingest screening: never persist caller-supplied credentials in clear
+    // text. Mirrors the gate already applied by `POST /memory/add`; the
+    // detector work is CPU-bound, so it runs off the async runtime.
+    let screened = {
+        let raw = content.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::security::get_security_service().process_input(&raw)
+        })
+        .await
+    };
+    let content = match screened {
+        Ok(result) if result.allowed => result.sanitized_input.unwrap_or(content),
+        Ok(result) => {
+            info!("v1_memories_add blocked: secret material detected");
+            return Json(serde_json::json!({
+                "status": "blocked",
+                "reason": "security_policy_violation",
+                "detection": {
+                    "is_injection": result.detection.is_injection,
+                    "confidence": result.detection.confidence,
+                    "attack_type": result.detection.attack_type.as_str(),
+                }
+            }))
+            .into_response();
+        }
+        Err(error) => {
+            tracing::warn!(%error, "v1_memories_add security screening failed; rejecting input");
+            return Json(serde_json::json!({
+                "status": "blocked",
+                "reason": "security_screening_unavailable",
+            }))
+            .into_response();
+        }
+    };
     let content_for_graph = content.clone();
 
     let mut path = payload
