@@ -213,3 +213,17 @@ module: `memory` (51 files / 25.2k lines), `server` (12k), `cli` (6.1k),
 ## SDD One-Page + SRS Mapping
 > Spec efimero `.gitcore/sdd/specs/###-feat/onepage.md` referencia `REQ-xxx` durable de `docs/SRS/REQUIREMENTS.md` (IEEE 830 reduced). Drift detector `srs-src-drift-detector` mantiene traceabilidad. Docs humanos estables en `docs/`, specs AI en `.gitcore/sdd/` aislado.
 <!-- SWAL-SDD-END -->
+
+<!-- SWAL-ZERO-HANDOFF-START -->
+## Protocolo Zero-Handoff Continuation (T3 / Xavier SSoT)
+> Cuando una sesión larga de T3 acumula alta densidad de contexto (>250k–300k tokens o >750 pasos):
+> 1. **Detección proactiva**: El agente verifica la salud del contexto ejecutando:
+>    `python3 ~/.hermes/scripts/t3-context-monitor.py --check`
+> 2. **Cápsula inmutable en Xavier**: Si el estado es `CRITICAL` o `needs_handoff: true`:
+>    `python3 ~/.hermes/scripts/t3-context-monitor.py --capsule`
+> 3. **Alerta y consulta obligatoria al usuario**:
+>    El agente debe avisar al usuario de la saturación crítica y preguntarle explícitamente (usando `ask_question`) si desea abrir una ventana limpia con el Seed Prompt generado o continuar en la actual.
+> 4. **Traspaso sin pérdida**:
+>    Al migrar, la nueva ventana consulta la cápsula en Xavier vía `xavier search "<capsule_id>"` y retoma el trabajo con contexto limpio (<1k tokens) sin arrastrar histórico degradado.
+<!-- SWAL-ZERO-HANDOFF-END -->
+
