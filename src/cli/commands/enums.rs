@@ -773,14 +773,44 @@ pub enum CloudCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Trigger manual synchronization (local -> cloud)
+    /// Encrypted backup of the memory store to Xavier Cloud (same as `cloud backup`)
     Sync {
+        /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
         /// Output in JSON format
         #[arg(long)]
         json: bool,
     },
-    /// Run a full cloud connection health check
+    /// Encrypt (client-side) and upload every memory to Xavier Cloud (PGHEART_*)
+    Backup {
+        /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Download, verify, decrypt and import the latest cloud backup
+    Restore {
+        /// Instance to restore from (default: PGHEART_INSTANCE_ID)
+        #[arg(long)]
+        instance: Option<String>,
+        /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Check the cloud backup: Worker reachable, manifest and every pack present, usage
     Verify {
+        /// Also download and decrypt every pack (needs the passphrase; writes nothing)
+        #[arg(long)]
+        deep: bool,
+        /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
+        #[arg(long)]
+        passphrase_file: Option<std::path::PathBuf>,
         /// Output in JSON format
         #[arg(long)]
         json: bool,
