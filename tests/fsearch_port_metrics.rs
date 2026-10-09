@@ -3,6 +3,9 @@
 // Measurement harness: prints one `FSEARCH_PORT_METRICS {json}` line with ok/top1/top5 rates
 // per query group (punct, typo, plain). Asserts only that plain and punct queries return Ok.
 
+// Sandbox HOME/XDG/XAVIER_* dirs before main: tests must never touch the real ~/.xavier.
+xavier::isolate_test_process!();
+
 use chrono::Utc;
 use tempfile::tempdir;
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
