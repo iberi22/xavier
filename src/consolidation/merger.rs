@@ -181,20 +181,22 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
         .advanced
         .minhash_threshold;
 
-    // If MinHash is extremely low, we can skip expensive cosine similarity
-    // but only if it's below a safe margin of the target threshold.
-    // In test environment, MinHash might be missing or different,
-    // so we only apply this if we have vectors to compare.
-    if minhash_sim < minhash_threshold * 0.5
-        && (left.content_vector.is_some() || right.content_vector.is_some())
-    {
+    let vectors = match (&left.content_vector, &right.content_vector) {
+        (Some(a), Some(b)) if a.len() == b.len() && usable_vector(a) && usable_vector(b) => {
+            Some((a, b))
+        }
+        _ => None,
+    };
+
+    // Only pre-filter semantic comparisons; missing vectors must still reach
+    // the lexical fallback, even when MinHash is missing or stale.
+    if vectors.is_some() && minhash_sim < minhash_threshold * 0.5 {
         return 0.0;
     }
 
-    let semantic = match (&left.content_vector, &right.content_vector) {
-        (Some(a), Some(b)) if !a.is_empty() && !b.is_empty() => cosine_similarity(a, b),
-        _ => 0.0,
-    };
+    let semantic = vectors
+        .map(|(a, b)| cosine_similarity(a, b))
+        .filter(|score| score.is_finite());
     let lexical = lexical_similarity(&left.content, &right.content);
 
     let left_path_norm: NormalizedId = left
@@ -225,7 +227,21 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
         }
     };
 
-    (semantic * 0.50 + lexical * 0.40 + path_boost * 0.10).clamp(0.0, 1.0)
+    // Transfer the unavailable semantic weight to lexical evidence. Keeping
+    // it at zero caps even identical documents below clustering thresholds.
+    let content_score = match semantic {
+        Some(score) => score * 0.50 + lexical * 0.40,
+        None => lexical * 0.90,
+    };
+    (content_score + path_boost * 0.10).clamp(0.0, 1.0)
+}
+
+fn usable_vector(vector: &[f32]) -> bool {
+    if vector.is_empty() || vector.iter().any(|value| !value.is_finite()) {
+        return false;
+    }
+    let squared_norm = vector.iter().map(|value| value * value).sum::<f32>();
+    squared_norm.is_finite() && squared_norm > 0.0
 }
 
 /// Importance score.
@@ -413,10 +429,82 @@ mod tests {
             memory("c", "Different note about deployment", 0.2),
         ];
 
-        // Lexical-only matches top out at 0.4 when no path/vector similarity is present.
-        let clusters = cluster_similar_memories(&memories, 0.4);
+        let clusters = cluster_similar_memories(&memories, 0.88);
         assert!(clusters.iter().any(|cluster| cluster.len() == 2));
         assert!(clusters.iter().any(|cluster| cluster.len() == 1));
+    }
+
+    #[test]
+    fn clusters_near_duplicates_with_unusable_vectors() {
+        let left_content =
+            "The authentication token must be bound to NodeId public key to prevent impersonation.";
+        let right_content = "The authentication token must be bound to NodeId public key to prevent impersonation attacks.";
+        let vector_pairs = [
+            (None, None),
+            (Some(vec![]), Some(vec![])),
+            (Some(vec![1.0, 0.0]), None),
+            (Some(vec![0.0, 0.0]), Some(vec![1.0, 0.0])),
+            (Some(vec![f32::NAN, 0.0]), Some(vec![1.0, 0.0])),
+            (Some(vec![f32::INFINITY, 0.0]), Some(vec![1.0, 0.0])),
+            (Some(vec![f32::MAX, 0.0]), Some(vec![1.0, 0.0])),
+            (Some(vec![1.0]), Some(vec![1.0, 0.0])),
+        ];
+        for (left_vector, right_vector) in vector_pairs {
+            let mut left = memory("docs/feature_a.md", left_content, 0.85);
+            let mut right = memory("docs/feature_b.md", right_content, 0.85);
+            left.doc.content_vector = left_vector;
+            right.doc.content_vector = right_vector;
+            let score = similarity(&left.doc, &right.doc);
+            assert!(
+                score.is_finite() && score >= 0.80,
+                "unusable vectors must fall back to lexical similarity: {score}, {:?}, {:?}",
+                left.doc.content_vector,
+                right.doc.content_vector
+            );
+            let unrelated = memory(
+                "docs/unrelated.md",
+                "Deployment workers export metrics daily",
+                0.85,
+            );
+            let clusters = cluster_similar_memories(&[left, right, unrelated], 0.80);
+            assert_eq!(clusters.len(), 2);
+            assert_eq!(clusters[0].len(), 2);
+            assert_eq!(clusters[1].len(), 1);
+        }
+    }
+
+    #[test]
+    fn valid_vectors_keep_existing_similarity_weights() {
+        let mut left = memory("docs/a.md", "Identical authentication specification", 0.85);
+        let mut right = memory("docs/b.md", &left.doc.content, 0.85);
+        left.doc.minhash = Some(crate::memory::qmd::compute_minhash(&left.doc.content));
+        right.doc.minhash = left.doc.minhash.clone();
+        left.doc.content_vector = Some(vec![1.0, 0.0]);
+        for (vector, expected) in [
+            (vec![1.0, 0.0], 0.95),
+            (vec![0.0, 1.0], 0.45),
+            (vec![-1.0, 0.0], 0.0),
+        ] {
+            right.doc.content_vector = Some(vector);
+            assert!((similarity(&left.doc, &right.doc) - expected).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn invalid_vectors_do_not_make_unrelated_text_similar() {
+        let mut left = memory(
+            "docs/a.md",
+            "Authentication tokens prevent impersonation",
+            0.85,
+        );
+        let mut right = memory("docs/a.md", "Deployment workers export metrics daily", 0.85);
+        left.doc.content_vector = Some(vec![f32::NAN]);
+        right.doc.content_vector = Some(vec![f32::NAN]);
+        let score = similarity(&left.doc, &right.doc);
+        assert!(score.is_finite() && score < 0.80);
+        left.doc.content.clear();
+        right.doc.content.clear();
+        assert!(similarity(&left.doc, &right.doc) < 0.80);
     }
 
     #[test]
@@ -464,8 +552,8 @@ mod tests {
 
         // Same content and same language family (Python vs Python)
         // Lexical similarity will be 1.0 (since content is identical)
-        // 1.0 * 0.4 = 0.4. Path boost is 0.0. Semantic is 0.0.
-        assert!(similarity(&doc_py, &doc_py2) >= 0.4);
+        // Without vectors, lexical evidence carries the semantic weight too.
+        assert!(similarity(&doc_py, &doc_py2) >= 0.9);
 
         // Different language families but same entity_id (explicit evidence)
         let mut doc_py_entity = doc_py.clone();
@@ -544,8 +632,8 @@ mod tests {
         assert!(sim_ab > sim_ac, "Similarity with normalized path reconciliation ({}) should be higher than different path ({})", sim_ab, sim_ac);
         // path_boost for AB should be 0.95, for AC 0.0.
         // With same content, lexical similarity is 1.0.
-        // AB: 0.4 * 1.0 + 0.1 * 0.95 = 0.495
-        // AC: 0.4 * 1.0 + 0.1 * 0.0 = 0.4
-        assert!(sim_ab >= 0.49);
+        // AB: 0.9 * 1.0 + 0.1 * 0.95 = 0.995
+        // AC: 0.9 * 1.0 + 0.1 * 0.0 = 0.9
+        assert!(sim_ab >= 0.99);
     }
 }

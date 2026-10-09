@@ -216,6 +216,84 @@ pub fn code_graph_db_path_for_root(root: &Path) -> PathBuf {
     root.join(".xavier").join("code_graph.db")
 }
 
+/// Environment variable naming extra repository roots to keep in the code graph.
+pub const EXTRA_ROOTS_ENV: &str = "XAVIER_CODE_EXTRA_ROOTS";
+
+/// Hard cap on extra roots.
+///
+/// `ConnectionManager::MAX_POOLS` is 16 with LRU eviction and the workspace root
+/// already holds one pool. Letting extras evict the workspace's own pool would make
+/// `code find` intermittently empty for the repo the operator is standing in, which
+/// is the exact bug class XAV-01 exists to prevent.
+pub const MAX_EXTRA_ROOTS: usize = 8;
+
+/// Extra repository roots declared through [`EXTRA_ROOTS_ENV`].
+///
+/// OS path-list (`:` on Unix, `;` on Windows), so [`std::env::split_paths`] parses it
+/// and no hand-rolled separator logic is needed.
+///
+/// Each entry goes through [`find_repo_root`] exactly like the workspace root does, so
+/// an extra root can never answer with another repo's graph — the XAV-01 cross-repo
+/// leak. Entries that do not exist are dropped rather than anchored at themselves: a
+/// missing root has no graph to contribute, and anchoring it would reserve a pool and
+/// an identity for nothing. Duplicates, including one that resolves to the workspace
+/// root, collapse.
+pub fn extra_code_roots() -> Vec<PathBuf> {
+    let Ok(raw) = std::env::var(EXTRA_ROOTS_ENV) else {
+        return Vec::new();
+    };
+    if raw.trim().is_empty() {
+        return Vec::new();
+    }
+    let mut out: Vec<PathBuf> = Vec::new();
+    for entry in std::env::split_paths(&raw) {
+        if entry.as_os_str().is_empty() {
+            continue;
+        }
+        if !entry.is_dir() {
+            tracing::warn!(
+                "code roots: ignoring {entry:?} from {EXTRA_ROOTS_ENV}: not a directory",
+            );
+            continue;
+        }
+        let Some(root) = find_repo_root(&entry) else {
+            continue;
+        };
+        let canonical = root.canonicalize().unwrap_or(root);
+        if out.contains(&canonical) {
+            continue;
+        }
+        if out.len() >= MAX_EXTRA_ROOTS {
+            tracing::warn!(
+                "code roots: {EXTRA_ROOTS_ENV} lists more than {MAX_EXTRA_ROOTS} roots; ignoring the rest",
+            );
+            break;
+        }
+        out.push(canonical);
+    }
+    out
+}
+
+/// Every root the code graph should answer for: the workspace root first, then the
+/// declared extras, deduplicated and capped.
+///
+/// The workspace root stays first so the repo the caller is standing in always wins any
+/// tie, and so an extra listing it cannot turn one repo into two identities.
+pub fn all_code_roots(workspace: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    if let Some(root) = find_repo_root(workspace) {
+        let canonical = root.canonicalize().unwrap_or(root);
+        out.push(canonical);
+    }
+    for extra in extra_code_roots() {
+        if !out.contains(&extra) {
+            out.push(extra);
+        }
+    }
+    out.truncate(MAX_EXTRA_ROOTS + 1);
+    out
+}
+
 /// Tests for the config-driven `project_id` in [`derive_repo_identity`].
 ///
 /// These cover the wiring itself: a declared `project_id` must win over the

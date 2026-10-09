@@ -1,0 +1,782 @@
+name: E2E Segmented
+
+# Runs the 127 integration-test targets that no other workflow executes, in
+# 13 independent jobs.
+#
+# Why (Belal, 2026-06-06): as a single job the first failing target hides every
+# target after it, and nobody learns whether the rest is green. One job per
+# segment, and inside each job the loop does not break on failure, so one run
+# reports the state of all 127 targets instead of just the first break.
+#
+# No job goes red on a failing target, on purpose: visibility first. A separate
+# gate job decides what blocks a release, so one broken segment never hides the
+# other twelve.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  e2e-01:
+    name: W01 resto_a (22)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 22 targets of wave 01
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'agent_lease_hooks_tests'
+            'ci_version_gate'
+            'clearance_live_e2e'
+            'd1_clavis_vault_leak_red'
+            'd2_clavis_wiring_red'
+            'docs_adr'
+            'encrypt_private_e2e'
+            'error_test'
+            'hormer_e2e'
+            'issue_executor_bridge_test'
+            'kernel_proxy_test'
+            'mini_expert_integration_test'
+            'notification_emitters'
+            'proxy_lending_integration'
+            'rate_limit_integration'
+            'server_e2e'
+            'stress_tests'
+            'telecom_file_transfer_e2e_test'
+            'test_gpud_sidecar'
+            'test_store_path_hierarchy'
+            'v1_memories_add_path_traversal'
+            'workspace_federation_test'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 01 (resto_a): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w01-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-02:
+    name: W02 resto_b (19)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 19 targets of wave 02
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'adversarial_challenge_2_stress'
+            'agent_task_lifecycle_tests'
+            'clavis_integration'
+            'context_regeneration_test'
+            'e2e_chat_local'
+            'headless_api_test'
+            'hormer_integration'
+            'ivn_api'
+            'live_system_one_integration_test'
+            'nat_traversal_test'
+            'notifications_stream'
+            'quadratic_voting_edge_test'
+            'recovery_flow'
+            'sevier_stress_test'
+            'swal_benchmarks'
+            'telecom_packet_fuzz_test'
+            'test_hc_e2e'
+            'test_xtsp_benchmarks'
+            'verifiable_credential_edge_test'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 02 (resto_b): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w02-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-03:
+    name: W03 resto_c (18)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 18 targets of wave 03
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'benchmark'
+            'clearance_audit_sqlite'
+            'data_commons'
+            'e2e_ecosystem_verification'
+            'headless_chat_test'
+            'hormer_scale'
+            'ivn_karma'
+            'marketplace_api'
+            'node_fase0_persist'
+            'pageindex_eval'
+            'quadratic_voting_test'
+            'regeneration_edge_test'
+            'sqlite_vec_validation'
+            'telecom_agent_fallback_test'
+            'telecom_simulation_test'
+            'test_humanchallenge'
+            'tgd_consolidation_test'
+            'verifiable_credential_test'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 03 (resto_c): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w03-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-04:
+    name: W04 resto_d (18)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 18 targets of wave 04
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'chronicle_harvest_test'
+            'clearance_e2e'
+            'distributed_tracer_test'
+            'env_guard'
+            'health_test'
+            'integration'
+            'ivn_verdict'
+            'messaging_status'
+            'nodes_provisioning_test'
+            'proxy_integration'
+            'quick_embed_test'
+            'segment_space'
+            'stability_ingestion_tests'
+            'telecom_concurrency_stress_test'
+            'test_cross_encoder'
+            'test_notifications_db'
+            'tui_screenshot_e2e'
+            'websocket_events'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 04 (resto_d): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w04-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-05:
+    name: W05 mesh (10)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 10 targets of wave 05
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'mesh_full_simulation_test'
+            'mesh_integration'
+            'mesh_iroh_test'
+            'mesh_management_test'
+            'mesh_network_test'
+            'mesh_node_lifecycle_test'
+            'mesh_peer_registry_test'
+            'mesh_permissions_test'
+            'mesh_security_sync_test'
+            'test_mesh_keystore'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 05 (mesh): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w05-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-06:
+    name: W06 search_embedding (7)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 7 targets of wave 06
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'embedding_fallback_resilience'
+            'embedding_fallback_test'
+            'embedding_local_integration'
+            'semantic_compression_test'
+            'semantic_search_tests'
+            'skill_semantic_rank_eval'
+            'test_search_noise_and_get'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 06 (search_embedding): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w06-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-07:
+    name: W07 session_sync_panel (7)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 7 targets of wave 07
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'http_pressure_wave20'
+            'kernel_mcp_test'
+            'mcp_session_edge_test'
+            'session_integration'
+            'session_sync_backoff_test'
+            'sync_check_handler_cached_result'
+            'sync_test'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 07 (session_sync_panel): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w07-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-08:
+    name: W08 security_secrets (6)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 6 targets of wave 08
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'http_auth_edge_test'
+            'profile_vault_e2e'
+            'proxy_security_test'
+            'secrets_import_env'
+            'secrets_redaction_test'
+            'security_redact'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 08 (security_secrets): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w08-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-09:
+    name: W09 memory_sync (8)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 8 targets of wave 09
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'access_flush_drain'
+            'cloud_memory_sync_cycle_test'
+            'ingest_cursor_d7_tests'
+            'memory_prune_test'
+            'memory_sync_e2e'
+            'memory_sync_http'
+            'memory_sync_unified'
+            'tgd_prune_gate_test'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 09 (memory_sync): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w09-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-10:
+    name: W10 maloca (4)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 4 targets of wave 10
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'maloca_data_node_test'
+            'maloca_live_sync_test'
+            'test_maloca_auth_gate'
+            'test_maloca_http_e2e'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 10 (maloca): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w10-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-11:
+    name: W11 telemetry_skill (3)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 3 targets of wave 11
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'ledger_skill_entries'
+            'telemetry_anonymizer_edge_test'
+            'telemetry_anonymizer_test'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 11 (telemetry_skill): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w11-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-12:
+    name: W12 codegraph (3)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 3 targets of wave 12
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'codegraph_installer_e2e'
+            'codegraph_scan_then_query'
+            'codegraph_uds_ipc_e2e'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 12 (codegraph): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w12-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  e2e-13:
+    name: W13 storage (2)
+    outputs:
+      failed: ${{ steps.run-wave.outputs.failed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Run all 2 targets of wave 13
+        id: run-wave
+        # No `-e` and no `break`: a red target must not hide the rest of its
+        # wave. Clear the runner-inherited `-e -o pipefail` (GitHub runs
+        # `bash -e -o pipefail`); `${PIPESTATUS[0]}` already isolates cargo's
+        # exit code, so the loop must run every target and reach its summary.
+        shell: bash
+        run: |
+          set +e +o pipefail
+          set -u
+          cargo test --package xavier --features ci-safe --no-run --quiet 2>&1 | tail -20 || true
+          targets=(
+            'storage_isolation'
+            'unified_storage_validation'
+          )
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "=== $t ==="
+            timeout -k 15 240 cargo test --package xavier --features ci-safe --test "$t" -- --test-threads=1 2>&1 | tail -20
+            if [ "${PIPESTATUS[0]}" -eq 0 ]; then echo "PASS: $t"; else echo "FAIL: $t"; failed+=("$t"); fi
+          done
+          echo
+          echo "==== wave 13 (storage): ${#failed[@]}/${#targets[@]} failed ===="
+          echo "failed: ${failed[*]:-none}"
+          echo "failed=${failed[*]:-none}" >> "$GITHUB_OUTPUT"
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-w13-log
+          path: "*.log"
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # The single blocking job promised by the header comment. The 13 wave jobs stay
+  # green-for-visibility (a red target must not hide the other waves); this gate
+  # aggregates their results and goes RED iff any wave reported a failing target.
+  gate:
+    name: E2E gate
+    needs: [e2e-01, e2e-02, e2e-03, e2e-04, e2e-05, e2e-06, e2e-07, e2e-08, e2e-09, e2e-10, e2e-11, e2e-12, e2e-13]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide whether any wave had failing targets
+        run: |
+          set -u
+          gate_failed=0
+          check() {
+            local job="$1" result="$2"
+            if [ "$result" != "none" ]; then
+              echo "::error::$job reported failing targets: $result"
+              gate_failed=1
+            else
+              echo "$job: all targets passed"
+            fi
+          }
+          check e2e-01 '${{ needs.e2e-01.outputs.failed }}'
+          check e2e-02 '${{ needs.e2e-02.outputs.failed }}'
+          check e2e-03 '${{ needs.e2e-03.outputs.failed }}'
+          check e2e-04 '${{ needs.e2e-04.outputs.failed }}'
+          check e2e-05 '${{ needs.e2e-05.outputs.failed }}'
+          check e2e-06 '${{ needs.e2e-06.outputs.failed }}'
+          check e2e-07 '${{ needs.e2e-07.outputs.failed }}'
+          check e2e-08 '${{ needs.e2e-08.outputs.failed }}'
+          check e2e-09 '${{ needs.e2e-09.outputs.failed }}'
+          check e2e-10 '${{ needs.e2e-10.outputs.failed }}'
+          check e2e-11 '${{ needs.e2e-11.outputs.failed }}'
+          check e2e-12 '${{ needs.e2e-12.outputs.failed }}'
+          check e2e-13 '${{ needs.e2e-13.outputs.failed }}'
+          if [ "$gate_failed" -ne 0 ]; then
+            echo "E2E gate FAILED: at least one wave reported failing targets"
+            exit 1
+          fi
+          echo "E2E gate PASSED: all 13 waves reported no failing targets"

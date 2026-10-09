@@ -1,0 +1,99 @@
+name: Android APK (unsigned build check)
+
+# Builds an Android APK and uploads it as an artifact. Publishes NOTHING.
+#
+# Scope, stated plainly: this verifies that the Rust crate and the generated
+# Gradle project actually build for Android. It CANNOT produce a distributable
+# app, because `gen/android/app/build.gradle.kts` has no `signingConfig` and the
+# repository has no keystore. An unsigned APK is installable only with
+# `adb install`, and a signing key, once created, must be stored as a secret:
+# losing it means the app can never be updated again. That decision is Belal's,
+# so this workflow deliberately stops at "the code builds".
+#
+# `tauri android init` already generated `gen/android/`, so this does not run it —
+# regenerating would discard any future hand edits to the Gradle project.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - panel-ui/src-tauri/**
+      - .github/workflows/android-apk.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  android-apk:
+    name: Build unsigned APK (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Use the runner's preinstalled SDK and NDK; set up the project against them.
+      - name: Install Rust toolchain with the Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.24.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install JS dependencies
+        run: pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true
+
+      - name: Build Panel UI
+        run: |
+          pnpm --prefix panel-ui install --config.dangerouslyAllowAllBuilds=true
+          pnpm --prefix panel-ui build
+
+      - name: Build the Android binary
+        # Same feature set as the desktop builds. The APK ships this as its
+        # `libxavier.so`, so it must be built for the ABI the app targets; the
+        # target itself is installed by the toolchain step above.
+        run: cargo build --release --target aarch64-linux-android --features "ci-safe,pageindex-pdfium"
+
+      - name: Assemble the APK with Gradle
+        # `gradlew` is committed without the executable bit, and `compileSdk = 36`
+        # must be present on the runner, so install the platform first.
+        working-directory: panel-ui/src-tauri/gen/android
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
+          ./gradlew assembleDebug --no-daemon
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+
+      - name: Locate the APK and report its size
+        run: |
+          set -euo pipefail
+          apk=$(find panel-ui/src-tauri/gen/android -name '*.apk' -print -quit)
+          if [ -z "$apk" ]; then
+            echo "No .apk produced"; exit 1
+          fi
+          echo "OK: $apk ($(du -h "$apk" | cut -f1))"
+
+      - name: Upload APK (unsigned, artifact only)
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-apk-unsigned
+          path: "**/*.apk"
+          retention-days: 14
+          if-no-files-found: error

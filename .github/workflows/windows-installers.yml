@@ -1,0 +1,102 @@
+name: Windows Installers (verify only)
+
+# Builds the Windows installers (WiX .msi + Inno Setup .exe) and uploads them as
+# workflow artifacts WITHOUT publishing a release.
+#
+# Why this exists rather than running `release.yml` by hand: `release.yml` has
+# `workflow_dispatch`, and its `publish-release` job fires on
+# `github.event_name == 'workflow_dispatch'`. Dispatching it from a plain branch
+# would therefore create a public GitHub Release. Building the installers is a
+# verification step; publishing is Belal's decision, so they are separated here.
+#
+# Reuses `installer/build-installer.ps1`, the same script `release.yml` calls, so
+# what this produces is what a release would ship.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - installer/**
+      - panel-ui/src-tauri/**
+      - .github/workflows/windows-installers.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows-installers:
+    name: Build .msi and .exe (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.24.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install JS dependencies
+        run: pnpm install --no-frozen-lockfile --config.dangerouslyAllowAllBuilds=true
+
+      - name: Build Panel UI
+        run: |
+          pnpm --prefix panel-ui install --config.dangerouslyAllowAllBuilds=true
+          pnpm --prefix panel-ui build
+        shell: pwsh
+
+      - name: Install installer tools (WiX + Inno Setup)
+        run: |
+          choco install wixtoolset innosetup -y
+          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $env:GITHUB_PATH
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      - name: Build Xavier sidecar for the target triple
+        # Same feature set the release uses.
+        run: cargo build --release --target x86_64-pc-windows-msvc --features "ci-safe,pageindex-pdfium"
+        shell: pwsh
+
+      - name: Build installers (WiX msi + Inno Setup)
+        run: |
+          $Version = if ("${{ github.ref_name }}" -like "v*") { "${{ github.ref_name }}".Substring(1) } else { "0.2.17" }
+          & ./installer/build-installer.ps1 -Version $Version -TargetTriple x86_64-pc-windows-msvc
+        shell: pwsh
+
+      - name: Show what was produced
+        run: |
+          Get-ChildItem -Path dist -Recurse -Include *.msi,*.exe |
+            Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}} |
+            Format-Table | Out-String | Write-Host
+        shell: pwsh
+
+      - name: Fail if no .msi was produced
+        run: |
+          $msi = Get-ChildItem -Path dist -Recurse -Filter *.msi -ErrorAction SilentlyContinue
+          if (-not $msi) { Write-Error "No .msi in dist/ — the installer step did not run"; exit 1 }
+          Write-Host "OK: $($msi[0].Name) ($([math]::Round($msi[0].Length/1MB,1)) MB)"
+        shell: pwsh
+
+      - name: Upload installers (artifact only, no release)
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-installers
+          path: |
+            dist/**/*.msi
+            dist/**/*.exe
+          retention-days: 14
+          if-no-files-found: error

@@ -15,7 +15,6 @@ use keyring::Entry;
 
 /// Fallback vault storage, lazily initialized per namespace.
 struct VaultBackend {
-    storage_dir: std::path::PathBuf,
     vault_key: [u8; 32],
 }
 
@@ -31,20 +30,40 @@ fn is_isolated_service(service_name: &str) -> bool {
     service_name == crate::clavis::CLAVIS_VAULT_SERVICE
 }
 
+/// Namespace root of the fallback vault, from the user home alone. Never
+/// touches the master key, so locating a secret cannot initialize one.
+fn fallback_base_dir(isolated_service: Option<&str>) -> Option<std::path::PathBuf> {
+    let home = dirs::home_dir()?;
+    Some(match isolated_service {
+        Some(service) => home.join(".xavier").join("vaults").join(service),
+        None => home.join(".xavier").join("secrets"),
+    })
+}
+
+/// Directory holding `service_name`'s fallback files, resolved without the
+/// master key. Reads must be able to probe for a file before any key material
+/// is loaded: an absent secret is the common case and must stay side-effect
+/// free.
+fn fallback_dir_for_service(service_name: &str) -> Option<std::path::PathBuf> {
+    if is_isolated_service(service_name) {
+        fallback_base_dir(Some(service_name))
+    } else if service_name == "xavier" {
+        fallback_base_dir(None)
+    } else {
+        fallback_base_dir(None).map(|base| base.join(service_name))
+    }
+}
+
 fn build_backend(isolated_service: Option<&str>) -> Option<VaultBackend> {
     // Initialize master key (handles keyring + file fallback internally)
     match MasterKeyManager::load_or_init() {
         Ok(mkm) => {
-            let home = match dirs::home_dir() {
-                Some(h) => h,
+            let storage_dir = match fallback_base_dir(isolated_service) {
+                Some(dir) => dir,
                 None => {
                     tracing::warn!("HardwareVault: no home dir, fallback vault unavailable");
                     return None;
                 }
-            };
-            let storage_dir = match isolated_service {
-                Some(service) => home.join(".xavier").join("vaults").join(service),
-                None => home.join(".xavier").join("secrets"),
             };
             crate::test_support::guard_user_path(&storage_dir);
             if let Err(e) = ensure_private_dir(&storage_dir) {
@@ -71,10 +90,7 @@ fn build_backend(isolated_service: Option<&str>) -> Option<VaultBackend> {
                 hasher.update(mkm.vault_key().unwrap_or([0u8; 32]));
                 hasher.finalize().into()
             };
-            Some(VaultBackend {
-                storage_dir,
-                vault_key,
-            })
+            Some(VaultBackend { vault_key })
         }
         Err(e) => {
             tracing::warn!("HardwareVault: master key init failed: {e}");
@@ -244,20 +260,19 @@ impl HardwareVault {
         })
     }
 
+    /// Directory holding this vault's fallback files. Resolved from the user
+    /// home only: probing for a secret must never load (or initialize) the
+    /// master key, and it never creates directories. Writes create the
+    /// directory through [`ensure_private_dir`] instead.
     fn storage_dir(&self) -> SecretResult<std::path::PathBuf> {
         #[cfg(test)]
         if let Some(ref dir) = self.custom_storage_dir {
             return Ok(dir.clone());
         }
 
-        let mut base = self.backend()?.storage_dir.clone();
-        if self.service_name != "xavier" {
-            base.push(&self.service_name);
-            if !base.exists() {
-                let _ = std::fs::create_dir_all(&base);
-            }
-        }
-        Ok(base)
+        fallback_dir_for_service(&self.service_name).ok_or_else(|| {
+            SecretError::ProviderError("Fallback vault unavailable (no home dir)".to_string())
+        })
     }
 
     /// Vault key for the local fallback files. Tests inject a synthetic key so
