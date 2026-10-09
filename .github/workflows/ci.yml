@@ -10,6 +10,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_TARGET_DIR: target
+  # Build-speed Phase 0: mold is enabled ONLY here in CI (after the
+  # rui314/setup-mold steps install it). Never force it in
+  # .cargo/config.toml so local devs without mold keep building.
+  RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
 
 jobs:
   # Path filtering to avoid running slow Rust builds on frontend/docs-only PRs
@@ -19,6 +23,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      embedding: ${{ steps.filter.outputs.embedding }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -46,6 +51,13 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'package.json'
               - '.github/workflows/ci.yml'
+            # Build-speed Phase 0: the local-gllm embedding backend is the
+            # riskiest dep change, so it gets its own check job below, gated
+            # on exactly the inputs that can affect it.
+            embedding:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'src/embedding/**'
 
   # Job 1: Rust Format Check
   rust-fmt:
@@ -115,6 +127,36 @@ jobs:
 
       - name: Run Cargo Check on MSRV
         run: cargo check --package xavier --all-targets --features ci-safe
+
+  # Job 2b: local-gllm embedding backend check (build-speed Phase 0)
+  # The candle removal is the riskiest dep change in this phase, and the
+  # default/ci-safe feature sets never compile the gllm backend. Run only
+  # when Cargo.toml, Cargo.lock or src/embedding/** change (see the
+  # `embedding` paths-filter in the `changes` job above).
+  rust-local-gllm-check:
+    name: Rust local-gllm Check
+    needs: changes
+    if: needs.changes.outputs.embedding == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Use mold linker
+        uses: rui314/setup-mold@v1
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-safe-gllm
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check local-gllm backend
+        run: cargo check -p xavier --features local-gllm
 
   # Job 3: Parallel Rust Tests
   rust-test:
