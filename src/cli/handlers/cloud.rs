@@ -227,7 +227,7 @@ pub async fn run_cli_backup(
     let cfg = backup_config()?;
     let pass = backup_passphrase(passphrase_file)?;
     let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await?;
-    let remote = cloud_backup::HttpBlobStore::new(&cfg);
+    let remote = cloud_backup::HttpBlobStore::new(&cfg)?;
     cloud_backup::run_backup(
         &store,
         &remote,
@@ -269,6 +269,15 @@ pub fn print_backup_report(r: &cloud_backup::BackupReport, as_json: bool) -> Res
         match &r.usage_after {
             Some(u) => print_usage(u),
             None => println!("  {:<22} {}", "Cloud usage:", "unavailable".yellow()),
+        }
+        if !r.manifest_published {
+            println!(
+                "  {} incomplete run: the previous complete backup was left in place",
+                "⚠️".yellow()
+            );
+        }
+        if r.packs_repaired > 0 {
+            println!("  {:<22} {}", "Packs repaired:", r.packs_repaired);
         }
         if r.records_locked > 0 {
             println!(
@@ -317,7 +326,7 @@ async fn handle_cloud_restore(
     let pass = backup_passphrase(passphrase_file.as_deref())?;
     let instance = instance.unwrap_or_else(|| cfg.instance_id.clone());
     let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await?;
-    let remote = cloud_backup::HttpBlobStore::new(&cfg);
+    let remote = cloud_backup::HttpBlobStore::new(&cfg)?;
     let r = cloud_backup::run_restore(&store, &remote, &instance, &pass).await?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&r)?);
@@ -351,7 +360,7 @@ async fn handle_cloud_verify(
     as_json: bool,
 ) -> Result<()> {
     let cfg = backup_config()?;
-    let remote = cloud_backup::HttpBlobStore::new(&cfg);
+    let remote = cloud_backup::HttpBlobStore::new(&cfg)?;
     let health = remote.health().await;
     let pass = if deep {
         Some(backup_passphrase(passphrase_file.as_deref())?)
