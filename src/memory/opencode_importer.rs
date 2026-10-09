@@ -16,6 +16,7 @@ use tracing::{debug, info, warn};
 
 use crate::embedding::Embedder;
 use crate::kernel::filters::strip_ansi;
+use crate::memory::ingest_cursor;
 use crate::memory::store::{stable_key, MemoryRecord, MemoryStore};
 
 /// Default quiet period a session must pass before `sync` will re-import it.
@@ -58,8 +59,8 @@ pub struct OpenCodeSession {
     pub turns: Vec<OpenCodeTurn>,
 }
 
-/// Change evidence for one session, kept in memory between passes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Change evidence for one session, kept between passes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct SessionFingerprint {
     /// Milliseconds since the Unix epoch, or 0 on a schema without the column.
     time_updated: i64,
@@ -68,9 +69,9 @@ struct SessionFingerprint {
     message_count: i64,
 }
 
-/// In-memory cursor state. Process-local by design: a restart costs one full
-/// pass, which is the same as the pre-cursor behaviour, never a missed import.
-#[derive(Debug, Default)]
+/// Cursor state. Persisted when a cursor path is configured; without one it is
+/// process-local and a restart costs one full pass, never a missed import.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct CursorState {
     /// Highest `time_updated` observed. The next pass queries from
     /// `watermark_ms - REPLAY_WINDOW_MS`, not from this value, so a session
@@ -123,6 +124,8 @@ pub struct OpenCodeImporter {
     embedder: Option<Arc<dyn Embedder>>,
     state: Mutex<CursorState>,
     hot_window_ms: i64,
+    /// Where the cursor is saved after each successful pass. `None` = memory only.
+    cursor_path: Option<PathBuf>,
 }
 
 impl Default for OpenCodeImporter {
@@ -142,6 +145,7 @@ impl OpenCodeImporter {
             embedder: None,
             state: Mutex::new(CursorState::default()),
             hot_window_ms: DEFAULT_HOT_WINDOW_MS,
+            cursor_path: None,
         }
     }
 
@@ -162,6 +166,21 @@ impl OpenCodeImporter {
     /// pass; the default keeps a live session from being re-written each cycle.
     pub fn with_hot_window(mut self, hot_window_ms: i64) -> Self {
         self.hot_window_ms = hot_window_ms.max(0);
+        self
+    }
+
+    /// Persist the cursor at `path` and restore it now. A missing, corrupt or
+    /// foreign-version file means a full first pass. The watermark is clamped to
+    /// the wall clock on load, so a poisoned future value cannot skip sessions.
+    pub fn with_cursor_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        let path = path.as_ref().to_path_buf();
+        if let Some(mut loaded) = ingest_cursor::load::<CursorState>(&path) {
+            loaded.watermark_ms = loaded.watermark_ms.min(now_ms());
+            if let Ok(state) = self.state.get_mut() {
+                *state = loaded;
+            }
+        }
+        self.cursor_path = Some(path);
         self
     }
 
@@ -435,6 +454,18 @@ impl OpenCodeImporter {
                     next = next.min(failed).max(watermark);
                 }
                 state.watermark_ms = next;
+            }
+        }
+
+        // Save only after the pass folded its results back: a failed read or
+        // store write never reaches `seen`, so it is never persisted as done.
+        // A save error costs a full pass after restart, not data.
+        if let Some(path) = self.cursor_path.as_deref() {
+            let snapshot = self.state.lock().map(|s| s.clone()).ok();
+            if let Some(snapshot) = snapshot {
+                if let Err(e) = ingest_cursor::save(path, &snapshot) {
+                    warn!("Could not persist OpenCode ingest cursor: {}", e);
+                }
             }
         }
 
@@ -811,6 +842,7 @@ mod tests {
     use super::*;
     use crate::embedding::{Embedder, EmbeddingError};
     use crate::memory::store::InMemoryMemoryStore;
+    use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
 
@@ -1668,6 +1700,140 @@ mod tests {
         assert_eq!(records.len(), 3, "force re-reads every session");
         assert_eq!(stored_rows(&store).await?.len(), 3);
 
+        Ok(())
+    }
+
+    fn cursor_file(dir: &Path) -> PathBuf {
+        dir.join("ingest-cursors").join("opencode.json")
+    }
+
+    /// Restart replay: a fresh instance on the same cursor file reads only what
+    /// changed since the previous instance's last successful pass.
+    #[tokio::test]
+    async fn restart_replays_only_changed() -> Result<()> {
+        let dir = tempdir()?;
+        let db_file = dir.path().join("opencode.db");
+        seed_three_sessions(&db_file)?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+
+        let first = quiet_importer(&db_file).with_cursor_path(&cursor);
+        assert_eq!(first.sync(&store).await?.read, 3);
+        drop(first);
+
+        let second = quiet_importer(&db_file).with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(stats.read, 0, "restart must not re-read unchanged sessions");
+        assert_eq!(stats.message_rows, 0);
+        assert_eq!(stats.skipped, 3);
+        drop(second);
+
+        let conn = Connection::open(&db_file)?;
+        conn.execute(
+            "UPDATE session SET time_updated = ?1 WHERE id = 'ses_b'",
+            [OLD_MS + 500_000],
+        )?;
+        drop(conn);
+
+        let third = quiet_importer(&db_file).with_cursor_path(&cursor);
+        let stats = third.sync(&store).await?;
+        assert_eq!(stats.read, 1, "only the modified session is replayed");
+        assert_eq!(stats.skipped, 2);
+        assert_eq!(stored_rows(&store).await?.len(), 3);
+        Ok(())
+    }
+
+    /// Corrupt or foreign-version cursor: full pass, no panic.
+    #[tokio::test]
+    async fn corrupt_cursor_falls_back_to_full_pass() -> Result<()> {
+        let dir = tempdir()?;
+        let db_file = dir.path().join("opencode.db");
+        seed_three_sessions(&db_file)?;
+        let cursor = cursor_file(dir.path());
+        fs::create_dir_all(cursor.parent().unwrap())?;
+
+        for garbage in ["{truncated", r#"{"version":999,"state":{}}"#, ""] {
+            fs::write(&cursor, garbage)?;
+            let store = InMemoryMemoryStore::new();
+            let importer = quiet_importer(&db_file).with_cursor_path(&cursor);
+            let stats = importer.sync(&store).await?;
+            assert_eq!(
+                stats.read, 3,
+                "garbage cursor {:?} must mean a full pass",
+                garbage
+            );
+            assert_eq!(stored_rows(&store).await?.len(), 3);
+        }
+        Ok(())
+    }
+
+    /// A pass with a failing session must not persist a cursor that moved past
+    /// it. After restart the failed session is retried, and only it.
+    #[tokio::test]
+    async fn cursor_not_advanced_on_failure_after_restart() -> Result<()> {
+        let dir = tempdir()?;
+        let db_file = dir.path().join("opencode.db");
+        seed_three_sessions(&db_file)?;
+        let cursor = cursor_file(dir.path());
+        let store = InMemoryMemoryStore::new();
+        // A BLOB where text is expected makes ses_b unreadable for this pass.
+        let conn = Connection::open(&db_file)?;
+        conn.execute(
+            "UPDATE message SET data = X'00FF' WHERE session_id = 'ses_b'",
+            [],
+        )?;
+        drop(conn);
+
+        let first = quiet_importer(&db_file).with_cursor_path(&cursor);
+        let stats = first.sync(&store).await?;
+        assert_eq!(stats.read, 2);
+        assert_eq!(stats.read_errors, 1);
+        drop(first);
+
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&cursor)?)?;
+        let watermark = saved["state"]["watermark_ms"].as_i64().unwrap_or(i64::MAX);
+        assert!(
+            watermark <= OLD_MS + 1_000,
+            "persisted watermark {} moved past the failed session",
+            watermark
+        );
+
+        let conn = Connection::open(&db_file)?;
+        conn.execute(
+            "UPDATE message SET data = ?1 WHERE session_id = 'ses_b'",
+            [json!({"role": "user"}).to_string()],
+        )?;
+        drop(conn);
+
+        let second = quiet_importer(&db_file).with_cursor_path(&cursor);
+        let stats = second.sync(&store).await?;
+        assert_eq!(stats.read, 1, "only the failed session is retried");
+        assert_eq!(stats.skipped, 2);
+        Ok(())
+    }
+
+    /// A persisted watermark in the future must be clamped on load, or the
+    /// replay floor lands above every real session and the pass sees nothing.
+    #[tokio::test]
+    async fn persisted_future_watermark_is_clamped_on_load() -> Result<()> {
+        let dir = tempdir()?;
+        let db_file = dir.path().join("opencode.db");
+        seed_three_sessions(&db_file)?;
+        let cursor = cursor_file(dir.path());
+        let poisoned = CursorState {
+            watermark_ms: now_ms() + 10 * 86_400_000,
+            ..Default::default()
+        };
+        ingest_cursor::save(&cursor, &poisoned)?;
+
+        let store = InMemoryMemoryStore::new();
+        let importer = quiet_importer(&db_file).with_cursor_path(&cursor);
+        let stats = importer.sync(&store).await?;
+        assert_eq!(
+            stats.candidates, 3,
+            "future watermark must not hide sessions"
+        );
+        assert_eq!(stats.read, 3);
         Ok(())
     }
 }
