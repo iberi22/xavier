@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 
 def plan_rollback(decision: dict, target: dict, state: dict, api=None, dry_run: bool = True) -> dict:
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     base_result = {
         "target_id": target.get("id"),
