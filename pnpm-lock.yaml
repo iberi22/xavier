@@ -69,8 +69,8 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
       react-force-graph-2d:
-        specifier: 1.29.1
-        version: 1.29.1(react@19.3.0)
+        specifier: 1.29.2
+        version: 1.29.2(react@19.3.0)
       recharts:
         specifier: ^3.10.1
         version: 3.10.1(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@18.3.1)(react@19.3.0)(redux@5.0.1)
@@ -2225,8 +2225,8 @@ packages:
     resolution: {integrity: sha512-Wp1zXWPVUPBmfoa3Cqc9ctaKuzKAV6uLstRqlR56kSjplf5uAce+qeyYym7F+PHbGTk+tCEdkCW6RD7DX/gBZw==}
     engines: {node: '>=20'}
 
-  force-graph@1.51.4:
-    resolution: {integrity: sha512-TdJ2KbkoiDQ7NIRx8IPGD0mAXXpLhamS7c+b7W98b0MHG7lphnda1VOQX/98UDTsttIAdH4TcP0l0MauSnLK8w==}
+  force-graph@1.52.0:
+    resolution: {integrity: sha512-0fpxrZzW6qwm9zM7wgh54d7GbxQfQSDV71I0apo+75PVYQPpPHGVPQFLsE9WAu+hOS4VdLd53g0Hua/bxDJKSg==}
     engines: {node: '>=12'}
 
   framer-motion@13.5.0:
@@ -2929,8 +2929,8 @@ packages:
     peerDependencies:
       react: ^19.3.0
 
-  react-force-graph-2d@1.29.1:
-    resolution: {integrity: sha512-1Rl/1Z3xy2iTHKj6a0jRXGyiI86xUti81K+jBQZ+Oe46csaMikp47L5AjrzA9hY9fNGD63X8ffrqnvaORukCuQ==}
+  react-force-graph-2d@1.29.2:
+    resolution: {integrity: sha512-ofAJXlnOufwViZ9YCV8c5S0ZEb2D1pXnD+j2NbVqSzgg217QiycTPrmKQsmODSg6aSssK5BdAX3vhCxM2YmGCQ==}
     engines: {node: '>=12'}
     peerDependencies:
       react: '*'
@@ -2944,8 +2944,8 @@ packages:
   react-is@18.3.1:
     resolution: {integrity: sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==}
 
-  react-kapsule@2.5.7:
-    resolution: {integrity: sha512-kifAF4ZPD77qZKc4CKLmozq6GY1sBzPEJTIJb0wWFK6HsePJatK3jXplZn2eeAt3x67CDozgi7/rO8fNQ/AL7A==}
+  react-kapsule@2.6.0:
+    resolution: {integrity: sha512-HzLJoYb1n1kfwjXbqFFcRR0EA6oPsJ64tNdDmCSaL/bz2o9wUZRSb0cMe//grLFeF9EVoL4CD/e6ozLyzEv+PQ==}
     engines: {node: '>=12'}
     peerDependencies:
       react: '>=16.13.1'
@@ -5353,7 +5353,7 @@ snapshots:
     dependencies:
       tiny-inflate: 1.0.3
 
-  force-graph@1.51.4:
+  force-graph@1.52.0:
     dependencies:
       '@tweenjs/tween.js': 25.0.0
       accessor-fn: 1.5.3
@@ -6168,12 +6168,12 @@ snapshots:
       react: 19.3.0
       scheduler: 0.28.0
 
-  react-force-graph-2d@1.29.1(react@19.3.0):
+  react-force-graph-2d@1.29.2(react@19.3.0):
     dependencies:
-      force-graph: 1.51.4
+      force-graph: 1.52.0
       prop-types: 15.8.1
       react: 19.3.0
-      react-kapsule: 2.5.7(react@19.3.0)
+      react-kapsule: 2.6.0(react@19.3.0)
 
   react-is@16.13.1: {}
 
@@ -6181,7 +6181,7 @@ snapshots:
 
   react-is@18.3.1: {}
 
-  react-kapsule@2.5.7(react@19.3.0):
+  react-kapsule@2.6.0(react@19.3.0):
     dependencies:
       jerrypick: 1.1.2
       react: 19.3.0
