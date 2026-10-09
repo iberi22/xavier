@@ -6,7 +6,10 @@ from datetime import datetime
 def parse_iso(val: str | None) -> datetime | None:
     if not val:
         return None
-    return datetime.fromisoformat(val)
+    try:
+        return datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+    except Exception:
+        return None
 
 def mttr_series(results: list[dict]) -> dict:
     series = {}
@@ -40,9 +43,9 @@ def mttr_series(results: list[dict]) -> dict:
         if escalated:
             series[tid]["unresolved"] += 1
 
-        occurred = parse_iso(r.get("occurred_at"))
+        occurred = parse_iso(r.get("first_bad_signal_at"))
         if not occurred:
-            occurred = parse_iso(r.get("first_bad_signal_at"))
+            occurred = parse_iso(r.get("occurred_at"))
 
         detected = parse_iso(r.get("detected_at"))
         decided = parse_iso(r.get("decided_at"))
