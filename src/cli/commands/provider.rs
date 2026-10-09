@@ -24,8 +24,15 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
             } else {
                 let status_code = resp.status();
                 let body = resp.text().await?;
-                let body_str = if body.is_empty() { "(empty body)" } else { &body };
-                println!("❌ Failed to get provider status: {} {}", status_code, body_str);
+                let body_str = if body.is_empty() {
+                    "(empty body)"
+                } else {
+                    &body
+                };
+                println!(
+                    "❌ Failed to get provider status: {} {}",
+                    status_code, body_str
+                );
             }
         }
         ProviderCommand::List => {
