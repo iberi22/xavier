@@ -20,7 +20,7 @@ def classify(event: dict, decision: dict, incident: dict | None = None) -> dict:
         "tag_moved": False,
         "source_revert": None,
         "state": "escalated",
-        "opened_at": event.get("opened_at") or (datetime.now(timezone.utc).isoformat() + "Z")
+        "opened_at": event.get("opened_at") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     }
 
     evidence = (incident.get("evidence", {}) if incident else {}) or decision.get("evidence", {}) or event.get("evidence", {})
