@@ -778,6 +778,9 @@ pub enum CloudCommand {
         /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
         #[arg(long)]
         passphrase_file: Option<std::path::PathBuf>,
+        /// Publish even if the backup is empty or under half the size of the previous one
+        #[arg(long)]
+        allow_shrink: bool,
         /// Output in JSON format
         #[arg(long)]
         json: bool,
@@ -787,6 +790,9 @@ pub enum CloudCommand {
         /// Read the backup passphrase from this file instead of XAVIER_CLOUD_BACKUP_PASSPHRASE
         #[arg(long)]
         passphrase_file: Option<std::path::PathBuf>,
+        /// Publish even if the backup is empty or under half the size of the previous one
+        #[arg(long)]
+        allow_shrink: bool,
         /// Output in JSON format
         #[arg(long)]
         json: bool,
