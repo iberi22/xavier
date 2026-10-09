@@ -7,13 +7,16 @@ from datetime import datetime, timezone
 def plan_rollback(decision: dict, target: dict, state: dict, api=None, dry_run: bool = True) -> dict:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Contract field first: a DecisionRecord carries previous_known_good_id.
+    to_id = decision.get("previous_known_good_id") or decision.get("to_deployment_id")
+
     base_result = {
         "target_id": target.get("id"),
         "kind": "cf_pages",
         "action": "rollback",
         "dry_run": dry_run,
         "from_deployment_id": decision.get("deployment_id"),
-        "to_deployment_id": decision.get("to_deployment_id"),
+        "to_deployment_id": to_id,
         "result": "skipped",
         "verified": False,
         "observed_at": now,
@@ -29,11 +32,10 @@ def plan_rollback(decision: dict, target: dict, state: dict, api=None, dry_run: 
     if decision.get("deployment_id") != target.get("production_id"):
         base_result["detail"] = "deployment mismatch"
         return base_result
-    if decision.get("to_deployment_id") != decision.get("previous_known_good_id"):
-        base_result["detail"] = "to_deployment_id mismatch"
+    if not to_id:
+        base_result["detail"] = "missing previous_known_good_id"
         return base_result
 
-    to_id = decision.get("to_deployment_id")
     retained = state.get("retained", {})
     if to_id not in retained:
         base_result["detail"] = "unretained deployment ID"

@@ -17,8 +17,7 @@ class TestCloudflarePages(unittest.TestCase):
         self.valid_decision = {
             "action": "rollback",
             "deployment_id": "prod_1",
-            "previous_known_good_id": "good_1",
-            "to_deployment_id": "good_1"
+            "previous_known_good_id": "good_1"
         }
         self.valid_target = {
             "id": "target_1",
@@ -77,6 +76,43 @@ class TestCloudflarePages(unittest.TestCase):
             dry_run=False
         )
         self.assertEqual(res["result"], "failed")
+        self.assertFalse(res["verified"])
+
+    def test_contract_decision_without_to_deployment_id_applies(self):
+        """A real DecisionRecord carries previous_known_good_id, not to_deployment_id."""
+        decision = {
+            "action": "rollback",
+            "deployment_id": "prod_1",
+            "previous_known_good_id": "good_1",
+        }
+        self.assertNotIn("to_deployment_id", decision)
+
+        def api_spy(to_id):
+            return to_id
+
+        res = cloudflare_pages.plan_rollback(
+            decision,
+            self.valid_target,
+            self.valid_state,
+            api=api_spy,
+            dry_run=False
+        )
+        self.assertEqual(res["result"], "applied")
+        self.assertTrue(res["verified"])
+        self.assertEqual(res["to_deployment_id"], "good_1")
+
+    def test_missing_previous_known_good_rejected(self):
+        decision = {
+            "action": "rollback",
+            "deployment_id": "prod_1",
+        }
+        res = cloudflare_pages.plan_rollback(
+            decision,
+            self.valid_target,
+            self.valid_state,
+            dry_run=False
+        )
+        self.assertEqual(res["result"], "skipped")
         self.assertFalse(res["verified"])
 
     def test_unretained_rejected(self):
