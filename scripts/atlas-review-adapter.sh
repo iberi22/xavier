@@ -26,7 +26,7 @@ reviewer_cmd="${ATLAS_REVIEW_CMD:-$HOME/.hermes/scripts/co-agent-review.sh}"
 # Check if reviewer_cmd exists and is executable. Since it could be a command in PATH or a direct path
 # We check command -v or -x file
 if ! command -v "$reviewer_cmd" >/dev/null 2>&1 && [[ ! -x "$reviewer_cmd" ]]; then
-    emit_reject "Reviewer binary missing: $reviewer_cmd"
+    emit_reject "Reviewer binary missing"
 fi
 
 # 3. Setup timeout and report dir
