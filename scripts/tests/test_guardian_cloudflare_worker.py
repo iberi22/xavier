@@ -14,9 +14,11 @@ class TestCloudflareWorkerRecovery(unittest.TestCase):
         self.decision = {
             "action": "rollback",
             "deployment_id": "prod-123",
-            "version_id": "ver-abc"
+            "version_id": "ver-abc",
+            "target_id": "target-1"
         }
         self.target = {
+            "id": "target-1",
             "kind": "cf_worker",
             "production_id": "prod-123"
         }
@@ -29,29 +31,36 @@ class TestCloudflareWorkerRecovery(unittest.TestCase):
     def test_wrong_kind(self):
         self.target["kind"] = "cf_pages"
         res = cfw.plan_rollback(self.decision, self.target, self.state)
-        self.assertEqual(res["result"], "rejected")
+        self.assertEqual(res["result"], "skipped")
+        self.assertEqual(res["kind"], "cf_worker")
+        self.assertEqual(res["action"], "rollback")
+        self.assertFalse(res["verified"])
 
     def test_wrong_action(self):
         self.decision["action"] = "deploy"
         res = cfw.plan_rollback(self.decision, self.target, self.state)
-        self.assertEqual(res["result"], "rejected")
+        self.assertEqual(res["result"], "skipped")
+        self.assertFalse(res["verified"])
 
     def test_wrong_deployment_id(self):
         self.decision["deployment_id"] = "prod-456"
         res = cfw.plan_rollback(self.decision, self.target, self.state)
-        self.assertEqual(res["result"], "rejected")
+        self.assertEqual(res["result"], "skipped")
+        self.assertFalse(res["verified"])
 
     def test_unknown_version(self):
         self.state["retained_versions"] = {}
         res = cfw.plan_rollback(self.decision, self.target, self.state)
-        self.assertEqual(res["result"], "rejected")
+        self.assertEqual(res["result"], "skipped")
         self.assertIn("absent", res["detail"].lower())
+        self.assertFalse(res["verified"])
 
     def test_traffic_mismatch(self):
         self.state["retained_versions"]["ver-abc"]["traffic"] = 90
         res = cfw.plan_rollback(self.decision, self.target, self.state)
-        self.assertEqual(res["result"], "rejected")
+        self.assertEqual(res["result"], "skipped")
         self.assertIn("traffic percentage", res["detail"].lower())
+        self.assertFalse(res["verified"])
 
     def test_dry_run_no_api_call(self):
         api_calls = []
@@ -60,9 +69,10 @@ class TestCloudflareWorkerRecovery(unittest.TestCase):
             return {"version_id": ver, "traffic": 100}
 
         res = cfw.plan_rollback(self.decision, self.target, self.state, api=mock_api, dry_run=True)
-        self.assertEqual(res["result"], "planned")
+        self.assertEqual(res["result"], "skipped")
         self.assertFalse(res["verified"])
         self.assertEqual(len(api_calls), 0)
+        self.assertEqual(res["to_deployment_id"], "ver-abc")
 
     def test_apply_verifies_version(self):
         api_calls = []
@@ -73,9 +83,10 @@ class TestCloudflareWorkerRecovery(unittest.TestCase):
             return {}
 
         res = cfw.plan_rollback(self.decision, self.target, self.state, api=mock_api, dry_run=False)
-        self.assertEqual(res["result"], "verified")
+        self.assertEqual(res["result"], "applied")
         self.assertTrue(res["verified"])
         self.assertEqual(len(api_calls), 2)
+        self.assertEqual(res["to_deployment_id"], "ver-abc")
 
     def test_apply_fails_on_traffic_mismatch(self):
         def mock_api(action, ver):
