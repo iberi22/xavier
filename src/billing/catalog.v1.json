@@ -1,5 +1,5 @@
 {
-  "$comment": "Catálogo canónico de planes de Xavier / Xavier Cloud. Fuente única de verdad: iberi22/xavier-cloud plans/catalog.v1.json. Las copias en otros repos deben ser idénticas (hay tests que lo comprueban). Cambiar un precio o límite = nueva versión + PR en cada repo.",
+  "$comment": "Catálogo canónico de planes de Xavier / Xavier Cloud. Fuente única de verdad: iberi22/xavier-cloud plans/catalog.v1.json. Las copias en otros repos deben ser idénticas, pero la igualdad entre repositorios no se comprueba aquí: los tests de este repo solo comparan la implementación Rust con esta copia local. Cambiar un precio o límite = nueva versión + PR en cada repo.",
   "version": "2026-10-08.1",
   "approved_by": "Brahyan Belalcázar",
   "approved_on": "2026-10-08",

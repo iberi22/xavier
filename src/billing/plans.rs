@@ -2,8 +2,10 @@
 //!
 //! Los precios y límites salen del catálogo canónico
 //! `iberi22/xavier-cloud` → `plans/catalog.v1.json` (versión 2026-10-08.1).
-//! `catalog.v1.json` en esta carpeta es una copia exacta; los tests de abajo
-//! fallan si este archivo y la copia dejan de coincidir.
+//! `catalog.v1.json` en esta carpeta es la copia de este repositorio y los
+//! tests de abajo solo comprueban que la implementación Rust coincide con esa
+//! copia local; la igualdad entre las copias de otros repositorios no se
+//! verifica aquí (requiere comparar contra `iberi22/xavier-cloud`).
 
 use serde::{Deserialize, Serialize};
 
@@ -110,7 +112,8 @@ impl Plan {
     /// `true` solo si el plan se puede contratar por autoservicio hoy.
     /// Ninguno de pago lo está todavía (cobro con Polar pendiente).
     pub fn is_purchasable(&self) -> bool {
-        matches!(self.status(), PlanStatus::Available) && self.monthly_price_cents() > 0
+        matches!(self.status(), PlanStatus::Available)
+            && self.monthly_price_cents().is_some_and(|cents| cents > 0)
     }
 
     /// Variable de entorno con el id de precio remoto (Stripe/Polar), si aplica.
@@ -156,15 +159,19 @@ impl Plan {
         })
     }
 
-    /// Monthly price in cents (0 = gratis o a medida).
-    pub fn monthly_price_cents(&self) -> u32 {
+    /// Precio mensual publicado en centavos.
+    ///
+    /// `Some(0)` = gratis (Local); `None` = a medida (Empresa), que no publica
+    /// precio y se contrata por contacto. Un plan a medida nunca debe
+    /// presentarse como si costara 0.
+    pub fn monthly_price_cents(&self) -> Option<u32> {
         match self {
-            Self::Free => 0,
-            Self::Fundador => 1_000,
-            Self::Cloud => 1_000,
-            Self::Pro => 1_900,
-            Self::Equipo => 4_900,
-            Self::Empresa => 0,
+            Self::Free => Some(0),
+            Self::Fundador => Some(1_000),
+            Self::Cloud => Some(1_000),
+            Self::Pro => Some(1_900),
+            Self::Equipo => Some(4_900),
+            Self::Empresa => None,
         }
     }
 
@@ -413,8 +420,9 @@ mod tests {
     fn prices_match_catalog() {
         for plan in Plan::ALL {
             let e = entry(plan.catalog_id());
-            let monthly = e["price"]["monthly_usd"].as_u64().unwrap_or(0) as u32;
-            assert_eq!(plan.monthly_price_cents(), monthly * 100, "{plan}");
+            // `monthly_usd: null` (Empresa) debe mapear a `None`, no a 0.
+            let monthly = e["price"]["monthly_usd"].as_u64().map(|m| m as u32 * 100);
+            assert_eq!(plan.monthly_price_cents(), monthly, "{plan}");
             let yearly = e["price"]["yearly_usd"].as_u64().map(|y| y as u32 * 100);
             assert_eq!(plan.yearly_price_cents(), yearly, "{plan}");
             let seat = e["price"]["extra_seat_monthly_usd"]
