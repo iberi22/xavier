@@ -65,7 +65,7 @@ machine never builds. PRs must be mergeable as-is:
 - `.gitcore/features.json` is the source of truth (status, tests, files).
 - Run `scripts/verify-pipeline.sh` to see the real state — it EXECUTES the
   declared tests. The pipeline is the judge; status is never hand-promoted.
-- **Post-merge lane** on `main`: full feature-ledger verification (`scripts/verify-pipeline.sh`), and it is the only thing allowed to promote a `features.json` status.
+- **Post-merge lane** — runs post-merge on `main`: full feature-ledger verification (`scripts/verify-pipeline.sh`), and it is the only thing allowed to promote a `features.json` status.
 
 ## 5. Modifying features.json
 
