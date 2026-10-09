@@ -83,8 +83,8 @@ test-utils = []
 bench-runners = []
 tauri = ["dep:tauri"]
 telegram = ["teloxide/macros", "teloxide/webhooks-axum", "teloxide/ctrlc_handler"]
-local-gllm = ["dep:gllm", "gllm/wgpu", "dep:candle-core"]
-local-gllm-cuda = ["dep:gllm", "gllm/cuda", "dep:candle-core"]
+local-gllm = ["dep:gllm", "gllm/wgpu"]
+local-gllm-cuda = ["dep:gllm", "gllm/cuda"]
 dev-mode = []
 # Enterprise features: Cortex Enterprise Cloud integration
 enterprise = []
@@ -325,9 +325,7 @@ totp-rs = { version = "6.0", features = ["gen_secret", "otpauth"] }
 qrcode = "0.14"
 rsa = "0.9"
 base32 = "0.5"
-libsql = { version = "0.9", default-features = false, features = ["core"] }
-sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls", "chrono", "json", "uuid"] }
-zerocopy = "0.8"
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls", "chrono", "json", "uuid"] }
 
 # File traversal
 walkdir = "2"
@@ -425,6 +423,26 @@ opt-level = 3
 lto = false
 codegen-units = 16
 strip = "debuginfo"
+
+# Dev/test profiles (build-speed Phase 0). Mirrors the per-machine
+# ~/.cargo/config.toml of the main dev box so CI gets the same behaviour:
+# line-tables-only debuginfo (smaller test binaries, faster links) and
+# optimized dependencies (crypto/KDF/SQLite-heavy tests run 10-50x faster
+# than at opt-level 0). Our own crate stays at opt-level 0 with debug
+# assertions/overflow checks on.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+[profile.test]
+debug = "line-tables-only"
+
+[profile.test.package."*"]
+opt-level = 2
+debug = false
 
 [profile.bench]
 opt-level = 3
