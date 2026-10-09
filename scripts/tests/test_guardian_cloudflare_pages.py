@@ -1,10 +1,16 @@
 import unittest
 import sys
 import os
+import importlib.util
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'guardian')))
+def load_module():
+    path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'guardian', 'cloudflare_pages.py'))
+    spec = importlib.util.spec_from_file_location("cloudflare_pages", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-import cloudflare_pages
+cloudflare_pages = load_module()
 
 class TestCloudflarePages(unittest.TestCase):
     def setUp(self):
@@ -15,6 +21,7 @@ class TestCloudflarePages(unittest.TestCase):
             "to_deployment_id": "good_1"
         }
         self.valid_target = {
+            "id": "target_1",
             "kind": "cf_pages",
             "production_id": "prod_1"
         }
@@ -37,9 +44,11 @@ class TestCloudflarePages(unittest.TestCase):
             api=api_spy,
             dry_run=True
         )
-        self.assertEqual(res["result"], "planned")
+        self.assertEqual(res["result"], "skipped")
         self.assertFalse(res["verified"])
         self.assertEqual(res["to_deployment_id"], "good_1")
+        self.assertTrue("target_id" in res)
+        self.assertTrue("observed_at" in res)
 
     def test_apply_success(self):
         def api_spy(to_id):
@@ -52,7 +61,7 @@ class TestCloudflarePages(unittest.TestCase):
             api=api_spy,
             dry_run=False
         )
-        self.assertEqual(res["result"], "planned")
+        self.assertEqual(res["result"], "applied")
         self.assertTrue(res["verified"])
         self.assertEqual(res["to_deployment_id"], "good_1")
 
@@ -78,7 +87,8 @@ class TestCloudflarePages(unittest.TestCase):
             state,
             dry_run=True
         )
-        self.assertEqual(res["result"], "rejected")
+        self.assertEqual(res["result"], "skipped")
+        self.assertFalse(res["verified"])
 
     def test_current_mismatch_rejected(self):
         decision = dict(self.valid_decision)
@@ -89,7 +99,8 @@ class TestCloudflarePages(unittest.TestCase):
             self.valid_state,
             dry_run=True
         )
-        self.assertEqual(res["result"], "rejected")
+        self.assertEqual(res["result"], "skipped")
+        self.assertFalse(res["verified"])
 
 if __name__ == '__main__':
     unittest.main()

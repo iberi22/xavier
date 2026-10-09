@@ -2,40 +2,71 @@ import json
 import sys
 import argparse
 import re
+from datetime import datetime, timezone
 
 def plan_rollback(decision: dict, target: dict, state: dict, api=None, dry_run: bool = True) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+
+    base_result = {
+        "target_id": target.get("id"),
+        "kind": "cf_pages",
+        "action": "rollback",
+        "dry_run": dry_run,
+        "from_deployment_id": decision.get("deployment_id"),
+        "to_deployment_id": decision.get("to_deployment_id"),
+        "result": "skipped",
+        "verified": False,
+        "observed_at": now,
+        "detail": ""
+    }
+
     if target.get("kind") != "cf_pages":
-        return {"result": "rejected", "verified": False, "detail": "target kind not cf_pages"}
+        base_result["detail"] = "target kind not cf_pages"
+        return base_result
     if decision.get("action") != "rollback":
-        return {"result": "rejected", "verified": False, "detail": "action not rollback"}
+        base_result["detail"] = "action not rollback"
+        return base_result
     if decision.get("deployment_id") != target.get("production_id"):
-        return {"result": "rejected", "verified": False, "detail": "deployment mismatch"}
+        base_result["detail"] = "deployment mismatch"
+        return base_result
     if decision.get("to_deployment_id") != decision.get("previous_known_good_id"):
-        return {"result": "rejected", "verified": False, "detail": "to_deployment_id mismatch"}
+        base_result["detail"] = "to_deployment_id mismatch"
+        return base_result
 
     to_id = decision.get("to_deployment_id")
     retained = state.get("retained", {})
     if to_id not in retained:
-        return {"result": "rejected", "verified": False, "detail": "unretained deployment ID"}
+        base_result["detail"] = "unretained deployment ID"
+        return base_result
 
     digest = retained[to_id].get("artifact_digest", "")
     if not digest or not re.match(r"^sha256:[0-9a-f]{64}$", digest):
-        return {"result": "rejected", "verified": False, "detail": "malformed artifact_digest"}
+        base_result["detail"] = "malformed artifact_digest"
+        return base_result
 
     if dry_run:
-        return {"result": "planned", "verified": False, "to_deployment_id": to_id, "detail": "dry run"}
+        base_result["detail"] = "dry run"
+        return base_result
 
     if not api:
-        return {"result": "failed", "verified": False, "detail": "no api"}
+        base_result["result"] = "failed"
+        base_result["detail"] = "no api"
+        return base_result
 
     try:
         new_prod_id = api(to_id)
         if new_prod_id == to_id:
-            return {"result": "planned", "verified": True, "to_deployment_id": to_id, "detail": "rollback verified"}
+            base_result["result"] = "applied"
+            base_result["verified"] = True
+            base_result["detail"] = "rollback verified"
         else:
-            return {"result": "failed", "verified": False, "detail": "rollback probe mismatch"}
+            base_result["result"] = "failed"
+            base_result["detail"] = "rollback probe mismatch"
     except Exception:
-        return {"result": "failed", "verified": False, "detail": "provider error"}
+        base_result["result"] = "failed"
+        base_result["detail"] = "provider error"
+
+    return base_result
 
 def main():
     parser = argparse.ArgumentParser(description="Cloudflare Pages recovery adapter")
@@ -59,8 +90,6 @@ def main():
         sys.stderr.write("malformed input\n")
         sys.exit(2)
 
-    # Simplified lookup assuming single target matching decision
-    # In a real scenario, we'd lookup by id
     targets = inventory.get("targets", [])
     target = {}
     for t in targets:
