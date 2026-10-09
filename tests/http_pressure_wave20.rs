@@ -38,9 +38,13 @@ async fn test_wave20_health_fast_under_pressure() {
     let health = collect_health_sync();
     let elapsed = start.elapsed();
 
+    // collect_health_sync bounds its own work with a 450ms internal timeout, so
+    // a 500ms wall-clock figure leaves only ~50ms for OS-thread spawn + join +
+    // scheduler latency under the load this test itself creates. Allow 1000ms
+    // (450ms internal bound + headroom) to avoid starving on 2-vCPU CI runners.
     assert!(
-        elapsed < Duration::from_millis(500),
-        "collect_health_sync took {:?}, expected <500ms",
+        elapsed < Duration::from_millis(1000),
+        "collect_health_sync took {:?}, expected <1000ms",
         elapsed
     );
     assert!(

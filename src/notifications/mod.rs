@@ -215,7 +215,7 @@ impl NotificationProvider for EmailProvider {
 
         let key = notification.title.clone();
         if !SYSTEM_ALERTS
-            .should_notify_email_async(&key, dedup_window)
+            .should_notify_email_async(&key, &notification.id, dedup_window)
             .await
         {
             tracing::info!(

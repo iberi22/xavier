@@ -516,6 +516,7 @@ mod tests {
             content: "word ".repeat(500),
             source_path: "/tmp/test".to_string(),
             embedding: None,
+            disable_model_invocation: false,
         };
 
         let remaining_budget = 50usize;

@@ -83,6 +83,13 @@ impl MemoryManager {
         let mut memories = Vec::new();
         for doc in docs {
             let priority = MemoryPriority::from_metadata(&doc.metadata);
+            let meta_created = doc
+                .metadata
+                .get("created_at")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+
             let (access_count, last_access, created_at) = if let Some(id) = &doc.id {
                 let counts = self
                     .access_counts
@@ -100,10 +107,10 @@ impl MemoryManager {
                 (
                     counts.get(id).copied().unwrap_or(0),
                     times.get(id).copied(),
-                    created.get(id).copied(),
+                    created.get(id).copied().or(meta_created),
                 )
             } else {
-                (0, None, None)
+                (0, None, meta_created)
             };
 
             let mut verified = false;

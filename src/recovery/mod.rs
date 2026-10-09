@@ -15,19 +15,14 @@
 //!                permanently unreadable, silently, with only a warning
 //! ```
 //!
-//! `~/.xavier/master.key` does **not** appear in that chain. It protects
-//! `auth2` (SQLCipher DB key + JWT) and the `secrets` vault
-//! (`src/keystore/mod.rs:183`, `src/auth2/db.rs:43`), and it is recoverable from
-//! a plain reinstall because its wrapping key is derived deterministically from
-//! the host name plus `/etc/machine-id` (`src/keystore/mod.rs:183-218`).
-//! Decrypting a real `XRK1` record with the unwrapped master key **fails**;
-//! with `record.key` it succeeds. So:
+//! This chain describes **XRK1** records. **XDK2** records instead use the
+//! default-space keystore (`spaces/default/keystore.json`), unlocked by the
+//! master key. A seal of `record.key` therefore does not recover XDK2 rows.
+//! The status report surfaces this gap when that default keystore exists.
 //!
-//! - Recovering `master.key` is *convenience* (it is re-derivable, not secret-forever).
-//! - Recovering `RECORD_KEY` is *existential*: without it all 22,410 rows are noise.
-//!
-//! Therefore this module protects **`record.key`** as the primary asset, and
-//! treats `master.key` as a secondary, weaker goal that shares the same escrow.
+//! `master.key` also protects `auth2` (SQLCipher DB key + JWT) and the `secrets`
+//! vault. This module seals `record.key`; its master KCV is an integrity marker,
+//! not a backup of the master key.
 //!
 //! # Invariant: a recovery copy is never encrypted with the key it protects
 //!
@@ -64,6 +59,19 @@
 //!   escrow key; the record key is *wrapped* by it. Binding the vault to the
 //!   words themselves would make the paper the single point of failure.
 //!
+//! # Cómo se enchufaría Shamir
+//!
+//! Shamir Secret Sharing (`src/node_identity/shamir.rs`) podría integrarse repartiendo
+//! la clave de recuperación de 32 bytes que hoy codifican las 24 palabras en N partes
+//! con un umbral K. Un comando `unseal --shares` reconstruiría esa clave de 32 bytes
+//! y continuaría por el mismo flujo de apertura de [`crate::recovery::mnemonic::MnemonicSeal`]
+//! y validación de KCV.
+//!
+//! Riesgos y consideraciones operativas:
+//! - Dónde vive cada parte: custodios independientes y almacenamiento desacoplado.
+//! - Co-ubicación: evitar estrictamente que el archivo de sello resida en el mismo sitio
+//!   o soporte que K partes del secreto, para no invalidar el umbral.
+//!
 //! # Non-destructive restore
 //!
 //! [`RecoveryStore::restore_into`] never overwrites: it writes to a sibling temp
@@ -83,4 +91,7 @@ pub use kcv::{compute_kcv, KcvError};
 pub use manifest::{RecoveryManifest, RecoveryStatus, RECOVERY_FORMAT_VERSION};
 pub use mnemonic::{MnemonicPath, MNEMONIC_WORD_COUNT};
 pub use passphrase::PassphrasePath;
-pub use store::{KeySourceReport, RecoveryStore, RestoreOutcome};
+pub use store::{
+    KcvState, KeySourceReport, RecoveryStore, RestoreOutcome, SealHealth, MNEMONIC_SEAL_FILE,
+    PASSPHRASE_SEAL_FILE,
+};

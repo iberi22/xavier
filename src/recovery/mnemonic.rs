@@ -117,8 +117,12 @@ impl MnemonicPath {
             salt: hex_encode(salt),
             nonce: hex_encode(nonce_bytes.as_bytes()),
             ciphertext: hex_encode(&ciphertext),
-            kdf: format!("argon2id-m19-t2-p1-{WRAP_DOMAIN:?}"),
+            kdf: Self::kdf_label(),
         })
+    }
+
+    pub(crate) fn kdf_label() -> String {
+        format!("argon2id-m19-t2-p1-{WRAP_DOMAIN:?}")
     }
 
     /// Unseal a key with the mnemonic. Wrong words fail the AEAD tag.

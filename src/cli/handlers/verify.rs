@@ -128,6 +128,35 @@ async fn verify_health(format: String) -> Result<()> {
     }
 }
 
+/// Prefix the daemon puts on `error` when the round-trip could not run at all.
+const UNAVAILABLE_PREFIX: &str = "verification_unavailable";
+
+/// Outcome of a `verify save` round-trip, derived from the daemon response.
+#[derive(Debug, PartialEq)]
+enum VerifySaveOutcome {
+    Passed,
+    Unavailable(String),
+    Failed(String),
+}
+
+fn verify_save_outcome(result: &serde_json::Value) -> VerifySaveOutcome {
+    let save_ok = result["save_ok"].as_bool().unwrap_or(false);
+    let retrieve_ok = result["retrieve_ok"].as_bool().unwrap_or(false);
+    let error = result["error"].as_str();
+
+    match error {
+        Some(e) if e.starts_with(UNAVAILABLE_PREFIX) => VerifySaveOutcome::Unavailable(
+            e.trim_start_matches(UNAVAILABLE_PREFIX)
+                .trim_start_matches(':')
+                .trim()
+                .to_string(),
+        ),
+        _ if save_ok && retrieve_ok => VerifySaveOutcome::Passed,
+        Some(e) => VerifySaveOutcome::Failed(e.to_string()),
+        None => VerifySaveOutcome::Failed("save/retrieve round-trip did not succeed".to_string()),
+    }
+}
+
 /// Verify memory save/retrieve round-trip
 async fn verify_save(content: String) -> Result<()> {
     use crate::cli::config::{auth_failed_error, auth_failed_message, is_auth_failure};
@@ -186,12 +215,21 @@ async fn verify_save(content: String) -> Result<()> {
         println!("  Latency:   {} ms", latency);
         println!("{}", "=".repeat(47));
 
-        if save_ok && retrieve_ok {
-            println!("[OK] Verification passed!");
-            Ok(())
-        } else {
-            println!("[X] Verification failed!");
-            Err(anyhow::anyhow!("verify save round-trip failed"))
+        match verify_save_outcome(&result) {
+            VerifySaveOutcome::Passed => {
+                println!("[OK] Verification passed!");
+                Ok(())
+            }
+            VerifySaveOutcome::Unavailable(reason) => {
+                // Not a failed save, and not a pass: the check never ran. Exit non-zero so
+                // scripts do not treat it as verified.
+                println!("[!] Verification skipped: {reason}");
+                Err(anyhow::anyhow!("verify save unavailable: {reason}"))
+            }
+            VerifySaveOutcome::Failed(reason) => {
+                println!("[X] Verification failed: {reason}");
+                Err(anyhow::anyhow!("verify save round-trip failed"))
+            }
         }
     } else {
         println!(
@@ -199,5 +237,31 @@ async fn verify_save(content: String) -> Result<()> {
             save_resp.text().await?
         );
         Err(anyhow::anyhow!("verify save request failed"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{verify_save_outcome, VerifySaveOutcome};
+    use serde_json::json;
+
+    #[test]
+    fn verify_save_outcome_maps_unavailable_to_skip() {
+        assert!(matches!(
+            verify_save_outcome(&json!({
+                "save_ok": false,
+                "retrieve_ok": false,
+                "error": "verification_unavailable: x"
+            })),
+            VerifySaveOutcome::Unavailable(_)
+        ));
+        assert_eq!(
+            verify_save_outcome(&json!({"save_ok": true, "retrieve_ok": true})),
+            VerifySaveOutcome::Passed
+        );
+        assert!(matches!(
+            verify_save_outcome(&json!({"save_ok": true, "retrieve_ok": false})),
+            VerifySaveOutcome::Failed(_)
+        ));
     }
 }

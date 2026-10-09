@@ -13,7 +13,7 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
     match cmd {
         ProviderCommand::Status => {
             let resp = client
-                .get(format!("{}/v1/provider/status", base_url))
+                .get(format!("{}/headless/provider/status", base_url))
                 .header("X-Xavier-Token", &token)
                 .send()
                 .await?;
@@ -22,7 +22,17 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
                 let status: serde_json::Value = resp.json().await?;
                 println!("{}", serde_json::to_string_pretty(&status)?);
             } else {
-                println!("❌ Failed to get provider status: {}", resp.text().await?);
+                let status_code = resp.status();
+                let body = resp.text().await?;
+                let body_str = if body.is_empty() {
+                    "(empty body)"
+                } else {
+                    &body
+                };
+                println!(
+                    "❌ Failed to get provider status: {} {}",
+                    status_code, body_str
+                );
             }
         }
         ProviderCommand::List => {
