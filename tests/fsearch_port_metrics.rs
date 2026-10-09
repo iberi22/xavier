@@ -42,7 +42,7 @@ const CORPUS: &[(&str, &str)] = &[
     ),
     (
         "config/xavier.config.json",
-        "Runtime configuration file for the xavier daemon with ingestion interval and ports.",
+        "Runtime configuration file with listener ports and feature flags.",
     ),
     (
         "docs/adr/041-session-ingestion.md",
@@ -82,11 +82,11 @@ const CORPUS: &[(&str, &str)] = &[
     ),
     (
         "incidents/INC-4821.md",
-        "Incident INC-4821 escalated to runtime support after ingestion loop saturation.",
+        "Incident INC-4821 about an expired certificate in the staging cluster.",
     ),
     (
         "incidents/INC-4790.md",
-        "Incident INC-4790 about backup timer drift on the production node.",
+        "Incident INC-4790 about a flaky integration test in the release job.",
     ),
     (
         "src/domain/cycle_breaks/w30_10.rs",
@@ -165,8 +165,8 @@ const CORPUS: &[(&str, &str)] = &[
         "Skill dispatch handler that resolves skills by substring ranking.",
     ),
     (
-        "docs/runbooks/ingest-loop-saturation.md",
-        "Runbook for a busy read loop during ingestion, with syscall counters.",
+        "docs/runbooks/disk-full.md",
+        "Runbook for a full disk, with cleanup steps for temporary files.",
     ),
     (
         "src/observability/metrics.rs",
