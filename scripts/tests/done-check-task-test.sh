@@ -16,7 +16,7 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 cat << 'INNER' > "$TEST_DIR/fake_reviewer.sh"
 #!/bin/bash
-cat "$1" | jq -c '.review'
+cat | jq -c '.review | {verdict: .verdict, notes: "fake review"}'
 INNER
 chmod +x "$TEST_DIR/fake_reviewer.sh"
 
@@ -168,6 +168,40 @@ cat << JSON > self_review.json
 JSON
 if bash "$DONE_CHECK" self_review.json --json >/dev/null 2>&1; then
     echo "Test 7 failed: script exited 0 but should fail"
+    exit 1
+fi
+
+# Additional test: missing/unset DONE_REVIEW_CMD
+export DONE_REVIEW_CMD=""
+if bash "$DONE_CHECK" green.json --json >/dev/null 2>&1; then
+    echo "Test 8 failed: missing DONE_REVIEW_CMD should fail"
+    exit 1
+fi
+export DONE_REVIEW_CMD="$TEST_DIR/fake_reviewer.sh"
+
+# Additional test: fake reviewer rejects but bundle says approve
+cat << 'INNER' > "$TEST_DIR/fake_rejecter.sh"
+#!/bin/bash
+echo '{"verdict":"reject","notes":"i said no"}'
+INNER
+chmod +x "$TEST_DIR/fake_rejecter.sh"
+
+export DONE_REVIEW_CMD="$TEST_DIR/fake_rejecter.sh"
+cat << JSON > mismatch.json
+{
+  "task_id": "1",
+  "sha": "$HEAD_SHA",
+  "declared_files": ["a", "b"],
+  "changed_files": ["b", "a"],
+  "changed_lines": 10,
+  "scans": {"secret_scan": "pass"},
+  "commands": ["cargo test"],
+  "atlas": {"passed": true, "dod_complete": true, "evidence_count": 1},
+  "review": {"verdict": "approve", "subject_sha": "$HEAD_SHA", "backend": "modelA", "executor": "modelB"}
+}
+JSON
+if bash "$DONE_CHECK" mismatch.json --json >/dev/null 2>&1; then
+    echo "Test 9 failed: fake rejecter should override bundle approve"
     exit 1
 fi
 
