@@ -44,7 +44,7 @@ Before enabling any target for automation, run offline rollback drills
 in a nonproduction setting to ensure safety. The offline drills must
 simulate a failed smoke, sustained error signal, false alarm, missing
 known-good artifact, rollback failure, and guardian outage scenarios.
-The offline runner calculates metrics per target including time to detect,
+The offline runner emits `first_bad_signal_at` and calculates metrics per target including time to detect,
 detection-to-decision time, rollback time, **production MTTR**,
 false positives, failed rollbacks, and unresolved incidents.
 Production MTTR tracks only restored targets and excludes GitHub integration MTTR.

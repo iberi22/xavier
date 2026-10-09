@@ -108,11 +108,28 @@ class TestGuardianDrill(unittest.TestCase):
 
         self.assertIn("target1", series)
         s = series["target1"]
-        self.assertEqual(s["time_to_detect"], 5.0) # From first_bad_signal_at vs detected_at
+        self.assertEqual(s["time_to_detect"], 10.0) # 5.0 from failed_smoke + 5.0 from missing_known_good
         self.assertEqual(s["production_mttr"], 30.0) # From failed_smoke
         self.assertEqual(s["unresolved"], 1) # From missing_known_good
         self.assertEqual(s["false_positives"], 1) # From false_alarm
         self.assertNotIn("integration_mttr", s)
+
+    def test_drill_result_contract_keys(self):
+        res = drill.run_drill(self.target, "failed_smoke", {}, self.now)
+        contract = {"target_id", "scenario", "detected_at", "decided_at",
+                    "restored_at", "escalated", "false_positive", "outcome"}
+        self.assertTrue(contract.issubset(set(res.keys())))
+        self.assertIn(res["outcome"], ("restored", "escalated", "failed"))
+        self.assertTrue(res["detected_at"].endswith("Z"))
+        self.assertTrue(res["restored_at"].endswith("Z"))
+
+    def test_time_to_detect_from_producer_field(self):
+        # Regression: time_to_detect must come from a real DrillResult field.
+        res = drill.run_drill(self.target, "failed_smoke", {}, self.now)
+        self.assertIn("first_bad_signal_at", res)
+        self.assertTrue(res["first_bad_signal_at"].endswith("Z"))
+        series = metrics.mttr_series([res])
+        self.assertEqual(series["target1"]["time_to_detect"], 5.0)
 
 if __name__ == "__main__":
     unittest.main()

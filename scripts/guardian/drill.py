@@ -1,4 +1,16 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+# Simulated fault onset to detection latency used by the offline drills.
+DETECTION_DELAY_SECONDS = 5
+
+
+def _utc_z(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 def run_drill(target: dict, scenario: str, adapters: dict | None = None, now: datetime | None = None) -> dict:
     if now is None:
@@ -53,18 +65,21 @@ def run_drill(target: dict, scenario: str, adapters: dict | None = None, now: da
         escalated = True
         outcome = "failed"
 
-    if scenario == "missing_known_good":
-        restored_at = None
-        escalated = True
-        outcome = "escalated"
+    # The simulated fault onset is a real producer field so time_to_detect can be
+    # derived from a DrillResult instead of a caller-only literal.
+    if false_positive:
+        first_bad_signal_at = now
+    else:
+        first_bad_signal_at = now - timedelta(seconds=DETECTION_DELAY_SECONDS)
 
     return {
         "target_id": target_id,
         "scenario": scenario,
-        "detected_at": detected_at.isoformat() if detected_at else None,
-        "decided_at": decided_at.isoformat() if decided_at else None,
-        "restored_at": restored_at.isoformat() if restored_at else None,
+        "detected_at": _utc_z(detected_at),
+        "decided_at": _utc_z(decided_at),
+        "restored_at": _utc_z(restored_at),
         "escalated": escalated,
         "false_positive": false_positive,
-        "outcome": outcome
+        "outcome": outcome,
+        "first_bad_signal_at": _utc_z(first_bad_signal_at),
     }
