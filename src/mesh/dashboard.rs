@@ -79,7 +79,7 @@ pub fn aggregate_dashboard(
 
     MeshDashboardResponse {
         peers,
-        maturity: MeshMaturityReport::default(),
+        maturity: MeshMaturityReport::unmeasured(),
         bandwidth: MeshBandwidth {
             bytes_sent,
             bytes_received,

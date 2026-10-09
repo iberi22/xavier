@@ -30,8 +30,7 @@ pub struct MeshAcl {
 }
 
 impl MeshAcl {
-    /// Load.
-    pub fn load() -> Result<Self> {
+    fn storage_path() -> Result<PathBuf> {
         let config_dir = if let Ok(val) = std::env::var("XAVIER_CONFIG_DIR") {
             PathBuf::from(val)
         } else {
@@ -39,7 +38,21 @@ impl MeshAcl {
                 .context("Could not determine config directory")?
                 .join("xavier")
         };
-        Self::load_from(config_dir.join("mesh_acl.json"))
+        Ok(config_dir.join("mesh_acl.json"))
+    }
+
+    /// Load the enforcement ACL, creating its configuration directory if needed.
+    pub fn load() -> Result<Self> {
+        Self::load_from(Self::storage_path()?)
+    }
+
+    /// Load the same typed ACL without creating files or directories.
+    pub fn load_read_only() -> Result<Self> {
+        Self::load_read_only_from(Self::storage_path()?)
+    }
+
+    pub(crate) fn has_entries(&self) -> bool {
+        !self.entries.is_empty()
     }
 
     /// Load from.
@@ -48,6 +61,10 @@ impl MeshAcl {
             std::fs::create_dir_all(parent)?;
         }
 
+        Self::load_read_only_from(storage_path)
+    }
+
+    fn load_read_only_from(storage_path: PathBuf) -> Result<Self> {
         if !storage_path.exists() {
             return Ok(Self {
                 entries: HashMap::new(),
