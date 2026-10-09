@@ -111,6 +111,15 @@ export function auditFiles(files) {
  * Gets list of files to check from git diff or tracked files.
  * @returns {string[]}
  */
+export function getStagedFiles() {
+  try {
+    const output = execSync('git diff --cached --name-only --diff-filter=ACMR', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+    return output.split('\n').map(f => f.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 export function getGitFiles() {
   try {
     const output = execSync('git ls-files', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
@@ -124,7 +133,8 @@ export function getGitFiles() {
  * Unit test suite runner for validation functions.
  */
 export function runTests() {
-  console.log('🧪 Running SWAL Husky Guard Unit Tests...');
+  const staged = getStagedFiles();
+  // Silenced verbose logs for --test mode to ensure one-line summary
   let pass = true;
 
   const testCases = [
@@ -151,7 +161,7 @@ export function runTests() {
   }
 
   if (pass) {
-    console.log('✅ All unit tests passed successfully!');
+    console.log(`✅ SWAL Husky Guard tests passed (staged: ${staged.length})`);
     return 0;
   } else {
     console.error('❌ Unit tests failed!');
