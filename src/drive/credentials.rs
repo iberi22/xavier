@@ -275,6 +275,24 @@ mod tests {
         assert_ne!(drive, auth_db);
     }
 
+    /// E3: key separation via the REAL derivations, not re-typed HKDF labels.
+    #[test]
+    fn e3_vault_auth_drive_keys_are_pairwise_distinct() {
+        use crate::keystore::MasterKeyManager;
+
+        let manager = MasterKeyManager::from_key_for_test(MASTER);
+        let vault = manager.vault_key().unwrap();
+        let auth = manager.auth_db_key().unwrap();
+        let drive = DriveCredentialStore::derive_wrapping_key(&MASTER).unwrap();
+
+        assert_ne!(vault, auth);
+        assert_ne!(vault, drive);
+        assert_ne!(auth, drive);
+        assert_ne!(vault, MASTER);
+        assert_ne!(auth, MASTER);
+        assert_ne!(drive, MASTER);
+    }
+
     /// AC: expiry has a safety margin, matching `google_oauth.rs:107`.
     #[test]
     fn expiry_uses_a_safety_margin() {

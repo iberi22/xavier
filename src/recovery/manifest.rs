@@ -21,17 +21,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::crypto::hex_encode;
 use crate::recovery::kcv::encode_kcv;
+use crate::recovery::store::{KcvState, SealHealth};
 
 /// On-disk manifest version.
 pub const RECOVERY_FORMAT_VERSION: u16 = 1;
 
 /// Which recovery paths currently hold a usable copy.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct RecoveryStatus {
     /// A 24-word BIP39 seal of the keys exists.
     pub mnemonic_seal_present: bool,
     /// A passphrase-sealed blob exists.
     pub passphrase_seal_present: bool,
+    pub mnemonic_seal: SealHealth,
+    pub passphrase_seal: SealHealth,
+    pub kcv: KcvState,
+    /// XDK2 rows in this space require the master key, independently of record.key.
+    pub default_space_keystore_exists: bool,
     /// The rclone crypt passphrase is stored somewhere recoverable.
     ///
     /// `None` means "unknown"; `Some(false)` means "verified absent". The
@@ -43,9 +49,12 @@ impl RecoveryStatus {
     /// Recovery is considered real only when a path exists **and** the
     /// independent crypt passphrase is accounted for.
     pub fn is_recoverable(&self) -> bool {
-        let path = self.mnemonic_seal_present || self.passphrase_seal_present;
+        let path = self.mnemonic_seal.is_valid() || self.passphrase_seal.is_valid();
         let crypt_ok = self.crypt_passphrase_backed_up == Some(true);
-        path && crypt_ok
+        path && matches!(
+            self.kcv,
+            KcvState::MatchesLiveKey | KcvState::LiveKeyMissing
+        ) && crypt_ok
     }
 
     /// Human-readable reasons recovery is not yet trustworthy.
@@ -53,6 +62,22 @@ impl RecoveryStatus {
         let mut gaps = Vec::new();
         if !self.mnemonic_seal_present && !self.passphrase_seal_present {
             gaps.push("no recovery seal exists for the record key".to_string());
+        }
+        match self.kcv {
+            KcvState::Absent => gaps.push("no KCV: an unsealed key cannot be verified".to_string()),
+            KcvState::MismatchesLiveKey => gaps.push(
+                "seals protect a different key than the live record.key (KCV mismatch)".to_string(),
+            ),
+            KcvState::Malformed => {
+                gaps.push("the key-check value or manifest is malformed".to_string())
+            }
+            KcvState::ManifestDisagrees => {
+                gaps.push("the manifest disagrees with the key-check value sidecar".to_string())
+            }
+            KcvState::MatchesLiveKey | KcvState::LiveKeyMissing => {}
+        }
+        if self.default_space_keystore_exists {
+            gaps.push("default-space keystore exists: XDK2 rows are protected by the master key, not by record.key".to_string());
         }
         match self.crypt_passphrase_backed_up {
             Some(true) => {}
@@ -160,6 +185,9 @@ mod tests {
             mnemonic_seal_present: true,
             passphrase_seal_present: false,
             crypt_passphrase_backed_up: Some(false),
+            mnemonic_seal: SealHealth::Valid { mode_0600: true },
+            kcv: KcvState::MatchesLiveKey,
+            ..Default::default()
         };
         assert!(
             !with_seal.is_recoverable(),
@@ -178,6 +206,16 @@ mod tests {
         assert!(complete.gaps().is_empty());
     }
 
+    #[test]
+    fn status_reports_default_space_master_key_gap() {
+        let status = RecoveryStatus {
+            default_space_keystore_exists: true,
+            ..Default::default()
+        };
+        assert!(status.gaps().iter().any(|gap| gap ==
+            "default-space keystore exists: XDK2 rows are protected by the master key, not by record.key"));
+    }
+
     /// An unverified passphrase must never be reported as safe.
     #[test]
     fn unverified_crypt_passphrase_is_a_gap() {
@@ -185,6 +223,10 @@ mod tests {
             mnemonic_seal_present: true,
             passphrase_seal_present: true,
             crypt_passphrase_backed_up: None,
+            mnemonic_seal: SealHealth::Valid { mode_0600: true },
+            passphrase_seal: SealHealth::Valid { mode_0600: true },
+            kcv: KcvState::MatchesLiveKey,
+            ..Default::default()
         };
         assert!(!s.is_recoverable());
         assert!(s.gaps().iter().any(|g| g.contains("never verified")));
@@ -197,6 +239,7 @@ mod tests {
             mnemonic_seal_present: false,
             passphrase_seal_present: false,
             crypt_passphrase_backed_up: Some(true),
+            ..Default::default()
         };
         assert!(!s.is_recoverable());
         assert!(s.gaps().iter().any(|g| g.contains("no recovery seal")));

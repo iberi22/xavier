@@ -65,7 +65,7 @@ machine never builds. PRs must be mergeable as-is:
 - `.gitcore/features.json` is the source of truth (status, tests, files).
 - Run `scripts/verify-pipeline.sh` to see the real state — it EXECUTES the
   declared tests. The pipeline is the judge; status is never hand-promoted.
-- CI runs the same pipeline on every PR.
+- **Post-merge lane** — runs post-merge on `main`: full feature-ledger verification (`scripts/verify-pipeline.sh`), and it is the only thing allowed to promote a `features.json` status.
 
 ## 5. Modifying features.json
 
@@ -99,7 +99,7 @@ machine never builds. PRs must be mergeable as-is:
 ## 9. Pull requests
 
 - 1 PR = 1 feature (or a bounded part of it), referencing its feature id.
-- CI runs: fmt, clippy, tests, feature verification, secret scan.
+- **PR lane**: `cargo fmt --all -- --check`, `cargo check --package xavier --all-targets --features ci-safe`, `cargo clippy --package xavier --all-targets --features ci-safe -- -D warnings`, `cargo test --package xavier --lib --features ci-safe -- --test-threads=1`, plus the secret scan.
 - Never commit: session state, output artifacts, `.env`, logs, databases.
 
 ## 10. Canonical Directory Protocol & Agent Hygiene
@@ -213,3 +213,17 @@ module: `memory` (51 files / 25.2k lines), `server` (12k), `cli` (6.1k),
 ## SDD One-Page + SRS Mapping
 > Spec efimero `.gitcore/sdd/specs/###-feat/onepage.md` referencia `REQ-xxx` durable de `docs/SRS/REQUIREMENTS.md` (IEEE 830 reduced). Drift detector `srs-src-drift-detector` mantiene traceabilidad. Docs humanos estables en `docs/`, specs AI en `.gitcore/sdd/` aislado.
 <!-- SWAL-SDD-END -->
+
+<!-- SWAL-ZERO-HANDOFF-START -->
+## Protocolo Zero-Handoff Continuation (T3 / Xavier SSoT)
+> Cuando una sesión larga de T3 acumula alta densidad de contexto (>250k–300k tokens o >750 pasos):
+> 1. **Detección proactiva**: El agente verifica la salud del contexto ejecutando:
+>    `python3 ~/.hermes/scripts/t3-context-monitor.py --check`
+> 2. **Cápsula inmutable en Xavier**: Si el estado es `CRITICAL` o `needs_handoff: true`:
+>    `python3 ~/.hermes/scripts/t3-context-monitor.py --capsule`
+> 3. **Alerta y consulta obligatoria al usuario**:
+>    El agente debe avisar al usuario de la saturación crítica y preguntarle explícitamente (usando `ask_question`) si desea abrir una ventana limpia con el Seed Prompt generado o continuar en la actual.
+> 4. **Traspaso sin pérdida**:
+>    Al migrar, la nueva ventana consulta la cápsula en Xavier vía `xavier search "<capsule_id>"` y retoma el trabajo con contexto limpio (<1k tokens) sin arrastrar histórico degradado.
+<!-- SWAL-ZERO-HANDOFF-END -->
+

@@ -83,6 +83,9 @@ const _: () = assert!(MIN_DISPATCH_CONFIDENCE > 0.0 && MIN_DISPATCH_CONFIDENCE <
 /// private top match cannot crowd out a readable one).
 const SKILL_DISPATCH_FETCH: usize = 10;
 
+/// The maximum number of skill descriptions to inject into the Tier 1 prompt.
+const MAX_TIER1_SKILLS: usize = 20;
+
 /// The dispatcher that ties the registry, memory, and retrieval together.
 pub struct SkillDispatcher {
     registry: SkillRegistry,
@@ -154,8 +157,12 @@ impl SkillDispatcher {
         let memory_budget = (max_tokens as f32 * 0.50) as usize;
         let _decision_budget = max_tokens.saturating_sub(skill_budget + memory_budget);
 
-        // 3. Compact the skill content to fit budget
-        let system_instructions = skill.compacted_content(skill_budget);
+        // 3. Build a compact description index of available skills
+        let mut system_instructions = String::from("Available skills:\n");
+        for (_, s) in matches.iter().take(MAX_TIER1_SKILLS) {
+            let marker = if s.name == skill.name { "*" } else { "-" };
+            system_instructions.push_str(&format!("{} {}: {}\n", marker, s.name, s.description));
+        }
 
         // 4. Gather relevant memories
         let (relevant_memories, prior_decisions) = if let Some(memory) = &self.memory {
@@ -295,7 +302,7 @@ mod tests {
     #[test]
     fn context_pack_serializes() {
         let pack = ContextPack {
-            system_instructions: "Do the thing".to_string(),
+            system_instructions: "Available skills:\n* do-the-thing: Do the thing".to_string(),
             relevant_memories: vec![MemoryReference {
                 id: "m1".to_string(),
                 path: "test/path".to_string(),
@@ -307,7 +314,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&pack).unwrap();
-        assert!(json.contains("Do the thing"));
+        assert!(json.contains("do-the-thing"));
         assert!(json.contains("test memory"));
     }
 
@@ -318,7 +325,7 @@ mod tests {
             skill_description: "A test".to_string(),
             confidence: 0.85,
             context_pack: ContextPack {
-                system_instructions: "Test".to_string(),
+                system_instructions: "Available skills:\n* test-skill: A test".to_string(),
                 relevant_memories: Vec::new(),
                 prior_decisions: Vec::new(),
                 total_tokens: 1,

@@ -88,6 +88,8 @@ pub enum KeySource {
     Env,
     /// From an existing key file.
     File(PathBuf),
+    /// No key file exists; probing never creates it.
+    Missing(PathBuf),
     /// Freshly generated into the key file.
     Generated(PathBuf),
     /// Not available: reads stay compatible, writes stay plaintext.
@@ -95,7 +97,7 @@ pub enum KeySource {
 }
 
 /// Resolve the node key plus where it came from.
-pub fn resolve_record_key_with_source() -> (Option<[u8; 32]>, KeySource) {
+pub fn peek_record_key_with_source() -> (Option<[u8; 32]>, KeySource) {
     // (a) Env var wins when present and well-formed.
     if let Ok(raw) = std::env::var(RECORD_KEY_ENV) {
         let hex = raw.trim().trim_start_matches("0x").trim_start_matches("0X");
@@ -114,15 +116,23 @@ pub fn resolve_record_key_with_source() -> (Option<[u8; 32]>, KeySource) {
         }
     }
 
-    // (b) Key file, generated on first use.
+    // (b) Existing key file only.
     let path = record_key_path();
     match read_key_file(&path) {
         Ok(Some(key)) => (Some(key), KeySource::File(path)),
-        Ok(None) => match generate_key_file(&path) {
+        Ok(None) => (None, KeySource::Missing(path)),
+        Err(e) => (None, KeySource::Unavailable(e.to_string())),
+    }
+}
+
+/// Resolve the node key, generating it only for a new node with a missing file.
+pub fn resolve_record_key_with_source() -> (Option<[u8; 32]>, KeySource) {
+    match peek_record_key_with_source() {
+        (None, KeySource::Missing(path)) => match generate_key_file(&path) {
             Ok(key) => (Some(key), KeySource::Generated(path)),
             Err(e) => (None, KeySource::Unavailable(e.to_string())),
         },
-        Err(e) => (None, KeySource::Unavailable(e.to_string())),
+        found => found,
     }
 }
 
@@ -2997,6 +3007,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn at_rest_key_resolution_order() {
         // Save/restore process env (tests run single-threaded for this module).
         let saved_key = std::env::var(RECORD_KEY_ENV).ok();
@@ -3006,6 +3017,12 @@ mod tests {
         // NOTE: at_rest tests run single-threaded (--test-threads=1): env mutation is safe.
         std::env::set_var(DATA_DIR_ENV, dir.path().to_string_lossy().to_string());
         std::env::remove_var(RECORD_KEY_ENV);
+
+        // Probing a missing key must never mint it.
+        let (missing, source) = peek_record_key_with_source();
+        assert!(missing.is_none());
+        assert!(matches!(source, KeySource::Missing(_)));
+        assert!(!record_key_path().exists());
 
         // (b) Missing file -> generated with 0600.
         let (key1, src1) = resolve_record_key_with_source();

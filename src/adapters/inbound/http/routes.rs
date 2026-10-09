@@ -559,6 +559,19 @@ pub struct VerifySaveResponse {
     pub save_ok: bool,
     pub latency_ms: u64,
     pub match_score: f32,
+    pub retrieve_ok: bool,
+    /// Set when the round-trip did not run or failed. Unavailable reasons start with
+    /// `verification_unavailable`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Internal token for the verification round-trip, read only from the daemon's own environment.
+/// `None` means verification cannot run; the handler reports that as unavailable, not as a failed save.
+fn resolve_internal_token() -> Option<String> {
+    ["XAVIER_TOKEN", "XAVIER_AUTH_TOKEN"]
+        .iter()
+        .find_map(|name| std::env::var(name).ok().filter(|t| !t.trim().is_empty()))
 }
 
 /// Verify save handler.
@@ -577,19 +590,23 @@ pub async fn verify_save_handler(
             save_ok: false,
             latency_ms: start.elapsed().as_millis() as u64,
             match_score: 0.0,
+            retrieve_ok: false,
+            error: Some("verification_unavailable: internal URL rejected".to_string()),
         });
     }
 
-    let auth_token = match std::env::var("XAVIER_TOKEN") {
-        Ok(token) => token,
-        Err(_) => {
-            tracing::error!("XAVIER_TOKEN is required for verification requests");
-            return Json(VerifySaveResponse {
-                save_ok: false,
-                latency_ms: start.elapsed().as_millis() as u64,
-                match_score: 0.0,
-            });
-        }
+    let Some(auth_token) = resolve_internal_token() else {
+        tracing::error!("no internal token configured; verification skipped");
+        return Json(VerifySaveResponse {
+            save_ok: false,
+            latency_ms: start.elapsed().as_millis() as u64,
+            match_score: 0.0,
+            retrieve_ok: false,
+            error: Some(
+                "verification_unavailable: no internal token configured in the daemon environment (set XAVIER_TOKEN or XAVIER_AUTH_TOKEN and restart)"
+                    .to_string(),
+            ),
+        });
     };
 
     let client = LIB_HTTP_CLIENT.clone();
@@ -610,11 +627,15 @@ pub async fn verify_save_handler(
             save_ok: vr.save_ok,
             latency_ms: elapsed,
             match_score: vr.match_score,
+            retrieve_ok: vr.retrieve_ok,
+            error: None,
         }),
-        Err(_) => Json(VerifySaveResponse {
+        Err(e) => Json(VerifySaveResponse {
             save_ok: false,
             latency_ms: elapsed,
             match_score: 0.0,
+            retrieve_ok: false,
+            error: Some(format!("verify round-trip failed: {e}")),
         }),
     }
 }
@@ -2795,5 +2816,209 @@ mod tests {
         assert_eq!(response.active_agents, 7);
         assert_eq!(response.timestamp_ms, 1_234_567);
         assert_eq!(response.alerts.len(), 2);
+    }
+
+    #[test]
+    fn verify_save_response_serializes_retrieve_ok_and_error() {
+        let v = serde_json::to_value(VerifySaveResponse {
+            save_ok: true,
+            latency_ms: 3,
+            match_score: 0.9,
+            retrieve_ok: true,
+            error: None,
+        })
+        .expect("serialize verify response");
+
+        assert_eq!(v["retrieve_ok"], true);
+        assert!(v.get("error").is_none());
+    }
+
+    #[test]
+    fn verify_save_response_includes_error_when_set() {
+        let v = serde_json::to_value(VerifySaveResponse {
+            save_ok: false,
+            latency_ms: 0,
+            match_score: 0.0,
+            retrieve_ok: false,
+            error: Some("verification_unavailable: x".to_string()),
+        })
+        .expect("serialize verify response");
+
+        assert_eq!(v["error"], "verification_unavailable: x");
+    }
+
+    #[test]
+    fn resolve_internal_token_prefers_token_then_alias() {
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::remove_var("XAVIER_TOKEN");
+        std::env::remove_var("XAVIER_AUTH_TOKEN");
+        assert_eq!(resolve_internal_token(), None);
+
+        std::env::set_var("XAVIER_AUTH_TOKEN", "alias-test-value");
+        assert_eq!(
+            resolve_internal_token().as_deref(),
+            Some("alias-test-value")
+        );
+
+        std::env::set_var("XAVIER_TOKEN", "   ");
+        assert_eq!(
+            resolve_internal_token().as_deref(),
+            Some("alias-test-value")
+        );
+
+        std::env::set_var("XAVIER_TOKEN", "primary-test-value");
+        assert_eq!(
+            resolve_internal_token().as_deref(),
+            Some("primary-test-value")
+        );
+    }
+}
+
+/// Verify save driven through the production router (`create_router`), with a loopback
+/// stand-in for the daemon's memory endpoints. No files are touched.
+#[cfg(test)]
+mod verify_save_route_tests {
+    use super::create_router;
+    use axum::{
+        body::Body,
+        http::{HeaderMap, Method, Request, StatusCode},
+        response::Response,
+        routing::post,
+        Json, Router,
+    };
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    /// Test fixture, not a real credential.
+    const TEST_TOKEN: &str = "verify-test-internal-token";
+
+    fn verify_request(content: &str) -> Request<Body> {
+        Request::builder()
+            .method(Method::POST)
+            .uri("/xavier/verify/save")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({ "path": "/_verify/test", "content": content }).to_string(),
+            ))
+            .expect("build verify request")
+    }
+
+    async fn read_json(resp: Response) -> serde_json::Value {
+        let bytes = resp
+            .into_body()
+            .collect()
+            .await
+            .expect("read response body")
+            .to_bytes();
+        serde_json::from_slice(&bytes).expect("response body is JSON")
+    }
+
+    /// Loopback stand-in for `/memory/add` and `/memory/search`. Add accepts only the expected
+    /// bearer token; search echoes the query back as the stored content.
+    async fn spawn_upstream() -> String {
+        let app = Router::new()
+            .route(
+                "/memory/add",
+                post(|headers: HeaderMap| async move {
+                    let expected = format!("Bearer {TEST_TOKEN}");
+                    let authorized = headers.get("authorization").and_then(|v| v.to_str().ok())
+                        == Some(expected.as_str());
+                    if authorized {
+                        StatusCode::OK
+                    } else {
+                        StatusCode::UNAUTHORIZED
+                    }
+                }),
+            )
+            .route(
+                "/memory/search",
+                post(|Json(body): Json<serde_json::Value>| async move {
+                    Json(serde_json::json!({ "results": [{ "content": body["query"] }] }))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback upstream");
+        let addr = listener.local_addr().expect("upstream address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn verify_save_route_reports_unavailable_without_internal_token() {
+        let _env = crate::settings::tests::TempEnv::new();
+        // Set XAVIER_URL so the handler never falls back to reading the settings file.
+        std::env::set_var("XAVIER_URL", "http://127.0.0.1:9");
+        std::env::remove_var("XAVIER_TOKEN");
+        std::env::remove_var("XAVIER_AUTH_TOKEN");
+
+        let resp = create_router()
+            .oneshot(verify_request("prueba"))
+            .await
+            .expect("route response");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = read_json(resp).await;
+
+        assert_eq!(body["save_ok"], false);
+        assert_eq!(body["retrieve_ok"], false);
+        assert!(body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("verification_unavailable"));
+    }
+
+    #[tokio::test]
+    async fn verify_save_route_reports_saved_and_retrieved() {
+        let upstream = spawn_upstream().await;
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_URL", &upstream);
+        std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
+        std::env::remove_var("XAVIER_AUTH_TOKEN");
+        std::env::remove_var("XAVIER_ALLOWED_DOMAINS");
+
+        let resp = create_router()
+            .oneshot(verify_request("prueba de ida y vuelta"))
+            .await
+            .expect("route response");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = read_json(resp).await;
+
+        assert_eq!(body["save_ok"], true);
+        assert_eq!(body["retrieve_ok"], true);
+        assert_eq!(body["match_score"], 1.0);
+        assert!(body.get("error").is_none());
+        assert!(!body.to_string().contains(TEST_TOKEN));
+    }
+
+    #[tokio::test]
+    async fn verify_save_route_reports_transport_error_as_not_ok() {
+        // Reserve a loopback port, then release it so the connection is refused.
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("reserve loopback port");
+        let addr = closed.local_addr().expect("reserved address");
+        drop(closed);
+
+        let _env = crate::settings::tests::TempEnv::new();
+        std::env::set_var("XAVIER_URL", format!("http://{addr}"));
+        std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
+        std::env::remove_var("XAVIER_AUTH_TOKEN");
+        std::env::remove_var("XAVIER_ALLOWED_DOMAINS");
+
+        let resp = create_router()
+            .oneshot(verify_request("prueba"))
+            .await
+            .expect("route response");
+        let body = read_json(resp).await;
+
+        assert_eq!(body["save_ok"], false);
+        assert_eq!(body["retrieve_ok"], false);
+        assert!(body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("verify round-trip failed"));
+        assert!(!body.to_string().contains(TEST_TOKEN));
     }
 }

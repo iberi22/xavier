@@ -6,7 +6,7 @@
 use crate::coordination::events::{XavierEvent, XavierEventBus};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -57,7 +57,7 @@ impl RetentionConfig {
 }
 
 /// One persisted event.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LoggedEvent {
     pub id: i64,
     /// Unix milliseconds.
