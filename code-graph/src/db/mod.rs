@@ -733,6 +733,23 @@ impl CodeGraphDB {
         0
     }
 
+    /// Helper to build an FTS token-wise query matching multiple words
+    fn build_fts_query(query: &str) -> Option<String> {
+        let tokens: Vec<String> = query
+            .split_whitespace()
+            .filter(|s| !s.is_empty())
+            // Cap at 8 tokens: intentional bound on FTS query cost.
+            .take(8)
+            .map(|t| format!("\"{}\"*", t.replace('"', "\"\"")))
+            .collect();
+
+        if tokens.is_empty() {
+            None
+        } else {
+            Some(tokens.join(" AND "))
+        }
+    }
+
     /// Find symbols by name with hybrid ranking
     pub fn find_symbols(&self, query: &str, limit: usize) -> Result<QueryResult> {
         let start = std::time::Instant::now();
@@ -774,20 +791,19 @@ impl CodeGraphDB {
                 .map_err(|e| GraphError::Database(e.to_string()))?
                 .filter_map(|r| r.ok())
                 .collect();
-        } else {
+        } else if let Some(fts_query) = Self::build_fts_query(query) {
             // MATCH query with BM25 rank
             let mut stmt = conn
-                .prepare(
-                    r#"SELECT s.id, s.stable_id, s.name, s.kind, s.lang, s.file_path, s.start_line, s.end_line, s.start_col, s.end_col, s.signature, s.parent, s.complexity
-                       FROM symbols s
-                       JOIN symbols_fts ON s.stable_id = symbols_fts.stable_id
-                       WHERE symbols_fts MATCH ?1
-                       ORDER BY bm25(symbols_fts)
-                       LIMIT ?2"#,
-                )
-                .map_err(|e| GraphError::Database(e.to_string()))?;
+                    .prepare(
+                        r#"SELECT s.id, s.stable_id, s.name, s.kind, s.lang, s.file_path, s.start_line, s.end_line, s.start_col, s.end_col, s.signature, s.parent, s.complexity
+                           FROM symbols s
+                           JOIN symbols_fts ON s.stable_id = symbols_fts.stable_id
+                           WHERE symbols_fts MATCH ?1
+                           ORDER BY bm25(symbols_fts)
+                           LIMIT ?2"#,
+                    )
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
 
-            let fts_query = format!("\"{}\"*", query.replace('"', "\"\""));
             symbols = stmt
                 .query_map(params![fts_query, limit as isize], |row| {
                     Ok(Symbol {
@@ -809,6 +825,8 @@ impl CodeGraphDB {
                 .map_err(|e| GraphError::Database(e.to_string()))?
                 .filter_map(|r| r.ok())
                 .collect();
+        } else {
+            symbols = Vec::new();
         }
 
         // Apply scoring and ranking without mutating semantic fields.
@@ -2260,6 +2278,99 @@ mod tests {
         let results = db.find_symbols("test", 1).expect("failed to find symbols");
         assert_eq!(results.symbols.len(), 1);
         assert!(results.symbols[0].stable_id.is_some());
+    }
+
+    #[test]
+    fn test_build_fts_query() {
+        assert_eq!(CodeGraphDB::build_fts_query(""), None);
+        assert_eq!(CodeGraphDB::build_fts_query("   "), None);
+        assert_eq!(
+            CodeGraphDB::build_fts_query("token"),
+            Some("\"token\"*".to_string())
+        );
+        assert_eq!(
+            CodeGraphDB::build_fts_query("calculate total"),
+            Some("\"calculate\"* AND \"total\"*".to_string())
+        );
+        assert_eq!(
+            CodeGraphDB::build_fts_query("multi   space"),
+            Some("\"multi\"* AND \"space\"*".to_string())
+        );
+        assert_eq!(
+            CodeGraphDB::build_fts_query("quote\"me"),
+            Some("\"quote\"\"me\"*".to_string())
+        );
+        assert!(CodeGraphDB::build_fts_query("a b")
+            .unwrap()
+            .contains(" AND "));
+        let many = "1 2 3 4 5 6 7 8 9 10";
+        let expected_many =
+            "\"1\"* AND \"2\"* AND \"3\"* AND \"4\"* AND \"5\"* AND \"6\"* AND \"7\"* AND \"8\"*";
+        assert_eq!(
+            CodeGraphDB::build_fts_query(many),
+            Some(expected_many.to_string())
+        );
+    }
+
+    #[test]
+    fn test_fts5_symbols_multi_word_search() {
+        let db = CodeGraphDB::in_memory().expect("db");
+
+        let sym1 = Symbol {
+            id: None,
+            stable_id: None,
+            name: "calculate_total".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/calc.rs".to_string(),
+            start_line: 10,
+            end_line: 15,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("fn calculate_total()".to_string()),
+            parent: None,
+            complexity: None,
+        };
+
+        db.insert_symbol(&sym1).expect("insert sym1");
+
+        // Non-adjacent tokens: the old phrase-prefix query cannot match this.
+        let sym2 = Symbol {
+            id: None,
+            stable_id: None,
+            name: "calculate_running_total".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/calc.rs".to_string(),
+            start_line: 20,
+            end_line: 25,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("fn calculate_running_total()".to_string()),
+            parent: None,
+            complexity: None,
+        };
+        db.insert_symbol(&sym2).expect("insert sym2");
+
+        // Should match "calculate total" on both adjacent and non-adjacent names
+        let res = db.find_symbols("calculate total", 10).expect("find");
+        assert_eq!(res.symbols.len(), 2);
+
+        // Reordered query matches regardless of token order
+        let res = db.find_symbols("total calculate", 10).expect("find");
+        assert_eq!(res.symbols.len(), 2);
+
+        // Should match single word "calculate"
+        let res = db.find_symbols("calculate", 10).expect("find");
+        assert_eq!(res.symbols.len(), 2);
+
+        // Should handle empty query (fallback to LIKE and return everything)
+        let res = db.find_symbols("", 10).expect("find");
+        assert_eq!(res.symbols.len(), 2);
+
+        // Should handle all whitespace query (returns empty)
+        let res = db.find_symbols("   ", 10).expect("find");
+        assert_eq!(res.symbols.len(), 0);
     }
 
     #[test]
