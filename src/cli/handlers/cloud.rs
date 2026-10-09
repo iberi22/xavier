@@ -16,12 +16,14 @@ pub async fn handle_cloud_command(cmd: CloudCommand) -> Result<()> {
         CloudCommand::SetBackend { backend, json } => handle_cloud_set_backend(backend, json).await,
         CloudCommand::Sync {
             passphrase_file,
+            allow_shrink,
             json,
         }
         | CloudCommand::Backup {
             passphrase_file,
+            allow_shrink,
             json,
-        } => handle_cloud_backup(passphrase_file, json).await,
+        } => handle_cloud_backup(passphrase_file, allow_shrink, json).await,
         CloudCommand::Restore {
             instance,
             passphrase_file,
@@ -223,6 +225,7 @@ fn print_usage(u: &cloud_backup::CloudUsage) {
 /// `cloud sync` and `sync now`.
 pub async fn run_cli_backup(
     passphrase_file: Option<&std::path::Path>,
+    allow_shrink: bool,
 ) -> Result<cloud_backup::BackupReport> {
     let cfg = backup_config()?;
     let pass = backup_passphrase(passphrase_file)?;
@@ -234,6 +237,7 @@ pub async fn run_cli_backup(
         &cfg,
         &pass,
         cloud_backup::KdfParams::new_default(),
+        allow_shrink,
     )
     .await
 }
@@ -305,6 +309,7 @@ pub fn print_backup_report(r: &cloud_backup::BackupReport, as_json: bool) -> Res
 
 async fn handle_cloud_backup(
     passphrase_file: Option<std::path::PathBuf>,
+    allow_shrink: bool,
     as_json: bool,
 ) -> Result<()> {
     if !as_json {
@@ -313,7 +318,7 @@ async fn handle_cloud_backup(
             "🔐".cyan()
         );
     }
-    let report = run_cli_backup(passphrase_file.as_deref()).await?;
+    let report = run_cli_backup(passphrase_file.as_deref(), allow_shrink).await?;
     print_backup_report(&report, as_json)
 }
 
@@ -340,6 +345,13 @@ async fn handle_cloud_restore(
             println!("  {:<22} {}", "Backup taken at:", t.to_rfc3339());
         }
         println!("  {:<22} {}", "Records in backup:", r.records_in_backup);
+        if !r.backup_complete {
+            println!(
+                "  {:<22} {}",
+                "Backup complete:",
+                "no (locked records were left out)".yellow()
+            );
+        }
         println!("  {:<22} {}", "Restored:", r.restored.to_string().green());
         println!("  {:<22} {}", "Kept (local newer):", r.skipped_newer_local);
         println!(
@@ -420,6 +432,13 @@ async fn handle_cloud_verify(
                     v.packs_missing.len().to_string().red()
                 );
             }
+            if v.manifest_authenticated != Some(true) {
+                println!(
+                    "  {:<22} {}",
+                    "Manifest:",
+                    "not authenticated (use --deep)".yellow()
+                );
+            }
             match v.decrypted_ok {
                 Some(true) => println!("  {:<22} {}", "Decrypt check:", "ok".green()),
                 Some(false) => println!("  {:<22} {}", "Decrypt check:", "FAILED".red()),
@@ -432,4 +451,33 @@ async fn handle_cloud_verify(
         anyhow::bail!("the cloud backup failed verification");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cli::commands::enums::{CloudCommand, Command};
+    use clap::Parser;
+
+    fn parse(args: &[&str]) -> CloudCommand {
+        match crate::cli::state::Cli::try_parse_from(args)
+            .expect("cloud args parse")
+            .cmd
+        {
+            Some(Command::Cloud { cmd }) => cmd,
+            _ => panic!("not a cloud command"),
+        }
+    }
+
+    #[test]
+    fn allow_shrink_is_opt_in_for_backup_and_sync() {
+        for sub in ["backup", "sync"] {
+            let flag = |args: &[&str]| match parse(args) {
+                CloudCommand::Backup { allow_shrink, .. }
+                | CloudCommand::Sync { allow_shrink, .. } => allow_shrink,
+                _ => panic!("unexpected command"),
+            };
+            assert!(!flag(&["xavier", "cloud", sub]));
+            assert!(flag(&["xavier", "cloud", sub, "--allow-shrink"]));
+        }
+    }
 }

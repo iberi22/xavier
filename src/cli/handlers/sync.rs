@@ -30,7 +30,7 @@ async fn handle_sync_now(mode: &str) -> Result<()> {
         return Ok(());
     }
     println!("Running the encrypted Xavier Cloud backup (push)...");
-    let report = crate::cli::handlers::cloud::run_cli_backup(None).await?;
+    let report = crate::cli::handlers::cloud::run_cli_backup(None, false).await?;
     crate::cli::handlers::cloud::print_backup_report(&report, false)
 }
 

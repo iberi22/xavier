@@ -69,6 +69,11 @@ pub const DEFAULT_INTERVAL_MINS: u64 = 360;
 pub const MIN_PASSPHRASE_CHARS: usize = 12;
 /// Uncompressed JSONL budget per pack before splitting.
 const PACK_SPLIT_BYTES: usize = 16 * 1024 * 1024;
+/// A backup holding fewer than this percent of the previous manifest's
+/// records is refused unless the caller opts in (`--allow-shrink`).
+const MIN_SHRINK_PERCENT: usize = 50;
+/// Hard ceiling for the manifest JSON.
+const MAX_MANIFEST_BYTES: usize = 4 * 1024 * 1024;
 /// Hard ceiling for one encrypted blob (the Worker accepts 8 MiB).
 const MAX_BLOB_BYTES: usize = 7 * 1024 * 1024;
 
@@ -179,26 +184,37 @@ pub fn passphrase_from_env() -> Result<Option<Zeroizing<String>>> {
     Ok(None)
 }
 
-/// Read the passphrase from the first line of a file.
+/// Read the passphrase from the first line of a file. The mode and owner are
+/// checked on the opened handle (no symlink follow), then read from it.
 pub fn passphrase_from_file(path: &std::path::Path) -> Result<Zeroizing<String>> {
-    ensure_private_file(path)?;
-    let raw = Zeroizing::new(
-        std::fs::read_to_string(path)
-            .with_context(|| format!("cannot read passphrase file {}", path.display()))?,
-    );
+    use std::io::Read;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut f = opts
+        .open(path)
+        .with_context(|| format!("cannot read passphrase file {}", path.display()))?;
+    ensure_private_file(&f, path)?;
+    let mut raw = Zeroizing::new(String::new());
+    f.read_to_string(&mut raw)
+        .with_context(|| format!("cannot read passphrase file {}", path.display()))?;
     let first = raw.lines().next().unwrap_or("").trim_end_matches('\r');
     validate_passphrase(Zeroizing::new(first.to_string()))
 }
 
 /// Refuse passphrase files readable by group or others (unix).
-fn ensure_private_file(path: &std::path::Path) -> Result<()> {
+fn ensure_private_file(f: &std::fs::File, path: &std::path::Path) -> Result<()> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(path)
-            .with_context(|| format!("cannot read passphrase file {}", path.display()))?
-            .permissions()
-            .mode();
+        use std::os::unix::fs::MetadataExt;
+        let meta = f
+            .metadata()
+            .with_context(|| format!("cannot read passphrase file {}", path.display()))?;
+        let mode = meta.mode();
         if mode & 0o077 != 0 {
             tracing::warn!(
                 "cloud_backup: passphrase file {} has mode {:o}",
@@ -213,7 +229,7 @@ fn ensure_private_file(path: &std::path::Path) -> Result<()> {
         }
     }
     #[cfg(not(unix))]
-    let _ = path;
+    let _ = (f, path);
     Ok(())
 }
 
@@ -568,6 +584,12 @@ impl BackupManifest {
     /// Fails when the manifest (packs, counts, order) was altered or never signed.
     fn authenticate(&self, kek: &[u8; 32]) -> Result<()> {
         use subtle::ConstantTimeEq;
+        if self.mac.is_empty() {
+            bail!(
+                "the cloud backup manifest was created before manifest authentication \
+                 (unsigned); use a new PGHEART_INSTANCE_ID"
+            );
+        }
         let expected = self.compute_mac(kek)?;
         if !bool::from(expected.as_bytes().ct_eq(self.mac.as_bytes())) {
             bail!(
@@ -641,6 +663,7 @@ impl HttpBlobStore {
         ensure_token_transport(&cfg.url)?;
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Ok(Self {
@@ -712,7 +735,19 @@ impl BlobStore for HttpBlobStore {
                 error_text(resp).await
             );
         }
-        Ok(Some(resp.bytes().await?.to_vec()))
+        let limit = MAX_BLOB_BYTES + 4096;
+        if resp.content_length().is_some_and(|n| n > limit as u64) {
+            bail!("Xavier Cloud chunk {name} exceeds {limit} bytes");
+        }
+        let mut resp = resp;
+        let mut body = Vec::new();
+        while let Some(part) = resp.chunk().await? {
+            if body.len() + part.len() > limit {
+                bail!("Xavier Cloud chunk {name} exceeds {limit} bytes");
+            }
+            body.extend_from_slice(&part);
+        }
+        Ok(Some(body))
     }
 
     async fn exists(&self, name: &str) -> Result<bool> {
@@ -803,10 +838,16 @@ async fn load_manifest(
     match remote.get(&manifest_chunk_name(instance_id)).await? {
         None => Ok(None),
         Some(bytes) => {
+            if bytes.len() > MAX_MANIFEST_BYTES {
+                bail!("the cloud backup manifest is larger than {MAX_MANIFEST_BYTES} bytes");
+            }
             let m: BackupManifest = serde_json::from_slice(&bytes)
                 .context("the cloud backup manifest is not valid JSON")?;
             if m.format != FORMAT {
                 bail!("unsupported cloud backup format '{}'", m.format);
+            }
+            if m.instance_id != sanitize_instance_id(instance_id) {
+                bail!("the cloud backup manifest belongs to a different instance");
             }
             Ok(Some(m))
         }
@@ -816,12 +857,18 @@ async fn load_manifest(
 /// Encrypt and upload the whole store. `new_kdf` is only used when the
 /// instance has no previous manifest (the salt is then kept stable so that
 /// unchanged packs are not re-uploaded).
+///
+/// Shrink guard: the manifest is the only place the pack ids live, so
+/// replacing it loses the previous backup for good. Unless `allow_shrink`,
+/// a run is refused when it would publish zero records over a non-empty
+/// backup, or fewer than `MIN_SHRINK_PERCENT` percent of its records.
 pub async fn run_backup(
     store: &dyn MemoryStore,
     remote: &dyn BlobStore,
     cfg: &CloudBackupConfig,
     passphrase: &str,
     new_kdf: KdfParams,
+    allow_shrink: bool,
 ) -> Result<BackupReport> {
     let instance = cfg.safe_instance_id();
     let previous = load_manifest(remote, &instance).await?;
@@ -843,6 +890,22 @@ pub async fn run_backup(
         .unwrap_or_default();
 
     let (records, locked, workspaces) = collect_records(store).await?;
+    if !allow_shrink {
+        if let Some(prev) = previous.as_ref().filter(|p| p.record_count > 0) {
+            let shrunk =
+                records.is_empty() || records.len() * 100 < prev.record_count * MIN_SHRINK_PERCENT;
+            if shrunk {
+                bail!(
+                    "refusing to replace the cloud backup of instance '{instance}' ({} records) \
+                     with a much smaller one ({} records, minimum {MIN_SHRINK_PERCENT}%): \
+                     is this a fresh or wrong data directory? Run `xavier cloud restore` first, \
+                     or pass --allow-shrink to override",
+                    prev.record_count,
+                    records.len()
+                );
+            }
+        }
+    }
     let plaintexts = build_pack_plaintexts(&records)?;
 
     let mut report = BackupReport {
@@ -915,6 +978,8 @@ pub struct RestoreReport {
     pub instance_id: String,
     pub backup_created_at: Option<DateTime<Utc>>,
     pub records_in_backup: usize,
+    /// False when the restored backup left locked records out.
+    pub backup_complete: bool,
     pub restored: usize,
     pub skipped_newer_local: usize,
     pub packs: usize,
@@ -932,6 +997,14 @@ async fn fetch_and_open(
             pack.hash
         )
     })?;
+    if blob.len() as u64 != pack.bytes {
+        bail!(
+            "pack {}: {} bytes, manifest says {}",
+            pack.hash,
+            blob.len(),
+            pack.bytes
+        );
+    }
     let gz = open_pack(kek, &pack.hash, &pack.pack_id, &blob)?;
     let recs = parse_pack(&gz)?;
     if recs.len() != pack.records {
@@ -967,6 +1040,7 @@ pub async fn run_restore(
         instance_id: instance,
         backup_created_at: Some(manifest.created_at),
         records_in_backup: manifest.record_count,
+        backup_complete: manifest.complete,
         packs: manifest.packs.len(),
         ..Default::default()
     };
@@ -1036,18 +1110,24 @@ pub async fn run_verify(
     report.backup_created_at = Some(manifest.created_at);
     report.records = manifest.record_count;
     report.packs = manifest.packs.len();
+    let kek = match passphrase {
+        Some(pass) => {
+            let kek = manifest.kdf.derive(pass)?;
+            if key_check_value(&kek) != manifest.kcv {
+                bail!("wrong passphrase for the cloud backup of instance '{instance}'");
+            }
+            manifest.authenticate(&kek)?;
+            report.manifest_authenticated = Some(true);
+            Some(kek)
+        }
+        None => None,
+    };
     for p in &manifest.packs {
         if !remote.exists(&p.hash).await? {
             report.packs_missing.push(p.hash.clone());
         }
     }
-    if let Some(pass) = passphrase {
-        let kek = manifest.kdf.derive(pass)?;
-        if key_check_value(&kek) != manifest.kcv {
-            bail!("wrong passphrase for the cloud backup of instance '{instance}'");
-        }
-        manifest.authenticate(&kek)?;
-        report.manifest_authenticated = Some(true);
+    if let Some(kek) = kek {
         let mut ok = report.packs_missing.is_empty();
         if ok {
             for p in &manifest.packs {
@@ -1087,9 +1167,15 @@ pub async fn periodic_backup_loop(
             &cfg,
             &passphrase,
             KdfParams::new_default(),
+            false,
         )
         .await
         {
+            Ok(r) if !r.manifest_published => tracing::warn!(
+                instance = %r.instance_id,
+                locked = r.records_locked,
+                "cloud_backup: incomplete run, previous backup kept"
+            ),
             Ok(r) => tracing::info!(
                 instance = %r.instance_id,
                 records = r.records_backed_up,
@@ -1098,9 +1184,10 @@ pub async fn periodic_backup_loop(
                 packs_unchanged = r.packs_unchanged,
                 bytes_uploaded = r.bytes_uploaded,
                 complete = r.complete,
+                manifest_published = r.manifest_published,
                 "cloud_backup: run finished"
             ),
-            Err(e) => tracing::warn!("cloud_backup: run failed: {e:#}"),
+            Err(e) => tracing::warn!("cloud_backup: run refused or failed: {e:#}"),
         }
         tokio::time::sleep(interval).await;
     }
@@ -1120,6 +1207,7 @@ mod tests {
     struct MemBlobs {
         blobs: Mutex<HashMap<String, Vec<u8>>>,
         puts: Mutex<usize>,
+        exists_calls: Mutex<usize>,
     }
 
     #[async_trait]
@@ -1136,6 +1224,7 @@ mod tests {
             Ok(self.blobs.lock().unwrap().get(name).cloned())
         }
         async fn exists(&self, name: &str) -> Result<bool> {
+            *self.exists_calls.lock().unwrap() += 1;
             Ok(self.blobs.lock().unwrap().contains_key(name))
         }
         async fn usage(&self) -> Result<CloudUsage> {
@@ -1341,7 +1430,7 @@ mod tests {
         }
         let remote = MemBlobs::default();
 
-        let rep = run_backup(&src, &remote, &cfg(), PASS, cheap_kdf())
+        let rep = run_backup(&src, &remote, &cfg(), PASS, cheap_kdf(), false)
             .await
             .unwrap();
         assert_eq!(rep.records_backed_up, 3);
@@ -1361,7 +1450,7 @@ mod tests {
 
         // Second run without changes uploads only the manifest.
         let puts_before = *remote.puts.lock().unwrap();
-        let rep2 = run_backup(&src, &remote, &cfg(), PASS, cheap_kdf())
+        let rep2 = run_backup(&src, &remote, &cfg(), PASS, cheap_kdf(), false)
             .await
             .unwrap();
         assert_eq!(rep2.packs_uploaded, 0);
@@ -1374,7 +1463,8 @@ mod tests {
             &remote,
             &cfg(),
             "not the right passphrase",
-            cheap_kdf()
+            cheap_kdf(),
+            false
         )
         .await
         .is_err());
@@ -1428,7 +1518,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = temp_store(dir.path()).await;
         store.put(record("ws", "x", "content", 0)).await.unwrap();
-        let rep = run_backup(&store, &remote, &cfg(), PASS, cheap_kdf())
+        let rep = run_backup(&store, &remote, &cfg(), PASS, cheap_kdf(), false)
             .await
             .unwrap();
         let first_pack = remote
@@ -1452,7 +1542,7 @@ mod tests {
         let store = temp_store(dir).await;
         store.put(record("ws", "a", "one", 0)).await.unwrap();
         store.put(record("ws", "b", "two", 30)).await.unwrap();
-        run_backup(&store, remote, &cfg(), PASS, cheap_kdf())
+        run_backup(&store, remote, &cfg(), PASS, cheap_kdf(), false)
             .await
             .unwrap();
         store
@@ -1495,9 +1585,11 @@ mod tests {
 
         // A backup must not build on a tampered previous manifest.
         let store = temp_store(dir.path()).await;
-        assert!(run_backup(&store, &remote, &cfg(), PASS, cheap_kdf())
-            .await
-            .is_err());
+        assert!(
+            run_backup(&store, &remote, &cfg(), PASS, cheap_kdf(), false)
+                .await
+                .is_err()
+        );
     }
 
     #[test]
@@ -1540,7 +1632,7 @@ mod tests {
         let mut locked = record("ws", "locked", "[locked]", 0);
         locked.metadata = serde_json::json!({"locked": true});
         store.put(locked).await.unwrap();
-        let rep = run_backup(&store, &remote, &cfg(), PASS, cheap_kdf())
+        let rep = run_backup(&store, &remote, &cfg(), PASS, cheap_kdf(), false)
             .await
             .unwrap();
         assert!(!rep.complete && !rep.manifest_published);
@@ -1549,10 +1641,205 @@ mod tests {
 
         // With no previous complete backup, an incomplete one is still published.
         let remote2 = MemBlobs::default();
-        let rep = run_backup(&store, &remote2, &cfg(), PASS, cheap_kdf())
+        let rep = run_backup(&store, &remote2, &cfg(), PASS, cheap_kdf(), false)
             .await
             .unwrap();
         assert!(!rep.complete && rep.manifest_published);
+    }
+
+    #[tokio::test]
+    async fn empty_or_much_smaller_store_never_replaces_a_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        let store = two_pack_backup(&remote, dir.path()).await;
+        let name = manifest_chunk_name(&cfg().instance_id);
+        let before = remote.blobs.lock().unwrap()[&name].clone();
+
+        // Fresh, empty store (new machine) over a 2-record backup.
+        let empty_dir = tempfile::tempdir().unwrap();
+        let empty = temp_store(empty_dir.path()).await;
+        let e = run_backup(&empty, &remote, &cfg(), PASS, cheap_kdf(), false)
+            .await
+            .unwrap_err();
+        assert!(e.to_string().contains("refusing"), "{e}");
+        assert_eq!(remote.blobs.lock().unwrap()[&name], before);
+
+        // Large shrink: 1 of 4 records (25%) is refused, 2 of 4 (50%) is accepted.
+        let remote = MemBlobs::default();
+        let big_dir = tempfile::tempdir().unwrap();
+        let big = temp_store(big_dir.path()).await;
+        for i in 0..4 {
+            big.put(record("ws", &format!("r{i}"), "x", i))
+                .await
+                .unwrap();
+        }
+        run_backup(&big, &remote, &cfg(), PASS, cheap_kdf(), false)
+            .await
+            .unwrap();
+        let small_dir = tempfile::tempdir().unwrap();
+        let small = temp_store(small_dir.path()).await;
+        small.put(record("ws", "r0", "x", 0)).await.unwrap();
+        assert!(
+            run_backup(&small, &remote, &cfg(), PASS, cheap_kdf(), false)
+                .await
+                .is_err()
+        );
+        small.put(record("ws", "r1", "x", 1)).await.unwrap();
+        run_backup(&small, &remote, &cfg(), PASS, cheap_kdf(), false)
+            .await
+            .unwrap();
+
+        // Explicit override (CLI --allow-shrink) publishes the empty backup.
+        let rep = run_backup(&empty, &remote, &cfg(), PASS, cheap_kdf(), true)
+            .await
+            .unwrap();
+        assert!(rep.manifest_published && rep.records_backed_up == 0);
+        // First backup of an empty store (no previous) is fine.
+        let fresh = MemBlobs::default();
+        run_backup(&empty, &fresh, &cfg(), PASS, cheap_kdf(), false)
+            .await
+            .unwrap();
+        drop(store);
+    }
+
+    #[tokio::test]
+    async fn manifest_of_another_instance_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        two_pack_backup(&remote, dir.path()).await;
+        let blob = remote.blobs.lock().unwrap()[&manifest_chunk_name(&cfg().instance_id)].clone();
+        remote
+            .blobs
+            .lock()
+            .unwrap()
+            .insert(manifest_chunk_name("other"), blob);
+        let e = run_verify(&remote, "other", None).await.unwrap_err();
+        assert!(e.to_string().contains("different instance"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn deep_verify_authenticates_before_probing_packs() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        two_pack_backup(&remote, dir.path()).await;
+        rewrite_manifest(&remote, |m| m.record_count += 1);
+        *remote.exists_calls.lock().unwrap() = 0;
+        let e = run_verify(&remote, &cfg().instance_id, Some(PASS))
+            .await
+            .unwrap_err();
+        assert!(e.to_string().contains("authentication"), "{e}");
+        assert_eq!(*remote.exists_calls.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn oversized_manifest_and_wrong_pack_size_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        two_pack_backup(&remote, dir.path()).await;
+        let id = cfg().instance_id;
+        let dst_dir = tempfile::tempdir().unwrap();
+        let dst = temp_store(dst_dir.path()).await;
+
+        // Pack size must match the (authenticated) manifest.
+        let hash = {
+            let b = remote.blobs.lock().unwrap();
+            let m: BackupManifest = serde_json::from_slice(&b[&manifest_chunk_name(&id)]).unwrap();
+            m.packs[0].hash.clone()
+        };
+        remote.blobs.lock().unwrap().get_mut(&hash).unwrap().push(0);
+        let e = run_restore(&dst, &remote, &id, PASS).await.unwrap_err();
+        assert!(e.to_string().contains("manifest says"), "{e}");
+
+        remote
+            .blobs
+            .lock()
+            .unwrap()
+            .insert(manifest_chunk_name(&id), vec![b' '; MAX_MANIFEST_BYTES + 1]);
+        let e = run_restore(&dst, &remote, &id, PASS).await.unwrap_err();
+        assert!(e.to_string().contains("larger than"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn http_get_refuses_oversized_bodies() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/v1/cloud/chunks/big0000000")
+            .with_status(200)
+            .with_body(vec![0u8; MAX_BLOB_BYTES + 8192])
+            .create_async()
+            .await;
+        let store = HttpBlobStore::new(&CloudBackupConfig {
+            url: server.url(),
+            token: "tok".into(),
+            instance_id: "i".into(),
+        })
+        .unwrap();
+        let e = store.get("big0000000").await.unwrap_err();
+        assert!(e.to_string().contains("exceeds"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn unsigned_legacy_manifest_gets_a_distinct_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        two_pack_backup(&remote, dir.path()).await;
+        rewrite_manifest(&remote, |m| m.mac = String::new());
+        let dst_dir = tempfile::tempdir().unwrap();
+        let dst = temp_store(dst_dir.path()).await;
+        let e = run_restore(&dst, &remote, &cfg().instance_id, PASS)
+            .await
+            .unwrap_err();
+        assert!(e.to_string().contains("new PGHEART_INSTANCE_ID"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn restore_reports_an_incomplete_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        let store = temp_store(dir.path()).await;
+        store.put(record("ws", "a", "one", 0)).await.unwrap();
+        let mut locked = record("ws", "locked", "[locked]", 0);
+        locked.metadata = serde_json::json!({"locked": true});
+        store.put(locked).await.unwrap();
+        run_backup(&store, &remote, &cfg(), PASS, cheap_kdf(), false)
+            .await
+            .unwrap();
+        let dst_dir = tempfile::tempdir().unwrap();
+        let dst = temp_store(dst_dir.path()).await;
+        let r = run_restore(&dst, &remote, &cfg().instance_id, PASS)
+            .await
+            .unwrap();
+        assert!(!r.backup_complete);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn passphrase_file_symlinks_are_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        write_passphrase_file(&real, PASS).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert!(passphrase_from_file(&link).is_err());
+        assert!(passphrase_from_file(&real).is_ok());
+    }
+
+    #[test]
+    fn token_transport_edge_cases() {
+        for ok in [
+            "HTTPS://cloud.example",
+            "http://127.0.0.2:8787",
+            "http://evil.example@localhost",
+        ] {
+            assert!(ensure_token_transport(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "http://localhost@evil.example",
+            "http://[::ffff:127.0.0.1]:8787",
+            "http://localhost.:8787",
+        ] {
+            assert!(ensure_token_transport(bad).is_err(), "{bad}");
+        }
     }
 
     #[tokio::test]
@@ -1576,7 +1863,7 @@ mod tests {
         let e = run_restore(&dst, &remote, &id, PASS).await.unwrap_err();
         assert!(e.to_string().contains("missing"), "{e}");
 
-        let rep = run_backup(&store, &remote, &cfg(), PASS, cheap_kdf())
+        let rep = run_backup(&store, &remote, &cfg(), PASS, cheap_kdf(), false)
             .await
             .unwrap();
         assert_eq!(rep.packs_repaired, 1);
