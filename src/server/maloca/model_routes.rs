@@ -23,9 +23,7 @@ impl ModelRouterService {
 }
 
 /// POST `/v1/maloca/models/infer`: Placeholder handler that does not run inference.
-pub async fn infer_handler(
-    State(_service): State<ModelRouterService>,
-) -> impl IntoResponse {
+pub async fn infer_handler(State(_service): State<ModelRouterService>) -> impl IntoResponse {
     (
         StatusCode::NOT_IMPLEMENTED,
         Json(serde_json::json!({
