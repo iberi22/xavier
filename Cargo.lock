@@ -74,7 +74,7 @@ dependencies = [
  "once_cell",
  "serde",
  "version_check",
- "zerocopy 0.8.59",
+ "zerocopy 0.8.60",
 ]
 
 [[package]]
@@ -2626,7 +2626,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokenizers",
  "yoke 0.8.3",
- "zerocopy 0.8.59",
+ "zerocopy 0.8.60",
  "zip 8.6.0",
 ]
 
@@ -6504,7 +6504,7 @@ dependencies = [
  "rand 0.9.5",
  "rand_distr",
  "serde",
- "zerocopy 0.8.59",
+ "zerocopy 0.8.60",
 ]
 
 [[package]]
@@ -8798,7 +8798,7 @@ dependencies = [
  "libc",
  "log",
  "netlink-packet-core 0.9.0",
- "zerocopy 0.8.59",
+ "zerocopy 0.8.60",
 ]
 
 [[package]]
@@ -10389,7 +10389,7 @@ version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
- "zerocopy 0.8.59",
+ "zerocopy 0.8.60",
 ]
 
 [[package]]
@@ -16278,7 +16278,7 @@ dependencies = [
  "xavier-core-logic",
  "xavier-pageindex",
  "xxhash-rust",
- "zerocopy 0.8.59",
+ "zerocopy 0.8.60",
  "zeroize",
  "zip 8.6.0",
  "zstd 0.14.0",
@@ -16487,11 +16487,11 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.59"
+version = "0.8.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6df92bf3d9227be3d53173901ddbffac2babc27ae50f397776ffd6dc33f800cb"
+checksum = "6400fc4bb7426f6faac3fb07566122bb18622e3022bd2c36426a92ed489b1dbe"
 dependencies = [
- "zerocopy-derive 0.8.59",
+ "zerocopy-derive 0.8.60",
 ]
 
 [[package]]
@@ -16507,9 +16507,9 @@ dependencies = [
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.59"
+version = "0.8.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac4f328cf2f05d084e496c3e9c3f33ed0a183656a16e1fcec4d464d8373aec82"
+checksum = "99c27cc7525bad4df59a45e073c45b2c2aa820efb588234cc23a547ec69a34db"
 dependencies = [
  "proc-macro2",
  "quote",
