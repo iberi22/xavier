@@ -28,20 +28,31 @@ jobs:
             exit 1
           fi
 
-      - name: Fetch current inventory.json using GitHub API
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api repos/${{ github.repository }}/contents/inventory.json -q '.content' | base64 -d > inventory.json || true
+      - name: Checkout inventory source
+        uses: actions/checkout@v4
 
       - name: Validate sha against inventory
         run: |
-          if [ -f inventory.json ]; then
-            RECORDED=$(jq -r '.targets[] | select(.kind == "gh_pages") | .retained.source_sha // empty' inventory.json 2>/dev/null || echo "")
-            if [ -n "$RECORDED" ] && [ "${{ inputs.sha }}" != "$RECORDED" ]; then
-              echo "sha differs from the inventory's recorded good SHA for the docs target"
-              exit 1
-            fi
+          INVENTORY="scripts/guardian/inventory.json"
+          if [ ! -s "$INVENTORY" ]; then
+            echo "Guardian inventory is missing or empty at $INVENTORY; refusing to recover"
+            exit 1
+          fi
+          GOOD_ID=$(jq -r '.targets[] | select(.kind == "gh_pages") | .previous_known_good_id // empty' "$INVENTORY" | head -n 1)
+          RECORDED=""
+          if [ -n "$GOOD_ID" ]; then
+            RECORDED=$(jq -r --arg id "$GOOD_ID" '.targets[] | select(.id == $id) | .source_sha // empty' "$INVENTORY" | head -n 1)
+          fi
+          if [ -z "$RECORDED" ]; then
+            RECORDED=$(jq -r '.targets[] | select(.kind == "gh_pages") | .source_sha // empty' "$INVENTORY" | head -n 1)
+          fi
+          if [ -z "$RECORDED" ]; then
+            echo "No recorded good SHA for the docs target in $INVENTORY"
+            exit 1
+          fi
+          if [ "${{ inputs.sha }}" != "$RECORDED" ]; then
+            echo "sha differs from the inventory's recorded good SHA for the docs target"
+            exit 1
           fi
 
       - name: Checkout pinned input
