@@ -16,6 +16,11 @@ paths = [
   '''AGENTS\.md$''',
   '''SECURITY\.md$''',
 ]
+# Commits whose only finding is a fake test credential (verified by hand).
+# 8a827d62 (#2863): ingest-screening fixture in tests/v1_api_ingest_test.rs.
+commits = [
+  "8a827d627381f1002a23875d63ea06de5d334a96",
+]
 
 [[rules]]
 id = "xavier-token-placeholder"
