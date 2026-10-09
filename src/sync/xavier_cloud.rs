@@ -181,12 +181,57 @@ pub fn passphrase_from_env() -> Result<Option<Zeroizing<String>>> {
 
 /// Read the passphrase from the first line of a file.
 pub fn passphrase_from_file(path: &std::path::Path) -> Result<Zeroizing<String>> {
+    ensure_private_file(path)?;
     let raw = Zeroizing::new(
         std::fs::read_to_string(path)
             .with_context(|| format!("cannot read passphrase file {}", path.display()))?,
     );
     let first = raw.lines().next().unwrap_or("").trim_end_matches('\r');
     validate_passphrase(Zeroizing::new(first.to_string()))
+}
+
+/// Refuse passphrase files readable by group or others (unix).
+fn ensure_private_file(path: &std::path::Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(path)
+            .with_context(|| format!("cannot read passphrase file {}", path.display()))?
+            .permissions()
+            .mode();
+        if mode & 0o077 != 0 {
+            tracing::warn!(
+                "cloud_backup: passphrase file {} has mode {:o}",
+                path.display(),
+                mode & 0o777
+            );
+            bail!(
+                "passphrase file {} is accessible by other users (mode {:o}); run `chmod 600` on it",
+                path.display(),
+                mode & 0o777
+            );
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+/// Create a new passphrase file readable only by the owner (0600 on unix).
+pub fn write_passphrase_file(path: &std::path::Path, passphrase: &str) -> Result<()> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts
+        .open(path)
+        .with_context(|| format!("cannot create passphrase file {}", path.display()))?;
+    f.write_all(passphrase.as_bytes())?;
+    f.write_all(b"\n")?;
+    Ok(())
 }
 
 fn validate_passphrase(p: Zeroizing<String>) -> Result<Zeroizing<String>> {
@@ -219,6 +264,11 @@ pub struct KdfParams {
     pub salt_b64: String,
 }
 
+/// Upper bounds for Argon2 costs accepted from a (remote) manifest.
+const MAX_KDF_M_KIB: u32 = 256 * 1024;
+const MAX_KDF_T: u32 = 10;
+const MAX_KDF_P: u32 = 16;
+
 impl KdfParams {
     /// Production defaults with a fresh random salt.
     pub fn new_default() -> Self {
@@ -242,6 +292,14 @@ impl KdfParams {
     pub fn derive(&self, passphrase: &str) -> Result<Zeroizing<[u8; 32]>> {
         if self.alg != "argon2id" {
             bail!("unsupported KDF '{}'", self.alg);
+        }
+        if self.m_kib > MAX_KDF_M_KIB || self.t > MAX_KDF_T || self.p > MAX_KDF_P {
+            bail!(
+                "refusing Argon2 costs above the cap (m_kib={} max {MAX_KDF_M_KIB}, t={} max {MAX_KDF_T}, p={} max {MAX_KDF_P})",
+                self.m_kib,
+                self.t,
+                self.p
+            );
         }
         let salt = crate::crypto::base64_decode(&self.salt_b64)
             .filter(|s| s.len() >= 8)
@@ -482,6 +540,42 @@ pub struct BackupManifest {
     pub workspace_count: usize,
     pub total_bytes: u64,
     pub packs: Vec<PackRef>,
+    /// False when locked records were left out of the backup.
+    #[serde(default)]
+    pub complete: bool,
+    /// Hex HMAC over every other field, keyed with the KEK.
+    #[serde(default)]
+    pub mac: String,
+}
+
+impl BackupManifest {
+    fn compute_mac(&self, kek: &[u8; 32]) -> Result<String> {
+        let mut unsigned = self.clone();
+        unsigned.mac = String::new();
+        let bytes = serde_json::to_vec(&unsigned)?;
+        Ok(crate::crypto::hex_encode(tagged_mac(
+            kek,
+            b"xcb1/manifest",
+            &bytes,
+        )))
+    }
+
+    fn seal(&mut self, kek: &[u8; 32]) -> Result<()> {
+        self.mac = self.compute_mac(kek)?;
+        Ok(())
+    }
+
+    /// Fails when the manifest (packs, counts, order) was altered or never signed.
+    fn authenticate(&self, kek: &[u8; 32]) -> Result<()> {
+        use subtle::ConstantTimeEq;
+        let expected = self.compute_mac(kek)?;
+        if !bool::from(expected.as_bytes().ct_eq(self.mac.as_bytes())) {
+            bail!(
+                "the cloud backup manifest failed authentication (tampered, truncated or unsigned)"
+            );
+        }
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -520,17 +614,40 @@ pub struct HttpBlobStore {
     token: String,
 }
 
+/// The Bearer token may only travel over HTTPS, or HTTP to a loopback host.
+fn ensure_token_transport(url: &str) -> Result<()> {
+    let u = reqwest::Url::parse(url).with_context(|| "invalid PGHEART_URL")?;
+    match u.scheme() {
+        "https" => Ok(()),
+        "http" => {
+            let loopback = match u.host() {
+                Some(url::Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
+                Some(url::Host::Ipv4(a)) => a.is_loopback(),
+                Some(url::Host::Ipv6(a)) => a.is_loopback(),
+                None => false,
+            };
+            if loopback {
+                Ok(())
+            } else {
+                bail!("refusing to send the Xavier Cloud token over plain HTTP to a non-loopback host; use https://")
+            }
+        }
+        other => bail!("unsupported PGHEART_URL scheme '{other}'"),
+    }
+}
+
 impl HttpBlobStore {
-    pub fn new(cfg: &CloudBackupConfig) -> Self {
+    pub fn new(cfg: &CloudBackupConfig) -> Result<Self> {
+        ensure_token_transport(&cfg.url)?;
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        Self {
+        Ok(Self {
             client,
             base: cfg.url.trim_end_matches('/').to_string(),
             token: cfg.token.clone(),
-        }
+        })
     }
 
     fn chunk_url(&self, name: &str) -> String {
@@ -642,6 +759,10 @@ pub struct BackupReport {
     pub packs_total: usize,
     pub packs_uploaded: usize,
     pub packs_unchanged: usize,
+    /// Packs listed by the previous manifest but gone from the cloud, re-uploaded.
+    pub packs_repaired: usize,
+    /// False when an incomplete run left the last complete backup in place.
+    pub manifest_published: bool,
     pub bytes_uploaded: u64,
     pub backup_bytes_total: u64,
     pub manifest_chunk: String,
@@ -714,6 +835,7 @@ pub async fn run_backup(
                  (use the same passphrase, or a new PGHEART_INSTANCE_ID)"
             );
         }
+        prev.authenticate(&kek)?;
     }
     let already: HashSet<String> = previous
         .as_ref()
@@ -731,13 +853,22 @@ pub async fn run_backup(
         manifest_chunk: manifest_chunk_name(&instance),
         ..Default::default()
     };
+    let complete = locked == 0;
+    // An incomplete run must never replace the last complete backup.
+    if !complete && previous.as_ref().is_some_and(|p| p.complete) {
+        report.usage_after = remote.usage().await.ok();
+        return Ok(report);
+    }
     let mut packs = Vec::with_capacity(plaintexts.len());
     for (gz, count) in plaintexts {
         let sealed = seal_pack(&kek, &gz)?;
         let size = sealed.blob.len() as u64;
-        if already.contains(&sealed.hash) {
+        if already.contains(&sealed.hash) && remote.exists(&sealed.hash).await? {
             report.packs_unchanged += 1;
         } else {
+            if already.contains(&sealed.hash) {
+                report.packs_repaired += 1;
+            }
             remote.put(&sealed.hash, &sealed.blob).await?;
             report.packs_uploaded += 1;
             report.bytes_uploaded += size;
@@ -754,7 +885,7 @@ pub async fn run_backup(
     report.packs_total = packs.len();
 
     // Manifest last: until it is written the previous backup stays the valid one.
-    let manifest = BackupManifest {
+    let mut manifest = BackupManifest {
         format: FORMAT.into(),
         instance_id: instance.clone(),
         created_at: Utc::now(),
@@ -765,12 +896,16 @@ pub async fn run_backup(
         workspace_count: workspaces,
         total_bytes: report.backup_bytes_total,
         packs,
+        complete,
+        mac: String::new(),
     };
+    manifest.seal(&kek)?;
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
     remote.put(&report.manifest_chunk, &manifest_bytes).await?;
     report.bytes_uploaded += manifest_bytes.len() as u64;
+    report.manifest_published = true;
     report.usage_after = remote.usage().await.ok();
-    report.complete = locked == 0;
+    report.complete = complete;
     Ok(report)
 }
 
@@ -827,6 +962,7 @@ pub async fn run_restore(
     if key_check_value(&kek) != manifest.kcv {
         bail!("wrong passphrase for the cloud backup of instance '{instance}'");
     }
+    manifest.authenticate(&kek)?;
     let mut report = RestoreReport {
         instance_id: instance,
         backup_created_at: Some(manifest.created_at),
@@ -872,6 +1008,8 @@ pub struct VerifyReport {
     pub records: usize,
     pub packs: usize,
     pub packs_missing: Vec<String>,
+    /// `Some(true)` when the manifest MAC checked out (needs the passphrase).
+    pub manifest_authenticated: Option<bool>,
     /// `Some(true)` when every pack was downloaded and decrypted (`--deep`).
     pub decrypted_ok: Option<bool>,
     pub usage: Option<CloudUsage>,
@@ -908,6 +1046,8 @@ pub async fn run_verify(
         if key_check_value(&kek) != manifest.kcv {
             bail!("wrong passphrase for the cloud backup of instance '{instance}'");
         }
+        manifest.authenticate(&kek)?;
+        report.manifest_authenticated = Some(true);
         let mut ok = report.packs_missing.is_empty();
         if ok {
             for p in &manifest.packs {
@@ -931,7 +1071,13 @@ pub async fn periodic_backup_loop(
     passphrase: Zeroizing<String>,
     interval: std::time::Duration,
 ) {
-    let remote = HttpBlobStore::new(&cfg);
+    let remote = match HttpBlobStore::new(&cfg) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("cloud_backup: disabled: {e:#}");
+            return;
+        }
+    };
     // Let the server finish starting before the first run.
     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
     loop {
@@ -1142,7 +1288,7 @@ mod tests {
         assert!(copy.embedding.is_empty());
         assert!(copy.encrypted_dek.is_none());
         assert_eq!(copy.embedding_status, "pending");
-        let packs = build_pack_plaintexts(&[copy.clone()]).unwrap();
+        let packs = build_pack_plaintexts(std::slice::from_ref(&copy)).unwrap();
         let back = parse_pack(&packs[0].0).unwrap();
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].content, "hello");
@@ -1299,6 +1445,192 @@ mod tests {
         assert_eq!(v.packs_missing, vec![first_pack]);
     }
 
+    async fn two_pack_backup(
+        remote: &MemBlobs,
+        dir: &std::path::Path,
+    ) -> crate::memory::sqlite_vec_store::VecSqliteMemoryStore {
+        let store = temp_store(dir).await;
+        store.put(record("ws", "a", "one", 0)).await.unwrap();
+        store.put(record("ws", "b", "two", 30)).await.unwrap();
+        run_backup(&store, remote, &cfg(), PASS, cheap_kdf())
+            .await
+            .unwrap();
+        store
+    }
+
+    fn rewrite_manifest(remote: &MemBlobs, f: impl FnOnce(&mut BackupManifest)) {
+        let name = manifest_chunk_name(&cfg().instance_id);
+        let mut blobs = remote.blobs.lock().unwrap();
+        let mut m: BackupManifest = serde_json::from_slice(&blobs[&name]).unwrap();
+        f(&mut m);
+        blobs.insert(name, serde_json::to_vec(&m).unwrap());
+    }
+
+    #[tokio::test]
+    async fn tampered_manifest_is_rejected_by_restore_and_verify() {
+        let dir = tempfile::tempdir().unwrap();
+        let dst_dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        two_pack_backup(&remote, dir.path()).await;
+        let dst = temp_store(dst_dir.path()).await;
+        let id = cfg().instance_id;
+
+        // Truncation with consistent counters.
+        rewrite_manifest(&remote, |m| {
+            let gone = m.packs.pop().unwrap();
+            m.record_count -= gone.records;
+            m.total_bytes -= gone.bytes;
+        });
+        let e = run_restore(&dst, &remote, &id, PASS).await.unwrap_err();
+        assert!(e.to_string().contains("authentication"), "{e}");
+        let e = run_verify(&remote, &id, Some(PASS)).await.unwrap_err();
+        assert!(e.to_string().contains("authentication"), "{e}");
+        assert!(dst.list("ws").await.unwrap().is_empty());
+
+        // Reordering.
+        let remote = MemBlobs::default();
+        two_pack_backup(&remote, dir.path()).await;
+        rewrite_manifest(&remote, |m| m.packs.reverse());
+        assert!(run_restore(&dst, &remote, &id, PASS).await.is_err());
+
+        // A backup must not build on a tampered previous manifest.
+        let store = temp_store(dir.path()).await;
+        assert!(run_backup(&store, &remote, &cfg(), PASS, cheap_kdf())
+            .await
+            .is_err());
+    }
+
+    #[test]
+    fn kdf_costs_above_the_cap_are_rejected() {
+        for (m, t, p) in [
+            (MAX_KDF_M_KIB + 1, 1, 1),
+            (256, MAX_KDF_T + 1, 1),
+            (256, 1, MAX_KDF_P + 1),
+            (u32::MAX, u32::MAX, u32::MAX),
+        ] {
+            let e = KdfParams::with_costs(m, t, p).derive(PASS).unwrap_err();
+            assert!(e.to_string().contains("above the cap"), "{e}");
+        }
+        assert!(KdfParams::with_costs(MAX_KDF_M_KIB.min(256), 1, 1)
+            .derive(PASS)
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn hostile_manifest_costs_fail_before_deriving() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        let store = two_pack_backup(&remote, dir.path()).await;
+        rewrite_manifest(&remote, |m| m.kdf.m_kib = u32::MAX);
+        let id = cfg().instance_id;
+        let e = run_restore(&store, &remote, &id, PASS).await.unwrap_err();
+        assert!(e.to_string().contains("above the cap"), "{e}");
+        let e = run_verify(&remote, &id, Some(PASS)).await.unwrap_err();
+        assert!(e.to_string().contains("above the cap"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn incomplete_backup_keeps_the_last_complete_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        let store = two_pack_backup(&remote, dir.path()).await;
+        let name = manifest_chunk_name(&cfg().instance_id);
+        let before = remote.blobs.lock().unwrap()[&name].clone();
+
+        let mut locked = record("ws", "locked", "[locked]", 0);
+        locked.metadata = serde_json::json!({"locked": true});
+        store.put(locked).await.unwrap();
+        let rep = run_backup(&store, &remote, &cfg(), PASS, cheap_kdf())
+            .await
+            .unwrap();
+        assert!(!rep.complete && !rep.manifest_published);
+        assert_eq!(rep.records_locked, 1);
+        assert_eq!(remote.blobs.lock().unwrap()[&name], before);
+
+        // With no previous complete backup, an incomplete one is still published.
+        let remote2 = MemBlobs::default();
+        let rep = run_backup(&store, &remote2, &cfg(), PASS, cheap_kdf())
+            .await
+            .unwrap();
+        assert!(!rep.complete && rep.manifest_published);
+    }
+
+    #[tokio::test]
+    async fn missing_packs_are_reuploaded_on_the_next_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let remote = MemBlobs::default();
+        let store = two_pack_backup(&remote, dir.path()).await;
+        let id = cfg().instance_id;
+        let pack = remote
+            .blobs
+            .lock()
+            .unwrap()
+            .keys()
+            .find(|k| !k.starts_with("xcb1-manifest-"))
+            .cloned()
+            .unwrap();
+        remote.blobs.lock().unwrap().remove(&pack);
+        assert!(!run_verify(&remote, &id, Some(PASS)).await.unwrap().ok);
+        let dst_dir = tempfile::tempdir().unwrap();
+        let dst = temp_store(dst_dir.path()).await;
+        let e = run_restore(&dst, &remote, &id, PASS).await.unwrap_err();
+        assert!(e.to_string().contains("missing"), "{e}");
+
+        let rep = run_backup(&store, &remote, &cfg(), PASS, cheap_kdf())
+            .await
+            .unwrap();
+        assert_eq!(rep.packs_repaired, 1);
+        assert!(run_verify(&remote, &id, Some(PASS)).await.unwrap().ok);
+    }
+
+    #[test]
+    fn bearer_token_requires_https_or_loopback() {
+        for ok in [
+            "https://cloud.example",
+            "http://127.0.0.1:8787",
+            "http://localhost:8787",
+            "http://[::1]:8787",
+        ] {
+            assert!(ensure_token_transport(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "http://cloud.example",
+            "http://10.0.0.5",
+            "http://localhost.evil.example",
+            "ftp://cloud.example",
+            "not a url",
+        ] {
+            assert!(ensure_token_transport(bad).is_err(), "{bad}");
+        }
+        let c = CloudBackupConfig {
+            url: "http://cloud.example".into(),
+            token: "t".into(),
+            instance_id: "i".into(),
+        };
+        assert!(HttpBlobStore::new(&c).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn passphrase_file_is_created_0600_and_loose_modes_are_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pass");
+        write_passphrase_file(&path, PASS).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(passphrase_from_file(&path).unwrap().as_str(), PASS);
+        assert!(write_passphrase_file(&path, PASS).is_err(), "no overwrite");
+
+        for mode in [0o640, 0o604, 0o644] {
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            let e = passphrase_from_file(&path).unwrap_err();
+            assert!(e.to_string().contains("other users"), "{mode:o}: {e}");
+        }
+    }
+
     #[tokio::test]
     async fn http_store_uses_native_routes_and_bearer_auth() {
         let mut server = mockito::Server::new_async().await;
@@ -1334,7 +1666,7 @@ mod tests {
             token: "tok".into(),
             instance_id: "i".into(),
         };
-        let http = HttpBlobStore::new(&c);
+        let http = HttpBlobStore::new(&c).unwrap();
         http.put("abcdef0123", b"blob").await.unwrap();
         assert!(http.get("nothere00").await.unwrap().is_none());
         let u = http.usage().await.unwrap();
