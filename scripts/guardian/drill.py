@@ -53,15 +53,10 @@ def run_drill(target: dict, scenario: str, adapters: dict | None = None, now: da
         escalated = True
         outcome = "failed"
 
-    # Specific overrides based on explicit instructions:
-    if scenario == "false_alarm":
-        false_positive = True
-        escalated = False
-        outcome = "restored"
-    elif scenario in ("missing_known_good", "rollback_failure", "guardian_outage"):
-        escalated = True
+    if scenario == "missing_known_good":
         restored_at = None
-        outcome = "failed" if scenario in ("rollback_failure", "guardian_outage") else "escalated"
+        escalated = True
+        outcome = "escalated"
 
     return {
         "target_id": target_id,

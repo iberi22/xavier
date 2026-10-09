@@ -1,8 +1,6 @@
 import unittest
 import importlib.util
 import os
-import json
-import tempfile
 from datetime import datetime, timezone, timedelta
 
 spec_drill = importlib.util.spec_from_file_location(
@@ -101,6 +99,7 @@ class TestGuardianDrill(unittest.TestCase):
         ]
 
         # Modify some times so we can test MTTR logic
+        results[0]["first_bad_signal_at"] = (self.now - timedelta(seconds=5)).isoformat()
         results[0]["detected_at"] = self.now.isoformat()
         results[0]["decided_at"] = (self.now + timedelta(seconds=10)).isoformat()
         results[0]["restored_at"] = (self.now + timedelta(seconds=30)).isoformat()
@@ -109,6 +108,7 @@ class TestGuardianDrill(unittest.TestCase):
 
         self.assertIn("target1", series)
         s = series["target1"]
+        self.assertEqual(s["time_to_detect"], 5.0) # From first_bad_signal_at vs detected_at
         self.assertEqual(s["production_mttr"], 30.0) # From failed_smoke
         self.assertEqual(s["unresolved"], 1) # From missing_known_good
         self.assertEqual(s["false_positives"], 1) # From false_alarm

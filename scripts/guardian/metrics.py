@@ -40,13 +40,17 @@ def mttr_series(results: list[dict]) -> dict:
         if escalated:
             series[tid]["unresolved"] += 1
 
+        occurred = parse_iso(r.get("occurred_at"))
+        if not occurred:
+            occurred = parse_iso(r.get("first_bad_signal_at"))
+
         detected = parse_iso(r.get("detected_at"))
         decided = parse_iso(r.get("decided_at"))
         restored = parse_iso(r.get("restored_at"))
 
-        # In a real implementation we would have an "occurred_at" to compute time_to_detect.
-        # Since we don't have start time in schema, we can assume time_to_detect = 0 or
-        # derive it if available. Given we just use what we have:
+        if occurred and detected:
+            series[tid]["time_to_detect"] += (detected - occurred).total_seconds()
+
         if detected and decided:
             series[tid]["detection_to_decision"] += (decided - detected).total_seconds()
 

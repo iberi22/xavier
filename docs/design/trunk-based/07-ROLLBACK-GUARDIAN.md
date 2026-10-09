@@ -34,9 +34,22 @@ The guardian verifies the failing deployment is current, the candidate is the im
 
 The rollback guardian sends a review notification with target, detected fault, evidence, decision, action and result to the operator app (Atlas), and opens or updates one GitHub incident issue keyed by target/deployment. Notification failure is itself recorded and retried without hiding the rollback outcome. Link the incident to CI/deploy runs, source SHA, prior and restored IDs, checksums, probe samples, guardian identity, timestamps and panel/owner decisions. Keep secrets and personal paths out of reports. Close only after production smoke and a stable observation window; preserve the failed deployment for investigation where possible.
 
+## Drills and measures
+
+Before enabling any target, rehearse a failed smoke, sustained error signal, false alarm, missing known-good artifact, rollback failure and guardian outage in a nonproduction target. Verify that only the intended version changes, the owner receives both notifications, and a schema/security case escalates without rollback. Repeat after recovery-mechanism changes and periodically thereafter. Report per target: time to detect, time from detection to guardian decision, rollback time, **production MTTR** from first confirmed bad production signal to restored healthy service, false-positive rollbacks, failed rollbacks and unresolved incidents. Keep this production MTTR separate from GitHub integration MTTR (`00-ANALYSIS.md:47-54`).
+
 ## Drill evidence and production MTTR
 
-Before enabling any target for automation, run offline rollback drills in a nonproduction setting to ensure safety. The drills must simulate six scenarios: failed smoke, sustained error signal, false alarm, missing known-good artifact, rollback failure, and guardian outage. The offline runner calculates key metrics per target: time to detect, detection-to-decision time, rollback time, **production MTTR**, false positives, failed rollbacks, and unresolved incidents. False alarms are recorded as false positives, while missing known-good targets, rollback failures, and guardian outages correctly escalate without executing a restore. The production MTTR only tracks restored targets and is completely decoupled from GitHub integration MTTR. Throughout all metrics gathering and offline drills, activation of actual recovery mechanisms strictly remains owner-authorized.
+Before enabling any target for automation, run offline rollback drills
+in a nonproduction setting to ensure safety. The offline drills must
+simulate a failed smoke, sustained error signal, false alarm, missing
+known-good artifact, rollback failure, and guardian outage scenarios.
+The offline runner calculates metrics per target including time to detect,
+detection-to-decision time, rollback time, **production MTTR**,
+false positives, failed rollbacks, and unresolved incidents.
+Production MTTR tracks only restored targets and excludes GitHub integration MTTR.
+Throughout all drills and metric gathering, actual recovery activation
+strictly remains owner-authorized.
 
 ## Machine-readable inventory
 
