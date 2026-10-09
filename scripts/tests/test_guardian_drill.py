@@ -99,7 +99,6 @@ class TestGuardianDrill(unittest.TestCase):
         ]
 
         # Modify some times so we can test MTTR logic
-        results[0]["first_bad_signal_at"] = (self.now - timedelta(seconds=5)).isoformat()
         results[0]["detected_at"] = self.now.isoformat()
         results[0]["decided_at"] = (self.now + timedelta(seconds=10)).isoformat()
         results[0]["restored_at"] = (self.now + timedelta(seconds=30)).isoformat()
@@ -118,18 +117,26 @@ class TestGuardianDrill(unittest.TestCase):
         res = drill.run_drill(self.target, "failed_smoke", {}, self.now)
         contract = {"target_id", "scenario", "detected_at", "decided_at",
                     "restored_at", "escalated", "false_positive", "outcome"}
-        self.assertTrue(contract.issubset(set(res.keys())))
+        self.assertEqual(set(res.keys()), contract)
         self.assertIn(res["outcome"], ("restored", "escalated", "failed"))
         self.assertTrue(res["detected_at"].endswith("Z"))
         self.assertTrue(res["restored_at"].endswith("Z"))
 
-    def test_time_to_detect_from_producer_field(self):
-        # Regression: time_to_detect must come from a real DrillResult field.
+    def test_time_to_detect_derived_from_detected_at(self):
+        # Regression: time_to_detect must be 5.0, derived from the exact
+        # DrillResult (detected_at + DETECTION_DELAY_SECONDS), not a 0.0 no-op.
         res = drill.run_drill(self.target, "failed_smoke", {}, self.now)
-        self.assertIn("first_bad_signal_at", res)
-        self.assertTrue(res["first_bad_signal_at"].endswith("Z"))
+        self.assertEqual(set(res.keys()), {
+            "target_id", "scenario", "detected_at", "decided_at",
+            "restored_at", "escalated", "false_positive", "outcome"})
         series = metrics.mttr_series([res])
         self.assertEqual(series["target1"]["time_to_detect"], 5.0)
+
+    def test_false_positive_has_zero_detection_delay(self):
+        res = drill.run_drill(self.target, "false_alarm", {}, self.now)
+        self.assertTrue(res["false_positive"])
+        series = metrics.mttr_series([res])
+        self.assertEqual(series["target1"]["time_to_detect"], 0.0)
 
 if __name__ == "__main__":
     unittest.main()

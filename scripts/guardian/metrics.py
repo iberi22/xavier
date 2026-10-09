@@ -1,7 +1,11 @@
+import os
 import sys
 import json
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from drill import DETECTION_DELAY_SECONDS
 
 def parse_iso(val: str | None) -> datetime | None:
     if not val:
@@ -50,6 +54,12 @@ def mttr_series(results: list[dict]) -> dict:
         detected = parse_iso(r.get("detected_at"))
         decided = parse_iso(r.get("decided_at"))
         restored = parse_iso(r.get("restored_at"))
+
+        # DrillResult is exact (no onset key): derive the simulated fault onset
+        # from detected_at, offset by the drill's detection delay.
+        if not occurred and detected:
+            delay = 0 if r.get("false_positive") else DETECTION_DELAY_SECONDS
+            occurred = detected - timedelta(seconds=delay)
 
         if occurred and detected:
             series[tid]["time_to_detect"] += (detected - occurred).total_seconds()
