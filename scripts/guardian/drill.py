@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 # Simulated fault onset to detection latency used by the offline drills.
 DETECTION_DELAY_SECONDS = 5
@@ -65,13 +65,9 @@ def run_drill(target: dict, scenario: str, adapters: dict | None = None, now: da
         escalated = True
         outcome = "failed"
 
-    # The simulated fault onset is a real producer field so time_to_detect can be
-    # derived from a DrillResult instead of a caller-only literal.
-    if false_positive:
-        first_bad_signal_at = now
-    else:
-        first_bad_signal_at = now - timedelta(seconds=DETECTION_DELAY_SECONDS)
-
+    # DrillResult must carry exactly the contract keys; the simulated fault onset
+    # is not a contract field, so consumers derive it from detected_at plus
+    # DETECTION_DELAY_SECONDS (0 for a false positive).
     return {
         "target_id": target_id,
         "scenario": scenario,
@@ -81,5 +77,4 @@ def run_drill(target: dict, scenario: str, adapters: dict | None = None, now: da
         "escalated": escalated,
         "false_positive": false_positive,
         "outcome": outcome,
-        "first_bad_signal_at": _utc_z(first_bad_signal_at),
     }
