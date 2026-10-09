@@ -2,11 +2,32 @@
 //!
 //! Implements sync status via HTTP API.
 
+use crate::cli::commands::enums::SyncCommand;
 use crate::cli::config::{require_xavier_token, resolve_base_url};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+
+pub enum SyncPlan {
+    Status,
+    Unsupported,
+}
+
+pub fn sync_plan(cmd: &SyncCommand) -> SyncPlan {
+    match cmd {
+        SyncCommand::Status | SyncCommand::Check => SyncPlan::Status,
+        SyncCommand::Now { .. } => SyncPlan::Unsupported,
+    }
+}
 
 /// Show sync status
-pub async fn handle_sync_command() -> Result<()> {
+pub async fn handle_sync_command(cmd: SyncCommand) -> Result<()> {
+    match sync_plan(&cmd) {
+        SyncPlan::Unsupported => {
+            eprintln!("xavier sync now is not implemented: the server exposes only the read-only /xavier/sync/check endpoint");
+            return Err(anyhow!("xavier sync now is not implemented"));
+        }
+        SyncPlan::Status => {}
+    }
+
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
     let client = crate::cli::commands::enums::CLI_HTTP_CLIENT.clone();
@@ -50,4 +71,21 @@ fn print_sync_status_table(data: &serde_json::Value) {
     println!("  Match Score: {:.1}%", score * 100.0);
     println!("  Active Agents: {}", agents);
     println!("═══════════════════════════════════════════");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sync_plan() {
+        assert!(matches!(sync_plan(&SyncCommand::Status), SyncPlan::Status));
+        assert!(matches!(sync_plan(&SyncCommand::Check), SyncPlan::Status));
+        assert!(matches!(
+            sync_plan(&SyncCommand::Now {
+                mode: "push".into()
+            }),
+            SyncPlan::Unsupported
+        ));
+    }
 }

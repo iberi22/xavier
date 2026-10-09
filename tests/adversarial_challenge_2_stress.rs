@@ -167,14 +167,15 @@ async fn test_adversarial_http_vault_boundary_conditions() {
     };
 
     // 1. Missing auth token (unauthenticated GET) -> 403
-    let unauth_req = build_router_request(Method::GET, "/v1/clavis/keys/probe_key", None, None);
+    let unauth_req =
+        build_router_request(Method::GET, "/v1/clavis/keys/api_key_probe_key", None, None);
     let resp = create_router().oneshot(unauth_req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
     // 2. Nonexistent key GET -> 404 with code clavis_key_not_found
     let ghost_req = build_router_request(
         Method::GET,
-        "/v1/clavis/keys/ghost_key_never_exists",
+        "/v1/clavis/keys/api_key_ghost_never_exists",
         None,
         Some(UserRole::Admin),
     );
@@ -187,7 +188,7 @@ async fn test_adversarial_http_vault_boundary_conditions() {
     // 3. Invalid key name with leading dot -> 400
     let dot_req = build_router_request(
         Method::GET,
-        "/v1/clavis/keys/.hidden",
+        "/v1/clavis/keys/api_key_.hidden",
         None,
         Some(UserRole::Admin),
     );
@@ -197,7 +198,7 @@ async fn test_adversarial_http_vault_boundary_conditions() {
     // 4. PUT empty key value -> correctly rejected with 400 BAD_REQUEST ("value must not be empty")
     let put_empty_req = build_router_request(
         Method::PUT,
-        "/v1/clavis/keys/empty_val_key",
+        "/v1/clavis/keys/api_key_empty_val_key",
         Some(r#"{"value":""}"#),
         Some(UserRole::Admin),
     );
@@ -205,9 +206,14 @@ async fn test_adversarial_http_vault_boundary_conditions() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     // 5. PUT valid initial key value -> 201 CREATED
+    // The router uses the process-global vault, which persists on disk: a previous
+    // run leaves this key behind and turns the create into an update (200). Reset it
+    // so the create path is genuinely exercised, then clean up at the end.
+    let vault = xavier::adapters::inbound::http::handlers::clavis::clavis_vault();
+    let _ = vault.delete_secret("api_key_valid_val_key");
     let put_req = build_router_request(
         Method::PUT,
-        "/v1/clavis/keys/valid_val_key",
+        "/v1/clavis/keys/api_key_valid_val_key",
         Some(r#"{"value":"initial_secret_123"}"#),
         Some(UserRole::Admin),
     );
@@ -217,7 +223,7 @@ async fn test_adversarial_http_vault_boundary_conditions() {
     // Verify stored value
     let get_req = build_router_request(
         Method::GET,
-        "/v1/clavis/keys/valid_val_key",
+        "/v1/clavis/keys/api_key_valid_val_key",
         None,
         Some(UserRole::Admin),
     );
@@ -230,12 +236,15 @@ async fn test_adversarial_http_vault_boundary_conditions() {
     // 6. PUT duplicate overwrite -> returns 200 OK
     let overwrite_req = build_router_request(
         Method::PUT,
-        "/v1/clavis/keys/valid_val_key",
+        "/v1/clavis/keys/api_key_valid_val_key",
         Some(r#"{"value":"new_updated_val"}"#),
         Some(UserRole::Admin),
     );
     let resp = create_router().oneshot(overwrite_req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+
+    // Clean up: leave no key behind for the next run.
+    let _ = vault.delete_secret("api_key_valid_val_key");
 }
 
 #[test]

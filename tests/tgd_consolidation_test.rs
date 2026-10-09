@@ -5,6 +5,8 @@ use tempfile::tempdir;
 use xavier::agents::provider::types::LlmResponse;
 use xavier::agents::provider::LlmProvider;
 use xavier::consolidation::ConsolidationTask;
+use xavier::memory::store::MemoryBackend;
+use xavier::memory::MemoryStore;
 use xavier::tgd::{TgdConfig, TgdEngine};
 use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
 
@@ -55,7 +57,9 @@ async fn test_tgd_consolidation_refinement() {
         .await
         .unwrap();
 
-    let config = WorkspaceConfig::from_env();
+    let mut config = WorkspaceConfig::from_env();
+    config.id = "test-ws".to_string();
+    config.memory_backend = MemoryBackend::Memory;
     let runtime_config = xavier::agents::RuntimeConfig::default();
     let workspace_state = Arc::new(
         WorkspaceState::new(config, runtime_config, workspace_dir.clone())
@@ -122,7 +126,6 @@ async fn test_nightly_consolidation_process() {
     use xavier::memory::manager::core::MemoryManager;
     use xavier::memory::qmd_memory::QmdMemory;
     use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
-    use xavier::memory::store::MemoryStore;
 
     let tmp = tempdir().unwrap();
     let db_path = tmp.path().join("test_consolidation.db");
@@ -207,7 +210,7 @@ async fn test_nightly_consolidation_process() {
         .unwrap();
 
     // Wait 2 seconds to ensure the TTL memory has expired
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     // Check count before nightly consolidation
     let list_before = store.list(workspace_id).await.unwrap();

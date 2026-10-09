@@ -74,6 +74,24 @@ pub fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Create a new private file with mode `0600` atomically using `create_new(true)`
+/// and `O_NOFOLLOW` on Unix. Fails if the path already exists (including a dangling symlink).
+pub fn create_private_file_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+        opts.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = opts.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+
 /// Master Key Manager handles the core encryption key for the system.
 pub struct MasterKeyManager {
     master_key: [u8; MASTER_KEY_LEN],
@@ -86,7 +104,7 @@ impl MasterKeyManager {
             return Ok(Self { master_key: key });
         }
 
-        if let Ok(key) = Self::load_from_fallback() {
+        if let Ok(key) = Self::load_from_fallback(true) {
             // Found in fallback, try to restore to keyring
             let _ = Self::save_to_keyring(&key);
             return Ok(Self { master_key: key });
@@ -116,6 +134,24 @@ impl MasterKeyManager {
         }
 
         Ok(Self { master_key: key })
+    }
+
+    /// Read an existing master key without minting, saving, or rewrapping it.
+    pub fn load_existing() -> Result<Option<Self>> {
+        if let Ok(key) = Self::load_from_keyring() {
+            return Ok(Some(Self { master_key: key }));
+        }
+        let path = Self::get_fallback_path();
+        match fs::symlink_metadata(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+            Ok(_) => Self::load_from_fallback(false).map(|key| Some(Self { master_key: key })),
+        }
+    }
+
+    /// Check value of the master key itself, without exposing its bytes.
+    pub fn kcv_hex(&self) -> String {
+        crate::recovery::kcv::encode_kcv(&self.master_key)
     }
 
     fn load_from_keyring() -> Result<[u8; MASTER_KEY_LEN]> {
@@ -223,11 +259,12 @@ impl MasterKeyManager {
         Self::derive_legacy_fallback_encryption_key(&Self::host_name())
     }
 
-    fn load_from_fallback() -> Result<[u8; MASTER_KEY_LEN]> {
+    fn load_from_fallback(rewrap: bool) -> Result<[u8; MASTER_KEY_LEN]> {
         Self::load_from_fallback_at(
             &Self::get_fallback_path(),
             &Self::get_fallback_encryption_key(),
             &Self::get_legacy_fallback_encryption_key(),
+            rewrap,
         )
     }
 
@@ -239,6 +276,7 @@ impl MasterKeyManager {
         path: &Path,
         current_key: &[u8; WRAPPING_KEY_LEN],
         legacy_key: &[u8; WRAPPING_KEY_LEN],
+        rewrap: bool,
     ) -> Result<[u8; MASTER_KEY_LEN]> {
         if !path.exists() {
             return Err(anyhow!("Fallback master key file not found"));
@@ -259,7 +297,7 @@ impl MasterKeyManager {
             }
         };
 
-        if needs_rewrap {
+        if needs_rewrap && rewrap {
             if let Err(e) = Self::write_fallback_at(&key, path, current_key) {
                 tracing::warn!(
                     "Could not re-wrap fallback master key with current derivation: {e}"
@@ -343,6 +381,15 @@ impl MasterKeyManager {
         let mut key = [0u8; 32];
         self.derive_key(b"xavier-secrets-vault-v1", &mut key)?;
         Ok(key)
+    }
+}
+
+#[cfg(test)]
+impl MasterKeyManager {
+    /// Build a manager directly from a fixed key without touching the OS
+    /// keyring or any file. Test-only.
+    pub(crate) fn from_key_for_test(master_key: [u8; MASTER_KEY_LEN]) -> Self {
+        Self { master_key }
     }
 }
 
@@ -534,7 +581,8 @@ mod tests {
         fs::write(&key_path, &legacy_blob).unwrap();
 
         let loaded =
-            MasterKeyManager::load_from_fallback_at(&key_path, &current_key, &legacy_key).unwrap();
+            MasterKeyManager::load_from_fallback_at(&key_path, &current_key, &legacy_key, true)
+                .unwrap();
         assert_eq!(loaded, master);
 
         let on_disk = fs::read(&key_path).unwrap();
@@ -561,6 +609,27 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_legacy_fallback_probe_does_not_rewrap() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("master.key");
+        let current = MasterKeyManager::derive_fallback_encryption_key(TEST_HOST, TEST_MACHINE_ID);
+        let legacy = MasterKeyManager::derive_legacy_fallback_encryption_key(TEST_HOST);
+        let key = [0x37; MASTER_KEY_LEN];
+        let blob = aes_encrypt(&key, &legacy, &NonceBytes::generate()).unwrap();
+        fs::write(&path, &blob).unwrap();
+        let loaded =
+            MasterKeyManager::load_from_fallback_at(&path, &current, &legacy, false).unwrap();
+        assert_eq!(loaded, key);
+        assert_eq!(fs::read(&path).unwrap(), blob);
+        let manager = MasterKeyManager::from_key_for_test(key);
+        assert_eq!(manager.kcv_hex(), crate::recovery::kcv::encode_kcv(&key));
+        assert_ne!(
+            manager.kcv_hex(),
+            crate::recovery::kcv::encode_kcv(&manager.vault_key().unwrap())
+        );
+    }
+
     /// An already-current file is read without touching it.
     #[test]
     fn test_current_fallback_file_is_read_without_rewrap() {
@@ -576,7 +645,8 @@ mod tests {
         let before = fs::read(&key_path).unwrap();
 
         let loaded =
-            MasterKeyManager::load_from_fallback_at(&key_path, &current_key, &legacy_key).unwrap();
+            MasterKeyManager::load_from_fallback_at(&key_path, &current_key, &legacy_key, true)
+                .unwrap();
         assert_eq!(loaded, master);
         assert_eq!(
             fs::read(&key_path).unwrap(),
@@ -600,7 +670,8 @@ mod tests {
         let foreign_blob = aes_encrypt(&master, &foreign_key, &NonceBytes::generate()).unwrap();
         fs::write(&key_path, &foreign_blob).unwrap();
 
-        let result = MasterKeyManager::load_from_fallback_at(&key_path, &current_key, &legacy_key);
+        let result =
+            MasterKeyManager::load_from_fallback_at(&key_path, &current_key, &legacy_key, true);
         assert!(result.is_err());
         assert_eq!(
             fs::read(&key_path).unwrap(),

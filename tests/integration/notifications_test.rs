@@ -2,6 +2,7 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 use xavier::codebase::connection_manager::ConnectionManager;
 use xavier::notifications::{IslandId, NOTIFICATIONS, SENT_EMAILS};
+use xavier::server::alerts::SYSTEM_ALERTS;
 
 async fn setup_test() {
     std::env::set_var("XAVIER_TEST", "true");
@@ -105,6 +106,59 @@ async fn test_email_notification_delivery() {
         .find(|e| e.title == "Email Test Title")
         .expect("find sent email");
     assert_eq!(sent_email.body, "Email Test Body");
+}
+
+/// Proves BOTH halves of the email dedup contract introduced to fix the
+/// self-suppression bug: the first notification for a title sends an email
+/// (the in-app row written by the same `notify()` call must not count as a
+/// repeat), and an immediate second notification for the same title is
+/// suppressed by the 300s window.
+#[tokio::test]
+async fn test_email_notification_dedup_suppresses_repeat() {
+    setup_test().await;
+
+    const TITLE: &str = "Email Dedup Title";
+
+    // Make the test independent of rows the shared memory DB may already hold.
+    let _ = ConnectionManager::global()
+        .with_conn("memory", |conn| {
+            conn.execute(
+                "DELETE FROM notifications WHERE title = 'Email Dedup Title'",
+                [],
+            )?;
+            Ok(())
+        })
+        .await;
+    SYSTEM_ALERTS.clear();
+    {
+        let mut emails = SENT_EMAILS.lock().await;
+        emails.clear();
+    }
+
+    // First notification -> exactly one email for the title.
+    let _ = NOTIFICATIONS
+        .notify(IslandId::Agents, TITLE, "first body", "success")
+        .await
+        .expect("first notify");
+    {
+        let emails = SENT_EMAILS.lock().await;
+        let count = emails.iter().filter(|e| e.title == TITLE).count();
+        assert_eq!(count, 1, "first notification must send exactly one email");
+    }
+
+    // Immediate repeat -> suppressed by the 300s dedup window.
+    let _ = NOTIFICATIONS
+        .notify(IslandId::Agents, TITLE, "second body", "success")
+        .await
+        .expect("second notify");
+    {
+        let emails = SENT_EMAILS.lock().await;
+        let count = emails.iter().filter(|e| e.title == TITLE).count();
+        assert_eq!(
+            count, 1,
+            "immediate repeat must be suppressed, found {count} emails"
+        );
+    }
 }
 
 #[tokio::test]
