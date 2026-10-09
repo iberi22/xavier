@@ -1290,11 +1290,16 @@ disable-model-invocation: true
         let mut registry = SkillRegistry::with_home(workspace.path(), None);
         registry.reindex().await.unwrap();
 
-        let skill = registry.get("silent-skill").expect("skill should still be indexed");
+        let skill = registry
+            .get("silent-skill")
+            .expect("skill should still be indexed");
         assert!(skill.disable_model_invocation);
 
         let search_results = registry.search("silent", 10);
-        assert!(search_results.is_empty(), "disabled skill should not appear in search results");
+        assert!(
+            search_results.is_empty(),
+            "disabled skill should not appear in search results"
+        );
     }
 
     // --- feat-skill-semantic-rank (#302) ---
