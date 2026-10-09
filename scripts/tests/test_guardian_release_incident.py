@@ -4,8 +4,11 @@ import tempfile
 import json
 import os
 
-# "unittest, importlib.util.spec_from_file_location pattern from scripts/tests/test_guardian_targets.py"
-spec = importlib.util.spec_from_file_location("release_incident", "scripts/guardian/release_incident.py")
+# Use os.path.dirname(__file__) pattern
+scripts_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+module_path = os.path.join(scripts_dir, "guardian", "release_incident.py")
+
+spec = importlib.util.spec_from_file_location("release_incident", module_path)
 release_incident = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release_incident)
 
@@ -21,7 +24,7 @@ class TestReleaseIncident(unittest.TestCase):
         }
         res = release_incident.classify(event, decision)
         self.assertEqual(res["state"], "escalated")
-        self.assertIsNone(res["revert_plan"])
+        self.assertIsNone(res["source_revert"])
         self.assertFalse(res["tag_moved"])
 
     def test_security_signal(self):
@@ -36,7 +39,7 @@ class TestReleaseIncident(unittest.TestCase):
         }
         res = release_incident.classify(event, decision)
         self.assertEqual(res["state"], "escalated")
-        self.assertIsNone(res["revert_plan"])
+        self.assertIsNone(res["source_revert"])
         self.assertFalse(res["tag_moved"])
 
     def test_confident_single_reversible_commit(self):
@@ -49,10 +52,10 @@ class TestReleaseIncident(unittest.TestCase):
             }
         }
         res = release_incident.classify(event, decision)
-        self.assertEqual(res["state"], "revert_planned")
-        self.assertIsNotNone(res["revert_plan"])
-        self.assertEqual(res["revert_plan"]["commit"], "abcdef")
-        self.assertFalse(res["revert_plan"]["panel_approved"])
+        self.assertEqual(res["state"], "escalated")
+        self.assertIsNotNone(res["source_revert"])
+        self.assertEqual(res["source_revert"]["sha"], "abcdef")
+        self.assertFalse(res["source_revert"]["panel_approved"])
         self.assertFalse(res["tag_moved"])
 
     def test_uncertain_attribution(self):
@@ -66,7 +69,7 @@ class TestReleaseIncident(unittest.TestCase):
         }
         res = release_incident.classify(event, decision)
         self.assertEqual(res["state"], "escalated")
-        self.assertIsNone(res["revert_plan"])
+        self.assertIsNone(res["source_revert"])
 
     def test_multi_commit(self):
         event = {"kind": "source_revert"}
@@ -79,7 +82,7 @@ class TestReleaseIncident(unittest.TestCase):
         }
         res = release_incident.classify(event, decision)
         self.assertEqual(res["state"], "escalated")
-        self.assertIsNone(res["revert_plan"])
+        self.assertIsNone(res["source_revert"])
 
     def test_tag_event(self):
         event = {"kind": "release_tag", "tag": "v1.2.3"}
@@ -89,7 +92,7 @@ class TestReleaseIncident(unittest.TestCase):
         self.assertFalse(res["tag_moved"])
         self.assertEqual(res["recommended_version"], "v1.2.2")
         self.assertEqual(res["state"], "escalated")
-        self.assertIsNone(res["revert_plan"])
+        self.assertIsNone(res["source_revert"])
 
     def test_input_immutability(self):
         event = {"kind": "source_revert"}
