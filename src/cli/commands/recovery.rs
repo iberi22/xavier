@@ -57,11 +57,17 @@ pub async fn handle_recovery_command(args: RecoveryArgs) -> Result<()> {
             replace_passphrase,
             rekey,
         ),
-        RecoveryCommand::Restore { key_hex, kcv } => {
-            let key_hex = key_hex.ok_or_else(|| {
-                anyhow::anyhow!("--key-hex is required (or pipe it: --key-hex -)")
-            })?;
-            restore(&key_hex, kcv.as_deref())
+        RecoveryCommand::Restore { key_file, kcv } => {
+            use std::io::Read;
+            let content = if key_file.as_os_str() == "-" {
+                let mut content = String::new();
+                std::io::stdin().read_to_string(&mut content)?;
+                content
+            } else {
+                std::fs::read_to_string(&key_file)
+                    .with_context(|| format!("cannot read key from {}", key_file.display()))?
+            };
+            restore(&strip_one_line_ending(content), kcv.as_deref())
         }
         RecoveryCommand::Unseal {
             mnemonic,
@@ -163,6 +169,22 @@ fn seal(
     if !mnemonic && !passphrase {
         bail!("choose at least one of --mnemonic or --passphrase");
     }
+    // Refuse before any prompt, generation or sealing.
+    let mut words_tty = if mnemonic && words_out.is_none() {
+        use std::io::IsTerminal;
+        let tty = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/tty")
+            .context(
+                "no controlling TTY available; use --words-out <file> to deliver recovery words",
+            )?;
+        if !tty.is_terminal() {
+            bail!("no controlling TTY available; use --words-out <file> to deliver recovery words");
+        }
+        Some(tty)
+    } else {
+        None
+    };
     let (key, _) = at_rest::peek_record_key_with_source();
     let key = key.ok_or_else(|| {
         anyhow::anyhow!(
@@ -238,15 +260,12 @@ fn seal(
                     .with_context(|| format!("cannot write words to {}", path.display()))?
             }
             None => {
-                let mut stdout = std::io::stdout().lock();
-                writeln!(
-                    stdout,
-                    "WRITE THESE 24 WORDS ON PAPER NOW (they ARE the key):"
-                )?;
+                let tty = words_tty.as_mut().expect("mnemonic delivery validated");
+                writeln!(tty, "WRITE THESE 24 WORDS ON PAPER NOW (they ARE the key):")?;
                 for (i, w) in words.split_whitespace().enumerate() {
-                    writeln!(stdout, "  {:>2}. {w}", i + 1)?;
+                    writeln!(tty, "  {:>2}. {w}", i + 1)?;
                 }
-                stdout.flush()?;
+                tty.flush()?;
             }
         }
     }
@@ -384,7 +403,7 @@ fn restore(key_hex: &str, kcv_hex: Option<&str>) -> Result<()> {
     let target = at_rest::record_key_path();
     println!("target: {}", target.display());
 
-    match store.restore_into(key_hex.trim(), &target, expected.as_deref())? {
+    match store.restore_into(key_hex, &target, expected.as_deref())? {
         xavier::recovery::RestoreOutcome::Installed => {
             println!("installed. Verify by reading a record before trusting it.");
             Ok(())
@@ -419,6 +438,8 @@ fn drive_status() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    xavier::isolate_test_process!();
+
     use super::*;
 
     #[test]
