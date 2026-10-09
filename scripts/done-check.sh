@@ -27,13 +27,18 @@ if ! jq -e '
   (.scans | type == "object" and has("secret_scan")) and
   (.commands | type == "array" and length > 0) and
   (.atlas | type == "object" and has("passed") and has("dod_complete") and has("evidence_count")) and
-  (.review | type == "object" and has("verdict") and has("subject_sha") and has("backend") and has("executor"))
+  (.review | type == "object" and has("verdict") and has("subject_sha") and has("backend") and has("executor")) and
+  has("worktree") and
+  has("claim_file")
 ' "$BUNDLE_FILE" >/dev/null 2>&1; then
     echo "Malformed bundle JSON" >&2
     exit 2
 fi
 
-DONE_REVIEW_CMD="${DONE_REVIEW_CMD:-scripts/atlas-review-adapter.sh}"
+# Resolve the default reviewer relative to this script so the seam works from
+# any CWD. An explicitly empty DONE_REVIEW_CMD stays empty (fail-closed).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DONE_REVIEW_CMD="${DONE_REVIEW_CMD:-$SCRIPT_DIR/atlas-review-adapter.sh}"
 
 TASK_ID=$(jq -r '.task_id' "$BUNDLE_FILE")
 
@@ -110,6 +115,8 @@ fi
 if [ -z "${DONE_REVIEW_CMD:-}" ] || ! command -v "$DONE_REVIEW_CMD" >/dev/null 2>&1; then
     add_check "review" "false" "DONE_REVIEW_CMD missing or unusable"
 else
+    # The bundle already carries the worktree/claim_file the reviewer needs
+    # (validated above), so it is forwarded verbatim on stdin.
     REVIEW_OUT=$("$DONE_REVIEW_CMD" < "$BUNDLE_FILE" 2>/dev/null || true)
     if [ -n "$REVIEW_OUT" ] && echo "$REVIEW_OUT" | jq -e 'type == "object" and has("verdict")' >/dev/null 2>&1; then
         REVIEW_VERDICT=$(echo "$REVIEW_OUT" | jq -r '.verdict')
