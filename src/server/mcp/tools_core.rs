@@ -320,10 +320,6 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                     "crypt_passphrase_backed_up": {
                         "type": "boolean",
                         "description": "Operator assertion: is the rclone crypt passphrase stored outside this host? Omit to report it as unverified."
-                    },
-                    "recovery_dir": {
-                        "type": "string",
-                        "description": "Optional override of the recovery directory (defaults to $XAVIER_RECOVERY_DIR or ~/.xavier/recovery)"
                     }
                 }
             }),
@@ -407,7 +403,7 @@ fn espacio_manager_for_root() -> anyhow::Result<std::sync::Arc<crate::espacio::S
 pub async fn handle_core_tool(
     _state: AppState,
     workspace: WorkspaceContext,
-    _claims: Option<&crate::security::auth::Claims>,
+    claims: Option<&crate::security::auth::Claims>,
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
@@ -1199,10 +1195,13 @@ pub async fn handle_core_tool(
             let crypt = arguments
                 .get("crypt_passphrase_backed_up")
                 .and_then(|v| v.as_bool());
-            let store = match arguments.get("recovery_dir").and_then(|v| v.as_str()) {
-                Some(dir) if !dir.trim().is_empty() => crate::recovery::RecoveryStore::at(dir),
-                _ => crate::recovery::RecoveryStore::from_env_or_default(),
-            };
+            use crate::security::auth::Permission;
+            if !claims.is_some_and(|c| c.role.can_edit_config()) {
+                return Err(anyhow::anyhow!(
+                    "Forbidden: Insufficient permissions to execute tool 'recovery_status'"
+                ));
+            }
+            let store = crate::recovery::RecoveryStore::from_env_or_default();
 
             use crate::memory::sqlite_vec_store::at_rest::{
                 peek_record_key_with_source, KeySource,

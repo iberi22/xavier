@@ -2528,3 +2528,203 @@ fn step_two() {}
         std::fs::remove_dir_all(&dir).ok();
     }
 }
+
+#[tokio::test]
+async fn auth_defaults_require_explicit_identity() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    for name in ["list_projects", "future_tool"] {
+        let err = super::server::handle_tool_call(
+            state.clone(),
+            workspace.clone(),
+            None,
+            name,
+            json!({}),
+        )
+        .await
+        .expect_err("caller identity required");
+        assert!(err
+            .to_string()
+            .starts_with("Forbidden: Insufficient permissions"));
+    }
+    super::server::handle_tool_call(
+        state.clone(),
+        workspace.clone(),
+        None,
+        "health_check",
+        json!({}),
+    )
+    .await
+    .expect("anonymous health");
+    let claims = crate::security::auth::Claims::new(
+        "stdio_local".into(),
+        "local@xavier".into(),
+        crate::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    );
+    super::server::handle_tool_call(
+        state.clone(),
+        workspace.clone(),
+        Some(&claims),
+        "list_projects",
+        json!({}),
+    )
+    .await
+    .expect("explicit operator");
+    assert!(!super::server::root_credential_present());
+    let err = super::server::handle_tool_call(
+        state,
+        workspace,
+        Some(&claims),
+        "espacio_channel_list",
+        json!({}),
+    )
+    .await
+    .expect_err("root credential required");
+    assert!(err.to_string().contains("root"));
+}
+
+#[tokio::test]
+async fn recovery_status_requires_admin() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    for role in [
+        crate::security::auth::UserRole::Readonly,
+        crate::security::auth::UserRole::User,
+    ] {
+        let claims = crate::security::auth::Claims::new(
+            "caller".into(),
+            "caller@xavier".into(),
+            role,
+            chrono::Duration::hours(1),
+        );
+        let err = super::server::handle_tool_call(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            "recovery_status",
+            json!({}),
+        )
+        .await
+        .expect_err("admin required");
+        assert!(err
+            .to_string()
+            .starts_with("Forbidden: Insufficient permissions"));
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn recovery_status_uses_configured_directory() {
+    crate::isolate_test_process!();
+    let default_dir = tempfile::tempdir().unwrap();
+    let extra_dir = tempfile::tempdir().unwrap();
+    let previous = std::env::var_os("XAVIER_RECOVERY_DIR");
+    std::env::set_var("XAVIER_RECOVERY_DIR", default_dir.path());
+    crate::recovery::RecoveryStore::at(default_dir.path())
+        .write_kcv(&[7; 32])
+        .unwrap();
+    let (state, workspace) = test_state().await;
+    let claims = crate::security::auth::Claims::new(
+        "operator".into(),
+        "local@xavier".into(),
+        crate::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    );
+    let result = super::server::handle_tool_call(
+        state,
+        workspace,
+        Some(&claims),
+        "recovery_status",
+        json!({"recovery_dir": extra_dir.path(), "crypt_passphrase_backed_up": true}),
+    )
+    .await;
+    match previous {
+        Some(v) => std::env::set_var("XAVIER_RECOVERY_DIR", v),
+        None => std::env::remove_var("XAVIER_RECOVERY_DIR"),
+    }
+    let output = result.expect("admin status");
+    assert_eq!(output["structuredContent"]["kcvPresent"], true);
+    assert_eq!(output["structuredContent"]["cryptPassphraseBackedUp"], true);
+    let schema = super::server::get_xavier_tools()
+        .into_iter()
+        .find(|t| t.name == "recovery_status")
+        .unwrap()
+        .input_schema;
+    assert!(schema["properties"].get("recovery_dir").is_none());
+}
+
+#[tokio::test]
+async fn auth_defaults_stdio_has_local_identity() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    let response = crate::server::mcp_stdio::dispatch_stdio_value(
+        state.clone(),
+        workspace.clone(),
+        json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "list_projects", "arguments": {}
+        }}),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(response.get("error").is_none(), "{response}");
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let response = crate::server::mcp_stdio::dispatch_stdio_value(
+        state,
+        workspace,
+        json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+            "name": "espacio_channel_list", "arguments": {"space_id": "esp_x"}
+        }}),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(response.to_string().contains("root"), "{response}");
+}
+
+fn stdio_claims() -> crate::security::auth::Claims {
+    crate::security::auth::Claims::new(
+        crate::server::mcp_stdio::STDIO_LOCAL_SUBJECT.into(),
+        "local@xavier".into(),
+        crate::security::auth::UserRole::Admin,
+        chrono::Duration::hours(1),
+    )
+}
+
+#[tokio::test]
+async fn auth_defaults_stdio_denies_secret_tools() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    let claims = stdio_claims();
+    for name in ["secret_lend", "secret_exec"] {
+        let err = super::server::handle_tool_call(
+            state.clone(),
+            workspace.clone(),
+            Some(&claims),
+            name,
+            json!({}),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().starts_with("Forbidden:"), "{name}: {err}");
+    }
+}
+
+#[tokio::test]
+async fn auth_defaults_stdio_run_command_not_gated() {
+    crate::isolate_test_process!();
+    let (state, workspace) = test_state().await;
+    let claims = stdio_claims();
+    let res = super::server::handle_tool_call(
+        state,
+        workspace,
+        Some(&claims),
+        "xavier_run_command",
+        json!({}),
+    )
+    .await;
+    if let Err(err) = res {
+        assert!(!err.to_string().starts_with("Forbidden:"), "{err}");
+    }
+}
