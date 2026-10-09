@@ -3,29 +3,35 @@ import json
 import argparse
 import urllib.request
 import urllib.error
-from urllib.parse import urlparse
 from datetime import datetime, timezone
 
-def _redact_url(url: str) -> str:
-    if not url:
-        return ""
-    try:
-        parsed = urlparse(url)
-        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-    except Exception:
-        return ""
+# Shared interface contracts (PLAN.md §Interface contracts):
+#   ProbeRecord     {target_id, kind, deployment_id, vantage, observed_at, status,
+#                    checks:[{name,ok,detail}], error|null}
+#                    status in ("healthy","unhealthy","unknown")
+#   FailureEvidence {target_id, kind, deployment_id, detected_at, failed_probes,
+#                    window_seconds, vantages:[str], correlated:bool,
+#                    missing_metrics:[str], summary}
+PROBE_STATUSES = ("healthy", "unhealthy", "unknown")
+
+def _utc_z(dt: datetime | None = None) -> str:
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 def _default_fetch(url: str, timeout: float = 5.0) -> tuple[int, str]:
-    # Redact url before using/printing, though we just use it safely here
-    redacted = _redact_url(url)
+    # The URL is used only for the request; it is never echoed back.
     req = urllib.request.Request(url, headers={'User-Agent': 'xavier-guardian-probe/1.0'})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
             return response.getcode(), response.read().decode('utf-8')
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode('utf-8')
-    except Exception as e:
-        return 0, str(e)
+    except Exception:
+        # Provider outage: the metric is unavailable, which is never healthy.
+        return 0, "probe unavailable"
 
 def probe_targets(inventory: dict, vantage: str, fetch=None) -> list[dict]:
     if fetch is None:
@@ -39,7 +45,7 @@ def probe_targets(inventory: dict, vantage: str, fetch=None) -> list[dict]:
     if not isinstance(targets, list):
         return []
 
-    now_iso = datetime.now(timezone.utc).isoformat()
+    observed_at = _utc_z()
 
     for t in targets:
         if not isinstance(t, dict):
@@ -47,74 +53,103 @@ def probe_targets(inventory: dict, vantage: str, fetch=None) -> list[dict]:
 
         if t.get("enabled") is True:
             target_id = t.get("id")
+            kind = t.get("kind")
             url = t.get("url")
             expected_did = t.get("production_id")
+            checks = []
+            error = None
 
             if not url:
-                # An unavailable metric is 'unknown', never healthy
+                # An unavailable metric is 'unknown', never healthy.
                 status = "unknown"
                 actual_did = expected_did
+                checks.append({"name": "endpoint", "ok": False, "detail": "no probe url configured"})
             else:
                 code, body = fetch(url, timeout=5.0)
                 if code == 0:
-                    status = "unknown" # or failing? "unavailable metric is unknown and never healthy"
+                    status = "unknown"
                     actual_did = expected_did
+                    error = "probe unavailable"
+                    checks.append({"name": "endpoint", "ok": False, "detail": "probe unavailable"})
                 else:
                     body_data = {}
                     try:
                         body_data = json.loads(body)
                     except Exception:
-                        pass
+                        body_data = {}
 
-                    actual_did = body_data.get("deployment_id", expected_did)
+                    if isinstance(body_data, dict):
+                        actual_did = body_data.get("deployment_id", expected_did)
+                    else:
+                        actual_did = expected_did
 
                     # Tie smoke, health and error-rate evidence to the actual deployment ID.
                     if 200 <= code < 300:
                         if actual_did and str(actual_did) != str(expected_did):
-                            status = "failing"
+                            status = "unhealthy"
+                            checks.append({"name": "deployment_id", "ok": False, "detail": "deployment id mismatch"})
                         else:
                             status = "healthy"
+                            checks.append({"name": "smoke", "ok": True, "detail": "ok"})
                     else:
-                        status = "failing"
+                        status = "unhealthy"
+                        checks.append({"name": "smoke", "ok": False, "detail": f"http {code}"})
 
             records.append({
                 "target_id": target_id,
+                "kind": kind,
                 "deployment_id": actual_did,
                 "vantage": vantage,
+                "observed_at": observed_at,
                 "status": status,
-                "timestamp": now_iso
+                "checks": checks,
+                "error": error,
             })
 
     return records
 
 def correlate(records: list[dict], now: datetime, policy: dict | None = None) -> list[dict]:
-    # return FailureEvidence records only
-    # deduplicate by (target_id, deployment_id)
+    # Return FailureEvidence records only, deduplicated by (target_id, deployment_id).
+    # An unavailable metric is 'unknown', never green; 'unhealthy' is the failure signal.
+    if not isinstance(records, list):
+        return []
+
+    policy = policy or {}
+    window_seconds = int(policy.get("window_seconds", 300))
+
     groups = {}
     for r in records:
+        if not isinstance(r, dict):
+            continue
         key = (r.get("target_id"), r.get("deployment_id"))
-        if key not in groups:
-            groups[key] = []
-        groups[key].append(r)
+        groups.setdefault(key, []).append(r)
 
     evidence = []
     for (tid, did), group_records in groups.items():
-        # correlated is True only with at least two agreeing vantages or agreeing telemetry
-        # a missing metric is unknown, never green
-        statuses = {r.get("status") for r in group_records}
-        vantages = {r.get("vantage") for r in group_records if r.get("status") in ("failing", "unknown")}
+        kind = next((r.get("kind") for r in group_records if r.get("kind")), None)
+        failing = [r for r in group_records if r.get("status") in ("unhealthy", "unknown")]
+        if not failing:
+            continue
 
-        # We consider a failure if any record is failing or unknown
-        # Actually, "unknown" is never healthy. Let's just track "failing" or "unknown" as evidence
-        if "failing" in statuses or "unknown" in statuses:
-            correlated = len(vantages) >= 2 or "telemetry" in vantages
+        failure_vantages = sorted({r.get("vantage") for r in failing if r.get("vantage")})
+        failed_probes = sorted({r.get("vantage") for r in failing if r.get("status") == "unhealthy"})
+        missing_metrics = sorted({r.get("vantage") for r in failing if r.get("status") == "unknown"})
+        # correlated is True only with at least two agreeing vantages or agreeing telemetry.
+        telemetry = any(r.get("vantage") == "telemetry" and r.get("status") == "unhealthy" for r in group_records)
+        correlated = len(failure_vantages) >= 2 or telemetry
 
-            evidence.append({
-                "target_id": tid,
-                "deployment_id": did,
-                "status": "failing" if "failing" in statuses else "unknown",
-                "correlated": correlated
-            })
+        evidence.append({
+            "target_id": tid,
+            "kind": kind,
+            "deployment_id": did,
+            "detected_at": _utc_z(now),
+            "failed_probes": failed_probes,
+            "window_seconds": window_seconds,
+            "vantages": failure_vantages,
+            "correlated": correlated,
+            "missing_metrics": missing_metrics,
+            "summary": f"{len(failing)} failing probe(s) on {tid}/{did}",
+        })
 
     return evidence
 
