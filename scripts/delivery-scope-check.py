@@ -11,7 +11,7 @@ def main():
     parser.add_argument('--head', required=True, help="Head SHA")
     parser.add_argument('--files', required=True, help="Declared files, comma separated")
     parser.add_argument('--include-worktree', action='store_true', help="Include staged and untracked files")
-    parser.add_argument('--json', action='store_true', help="Output in JSON format (default)")
+    parser.add_argument('--json', action='store_true', default=True, help="Output in JSON format (default)")
 
     args = parser.parse_args()
 
@@ -104,7 +104,7 @@ def main():
             errors.append(f"Broken symlink: {path}")
         else:
             canonical = os.path.realpath(abs_path)
-            if not canonical.startswith(repo_root):
+            if os.path.commonpath([canonical, repo_root]) != repo_root:
                 errors.append(f"Path resolves outside repository: {path}")
 
         # Check if non-text file added

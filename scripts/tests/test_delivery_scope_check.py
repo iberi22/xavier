@@ -115,6 +115,32 @@ class TestDeliveryScopeCheck(unittest.TestCase):
         # We can just manually invoke the script's validation logic, or make the script parse the list of changed paths with a leading slash.
         pass # Not applicable as git paths are relative to repo root
 
+    def test_sibling_prefix_path_rejected(self):
+        # Create a sibling directory
+        parent_dir = os.path.dirname(self.repo_path)
+        base_name = os.path.basename(self.repo_path)
+        sibling_dir = os.path.join(parent_dir, base_name + "-sibling")
+        os.makedirs(sibling_dir, exist_ok=True)
+        try:
+            self._write_file("link", "hello\n")
+            subprocess.run(["git", "add", "link"], cwd=self.repo_path, check=True, env=self.env)
+            subprocess.run(["git", "commit", "-m", "test"], cwd=self.repo_path, check=True, env=self.env)
+
+            # Replace file with a symlink to sibling directory
+            os.remove(os.path.join(self.repo_path, "link"))
+            os.symlink(sibling_dir, os.path.join(self.repo_path, "link"))
+
+            subprocess.run(["git", "add", "link"], cwd=self.repo_path, check=True, env=self.env)
+            subprocess.run(["git", "commit", "-m", "symlink"], cwd=self.repo_path, check=True, env=self.env)
+
+            head_sha = self._get_sha("HEAD")
+            result = self._run_check(head_sha, "link")
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Path resolves outside repository", result.stderr)
+        finally:
+            os.rmdir(sibling_dir)
+
     def test_absolute_path_error_logic(self):
         # Test broken symlink specifically
         self._write_file("link", "hello\n")
