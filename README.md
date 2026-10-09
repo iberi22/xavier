@@ -194,7 +194,7 @@ src/
 - **`memory`**: Provides hybrid vector + keyword search (`BM25` + `sqlite-vec`), hierarchical context tree clustering (HCE engine), and dynamic zone weighting (1.5x boost for active work contexts). Memory symbol links are resolved on-demand.
 - **`codebase` / `code-graph`**: Performs incremental language parsing (Rust, TypeScript, Python, Go, Java, C/C++) to compute call chains, reverse dependencies, complexity hotspots, and blast radius for code entities.
 - **`mesh`**: Handles decentralized P2P synchronization between same-tenant nodes with last-write-wins timestamp conflict resolution and local SQLite offline queue fallback (`offline_queue` table).
-- **`agents` & `server`**: Houses the Axum HTTP REST API, MCP JSON-RPC transports (Stdio and SSE), hardware VRAM/GPU discovery sidecar (`gpud`), and provider routing.
+- **`agents` & `server`**: Houses the Axum HTTP REST API, MCP JSON-RPC transports (Stdio and SSE), and provider routing.
 - **`maloca`**: Connects Xavier to the Maloca presentation portal, tracking ecosystem alignment, backlog features, agent challenge scoring, and app registry metadata.
 
 ---
@@ -214,13 +214,17 @@ All authenticated HTTP routes require the `X-Xavier-Token` header (or `XAVIER_DE
 | `/v1/maloca/alignment/goals` | `GET` | Retrieve canonical SWAL goals and verification criteria |
 | `/v1/maloca/backlog/unified` | `GET` | Query aggregated multi-repo features (`wave`, `status`, `priority`) |
 | `/v1/maloca/backlog/summary` | `GET` | Retrieve backlog progress metrics (30s TTL cache) |
-| `/v1/maloca/models/infer` | `POST` | Execute inference request via model router |
-| `/v1/maloca/models/list` | `GET` | List available Ollama and cloud LLM models |
-| `/v1/maloca/models/health` | `GET` | Query model engine health status |
+| `/v1/maloca/models/infer` | `POST` | Execute inference request via model router (placeholder, returns 501 Not Implemented) |
+| `/v1/maloca/models/list` | `GET` | List available Ollama and cloud LLM models (placeholder, returns 501 Not Implemented) |
+| `/v1/maloca/models/health` | `GET` | Query model engine health status (placeholder, returns 501 Not Implemented) |
 | `/v1/maloca/challenges/generate` | `POST` | Generate cognitive HumanChallenge candidate |
 | `/v1/maloca/challenges/answer` | `POST` | Submit response to challenge for semantic similarity scoring |
 | `/v1/maloca/challenges/list` | `GET` | List active challenges |
 | `/v1/maloca/challenges/stats` | `GET` | Retrieve challenge engine statistics |
+
+#### Not mounted (design only)
+
+The `gpud` router is never merged into the server, so these paths are unreachable today.
 
 #### GPU Discovery & Sidecar (`/v1/gpud/*`)
 | Endpoint | Method | Description |
