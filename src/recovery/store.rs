@@ -449,8 +449,8 @@ impl RecoveryStore {
 
     /// Restore a key to `target` **without ever overwriting an existing key**.
     ///
-    /// `expected_kcv` is the KCV the key must match; pass `None` to skip
-    /// verification (not recommended — that is how a wrong key gets installed).
+    /// `expected_kcv` is the required KCV the key must match. Restore fails
+    /// closed when no KCV is available.
     ///
     /// Returns [`RestoreOutcome::Rejected`] and leaves `target` untouched when the
     /// candidate fails verification or `target` already exists.
@@ -484,6 +484,11 @@ impl RecoveryStore {
         let mut key = [0u8; 32];
         key.copy_from_slice(&bytes);
 
+        if expected_kcv.is_none() {
+            return Ok(RestoreOutcome::Rejected {
+                reason: "kcv_required".to_string(),
+            });
+        }
         if let Some(expected) = expected_kcv {
             if let Err(e) = crate::recovery::kcv::verify_kcv(&key, expected) {
                 return Ok(RestoreOutcome::Rejected {
@@ -633,6 +638,25 @@ mod tests {
 
     const KEY_A: [u8; 32] = [0xA1; 32];
     const KEY_B: [u8; 32] = [0xB2; 32];
+
+    #[test]
+    fn restore_requires_kcv_before_installing() {
+        crate::isolate_test_process!();
+        let dir = tempfile::tempdir().unwrap();
+        let store = RecoveryStore::at(dir.path().join("recovery"));
+        let target = dir.path().join("node").join("record.key");
+        let outcome = store
+            .restore_into(&hex_encode(KEY_A), &target, None)
+            .unwrap();
+        assert_eq!(
+            outcome,
+            RestoreOutcome::Rejected {
+                reason: "kcv_required".to_string(),
+            }
+        );
+        assert!(!target.parent().unwrap().exists());
+        assert!(!store.root().exists());
+    }
 
     #[test]
     fn kcv_roundtrip_on_disk() {
