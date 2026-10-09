@@ -9,6 +9,9 @@ cfw = importlib.util.module_from_spec(spec)
 sys.modules["cloudflare_worker"] = cfw
 spec.loader.exec_module(cfw)
 
+ACTION_RESULT_KEYS = {"target_id", "kind", "action", "dry_run", "from_deployment_id",
+                     "to_deployment_id", "result", "verified", "observed_at", "detail"}
+
 class TestCloudflareWorkerRecovery(unittest.TestCase):
     def setUp(self):
         self.decision = {
@@ -27,6 +30,34 @@ class TestCloudflareWorkerRecovery(unittest.TestCase):
                 "ver-abc": {"traffic": 100}
             }
         }
+
+    def test_contract_decision_record_uses_previous_known_good_id(self):
+        # Regression: a contract-shaped DecisionRecord carries previous_known_good_id,
+        # not version_id. It must resolve to the retained version.
+        decision = {
+            "target_id": "target-1",
+            "kind": "cf_worker",
+            "deployment_id": "prod-123",
+            "decided_at": "2023-10-20T12:00:00Z",
+            "action": "rollback",
+            "reason": "correlated failure",
+            "reversible": True,
+            "previous_known_good_id": "ver-abc",
+            "attempts_used": 0,
+            "cooldown_until": None,
+            "evidence": {},
+        }
+        res = cfw.plan_rollback(decision, self.target, self.state, dry_run=True)
+        self.assertEqual(set(res.keys()), ACTION_RESULT_KEYS)
+        self.assertEqual(res["result"], "skipped")
+        self.assertFalse(res["verified"])
+        self.assertEqual(res["to_deployment_id"], "ver-abc")
+        self.assertTrue(res["observed_at"].endswith("Z"))
+
+    def test_action_result_contract_keys(self):
+        res = cfw.plan_rollback(self.decision, self.target, self.state, dry_run=True)
+        self.assertEqual(set(res.keys()), ACTION_RESULT_KEYS)
+        self.assertTrue(res["observed_at"].endswith("Z"))
 
     def test_wrong_kind(self):
         self.target["kind"] = "cf_pages"

@@ -17,7 +17,7 @@ def plan_rollback(decision: dict, target: dict, state: dict, api=None, dry_run: 
             "to_deployment_id": to_deployment_id,
             "result": result_val,
             "verified": verified,
-            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "observed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "detail": detail
         }
 
@@ -30,7 +30,11 @@ def plan_rollback(decision: dict, target: dict, state: dict, api=None, dry_run: 
     if decision.get("deployment_id") != from_deployment_id:
         return make_result("skipped", False, None, "Deployment ID mismatch")
 
-    version_id = decision.get("version_id", decision.get("target_version_id", decision.get("artifact_digest")))
+    # Contract field first: a DecisionRecord carries previous_known_good_id.
+    version_id = (decision.get("previous_known_good_id")
+                  or decision.get("to_deployment_id")
+                  or decision.get("version_id")
+                  or decision.get("target_version_id"))
     if not version_id:
         return make_result("skipped", False, None, "Missing version ID")
 
