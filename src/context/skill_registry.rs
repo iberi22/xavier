@@ -1023,7 +1023,7 @@ Instructions here.
         let (name, desc, disable_model_invocation) = parse_frontmatter(content);
         assert_eq!(name.unwrap(), "test-skill");
         assert_eq!(desc, "A test skill for unit testing");
-        assert_eq!(disable_model_invocation, false);
+        assert!(!disable_model_invocation);
     }
 
     #[test]
@@ -1041,7 +1041,7 @@ disable-model-invocation: true
         let (name, desc, disable_model_invocation) = parse_frontmatter(content);
         assert_eq!(name.unwrap(), "block-skill");
         assert_eq!(desc, "This is a multiline description string.");
-        assert_eq!(disable_model_invocation, true);
+        assert!(disable_model_invocation);
     }
 
     #[test]
@@ -1281,7 +1281,7 @@ disable-model-invocation: true
     async fn test_disable_model_invocation_frontmatter() {
         let workspace = tempfile::tempdir().unwrap();
         let skills_dir = workspace.path().join("skills");
-        std::fs::create_dir_all(&skills_dir.join("silent-skill")).unwrap();
+        std::fs::create_dir_all(skills_dir.join("silent-skill")).unwrap();
         std::fs::write(
             skills_dir.join("silent-skill").join("SKILL.md"),
             "---\nname: silent-skill\ndescription: \"silent\"\ndisable-model-invocation: true\n---\nbody",
