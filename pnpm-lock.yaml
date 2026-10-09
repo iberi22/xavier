@@ -48,8 +48,8 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0))
       '@tauri-apps/api':
-        specifier: ^2.12.0
-        version: 2.12.0
+        specifier: ^2.12.1
+        version: 2.12.1
       '@tauri-apps/plugin-dialog':
         specifier: 2.8.1
         version: 2.8.1
@@ -1366,8 +1366,8 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tauri-apps/api@2.12.0':
-    resolution: {integrity: sha512-fUSxFX8VABYe9W9K5ROdEaKVkNUFRcMSRofjruvaxztXA+I0XnQHcYHF8m/a6iExRUxsUf0HsFWhPBuH9IgzJw==}
+  '@tauri-apps/api@2.12.1':
+    resolution: {integrity: sha512-DeyFHa3wynpyoqTDikDEDGTJIq4LQ5USfolQGRmGIWT6JMADyxZBTDa5cAdT3tDg73rUXufPaCwN7aXBos4OnQ==}
 
   '@tauri-apps/cli-darwin-arm64@2.12.1':
     resolution: {integrity: sha512-8bMnbpJ2jKO/ufrOPL65EMHC3ptw7fzeraoQkwibyfGLqIl+UCWsC0152kmNbW6r9NvVQduXqAZF5mH1QgTWhw==}
@@ -4450,7 +4450,7 @@ snapshots:
       tailwindcss: 4.3.3
       vite: 8.3.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)
 
-  '@tauri-apps/api@2.12.0': {}
+  '@tauri-apps/api@2.12.1': {}
 
   '@tauri-apps/cli-darwin-arm64@2.12.1':
     optional: true
@@ -4501,7 +4501,7 @@ snapshots:
 
   '@tauri-apps/plugin-dialog@2.8.1':
     dependencies:
-      '@tauri-apps/api': 2.12.0
+      '@tauri-apps/api': 2.12.1
 
   '@testing-library/dom@10.4.2':
     dependencies:
