@@ -11,6 +11,11 @@ on:
         description: 'The retained artifact digest'
         required: true
         type: string
+      inventory_path:
+        description: 'Guardian inventory JSON to validate the SHA against. Must exist; the step is fail-closed when it is missing or empty.'
+        required: false
+        default: 'scripts/guardian/inventory.json'
+        type: string
 
 permissions:
   contents: read
@@ -32,10 +37,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate sha against inventory
+        # Fail-closed by design: docs recovery never runs without a provisioned
+        # inventory, because the retained good SHA cannot be validated otherwise.
         run: |
-          INVENTORY="scripts/guardian/inventory.json"
+          INVENTORY="${{ inputs.inventory_path }}"
           if [ ! -s "$INVENTORY" ]; then
-            echo "Guardian inventory is missing or empty at $INVENTORY; refusing to recover"
+            echo "Guardian inventory is missing or empty at $INVENTORY; refusing to recover (fail-closed)."
+            echo "Provision the inventory (or set the inventory_path input) before re-running this workflow."
             exit 1
           fi
           GOOD_ID=$(jq -r '.targets[] | select(.kind == "gh_pages") | .previous_known_good_id // empty' "$INVENTORY" | head -n 1)

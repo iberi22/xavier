@@ -1,6 +1,11 @@
 import unittest
 import importlib.util
+import io
+import json
 import os
+import sys
+import tempfile
+import contextlib
 
 ACTION_RESULT_KEYS = {"target_id", "kind", "action", "dry_run", "from_deployment_id",
                       "to_deployment_id", "result", "verified", "observed_at", "detail"}
@@ -30,7 +35,7 @@ class TestDocsRecover(unittest.TestCase):
         }
 
     def assertActionResult(self, res):
-        self.assertEqual(set(res.keys()), ACTION_RESULT_KEYS | {"plan"})
+        self.assertEqual(set(res.keys()), ACTION_RESULT_KEYS)
         self.assertEqual(res["action"], "rollback")
         self.assertEqual(res["kind"], "gh_pages")
         self.assertIn(res["result"], ("applied", "skipped", "failed"))
@@ -72,8 +77,28 @@ class TestDocsRecover(unittest.TestCase):
         self.assertActionResult(res)
         self.assertEqual(res["result"], "skipped")
         self.assertFalse(res["verified"])
-        self.assertEqual(res["plan"]["to_deployment_id"], "good_id")
-        self.assertEqual(res["plan"]["artifact_digest"], self.valid_retained["artifact_digest"])
+        self.assertEqual(res["to_deployment_id"], "good_id")
+        self.assertIn("Recovery planned", res["detail"])
+
+    def test_plan_is_not_part_of_action_result(self):
+        # Regression: the recovery plan must not leak into the exact ActionResult.
+        res = docs_recover.plan_recovery(self.valid_decision, self.valid_target, self.valid_retained, dry_run=True)
+        self.assertNotIn("plan", res)
+        self.assertEqual(set(res.keys()), ACTION_RESULT_KEYS)
+
+    def test_probe_receives_the_internal_plan(self):
+        seen = {}
+
+        def probe(plan):
+            seen.update(plan)
+            return True
+
+        res = docs_recover.plan_recovery(self.valid_decision, self.valid_target, self.valid_retained,
+                                         dry_run=False, probe=probe)
+        self.assertTrue(res["verified"])
+        self.assertEqual(seen["to_deployment_id"], "good_id")
+        self.assertEqual(seen["artifact_digest"], self.valid_retained["artifact_digest"])
+        self.assertEqual(seen["source_sha"], self.valid_retained["source_sha"])
 
     def test_apply_plan_keeps_verified_false_without_probe(self):
         res = docs_recover.plan_recovery(self.valid_decision, self.valid_target, self.valid_retained, dry_run=False)
@@ -113,7 +138,29 @@ class TestDocsRecover(unittest.TestCase):
         self.assertActionResult(res)
         self.assertEqual(res["result"], "skipped")
         self.assertEqual(res["to_deployment_id"], "good_id")
-        self.assertEqual(res["plan"]["source_sha"], self.valid_retained["source_sha"])
+
+    def test_missing_inventory_fails_closed(self):
+        # Regression: a missing inventory.json must fail closed with a clear message.
+        with tempfile.TemporaryDirectory() as tmp:
+            decision_path = os.path.join(tmp, "decision.json")
+            state_path = os.path.join(tmp, "state.json")
+            with open(decision_path, "w", encoding="utf-8") as f:
+                json.dump(self.valid_decision, f)
+            with open(state_path, "w", encoding="utf-8") as f:
+                json.dump({"retained": {}}, f)
+            missing = os.path.join(tmp, "inventory.json")
+
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as cm:
+                    docs_recover.main([
+                        decision_path,
+                        "--inventory", missing,
+                        "--state", state_path,
+                    ])
+            self.assertEqual(cm.exception.code, 2)
+            self.assertIn("Inventory not found", stderr.getvalue())
+            self.assertIn("fail-closed", stderr.getvalue())
 
 if __name__ == '__main__':
     unittest.main()
