@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -9,6 +10,8 @@ from datetime import datetime, timezone
 #                 from_deployment_id, to_deployment_id,
 #                 result in ("applied","skipped","failed"), verified:bool,
 #                 observed_at, detail}
+# The recovery plan is internal: it is handed to the probe and never added to
+# the ActionResult. A missing inventory is fail-closed (exit 2, clear message).
 ACTION_RESULT_KEYS = ("target_id", "kind", "action", "dry_run", "from_deployment_id",
                       "to_deployment_id", "result", "verified", "observed_at", "detail")
 
@@ -24,7 +27,9 @@ def plan_recovery(decision: dict, target: dict, retained: dict, dry_run: bool = 
     requested_to = decision.get("to_deployment_id") or decision.get("previous_known_good_id")
     to_deployment_id = requested_to
 
-    def make_result(result_val: str, verified: bool, detail: str, plan=None) -> dict:
+    def make_result(result_val: str, verified: bool, detail: str) -> dict:
+        # ActionResult keys are exact: the recovery plan stays internal and is
+        # only handed to the probe; it is never part of the contract record.
         return {
             "target_id": target_id,
             "kind": "gh_pages",
@@ -36,7 +41,6 @@ def plan_recovery(decision: dict, target: dict, retained: dict, dry_run: bool = 
             "verified": verified,
             "observed_at": _utc_z(),
             "detail": detail,
-            "plan": plan,
         }
 
     if target.get("kind") != "gh_pages":
@@ -63,17 +67,17 @@ def plan_recovery(decision: dict, target: dict, retained: dict, dry_run: bool = 
     }
 
     if dry_run:
-        return make_result("skipped", False, "Recovery planned", plan)
+        return make_result("skipped", False, "Recovery planned")
 
     if probe is not None:
         if not probe(plan):
-            return make_result("failed", False, "Recovery applied but public-URL probe failed", plan)
-        return make_result("applied", True, "Recovery applied and public-URL probe verified", plan)
+            return make_result("failed", False, "Recovery applied but public-URL probe failed")
+        return make_result("applied", True, "Recovery applied and public-URL probe verified")
 
-    return make_result("applied", False, "Recovery applied", plan)
+    return make_result("applied", False, "Recovery applied")
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Docs recovery planner")
     parser.add_argument("decision", help="Decision JSON file")
     parser.add_argument("--inventory", required=True, help="Inventory JSON file")
@@ -81,8 +85,18 @@ def main():
     parser.add_argument("--apply", action="store_true", help="Apply the recovery")
     parser.add_argument("--json", action="store_true", help="Output JSON")
 
+    args = parser.parse_args(argv)
+
+    # Fail-closed: without a provisioned inventory there is nothing to validate
+    # the retained good SHA against, so refuse loudly instead of recovering blind.
+    if not os.path.isfile(args.inventory):
+        sys.stderr.write(
+            "Inventory not found: %s; refusing to recover (fail-closed). "
+            "Provision the guardian inventory before running docs recovery.\n" % args.inventory
+        )
+        sys.exit(2)
+
     try:
-        args = parser.parse_args()
         with open(args.decision, "r", encoding="utf-8") as f:
             decision = json.load(f)
         with open(args.inventory, "r", encoding="utf-8") as f:
