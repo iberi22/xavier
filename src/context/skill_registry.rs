@@ -1456,6 +1456,13 @@ disable-model-invocation: true
         }
     }
 
+    /// Only files named SKILL.md are indexed, so each fixture lives in its own folder.
+    fn skill_file(dir: &std::path::Path, folder: &str) -> std::path::PathBuf {
+        let d = dir.join(folder);
+        std::fs::create_dir_all(&d).unwrap();
+        d.join("SKILL.md")
+    }
+
     #[tokio::test]
     async fn registry_rejects_non_skill_entries() {
         let mut registry = SkillRegistry::new(vec![]);
@@ -1466,21 +1473,21 @@ disable-model-invocation: true
 
         // Write a valid skill
         std::fs::write(
-            dir.join("SKILL1.md"),
+            skill_file(&dir, "fixture-1"),
             "---\nname: valid-skill\ndescription: \"Valid description\"\n---\n\nContent",
         )
         .unwrap();
 
         // Write an invalid skill (bad slug)
         std::fs::write(
-            dir.join("SKILL2.md"),
+            skill_file(&dir, "fixture-2"),
             "---\nname: \">-\"\ndescription: \"Valid description\"\n---\n\nContent",
         )
         .unwrap();
 
         // Write an invalid skill (bad slug space)
         std::fs::write(
-            dir.join("SKILL3.md"),
+            skill_file(&dir, "fixture-3"),
             "---\nname: \"my skill\"\ndescription: \"Valid description\"\n---\n\nContent",
         )
         .unwrap();
@@ -1503,21 +1510,21 @@ disable-model-invocation: true
 
         // Write a valid skill
         std::fs::write(
-            dir.join("SKILL1.md"),
+            skill_file(&dir, "fixture-1"),
             "---\nname: valid-skill-two\ndescription: \"Valid description\"\n---\n\nContent",
         )
         .unwrap();
 
         // Write an invalid skill (empty desc)
         std::fs::write(
-            dir.join("SKILL2.md"),
+            skill_file(&dir, "fixture-2"),
             "---\nname: invalid-skill\ndescription: \"\"\n---\n\nContent",
         )
         .unwrap();
 
         // Write an invalid skill (1 char desc)
         std::fs::write(
-            dir.join("SKILL3.md"),
+            skill_file(&dir, "fixture-3"),
             "---\nname: invalid-skill-two\ndescription: \"a\"\n---\n\nContent",
         )
         .unwrap();
